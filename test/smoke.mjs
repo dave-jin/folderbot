@@ -271,6 +271,11 @@ try {
         await pg.evaluate(() => window.__kb(0)); await pg.evaluate(() => document.activeElement.blur()); await wait(400)
         const kbr = await pg.evaluate(() => ({ kb: document.querySelector('.app').classList.contains('kb'), rootH: document.querySelector('#root').getBoundingClientRect().height, ih: innerHeight, hdr: getComputedStyle(document.querySelector('.chat-hdr')).display }))
         if (kbr.kb || Math.abs(kbr.rootH - kbr.ih) > 2 || kbr.hdr === 'none') fail('phone: keyboard restore ' + JSON.stringify(kbr))
+        // iOS 26 이 키보드를 내린 뒤 시각 뷰포트를 60px 덜 돌려줘도(입력 중 아님) 루트는 전체 높이를 유지한다 — 아래 빈 띠 없음
+        await pg.evaluate(() => window.__kb(60)); await wait(300)
+        const stuck = await pg.evaluate(() => ({ rootH: document.querySelector('#root').getBoundingClientRect().height, ih: innerHeight, compBottom: document.querySelector('.composer').getBoundingClientRect().bottom }))
+        if (Math.abs(stuck.rootH - stuck.ih) > 2 || stuck.ih - stuck.compBottom > 24) fail('phone: stale visual viewport left a bottom gap ' + JSON.stringify(stuck))
+        await pg.evaluate(() => window.__kb(0)); await wait(200)
         await pg.click('.chat-hdr .rb'); await wait(300); if (!(await pg.$('.mhome .mcards')) || (await pg.$$eval('.mrow', (r) => r.length)) < 3) fail('phone: home cards/rows'); await pg.screenshot({ path: 'test/tmp/phone-home.png' })
         const ov = await pg.evaluate(() => { const m = document.querySelector('.mscroll'); return { sw: m.scrollWidth, cw: m.clientWidth, dw: document.documentElement.scrollWidth, iw: innerWidth } }); if (ov.sw > ov.cw || ov.dw > ov.iw) fail('phone: horizontal overflow ' + JSON.stringify(ov))
         await pg.click('.mtop .rb'); await wait(300); const mr = await pg.evaluate(() => { const r = document.querySelector('.modal').getBoundingClientRect(); return { top: r.top, bottom: r.bottom, h: innerHeight } }); if (!(mr.top >= 0 && mr.bottom <= mr.h)) fail('phone: settings modal out of viewport ' + JSON.stringify(mr)); await pg.screenshot({ path: 'test/tmp/phone-settings.png' }); await pg.click('.modal .modal-h .ib'); await wait(200)

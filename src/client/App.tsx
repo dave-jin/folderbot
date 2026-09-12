@@ -37,16 +37,21 @@ function useKeyboard(): boolean {
     let maxH = 0, lastW = 0
     const f = () => {
       if (vv.width !== lastW) { lastW = vv.width; maxH = 0 } // 회전·창 크기 변경 → 기준 다시
-      maxH = Math.max(maxH, vv.height)
+      maxH = Math.max(maxH, vv.height, window.innerHeight, document.documentElement.clientHeight)
       const ae = document.activeElement as HTMLElement | null
       const editing = !!ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)
       const open = editing && maxH - vv.height > 140
+      // 입력 중이 아니면 키보드가 떠 있을 수 없다 — 그때는 시각 뷰포트 값을 믿지 않고 최대 높이를 쓴다.
+      // iOS 26 은 키보드(입력 보조 막대 ~60pt)가 내려간 뒤 시각 뷰포트를 덜 돌려주기도 한다 → 아래에 ~100pt 빈 띠 (2026-09-13 Dave 스크린샷)
+      const h = open ? vv.height : maxH
       const st = document.documentElement.style
-      st.setProperty('--vvh', `${Math.round(vv.height)}px`); st.setProperty('--vvt', `${Math.round(vv.offsetTop)}px`)
+      st.setProperty('--vvh', `${Math.round(h)}px`); st.setProperty('--vvt', `${open ? Math.round(vv.offsetTop) : 0}px`)
       setKb(open)
       if (!open) window.scrollTo(0, 0)
     }
-    f(); vv.addEventListener('resize', f); vv.addEventListener('scroll', f); window.addEventListener('resize', f); document.addEventListener('focusin', f); document.addEventListener('focusout', () => setTimeout(f, 50))
+    // 키보드가 내려가는 애니메이션 동안 값이 흔들린다 — 포커스가 빠진 뒤 세 번 다시 잰다
+    const later = () => { setTimeout(f, 50); setTimeout(f, 300); setTimeout(f, 700) }
+    f(); vv.addEventListener('resize', f); vv.addEventListener('scroll', f); window.addEventListener('resize', f); document.addEventListener('focusin', f); document.addEventListener('focusout', later); document.addEventListener('visibilitychange', later)
     return () => { vv.removeEventListener('resize', f); vv.removeEventListener('scroll', f); window.removeEventListener('resize', f); document.removeEventListener('focusin', f) }
   }, [])
   return kb
