@@ -212,7 +212,7 @@ b,strong { color:var(--w); font-weight:600 }
   /* 대화 — 위 페이드 + 둥근 버튼 · 봇 알약 · 아래 알약 컴포저 */
   .col.chat { --footh:150px; min-width:0 }
   .chat-hdr.hdr { height:auto; padding:calc(var(--sat) + 10px) 16px 10px; border-bottom:0; background:linear-gradient(180deg, rgba(20,20,20,.94) 0%, rgba(20,20,20,.6) 70%, rgba(20,20,20,0) 100%); backdrop-filter:none; -webkit-backdrop-filter:none; gap:10px }
-  .bpill { display:inline-flex; align-items:center; gap:8px; height:44px; padding:0 14px 0 8px; border-radius:22px; border:1px solid var(--hair); max-width:calc(100% - 118px); min-width:0 } .bpill b { font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 }
+  .bpill { display:inline-flex; align-items:center; gap:8px; height:44px; padding:0 14px 0 8px; border-radius:22px; border:1px solid var(--hair); max-width:100%; min-width:0 } .bpill b { font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 }
   .chat-body { padding:calc(var(--sat) + 72px) 18px calc(var(--footh) + 10px); gap:14px; font-size:16px; line-height:1.6 }
   .pinq { top:calc(var(--sat) + 62px); width:calc(100% - 36px); border-radius:14px; padding:10px 14px; font-size:15px }
   .tobot { width:40px; height:40px }
