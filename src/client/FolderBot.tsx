@@ -56,7 +56,20 @@ export const I = {
   archive: <><rect x="2" y="3" width="12" height="3" /><path d="M3 6v7h10V6M6.5 9h3" /></>,
   pause: <path d="M5.5 3v10M10.5 3v10" />,
   inbox: <><path d="M2 9l2-6h8l2 6v4H2z" /><path d="M2 9h4l1 2h2l1-2h4" /></>,
-  phone: <><rect x="4.5" y="1.5" width="7" height="13" rx="1.5" /><path d="M7 12.5h2" /></>
+  phone: <><rect x="4.5" y="1.5" width="7" height="13" rx="1.5" /><path d="M7 12.5h2" /></>,
+  doc: <><path d="M4 2h5l3 3v9H4z" /><path d="M6 8h4M6 10.5h4" /></>,
+  panel: <><rect x="2" y="3" width="12" height="10" rx="1.5" /><path d="M6 3v10" /></>,
+  panelr: <><rect x="2" y="3" width="12" height="10" rx="1.5" /><path d="M10 3v10" /></>,
+  sub: <path d="M4 3v6a2 2 0 0 0 2 2h6M9 8l3 3-3 3" />,
+  expand: <><path d="M9 3h4v4M3 13l10-10M7 13H3V9" /></>,
+  list: <><path d="M5 4h8M5 8h8M5 12h8" /><circle cx="2.5" cy="4" r=".8" /><circle cx="2.5" cy="8" r=".8" /><circle cx="2.5" cy="12" r=".8" /></>,
+  sort: <path d="M3 4h10M3 8h7M3 12h4" />,
+  eye: <><path d="M1.5 8s2.5-4 6.5-4 6.5 4 6.5 4-2.5 4-6.5 4S1.5 8 1.5 8z" /><circle cx="8" cy="8" r="2" /></>,
+  up: <path d="M8 13V3M4 7l4-4 4 4" />,
+  grep: <><circle cx="7" cy="7" r="4" /><path d="M10 10l3.5 3.5M5 7h4" /></>,
+  plug: <><path d="M5 2v4M11 2v4M3 6h10v3a5 5 0 0 1-10 0z" /><path d="M8 14v-3" /></>,
+  cal: <><rect x="2" y="3" width="12" height="11" rx="1.5" /><path d="M2 7h12M5 1.5v3M11 1.5v3" /></>,
+  home: <><path d="M2 8l6-5 6 5v6H2z" /><path d="M6.5 14V9.5h3V14" /></>
 }
 export function Icon({ n, size = 16, color, style }: { n: keyof typeof I; size?: number; color?: string; style?: React.CSSProperties }) {
   return <svg className="ico" viewBox="0 0 16 16" width={size} height={size} style={{ color, ...style }}>{I[n]}</svg>

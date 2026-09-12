@@ -23,11 +23,12 @@ export interface StateShape {
   port: number
   botLimit: number
   devices: { id: string; name: string; lastSeen: number }[]
+  defaults: { model: string; effort: string }
   online: 'on' | 'off'
   loaded: boolean
   filesTick: Record<string, number>
 }
-const init: StateShape = { version: '', root: '', rules: null, rulesInstalled: false, bots: [], candidates: [], sessionsByBot: {}, chats: {}, pending: {}, todos: {}, auth: { verdict: 'unknown', checkedAt: 0 }, inbox: 0, notifications: [], vapidPublic: '', tailnet: null, addrs: [], port: 7373, botLimit: 8, devices: [], online: 'off', loaded: false, filesTick: {} }
+const init: StateShape = { version: '', root: '', rules: null, rulesInstalled: false, bots: [], candidates: [], sessionsByBot: {}, chats: {}, pending: {}, todos: {}, auth: { verdict: 'unknown', checkedAt: 0 }, inbox: 0, notifications: [], vapidPublic: '', tailnet: null, addrs: [], port: 7373, botLimit: 8, devices: [], defaults: { model: 'claude-opus-5', effort: 'high' }, online: 'off', loaded: false, filesTick: {} }
 
 type Action = { type: 'state'; s: Partial<StateShape> } | { type: 'frame'; f: Frame } | { type: 'chat'; sessionId: string; items: ChatItem[]; pending: PermissionRequest[] } | { type: 'online'; v: 'on' | 'off' } | { type: 'todos'; botId: string; items: TodoItem[] }
 
@@ -50,6 +51,7 @@ function reducer(s: StateShape, a: Action): StateShape {
           return { ...s, chats: { ...s.chats, [f.sessionId]: items } }
         }
         case 'state': { const list = s.sessionsByBot[f.botId]; if (!list) return s; return { ...s, sessionsByBot: { ...s.sessionsByBot, [f.botId]: list.map((x) => (x.id === f.sessionId ? { ...x, state: f.state, alive: true, hibernated: false } : x)) } } }
+        case 'activity': { const list = s.sessionsByBot[f.botId]; if (!list) return s; return { ...s, sessionsByBot: { ...s.sessionsByBot, [f.botId]: list.map((x) => (x.id === f.sessionId ? { ...x, activity: f.activity, turnStartedAt: f.turnStartedAt ?? x.turnStartedAt } : x)) } } }
         case 'permission': return { ...s, pending: { ...s.pending, [f.sessionId]: [...(s.pending[f.sessionId] ?? []).filter((p) => p.requestId !== f.req.requestId), f.req] } }
         case 'notify': return { ...s, notifications: [f.n, ...s.notifications].slice(0, 100) }
         case 'auth': return { ...s, auth: f.auth }
@@ -96,5 +98,13 @@ export function fmtTime(t: number): string {
   if (same) return d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })
   if (diff < 7 * 86400_000) return ['일', '월', '화', '수', '목', '금', '토'][d.getDay()]
   return `${d.getMonth() + 1}/${d.getDate()}`
+}
+export function fmtElapsed(from?: number): string {
+  if (!from) return ''
+  const sec = Math.max(0, Math.floor((Date.now() - from) / 1000))
+  if (sec < 60) return `0:${String(sec).padStart(2, '0')}`
+  const m = Math.floor(sec / 60); const ss = sec % 60
+  if (m < 60) return `${m}m ${String(ss).padStart(2, '0')}s`
+  return `${Math.floor(m / 60)}h ${m % 60}m`
 }
 export function fmtDate(t: number): string { const d = new Date(t); return `${d.getMonth() + 1}월 ${d.getDate()}일 (${['일', '월', '화', '수', '목', '금', '토'][d.getDay()]}) ${d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })}` }

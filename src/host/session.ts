@@ -53,6 +53,7 @@ export interface SpawnSpec {
   addDirs?: string[]
   mcpConfig?: string
   model?: string
+  effort?: string
   name?: string
   appendSystemPrompt?: string
   bin?: string
@@ -75,6 +76,7 @@ export class ClaudeWorker extends EventEmitter {
     for (const d of spec.addDirs ?? []) args.push('--add-dir', d)
     if (spec.mcpConfig) args.push('--mcp-config', spec.mcpConfig)
     if (spec.model) args.push('--model', spec.model)
+    if (spec.effort) args.push('--effort', spec.effort)
     if (spec.name) args.push('--name', spec.name.replace(/[^\p{L}\p{N}_-]+/gu, '-').slice(0, 60))
     if (spec.appendSystemPrompt) args.push('--append-system-prompt', spec.appendSystemPrompt)
     args.push('--settings', JSON.stringify({ crossSessionInbound: 'accept' }))
@@ -154,11 +156,15 @@ export interface SessionRec {
   routine?: string
   permissionMode?: PermissionMode
   model?: string
+  effort?: string
+  activity?: string
+  turnStartedAt?: number
 }
 
 export interface ManagerEvents {
   state: (s: SessionRec, prev: SessionState, notify: boolean) => void
   chat: (sessionId: string, item: ChatItem, replace: boolean) => void
+  activity: (s: SessionRec) => void
   permission: (s: SessionRec, req: PermissionRequest) => void
   sessions: (botId: string) => void
   files: (botId: string) => void
@@ -173,6 +179,8 @@ export class SessionManager extends EventEmitter {
   mcpUrl: (sid: string, botId: string) => string | undefined = () => undefined
   systemPromptFor: (bot: Bot) => string = () => ''
   bin?: string
+  /** 새 세션이 물려받는 기본값 — 기존 세션은 만들 때의 값을 유지한다 */
+  defaults: { model?: string; effort?: string } = {}
 
   constructor() {
     super()
@@ -191,14 +199,14 @@ export class SessionManager extends EventEmitter {
   }
   info(r: SessionRec): SessionInfo {
     const w = this.workers.get(r.id)
-    return { id: r.id, botId: r.botId, name: r.name, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine }
+    return { id: r.id, botId: r.botId, name: r.name, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort }
   }
   get(id: string): SessionRec | undefined { return this.recs.get(id) }
   items(id: string): ChatItem[] { return this.recs.get(id)?.items ?? [] }
 
-  create(bot: Bot, name: string, opts: { permissionMode?: PermissionMode; model?: string; routine?: string } = {}): SessionRec {
+  create(bot: Bot, name: string, opts: { permissionMode?: PermissionMode; model?: string; effort?: string; routine?: string } = {}): SessionRec {
     const id = `s_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-    const r: SessionRec = { id, botId: bot.id, name, cwd: bot.repo ?? bot.abs, cliSessionId: null, state: 'idle', createdAt: Date.now(), lastActivity: Date.now(), items: [], routine: opts.routine, permissionMode: opts.permissionMode, model: opts.model }
+    const r: SessionRec = { id, botId: bot.id, name, cwd: bot.repo ?? bot.abs, cliSessionId: null, state: 'idle', createdAt: Date.now(), lastActivity: Date.now(), items: [], routine: opts.routine, permissionMode: opts.permissionMode, model: opts.model ?? this.defaults.model, effort: opts.effort ?? this.defaults.effort }
     this.recs.set(id, r)
     this.persist(r)
     this.emit('sessions', bot.id)
@@ -237,7 +245,7 @@ export class SessionManager extends EventEmitter {
   ensureWorker(r: SessionRec, bot: Bot): ClaudeWorker {
     const existing = this.workers.get(r.id)
     if (existing?.alive) return existing
-    const w = new ClaudeWorker({ cwd: r.cwd, resume: r.cliSessionId, permissionMode: r.permissionMode, addDirs: bot.repo ? [bot.abs] : undefined, mcpConfig: this.mcpUrl(r.id, bot.id), model: r.model, name: `${bot.name}-${r.name}`, appendSystemPrompt: this.systemPromptFor(bot) || undefined, bin: this.bin })
+    const w = new ClaudeWorker({ cwd: r.cwd, resume: r.cliSessionId, permissionMode: r.permissionMode, addDirs: bot.repo ? [bot.abs] : undefined, mcpConfig: this.mcpUrl(r.id, bot.id), model: r.model, effort: r.effort, name: `${bot.name}-${r.name}`, appendSystemPrompt: this.systemPromptFor(bot) || undefined, bin: this.bin })
     this.workers.set(r.id, w)
     w.on('line', (line: StreamLine) => this.onLine(r, line))
     w.on('permission', (p: PermissionRequest) => { this.setState(r, { kind: 'permission_requested' }); this.emit('permission', r, p) })
@@ -256,34 +264,74 @@ export class SessionManager extends EventEmitter {
     this.emit('sessions', r.botId)
     return w
   }
+  private thinking = new Map<string, ChatItem & { kind: 'thinking' }>()
+  private activityAt = new Map<string, number>()
+  /** «지금 하는 일» 한 줄 — 0.4초에 한 번만 밖으로 (토큰마다 쏘지 않는다) */
+  private setActivity(r: SessionRec, text: string, force = false): void {
+    r.activity = text
+    const last = this.activityAt.get(r.id) ?? 0
+    if (!force && Date.now() - last < 400) return
+    this.activityAt.set(r.id, Date.now())
+    this.emit('activity', r)
+  }
+  private subOf(r: SessionRec, parentId: string | null | undefined): (ChatItem & { kind: 'subagent' }) | undefined {
+    if (!parentId) return undefined
+    // 같은 id 가 두 번 올 수 있으니(재시도·스텁) 뒤에서부터 찾는다
+    for (let i = r.items.length - 1; i >= 0; i--) { const it = r.items[i]; if (it.id === `t_${parentId}`) return it.kind === 'subagent' ? it : undefined }
+    return undefined
+  }
   private onLine(r: SessionRec, line: StreamLine): void {
     if (line.session_id && r.cliSessionId !== line.session_id) { r.cliSessionId = line.session_id; this.persist(r) }
     if (line.type === 'system' && line.subtype === 'init') return
+    const parent = line.parent_tool_use_id ?? null
     if (line.type === 'stream_event') {
-      const ev = line.event as { type?: string; delta?: { type?: string; text?: string }; index?: number } | undefined
-      if (ev?.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
+      const ev = line.event as { type?: string; delta?: { type?: string; text?: string; thinking?: string }; index?: number } | undefined
+      if (ev?.type === 'content_block_delta' && ev.delta?.type === 'text_delta' && !parent) {
         let cur = this.streaming.get(r.id)
         if (!cur) { cur = { id: itemId('a'), t: Date.now(), kind: 'assistant', text: '', streaming: true }; this.streaming.set(r.id, cur); r.items.push(cur) }
         cur.text += ev.delta.text ?? ''
         this.emit('chat', r.id, cur, true)
+        this.setActivity(r, '답 쓰는 중')
+      } else if (ev?.type === 'content_block_delta' && ev.delta?.type === 'thinking_delta' && !parent) {
+        let th = this.thinking.get(r.id)
+        if (!th) { th = { id: itemId('th'), t: Date.now(), kind: 'thinking', text: '', streaming: true }; this.thinking.set(r.id, th); r.items.push(th) }
+        th.text += ev.delta.thinking ?? ''
+        if (th.text.length % 40 < 8) this.emit('chat', r.id, th, true)
+        this.setActivity(r, `생각 중 · ${th.text.slice(-90).replace(/\s+/g, ' ')}`)
       }
       this.setState(r, { kind: 'stream_activity' })
       return
     }
     if (line.type === 'assistant') {
+      const sub = this.subOf(r, parent)
       const text = assistantText(line)
-      const cur = this.streaming.get(r.id)
-      if (text) {
-        if (cur) { cur.text = text; cur.streaming = false; this.streaming.delete(r.id); this.push(r, cur, true) }
-        else this.push(r, { id: itemId('a'), t: Date.now(), kind: 'assistant', text })
-      }
+      if (!parent) {
+        const th = this.thinking.get(r.id); if (th) { th.streaming = false; this.thinking.delete(r.id); this.push(r, th, true) }
+        for (const b of line.message?.content ?? []) if (b.type === 'thinking' && typeof b.thinking === 'string' && !th) this.push(r, { id: itemId('th'), t: Date.now(), kind: 'thinking', text: String(b.thinking) })
+        const cur = this.streaming.get(r.id)
+        if (text) {
+          if (cur) { cur.text = text; cur.streaming = false; this.streaming.delete(r.id); this.push(r, cur, true) }
+          else this.push(r, { id: itemId('a'), t: Date.now(), kind: 'assistant', text })
+        }
+      } else if (sub && text) { sub.last = text.slice(0, 80).replace(/\s+/g, ' '); this.push(r, sub, true) }
       const touched: string[] = []
       for (const b of line.message?.content ?? []) {
-        if (b.type === 'tool_use') {
-          const name = String(b.name ?? 'tool'); const input = (b.input ?? {}) as Record<string, unknown>
-          this.push(r, { id: `t_${String(b.id ?? itemId('t'))}`, t: Date.now(), kind: 'tool', name, summary: toolSummary(name, input), input })
-          const tp = touchedPath(name, input); if (tp) touched.push(tp)
+        if (b.type !== 'tool_use') continue
+        const name = String(b.name ?? 'tool'); const input = (b.input ?? {}) as Record<string, unknown>; const id = `t_${String(b.id ?? itemId('t'))}`
+        if (name === 'TodoWrite' && !parent) {
+          const todos = Array.isArray(input.todos) ? (input.todos as { content?: string; status?: string; activeForm?: string }[]) : []
+          this.push(r, { id: `todos_${r.id}`, t: Date.now(), kind: 'todos', items: todos.map((x) => ({ content: String(x.content ?? ''), status: (x.status === 'completed' || x.status === 'in_progress' ? x.status : 'pending'), activeForm: x.activeForm ? String(x.activeForm) : undefined })) }, true)
+          continue
         }
+        if ((name === 'Task' || name === 'Agent') && !parent) {
+          this.push(r, { id, t: Date.now(), kind: 'subagent', name: toolSummary(name, input) || '서브에이전트', prompt: typeof input.prompt === 'string' ? input.prompt : '', tools: 0, last: '', status: 'run' })
+          this.setActivity(r, `에이전트 · ${toolSummary(name, input)}`, true)
+          continue
+        }
+        this.push(r, { id, t: Date.now(), kind: 'tool', name, summary: toolSummary(name, input), input, parentId: sub ? sub.id : undefined })
+        if (sub) { sub.tools += 1; sub.last = `${name} ${toolSummary(name, input)}`.slice(0, 80); this.push(r, sub, true) }
+        this.setActivity(r, `${sub ? `${sub.name} › ` : ''}${name} · ${toolSummary(name, input)}`.slice(0, 120), true)
+        const tp = touchedPath(name, input); if (tp) touched.push(tp)
       }
       if (touched.length) { this.push(r, { id: itemId('f'), t: Date.now(), kind: 'files', paths: touched }); this.emit('files', r.botId) }
       this.setState(r, { kind: 'stream_activity' })
@@ -291,22 +339,23 @@ export class SessionManager extends EventEmitter {
     }
     if (line.type === 'user') {
       for (const b of line.message?.content ?? []) {
-        if (b.type === 'tool_result') {
-          const id = `t_${String(b.tool_use_id ?? '')}`
-          const it = r.items.find((x) => x.id === id)
-          if (it && it.kind === 'tool') {
-            const c = b.content
-            it.result = (typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => (x as { text?: string }).text ?? '').join('\n') : '').slice(0, 2000)
-            it.isError = !!b.is_error
-            this.push(r, it, true)
-          }
-        }
+        if (b.type !== 'tool_result') continue
+        const id = `t_${String(b.tool_use_id ?? '')}`
+        let it: ChatItem | undefined; for (let i = r.items.length - 1; i >= 0; i--) if (r.items[i].id === id) { it = r.items[i]; break }
+        const c = b.content
+        const resText = (typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => (x as { text?: string }).text ?? '').join('\n') : '').slice(0, 2000)
+        if (it && it.kind === 'tool') { it.result = resText; it.isError = !!b.is_error; this.push(r, it, true) }
+        else if (it && it.kind === 'subagent') { it.status = b.is_error ? 'error' : 'done'; it.result = resText; this.push(r, it, true) }
       }
       return
     }
     if (line.type === 'result') {
+      if (parent) return
       const cur = this.streaming.get(r.id); if (cur) { cur.streaming = false; this.streaming.delete(r.id); this.push(r, cur, true) }
+      const th = this.thinking.get(r.id); if (th) { th.streaming = false; this.thinking.delete(r.id); this.push(r, th, true) }
+      for (const it of r.items) if (it.kind === 'subagent' && it.status === 'run') { it.status = 'done'; this.push(r, it, true) }
       this.push(r, { id: itemId('r'), t: Date.now(), kind: 'result', ok: !line.is_error, durationMs: line.duration_ms ?? 0, costUsd: line.total_cost_usd, error: line.is_error ? String(line.error ?? line.result ?? '') : undefined })
+      this.setActivity(r, '', true)
       this.setState(r, { kind: 'result_received', isError: !!line.is_error })
       this.persist(r)
     }
@@ -316,6 +365,8 @@ export class SessionManager extends EventEmitter {
     const w = this.ensureWorker(r, bot)
     this.push(r, { id: itemId('u'), t: Date.now(), kind: 'user', text })
     w.send(text)
+    if (r.state !== 'running') r.turnStartedAt = Date.now()
+    this.setActivity(r, '시작하는 중', true)
     this.setState(r, { kind: 'user_sent' })
     this.persist(r)
   }

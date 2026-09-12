@@ -31,6 +31,7 @@ export class Host {
     this.notifier = new Notifier(cfg)
     this.notifier.onEvent = (n) => this.broadcast({ ev: 'notify', n })
     this.sessions.bin = cfg.claudeBin
+    this.sessions.defaults = { model: cfg.defaultModel, effort: cfg.defaultEffort }
     setOauthToken(cfg.claudeOauthToken)
     this.sessions.mcpUrl = (sid, botId) => JSON.stringify({ mcpServers: { folderbot: { type: 'http', url: `http://127.0.0.1:${cfg.port}/mcp/${botId}?sid=${encodeURIComponent(sid)}` } } })
     this.sessions.systemPromptFor = (bot) => this.systemPrompt(bot)
@@ -47,6 +48,7 @@ export class Host {
     this.sessions.on('sessions', (botId: string) => this.broadcast({ ev: 'sessions', botId, sessions: this.sessions.list(botId) }))
     this.sessions.on('chat', (sessionId: string, item, replace: boolean) => this.broadcast({ ev: 'chat', sessionId, item, replace }))
     this.sessions.on('files', (botId: string) => this.broadcast({ ev: 'files', botId }))
+    this.sessions.on('activity', (r: SessionRec) => this.broadcast({ ev: 'activity', sessionId: r.id, botId: r.botId, activity: r.activity ?? '', turnStartedAt: r.turnStartedAt }))
     this.sessions.on('auth-error', () => { void this.refreshAuth(true) })
     this.sessions.on('chat', (sessionId: string, item) => {
       // CLI 가 인증 오류를 result/assistant 로 흘리는 경우도 잡는다
@@ -112,6 +114,12 @@ export class Host {
     this.sessions.send(s, bot, `${r.prompt}\n\n(이건 예약된 루틴 "${r.name}" 이야. 사람이 없을 수 있으니 ${r.approve === 'always' ? '' : r.approve === 'folder' ? '이 폴더 안 파일만 고치고 ' : '파일을 고치지 말고 제안만 하고 '}결과를 짧게 요약해.)`)
   }
 
+  /** 기본 모델·생각 레벨 — 저장하면 다음 세션부터 */
+  setDefaults(model: string, effort: string): void {
+    this.cfg.defaultModel = model || undefined; this.cfg.defaultEffort = effort || undefined
+    this.sessions.defaults = { model: this.cfg.defaultModel, effort: this.cfg.defaultEffort }
+    saveConfig(this.cfg)
+  }
   setToken(token: string): void {
     this.cfg.claudeOauthToken = token.trim() || undefined
     setOauthToken(this.cfg.claudeOauthToken)

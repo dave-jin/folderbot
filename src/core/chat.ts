@@ -5,6 +5,8 @@ export interface StreamLine {
   type: string
   subtype?: string
   session_id?: string
+  /** 서브에이전트(Task/Agent) 안에서 난 줄이면 부모 tool_use id */
+  parent_tool_use_id?: string | null
   message?: { role?: string; content?: Array<Record<string, unknown>>; stop_reason?: string }
   event?: Record<string, unknown>
   duration_ms?: number
@@ -24,6 +26,7 @@ export function toolSummary(name: string, input: Record<string, unknown>): strin
     case 'Glob': case 'Grep': return s('pattern') + (s('path') ? ` · ${s('path')}` : '')
     case 'WebFetch': case 'WebSearch': return s('url') || s('query')
     case 'Task': case 'Agent': return s('description') || s('prompt').slice(0, 80)
+    case 'TodoWrite': return `${Array.isArray(input.todos) ? (input.todos as unknown[]).length : 0}개 항목`
     default: {
       const first = Object.values(input).find((v) => typeof v === 'string') as string | undefined
       return (first ?? '').slice(0, 100)

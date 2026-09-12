@@ -1,4 +1,5 @@
-import { existsSync, readdirSync, readFileSync, statSync, createReadStream } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync, createReadStream, renameSync } from 'node:fs'
+import { dirname, basename } from 'node:path'
 import { join, extname, relative, resolve, sep } from 'node:path'
 import { atomicWrite } from './paths'
 
@@ -33,6 +34,22 @@ export function tree(base: string, depth = 2, max = 400): TreeNode[] {
     return out.sort((a, b) => (a.dir === b.dir ? b.mtime - a.mtime : a.dir ? -1 : 1))
   }
   return walk(base, depth)
+}
+
+/** 한 단계만 읽는다 — 트리는 펼칠 때마다 이걸 부른다(게으른 로드). 폴더 먼저 · 한글 이름순 · 숨김·.git 제외 · 번들(.app/.key)은 파일 취급 */
+export function listDir(base: string, rel: string): TreeNode[] {
+  const dir = rel ? join(base, rel) : base
+  let names: string[] = []
+  try { names = readdirSync(dir) } catch { return [] }
+  const out: TreeNode[] = []
+  for (const name of names) {
+    if (SKIP.has(name) || name.startsWith('.')) continue
+    const abs = join(dir, name)
+    let st; try { st = statSync(abs) } catch { continue }
+    const bundle = /\.(app|key|numbers|pages|bundle|framework)$/i.test(name)
+    out.push({ name, rel: relative(base, abs), dir: st.isDirectory() && !bundle, size: st.isDirectory() ? undefined : st.size, mtime: st.mtimeMs })
+  }
+  return out.sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name, 'ko') : a.dir ? -1 : 1))
 }
 
 /** 최근 변경순 평평한 목록 */
@@ -71,6 +88,15 @@ export function readText(abs: string, max = 2_000_000): { text: string; truncate
 /** 바이트 보존 쓰기 — 개행 스타일은 호출부가 유지한다 */
 export function writeText(abs: string, text: string): void { atomicWrite(abs, text) }
 
+/** 같은 폴더 안에서 이름만 바꾼다 — 덮어쓰지 않는다 */
+export function renameEntry(abs: string, newName: string): string {
+  const clean = newName.replace(/[\/\\:\u0000-\u001f]/g, '_').trim()
+  if (!clean || clean === basename(abs)) return abs
+  const to = join(dirname(abs), clean)
+  if (existsSync(to)) throw new Error('같은 이름이 이미 있어요')
+  renameSync(abs, to)
+  return to
+}
 export function stream(abs: string) { return createReadStream(abs) }
 export function exists(abs: string): boolean { return existsSync(abs) }
 export function mime(abs: string): string {

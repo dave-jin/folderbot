@@ -48,6 +48,14 @@ try {
   if (!chat.items.some((i) => i.kind === 'assistant' && /스텁이 받았습니다/.test(i.text))) fail('assistant reply missing: ' + JSON.stringify(chat.items))
   if (!chat.items.some((i) => i.kind === 'tool' && i.name === 'Read')) fail('tool line missing')
   if (chat.info.state !== 'done') fail(`state ${chat.info.state}`); ok('send → tool → assistant → done')
+  // 서브에이전트 · 생각 · TodoWrite
+  const sub = chat.items.find((i) => i.kind === 'subagent'); if (!sub || sub.tools !== 1 || sub.status !== 'done' || !/2건/.test(sub.result ?? '')) fail('subagent item: ' + JSON.stringify(sub))
+  if (!chat.items.some((i) => i.kind === 'tool' && i.parentId === sub.id && i.name === 'Grep')) fail('child tool parentId')
+  if (chat.items.some((i) => i.kind === 'assistant' && /하위 조사 끝/.test(i.text))) fail('subagent text leaked into main chat')
+  if (!chat.items.some((i) => i.kind === 'thinking' && /먼저 읽을지/.test(i.text))) fail('thinking item')
+  const td = chat.items.find((i) => i.kind === 'todos'); if (!td || td.items.length !== 2 || td.items[1].status !== 'in_progress') fail('todos item')
+  if (chat.items.some((i) => i.kind === 'tool' && i.name === 'TodoWrite')) fail('TodoWrite should not be a tool line')
+  if (!frames.some((f) => f.ev === 'activity')) fail('no activity frame'); ok('subagent(parentId) · thinking · todos · activity')
   // 승인 흐름
   await api(`/sessions/${s1.sessionId}/send`, { text: '승인이 필요한 일 해 줘' })
   await wait(700)
@@ -66,6 +74,10 @@ try {
   await api(`/bots/${bot.id}/file`, { rel: 'stub-output.md', text: f.text + '\n추가\n' })
   if (!readFileSync(join(root, '3. Area/제품_Rondo/stub-output.md'), 'utf8').endsWith('추가\n')) fail('file write'); ok('file read/write')
   try { await api(`/bots/${bot.id}/file?rel=../../../../../../etc/hostname`); fail('path guard') } catch (e) { if (!/밖/.test(e.message)) fail('guard msg ' + e.message); ok('path guard') }
+  // 지연 트리 · 이름 바꾸기
+  const ls = await api(`/bots/${bot.id}/ls?dir=`); if (!ls.some((n) => n.name === 'todo.md') || typeof ls[0].dir !== 'boolean') fail('ls')
+  const rn = await api(`/bots/${bot.id}/rename`, { rel: 'stub-output.md', name: 'stub-renamed.md' }); if (rn.rel !== 'stub-renamed.md' || !existsSync(join(root, '3. Area/제품_Rondo/stub-renamed.md'))) fail('rename')
+  await api(`/bots/${bot.id}/rename`, { rel: 'stub-renamed.md', name: 'stub-output.md' }); ok('ls (lazy) · rename')
   // 첨부 업로드 (기기에서) · 토큰 저장
   const up = await api(`/bots/${bot.id}/upload`, { name: '회의록.txt', data: Buffer.from('안녕').toString('base64') })
   if (!up.rel.startsWith('첨부/') || !existsSync(join(root, '3. Area/제품_Rondo', up.rel))) fail('upload ' + JSON.stringify(up))
@@ -104,16 +116,30 @@ try {
   try {
     const { chromium } = await import('playwright-core')
     const br = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] })
+    globalThis.__br = br
     for (const [name, vp] of [['desktop', { width: 1440, height: 900 }], ['phone', { width: 390, height: 844 }]]) {
       const pg = await br.newPage({ viewport: vp, deviceScaleFactor: 1 })
       await pg.addInitScript(() => localStorage.setItem('folderbot:token', 'x'))
-      await pg.goto(base + `/#bot=${bot.id}`); await pg.waitForSelector('.chat-head', { timeout: 15000 }); await wait(600)
+      const errs = []; pg.on('pageerror', (e) => errs.push(e.message)); pg.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()) })
+      await pg.goto(base + `/#bot=${bot.id}`)
+      try { await pg.waitForSelector('.col.chat .hdr', { timeout: 15000 }) } catch (e) { mkdirSync('test/tmp', { recursive: true }); await pg.screenshot({ path: `test/tmp/${name}-fail.png` }); console.log('page errors:', errs.join(' | ').slice(0, 1500)); console.log('html:', (await pg.content()).slice(0, 800)); throw e }
+      await wait(800)
       mkdirSync('test/tmp', { recursive: true }); await pg.screenshot({ path: `test/tmp/${name}.png` })
-      const errs = []; pg.on('pageerror', (e) => errs.push(e.message))
-      if (name === 'desktop') { const txt = await pg.textContent('.msgs'); if (!/스텁이 처리했습니다/.test(txt)) fail('ui chat missing'); const rows = await pg.$$eval('.sb .row', (r) => r.length); if (rows < 3) fail(`ui rows ${rows}`) }
+      if (name === 'desktop') {
+        const txt = await pg.textContent('.chat-body'); if (!/스텁이 처리했습니다/.test(txt)) fail('ui chat missing')
+        const rows = await pg.$$eval('.brow', (r) => r.length); if (rows < 3) fail(`ui rows ${rows}`)
+        if (!(await pg.$('.sub'))) fail('ui subagent line missing'); if (!(await pg.$('.todow'))) fail('ui todo widget missing')
+        if (!(await pg.$('.panel .trow'))) fail('ui tree missing')
+        // 파일 칩 → 문서 열이 열린다 · 트리 클릭 → 미리보기 탭
+        await pg.click('.files .chip'); await pg.waitForSelector('.doc .dbody', { timeout: 5000 }); await wait(400)
+        const tabs = await pg.$$eval('.doc .tab', (r) => r.length); if (tabs < 1) fail('doc tab')
+        await pg.screenshot({ path: 'test/tmp/desktop-doc.png' })
+        await pg.keyboard.press('Meta+Shift+D'); await wait(200); if (await pg.$('.doc')) fail('doc column should hide on ⌘⇧D')
+        if (errs.length) fail('page errors: ' + errs.join(' | '))
+      }
       await pg.close()
     }
     await br.close(); ok('ui renders (desktop · phone) → test/tmp/*.png')
-  } catch (e) { console.log('(화면 검사 건너뜀:', e.message.split('\n')[0], ')') }
+  } catch (e) { console.log('(화면 검사 건너뜀:', e.message.split('\n')[0], ')'); try { await globalThis.__br?.close() } catch {} }
   console.log('\nSMOKE OK')
 } catch (e) { fail(e.stack) } finally { host.kill(); rmSync(root, { recursive: true, force: true }); rmSync(data, { recursive: true, force: true }); rmSync(claudeCfg, { recursive: true, force: true }) }

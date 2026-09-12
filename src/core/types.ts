@@ -79,6 +79,12 @@ export interface SessionInfo {
   pending: PermissionRequest[]
   lastError?: string
   routine?: string
+  /** 지금 하는 일 한 줄 (도구명 · 요약 / 생각 중 / 답 쓰는 중) */
+  activity?: string
+  /** 이번 턴 시작 시각 — 경과 시간은 이걸로 잰다 */
+  turnStartedAt?: number
+  model?: string
+  effort?: string
 }
 
 export interface PermissionRequest {
@@ -96,7 +102,12 @@ export interface PermissionRequest {
 export type ChatItem =
   | { id: string; t: number; kind: 'user'; text: string }
   | { id: string; t: number; kind: 'assistant'; text: string; streaming?: boolean }
-  | { id: string; t: number; kind: 'tool'; name: string; summary: string; input?: Record<string, unknown>; result?: string; isError?: boolean }
+  | { id: string; t: number; kind: 'tool'; name: string; summary: string; input?: Record<string, unknown>; result?: string; isError?: boolean; parentId?: string }
+  | { id: string; t: number; kind: 'thinking'; text: string; streaming?: boolean }
+  /** Task/Agent 도구 하나 = 서브에이전트 하나. 자식 도구 줄은 parentId 로 이 id 를 가리킨다 */
+  | { id: string; t: number; kind: 'subagent'; name: string; prompt: string; tools: number; last: string; status: 'run' | 'done' | 'error'; result?: string }
+  /** TodoWrite — 세션당 하나(최신)만 남긴다 */
+  | { id: string; t: number; kind: 'todos'; items: { content: string; status: 'pending' | 'in_progress' | 'completed'; activeForm?: string }[] }
   | { id: string; t: number; kind: 'system'; text: string }
   | { id: string; t: number; kind: 'result'; ok: boolean; durationMs: number; costUsd?: number; error?: string }
   | { id: string; t: number; kind: 'files'; paths: string[] }
@@ -140,6 +151,7 @@ export type Frame =
   | { ev: 'sessions'; botId: string; sessions: SessionInfo[] }
   | { ev: 'chat'; sessionId: string; item: ChatItem; replace?: boolean }
   | { ev: 'state'; sessionId: string; botId: string; state: SessionState }
+  | { ev: 'activity'; sessionId: string; botId: string; activity: string; turnStartedAt?: number }
   | { ev: 'permission'; sessionId: string; botId: string; req: PermissionRequest }
   | { ev: 'notify'; n: NotifyEvent }
   | { ev: 'auth'; auth: AuthState }

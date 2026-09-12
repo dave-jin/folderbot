@@ -29,9 +29,19 @@ rl.on('line', (raw) => {
   }
   if (msg.type !== 'user') return
   const text = msg.message?.content?.map?.((b) => b.text ?? '').join('') ?? ''
-  say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'stub-t1', name: 'Read', input: { file_path: join(process.cwd(), 'readme.md') } }] } })
-  say({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'stub-t1', content: '(readme)' }] } })
+  const u = randomUUID().slice(0, 6)
+  say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: `stub-t1-${u}`, name: 'Read', input: { file_path: join(process.cwd(), 'readme.md') } }] } })
+  say({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `stub-t1-${u}`, content: '(readme)' }] } })
+  say({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '무엇을 먼저 읽을지 정한다' } } })
   say({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '생각 중…' } } })
+  // 서브에이전트 — Task 안의 줄은 parent_tool_use_id 를 단다
+  say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: `stub-task-${u}`, name: 'Task', input: { description: '하위 조사', prompt: '폴더를 훑어 요약해' } }] } })
+  say({ type: 'assistant', parent_tool_use_id: `stub-task-${u}`, message: { role: 'assistant', content: [{ type: 'tool_use', id: `stub-c1-${u}`, name: 'Grep', input: { pattern: 'todo', path: process.cwd() } }] } })
+  say({ type: 'user', parent_tool_use_id: `stub-task-${u}`, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `stub-c1-${u}`, content: '2 matches' }] } })
+  say({ type: 'assistant', parent_tool_use_id: `stub-task-${u}`, message: { role: 'assistant', content: [{ type: 'text', text: '하위 조사 끝' }] } })
+  say({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `stub-task-${u}`, content: '하위 조사 결과: 2건' }] } })
+  say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: `stub-todo-${u}`, name: 'TodoWrite', input: { todos: [{ content: '읽기', status: 'completed', activeForm: '읽는 중' }, { content: '답 쓰기', status: 'in_progress', activeForm: '답 쓰는 중' }] } }] } })
+  say({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `stub-todo-${u}`, content: 'ok' }] } })
   if (/승인|permission/.test(text) || process.env.STUB_ASK_PERMISSION) {
     pendingReq = { text }
     const request_id = `req-${randomUUID()}`
