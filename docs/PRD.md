@@ -334,9 +334,11 @@ A 로 시작하고 전송 계층을 추상화해 B/C 를 나중에 끼운다. Da
 | S8 끊김·복구 | ✅ | 30분 워치독 3갈래(loggedin/loggedout/**unreadable**) · 앰버 배너 · 푸시 · 대기열 → 복구 시 재전송 · SSE 오프라인 표시 |
 | S9 정지·은퇴 | ✅ | 정지(휴면) · Archive 이동(은퇴, 되돌리기) |
 | S10 할 일 | ✅ | `- [ ] 제목: 설명 <!-- bot -->` · 패널 4개 · 시트 · 봇에게 맡기기 · 봇 규약을 시스템 프롬프트에 주입 · `todo_add` MCP |
-| S11 목록·알림 | ◐ | 폭 드래그(64/240–420)·정렬·묶기·밀도·알림 센터·macOS 알림 센터(terminal-notifier/osascript)·조용한 시간. **메뉴바 앱은 미구현**(네이티브 셸 M5) |
+| S11 목록·알림 | ✅ | 폭 드래그(64/240–420)·정렬·묶기·밀도·알림 센터·조용한 시간 · **맥북 셸(`desktop/`)**: 메뉴바 폴더봇 아이콘 + 대기 배지, 네이티브 알림 클릭 점프, Dock 배지, 로그인 시 자동 실행, `folderbot://` 딥링크. 메뉴바 팝오버(카드에서 바로 승인)는 아직 메뉴 형태 |
 
-**미구현·다음**: Codex(`codex app-server`) · macOS 얇은 셸(메뉴바·Dock 배지·로그인 항목 자동 실행) · Dropbox 동기화 점 · QR 페어링 · Johnny.Decimal 실제 스캔 규칙 · 규칙 인터뷰(custom).
+**맥북 앱**: GitHub Actions(macOS 러너)가 `desktop/` 변경마다 DMG(arm64, ad-hoc 서명)를 빌드해 `dave-jin/rondo` Releases `desktop-v<n>` 에 올린다. 앱은 호스트 주소 + 페어링으로 미니에 붙는 셸이다.
+
+**미구현·다음**: Codex(`codex app-server`) · 메뉴바 팝오버(카드에서 바로 승인) · 미니 쪽 로그인 항목 자동 실행 셸 · Dropbox 동기화 점 · QR 페어링 · Johnny.Decimal 실제 스캔 규칙 · 규칙 인터뷰(custom) · 개발자 서명·공증.
 
 ## 11. 사실 확인 (2026-09-12)
 

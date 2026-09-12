@@ -47,3 +47,11 @@ Claude CLI 는 헤드리스(SSH·launchd)에서 키체인을 못 읽습니다. �
 | 폰에서 주소가 안 열림 | 폰 Tailscale 켜짐? `folderbot status` 로 tailnet state 확인 |
 | 푸시가 안 옴 | HTTP 로는 서비스 워커가 안 뜹니다. `tailscale serve` HTTPS + 홈 화면 설치 |
 | 후보가 0 | 루트 `CLAUDE.md` 의 `active:` 글롭이 실제 폴더명과 같은지 (예: `2. Projects/*`) |
+
+## 8. 맥북 — 설치형 앱 (Folder Bot.app)
+Grok Bot 처럼 앱으로 씁니다. 앱은 **미니의 호스트에 붙는 셸**이라 맥북에는 호스트가 필요 없습니다.
+1. GitHub Releases(`dave-jin/rondo` › `desktop-v*`)에서 `Folder Bot-<ver>-arm64.dmg` 를 받아 `/Applications` 에 끌어 놓습니다.
+2. ad-hoc 서명이라 처음엔 Finder 에서 **우클릭 → 열기**. "손상됨" 이 뜨면 터미널에서 `xattr -dr com.apple.quarantine "/Applications/Folder Bot.app"`.
+3. 첫 화면에 미니 호스트 주소(`http://100.x.x.x:7373` 또는 `https://mac-mini.<tailnet>.ts.net`)를 넣고 연결 → 6자리 페어링 코드.
+4. 메뉴바에 폴더봇 아이콘이 생깁니다 — 확인 대기 수가 배지로, 클릭하면 창, 우클릭 메뉴에 **로그인 시 자동 실행**.
+5. 알림은 macOS 알림 센터로 오고, 누르면 그 대화로 갑니다. 창을 닫아도 메뉴바에 남아 있어요.
