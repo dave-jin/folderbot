@@ -64,16 +64,24 @@ function useUpdate(say: (m: string) => void): [UpdState | null, () => void, () =
     void u.state().then(setSt).catch(() => {})
     return u.onChange((n) => { setSt(n); if (n.staged?.ready && readyRef.current !== n.staged.version) { readyRef.current = n.staged.version; say(n.deferred ? `v${n.staged.version} 준비됨 — 세션 ${n.busy}개가 끝나면 자동으로 적용해요` : `v${n.staged.version} 준비됨 — 아래 버전 칩에서 재시작`) } })
   }, [])
-  const check = () => { const u = desk?.update; if (!u) return; setSt((x) => (x ? { ...x, checking: true } : x)); void u.check().then(setSt).catch(() => {}) }
+  const check = () => {
+    const u = desk?.update
+    if (!u) { say('업데이트는 Mac 앱(호스트)이 스스로 받아요 — 이 화면은 호스트가 새 버전을 적용하면 함께 바뀝니다'); return }
+    setSt((x) => (x ? { ...x, checking: true } : x)); say('업데이트 확인 중…')
+    void u.check().then((n) => {
+      setSt(n)
+      say(n.lastError ? `확인 실패 — ${n.lastError}` : n.staged?.ready ? `v${n.staged.version} 준비됨 — 버전 칩을 눌러 재시작` : n.downloading || n.staged ? `v${n.staged?.version} 받는 중 — 다 받으면 알려 드려요` : `최신 버전이에요 (v${n.current})`)
+    }).catch((e: unknown) => say(`확인 실패 — ${e instanceof Error ? e.message : String(e)}`))
+  }
   const apply = () => { const u = desk?.update; if (!u || !st?.staged?.ready) return; if (st.busy > 0 && !confirm(`세션 ${st.busy}개가 중단됩니다. 지금 재시작해서 v${st.staged.version} 을 적용할까요?`)) return; u.apply() }
   return [st, check, apply]
 }
 function UpdateChip({ version, st, onCheck, onApply }: { version: string; st: UpdState | null; onCheck: () => void; onApply: () => void }) {
-  if (!isDesktop || !st) return <span className="bd mono">v{version}</span>
+  if (!isDesktop || !st) return <button className="bd mono upd" onClick={onCheck} title={isDesktop ? '업데이트 확인' : '호스트 버전'}>v{version}</button>
   if (st.staged?.ready) return st.deferred ? <span className="bd" style={{ color: 'var(--wait)' }} title="호스트 모드 — 세션이 전부 유휴가 되는 순간 자동 적용">v{st.staged.version} · 세션 {st.busy}개 끝나면 적용</span>
     : <button className="bd" style={{ color: 'var(--done)', display: 'inline-flex', alignItems: 'center', gap: 4 }} onClick={onApply} title={st.staged.notes}><span className="dot done" style={{ width: 5, height: 5 }} />v{st.staged.version} 재시작해서 적용</button>
   if (st.downloading) return <span className="bd" title="조용히 받는 중 — 다 받으면 알려 드려요">v{st.staged?.version} 받는 중 {Math.round((st.staged?.progress ?? 0) * 100)}%</span>
-  return <button className="bd mono" onClick={onCheck} title={st.lastError ? `마지막 확인 실패 — ${st.lastError}` : st.lastCheck ? `업데이트 확인 · 마지막 ${fmtTime(st.lastCheck)}` : '업데이트 확인'} style={st.lastError ? { color: 'var(--wait)' } : undefined}>v{st.current}{st.checking ? ' · 확인 중…' : ''}</button>
+  return <button className="bd mono upd" onClick={onCheck} title={st.lastError ? `마지막 확인 실패 — ${st.lastError}` : st.lastCheck ? `업데이트 확인 · 마지막 ${fmtTime(st.lastCheck)}` : '업데이트 확인'} style={st.lastError ? { color: 'var(--wait)' } : undefined}><Icon n="undo" size={10} style={st.checking ? { animation: 'spin 1s linear infinite' } : undefined} />v{st.current}{st.checking ? ' · 확인 중…' : ''}</button>
 }
 
 function Main() {

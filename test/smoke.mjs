@@ -162,6 +162,8 @@ try {
         if (!(await pg.$('.panel .trow'))) fail('ui tree missing')
         if (!(await pg.$('.chat-hdr.glass')) || !(await pg.$('.composer .cbar')) || !(await pg.$('.ring'))) fail('ui composer bar / glass header missing')
         if (!(await pg.$('.sb-foot .mr.main'))) fail('ui main badge')
+        // 버전 칩을 누르면 확인 — 브라우저 화면에선 안내 토스트
+        await pg.click('.sb-foot .bd.upd'); await wait(200); const vt = await pg.textContent('.toast'); if (!/업데이트/.test(vt ?? '')) fail('ui version chip toast: ' + vt)
         // 이름은 가운데 말줄임 — 꼬리(.mt)가 남아 있다
         if (!(await pg.$('.brow .n .mid .mt')) || !(await pg.$('.panel .trow .n .mid'))) fail('ui mid ellipsis')
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다

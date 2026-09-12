@@ -62,7 +62,7 @@ b,strong { color:var(--w); font-weight:600 }
 .brow { display:flex; align-items:center; gap:9px; padding:5px 12px; border-radius:6px; font-size:13px; color:var(--t); width:100%; min-height:30px } .brow:hover { background:var(--hover) } .brow.on { background:var(--sel); color:var(--w) } .brow .n { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .brow time { font-size:11px; color:var(--t3); white-space:nowrap }
 .sb-foot { display:flex; align-items:center; gap:8px; padding:10px 20px 14px; font-size:12.5px; color:var(--t2); white-space:nowrap; min-width:0 } .sb-foot > span:first-of-type + span { overflow:hidden; text-overflow:ellipsis }
 .mr { font-size:10.5px; border-radius:4px; padding:0 6px; border:1px solid; white-space:nowrap; flex:none } .mr.main { color:var(--done); border-color:rgba(79,191,135,.35) } .mr.remote { color:#7fb0ff; border-color:rgba(127,176,255,.35) }
-.brow .n small { display:block; font-size:10.5px; color:var(--t3); line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .sb-foot .bd { margin-left:auto; font-size:11px; color:var(--t3) } .sb-foot .bd + .bd { margin-left:8px }
+.brow .n small { display:block; font-size:10.5px; color:var(--t3); line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .sb-foot .bd { margin-left:auto; font-size:11px; color:var(--t3) } .sb-foot .bd.upd { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border-radius:6px; cursor:pointer } .sb-foot .bd.upd:hover { color:var(--t); background:var(--hover) } .sb-foot .bd + .bd { margin-left:8px }
 
 /* ── 채팅 — 스크롤 컨테이너 하나, 유리(헤더 · 고정 질문 · ↓ · 컴포저)는 그 형제 ── */
 .col.chat { position:relative; --footh:132px }
