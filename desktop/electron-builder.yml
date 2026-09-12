@@ -8,6 +8,8 @@ files:
   - preload.js
   - updater.js
   - update-pick.js
+  - perms.js
+  - perm-core.js
   - connect.html
   - package.json
   - build/trayTemplate.png

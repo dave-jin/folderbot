@@ -5,6 +5,7 @@ const { existsSync, readFileSync, writeFileSync, mkdirSync } = require('node:fs'
 const { join } = require('node:path')
 const http = require('node:http'); const https = require('node:https')
 const updater = require('./updater')
+const perms = require('./perms')
 
 const SETTINGS = () => join(app.getPath('userData'), 'settings.json')
 let settings = { mode: '', hostUrl: '', token: '', loginItem: false, root: '', port: 7373 }
@@ -31,6 +32,7 @@ function createWin() {
   win = new BrowserWindow({ width: 1280, height: 860, minWidth: 720, minHeight: 520, titleBarStyle: 'hiddenInset', backgroundColor: '#141414', show: false, webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, sandbox: false } })
   win.once('ready-to-show', () => { win.show(); if (pendingNav) { navigate(pendingNav); pendingNav = null } })
   win.on('closed', () => { win = null })
+  win.on('focus', () => { try { win.webContents.send('fb:perms', perms.list({ host: settings.mode === 'host' })) } catch {} })
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' } })
   loadHome()
 }
@@ -67,6 +69,13 @@ ipcMain.handle('fb:host-available', () => hostAvailable())
 app.on('web-contents-created', (_e, wc) => {
   wc.on('will-navigate', (e, url) => { if (url.startsWith('folderbot-connect://')) { e.preventDefault(); settings.hostUrl = decodeURIComponent(url.slice('folderbot-connect://'.length)); settings.token = ''; save(); loadHome(); startSse() } })
 })
+// 권한 — 목록 · 설정 창 · 사용자 대답 · 테스트 알림 · 다시 시작
+ipcMain.handle('fb:perm-list', () => perms.list({ host: settings.mode === 'host' }))
+ipcMain.handle('fb:perm-open', (_e, id) => perms.openPane(id))
+ipcMain.handle('fb:perm-ack', (_e, id, ok) => { perms.setAck(id, !!ok); return perms.list({ host: settings.mode === 'host' }) })
+ipcMain.handle('fb:perm-reset', () => { perms.resetAcks(); return perms.list({ host: settings.mode === 'host' }) })
+ipcMain.handle('fb:perm-test', () => perms.sendTest())
+ipcMain.on('fb:perm-relaunch', () => perms.relaunch())
 ipcMain.handle('fb:update-state', () => updater.state())
 ipcMain.handle('fb:update-check', async () => { await updater.check(true); return updater.state() })
 ipcMain.on('fb:update-apply', () => { updater.apply() })

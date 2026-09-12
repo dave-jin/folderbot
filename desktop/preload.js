@@ -5,6 +5,16 @@ contextBridge.exposeInMainWorld('folderbotDesktop', {
   hostMode: () => ipcRenderer.send('fb:host-mode'),
   hostAvailable: () => ipcRenderer.invoke('fb:host-available'),
   tokenChanged: (token) => ipcRenderer.send('fb:token', token),
+  // 권한 관문 — 첫 실행·업데이트 뒤 화면이 쓴다
+  perms: {
+    list: () => ipcRenderer.invoke('fb:perm-list'),
+    open: (id) => ipcRenderer.invoke('fb:perm-open', id),
+    ack: (id, ok) => ipcRenderer.invoke('fb:perm-ack', id, ok),
+    reset: () => ipcRenderer.invoke('fb:perm-reset'),
+    test: () => ipcRenderer.invoke('fb:perm-test'),
+    relaunch: () => ipcRenderer.send('fb:perm-relaunch'),
+    onChange: (cb) => { const f = (_e, items) => cb(items); ipcRenderer.on('fb:perms', f); return () => ipcRenderer.removeListener('fb:perms', f) }
+  },
   // 자기 업데이트 — 화면의 버전 칩이 쓴다
   update: {
     state: () => ipcRenderer.invoke('fb:update-state'),
