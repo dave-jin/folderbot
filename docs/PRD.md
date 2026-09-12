@@ -362,6 +362,8 @@ A 로 시작하고 전송 계층을 추상화해 B/C 를 나중에 끼운다. Da
 
 **v0.3.9 (2026-09-13) — 원격 맥 앱에서 이름 바꾸기·새 폴더가 안 되던 원인**: `window.prompt()` 를 썼는데 Electron 은 prompt() 를 지원하지 않아 아무 반응 없이 끝났다. 앱 안 이름 모달(`askName`·`AskHost`, 확장자 앞까지 선택)로 교체 — 맥 앱·브라우저·폰이 같은 경험. 스모크가 트리 우클릭 › 이름 바꾸기 → 모달 → ⏎ → 트리 반영을 확인한다. (교훈: 브라우저 전용 동기 대화상자 `prompt`는 셸에서 금지 — `confirm` 도 장기적으로 같은 길.)
 
+**v0.3.10 (2026-09-13) — 폰 상·하단 여백을 elon-bookclub 방식으로**: 상태바를 시스템에 맡긴다(`apple-mobile-web-app-status-bar-style: default` — 불투명, theme-color 색). 웹뷰가 상태바 **아래에서** 시작하므로 위쪽 안전영역·블러를 앱이 계산할 일이 없고, 헤더는 보통 여백(위 10~12px, 높이 ≈ 64px)만 둔다. 아래는 `env(safe-area-inset-bottom)` + 4~6px 로 홈 인디케이터에 바짝(elon 의 `pb-[env(safe-area-inset-bottom)]`). 핀치·더블탭·ctrl+휠 확대는 `useViewportLock` 으로 2중 차단(elon `ViewportLock`). `--sat` 는 식에 남겨 두어 투명 모드로 되돌려도 계산이 맞다.
+
 **미구현·다음**: Codex(`codex app-server`) · 메뉴바 팝오버(카드에서 바로 승인) · Dropbox 동기화 점 · QR 페어링 · Johnny.Decimal 실제 스캔 규칙 · 규칙 인터뷰(custom) · 개발자 서명·공증.
 
 ## 11. 사실 확인 (2026-09-12)

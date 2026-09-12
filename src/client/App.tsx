@@ -52,8 +52,21 @@ function useKeyboard(): boolean {
   return kb
 }
 
+/** 핀치·더블탭·ctrl+휠 확대 차단 — iOS 는 user-scalable=no 를 무시하기도 한다 (elon-bookclub ViewportLock 승계) */
+function useViewportLock(): void {
+  useEffect(() => {
+    const block = (e: Event) => e.preventDefault()
+    const touch = (e: TouchEvent) => { if (e.touches.length > 1) e.preventDefault() }
+    const wheel = (e: WheelEvent) => { if (e.ctrlKey) e.preventDefault() }
+    for (const n of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(n, block, { passive: false })
+    document.addEventListener('touchmove', touch, { passive: false }); document.addEventListener('wheel', wheel, { passive: false })
+    return () => { for (const n of ['gesturestart', 'gesturechange', 'gestureend']) document.removeEventListener(n, block); document.removeEventListener('touchmove', touch); document.removeEventListener('wheel', wheel) }
+  }, [])
+}
+
 export function App() {
   const { s } = useStore()
+  useViewportLock()
   const [authed, setAuthed] = useState(() => { const h = new URLSearchParams(location.hash.slice(1)); const t = h.get('token'); if (t) { setToken(t); h.delete('token'); location.hash = h.toString(); location.reload() } return !!token() })
   useEffect(() => { const f = () => setAuthed(false); window.addEventListener('fb:authlost', f); return () => window.removeEventListener('fb:authlost', f) }, [])
   const perm = usePerms() // ⚠ 훅은 early return 앞에 — 뒤에 두면 React #310(훅 수 변동)
