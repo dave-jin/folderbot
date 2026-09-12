@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { TODO_RULES_PROMPT } from '../core/todo'
-import type { AuthState, Bot, Frame, PermissionRequest, RoutineDef, SessionState } from '../core/types'
+import type { AuthState, Bot, Frame, PermissionMode, PermissionRequest, RoutineDef, SessionState } from '../core/types'
 import { STATE_LABEL } from '../core/types'
 import { checkAuth } from './auth'
 import { Notifier } from './notify'
@@ -87,7 +87,7 @@ export class Host {
   }
 
   /** 세션에 지시 — 없으면 만든다 */
-  sendToBot(bot: Bot, text: string, sessionId?: string, name?: string, from?: string): string {
+  sendToBot(bot: Bot, text: string, sessionId?: string, name?: string, from?: string, opts: { model?: string; effort?: string; permissionMode?: PermissionMode } = {}): string {
     let r = sessionId ? this.sessions.get(sessionId) : undefined
     if (!r) {
       const list = this.sessions.list(bot.id)
@@ -95,7 +95,7 @@ export class Host {
       if (!r) {
         if (this.sessions.liveCountFor(bot.id) >= 4) throw new Error(`${bot.name} 은 이미 세션 4개가 돌고 있어요. 하나 끝나면 이어서 하세요.`)
         if (this.sessions.liveCount() >= 12) throw new Error('호스트 세션 상한(12)에 닿았어요.')
-        r = this.sessions.create(bot, name ?? (from ? `위임 · ${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : '메인'))
+        r = this.sessions.create(bot, name ?? (from ? `위임 · ${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : '메인'), opts)
       }
     }
     if (this.auth.verdict === 'unreadable' || this.auth.verdict === 'loggedout') {

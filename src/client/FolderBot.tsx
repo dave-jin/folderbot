@@ -69,7 +69,8 @@ export const I = {
   grep: <><circle cx="7" cy="7" r="4" /><path d="M10 10l3.5 3.5M5 7h4" /></>,
   plug: <><path d="M5 2v4M11 2v4M3 6h10v3a5 5 0 0 1-10 0z" /><path d="M8 14v-3" /></>,
   cal: <><rect x="2" y="3" width="12" height="11" rx="1.5" /><path d="M2 7h12M5 1.5v3M11 1.5v3" /></>,
-  home: <><path d="M2 8l6-5 6 5v6H2z" /><path d="M6.5 14V9.5h3V14" /></>
+  home: <><path d="M2 8l6-5 6 5v6H2z" /><path d="M6.5 14V9.5h3V14" /></>,
+  mic: <><rect x="6" y="1.5" width="4" height="7.5" rx="2" /><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2.5M5.5 14.5h5" /></>
 }
 export function Icon({ n, size = 16, color, style }: { n: keyof typeof I; size?: number; color?: string; style?: React.CSSProperties }) {
   return <svg className="ico" viewBox="0 0 16 16" width={size} height={size} style={{ color, ...style }}>{I[n]}</svg>

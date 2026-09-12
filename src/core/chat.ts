@@ -16,6 +16,19 @@ export interface StreamLine {
   error?: string
   stop_reason?: string
   deferred_tool_use?: { name?: string; id?: string; input?: Record<string, unknown> }
+  /** result 줄 — 이번 턴 토큰. 입력+캐시 = 지금 컨텍스트 크기 */
+  usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }
+  modelUsage?: Record<string, { contextWindow?: number }>
+  /** system/init 줄 — CLI 가 아는 슬래시 명령 이름들 */
+  slash_commands?: string[]
+}
+
+/** result 의 usage → 컨텍스트 사용량. 창 크기는 modelUsage 에서, 없으면 200k */
+export function contextOf(line: StreamLine): { used: number; window: number } | null {
+  const u = line.usage; if (!u) return null
+  const used = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
+  const win = Math.max(0, ...Object.values(line.modelUsage ?? {}).map((m) => m.contextWindow ?? 0)) || 200_000
+  return { used, window: win }
 }
 
 export function toolSummary(name: string, input: Record<string, unknown>): string {

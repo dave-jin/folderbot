@@ -12,7 +12,7 @@ const sessionId = at('--resume') ?? `stub-${randomUUID()}`
 const say = (o) => process.stdout.write(JSON.stringify({ session_id: sessionId, ...o }) + '\n')
 // 트랜스크립트 파일을 흉내 — --resume 판정이 이걸 본다
 try { const dir = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-')); mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, `${sessionId}.jsonl`), JSON.stringify({ cwd: process.cwd() }) + '\n') } catch {}
-say({ type: 'system', subtype: 'init', model: 'stub', tools: [], mcp_servers: [] })
+say({ type: 'system', subtype: 'init', model: at('--model') ?? 'stub', tools: [], mcp_servers: [], slash_commands: ['compact', 'context', 'review'] })
 const rl = createInterface({ input: process.stdin })
 let pendingReq = null
 rl.on('line', (raw) => {
@@ -49,6 +49,6 @@ rl.on('line', (raw) => {
     return
   }
   say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: `스텁이 받았습니다: ${text.slice(0, 60)}` }], stop_reason: 'end_turn' } })
-  say({ type: 'result', subtype: 'success', duration_ms: 123, total_cost_usd: 0.001 })
+  say({ type: 'result', subtype: 'success', duration_ms: 123, total_cost_usd: 0.001, usage: { input_tokens: 4000, cache_read_input_tokens: 60000, cache_creation_input_tokens: 0, output_tokens: 300 }, modelUsage: { stub: { contextWindow: 200000 } } })
 })
 rl.on('close', () => process.exit(0))

@@ -9,6 +9,7 @@ import { saveConfig } from './paths'
 import { handleMcp } from './mcp'
 import { guard, kindOf, mime, readText, recent, stream, tree, writeText, exists, listDir, renameEntry } from './files'
 import { todoToggle } from './todoStore'
+import { slashCommands } from './slash'
 
 interface Client { res: ServerResponse; device: string }
 const PAIR_TTL = 2 * 60 * 1000
@@ -146,7 +147,8 @@ export class Gateway {
       if (sub === 'retire' && m === 'POST') { const to = reg.retire(bot.id); h.afterBotsChanged(); return json(200, { to }) }
       if (sub === 'sessions' && m === 'GET') return json(200, h.sessions.list(bot.id))
       if (sub === 'sessions' && m === 'POST') { const b = await body(); const s = h.sessions.create(bot, String(b.name ?? '새 세션'), { permissionMode: b.permissionMode as never, model: b.model ? String(b.model) : undefined }); return json(200, h.sessions.info(s)) }
-      if (sub === 'send' && m === 'POST') { const b = await body(); const sid = h.sendToBot(bot, String(b.text), b.sessionId ? String(b.sessionId) : undefined, b.name ? String(b.name) : undefined); return json(200, { sessionId: sid }) }
+      if (sub === 'send' && m === 'POST') { const b = await body(); const sid = h.sendToBot(bot, String(b.text), b.sessionId ? String(b.sessionId) : undefined, b.name ? String(b.name) : undefined, undefined, { model: b.model ? String(b.model) : undefined, effort: b.effort ? String(b.effort) : undefined, permissionMode: b.permissionMode ? (String(b.permissionMode) as never) : undefined }); return json(200, { sessionId: sid }) }
+      if (sub === 'slash') { const sid = url.searchParams.get('sid') ?? ''; return json(200, slashCommands(bot.abs, reg.root, sid ? h.sessions.slashOf(sid) : [])) }
       if (sub === 'todo' && m === 'GET') return json(200, h.todo(bot))
       if (sub === 'todo' && seg[4] === 'toggle' && m === 'POST') { const b = await body(); const items = todoToggle(bot.abs, Number(b.line), !!b.done); h.broadcast({ ev: 'todo', botId: bot.id, items }); return json(200, items) }
       if (sub === 'todo' && m === 'POST') { const b = await body(); h.todoAdd(bot, String(b.title), String(b.desc ?? ''), 'me'); return json(200, h.todo(bot)) }
@@ -194,6 +196,7 @@ export class Gateway {
       if (sub === 'ack' && m === 'POST') { h.sessions.acknowledge(r); return json(200, { ok: true }) }
       if (sub === 'rename' && m === 'POST') { const b = await body(); h.sessions.rename(r.id, String(b.name)); return json(200, { ok: true }) }
       if (sub === 'hibernate' && m === 'POST') { h.sessions.hibernate(r.id); return json(200, { ok: true }) }
+      if (sub === 'settings' && m === 'POST') { const b = await body(); h.sessions.configure(r, { model: b.model === undefined ? undefined : String(b.model), effort: b.effort === undefined ? undefined : String(b.effort), permissionMode: b.permissionMode === undefined ? undefined : (String(b.permissionMode) as never) }); return json(200, h.sessions.info(r)) }
     }
     return json(404, { error: 'not found' })
   }

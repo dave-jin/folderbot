@@ -32,7 +32,7 @@ export function useDocs(botId: string): DocsApi {
 interface DocData { kind: string; text?: string; size?: number; mtime?: number; truncated?: boolean }
 
 /** 문서 열 — 헤더(탭) · 툴바(폴더/파일 · 위치 · ⋯) · 본문. 편집은 자동 저장, 봇이 고치면 한 줄 배너 */
-export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, onAttach, say }: { bot: Bot; docs: DocsApi; filesTick?: number; onTalk: (rel: string) => void; onHide: () => void; wide: boolean; onWide: () => void; onAttach: (rel: string) => void; say: (m: string) => void }) {
+export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, onAttach, say, phone, onBack }: { bot: Bot; docs: DocsApi; filesTick?: number; onTalk: (rel: string) => void; onHide: () => void; wide: boolean; onWide: () => void; onAttach: (rel: string) => void; say: (m: string) => void; phone?: boolean; onBack?: () => void }) {
   const rel = docs.active
   const [doc, setDoc] = useState<DocData | null>(null)
   const [err, setErr] = useState('')
@@ -80,7 +80,8 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
   const name = rel?.split('/').pop() ?? ''; const dir = rel && rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : (bot.orchestrator ? '볼트' : bot.name)
   const isMd = /\.(md|markdown|txt)$/i.test(rel ?? '')
   return <div className="col doc" style={{ flex: wide ? 3 : 1.15 }}>
-    <div className="hdr" style={{ paddingLeft: 10 }}>
+    <div className="hdr" style={phone ? undefined : { paddingLeft: 10 }}>
+      {phone ? <><button className="rb glassb" onClick={onBack} title="폴더로"><Icon n="back" size={20} /></button><span className="ttl">{name || '문서'}</span><span className="sp" /></> : null}
       <div className="tabs">{docs.tabs.slice(0, 6).map((t) => <button key={t.rel} className={`tab ${t.rel === docs.active ? 'on' : ''} ${t.pinned ? '' : 'pv'}`} onClick={() => docs.setActive(t.rel)} onDoubleClick={() => docs.pin(t.rel)} title={t.rel}>{t.rel.split('/').pop()}<span className="x" onClick={(e) => { e.stopPropagation(); docs.close(t.rel) }}><Icon n="x" size={9} /></span></button>)}{docs.tabs.length > 6 ? <span className="more">+{docs.tabs.length - 6}</span> : null}</div>
       <div className="acts"><button className={`ib ${wide ? 'on' : ''}`} onClick={onWide} title="넓게"><Icon n="expand" size={13} /></button><button className="ib" onClick={onHide} title="문서 열 접기 (⌘⇧D)"><Icon n="x" size={13} /></button></div>
     </div>
@@ -101,5 +102,6 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
       : doc.kind === 'image' ? <div className="dbody center"><img src={raw(rel)} style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 6 }} /></div>
       : doc.kind === 'pdf' ? <iframe className="dbody" style={{ padding: 0, border: 0, background: '#fff' }} src={raw(rel)} />
       : <div className="empty">미리보기가 없는 형식이에요 · {doc.size} bytes<a href={raw(rel)} target="_blank" rel="noreferrer" className="btn">새 창에서 열기</a></div>}
+    {phone && rel ? <div className="dfoot">{sibs.length > 1 ? <><button className="rb" onClick={() => docs.open(sibs[(idx - 1 + sibs.length) % sibs.length])}><Icon n="up" size={18} /></button><button className="rb" onClick={() => docs.open(sibs[(idx + 1) % sibs.length])}><Icon n="chevd" size={18} /></button></> : null}<button className="talk" onClick={() => onAttach(rel)}>봇에게 이 문서로 말하기</button></div> : null}
   </div>
 }

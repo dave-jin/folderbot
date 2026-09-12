@@ -85,6 +85,19 @@ export interface SessionInfo {
   turnStartedAt?: number
   model?: string
   effort?: string
+  permissionMode?: PermissionMode
+  /** 컨텍스트 사용량 — 마지막 턴의 입력 토큰(캐시 포함) / 창 크기 */
+  ctx?: { used: number; window: number }
+  /** 모델·노력·모드를 바꿨는데 턴이 도는 중이라 다음 턴부터 적용 */
+  restartPending?: boolean
+}
+
+/** 슬래시 자동완성 항목 — 스킬(.claude/skills) · 명령(.claude/commands) · CLI 내장 */
+export interface SlashCmd {
+  name: string
+  desc: string
+  kind: 'skill' | 'command' | 'cli'
+  scope: 'folder' | 'root' | 'user' | 'cli'
 }
 
 export interface PermissionRequest {

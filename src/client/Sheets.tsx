@@ -4,6 +4,7 @@ import type { Bot, Candidate, NotifyEvent, RoutineDef } from '../core/types'
 import { api, setToken, subscribePush } from './api'
 import { FolderBot, Icon } from './FolderBot'
 import { fmtTime, useStore } from './store'
+import { EFFORTS, MODELS } from './consts'
 
 marked.setOptions({ gfm: true, breaks: true })
 export function Md({ text, streaming }: { text: string; streaming?: boolean }) {
@@ -166,18 +167,16 @@ export function useToast(): [string, (m: string) => void] {
   return [msg, (m: string) => { setMsg(m); window.clearTimeout(t.current); t.current = window.setTimeout(() => setMsg(''), 2600) }]
 }
 
-const MODELS: [string, string][] = [['claude-opus-5', 'Opus 5 — 기본'], ['claude-sonnet-5', 'Sonnet 5 — 빠름'], ['claude-haiku-4-5-20251001', 'Haiku 4.5 — 가장 빠름']]
-const EFFORTS: [string, string][] = [['low', '낮음'], ['medium', '보통'], ['high', '높음 — 기본'], ['xhigh', '매우 높음'], ['max', '최대']]
 function DefaultsBox() {
   const { s, refresh } = useStore()
-  const [model, setModel] = useState(s.defaults.model || 'claude-opus-5'); const [effort, setEffort] = useState(s.defaults.effort || 'high'); const [msg, setMsg] = useState('')
+  const [model, setModel] = useState(s.defaults.model || 'claude-fable-5-1'); const [effort, setEffort] = useState(s.defaults.effort || 'high'); const [msg, setMsg] = useState('')
   const save = async (m: string, e: string) => { try { await api('/defaults', { body: { model: m, effort: e } }); await refresh(); setMsg('저장했어요 — 다음 세션부터 적용돼요. 지금 열린 세션은 만들 때의 값을 그대로 씁니다.') } catch (er) { setMsg((er as Error).message) } }
   return <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '4px 8px' }}>
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-      <div className="field" style={{ flex: 1, minWidth: 180 }}><label>모델</label><select value={model} onChange={(e) => { setModel(e.target.value); void save(e.target.value, effort) }}>{MODELS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></div>
-      <div className="field" style={{ flex: 1, minWidth: 140 }}><label>생각 레벨</label><select value={effort} onChange={(e) => { setEffort(e.target.value); void save(model, e.target.value) }}>{EFFORTS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></div>
+      <div className="field" style={{ flex: 1, minWidth: 180 }}><label>모델</label><select value={model} onChange={(e) => { setModel(e.target.value); void save(e.target.value, effort) }}>{MODELS.map((m) => <option key={m.v} value={m.v}>{m.t}{m.d ? ` — ${m.d}` : ''}</option>)}</select></div>
+      <div className="field" style={{ flex: 1, minWidth: 140 }}><label>생각 레벨</label><select value={effort} onChange={(e) => { setEffort(e.target.value); void save(model, e.target.value) }}>{EFFORTS.map((e) => <option key={e.v} value={e.v}>{e.t}{e.v === 'high' ? ' — 기본' : ''}</option>)}</select></div>
     </div>
-    <div style={{ fontSize: 12, color: 'var(--t3)' }}>{msg || '모든 봇의 새 세션이 이 값으로 뜹니다. 세션마다 고르는 메뉴는 없어요 — 하나로 고정.'}</div>
+    <div style={{ fontSize: 12, color: 'var(--t3)' }}>{msg || '모든 봇의 새 세션이 이 값으로 뜹니다. 세션마다 바꾸려면 입력창 아래 줄(모델 · 노력 · 모드)에서.'}</div>
   </div>
 }
 function TokenBox({ mode }: { mode?: 'login' | 'token' }) {

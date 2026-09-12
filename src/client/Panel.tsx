@@ -9,7 +9,7 @@ export interface SecH { sessions: number; todo: number }
 interface Node { name: string; rel: string; dir: boolean; mtime: number; size?: number }
 
 /** 오른쪽 패널 — 세션 · 할 일(Inbox) · 파일(실제 트리) · 루틴. 섹션 사이 선이 드래그 핸들 */
-export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAttach, touched, filesTick, secH, onSecH, onCollapse, say, refresh, activeDoc, onDragY, focusSec }: { bot: Bot; sessions: SessionInfo[]; sessionId?: string; go: (b: string, sid?: string) => void; onOpenFile: (rel: string, pin?: boolean) => void; onTalk: (t: string) => void; onAttach: (rel: string) => void; touched: string[]; filesTick?: number; secH: SecH; onSecH: (h: SecH) => void; onCollapse: () => void; say: (m: string) => void; refresh: () => Promise<void>; activeDoc: string | null; onDragY: (on: boolean) => void; focusSec?: { sec: string; n: number } | null }) {
+export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAttach, onMention, touched, filesTick, secH, onSecH, onCollapse, say, refresh, activeDoc, onDragY, focusSec, phone, onBack }: { bot: Bot; sessions: SessionInfo[]; sessionId?: string; go: (b: string, sid?: string) => void; onOpenFile: (rel: string, pin?: boolean) => void; onTalk: (t: string) => void; onAttach: (rel: string, dir?: boolean) => void; onMention: (rel: string) => void; phone?: boolean; onBack?: () => void; touched: string[]; filesTick?: number; secH: SecH; onSecH: (h: SecH) => void; onCollapse: () => void; say: (m: string) => void; refresh: () => Promise<void>; activeDoc: string | null; onDragY: (on: boolean) => void; focusSec?: { sec: string; n: number } | null }) {
   const { s, loadTodo } = useStore()
   const [open, setOpen] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem(`fb:secs:${bot.id}`) ?? '') } catch { return { sessions: true, todo: true, files: true, routines: false } } })
   useEffect(() => { try { setOpen(JSON.parse(localStorage.getItem(`fb:secs:${bot.id}`) ?? '')) } catch { setOpen({ sessions: true, todo: true, files: true, routines: false }) } }, [bot.id])
@@ -21,7 +21,7 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
   const todos = (s.todos[bot.id] ?? [])
   const dragY = (k: 'sessions' | 'todo') => (e: React.PointerEvent) => { e.preventDefault(); onDragY(true); const y0 = e.clientY; const h0 = secH[k]; const mv = (ev: PointerEvent) => onSecH({ ...secH, [k]: Math.max(56, Math.min(420, h0 + ev.clientY - y0)) }); const up = () => { onDragY(false); window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up) }; window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up) }
   return <div className="col side panel" style={{ width: '100%' }}>
-    <div className="hdr"><span className="ttl">{bot.orchestrator ? '이 볼트에서' : '이 폴더에서'}</span><span className="sp" /><div className="acts"><button className="ib on" onClick={onCollapse} title="패널 접기 (⌘⇧B)"><Icon n="panelr" size={14} /></button></div></div>
+    <div className="hdr">{phone ? <button className="rb glassb" onClick={onBack} title="대화로"><Icon n="back" size={20} /></button> : null}<span className="ttl">{bot.orchestrator ? '이 볼트에서' : '이 폴더에서'}</span><span className="sp" />{!phone ? <div className="acts"><button className="ib on" onClick={onCollapse} title="패널 접기 (⌘⇧B)"><Icon n="panelr" size={14} /></button></div> : null}</div>
     {/* 세션 */}
     <div className={`sec ${open.sessions ? 'fix' : 'fix'}`} style={open.sessions ? { height: secH.sessions } : undefined}>
       <button className="sech" onClick={() => tog('sessions')}><Icon n={open.sessions ? 'chevd' : 'chev'} size={9} /><span>세션</span><span className="c">{sessions.length}</span><span className="tools on"><span className="ib" title="새 세션" onClick={async (e) => { e.stopPropagation(); const info = await api<SessionInfo>(`/bots/${bot.id}/sessions`, { body: { name: `세션 ${sessions.length + 1}` } }); await refresh(); go(bot.id, info.id) }}><Icon n="plus" size={12} /></span></span></button>
@@ -35,7 +35,7 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
     <div className="divy" onPointerDown={dragY('todo')} onDoubleClick={() => onSecH({ ...secH, todo: 84 })} />
     {/* 파일 */}
     <div className="sec grow">
-      <Tree bot={bot} open={!!open.files} tog={() => tog('files')} onOpen={onOpenFile} onAttach={onAttach} touched={touched} tick={filesTick} say={say} active={activeDoc} />
+      <Tree bot={bot} open={!!open.files} tog={() => tog('files')} onOpen={onOpenFile} onAttach={onAttach} onMention={onMention} touched={touched} tick={filesTick} say={say} active={activeDoc} />
     </div>
     <div className="divy" style={{ cursor: 'default' }} />
     {/* 루틴 */}
@@ -83,7 +83,7 @@ function InboxSec({ open, tog, onSend }: { open: boolean; tog: () => void; onSen
 }
 
 /* ── 파일 트리 (게으른 로드) ── */
-function Tree({ bot, open, tog, onOpen, onAttach, touched, tick, say, active }: { bot: Bot; open: boolean; tog: () => void; onOpen: (rel: string, pin?: boolean) => void; onAttach: (rel: string) => void; touched: string[]; tick?: number; say: (m: string) => void; active: string | null }) {
+function Tree({ bot, open, tog, onOpen, onAttach, onMention, touched, tick, say, active }: { bot: Bot; open: boolean; tog: () => void; onOpen: (rel: string, pin?: boolean) => void; onAttach: (rel: string, dir?: boolean) => void; onMention: (rel: string) => void; touched: string[]; tick?: number; say: (m: string) => void; active: string | null }) {
   const [dirs, setDirs] = useState<Record<string, Node[]>>({})
   const [exp, setExp] = useState<Set<string>>(() => { try { return new Set(JSON.parse(localStorage.getItem(`fb:tree:${bot.id}`) ?? '[""]')) } catch { return new Set(['']) } })
   const [sort, setSort] = useState<'name' | 'mtime'>(() => (localStorage.getItem('fb:tsort') as 'name' | 'mtime') || 'name')
@@ -132,14 +132,14 @@ function Tree({ bot, open, tog, onOpen, onAttach, touched, tick, say, active }: 
     {open ? <>
       {filter !== null ? <div className="tfilter"><Icon n="search" size={12} /><input autoFocus placeholder="이름으로 거르기…" value={filter} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setFilter(null) }} /><span onClick={() => setFilter(null)} style={{ cursor: 'pointer' }}><Icon n="x" size={11} /></span></div> : null}
       <div className="secb" style={{ padding: '0 6px 8px' }}>
-        {rows.map(({ n, depth }) => <button key={n.rel} className={`trow ${n.dir ? 'dir' : ''} ${active === n.rel ? 'on' : ''} ${flash.has(n.rel) ? 'flash' : ''}`} style={{ ['--pad' as string]: `${10 + depth * 14}px` }} onClick={() => (n.dir ? toggleDir(n.rel) : onOpen(n.rel))} onDoubleClick={() => { if (!n.dir) onOpen(n.rel, true) }} onContextMenu={(e) => { e.preventDefault(); setCtx({ x: e.clientX, y: e.clientY, n }) }} title={n.rel} draggable={!n.dir} onDragStart={(e) => { e.dataTransfer.setData('text/x-fb-rel', n.rel); e.dataTransfer.setData('text/plain', `${bot.abs}/${n.rel}`) }}>
+        {rows.map(({ n, depth }) => <button key={n.rel} className={`trow ${n.dir ? 'dir' : ''} ${active === n.rel ? 'on' : ''} ${flash.has(n.rel) ? 'flash' : ''}`} style={{ ['--pad' as string]: `${10 + depth * 14}px` }} onClick={() => (n.dir ? toggleDir(n.rel) : onOpen(n.rel))} onDoubleClick={() => { if (!n.dir) onOpen(n.rel, true) }} onContextMenu={(e) => { e.preventDefault(); setCtx({ x: e.clientX, y: e.clientY, n }) }} title={n.rel} draggable onDragStart={(e) => { e.dataTransfer.setData('text/x-fb-rel', n.rel); e.dataTransfer.setData('text/x-fb-dir', n.dir ? '1' : '0'); e.dataTransfer.setData('text/plain', `${bot.abs}/${n.rel}`) }}>
           <span className="cv">{n.dir ? <Icon n={exp.has(n.rel) ? 'chevd' : 'chev'} size={9} /> : null}</span><Icon n={n.dir ? 'folder' : 'doc'} size={12} color={n.dir && exp.has(n.rel) ? 'var(--wait)' : 'var(--t3)'} /><span className="n">{n.name}</span><time>{flash.has(n.rel) ? '방금' : fmtTime(n.mtime)}</time>
         </button>)}
         {!rows.length ? <div className="kv" style={{ color: 'var(--t3)' }}>{dirs[''] ? '비어 있어요' : <><div className="skel" style={{ width: '70%' }} /></>}</div> : null}
       </div>
     </> : null}
     {ctx ? <div className="menu ctx" style={{ left: Math.min(ctx.x, window.innerWidth - 200), top: Math.min(ctx.y, window.innerHeight - 220) }}>
-      {!ctx.n.dir ? <><button onClick={() => onOpen(ctx.n.rel, true)}><span style={{ flex: 1 }}>열기 (고정 탭)</span><span className="k">⏎</span></button><button onClick={() => onAttach(ctx.n.rel)}><span style={{ flex: 1 }}>첨부로 보내기</span></button></> : <button onClick={() => toggleDir(ctx.n.rel)}><span style={{ flex: 1 }}>{exp.has(ctx.n.rel) ? '접기' : '펼치기'}</span></button>}
+      {!ctx.n.dir ? <><button onClick={() => onOpen(ctx.n.rel, true)}><span style={{ flex: 1 }}>열기 (고정 탭)</span><span className="k">⏎</span></button><button onClick={() => onAttach(ctx.n.rel)}><span style={{ flex: 1 }}>첨부로 보내기</span></button><button onClick={() => onMention(ctx.n.rel)}><span style={{ flex: 1 }}>@ 로 언급하기</span><span className="k">@</span></button></> : <><button onClick={() => toggleDir(ctx.n.rel)}><span style={{ flex: 1 }}>{exp.has(ctx.n.rel) ? '접기' : '펼치기'}</span></button><button onClick={() => onAttach(ctx.n.rel, true)}><span style={{ flex: 1 }}>폴더째 첨부</span></button></>}
       <button onClick={() => { navigator.clipboard?.writeText(`${bot.abs}/${ctx.n.rel}`); say('경로를 복사했어요') }}><span style={{ flex: 1 }}>경로 복사</span><span className="k">⌘C</span></button>
       <button onClick={() => rename(ctx.n)}><span style={{ flex: 1 }}>이름 바꾸기</span></button>
       <hr /><button onClick={() => setExp(new Set(['']))}><span style={{ flex: 1 }}>모두 접기</span></button>

@@ -1,6 +1,6 @@
 {
   "name": "folderbot",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Folder Bot — 내 Mac mini 위에서 사는, 폴더마다 하나씩 붙는 AI 동료들",
   "private": true,
   "type": "module",

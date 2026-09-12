@@ -56,6 +56,21 @@ try {
   const td = chat.items.find((i) => i.kind === 'todos'); if (!td || td.items.length !== 2 || td.items[1].status !== 'in_progress') fail('todos item')
   if (chat.items.some((i) => i.kind === 'tool' && i.name === 'TodoWrite')) fail('TodoWrite should not be a tool line')
   if (!frames.some((f) => f.ev === 'activity')) fail('no activity frame'); ok('subagent(parentId) · thinking · todos · activity')
+  // 컨텍스트 사용량 (result.usage) · 슬래시 목록 (파일 + CLI init)
+  if (!chat.info.ctx || chat.info.ctx.used !== 64000 || chat.info.ctx.window !== 200000) fail('ctx: ' + JSON.stringify(chat.info.ctx))
+  mkdirSync(join(root, '3. Area/제품_Rondo/.claude/skills/standup'), { recursive: true }); writeFileSync(join(root, '3. Area/제품_Rondo/.claude/skills/standup/SKILL.md'), '---\nname: standup\ndescription: 어제 한 일·오늘 할 일 정리\n---\n# standup\n')
+  mkdirSync(join(root, '.claude/commands'), { recursive: true }); writeFileSync(join(root, '.claude/commands/status.md'), '봇 현황 한 줄\n')
+  const slc = await api(`/bots/${bot.id}/slash?sid=${s1.sessionId}`)
+  if (!slc.some((c) => c.name === 'standup' && c.kind === 'skill' && c.scope === 'folder' && /어제/.test(c.desc))) fail('slash skill: ' + JSON.stringify(sl))
+  if (!slc.some((c) => c.name === 'status' && c.kind === 'command' && c.scope === 'root')) fail('slash root command')
+  if (!slc.some((c) => c.name === 'compact' && c.kind === 'cli')) fail('slash cli'); ok(`ctx ${chat.info.ctx.used}/${chat.info.ctx.window} · slash ${slc.length}`)
+  // 세션 설정 — 유휴면 워커를 내리고(절전) 같은 id 로 이어서 뜬다 · 모델이 init 에 반영
+  const cfg1 = await api(`/sessions/${s1.sessionId}/settings`, { model: 'claude-sonnet-5', permissionMode: 'plan' })
+  if (cfg1.model !== 'claude-sonnet-5' || cfg1.permissionMode !== 'plan' || !cfg1.hibernated) fail('settings: ' + JSON.stringify(cfg1))
+  const idBefore = cfg1.cliSessionId
+  await api(`/sessions/${s1.sessionId}/send`, { text: '설정 바꾼 뒤' }); await wait(700)
+  chat = await api(`/sessions/${s1.sessionId}/chat`)
+  if (chat.info.cliSessionId !== idBefore || chat.info.model !== 'claude-sonnet-5' || !chat.info.alive) fail('settings resume: ' + JSON.stringify(chat.info)); ok('session settings → hibernate → resume with new model')
   // 승인 흐름
   await api(`/sessions/${s1.sessionId}/send`, { text: '승인이 필요한 일 해 줘' })
   await wait(700)
@@ -130,6 +145,26 @@ try {
         const rows = await pg.$$eval('.brow', (r) => r.length); if (rows < 3) fail(`ui rows ${rows}`)
         if (!(await pg.$('.sub'))) fail('ui subagent line missing'); if (!(await pg.$('.todow'))) fail('ui todo widget missing')
         if (!(await pg.$('.panel .trow'))) fail('ui tree missing')
+        if (!(await pg.$('.chat-hdr.glass')) || !(await pg.$('.composer .cbar')) || !(await pg.$('.ring'))) fail('ui composer bar / glass header missing')
+        const cbar = await pg.textContent('.composer .cbar'); if (!/Fable 5.1|Sonnet 5/.test(cbar) || !/자동|계획/.test(cbar) || !/높음/.test(cbar)) fail('ui cbar labels: ' + cbar)
+        // 슬래시 자동완성 → 스킬이 뜬다 · @ → 파일이 뜬다
+        await pg.fill('.composer textarea', '/st'); await wait(300); const sp = await pg.textContent('.cpop'); if (!/standup/.test(sp ?? '') || !/status/.test(sp ?? '')) fail('ui slash popup: ' + sp)
+        await pg.keyboard.press('Escape'); await pg.fill('.composer textarea', '@todo'); await wait(600); const ap = await pg.textContent('.cpop'); if (!/todo\.md/.test(ap ?? '')) fail('ui @ popup: ' + ap)
+        await pg.keyboard.press('Enter'); await wait(200); const ta = await pg.inputValue('.composer textarea'); if (!/@todo\.md /.test(ta)) fail('ui @ insert: ' + ta); if (!(await pg.$('.chat-foot .files .chip'))) fail('ui @ attach chip')
+        await pg.fill('.composer textarea', '')
+        // 모드 팝업 · 모델 팝업
+        await pg.click('.cbar .cbtn'); await wait(150); if (!/편집 자동 수락/.test((await pg.textContent('.cpop')) ?? '')) fail('ui mode popup'); await pg.keyboard.press('Escape')
+        // ↓ 최근으로 — 위로 스크롤하면 뜨고, 직전 질문이 고정된다
+        await pg.evaluate(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop = 0 }); await wait(400)
+        if (!(await pg.$('.tobot'))) fail('ui ↓ button'); if (await pg.$('.pinq')) fail('ui pinned question should not show while the question is below')
+        // 고정 질문은 답이 화면보다 길 때만 — 창을 낮춰서 질문을 지나쳐 본다
+        await pg.setViewportSize({ width: 1440, height: 260 }); await wait(200)
+        await pg.evaluate(() => { const el = document.querySelector('.chat-scroll'); const u = document.querySelector('.umsg.last'); el.scrollTop = u.offsetTop + u.offsetHeight + 60 }); await wait(400)
+        if (!(await pg.$('.pinq'))) { console.log('DBG', JSON.stringify(await pg.evaluate(() => { const el = document.querySelector('.chat-scroll'); const u = document.querySelector('.umsg.last'); const r = el.getBoundingClientRect(); const ur = u?.getBoundingClientRect(); return { st: el.scrollTop, sh: el.scrollHeight, ch: el.clientHeight, rootTop: r.top, uTop: ur?.top, uBottom: ur?.bottom, uOff: u?.offsetTop, n: document.querySelectorAll('.umsg').length } }))); await pg.screenshot({ path: 'test/tmp/desktop-scrolled.png' }); fail('ui pinned question') }
+        await pg.screenshot({ path: 'test/tmp/desktop-scrolled.png' })
+        await pg.setViewportSize({ width: 1440, height: 900 }); await wait(200)
+        await pg.evaluate(() => { document.querySelector('.chat-scroll').scrollTop = 0 }); await wait(300)
+        await pg.click('.tobot'); await wait(800); if (await pg.$('.tobot')) fail('ui ↓ should hide at bottom')
         // 파일 칩 → 문서 열이 열린다 · 트리 클릭 → 미리보기 탭
         await pg.click('.files .chip'); await pg.waitForSelector('.doc .dbody', { timeout: 5000 }); await wait(400)
         const tabs = await pg.$$eval('.doc .tab', (r) => r.length); if (tabs < 1) fail('doc tab')
@@ -137,9 +172,17 @@ try {
         await pg.keyboard.press('Meta+Shift+D'); await wait(200); if (await pg.$('.doc')) fail('doc column should hide on ⌘⇧D')
         if (errs.length) fail('page errors: ' + errs.join(' | '))
       }
+      if (name === 'phone') {
+        if (await pg.$('.mtabs')) fail('phone: tab bar should be gone')
+        if (!(await pg.$('.chat-hdr .rb')) || !(await pg.$('.cchips')) || !(await pg.$('.composer .plusb'))) fail('phone: round buttons / chips / pill composer')
+        await pg.click('.chat-hdr .rb'); await wait(300); if (!(await pg.$('.mhome .mcards')) || (await pg.$$eval('.mrow', (r) => r.length)) < 3) fail('phone: home cards/rows'); await pg.screenshot({ path: 'test/tmp/phone-home.png' })
+        await pg.click('.mrow'); await wait(300); await pg.click('.chat-hdr .rb:last-child'); await wait(300); if (!(await pg.$('.rpwrap .rb'))) fail('phone: panel page'); await pg.screenshot({ path: 'test/tmp/phone-panel.png' })
+        await pg.click('.panel .secb button.trow:not(.dir)'); await wait(600); if (!(await pg.$('.docwrap .dfoot'))) fail('phone: doc page'); await pg.screenshot({ path: 'test/tmp/phone-doc.png' })
+        if (errs.length) fail('page errors: ' + errs.join(' | '))
+      }
       await pg.close()
     }
     await br.close(); ok('ui renders (desktop · phone) → test/tmp/*.png')
-  } catch (e) { console.log('(화면 검사 건너뜀:', e.message.split('\n')[0], ')'); try { await globalThis.__br?.close() } catch {} }
+  } catch (e) { console.log('(화면 검사 건너뜀:', e.stack.split('\n').slice(0, 4).join(' | '), ')'); try { await globalThis.__br?.close() } catch {} }
   console.log('\nSMOKE OK')
 } catch (e) { fail(e.stack) } finally { host.kill(); rmSync(root, { recursive: true, force: true }); rmSync(data, { recursive: true, force: true }); rmSync(claudeCfg, { recursive: true, force: true }) }

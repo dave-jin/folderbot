@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { transition, shouldNotify } from '../core/stateMachine'
-import { assistantText, itemId, toolSummary, touchedPath, type StreamLine } from '../core/chat'
+import { assistantText, contextOf, itemId, toolSummary, touchedPath, type StreamLine } from '../core/chat'
 import type { Bot, ChatItem, PermissionMode, PermissionRequest, SessionInfo, SessionState } from '../core/types'
 import { atomicWrite, dataDir, ensureDir } from './paths'
 
@@ -159,6 +159,10 @@ export interface SessionRec {
   effort?: string
   activity?: string
   turnStartedAt?: number
+  ctx?: { used: number; window: number }
+  restartPending?: boolean
+  /** CLI init 이 알려준 슬래시 명령 이름들 */
+  slash?: string[]
 }
 
 export interface ManagerEvents {
@@ -199,7 +203,7 @@ export class SessionManager extends EventEmitter {
   }
   info(r: SessionRec): SessionInfo {
     const w = this.workers.get(r.id)
-    return { id: r.id, botId: r.botId, name: r.name, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort }
+    return { id: r.id, botId: r.botId, name: r.name, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
   }
   get(id: string): SessionRec | undefined { return this.recs.get(id) }
   items(id: string): ChatItem[] { return this.recs.get(id)?.items ?? [] }
@@ -219,6 +223,18 @@ export class SessionManager extends EventEmitter {
     if (r) this.emit('sessions', r.botId)
   }
   rename(id: string, name: string): void { const r = this.recs.get(id); if (!r) return; r.name = name; this.persist(r); this.emit('sessions', r.botId) }
+  /** 세션의 모델·노력·모드 — 셋 다 스폰 인자라 워커를 내리고 같은 id 로 이어서 띄운다. 턴이 도는 중이면 끝난 뒤에 */
+  configure(r: SessionRec, o: { model?: string; effort?: string; permissionMode?: PermissionMode }): void {
+    let changed = false
+    if (o.model !== undefined && o.model !== r.model) { r.model = o.model || undefined; changed = true }
+    if (o.effort !== undefined && o.effort !== r.effort) { r.effort = o.effort || undefined; changed = true }
+    if (o.permissionMode !== undefined && o.permissionMode !== r.permissionMode) { r.permissionMode = o.permissionMode; changed = true }
+    if (!changed) return
+    const w = this.workers.get(r.id)
+    if (w?.alive) { if (r.state === 'running' || r.state === 'awaiting_input' || w.pending.size) r.restartPending = true; else { w.kill(); this.workers.delete(r.id) } }
+    this.persist(r); this.emit('sessions', r.botId)
+  }
+  slashOf(id: string): string[] { return this.recs.get(id)?.slash ?? [] }
 
   private persist(r: SessionRec): void {
     const slim = { ...r, items: r.items.slice(-1500) }
@@ -282,7 +298,7 @@ export class SessionManager extends EventEmitter {
   }
   private onLine(r: SessionRec, line: StreamLine): void {
     if (line.session_id && r.cliSessionId !== line.session_id) { r.cliSessionId = line.session_id; this.persist(r) }
-    if (line.type === 'system' && line.subtype === 'init') return
+    if (line.type === 'system' && line.subtype === 'init') { if (Array.isArray(line.slash_commands)) { r.slash = line.slash_commands.map(String); this.emit('sessions', r.botId) } return }
     const parent = line.parent_tool_use_id ?? null
     if (line.type === 'stream_event') {
       const ev = line.event as { type?: string; delta?: { type?: string; text?: string; thinking?: string }; index?: number } | undefined
@@ -355,9 +371,11 @@ export class SessionManager extends EventEmitter {
       const th = this.thinking.get(r.id); if (th) { th.streaming = false; this.thinking.delete(r.id); this.push(r, th, true) }
       for (const it of r.items) if (it.kind === 'subagent' && it.status === 'run') { it.status = 'done'; this.push(r, it, true) }
       this.push(r, { id: itemId('r'), t: Date.now(), kind: 'result', ok: !line.is_error, durationMs: line.duration_ms ?? 0, costUsd: line.total_cost_usd, error: line.is_error ? String(line.error ?? line.result ?? '') : undefined })
+      const ctx = contextOf(line); if (ctx) r.ctx = ctx
       this.setActivity(r, '', true)
       this.setState(r, { kind: 'result_received', isError: !!line.is_error })
-      this.persist(r)
+      if (r.restartPending) { r.restartPending = false; const w = this.workers.get(r.id); if (w && !w.pending.size) { w.kill(); this.workers.delete(r.id) } }
+      this.persist(r); this.emit('sessions', r.botId)
     }
   }
 

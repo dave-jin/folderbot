@@ -36,9 +36,9 @@ const CONFIG = () => join(ensureDir(dataDir()), 'config.json')
 export function loadConfig(): HostConfig {
   try {
     const j = JSON.parse(readFileSync(CONFIG(), 'utf8')) as Partial<HostConfig>
-    return { root: j.root ?? null, port: j.port ?? DEFAULT_PORT, devices: j.devices ?? [], vapid: j.vapid, pushSubs: j.pushSubs ?? [], quiet: j.quiet, botLimit: j.botLimit ?? 8, claudeBin: j.claudeBin, claudeOauthToken: j.claudeOauthToken, defaultModel: j.defaultModel ?? 'claude-opus-5', defaultEffort: j.defaultEffort ?? 'high' }
+    return { root: j.root ?? null, port: j.port ?? DEFAULT_PORT, devices: j.devices ?? [], vapid: j.vapid, pushSubs: j.pushSubs ?? [], quiet: j.quiet, botLimit: j.botLimit ?? 8, claudeBin: j.claudeBin, claudeOauthToken: j.claudeOauthToken, defaultModel: j.defaultModel ?? 'claude-fable-5-1', defaultEffort: j.defaultEffort ?? 'high' }
   } catch {
-    return { root: null, port: DEFAULT_PORT, devices: [], pushSubs: [], botLimit: 8, defaultModel: 'claude-opus-5', defaultEffort: 'high' }
+    return { root: null, port: DEFAULT_PORT, devices: [], pushSubs: [], botLimit: 8, defaultModel: 'claude-fable-5-1', defaultEffort: 'high' }
   }
 }
 
