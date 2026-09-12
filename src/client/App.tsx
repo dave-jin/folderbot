@@ -21,7 +21,22 @@ function useHash(): [Record<string, string>, (p: Record<string, string>) => void
 }
 function useMedia(q: string): boolean { const [m, setM] = useState(() => window.matchMedia(q).matches); useEffect(() => { const mq = window.matchMedia(q); const f = () => setM(mq.matches); mq.addEventListener('change', f); return () => mq.removeEventListener('change', f) }, [q]); return m }
 /** 폰 키보드 — visualViewport 가 창보다 훨씬 낮아지면 열린 것 */
-function useKeyboard(): boolean { const [kb, setKb] = useState(false); useEffect(() => { const vv = window.visualViewport; if (!vv) return; const f = () => setKb(vv.height < window.innerHeight - 140); vv.addEventListener('resize', f); return () => vv.removeEventListener('resize', f) }, []); return kb }
+function useKeyboard(): boolean {
+  const [kb, setKb] = useState(false)
+  useEffect(() => {
+    const vv = window.visualViewport; if (!vv) return
+    const f = () => {
+      // 키보드가 가린 높이 — 레이아웃 뷰포트가 같이 줄었으면(resizes-content) 0, 안 줄었으면 그만큼 컴포저를 올린다
+      const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+      const open = covered > 140 || vv.height < screen.height * 0.72
+      document.documentElement.style.setProperty('--kb', `${covered}px`)
+      setKb(open)
+      if (!open) window.scrollTo(0, 0)
+    }
+    f(); vv.addEventListener('resize', f); vv.addEventListener('scroll', f); return () => { vv.removeEventListener('resize', f); vv.removeEventListener('scroll', f) }
+  }, [])
+  return kb
+}
 
 export function App() {
   const { s } = useStore()

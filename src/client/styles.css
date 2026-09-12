@@ -2,7 +2,8 @@
 :root { --bg:#141414; --bg2:#181818; --sb:#111111; --line:#232323; --line2:#2c2c2c; --box:#1c1c1c; --sel:#222222; --hover:#1a1a1a; --w:#ededed; --t:#d6d6d6; --t2:#9a9a9a; --t3:#666666; --run:#e08850; --wait:#e2a33b; --done:#4fbf87; --err:#e5534b; --ui:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',system-ui,sans-serif; --mono:'JetBrains Mono','SF Mono',Menlo,monospace; --hh:44px;
   --glassA:rgba(20,20,20,.70); --glassB:rgba(28,28,28,.68); --hair:rgba(255,255,255,.07); --blur:blur(22px) saturate(1.4); --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px) }
 * { box-sizing:border-box; touch-action:manipulation }
-html,body,#root { height:100%; height:100dvh; margin:0; background:var(--bg); color:var(--t); font-family:var(--ui); font-size:13.5px; line-height:1.65; -webkit-font-smoothing:antialiased; overflow-x:hidden; overscroll-behavior:none; -webkit-text-size-adjust:100% }
+html,body { height:100%; margin:0 }
+#root { position:fixed; inset:0; margin:0; background:var(--bg); color:var(--t); font-family:var(--ui); font-size:13.5px; line-height:1.65; -webkit-font-smoothing:antialiased; overflow-x:hidden; overscroll-behavior:none; -webkit-text-size-adjust:100% }
 button { font:inherit; color:inherit; background:none; border:0; cursor:pointer; padding:0; text-align:left }
 input,textarea,select { font:inherit; color:inherit }
 a { color:var(--w) }
@@ -64,7 +65,7 @@ b,strong { color:var(--w); font-weight:600 }
 .chat-body { display:flex; flex-direction:column; gap:16px; padding:calc(var(--hh) + 22px) 24px calc(var(--footh) + 12px); width:100%; max-width:760px; align-self:center; flex:1 }
 .pinq { position:absolute; top:calc(var(--hh) + 10px); left:50%; transform:translateX(-50%); width:calc(100% - 48px); max-width:712px; z-index:4; border:1px solid var(--hair); border-radius:8px; padding:8px 14px; color:var(--w); font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:0 8px 24px rgba(0,0,0,.35); cursor:pointer; animation:fadein .18s ease-out }
 .tobot { position:absolute; left:50%; transform:translateX(-50%); bottom:calc(var(--footh) + 14px); z-index:5; width:32px; height:32px; animation:fadein .18s ease-out } .tobot .dot { position:absolute; right:-1px; top:-1px; width:8px; height:8px; border:2px solid var(--bg) }
-.chat-foot { position:absolute; left:0; right:0; bottom:0; z-index:5; display:flex; flex-direction:column; align-items:center; padding:0 24px 8px; pointer-events:none } .chat-foot > * { pointer-events:auto }
+.chat-foot { position:absolute; left:0; right:0; bottom:var(--kb, 0px); z-index:5; display:flex; flex-direction:column; align-items:center; padding:0 24px 8px; pointer-events:none } .chat-foot > * { pointer-events:auto }
 .chat-foot::before { content:''; position:absolute; left:0; right:0; top:-56px; bottom:0; background:linear-gradient(180deg, rgba(20,20,20,0) 0%, rgba(20,20,20,.88) 40%, rgba(24,24,24,.96) 100%); pointer-events:none; z-index:-1 }
 .chat-foot .queue, .chat-foot .files { width:100%; max-width:712px; margin-bottom:8px }
 .umsg { background:var(--box); border-radius:8px; padding:11px 14px; color:var(--w); white-space:pre-wrap; word-break:break-word }
@@ -181,14 +182,14 @@ b,strong { color:var(--w); font-weight:600 }
   .app { background:linear-gradient(180deg, var(--bg) 0%, var(--bg) 55%, var(--bg2) 100%) }
   .col, .col.side { background:transparent }
   /* 홈 */
-  .mhome { flex-direction:column; position:relative }
+  .mhome { flex-direction:column; position:relative; overflow:hidden }
   .mtop { display:flex; align-items:center; gap:10px; padding:calc(var(--sat) + 6px) 18px 0; flex:none } .mtop .sp { flex:1 }
-  .mscroll { flex:1; overflow:auto; padding-bottom:calc(var(--sab) + 90px) }
+  .mscroll { flex:1; overflow-y:auto; overflow-x:hidden; padding-bottom:calc(var(--sab) + 90px); -webkit-overflow-scrolling:touch }
   .mtitle { padding:22px 18px 2px; font-size:30px; font-weight:600; color:var(--w); letter-spacing:-.3px }
   .msub { padding:0 18px 14px; font-size:14px; color:var(--t2); display:flex; align-items:center; gap:8px }
-  .mcards { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:0 16px 6px } .mcards button { height:118px; border-radius:16px; background:var(--bg2); border:1px solid var(--line); padding:16px 16px 14px; display:flex; flex-direction:column; justify-content:space-between; align-items:flex-start } .mcards button .n { font-size:17px; color:var(--w) } .mcards button .n span { color:var(--t3); margin-left:4px }
+  .mcards { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:0 16px 6px } .mcards button { height:118px; border-radius:16px; background:var(--bg2); border:1px solid var(--line); padding:16px 16px 14px; display:flex; flex-direction:column; justify-content:space-between; align-items:flex-start } .mcards button .n { font-size:17px; color:var(--w); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100% } .mcards button .n span { color:var(--t3); margin-left:4px }
   .mhome .secl { font-size:13px; padding:14px 18px 2px }
-  .mrow { display:flex; align-items:center; gap:14px; padding:11px 18px; min-height:70px; width:100% } .mrow:active { background:var(--sel) } .mrow .av { position:relative; flex:none } .mrow .av .dot { position:absolute; right:-1px; bottom:-1px; width:12px; height:12px; border:2px solid var(--bg); box-sizing:content-box } .mrow .t { flex:1; min-width:0 } .mrow .l1 { display:flex; align-items:baseline; gap:8px } .mrow .l1 b { font-size:17px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 } .mrow .l1 time { margin-left:auto; font-size:13px; color:var(--t3); flex:none } .mrow .l2 { font-size:14px; color:var(--t2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .mrow { display:flex; align-items:center; gap:14px; padding:11px 18px; min-height:70px; width:100% } .mrow:active { background:var(--sel) } .mrow .av { position:relative; flex:none } .mrow .av .dot { position:absolute; right:-1px; bottom:-1px; width:12px; height:12px; border:2px solid var(--bg); box-sizing:content-box } .mrow .t { flex:1; min-width:0; display:flex; flex-direction:column } .mrow .l1 { display:flex; align-items:baseline; gap:8px } .mrow .l1 b { font-size:17px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 } .mrow .l1 time { margin-left:auto; font-size:13px; color:var(--t3); flex:none } .mrow .l2 { display:block; font-size:14px; color:var(--t2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
   .mpill { display:flex; position:absolute; left:16px; right:16px; bottom:calc(var(--sab) + 10px); height:60px; border-radius:30px; border:1px solid var(--hair); align-items:center; gap:10px; padding:0 10px 0 8px; box-shadow:0 10px 30px rgba(0,0,0,.45); color:var(--t3); font-size:17px; z-index:5 } .mpill .pl { width:40px; height:40px; border-radius:50%; background:rgba(255,255,255,.06); display:inline-flex; align-items:center; justify-content:center; color:var(--t); flex:none } .mpill .tx { flex:1 }
   .mhome::after { content:''; position:absolute; left:0; right:0; bottom:0; height:140px; background:linear-gradient(180deg, rgba(20,20,20,0), rgba(24,24,24,.9) 70%); pointer-events:none; z-index:4 }
   /* 대화 — 위 페이드 + 둥근 버튼 · 봇 알약 · 아래 알약 컴포저 */
@@ -207,7 +208,7 @@ b,strong { color:var(--w); font-weight:600 }
   .composer .plusb { width:40px; height:40px; border-radius:50%; background:rgba(255,255,255,.06); display:inline-flex; align-items:center; justify-content:center; color:var(--t); flex:none }
   .sendb { width:36px; height:36px } .sendb.mic { background:transparent; color:var(--t2) }
   .cpop { left:0; right:0; width:auto; border-radius:20px; padding:6px; bottom:calc(100% + 10px) } .cpop.r { width:auto } .prow2 { min-height:52px; padding:10px 14px; border-radius:12px } .prow2 .t b { font-size:16px } .prow2 .t small { font-size:13px }
-  .app.kb .cchips, .app.kb .tobot { display:none } .app.kb .chat-foot { padding-bottom:8px }
+  .app.kb .cchips, .app.kb .tobot { display:none } .app.kb .chat-foot { padding-bottom:8px } .app.kb .chat-hdr { display:none }
   .umsg { border-radius:18px 18px 6px 18px; align-self:flex-end; max-width:88%; padding:10px 16px }
   .md h1,.md h2,.md h3 { font-size:17px }
   .acts-row { font-size:13px; gap:18px }
@@ -223,6 +224,7 @@ b,strong { color:var(--w); font-weight:600 }
   .doc .tabs { display:none } .dtb { padding:0 18px; height:38px; font-size:13px }
   .dbody { padding:16px 18px } .dbody .md { font-size:16px; line-height:1.7 }
   .dfoot { display:flex; flex:none; gap:10px; align-items:center; padding:8px 16px calc(var(--sab) + 10px) } .dfoot .talk { height:44px; padding:0 18px; border-radius:22px; background:var(--box); border:1px solid var(--hair); display:inline-flex; align-items:center; font-size:14px; color:var(--t); margin-left:auto }
-  .modal { width:calc(100% - 16px) } .sheet { width:calc(100% - 16px); height:calc(100% - 16px) }
+  .modal, .sheet { left:8px; right:8px; top:calc(var(--sat) + 8px); bottom:calc(var(--sab) + 8px); width:auto; height:auto; max-height:none; transform:none; border-radius:16px }
+  .modal-b { flex:1 } .modal-h { padding-top:18px }
   .menu.ctx { left:16px !important; right:16px; top:auto !important; bottom:calc(var(--sab) + 16px); border-radius:16px; padding:8px } .menu.ctx button { min-height:48px; font-size:16px; padding:8px 14px; border-radius:10px }
 }
