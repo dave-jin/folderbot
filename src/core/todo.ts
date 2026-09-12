@@ -37,6 +37,25 @@ export function toggleLine(md: string, line: number, done: boolean): string {
   return lines.join(nl)
 }
 
+/** 제목·설명 편집 — 그 줄만. 완료 상태와 봇 표식은 유지 */
+export function editLine(md: string, line: number, title: string, desc: string): string {
+  const nl = md.includes('\r\n') ? '\r\n' : '\n'
+  const lines = md.split(/\r?\n/)
+  const m = LINE.exec(lines[line] ?? '')
+  if (!m || !title.trim()) return md
+  const by: TodoItem['by'] = BOT_MARK.test(m[3]) ? 'bot' : 'me'
+  lines[line] = `${m[1]}${formatLine(title, desc, by, m[2] !== ' ')}`
+  return lines.join(nl)
+}
+/** 줄 삭제 — 그 줄만 지운다 (되돌리기는 화면이 addLine 으로) */
+export function deleteLine(md: string, line: number): string {
+  const nl = md.includes('\r\n') ? '\r\n' : '\n'
+  const lines = md.split(/\r?\n/)
+  if (!LINE.test(lines[line] ?? '')) return md
+  lines.splice(line, 1)
+  return lines.join(nl)
+}
+
 /** 새 항목 추가 — 첫 `## 완료` 절 앞, 없으면 마지막 체크박스 뒤, 없으면 파일 끝. */
 export function addLine(md: string, title: string, desc: string, by: TodoItem['by']): string {
   const nl = md.includes('\r\n') ? '\r\n' : '\n'

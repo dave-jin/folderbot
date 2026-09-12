@@ -8,10 +8,12 @@ import { bindAddresses, tailnetInfo } from './tailnet'
 import { saveConfig } from './paths'
 import { handleMcp } from './mcp'
 import { guard, kindOf, mime, readText, recent, stream, tree, writeText, exists, listDir, renameEntry } from './files'
-import { todoToggle } from './todoStore'
+import { todoDelete, todoEdit, todoToggle } from './todoStore'
+import { globParents, roleOf } from '../core/rules'
 import { slashCommands } from './slash'
 
 interface Client { res: ServerResponse; device: string }
+interface Who { ok: boolean; device: string; id: string; main: boolean }
 const PAIR_TTL = 2 * 60 * 1000
 
 export class Gateway {
@@ -57,17 +59,18 @@ export class Gateway {
     for (const c of this.clients) { try { c.res.write(data) } catch { this.clients.delete(c) } }
   }
 
-  private auth(req: IncomingMessage): { ok: boolean; device: string } {
-    if (process.env.FOLDERBOT_NO_AUTH) return { ok: true, device: 'local' }
+  /** 누가 보고 있나 — 호스트 맥 자체의 창(this-mac 토큰 · 인증 없는 로컬)은 «메인», 나머지는 «원격 · 기기이름» */
+  private auth(req: IncomingMessage): Who {
+    if (process.env.FOLDERBOT_NO_AUTH) return { ok: true, device: 'local', id: 'local', main: true }
     const h = req.headers.authorization ?? ''
     const url = new URL(req.url ?? '/', 'http://x')
     const tok = h.startsWith('Bearer ') ? h.slice(7) : (url.searchParams.get('token') ?? '')
-    if (!tok) return { ok: false, device: '' }
+    if (!tok) return { ok: false, device: '', id: '', main: false }
     for (const d of this.host.cfg.devices) {
       const a = Buffer.from(d.token), b = Buffer.from(tok)
-      if (a.length === b.length && timingSafeEqual(a, b)) { d.lastSeen = Date.now(); return { ok: true, device: d.name } }
+      if (a.length === b.length && timingSafeEqual(a, b)) { d.lastSeen = Date.now(); return { ok: true, device: d.name, id: d.id, main: d.name === 'this-mac' } }
     }
-    return { ok: false, device: '' }
+    return { ok: false, device: '', id: '', main: false }
   }
   private isLoopback(req: IncomingMessage): boolean { const a = req.socket.remoteAddress ?? ''; return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1' }
 
@@ -97,12 +100,12 @@ export class Gateway {
     if (p.startsWith('/api/')) {
       const a = this.auth(req)
       if (!a.ok) return json(401, { error: 'unauthorized' })
-      return this.api(p, url, req, res, json, body, a.device)
+      return this.api(p, url, req, res, json, body, a.device, a)
     }
     return this.static(p, res)
   }
 
-  private async api(p: string, url: URL, req: IncomingMessage, res: ServerResponse, json: (c: number, b: unknown) => void, body: () => Promise<Record<string, unknown>>, device: string): Promise<void> {
+  private async api(p: string, url: URL, req: IncomingMessage, res: ServerResponse, json: (c: number, b: unknown) => void, body: () => Promise<Record<string, unknown>>, device: string, who: Who): Promise<void> {
     const h = this.host; const reg = h.registry
     const m = req.method ?? 'GET'
     const seg = p.split('/').filter(Boolean) // ['api', ...]
@@ -118,7 +121,7 @@ export class Gateway {
     }
     if (p === '/api/state') {
       const tn = await tailnetInfo()
-      return json(200, { version: h.version, root: reg.root, rules: reg.rules, rulesInstalled: reg.rulesInstalled(), bots: reg.bots(), candidates: reg.candidates(), auth: h.auth, inbox: reg.inboxItems().length, notifications: h.notifier.events.slice(0, 50), vapidPublic: h.notifier.vapidPublic(), tailnet: tn, addrs: this.addrs, port: h.cfg.port, botLimit: reg.botLimit, devices: h.cfg.devices.map((d) => ({ id: d.id, name: d.name, lastSeen: d.lastSeen })), sessionsByBot: Object.fromEntries(reg.bots().map((b) => [b.id, h.sessions.list(b.id)])), defaults: { model: h.cfg.defaultModel ?? '', effort: h.cfg.defaultEffort ?? '' } })
+      return json(200, { version: h.version, root: reg.root, rules: reg.rules, rulesInstalled: reg.rulesInstalled(), bots: reg.bots(), candidates: reg.candidates(), auth: h.auth, inbox: reg.inboxItems().length, notifications: h.notifier.events.slice(0, 50), vapidPublic: h.notifier.vapidPublic(), tailnet: tn, addrs: this.addrs, port: h.cfg.port, botLimit: reg.botLimit, devices: h.cfg.devices.map((d) => ({ id: d.id, name: d.name, lastSeen: d.lastSeen })), sessionsByBot: Object.fromEntries(reg.bots().map((b) => [b.id, h.sessions.list(b.id)])), defaults: { model: h.cfg.defaultModel ?? '', effort: h.cfg.defaultEffort ?? '' }, hostName: h.hostName(), device: { id: who.id, name: who.main ? h.hostName() : who.device, main: who.main } })
     }
     if (p === '/api/bots' && m === 'GET') return json(200, reg.bots())
     if (p === '/api/candidates') return json(200, reg.candidates())
@@ -136,6 +139,7 @@ export class Gateway {
     if (p === '/api/push/test' && m === 'POST') { h.notifier.emit('done', 'orch', 'Folder Bot', '푸시가 도착하면 성공이에요', undefined, { mac: false }); return json(200, { ok: true }) }
     if (p === '/api/tailnet') return json(200, await tailnetInfo())
     if (p === '/api/auth/refresh' && m === 'POST') return json(200, await h.refreshAuth())
+    if (p === '/api/names' && m === 'POST') { const b = await body(); h.setNames({ hostName: b.hostName === undefined ? undefined : String(b.hostName), deviceId: who.id, deviceName: b.deviceName === undefined ? undefined : String(b.deviceName) }); return json(200, { hostName: h.hostName(), device: { id: who.id, name: who.main ? h.hostName() : (h.cfg.devices.find((d) => d.id === who.id)?.name ?? who.device), main: who.main } }) }
     if (p === '/api/defaults' && m === 'POST') { const b = await body(); h.setDefaults(String(b.model ?? ''), String(b.effort ?? '')); return json(200, { model: h.cfg.defaultModel ?? '', effort: h.cfg.defaultEffort ?? '' }) }
     if (p === '/api/auth/token' && m === 'POST') { const b = await body(); h.setToken(String(b.token ?? '')); return json(200, { ok: true, mode: h.cfg.claudeOauthToken ? 'token' : 'login' }) }
     if (p === '/api/pairing' && m === 'POST') { if (!this.isLoopback(req) && device !== 'local') return json(403, { error: '미니에서만 열 수 있어요' }); return json(200, this.openPairing()) }
@@ -151,9 +155,15 @@ export class Gateway {
       if (sub === 'slash') { const sid = url.searchParams.get('sid') ?? ''; return json(200, slashCommands(bot.abs, reg.root, sid ? h.sessions.slashOf(sid) : [])) }
       if (sub === 'todo' && m === 'GET') return json(200, h.todo(bot))
       if (sub === 'todo' && seg[4] === 'toggle' && m === 'POST') { const b = await body(); const items = todoToggle(bot.abs, Number(b.line), !!b.done); h.broadcast({ ev: 'todo', botId: bot.id, items }); return json(200, items) }
+      if (sub === 'todo' && seg[4] === 'edit' && m === 'POST') { const b = await body(); const items = todoEdit(bot.abs, Number(b.line), String(b.title ?? ''), String(b.desc ?? '')); h.broadcast({ ev: 'todo', botId: bot.id, items }); return json(200, items) }
+      if (sub === 'todo' && seg[4] === 'delete' && m === 'POST') { const b = await body(); const items = todoDelete(bot.abs, Number(b.line)); h.broadcast({ ev: 'todo', botId: bot.id, items }); return json(200, items) }
       if (sub === 'todo' && m === 'POST') { const b = await body(); h.todoAdd(bot, String(b.title), String(b.desc ?? ''), 'me'); return json(200, h.todo(bot)) }
       if (sub === 'files') return json(200, tree(bot.abs, Number(url.searchParams.get('depth') ?? 2)))
-      if (sub === 'ls') { const rel = url.searchParams.get('dir') ?? ''; guard(roots(bot), join(bot.abs, rel)); return json(200, listDir(bot.abs, rel)) }
+      if (sub === 'ls') {
+        // 폴더 항목에 «하네스 있음» · «봇 있음(id)» · 1단계 역할을 붙인다 — 피커와 우클릭 «여기서 시작» 이 쓴다
+        const rel = url.searchParams.get('dir') ?? ''; guard(roots(bot), join(bot.abs, rel))
+        return json(200, listDir(bot.abs, rel).map((n) => { if (!n.dir) return n; const vrel = bot.rel ? `${bot.rel}/${n.rel}` : n.rel; return { ...n, harness: reg.hasHarness(join(bot.abs, n.rel)), botId: reg.botByRel(vrel)?.id, role: vrel.includes('/') ? undefined : (globParents(reg.rules.roles.active).includes(vrel) ? 'active' : roleOf(reg.rules, vrel) ?? undefined) } }))
+      }
       if (sub === 'rename' && m === 'POST') { const b = await body(); const abs = guard(roots(bot), join(bot.abs, String(b.rel))); const to = renameEntry(abs, String(b.name)); h.broadcast({ ev: 'files', botId: bot.id }); return json(200, { rel: relative(bot.abs, to) }) }
       if (sub === 'upload' && m === 'POST') {
         // 원격 기기에서 올린 파일 — <봇 폴더>/첨부/ 에 저장 (덮어쓰지 않음, 25MB 상한)

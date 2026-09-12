@@ -166,7 +166,7 @@ export class Registry extends EventEmitter {
     const abs = join(this.root, a.rel)
     if (!existsSync(abs)) return null
     const cfg = this.botConfig(abs)
-    return { id: a.id, rel: a.rel, abs, name: basename(a.rel), section: dirname(a.rel), color: cfg.color ?? a.color, orchestrator: false, startedAt: a.startedAt, vendor: cfg.vendor ?? a.vendor ?? 'claude', repo: cfg.repo ? resolve(abs, cfg.repo.replace(/^~/, process.env.HOME ?? '')) : undefined, routines: cfg.routines ?? [] }
+    return { id: a.id, rel: a.rel, abs, name: basename(a.rel), section: a.rel.split('/')[0] === a.rel ? '' : a.rel.split('/')[0], color: cfg.color ?? a.color, orchestrator: false, startedAt: a.startedAt, vendor: cfg.vendor ?? a.vendor ?? 'claude', repo: cfg.repo ? resolve(abs, cfg.repo.replace(/^~/, process.env.HOME ?? '')) : undefined, routines: cfg.routines ?? [] }
   }
   bot(id: string): Bot | undefined { return this.bots().find((b) => b.id === id) }
   botByRel(rel: string): Bot | undefined { return this.bots().find((b) => b.rel === rel) }
@@ -209,9 +209,13 @@ export class Registry extends EventEmitter {
   /** 새 폴더 만들기 — 규칙 naming 적용 + 하네스 스캐폴드. 반환: rel */
   createFolder(section: string, name: string): string {
     const parents = globParents(this.rules.roles.active)
-    if (!parents.includes(section)) throw new Error(`활성 범주가 아니에요: ${section}`)
-    const folderName = section === parents[0] ? applyNaming(this.rules.naming.project, name) : name
-    const rel = `${section}/${folderName}`.normalize('NFC')
+    section = section.replace(/^\/+|\/+$/g, '').normalize('NFC')
+    const parentAbs = section ? join(this.root, section) : this.root
+    if (!parentAbs.startsWith(this.root) || !existsSync(parentAbs) || !statSync(parentAbs).isDirectory()) throw new Error(`폴더가 없어요: ${section}`)
+    const clean = name.replace(/[\/\\:\u0000-\u001f]/g, '_').trim()
+    if (!clean) throw new Error('이름이 비었어요')
+    const folderName = section === parents[0] ? applyNaming(this.rules.naming.project, clean) : clean
+    const rel = (section ? `${section}/${folderName}` : folderName).normalize('NFC')
     const abs = join(this.root, rel)
     if (existsSync(abs)) throw new Error(`이미 있어요: ${rel}`)
     mkdirSync(abs, { recursive: true })

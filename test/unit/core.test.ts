@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { parseRules, rulesSection, PARA_PRESET, globMatch, globParents, roleOf, applyNaming } from '../../src/core/rules'
-import { parseTodo, addLine, toggleLine, formatLine } from '../../src/core/todo'
+import { parseTodo, addLine, toggleLine, formatLine, editLine, deleteLine } from '../../src/core/todo'
 import { transition, shouldNotify } from '../../src/core/stateMachine'
 import { authVerdict } from '../../src/core/authVerdict'
 import { toolSummary, touchedPath } from '../../src/core/chat'
@@ -75,5 +75,21 @@ describe('chat helpers', () => {
     expect(toolSummary('Bash', { command: 'npm run qa' })).toBe('npm run qa')
     expect(touchedPath('Edit', { file_path: '/a/b.md' })).toBe('/a/b.md')
     expect(touchedPath('Read', { file_path: '/a/b.md' })).toBeNull()
+  })
+})
+
+describe('todo edit · delete', () => {
+  const md = '# todo\n\n- [ ] 제목: 설명\n- [x] 끝난 일 <!-- bot -->\n\n## 완료\n'
+  it('편집은 그 줄만 바꾸고 완료 상태·봇 표식을 지킨다', () => {
+    const out = editLine(md, 3, '끝난 일 2', '더 설명')
+    expect(out.split('\n')[3]).toBe('- [x] 끝난 일 2: 더 설명 <!-- bot -->')
+    expect(out.split('\n')[2]).toBe('- [ ] 제목: 설명')
+    expect(editLine(md, 3, '   ', '')).toBe(md)
+    expect(editLine(md, 0, 'x', '')).toBe(md)
+  })
+  it('삭제는 그 줄만 지운다', () => {
+    const out = deleteLine(md, 2)
+    expect(out).toBe('# todo\n\n- [x] 끝난 일 <!-- bot -->\n\n## 완료\n')
+    expect(deleteLine(md, 0)).toBe(md)
   })
 })

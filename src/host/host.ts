@@ -1,4 +1,6 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { hostname } from 'node:os'
 import { join, relative } from 'node:path'
 import { TODO_RULES_PROMPT } from '../core/todo'
 import type { AuthState, Bot, Frame, PermissionMode, PermissionRequest, RoutineDef, SessionState } from '../core/types'
@@ -114,6 +116,18 @@ export class Host {
     this.sessions.send(s, bot, `${r.prompt}\n\n(이건 예약된 루틴 "${r.name}" 이야. 사람이 없을 수 있으니 ${r.approve === 'always' ? '' : r.approve === 'folder' ? '이 폴더 안 파일만 고치고 ' : '파일을 고치지 말고 제안만 하고 '}결과를 짧게 요약해.)`)
   }
 
+  /** 메인(호스트) 이름 — 설정값이 없으면 맥의 컴퓨터 이름(시스템 설정 › 일반 › 정보), 그것도 없으면 hostname */
+  private computerName = ''
+  hostName(): string {
+    if (this.cfg.hostName?.trim()) return this.cfg.hostName.trim()
+    if (!this.computerName) { try { this.computerName = process.platform === 'darwin' ? execFileSync('/usr/sbin/scutil', ['--get', 'ComputerName'], { timeout: 2000 }).toString().trim() : '' } catch { /* */ } if (!this.computerName) this.computerName = hostname().replace(/\.local$/, '') || 'Host' }
+    return this.computerName
+  }
+  setNames(o: { hostName?: string; deviceId?: string; deviceName?: string }): void {
+    if (o.hostName !== undefined) this.cfg.hostName = o.hostName.trim() || undefined
+    if (o.deviceId && o.deviceName !== undefined) { const d = this.cfg.devices.find((x) => x.id === o.deviceId); if (d && o.deviceName.trim()) d.name = o.deviceName.trim().slice(0, 40) }
+    saveConfig(this.cfg)
+  }
   /** 기본 모델·생각 레벨 — 저장하면 다음 세션부터 */
   setDefaults(model: string, effort: string): void {
     this.cfg.defaultModel = model || undefined; this.cfg.defaultEffort = effort || undefined
@@ -133,8 +147,8 @@ export class Host {
     if (fromFailure && this.auth.verdict === 'loggedin') this.auth = { ...this.auth, verdict: 'unreadable', reason: '세션 프로세스가 자격증명을 못 읽었어요' }
     this.auth.mode = this.cfg.claudeOauthToken ? 'token' : 'login'
     this.broadcast({ ev: 'auth', auth: this.auth })
-    if (this.auth.verdict === 'unreadable' && prev !== 'unreadable') this.notifier.emit('error', ORCH_ID, 'Mac mini 에서 Claude 로그인이 필요해요', 'Jump Desktop → 터미널 → claude → /login. 대기 중인 지시는 복구되면 이어서 해요.')
-    if (this.auth.verdict === 'loggedout' && prev !== 'loggedout') this.notifier.emit('error', ORCH_ID, 'Claude 가 로그아웃됐어요', '미니에서 claude → /login 을 해 주세요.')
+    if (this.auth.verdict === 'unreadable' && prev !== 'unreadable') this.notifier.emit('error', ORCH_ID, `${this.hostName()} 에서 Claude 로그인이 필요해요`, '호스트 맥에서 터미널 → claude → /login. 대기 중인 지시는 복구되면 이어서 해요.')
+    if (this.auth.verdict === 'loggedout' && prev !== 'loggedout') this.notifier.emit('error', ORCH_ID, 'Claude 가 로그아웃됐어요', `${this.hostName()} 에서 claude → /login 을 해 주세요.`)
     if (this.auth.verdict === 'loggedin' && this.queued.length) {
       const q = this.queued; this.queued = []
       for (const it of q) { const b = this.registry.bot(it.botId); const r = this.sessions.get(it.sessionId); if (b && r) this.sessions.send(r, b, it.text) }

@@ -24,11 +24,14 @@ export interface StateShape {
   botLimit: number
   devices: { id: string; name: string; lastSeen: number }[]
   defaults: { model: string; effort: string }
+  /** 메인(호스트) 이름 · 이 화면이 어디서 보고 있는지 */
+  hostName: string
+  device: { id: string; name: string; main: boolean }
   online: 'on' | 'off'
   loaded: boolean
   filesTick: Record<string, number>
 }
-const init: StateShape = { version: '', root: '', rules: null, rulesInstalled: false, bots: [], candidates: [], sessionsByBot: {}, chats: {}, pending: {}, todos: {}, auth: { verdict: 'unknown', checkedAt: 0 }, inbox: 0, notifications: [], vapidPublic: '', tailnet: null, addrs: [], port: 7373, botLimit: 8, devices: [], defaults: { model: 'claude-opus-5', effort: 'high' }, online: 'off', loaded: false, filesTick: {} }
+const init: StateShape = { version: '', root: '', rules: null, rulesInstalled: false, bots: [], candidates: [], sessionsByBot: {}, chats: {}, pending: {}, todos: {}, auth: { verdict: 'unknown', checkedAt: 0 }, inbox: 0, notifications: [], vapidPublic: '', tailnet: null, addrs: [], port: 7373, botLimit: 8, devices: [], defaults: { model: 'claude-fable-5-1', effort: 'high' }, hostName: '', device: { id: '', name: '', main: false }, online: 'off', loaded: false, filesTick: {} }
 
 type Action = { type: 'state'; s: Partial<StateShape> } | { type: 'frame'; f: Frame } | { type: 'chat'; sessionId: string; items: ChatItem[]; pending: PermissionRequest[] } | { type: 'online'; v: 'on' | 'off' } | { type: 'todos'; botId: string; items: TodoItem[] }
 

@@ -18,6 +18,8 @@ export interface HostConfig {
   /** 새 세션의 기본 모델·생각 레벨 — 바꾸면 다음 세션부터 */
   defaultModel?: string
   defaultEffort?: string
+  /** 메인(호스트) 이름 — 비면 컴퓨터 이름 */
+  hostName?: string
 }
 
 export function dataDir(): string {
@@ -36,7 +38,7 @@ const CONFIG = () => join(ensureDir(dataDir()), 'config.json')
 export function loadConfig(): HostConfig {
   try {
     const j = JSON.parse(readFileSync(CONFIG(), 'utf8')) as Partial<HostConfig>
-    return { root: j.root ?? null, port: j.port ?? DEFAULT_PORT, devices: j.devices ?? [], vapid: j.vapid, pushSubs: j.pushSubs ?? [], quiet: j.quiet, botLimit: j.botLimit ?? 8, claudeBin: j.claudeBin, claudeOauthToken: j.claudeOauthToken, defaultModel: j.defaultModel ?? 'claude-fable-5-1', defaultEffort: j.defaultEffort ?? 'high' }
+    return { root: j.root ?? null, port: j.port ?? DEFAULT_PORT, devices: j.devices ?? [], vapid: j.vapid, pushSubs: j.pushSubs ?? [], quiet: j.quiet, botLimit: j.botLimit ?? 8, claudeBin: j.claudeBin, claudeOauthToken: j.claudeOauthToken, defaultModel: j.defaultModel ?? 'claude-fable-5-1', defaultEffort: j.defaultEffort ?? 'high', hostName: j.hostName }
   } catch {
     return { root: null, port: DEFAULT_PORT, devices: [], pushSubs: [], botLimit: 8, defaultModel: 'claude-fable-5-1', defaultEffort: 'high' }
   }

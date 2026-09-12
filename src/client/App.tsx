@@ -43,7 +43,7 @@ export function App() {
   const [authed, setAuthed] = useState(() => { const h = new URLSearchParams(location.hash.slice(1)); const t = h.get('token'); if (t) { setToken(t); h.delete('token'); location.hash = h.toString(); location.reload() } return !!token() })
   useEffect(() => { const f = () => setAuthed(false); window.addEventListener('fb:authlost', f); return () => window.removeEventListener('fb:authlost', f) }, [])
   if (!authed) return <div className="app"><Pairing onDone={() => location.reload()} /></div>
-  if (!s.loaded) return <div className="app"><div className="empty"><FolderBot color="#e08850" size={40} mood="work" />Mac mini 에 연결하는 중…</div></div>
+  if (!s.loaded) return <div className="app"><div className="empty"><FolderBot color="#e08850" size={40} mood="work" />호스트에 연결하는 중…</div></div>
   if (!s.rulesInstalled) return <div className="app"><Onboarding /></div>
   return <Main />
 }
@@ -144,10 +144,13 @@ function Main() {
   const closeRp = () => setLay((l) => ({ ...l, rpOpen: false, rpPin: false }))
   const openSb = () => setLay((l) => ({ ...l, sbOpen: true, sbPin: true })); const closeSb = () => setLay((l) => ({ ...l, sbOpen: false, sbPin: false }))
   const stripBots = rows.flatMap(([, it]) => it)
+  // 트리 우클릭 «여기서 에이전트 시작» · «새 폴더 만들기 → 시작» — 볼트 상대 경로로
+  const startAt = async (rel: string, botId?: string) => { if (botId) { go(botId); return } if (!bot.orchestrator && !confirm(`상위 봇 ${bot.name} 와 폴더가 겹쳐요. 그래도 여기서 시작할까요?`)) return; try { const b = await api<Bot>('/bots/start', { body: { rel } }); await refresh(); go(b.id); say(`${b.name} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
+  const newFolderAt = async (parent: string) => { const name = prompt(`${parent || '볼트'} 안에 만들 폴더 이름`); if (!name?.trim()) return; try { const r = await api<{ rel: string; bot: Bot }>('/folders', { body: { section: parent, name: name.trim(), start: true } }); await refresh(); go(r.bot.id); say(`${r.rel} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
   const newSession = async () => { const info = await api<SessionInfo>(`/bots/${bot.id}/sessions`, { body: { name: `세션 ${sessions.length + 1}` } }); await refresh(); go(bot.id, info.id) }
   return <div className={`app ${isDesktop ? 'desktop' : ''} ${phone ? 'phone' : ''} ${kb ? 'kb' : ''} ${drag === 'x' ? 'dragx' : drag === 'y' ? 'dragy' : ''}`} data-view={view === 'doc' && !showDoc ? 'panel' : view}>
-    {s.online === 'off' ? <div className="offline">Mac mini 와 다시 연결하는 중…</div> : null}
-    {s.auth.verdict === 'unreadable' || s.auth.verdict === 'loggedout' ? <div className="banner"><span className="dot wait" /><span><b>Mac mini 에서 Claude 로그인이 필요해요.</b> 미니에서 <span className="mono">claude</span> → <span className="mono">/login</span>, 또는 설정 › Claude 토큰. 보낸 지시는 대기열에 두었다가 복구되면 이어서 해요.</span><span style={{ marginLeft: 'auto' }} /><button className="btn" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button></div> : null}
+    {s.online === 'off' ? <div className="offline">{s.hostName || '호스트'} 와 다시 연결하는 중…</div> : null}
+    {s.auth.verdict === 'unreadable' || s.auth.verdict === 'loggedout' ? <div className="banner"><span className="dot wait" /><span><b>{s.hostName} 에서 Claude 로그인이 필요해요.</b> 호스트 맥에서 <span className="mono">claude</span> → <span className="mono">/login</span>, 또는 설정 › Claude 토큰. 보낸 지시는 대기열에 두었다가 복구되면 이어서 해요.</span><span style={{ marginLeft: 'auto' }} /><button className="btn" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button></div> : null}
     <div className="cols">
       {/* ── 왼쪽 (폰은 홈 화면) ── */}
       {phone ? <Home rows={rows} bot={bot} go={go} setModal={setModal} waiting={waiting} unread={unread} onAsk={() => { go('orch'); setFocusReq(Date.now()) }} />
@@ -161,10 +164,10 @@ function Main() {
         <div className="sb-list">
           {rows.map(([sec, list]) => <div key={sec}>
             <div className="secl">{sec === '관제' ? '관제' : sec}</div>
-            {list.map(({ b, sum }) => <button key={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''}`} onClick={() => go(b.id)} title={sum.text}><FolderBot color={b.color} size={16} mood={sum.mood} mono /><span className="n">{b.name}</span><span className={`dot ${stateDot(sum.state ?? undefined)}`} /><time>{fmtTime(sum.t)}</time></button>)}
+            {list.map(({ b, sum }) => <button key={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''}`} onClick={() => go(b.id)} title={`${b.rel || '볼트'} — ${sum.text}`}><FolderBot color={b.color} size={16} mood={sum.mood} mono /><span className="n">{b.name}{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span><span className={`dot ${stateDot(sum.state ?? undefined)}`} /><time>{fmtTime(sum.t)}</time></button>)}
           </div>)}
         </div>
-        <div className="sb-foot"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} /><span>Mac mini</span>{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<UpdateChip version={s.version} st={upd} onCheck={updCheck} onApply={updApply} /></div>
+        <div className="sb-foot"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} /><span>{s.hostName}</span><MrBadge />{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<UpdateChip version={s.version} st={upd} onCheck={updCheck} onApply={updApply} /></div>
       </div> : <div className="strip left"><button className="ib" onClick={openSb} title="목록 펼치기 (⌘B)"><Icon n="panel" size={14} /></button><div className="gap" />
         <button className="ib" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span className="fly"><b>폴더 선택 · 시작</b><span>후보 {s.candidates.filter((c) => !c.active).length}</span></span></button>
         <button className="ib" onClick={() => setModal('notify')}><Icon n="bell" size={14} />{unread ? <span className="bd">{unread}</span> : null}<span className="fly"><b>알림</b><span>{unread ? `읽지 않음 ${unread}` : '없음'}</span></span></button>
@@ -181,7 +184,7 @@ function Main() {
 
       {/* ── 오른쪽 ── */}
       {!phone ? <div className="divx" onPointerDown={rpOpen ? dragX('rp', -1) : undefined} onDoubleClick={() => setLay({ ...lay, rp: DEF.rp, rpOpen: true, rpPin: true })} /> : null}
-      {rpOpen || phone ? <div className="rpwrap" style={{ width: phone ? '100%' : lay.rp, flex: 'none', display: 'flex', minWidth: 0 }}><Panel bot={bot} sessions={sessions} sessionId={sessionId} go={go} onOpenFile={openDoc} onTalk={(t) => { setPrefill(t); if (phone) setView('chat') }} onAttach={(rel, dir) => addAttach({ rel, abs: `${bot.abs}/${rel}`, dir })} onMention={(rel) => { setMentionReq((m) => [...m, rel]); if (phone) setView('chat') }} touched={touched} filesTick={s.filesTick[bot.id]} secH={lay.secH} onSecH={(h) => setLay({ ...lay, secH: h })} onCollapse={closeRp} focusSec={focusSec} say={say} refresh={refresh} activeDoc={showDoc ? docs.active : null} onDragY={(on) => setDrag(on ? 'y' : '')} phone={phone} onBack={() => setView('chat')} /></div>
+      {rpOpen || phone ? <div className="rpwrap" style={{ width: phone ? '100%' : lay.rp, flex: 'none', display: 'flex', minWidth: 0 }}><Panel bot={bot} sessions={sessions} sessionId={sessionId} go={go} onOpenFile={openDoc} onTalk={(t) => { setPrefill(t); if (phone) setView('chat') }} onAttach={(rel, dir) => addAttach({ rel, abs: `${bot.abs}/${rel}`, dir })} onMention={(rel) => { setMentionReq((m) => [...m, rel]); if (phone) setView('chat') }} onStartAt={startAt} onNewFolderAt={newFolderAt} touched={touched} filesTick={s.filesTick[bot.id]} secH={lay.secH} onSecH={(h) => setLay({ ...lay, secH: h })} onCollapse={closeRp} focusSec={focusSec} say={say} refresh={refresh} activeDoc={showDoc ? docs.active : null} onDragY={(on) => setDrag(on ? 'y' : '')} phone={phone} onBack={() => setView('chat')} /></div>
         : <div className="strip right"><button className="ib" onClick={() => openRp()} title="패널 펼치기 (⌘⇧B)"><Icon n="panelr" size={14} /></button><div className="gap" />
         <button className="ib" onClick={() => openRp('sessions')}><Icon n="clock" size={14} />{sessions.some((x) => x.state === 'running') ? <span className="dot run" style={{ position: 'absolute', right: 2, top: 2 }} /> : null}<span className="fly"><b>세션</b><span>{sessions.length}개</span></span></button>
         <button className="ib" onClick={() => openRp('todo')}><Icon n="list" size={14} />{(s.todos[bot.id] ?? []).filter((t) => !t.done).length ? <span className="bd">{(s.todos[bot.id] ?? []).filter((t) => !t.done).length}</span> : null}<span className="fly"><b>{bot.orchestrator ? 'Inbox' : '할 일'}</b><span>{bot.orchestrator ? `${s.inbox}개` : `미완료 ${(s.todos[bot.id] ?? []).filter((t) => !t.done).length}`}</span></span></button>
@@ -195,6 +198,9 @@ function Main() {
     {toast ? <div className="toast">{toast}</div> : null}
   </div>
 }
+
+/** 메인(호스트 맥의 창) · 원격(그 외 기기) 배지 */
+function MrBadge() { const { s } = useStore(); return s.device.main ? <span className="mr main">메인</span> : <span className="mr remote">원격 · {s.device.name}</span> }
 
 function botSummary(bot: Bot, sessions: SessionInfo[], notif: NotifyEvent[]) {
   const wait = sessions.find((x) => x.state === 'awaiting_input'); const run = sessions.find((x) => x.state === 'running')
@@ -215,7 +221,7 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk }: { rows: Row[]
     <div className="mtop"><button className="rb" onClick={() => setModal('settings')} title="설정"><FolderBot color="#e08850" size={26} mood={waiting ? 'wait' : 'idle'} mono /></button><span className="sp" /><button className="rb" onClick={() => setModal('notify')}><Icon n="bell" size={20} />{unread ? <span className="bd">{unread}</span> : null}</button><button className="rb" onClick={() => setModal('picker')}><Icon n="fplus" size={20} /></button></div>
     <div className="mscroll">
       <div className="mtitle">Folder Bot</div>
-      <div className="msub"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} style={{ width: 7, height: 7 }} />Mac mini · 봇 {s.bots.length} · 후보 {cands}</div>
+      <div className="msub"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} style={{ width: 7, height: 7 }} />{s.hostName}<MrBadge /><span>· 봇 {s.bots.length} · 후보 {cands}</span></div>
       <div className="mcards">
         <button onClick={() => setModal('notify')}><Icon n="bell" size={22} color="var(--wait)" /><span className="n">확인 필요<span>{waiting}</span></span></button>
         <button onClick={() => (running[0] ? go(running[0].b.id) : go(bot.id))}><Icon n="run" size={22} color="var(--run)" /><span className="n">일하는 중<span>{running.length}</span></span></button>
@@ -385,7 +391,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
         </div>
         {!phone ? <div className="cbar">{modeBtn}{plusBtn}<span className="sp" />{modelBtn}{effortBtn}{ringBtn}{sendBtn}</div> : null}
       </div>
-      {!phone ? <div className="cfoot"><span className={`dot ${cur?.alive || running ? 'done' : 'none'}`} style={{ width: 5, height: 5 }} /><span>{cur?.hibernated && !running ? 'Mac mini · 절전 (첫 답이 몇 초 늦어요)' : 'Mac mini'}</span>{cur?.restartPending ? <span>· 턴이 끝나면 새 설정으로 재시작</span> : null}<span className="sp" />{uploading ? <span>올리는 중…</span> : null}</div> : null}
+      {!phone ? <div className="cfoot"><span className={`dot ${cur?.alive || running ? 'done' : 'none'}`} style={{ width: 5, height: 5 }} /><span>{cur?.hibernated && !running ? `${s.hostName} · 절전 (첫 답이 몇 초 늦어요)` : s.hostName}</span>{cur?.restartPending ? <span>· 턴이 끝나면 새 설정으로 재시작</span> : null}<span className="sp" />{uploading ? <span>올리는 중…</span> : null}</div> : null}
     </div>
     {pickOpen ? <FilePickModal bot={bot} onClose={() => setPickOpen(false)} onPick={(rel) => { addAtt({ rel, abs: `${bot.abs}/${rel}` }); setPickOpen(false) }} /> : null}
   </div>
