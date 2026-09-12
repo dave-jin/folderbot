@@ -42,6 +42,13 @@ folderbot init "/Users/dave/Library/CloudStorage/Dropbox-Cbsjin/진대연 (Dave)
 - 작성창 **+** › **이 기기에서 파일 올리기** — 폰·맥북의 파일이 `<봇 폴더>/첨부/` 에 저장되고(같은 이름은 `-1`), 메시지에 경로가 붙어 봇이 읽습니다.
 - **+** › **이 폴더에서 고르기** — 미니의 봇 폴더 트리에서 선택. 여러 개 가능, 칩으로 표시.
 
+## 4′. 자동 업데이트
+앱이 부팅 15초 뒤 + 6시간마다 공개 릴리스(`dave-jin/rondo-releases`, 태그 `folderbot-desktop-v*`)를 보고 **조용히 받아 둡니다.**
+- 맥북(클라이언트): 다 받으면 확인창 하나 — [지금 재시작해서 적용] / [나중에]. 메뉴바 › 업데이트 확인 으로 수동도 됨.
+- 미니(호스트): 진행 중 세션이 있으면 **기다렸다가 전부 유휴가 되는 순간 자동 적용**(세션을 죽이지 않음). 없으면 바로.
+- 교체는 앱이 완전히 끝난 뒤 분리된 스크립트가 `ditto --noqtn` 으로 합니다(검역 딱지 없음 → Gatekeeper 안 걸림). `/Applications` 밖에서 실행 중이면 자동 교체 대신 받은 zip 을 보여 줍니다.
+- 🔴 **한 번만 할 일(Dave)**: GitHub Actions 가 공개 리포에 올리려면 PAT 가 필요합니다. github.com › Settings › Developer settings › Fine-grained token — 리포 `rondo-releases`, 권한 **Contents: Read and write** → 그 값을 `dave-jin/rondo` › Settings › Secrets and variables › Actions › `RELEASES_TOKEN` 에 저장. 그 다음 main 푸시부터 프리릴리스가 올라가고 설치된 앱이 받기 시작합니다. (secret 이 없으면 그 단계만 건너뛰고 `dave-jin/rondo` 릴리스만 만듭니다.)
+
 ## 5. 재부팅했을 때
 앱 방식: 로그인 항목이라 사람이 미니에 로그인하면 자동으로 뜸(자동 로그인을 켜 두면 전원만 켜도 됨).
 CLI 방식: 1′ 절차로 다시.

@@ -6,6 +6,7 @@ directories:
 files:
   - main.js
   - preload.js
+  - updater.js
   - connect.html
   - package.json
   - build/trayTemplate.png

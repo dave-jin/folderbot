@@ -4,6 +4,7 @@ const { pathToFileURL } = require('node:url')
 const { existsSync, readFileSync, writeFileSync, mkdirSync } = require('node:fs')
 const { join } = require('node:path')
 const http = require('node:http'); const https = require('node:https')
+const updater = require('./updater')
 
 const SETTINGS = () => join(app.getPath('userData'), 'settings.json')
 let settings = { mode: '', hostUrl: '', token: '', loginItem: false, root: '', port: 7373 }
@@ -94,6 +95,8 @@ function trayMenu() {
       { label: settings.hostUrl ? `호스트 · ${settings.hostUrl.replace(/^https?:\/\//, '')}` : '호스트 없음', enabled: false },
       { label: '호스트 바꾸기…', click: () => { settings.mode = ''; settings.hostUrl = ''; settings.token = ''; save(); stopSse(); showWin(); loadHome() } }
     ]),
+    { type: 'separator' },
+    ...(() => { const u = updater.state(); return u.staged?.ready ? [{ label: `v${u.staged.version} 업데이트 적용 (재시작)`, click: () => updater.apply() }] : u.downloading ? [{ label: `업데이트 받는 중 ${Math.round((u.staged?.progress || 0) * 100)}%`, enabled: false }] : [{ label: `업데이트 확인 (v${u.current})`, click: () => void updater.check(true) }] })(),
     { label: '로그인 시 자동 실행', type: 'checkbox', checked: settings.loginItem, click: (mi) => { settings.loginItem = mi.checked; save(); app.setLoginItemSettings({ openAtLogin: mi.checked, openAsHidden: true }) } },
     { type: 'separator' },
     { label: '종료', role: 'quit' }
@@ -159,6 +162,8 @@ app.whenReady().then(async () => {
   createWin(); startSse()
   app.setLoginItemSettings({ openAtLogin: !!settings.loginItem, openAsHidden: true })
   app.on('activate', showWin)
+  // 자기 업데이트 — 호스트 모드에선 세션이 전부 유휴일 때만 적용한다
+  updater.start({ isHost: () => settings.mode === 'host', isBusy: () => { let b = 0; for (const st of states.values()) if (st === 'running' || st === 'awaiting_input') b++; return b > 0 }, onChange: () => { try { tray?.setContextMenu(trayMenu()) } catch {} } })
 })
 app.on('window-all-closed', () => { /* 메뉴바에 남는다 */ })
 app.on('before-quit', () => { try { hostRun?.stop() } catch {} })

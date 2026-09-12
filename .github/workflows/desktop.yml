@@ -10,6 +10,8 @@ permissions:
 jobs:
   build:
     runs-on: macos-14
+    env:
+      RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,15 +22,20 @@ jobs:
           BUNDLE_ALL=1 node scripts/build.mjs
           rm -rf desktop/host && mkdir -p desktop/host && cp -r dist/host dist/client desktop/host/
           cp package.json desktop/host/package.json
-      - name: Install (desktop)
+      - name: Install (desktop) + 버전 도장 0.1.<run_number>
         working-directory: desktop
-        run: npm ci --no-audit --no-fund
+        run: |
+          npm ci --no-audit --no-fund
+          npm version 0.1.${{ github.run_number }} --no-git-tag-version
       - name: Build DMG + zip (arm64, ad-hoc signed)
         working-directory: desktop
         env: { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }
         run: npx electron-builder --mac --arm64 --publish never
-      - name: List
-        run: ls -la desktop/dist
+      - name: Checksums
+        working-directory: desktop/dist
+        run: |
+          for f in *.zip *.dmg; do shasum -a 256 "$f" > "$f.sha256"; done
+          ls -la
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
@@ -41,3 +48,22 @@ jobs:
           files: |
             desktop/dist/*.dmg
             desktop/dist/*.zip
+            desktop/dist/*.sha256
+      # 앱 자기 업데이트가 보는 곳 — 공개 리포에 프리릴리스로 (알파 Rondo 의 releases/latest 와 안 섞이게)
+      # 다른 리포에 쓰려면 PAT 가 필요하다: dave-jin/rondo › Settings › Secrets › RELEASES_TOKEN (rondo-releases Contents: write)
+      - name: Release (public, for self-update)
+        if: ${{ env.RELEASES_TOKEN != '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: dave-jin/rondo-releases
+          token: ${{ env.RELEASES_TOKEN }}
+          tag_name: folderbot-desktop-v0.1.${{ github.run_number }}
+          name: Folder Bot v0.1.${{ github.run_number }}
+          prerelease: true
+          body: |
+            Folder Bot 데스크톱 · Apple Silicon · ad-hoc 서명. 설치된 앱이 자동으로 받아 적용합니다.
+            처음 설치: DMG 를 열어 /Applications 로. "확인되지 않은 개발자" 는 우클릭 → 열기.
+          files: |
+            desktop/dist/*.dmg
+            desktop/dist/*.zip
+            desktop/dist/*.sha256
