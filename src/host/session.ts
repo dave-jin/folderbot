@@ -10,11 +10,18 @@ import { assistantText, itemId, toolSummary, touchedPath, type StreamLine } from
 import type { Bot, ChatItem, PermissionMode, PermissionRequest, SessionInfo, SessionState } from '../core/types'
 import { atomicWrite, dataDir, ensureDir } from './paths'
 
+/** 워커 env — 중첩 마커를 지우고, 설정된 장기 토큰이 있으면 넣는다 */
+let oauthToken = ''
+export function setOauthToken(t: string | undefined): void { oauthToken = (t ?? '').trim() }
 export function cleanClaudeEnv(): Record<string, string> {
   const env = { ...process.env } as Record<string, string>
   for (const k of Object.keys(env)) if (/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_EFFORT)/.test(k)) delete env[k]
+  if (oauthToken) env.CLAUDE_CODE_OAUTH_TOKEN = oauthToken
+  // GUI 앱(Electron)에서 띄우면 셸 PATH 가 없다 — claude 가 부르는 node·git 이 보이게
+  env.PATH = [env.PATH, '/opt/homebrew/bin', '/usr/local/bin', `${process.env.HOME ?? ''}/.local/bin`].filter(Boolean).join(':')
   return env
 }
+export const AUTH_ERROR = /Failed to authenticate|Not logged in|Please run \/login|Login expired|OAuth session expired|Invalid authentication|authentication_error/i
 
 export function claudeBin(override?: string): string {
   if (process.env.FOLDERBOT_CLI_BIN) return process.env.FOLDERBOT_CLI_BIN
@@ -239,7 +246,9 @@ export class SessionManager extends EventEmitter {
       if (w.cliSessionId) r.cliSessionId = w.cliSessionId
       if (code !== 0 && code !== 143 && code !== 137 && code !== null) {
         r.lastError = (err || `exit ${code}`).trim().slice(-600)
-        this.push(r, { id: itemId('e'), t: Date.now(), kind: 'system', text: `세션을 못 띄웠어요 · ${r.lastError.split('\n').pop() ?? ''}` })
+        const authErr = AUTH_ERROR.test(r.lastError)
+        this.push(r, { id: itemId('e'), t: Date.now(), kind: 'system', text: authErr ? 'Claude 로그인이 필요해요 — 미니에서 claude → /login, 또는 설정 › Claude 토큰' : `세션을 못 띄웠어요 · ${r.lastError.split('\n').pop() ?? ''}` })
+        if (authErr) this.emit('auth-error', r)
       }
       this.setState(r, { kind: 'process_exited', code })
       this.emit('sessions', r.botId)

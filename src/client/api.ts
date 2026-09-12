@@ -61,3 +61,8 @@ export async function subscribePush(vapidPublic: string, device: string): Promis
     return true
   } catch { return false }
 }
+
+export async function uploadFile(botId: string, file: File): Promise<{ rel: string; abs: string; size: number }> {
+  const data = await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] ?? ''); r.onerror = rej; r.readAsDataURL(file) })
+  return api(`/bots/${botId}/upload`, { body: { name: file.name, data } })
+}

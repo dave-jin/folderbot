@@ -1,15 +1,17 @@
 // Folder Bot — macOS 셸. 미니의 호스트(웹 클라이언트)를 창에 띄우고, 메뉴바·알림·Dock 배지를 맡는다.
-const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, ipcMain, shell, session } = require('electron')
+const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, ipcMain, shell, session, dialog, clipboard } = require('electron')
+const { pathToFileURL } = require('node:url')
 const { existsSync, readFileSync, writeFileSync, mkdirSync } = require('node:fs')
 const { join } = require('node:path')
 const http = require('node:http'); const https = require('node:https')
 
 const SETTINGS = () => join(app.getPath('userData'), 'settings.json')
-let settings = { hostUrl: '', token: '', loginItem: false }
+let settings = { mode: '', hostUrl: '', token: '', loginItem: false, root: '', port: 7373 }
 try { settings = { ...settings, ...JSON.parse(readFileSync(SETTINGS(), 'utf8')) } } catch {}
 const save = () => { try { mkdirSync(app.getPath('userData'), { recursive: true }); writeFileSync(SETTINGS(), JSON.stringify(settings, null, 2)) } catch {} }
 
 let win = null, tray = null, sse = null, waiting = 0, mood = 'idle', pendingNav = null
+let hostRun = null, pairing = null
 const moodTitle = { idle: '', work: '', wait: '', done: '', error: '', sleep: '' }
 
 if (!app.requestSingleInstanceLock()) app.quit()
@@ -32,14 +34,39 @@ function createWin() {
   loadHome()
 }
 function loadHome() {
+  if (settings.mode === 'host' && hostRun) { win.loadURL(`${settings.hostUrl}/#token=${encodeURIComponent(hostRun.gateway.localToken())}`).catch(() => {}); return }
   if (!settings.hostUrl) { win.loadFile(join(__dirname, 'connect.html')); return }
   win.loadURL(settings.hostUrl).catch(() => win.loadFile(join(__dirname, 'connect.html')))
 }
+
+// ── 호스트 모드: 이 맥(미니)에서 호스트를 앱 안에서 띄운다 — GUI 앱이라 claude 가 키체인을 읽는다 ──
+const HOST_BUNDLE = join(__dirname, 'host', 'host', 'index.mjs')
+const HOST_CLIENT = join(__dirname, 'host', 'client')
+function hostAvailable() { return existsSync(HOST_BUNDLE) && existsSync(join(HOST_CLIENT, 'index.html')) }
+async function startHostMode(root) {
+  if (!hostAvailable()) throw new Error('이 빌드에는 호스트가 안 들어 있어요')
+  process.env.FOLDERBOT_DATA = join(app.getPath('userData'), 'host')
+  const mod = await import(pathToFileURL(HOST_BUNDLE).href)
+  hostRun = await mod.startHost({ root, port: settings.port || 7373, webRoot: HOST_CLIENT, log: (m) => console.log('[host]', m) })
+  settings.mode = 'host'; settings.root = root; settings.hostUrl = `http://127.0.0.1:${settings.port || 7373}`; settings.token = hostRun.gateway.localToken(); save()
+  pairing = hostRun.gateway.openPairing()
+  startSse(); refreshTray()
+  return hostRun
+}
+function newPairing() { if (!hostRun) return null; pairing = hostRun.gateway.openPairing(); refreshTray(); return pairing }
+async function chooseRootAndStart() {
+  const r = await dialog.showOpenDialog({ title: '에이전트와 함께 일할 루트 폴더 (예: PARA)', properties: ['openDirectory', 'createDirectory'], buttonLabel: '이 폴더를 루트로' })
+  if (r.canceled || !r.filePaths[0]) return
+  try { await startHostMode(r.filePaths[0]); if (!settings.loginItem) { settings.loginItem = true; save(); app.setLoginItemSettings({ openAtLogin: true, openAsHidden: true }) } showWin(); loadHome() }
+  catch (e) { dialog.showErrorBox('호스트를 못 띄웠어요', String(e && e.message || e)) }
+}
+ipcMain.on('fb:host-mode', () => { void chooseRootAndStart() })
+ipcMain.handle('fb:host-available', () => hostAvailable())
 // connect.html 이 주소를 확인하면 folderbot-connect://<url> 로 알려 준다
 app.on('web-contents-created', (_e, wc) => {
   wc.on('will-navigate', (e, url) => { if (url.startsWith('folderbot-connect://')) { e.preventDefault(); settings.hostUrl = decodeURIComponent(url.slice('folderbot-connect://'.length)); settings.token = ''; save(); loadHome(); startSse() } })
 })
-ipcMain.on('fb:change-host', () => { settings.hostUrl = ''; settings.token = ''; save(); stopSse(); if (win) loadHome() })
+ipcMain.on('fb:change-host', () => { settings.mode = ''; settings.hostUrl = ''; settings.token = ''; save(); stopSse(); if (win) loadHome() })
 ipcMain.on('fb:token', (_e, token) => { if (typeof token === 'string' && token !== settings.token) { settings.token = token; save(); startSse() } })
 
 // ── 트레이 (폴더봇 · 표정 = 합친 상태 · 배지 = 확인 대기 수) ──
@@ -57,8 +84,16 @@ function trayMenu() {
     { label: 'Folder Bot 열기', click: showWin },
     { label: '알림 센터', click: () => navigate('#notify=1') },
     { type: 'separator' },
-    { label: settings.hostUrl ? `호스트 · ${settings.hostUrl.replace(/^https?:\/\//, '')}` : '호스트 없음', enabled: false },
-    { label: '호스트 바꾸기…', click: () => { settings.hostUrl = ''; settings.token = ''; save(); stopSse(); showWin(); loadHome() } },
+    ...(settings.mode === 'host' ? [
+      { label: `이 맥이 호스트 · ${settings.root}`, enabled: false },
+      { label: pairing && Date.now() < pairing.expiresAt ? `페어링 코드 ${pairing.code} (클릭해 복사)` : '페어링 코드 만들기', click: () => { const p = pairing && Date.now() < pairing.expiresAt ? pairing : newPairing(); if (p) { clipboard.writeText(p.code); new Notification({ title: 'Folder Bot 페어링 코드', body: `${p.code} · 2분 안에 폰·맥북에서 입력` }).show() } } },
+      { label: '새 페어링 코드', click: () => { const p = newPairing(); if (p) { clipboard.writeText(p.code); new Notification({ title: 'Folder Bot 페어링 코드', body: `${p.code} · 복사됨` }).show() } } },
+      { label: '폰에서 열 주소 복사', click: () => { const urls = hostRun ? hostRun.urls.filter((u) => !u.includes('127.0.0.1')) : []; clipboard.writeText(urls[0] || settings.hostUrl); new Notification({ title: 'Folder Bot', body: urls[0] ? `${urls[0]} 복사됨 (같은 Tailscale)` : 'Tailscale 주소가 아직 없어요 — Tailscale 을 켜세요' }).show() } },
+      { label: '루트 폴더 바꾸기…', click: () => { hostRun?.stop(); hostRun = null; void chooseRootAndStart() } }
+    ] : [
+      { label: settings.hostUrl ? `호스트 · ${settings.hostUrl.replace(/^https?:\/\//, '')}` : '호스트 없음', enabled: false },
+      { label: '호스트 바꾸기…', click: () => { settings.mode = ''; settings.hostUrl = ''; settings.token = ''; save(); stopSse(); showWin(); loadHome() } }
+    ]),
     { label: '로그인 시 자동 실행', type: 'checkbox', checked: settings.loginItem, click: (mi) => { settings.loginItem = mi.checked; save(); app.setLoginItemSettings({ openAtLogin: mi.checked, openAsHidden: true }) } },
     { type: 'separator' },
     { label: '종료', role: 'quit' }
@@ -114,11 +149,16 @@ function notify(n) {
   no.show()
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   process.env.FOLDERBOT_DESKTOP_VERSION = app.getVersion()
   session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => cb(perm === 'notifications' || perm === 'clipboard-read' || perm === 'clipboard-sanitized-write'))
-  createTray(); createWin(); startSse()
+  createTray()
+  if (settings.mode === 'host' && settings.root) {
+    try { await startHostMode(settings.root) } catch (e) { console.error(e); settings.mode = ''; save() }
+  }
+  createWin(); startSse()
   app.setLoginItemSettings({ openAtLogin: !!settings.loginItem, openAsHidden: true })
   app.on('activate', showWin)
 })
 app.on('window-all-closed', () => { /* 메뉴바에 남는다 */ })
+app.on('before-quit', () => { try { hostRun?.stop() } catch {} })

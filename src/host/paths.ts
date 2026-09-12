@@ -13,6 +13,8 @@ export interface HostConfig {
   quiet?: { from: string; to: string }
   botLimit?: number
   claudeBin?: string
+  /** claude setup-token 으로 만든 1년짜리 토큰 — 키체인을 못 읽는 문맥(헤드리스)의 대안 */
+  claudeOauthToken?: string
 }
 
 export function dataDir(): string {
@@ -31,7 +33,7 @@ const CONFIG = () => join(ensureDir(dataDir()), 'config.json')
 export function loadConfig(): HostConfig {
   try {
     const j = JSON.parse(readFileSync(CONFIG(), 'utf8')) as Partial<HostConfig>
-    return { root: j.root ?? null, port: j.port ?? DEFAULT_PORT, devices: j.devices ?? [], vapid: j.vapid, pushSubs: j.pushSubs ?? [], quiet: j.quiet, botLimit: j.botLimit ?? 8, claudeBin: j.claudeBin }
+    return { root: j.root ?? null, port: j.port ?? DEFAULT_PORT, devices: j.devices ?? [], vapid: j.vapid, pushSubs: j.pushSubs ?? [], quiet: j.quiet, botLimit: j.botLimit ?? 8, claudeBin: j.claudeBin, claudeOauthToken: j.claudeOauthToken }
   } catch {
     return { root: null, port: DEFAULT_PORT, devices: [], pushSubs: [], botLimit: 8 }
   }

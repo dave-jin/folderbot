@@ -116,6 +116,8 @@ export interface AuthState {
   plan?: string
   checkedAt: number
   reason?: string
+  /** login = 키체인 로그인 · token = setup-token 장기 토큰 */
+  mode?: 'login' | 'token'
 }
 
 export type NotifyKind = 'awaiting' | 'done' | 'error' | 'todo' | 'routine'

@@ -5,10 +5,10 @@ import type { AuthState, Bot, Frame, PermissionRequest, RoutineDef, SessionState
 import { STATE_LABEL } from '../core/types'
 import { checkAuth } from './auth'
 import { Notifier } from './notify'
-import { type HostConfig, absRoot } from './paths'
+import { type HostConfig, absRoot, saveConfig } from './paths'
 import { ORCH_ID, Registry } from './registry'
 import { Routines, approveToMode } from './routines'
-import { SessionManager, type SessionRec } from './session'
+import { SessionManager, setOauthToken, AUTH_ERROR, type SessionRec } from './session'
 import { readTodo, todoAdd, todoContext } from './todoStore'
 import { recent as recentFiles, tree as fileTree } from './files'
 
@@ -31,6 +31,7 @@ export class Host {
     this.notifier = new Notifier(cfg)
     this.notifier.onEvent = (n) => this.broadcast({ ev: 'notify', n })
     this.sessions.bin = cfg.claudeBin
+    setOauthToken(cfg.claudeOauthToken)
     this.sessions.mcpUrl = (sid, botId) => JSON.stringify({ mcpServers: { folderbot: { type: 'http', url: `http://127.0.0.1:${cfg.port}/mcp/${botId}?sid=${encodeURIComponent(sid)}` } } })
     this.sessions.systemPromptFor = (bot) => this.systemPrompt(bot)
     this.routines = new Routines({ run: (b, r) => this.runRoutine(b, r), log: this.log })
@@ -46,6 +47,11 @@ export class Host {
     this.sessions.on('sessions', (botId: string) => this.broadcast({ ev: 'sessions', botId, sessions: this.sessions.list(botId) }))
     this.sessions.on('chat', (sessionId: string, item, replace: boolean) => this.broadcast({ ev: 'chat', sessionId, item, replace }))
     this.sessions.on('files', (botId: string) => this.broadcast({ ev: 'files', botId }))
+    this.sessions.on('auth-error', () => { void this.refreshAuth(true) })
+    this.sessions.on('chat', (sessionId: string, item) => {
+      // CLI 가 인증 오류를 result/assistant 로 흘리는 경우도 잡는다
+      if ((item.kind === 'result' && !item.ok && AUTH_ERROR.test(item.error ?? '')) || (item.kind === 'assistant' && AUTH_ERROR.test(item.text) && item.text.length < 200)) void this.refreshAuth(true)
+    })
     this.sessions.on('permission', (r: SessionRec, req: PermissionRequest) => {
       this.broadcast({ ev: 'permission', sessionId: r.id, botId: r.botId, req })
       const bot = this.registry.bot(r.botId)
@@ -106,9 +112,18 @@ export class Host {
     this.sessions.send(s, bot, `${r.prompt}\n\n(이건 예약된 루틴 "${r.name}" 이야. 사람이 없을 수 있으니 ${r.approve === 'always' ? '' : r.approve === 'folder' ? '이 폴더 안 파일만 고치고 ' : '파일을 고치지 말고 제안만 하고 '}결과를 짧게 요약해.)`)
   }
 
-  async refreshAuth(): Promise<AuthState> {
+  setToken(token: string): void {
+    this.cfg.claudeOauthToken = token.trim() || undefined
+    setOauthToken(this.cfg.claudeOauthToken)
+    saveConfig(this.cfg)
+    void this.refreshAuth()
+  }
+  async refreshAuth(fromFailure = false): Promise<AuthState> {
     const prev = this.auth.verdict
     this.auth = await checkAuth(this.cfg.claudeBin)
+    // 세션이 인증 오류로 죽었는데 status 가 «로그인됨» 이라고 하면, status 가 틀린 것 — 문맥에서 못 읽는 경우다
+    if (fromFailure && this.auth.verdict === 'loggedin') this.auth = { ...this.auth, verdict: 'unreadable', reason: '세션 프로세스가 자격증명을 못 읽었어요' }
+    this.auth.mode = this.cfg.claudeOauthToken ? 'token' : 'login'
     this.broadcast({ ev: 'auth', auth: this.auth })
     if (this.auth.verdict === 'unreadable' && prev !== 'unreadable') this.notifier.emit('error', ORCH_ID, 'Mac mini 에서 Claude 로그인이 필요해요', 'Jump Desktop → 터미널 → claude → /login. 대기 중인 지시는 복구되면 이어서 해요.')
     if (this.auth.verdict === 'loggedout' && prev !== 'loggedout') this.notifier.emit('error', ORCH_ID, 'Claude 가 로그아웃됐어요', '미니에서 claude → /login 을 해 주세요.')

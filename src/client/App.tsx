@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Bot, ChatItem, NotifyEvent, PermissionRequest, SessionInfo, TodoItem } from '../core/types'
 import { STATE_LABEL } from '../core/types'
-import { api, token } from './api'
+import { api, setToken, token, uploadFile } from './api'
 import { FolderBot, Icon, moodOf, type Mood } from './FolderBot'
 import { FileSheet, FolderPicker, Md, NotifyCenter, Onboarding, Pairing, RoutineSheet, Settings, TodoRow, TodoSheet, useToast } from './Sheets'
 import { fmtDate, fmtTime, useStore } from './store'
@@ -18,7 +18,8 @@ function useHash(): [Record<string, string>, (p: Record<string, string>) => void
 
 export function App() {
   const { s, refresh } = useStore()
-  const [authed, setAuthed] = useState(!!token())
+  // 호스트 앱(같은 맥)이 #token=… 으로 열면 페어링 없이 저장
+  const [authed, setAuthed] = useState(() => { const h = new URLSearchParams(location.hash.slice(1)); const t = h.get('token'); if (t) { setToken(t); h.delete('token'); location.hash = h.toString(); location.reload() } return !!token() })
   useEffect(() => { const f = () => setAuthed(false); window.addEventListener('fb:authlost', f); return () => window.removeEventListener('fb:authlost', f) }, [])
   if (!authed) return <div className="app"><Pairing onDone={() => location.reload()} /></div>
   if (!s.loaded) return <div className="app"><div className="empty"><FolderBot color="#e08850" size={48} mood="work" />Mac mini 에 연결하는 중…</div></div>
@@ -165,13 +166,17 @@ function RecentFiles({ bot, tick, onOpen }: { bot: Bot; tick?: number; onOpen: (
 /* ── 대화 ───────────────────────────────────────────────────────────────── */
 function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, onBack, onSession, onFile, onRp, say, refreshAll }: { bot: Bot; sessions: SessionInfo[]; cur?: SessionInfo; items: ChatItem[]; pending: PermissionRequest[]; prefill: string; onPrefilled: () => void; onBack: () => void; onSession: (sid: string) => void; onFile: (rel: string) => void; onRp: () => void; say: (m: string) => void; refreshAll: () => Promise<void> }) {
   const [text, setText] = useState(''); const [sessMenu, setSessMenu] = useState(false); const [busy, setBusy] = useState(false)
+  const [attach, setAttach] = useState<{ rel: string; abs: string; uploaded?: boolean }[]>([]); const [attMenu, setAttMenu] = useState(false); const [pickOpen, setPickOpen] = useState(false); const [uploading, setUploading] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
   const endRef = useRef<HTMLDivElement>(null); const taRef = useRef<HTMLTextAreaElement>(null)
+  const onPickLocal = async (files: FileList | null) => { if (!files?.length) return; setUploading(true); try { for (const f of Array.from(files)) { const r = await uploadFile(bot.id, f); setAttach((a) => [...a, { rel: r.rel, abs: r.abs, uploaded: true }]) } say(`${files.length}개 올렸어요 → 첨부/`) } catch (e) { say((e as Error).message) } finally { setUploading(false); if (fileRef.current) fileRef.current.value = '' } }
   useEffect(() => { if (prefill) { setText((t) => (t ? `${t} ${prefill}` : prefill)); onPrefilled(); taRef.current?.focus() } }, [prefill])
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }) }, [items.length, items[items.length - 1]?.kind === 'assistant' ? (items[items.length - 1] as { text: string }).text.length : 0, pending.length])
   const send = async () => {
-    const t = text.trim(); if (!t || busy) return
+    let t = text.trim(); if ((!t && !attach.length) || busy) return
+    if (attach.length) t = `${t || '첨부한 파일을 봐 줘.'}\n\n첨부 파일 (읽어서 참고해):\n${attach.map((a) => `- ${a.abs}`).join('\n')}`
     setBusy(true)
-    try { if (cur) await api(`/sessions/${cur.id}/send`, { body: { text: t } }); else { const r = await api<{ sessionId: string }>(`/bots/${bot.id}/send`, { body: { text: t, name: '메인' } }); await refreshAll(); onSession(r.sessionId) } setText('') } catch (e) { say((e as Error).message) } finally { setBusy(false) }
+    try { if (cur) await api(`/sessions/${cur.id}/send`, { body: { text: t } }); else { const r = await api<{ sessionId: string }>(`/bots/${bot.id}/send`, { body: { text: t, name: '메인' } }); await refreshAll(); onSession(r.sessionId) } setText(''); setAttach([]) } catch (e) { say((e as Error).message) } finally { setBusy(false) }
   }
   const state = cur?.state ?? 'idle'
   const mood = moodOf(state, !!cur?.hibernated)
@@ -204,11 +209,35 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, onBack
       {cur && pending.map((p) => <PermCard key={p.requestId} p={p} sid={cur.id} />)}
       <div ref={endRef} />
     </div>
-    <div className="composer"><div className="box">
+    <div className="composer">
+      {attach.length ? <div className="files" style={{ padding: '0 4px 8px' }}>{attach.map((a) => <span key={a.abs} className="chip" title={a.abs}><Icon n="file" size={13} color={a.uploaded ? 'var(--tool-write)' : 'var(--tool-read)'} /><span className="mono">{a.rel}</span><button onClick={() => setAttach(attach.filter((x) => x.abs !== a.abs))} style={{ color: 'var(--faint)', display: 'inline-flex' }}><Icon n="x" size={11} /></button></span>)}</div> : null}
+      <input ref={fileRef} type="file" multiple hidden onChange={(e) => onPickLocal(e.target.files)} />
+      <div className="box" style={{ position: 'relative' }}>
+      <button className="iconbtn" title="첨부" onClick={() => setAttMenu(!attMenu)} disabled={uploading}><Icon n="plus" size={14} /></button>
+      {attMenu ? <div className="menu" style={{ left: 0, bottom: 48 }} onClick={() => setAttMenu(false)}><button onClick={() => fileRef.current?.click()}><Icon n="phone" size={14} /><span style={{ flex: 1 }}>이 기기에서 파일 올리기</span><span style={{ fontSize: 11, color: 'var(--faint)' }}>→ 첨부/</span></button><button onClick={() => setPickOpen(true)}><Icon n="folder" size={14} /><span style={{ flex: 1 }}>{bot.orchestrator ? '볼트' : '이 폴더'}에서 고르기</span></button></div> : null}
       <textarea ref={taRef} rows={1} placeholder={`${bot.name}${/[가-힣]$/.test(bot.name) ? '에게' : ' 에게'} 메시지…`} value={text} onChange={(e) => { setText(e.target.value); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(160, e.target.scrollHeight)}px` }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send() } }} />
-      <button className="sendbtn" onClick={send} disabled={busy} title="보내기"><Icon n="send" size={14} /></button>
+      <button className="sendbtn" onClick={send} disabled={busy || uploading} title="보내기"><Icon n="send" size={14} /></button>
     </div></div>
+    {pickOpen ? <FilePickModal bot={bot} onClose={() => setPickOpen(false)} onPick={(rel) => { setAttach((a) => a.some((x) => x.rel === rel) ? a : [...a, { rel, abs: `${bot.abs}/${rel}` }]); setPickOpen(false) }} /> : null}
   </div>
+}
+
+function FilePickModal({ bot, onClose, onPick }: { bot: Bot; onClose: () => void; onPick: (rel: string) => void }) {
+  const [tree, setTree] = useState<{ name: string; rel: string; dir: boolean; mtime: number; children?: unknown[] }[]>([])
+  const [q, setQ] = useState('')
+  useEffect(() => { void api<typeof tree>(`/bots/${bot.id}/files?depth=4`).then(setTree) }, [bot.id])
+  const flat: { rel: string; dir: boolean; mtime: number }[] = []
+  const walk = (n: typeof tree) => { for (const x of n) { if (!x.dir) flat.push({ rel: x.rel, dir: false, mtime: x.mtime }); if (x.children) walk(x.children as typeof tree) } }
+  walk(tree)
+  const list = flat.filter((f) => !q || f.rel.toLowerCase().includes(q.toLowerCase())).sort((a, b) => b.mtime - a.mtime).slice(0, 200)
+  return <>
+    <div className="backdrop" onClick={onClose} />
+    <div className="modal" style={{ width: 'min(560px,calc(100% - 24px))' }}>
+      <div className="modal-h"><div className="t"><b>{bot.orchestrator ? '볼트' : bot.name}에서 파일 고르기</b><small>고른 파일의 경로가 메시지에 붙고, 봇이 읽어요</small></div><button className="iconbtn" onClick={onClose}><Icon n="x" size={15} /></button></div>
+      <div className="search"><Icon n="search" size={14} /><input placeholder="파일 이름으로 찾기" value={q} onChange={(e) => setQ(e.target.value)} autoFocus /></div>
+      <div className="modal-b" style={{ maxHeight: '55vh' }}>{list.map((f) => <button key={f.rel} className="frow" onClick={() => onPick(f.rel)}><Icon n="file" size={13} color="var(--tool-read)" /><span className="n">{f.rel}</span><time>{fmtTime(f.mtime)}</time></button>)}{!list.length ? <div className="empty">파일이 없어요</div> : null}</div>
+    </div>
+  </>
 }
 
 function ToolLine({ it, onFile }: { it: Extract<ChatItem, { kind: 'tool' }>; onFile: (p: string) => void }) {

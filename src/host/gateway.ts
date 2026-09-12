@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, extname, normalize } from 'node:path'
 import type { Frame } from '../core/types'
 import type { Host } from './host'
@@ -40,6 +40,12 @@ export class Gateway {
       s.on('error', () => {}); s.listen(this.host.cfg.port, addr, () => this.host.log(`listening http://${addr}:${this.host.cfg.port}`))
       this.servers.push(s); this.addrs.push(addr)
     }
+  }
+  /** 같은 맥의 창(호스트 앱)용 토큰 — 페어링 없이 바로 */
+  localToken(): string {
+    let d = this.host.cfg.devices.find((x) => x.name === 'this-mac')
+    if (!d) { d = { id: randomBytes(6).toString('hex'), name: 'this-mac', token: randomBytes(32).toString('base64url'), createdAt: Date.now(), lastSeen: Date.now() }; this.host.cfg.devices.push(d); saveConfig(this.host.cfg) }
+    return d.token
   }
   openPairing(): { code: string; expiresAt: number } {
     this.pairing = { code: String(Math.floor(100000 + Math.random() * 900000)), expiresAt: Date.now() + PAIR_TTL }
@@ -129,6 +135,7 @@ export class Gateway {
     if (p === '/api/push/test' && m === 'POST') { h.notifier.emit('done', 'orch', 'Folder Bot', '푸시가 도착하면 성공이에요', undefined, { mac: false }); return json(200, { ok: true }) }
     if (p === '/api/tailnet') return json(200, await tailnetInfo())
     if (p === '/api/auth/refresh' && m === 'POST') return json(200, await h.refreshAuth())
+    if (p === '/api/auth/token' && m === 'POST') { const b = await body(); h.setToken(String(b.token ?? '')); return json(200, { ok: true, mode: h.cfg.claudeOauthToken ? 'token' : 'login' }) }
     if (p === '/api/pairing' && m === 'POST') { if (!this.isLoopback(req) && device !== 'local') return json(403, { error: '미니에서만 열 수 있어요' }); return json(200, this.openPairing()) }
     if (p === '/api/devices/revoke' && m === 'POST') { const b = await body(); h.cfg.devices = h.cfg.devices.filter((d) => d.id !== b.id); saveConfig(h.cfg); return json(200, { ok: true }) }
 
@@ -143,6 +150,21 @@ export class Gateway {
       if (sub === 'todo' && seg[4] === 'toggle' && m === 'POST') { const b = await body(); const items = todoToggle(bot.abs, Number(b.line), !!b.done); h.broadcast({ ev: 'todo', botId: bot.id, items }); return json(200, items) }
       if (sub === 'todo' && m === 'POST') { const b = await body(); h.todoAdd(bot, String(b.title), String(b.desc ?? ''), 'me'); return json(200, h.todo(bot)) }
       if (sub === 'files') return json(200, tree(bot.abs, Number(url.searchParams.get('depth') ?? 2)))
+      if (sub === 'upload' && m === 'POST') {
+        // 원격 기기에서 올린 파일 — <봇 폴더>/첨부/ 에 저장 (덮어쓰지 않음, 25MB 상한)
+        const chunks: Buffer[] = []; let total = 0
+        for await (const c of req) { total += (c as Buffer).length; if (total > 40 * 1024 * 1024) return json(413, { error: '너무 커요 (25MB 상한)' }); chunks.push(c as Buffer) }
+        const b = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { name?: string; data?: string }
+        const name = String(b.name ?? 'file').replace(/[\/\\:\u0000-\u001f]/g, '_').slice(0, 120)
+        const buf = Buffer.from(String(b.data ?? ''), 'base64')
+        if (buf.length > 25 * 1024 * 1024) return json(413, { error: '너무 커요 (25MB 상한)' })
+        const dir = join(bot.abs, '첨부'); if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+        let rel = `첨부/${name}`; let i = 1
+        while (existsSync(join(bot.abs, rel))) { const dot = name.lastIndexOf('.'); rel = `첨부/${dot > 0 ? name.slice(0, dot) : name}-${i++}${dot > 0 ? name.slice(dot) : ''}` }
+        writeFileSync(join(bot.abs, rel), buf)
+        h.broadcast({ ev: 'files', botId: bot.id })
+        return json(200, { rel, abs: join(bot.abs, rel), size: buf.length })
+      }
       if (sub === 'recent') return json(200, recent(bot.abs, 14))
       if (sub === 'file' && m === 'GET') {
         const abs = guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? ''))

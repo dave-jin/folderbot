@@ -10,6 +10,7 @@ files:
   - package.json
   - build/trayTemplate.png
   - build/trayTemplate@2x.png
+  - host/**
 extraResources:
   - from: build/icon.png
     to: icon.png

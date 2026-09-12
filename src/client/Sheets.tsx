@@ -201,6 +201,9 @@ export function Settings({ onClose }: { onClose: () => void }) {
       <div className="modal-h"><div className="t"><b>설정</b><small>Folder Bot v{s.version}</small></div><button className="iconbtn" onClick={onClose}><Icon n="x" size={15} /></button></div>
       <div className="modal-b" style={{ padding: '0 18px 12px', gap: 14 }}>
         <div><div className="sec" style={{ padding: '8px 0 4px' }}>호스트</div><div className="kv"><span className="n">루트</span><span className="mono" style={{ fontSize: 11.5 }}>{s.root}</span></div><div className="kv"><span className="n">주소</span><span className="mono" style={{ fontSize: 11.5 }}>{s.addrs.map((a) => `http://${a}:${s.port}`).join(' · ')}</span></div>{s.tailnet ? <div className="kv"><span className="n">Tailscale</span><span>{s.tailnet.state}{s.tailnet.dnsName ? ` · ${s.tailnet.dnsName}` : ''}</span></div> : null}<div className="kv"><span className="n">Claude 로그인</span><span style={{ color: s.auth.verdict === 'loggedin' ? 'var(--done)' : 'var(--awaiting)' }}>{s.auth.verdict}{s.auth.email ? ` · ${s.auth.email}` : ''}</span><button className="btn ghost" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button></div></div>
+        <div><div className="sec" style={{ padding: '8px 0 4px' }}>Claude 인증</div>
+          <div className="kv" style={{ color: 'var(--faint)', lineHeight: 1.5, alignItems: 'flex-start' }}><span>미니가 키체인 로그인을 못 읽는 상황(헤드리스·SSH)이면 <b style={{ color: 'var(--dim)' }}>장기 토큰</b>을 씁니다. 아무 맥에서 터미널에 <span className="mono">claude setup-token</span> 을 치고 브라우저 승인 뒤 나온 토큰을 붙여 넣으세요 (1년 유효). ⚠ 토큰 모드에선 claude.ai 커넥터(Gmail·Notion 등)는 안 붙어요.</span></div>
+          <TokenBox mode={s.auth.mode} /></div>
         <div><div className="sec" style={{ padding: '8px 0 4px' }}>기기</div>{s.devices.map((d) => <div className="kv" key={d.id}><Icon n="phone" size={13} /><span className="n">{d.name}</span><time style={{ fontSize: 11 }}>{fmtTime(d.lastSeen)}</time><button className="btn ghost" onClick={() => api('/devices/revoke', { body: { id: d.id } }).then(refresh)}>끊기</button></div>)}
           {isLocal ? <div className="kv"><span className="n">새 기기 연결</span>{pair ? <span className="mono" style={{ fontSize: 22, letterSpacing: '.18em', color: 'var(--strong)' }}>{pair.code}</span> : null}<button className="btn" onClick={async () => setPair(await api('/pairing', { body: {} }))}>페어링 코드</button></div> : <div className="kv" style={{ color: 'var(--faint)' }}>새 기기 연결은 미니의 화면(127.0.0.1)이나 터미널(p + Enter)에서</div>}</div>
         <div><div className="sec" style={{ padding: '8px 0 4px' }}>알림</div><div className="kv"><span className="n">이 기기 푸시</span><button className="btn" onClick={async () => setPushOn(await subscribePush(s.vapidPublic, navigator.userAgent.slice(0, 30)))}>{pushOn === true ? '켜짐' : pushOn === false ? '실패 · HTTPS + 홈 화면 설치 필요' : '켜기'}</button></div><div className="kv" style={{ color: 'var(--faint)' }}>조용한 시간 23:00–07:00 (확인해 주세요만 통과). 폰 푸시는 Tailscale serve 로 HTTPS 를 붙이고 홈 화면에 설치해야 동작해요.</div></div>
@@ -213,4 +216,14 @@ export function Settings({ onClose }: { onClose: () => void }) {
 export function useToast(): [string, (m: string) => void] {
   const [msg, setMsg] = useState(''); const t = useRef<number | undefined>(undefined)
   return [msg, (m: string) => { setMsg(m); window.clearTimeout(t.current); t.current = window.setTimeout(() => setMsg(''), 2600) }]
+}
+
+function TokenBox({ mode }: { mode?: 'login' | 'token' }) {
+  const { refresh } = useStore()
+  const [t, setT] = useState(''); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState('')
+  const save = async (token: string) => { setBusy(true); try { await api('/auth/token', { body: { token } }); await refresh(); setMsg(token ? '토큰을 저장했어요. 새 세션부터 적용돼요.' : '토큰을 지웠어요.'); setT('') } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) } }
+  return <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '4px 8px' }}>
+    <div style={{ display: 'flex', gap: 8 }}><input className="mono" style={{ flex: 1, background: 'var(--code)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 8, padding: '8px 10px', outline: 0 }} placeholder="sk-ant-oat01-…" value={t} onChange={(e) => setT(e.target.value)} /><button className="btn primary" disabled={busy || !t.trim()} onClick={() => save(t)}>저장</button>{mode === 'token' ? <button className="btn" disabled={busy} onClick={() => save('')}>지우기</button> : null}</div>
+    <div style={{ fontSize: 12, color: mode === 'token' ? 'var(--done)' : 'var(--faint)' }}>{mode === 'token' ? '지금: 장기 토큰 모드' : '지금: 키체인 로그인 모드'}{msg ? ` · ${msg}` : ''}</div>
+  </div>
 }
