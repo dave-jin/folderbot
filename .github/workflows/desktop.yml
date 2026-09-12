@@ -2,6 +2,8 @@ name: desktop (macOS)
 on:
   workflow_dispatch:
   push:
+    branches: [main]
+    paths: ['desktop/**', '.github/workflows/desktop.yml']
     tags: ['desktop-v*']
 permissions:
   contents: write
