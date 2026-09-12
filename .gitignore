@@ -141,3 +141,10 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# folderbot
+node_modules/
+dist/
+release/
+.folderbot-data/
+test/tmp/
