@@ -260,6 +260,8 @@ try {
       if (name === 'phone') {
         if (await pg.$('.mtabs')) fail('phone: tab bar should be gone')
         if (!(await pg.$('.chat-hdr .rb')) || !(await pg.$('.cchips')) || !(await pg.$('.composer .plusb'))) fail('phone: round buttons / chips / pill composer')
+        // 위 헤더는 불투명(페이드 없음) — 글이 밑으로 비치지 않는다
+        const hb = await pg.$eval('.chat-hdr', (e) => getComputedStyle(e).backgroundImage + '|' + getComputedStyle(e).backgroundColor); if (/gradient/.test(hb) || /rgba\(\d+, \d+, \d+, 0\)/.test(hb)) fail('phone: header should be opaque ' + hb)
         // 헤더 알약의 봇 이름이 잘리지 않는다 (짧은 이름은 전부, 알약은 남는 폭을 쓴다)
         const bp = await pg.evaluate(() => { const b = document.querySelector('.bpill b'); const p = document.querySelector('.bpill'); return { text: b.textContent, sw: b.scrollWidth, cw: b.clientWidth, pw: p.getBoundingClientRect().width, hw: document.querySelector('.chat-hdr').getBoundingClientRect().width } })
         if (!(bp.cw > 40 && bp.sw <= bp.cw + 1 && /제품_Rondo/.test(bp.text))) fail('phone: header pill name clipped ' + JSON.stringify(bp))
