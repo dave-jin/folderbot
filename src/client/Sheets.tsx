@@ -218,6 +218,31 @@ export function Settings({ onClose }: { onClose: () => void }) {
   </>
 }
 
+/**
+ * 이름 묻기 — `window.prompt()` 대체. Electron 은 prompt() 를 지원하지 않아(«prompt() is and will not be supported»)
+ * 데스크톱 앱에서 이름 바꾸기·새 폴더가 아무 반응 없이 끝났다 (2026-09-13 Dave: «원격에서 파일, 폴더 이름 바꾸기가 안돼»).
+ * 앱 안 모달 하나로 모든 표면(맥 앱·브라우저·폰)이 같은 경험을 한다. 확장자 앞까지 미리 선택해 이름만 고치게.
+ */
+let askResolve: ((v: string | null) => void) | null = null
+let askSet: ((q: { title: string; initial: string } | null) => void) | null = null
+export function askName(title: string, initial = ''): Promise<string | null> {
+  return new Promise((res) => { askResolve?.(null); askResolve = res; if (askSet) askSet({ title, initial }); else { askResolve = null; res(window.prompt(title, initial)) } })
+}
+export function AskHost() {
+  const [q, setQ] = useState<{ title: string; initial: string } | null>(null); const [v, setV] = useState('')
+  useEffect(() => { askSet = (n) => { setQ(n); setV(n?.initial ?? '') }; return () => { askSet = null } }, [])
+  if (!q) return null
+  const done = (val: string | null) => { setQ(null); const r = askResolve; askResolve = null; r?.(val) }
+  return <>
+    <div className="backdrop" onClick={() => done(null)} />
+    <div className="modal ask" style={{ width: 'min(420px,calc(100% - 24px))' }}>
+      <div className="modal-h"><div className="t"><b>{q.title}</b></div></div>
+      <div className="modal-b" style={{ padding: '4px 18px 12px' }}><input className="askin" autoFocus value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') done(v.trim() || null); if (e.key === 'Escape') done(null) }} onFocus={(e) => { const i = e.currentTarget; const dot = i.value.lastIndexOf('.'); i.setSelectionRange(0, dot > 0 ? dot : i.value.length) }} /></div>
+      <div className="modal-f"><span className="sp" /><button className="btn" onClick={() => done(null)}>취소 (⎋)</button><button className="btn on" onClick={() => done(v.trim() || null)}>확인 (⏎)</button></div>
+    </div>
+  </>
+}
+
 export function useToast(): [string, (m: string) => void] {
   const [msg, setMsg] = useState(''); const t = useRef<number | undefined>(undefined)
   return [msg, (m: string) => { setMsg(m); window.clearTimeout(t.current); t.current = window.setTimeout(() => setMsg(''), 2600) }]

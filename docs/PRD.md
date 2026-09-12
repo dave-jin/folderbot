@@ -356,6 +356,12 @@ A 로 시작하고 전송 계층을 추상화해 B/C 를 나중에 끼운다. Da
 
 **v0.3.6 (2026-09-12) — 알림이 안 오던 원인: 번들이 서명되지 않았다**: electron-builder 의 `identity: null` 은 «서명 생략» 이지 ad-hoc 이 아니다 — v17 까지 zip 안 번들에 `_CodeSignature` 가 0개였고(실측), macOS 알림 센터는 서명 없는 앱을 등록하지 않아 테스트 알림도 실 알림도 조용히 버려졌다. `desktop/afterPack.js` 가 dmg/zip 을 만들기 전에 `codesign --force --deep --sign -` 로 ad-hoc 서명하고 검증한다(알파 Rondo `scripts/dmg.sh` 승계). CI 는 zip 안에 `_CodeSignature/CodeResources` 가 있는지 확인하고 없으면 실패한다. ⚠ 서명이 생기면 cdhash 가 바뀌어 전체 디스크 접근이 풀린다 — 권한 관문이 그걸 받는다.
 
+**v0.3.7 (2026-09-13) — 폰 키보드: 루트 = 시각 뷰포트**: v14 의 «standalone 100vh 고정» 이 키보드 아래에 컴포저를 묻었다(Dave 스크린샷: 입력칸이 안 보임). `useKeyboard` 가 `visualViewport` 높이·offsetTop 을 `--vvh`·`--vvt` 로 쓰고 폰 CSS 의 `#root` 가 그걸 높이로 쓴다 — 키보드가 뜨면 루트가 그만큼 줄어 컴포저는 늘 키보드 바로 위, 닫히면 돌아온다(하단 띠도 없음). 열림 판정은 «입력칸 포커스 + 최대 높이보다 140px 이상 축소». 스크롤 컨테이너가 줄면 맨 아래를 유지(ResizeObserver). 스모크가 가짜 visualViewport 로 키보드를 흉내 내 루트 높이·컴포저 위치·헤더 숨김·마지막 말 노출·복원을 잰다(`test/tmp/phone-kb.png`).
+
+**v0.3.8 (2026-09-13) — 생각 내용은 CLI 가 주지 않는다 (실측)**: `claude -p --output-format stream-json --include-partial-messages` (2.1.269) 를 Opus 5·Sonnet 5·Haiku 4.5 로 직접 돌려 보니 thinking 블록·delta 는 오지만 `thinking` 은 전부 빈 문자열, 서명만 있다. headless 출력은 생각 내용을 주지 않는다 — 모델 문제가 아니라 CLI 의 동작. 그래서 빈 «생각 · (내용 없음)» 행을 도구마다 남기던 것을 없앴다: 생각 항목은 본문이 생겼을 때만 채팅에 들어가고(`thinkShown`), 빈 채로 끝나면 조용히 버린다(`endThinking`). 생각 중임은 상태줄 «생각 중» 으로만 보인다. CLI 가 내용을 주기 시작하면 코드 수정 없이 다시 보인다.
+
+**v0.3.9 (2026-09-13) — 원격 맥 앱에서 이름 바꾸기·새 폴더가 안 되던 원인**: `window.prompt()` 를 썼는데 Electron 은 prompt() 를 지원하지 않아 아무 반응 없이 끝났다. 앱 안 이름 모달(`askName`·`AskHost`, 확장자 앞까지 선택)로 교체 — 맥 앱·브라우저·폰이 같은 경험. 스모크가 트리 우클릭 › 이름 바꾸기 → 모달 → ⏎ → 트리 반영을 확인한다. (교훈: 브라우저 전용 동기 대화상자 `prompt`는 셸에서 금지 — `confirm` 도 장기적으로 같은 길.)
+
 **미구현·다음**: Codex(`codex app-server`) · 메뉴바 팝오버(카드에서 바로 승인) · Dropbox 동기화 점 · QR 페어링 · Johnny.Decimal 실제 스캔 규칙 · 규칙 인터뷰(custom) · 개발자 서명·공증.
 
 ## 11. 사실 확인 (2026-09-12)

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Bot, SessionInfo, TodoItem } from '../core/types'
 import { api } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
-import { RoutineSheet } from './Sheets'
+import { RoutineSheet, askName } from './Sheets'
 import { fmtElapsed, fmtTime, useStore } from './store'
 
 export interface SecH { sessions: number; todo: number }
@@ -139,7 +139,7 @@ function Tree({ bot, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFol
   }, [dirs, exp, sort, filter])
   const vaultRel = (rel: string) => (bot.rel ? `${bot.rel}/${rel}` : rel)
   const toggleDir = (rel: string) => setExp((e) => { const n = new Set(e); if (n.has(rel)) n.delete(rel); else n.add(rel); return n })
-  const rename = async (n: Node) => { const name = prompt('새 이름', n.name); if (!name || name === n.name) return; try { const r = await api<{ rel: string }>(`/bots/${bot.id}/rename`, { body: { rel: n.rel, name } }); say(`→ ${r.rel}`); const parent = n.rel.includes('/') ? n.rel.slice(0, n.rel.lastIndexOf('/')) : ''; void loadDir(parent) } catch (e) { say((e as Error).message) } }
+  const rename = async (n: Node) => { const name = await askName(`${n.dir ? '폴더' : '파일'} 이름 바꾸기`, n.name); if (!name || name === n.name) return; try { const r = await api<{ rel: string }>(`/bots/${bot.id}/rename`, { body: { rel: n.rel, name } }); say(`→ ${r.rel}`); const parent = n.rel.includes('/') ? n.rel.slice(0, n.rel.lastIndexOf('/')) : ''; void loadDir(parent) } catch (e) { say((e as Error).message) } }
   return <>
     <button className="sech" onClick={tog}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>파일</span>
       <span className={`tools ${sort !== 'name' || filter !== null ? 'on' : ''}`} onClick={(e) => e.stopPropagation()}>

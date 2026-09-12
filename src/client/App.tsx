@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Bot, ChatItem, NotifyEvent, PermissionMode, PermissionRequest, SessionInfo, SlashCmd } from '../core/types'
 import { api, setToken, token, uploadFile } from './api'
 import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
-import { FolderPicker, Md, NotifyCenter, Onboarding, Pairing, Settings, useToast } from './Sheets'
+import { AskHost, FolderPicker, Md, NotifyCenter, Onboarding, Pairing, Settings, askName, useToast } from './Sheets'
 import { DocPane, useDocs } from './Doc'
 import { Elapsed, Panel, type SecH } from './Panel'
 import { fmtTime, useStore } from './store'
@@ -22,19 +22,32 @@ function useHash(): [Record<string, string>, (p: Record<string, string>) => void
 }
 function useMedia(q: string): boolean { const [m, setM] = useState(() => window.matchMedia(q).matches); useEffect(() => { const mq = window.matchMedia(q); const f = () => setM(mq.matches); mq.addEventListener('change', f); return () => mq.removeEventListener('change', f) }, [q]); return m }
 /** 폰 키보드 — visualViewport 가 창보다 훨씬 낮아지면 열린 것 */
+/**
+ * 키보드 — 루트(#root)를 **시각 뷰포트**(visualViewport)에 맞춘다 (`--vvh`·`--vvt`, 폰 CSS 가 읽는다).
+ * iOS 는 키보드가 뜨면 레이아웃 뷰포트를 줄이기도(브라우저), 안 줄이기도(홈화면 앱·iOS 26) 하고, 닫힌 뒤
+ * 안 돌려주기도 한다(하단 띠). 종전의 «innerHeight − vv.height 만큼 컴포저를 올린다» 는 레이아웃 뷰포트가
+ * 안 줄 때만 맞았고, v14 의 «100vh 고정» 은 반대로 키보드 아래에 컴포저를 묻었다(2026-09-13 Dave 스크린샷).
+ * 시각 뷰포트만이 언제나 «지금 보이는 만큼» 이다 — 그 높이를 루트 높이로 쓰면 컴포저는 늘 키보드 바로 위다.
+ * 열림 판정은 «입력칸에 포커스 + 최대 높이보다 140px 이상 줄었다» — 창 크기 조절·회전을 키보드로 착각하지 않는다.
+ */
 function useKeyboard(): boolean {
   const [kb, setKb] = useState(false)
   useEffect(() => {
     const vv = window.visualViewport; if (!vv) return
+    let maxH = 0, lastW = 0
     const f = () => {
-      // 키보드가 가린 높이 — 레이아웃 뷰포트가 같이 줄었으면(resizes-content) 0, 안 줄었으면 그만큼 컴포저를 올린다
-      const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
-      const open = covered > 140
-      document.documentElement.style.setProperty('--kb', `${covered}px`)
+      if (vv.width !== lastW) { lastW = vv.width; maxH = 0 } // 회전·창 크기 변경 → 기준 다시
+      maxH = Math.max(maxH, vv.height)
+      const ae = document.activeElement as HTMLElement | null
+      const editing = !!ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)
+      const open = editing && maxH - vv.height > 140
+      const st = document.documentElement.style
+      st.setProperty('--vvh', `${Math.round(vv.height)}px`); st.setProperty('--vvt', `${Math.round(vv.offsetTop)}px`)
       setKb(open)
       if (!open) window.scrollTo(0, 0)
     }
-    f(); vv.addEventListener('resize', f); vv.addEventListener('scroll', f); return () => { vv.removeEventListener('resize', f); vv.removeEventListener('scroll', f) }
+    f(); vv.addEventListener('resize', f); vv.addEventListener('scroll', f); window.addEventListener('resize', f); document.addEventListener('focusin', f); document.addEventListener('focusout', () => setTimeout(f, 50))
+    return () => { vv.removeEventListener('resize', f); vv.removeEventListener('scroll', f); window.removeEventListener('resize', f); document.removeEventListener('focusin', f) }
   }, [])
   return kb
 }
@@ -162,7 +175,7 @@ function Main() {
   const hovRow = hov ? stripBots.find((x) => x.b.id === hov.id) : undefined
   // 트리 우클릭 «여기서 에이전트 시작» · «새 폴더 만들기 → 시작» — 볼트 상대 경로로
   const startAt = async (rel: string, botId?: string) => { if (botId) { go(botId); return } if (!bot.orchestrator && !confirm(`상위 봇 ${bot.name} 와 폴더가 겹쳐요. 그래도 여기서 시작할까요?`)) return; try { const b = await api<Bot>('/bots/start', { body: { rel } }); await refresh(); go(b.id); say(`${b.name} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
-  const newFolderAt = async (parent: string) => { const name = prompt(`${parent || '볼트'} 안에 만들 폴더 이름`); if (!name?.trim()) return; try { const r = await api<{ rel: string; bot: Bot }>('/folders', { body: { section: parent, name: name.trim(), start: true } }); await refresh(); go(r.bot.id); say(`${r.rel} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
+  const newFolderAt = async (parent: string) => { const name = await askName(`${parent || '볼트'} 안에 만들 폴더 이름`); if (!name?.trim()) return; try { const r = await api<{ rel: string; bot: Bot }>('/folders', { body: { section: parent, name: name.trim(), start: true } }); await refresh(); go(r.bot.id); say(`${r.rel} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
   const newSession = async () => { const info = await api<SessionInfo>(`/bots/${bot.id}/sessions`, { body: { name: `세션 ${sessions.length + 1}` } }); await refresh(); go(bot.id, info.id) }
   return <div className={`app ${isDesktop ? 'desktop' : ''} ${phone ? 'phone' : ''} ${kb ? 'kb' : ''} ${drag === 'x' ? 'dragx' : drag === 'y' ? 'dragy' : ''}`} data-view={view === 'doc' && !showDoc ? 'panel' : view}>
     {s.online === 'off' ? <div className="offline">{s.hostName || '호스트'} 와 다시 연결하는 중…</div> : null}
@@ -212,6 +225,7 @@ function Main() {
     {modal === 'picker' ? <FolderPicker onClose={() => setModal(null)} onStarted={(b) => { setModal(null); go(b.id); say(`${b.name} 에서 시작했어요`) }} /> : null}
     {modal === 'notify' ? <NotifyCenter onClose={() => setModal(null)} onJump={(n) => { setModal(null); api('/notifications/read', { body: { ids: [n.id] } }).then(refresh); go(n.botId, n.sessionId) }} /> : null}
     {modal === 'settings' ? <Settings onClose={() => setModal(null)} /> : null}
+    <AskHost />
     {toast ? <div className="toast">{toast}</div> : null}
   </div>
 }
@@ -304,7 +318,8 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const [drill, setDrill] = useState<string | null>(null)
   const [drop, setDrop] = useState<'' | 'tree' | 'files'>('')
   const [slash, setSlash] = useState<SlashCmd[]>([]); const [files, setFiles] = useState<FileNode[] | null>(null); const [sel, setSel] = useState(0); const [dismissed, setDismissed] = useState('')
-  const [pinned, setPinned] = useState(false); const [atBottom, setAtBottom] = useState(true)
+  const [pinned, setPinned] = useState(false); const [atBottom, setAtBottom] = useState(true); const atBottomRef = useRef(true); atBottomRef.current = atBottom
+  useEffect(() => { const el = scRef.current; if (!el || typeof ResizeObserver === 'undefined') return; const ro = new ResizeObserver(() => { if (atBottomRef.current) el.scrollTop = el.scrollHeight }); ro.observe(el); return () => ro.disconnect() }, [])
   const [draft, setDraft] = useState<{ model?: string; effort?: string; permissionMode?: PermissionMode }>({})
   const fileRef = useRef<HTMLInputElement>(null); const endRef = useRef<HTMLDivElement>(null); const taRef = useRef<HTMLTextAreaElement>(null); const scRef = useRef<HTMLDivElement>(null); const footRef = useRef<HTMLDivElement>(null); const colRef = useRef<HTMLDivElement>(null); const lastUserRef = useRef<HTMLDivElement | null>(null)
   const state = cur?.state ?? 'idle'; const running = state === 'running'
@@ -454,7 +469,7 @@ function Item({ it, bot, items, onFile, onDrill, state, say, isLastAssistant, is
   switch (it.kind) {
     case 'user': return <div className={`umsg ${isLastUser ? 'last' : ''}`} ref={isLastUser ? userRef : undefined}>{it.text}</div>
     case 'assistant': return <div><Md text={it.text || ' '} streaming={!!it.streaming} />{!it.streaming && isLastAssistant ? <div className="acts-row"><button onClick={() => { navigator.clipboard?.writeText(it.text); say('복사했어요') }} title="복사"><Icon n="doc" size={13} />복사</button>{onRetry && state !== 'running' ? <button onClick={onRetry} title="같은 질문 다시"><Icon n="undo" size={13} />다시</button> : null}<span>{fmtTime(it.t)}</span></div> : null}</div>
-    case 'thinking': return <div><button className={`meta ${open ? 'open' : ''}`} onClick={() => setOpen(!open)}><span>생각</span>{!open ? <span className="tx">· {it.text.trim() ? it.text.replace(/\s+/g, ' ').slice(0, 100) : it.streaming ? '생각 중…' : '(내용 없음)'}</span> : null}<Icon n={open ? 'chevd' : 'chev'} size={9} /></button>{open ? <div className="think">{it.text.trim() ? it.text : it.streaming ? '생각 중…' : '모델이 생각 내용을 돌려주지 않았어요.'}</div> : null}</div>
+    case 'thinking': return <div><button className={`meta ${open ? 'open' : ''}`} onClick={() => setOpen(!open)}><span>생각</span>{!open ? <span className="tx">· {it.text.trim() ? it.text.replace(/\s+/g, ' ').slice(0, 100) : it.streaming ? '생각 중…' : '(내용 없음)'}</span> : null}<Icon n={open ? 'chevd' : 'chev'} size={9} /></button>{open ? <div className="think">{it.text.trim() ? it.text : it.streaming ? '생각 중…' : 'Claude Code 가 headless 출력에서는 생각 내용을 주지 않아요 (서명만 옵니다).'}</div> : null}</div>
     case 'tool': return <ToolLine it={it} onFile={onFile} base={bot.abs} />
     case 'subagent': { const kids = items.filter((x) => x.kind === 'tool' && x.parentId === it.id) as Tool[]; return <div className="sub"><div className="l"><button className="ib" style={{ width: 18, height: 18, marginLeft: -4 }} onClick={() => setOpen(!open)}><Icon n={open ? 'chevd' : 'sub'} size={12} /></button><span className="nm">{it.name}</span>{it.status === 'run' ? <span className="spin run" /> : <Icon n={it.status === 'error' ? 'x' : 'check'} size={11} color={it.status === 'error' ? 'var(--err)' : 'var(--done)'} />}<span className="m">{it.status === 'run' ? '실행 중' : it.status === 'error' ? '실패' : '끝남'} · 도구 {it.tools}회{it.last ? <> · <span className="mono">{it.last}</span></> : null}</span><button className="op" onClick={() => onDrill(it.id)}>열기 <Icon n="chev" size={10} /></button></div>{open ? <div className="in">{kids.slice(-4).map((k) => <ToolLine key={k.id} it={k} onFile={onFile} base={bot.abs} />)}{it.result && it.status !== 'run' ? <div className="meta" style={{ whiteSpace: 'pre-wrap' }}>{it.result.slice(0, 300)}</div> : null}{!kids.length ? <div className="meta">아직 도구를 안 썼어요</div> : null}</div> : null}</div> }
     case 'todos': return <TodoWidget it={it} stopped={state !== 'running'} />

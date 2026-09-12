@@ -45,6 +45,8 @@ function sha256(file) { return new Promise((resolve, reject) => { const h = crea
 /** 최신 릴리스 조회 — 현재보다 새 버전이 있으면 {version, zipUrl, shaUrl, size, notes} */
 async function latest() {
   const r = await get(`https://api.github.com/repos/${REPO}/releases?per_page=30`)
+  // 404 = 리포가 비공개(또는 이름이 바뀜) — GitHub 은 비공개 리포를 익명에게 404 로 숨긴다. 앱에는 토큰이 없다
+  if (r.status === 404) throw new Error(`releases HTTP 404 — ${REPO} 가 비공개라 앱이 못 봅니다 (리포를 공개로 바꾸거나 릴리스 전용 공개 리포 필요)`)
   if (r.status !== 200) throw new Error(`releases HTTP ${r.status}`)
   return pickLatest(JSON.parse(r.body), app.getVersion())
 }

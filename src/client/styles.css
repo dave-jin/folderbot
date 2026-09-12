@@ -68,10 +68,10 @@ b,strong { color:var(--w); font-weight:600 }
 .col.chat { position:relative; --footh:132px }
 .chat-hdr { position:absolute; left:0; right:0; top:0; z-index:4; border-bottom:1px solid var(--hair) }
 .chat-scroll { position:absolute; inset:0; overflow:auto; display:flex; flex-direction:column; overscroll-behavior:contain }
-.chat-body { display:flex; flex-direction:column; gap:16px; padding:calc(var(--hh) + 22px) 24px calc(var(--footh) + var(--kb, 0px) + 12px); width:100%; max-width:760px; align-self:center; flex:1 }
+.chat-body { display:flex; flex-direction:column; gap:16px; padding:calc(var(--hh) + 22px) 24px calc(var(--footh) + 12px); width:100%; max-width:760px; align-self:center; flex:1 }
 .pinq { position:absolute; top:calc(var(--hh) + 10px); left:50%; transform:translateX(-50%); width:calc(100% - 48px); max-width:712px; z-index:4; border:1px solid var(--hair); border-radius:8px; padding:8px 14px; color:var(--w); font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:0 8px 24px rgba(0,0,0,.35); cursor:pointer; animation:fadein .18s ease-out }
 .tobot { position:absolute; left:50%; transform:translateX(-50%); bottom:calc(var(--footh) + 14px); z-index:5; width:32px; height:32px; animation:fadein .18s ease-out } .tobot .dot { position:absolute; right:-1px; top:-1px; width:8px; height:8px; border:2px solid var(--bg) }
-.chat-foot { position:absolute; left:0; right:0; bottom:var(--kb, 0px); z-index:5; display:flex; flex-direction:column; align-items:center; padding:0 24px 8px; pointer-events:none } .chat-foot > * { pointer-events:auto }
+.chat-foot { position:absolute; left:0; right:0; bottom:0; z-index:5; display:flex; flex-direction:column; align-items:center; padding:0 24px 8px; pointer-events:none } .chat-foot > * { pointer-events:auto }
 .chat-foot::before { content:''; position:absolute; left:0; right:0; top:-56px; bottom:0; background:linear-gradient(180deg, rgba(20,20,20,0) 0%, rgba(20,20,20,.88) 40%, rgba(24,24,24,.96) 100%); pointer-events:none; z-index:-1 }
 .chat-foot .queue, .chat-foot .files { width:100%; max-width:712px; margin-bottom:8px }
 .umsg { background:var(--box); border-radius:8px; padding:11px 14px; color:var(--w); white-space:pre-wrap; word-break:break-word }
@@ -147,6 +147,7 @@ b,strong { color:var(--w); font-weight:600 }
 /* ── 모달 · 대화상자 ── */
 .backdrop { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:40 }
 .modal { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); width:min(640px,calc(100% - 24px)); max-height:calc(100% - 24px); background:var(--sb); border:1px solid var(--line2); border-radius:12px; box-shadow:0 24px 60px rgba(0,0,0,.6); display:flex; flex-direction:column; overflow:hidden; z-index:42 }
+.modal.ask { z-index:90 } .modal.ask + .backdrop, .modal.ask ~ .backdrop { z-index:89 } .askin { width:100%; background:var(--bg); border:1px solid var(--line2); border-radius:8px; padding:9px 12px; font-size:14px; color:var(--w); outline:0 } .askin:focus { border-color:var(--t3) }
 .modal-h { display:flex; align-items:flex-start; gap:12px; padding:16px 18px 10px } .modal-h .t { display:flex; flex-direction:column; gap:2px; flex:1 } .modal-h .t b { font-weight:600; color:var(--w); font-size:15px } .modal-h .t small { color:var(--t3); font-size:12px }
 .modal-b { overflow:auto; padding:0 10px 8px; display:flex; flex-direction:column; gap:1px } .modal-f { display:flex; align-items:center; gap:10px; padding:12px 18px 16px; border-top:1px solid var(--line); flex-wrap:wrap } .modal-f .sp { flex:1 }
 .sheet { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); width:min(820px,calc(100% - 24px)); height:min(640px,calc(100% - 24px)); background:var(--sb); border:1px solid var(--line2); border-radius:12px; box-shadow:0 24px 60px rgba(0,0,0,.6); display:flex; flex-direction:column; z-index:41; overflow:hidden }
@@ -194,7 +195,8 @@ b,strong { color:var(--w); font-weight:600 }
   .app[data-view="panel"] .cols > .rpwrap { display:flex !important }
   html,body,#root { background:var(--bg2) }
   .app { background:linear-gradient(180deg, var(--bg) 0%, var(--bg) 55%, var(--bg2) 100%) }
-  @media (display-mode: standalone) { #root { bottom:auto; height:100vh } }
+  /* 루트 = 시각 뷰포트 (useKeyboard 가 --vvh/--vvt 를 쓴다) — 키보드가 뜨면 그만큼 줄고, 닫히면 돌아온다. 레이아웃 뷰포트를 믿지 않는다 */
+  #root { top:var(--vvt, 0px); bottom:auto; height:var(--vvh, 100%) }
   .col, .col.side { background:transparent }
   /* 홈 */
   .mhome { flex-direction:column; position:relative; overflow:hidden }
@@ -211,7 +213,7 @@ b,strong { color:var(--w); font-weight:600 }
   .col.chat { --footh:150px }
   .chat-hdr.hdr { height:auto; padding:calc(var(--sat) + 24px) 16px 10px; border-bottom:0; background:linear-gradient(180deg, rgba(20,20,20,.94) 0%, rgba(20,20,20,.6) 70%, rgba(20,20,20,0) 100%); backdrop-filter:none; -webkit-backdrop-filter:none; gap:10px }
   .bpill { display:inline-flex; align-items:center; gap:8px; height:44px; padding:0 14px 0 8px; border-radius:22px; border:1px solid var(--hair); max-width:calc(100% - 118px); min-width:0 } .bpill b { font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 }
-  .chat-body { padding:calc(var(--sat) + 84px) 18px calc(var(--footh) + var(--kb, 0px) + 10px); gap:14px; font-size:16px; line-height:1.6 }
+  .chat-body { padding:calc(var(--sat) + 84px) 18px calc(var(--footh) + 10px); gap:14px; font-size:16px; line-height:1.6 }
   .pinq { top:calc(var(--sat) + 74px); width:calc(100% - 36px); border-radius:14px; padding:10px 14px; font-size:15px }
   .tobot { width:40px; height:40px }
   .chat-foot { padding:0 0 calc(var(--sab) + 2px) }
@@ -242,5 +244,6 @@ b,strong { color:var(--w); font-weight:600 }
   .todo .tools { visibility:visible; background:linear-gradient(90deg, rgba(20,20,20,0), var(--bg) 30%) } .todo .tt .sp { display:block } .todo .more { background:linear-gradient(90deg, rgba(20,20,20,0), var(--bg) 50%) } .pk .fl .hint { display:none }
   .modal, .sheet { left:8px; right:8px; top:calc(var(--sat) + 8px); bottom:calc(var(--sab) + 8px); width:auto; height:auto; max-height:none; transform:none; border-radius:16px }
   .modal-b { flex:1 } .modal-h { padding-top:18px }
+  .modal.ask { top:calc(var(--sat) + 48px); bottom:auto; height:auto; left:12px; right:12px }
   .menu.ctx { left:16px !important; right:16px; top:auto !important; bottom:calc(var(--sab) + 16px); border-radius:16px; padding:8px } .menu.ctx button { min-height:48px; font-size:16px; padding:8px 14px; border-radius:10px }
 }

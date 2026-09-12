@@ -283,6 +283,21 @@ export class SessionManager extends EventEmitter {
   private thinking = new Map<string, ChatItem & { kind: 'thinking' }>()
   /** 생각 스트림을 렌더러로 보낸 마지막 시각 — 길이 나머지(%40)로 던지면 큰 청크가 오는 모델에서 한 번도 안 맞아 화면이 비어 있었다 */
   private thinkSent = new Map<string, number>()
+  /** 생각 항목을 채팅에 넣었나 — 본문이 생기기 전엔 넣지 않는다. 실측(CLI 2.1.269 `-p`, Opus 5·Sonnet 5·Haiku 4.5 전부):
+   *  thinking 블록과 delta 가 오지만 `thinking` 은 빈 문자열이고 서명만 있다. 즉 headless 출력은 생각 내용을 주지 않는다.
+   *  그러니 빈 «생각 · (내용 없음)» 행을 도구마다 남기지 말고, 생각 중임은 상태줄(activity)로만 보인다. */
+  private thinkShown = new Set<string>()
+  /** 생각 블록 마감 — 본문이 있으면 채팅에 남기고(이미 보였으면 교체), 없으면 조용히 버린다 */
+  private endThinking(r: SessionRec, extra: string[] = []): void {
+    const th = this.thinking.get(r.id)
+    if (!th) { for (const t of extra) this.push(r, { id: itemId('th'), t: Date.now(), kind: 'thinking', text: t }); return }
+    this.thinking.delete(r.id); this.thinkSent.delete(r.id)
+    if (!th.text.trim() && extra.length) th.text = extra.join('\n\n')
+    th.streaming = false
+    const shown = this.thinkShown.delete(r.id)
+    if (!th.text.trim()) return
+    if (shown) this.push(r, th, true); else this.push(r, th)
+  }
   private activityAt = new Map<string, number>()
   /** «지금 하는 일» 한 줄 — 0.4초에 한 번만 밖으로 (토큰마다 쏘지 않는다) */
   private setActivity(r: SessionRec, text: string, force = false): void {
@@ -312,10 +327,11 @@ export class SessionManager extends EventEmitter {
         this.setActivity(r, '답 쓰는 중')
       } else if (ev?.type === 'content_block_delta' && ev.delta?.type === 'thinking_delta' && !parent) {
         let th = this.thinking.get(r.id)
-        if (!th) { th = { id: itemId('th'), t: Date.now(), kind: 'thinking', text: '', streaming: true }; this.thinking.set(r.id, th); r.items.push(th) }
+        if (!th) { th = { id: itemId('th'), t: Date.now(), kind: 'thinking', text: '', streaming: true }; this.thinking.set(r.id, th) }
         th.text += ev.delta.thinking ?? ''
-        const now = Date.now(); if (now - (this.thinkSent.get(r.id) ?? 0) > 150) { this.thinkSent.set(r.id, now); this.emit('chat', r.id, th, true) }
-        this.setActivity(r, `생각 중 · ${th.text.slice(-90).replace(/\s+/g, ' ')}`)
+        if (th.text.trim() && !this.thinkShown.has(r.id)) { this.thinkShown.add(r.id); r.items.push(th) }
+        const now = Date.now(); if (this.thinkShown.has(r.id) && now - (this.thinkSent.get(r.id) ?? 0) > 150) { this.thinkSent.set(r.id, now); this.emit('chat', r.id, th, true) }
+        this.setActivity(r, th.text.trim() ? `생각 중 · ${th.text.slice(-90).replace(/\s+/g, ' ')}` : '생각 중')
       }
       this.setState(r, { kind: 'stream_activity' })
       return
@@ -324,10 +340,7 @@ export class SessionManager extends EventEmitter {
       const sub = this.subOf(r, parent)
       const text = assistantText(line)
       if (!parent) {
-        const th = this.thinking.get(r.id)
-        const blocks = (line.message?.content ?? []).filter((b) => b.type === 'thinking' && typeof b.thinking === 'string').map((b) => String(b.thinking)).filter(Boolean)
-        if (th) { if (!th.text.trim() && blocks.length) th.text = blocks.join('\n\n'); th.streaming = false; this.thinking.delete(r.id); this.thinkSent.delete(r.id); this.push(r, th, true) }
-        else for (const t of blocks) this.push(r, { id: itemId('th'), t: Date.now(), kind: 'thinking', text: t })
+        this.endThinking(r, (line.message?.content ?? []).filter((b) => b.type === 'thinking' && typeof b.thinking === 'string').map((b) => String(b.thinking)).filter((t) => t.trim()))
         const cur = this.streaming.get(r.id)
         if (text) {
           if (cur) { cur.text = text; cur.streaming = false; this.streaming.delete(r.id); this.push(r, cur, true) }
@@ -372,7 +385,7 @@ export class SessionManager extends EventEmitter {
     if (line.type === 'result') {
       if (parent) return
       const cur = this.streaming.get(r.id); if (cur) { cur.streaming = false; this.streaming.delete(r.id); this.push(r, cur, true) }
-      const th = this.thinking.get(r.id); if (th) { th.streaming = false; this.thinking.delete(r.id); this.push(r, th, true) }
+      this.endThinking(r)
       for (const it of r.items) if (it.kind === 'subagent' && it.status === 'run') { it.status = 'done'; this.push(r, it, true) }
       this.push(r, { id: itemId('r'), t: Date.now(), kind: 'result', ok: !line.is_error, durationMs: line.duration_ms ?? 0, costUsd: line.total_cost_usd, error: line.is_error ? String(line.error ?? line.result ?? '') : undefined })
       const ctx = contextOf(line); if (ctx) r.ctx = ctx
