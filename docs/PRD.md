@@ -1,194 +1,246 @@
-# Rondo V1 — PRD (정식 버전)
+# Project Bot — PRD
 
-> **버전**: v0.2 · 2026-09-12 · **초안 — Dave 와 함께 수정 중. 코드 작업 금지, 계획만.**
-> **관계**: 알파(베타) = `dave-jin/rondo-app` v0.0.359 (동결 예정) · 정식 V1 = 이 리포 `dave-jin/rondo` (v1.0.0 부터)
-> **알파 PRD**: `PARA/3. Area/제품_Rondo/PRD.md` v3.3 — V1 이 계승하는 개념(론도·그룹·마에스트로·컨텍스트 3축·상태 언어·편집기 골든 스펙)은 거기 정의를 그대로 따른다. 이 문서는 **바뀌는 것**만 적는다.
+> **버전**: v0.3 · 2026-09-12 · **초안 — Dave 와 함께 수정 중. 코드 작업 금지, 계획만.**
+> **가제**: **Project Bot** (Dave 2026-09-12). 리포는 당분간 `dave-jin/rondo` 를 그대로 쓴다.
+> **위치**: 완전히 새로운 프로덕트. Rondo 알파(`rondo-app`)는 **부품 창고**로만 쓴다 (부록 A). 알파의 결정·이력은 이 문서에 적지 않는다.
+> **1차 레퍼런스**: xAI **Grok Bot** (2026-08 베타). 2차: Claude Code Remote Control · Codex Remote · Cursor Cloud Agents.
 
 ---
 
 ## 0. 한 줄 정의
 
-**Mac mini 가 나의 개인 클라우드가 되고, Rondo 가 그 위에서 어디서든 여는 원격 에이전트 IDE 가 된다.**
+**내 Mac mini 위에서 사는, 폴더마다 하나씩 붙는 AI 동료들 — 그리고 그들을 PARA 로 관제하는 오케스트레이터.**
 
-알파는 *"내 맥에서 여는 에이전트 워크스페이스"* 였다. V1 은 *"항상 켜진 Mac mini 에서 세션이 살고, 나는 PC·폰 어디서든 붙어서 지시하고 확인한다"* 로 바뀐다. 화면은 알파를 차용하되, **세션이 사는 곳(호스트)과 보는 곳(클라이언트)이 분리**되는 것이 근본 변화다.
+Grok Bot 이 *"봇마다 클라우드 컴퓨터 하나"* 라면, Project Bot 은 *"내 컴퓨터(Mac mini) 하나에 **폴더마다 봇 하나**"* 다. 봇을 만들지 않는다 — **폴더가 생기면 봇이 생긴다.** 어디서든(PC·iPhone·Android) 동료에게 말 걸듯 봇에게 말하고, 봇은 그 폴더의 지침·기억·자료를 들고 Mac mini 에서 일한다. 내 폰이 꺼져도 일은 계속된다.
 
-## 1. Dave 의 목표 (2026-09-12 원문 요지)
+## 1. 문제
 
-1. 원격 세션의 **환경 구축 비용**이 너무 크다 → 모든 작업(Claude·Codex)을 **Mac mini 에서** 돌린다. Mac mini = 원격 세션의 메인 공간.
-2. PC·iPhone·Android 어디서든 접속해 **세션을 보고 직접 지시**한다. 화면을 덮거나 폰이 꺼져도 세션은 계속 돈다. 다시 켜면 같은 세션에 붙어 진행을 본다.
-3. 구성은 둘: **① Mac mini 에 설치하는 호스트 앱** · **② 어디서든 붙는 클라이언트**.
-4. 로그인은 **구글 로그인**. 세션을 내 컴퓨터처럼 관리한다.
-5. 장점: Mac mini 의 저장공간·리소스 · **Dropbox 볼트** 그대로 · 리포 클론이 쉬움 · 자료 전달이 쉬움.
-6. **알파 Rondo 의 화면이 원격 화면**이 된다. 세션을 열고 접근 폴더를 지정하면 그 안에서 파일 생성·세션 실행이 원격으로 전부 가능해야 한다.
-7. 고민: Dropbox 와 동기화됐는지 어떻게 확인하나.
+1. **환경이 곧 병목이다.** 원격 세션(Claude Code on the web 등)은 매번 환경을 새로 만든다 — 클론·의존성·자격증명·볼트 접근. 내 Mac mini 에는 그 전부가 이미 있다.
+2. **세션이 폴더를 모른다.** 지금은 세션을 열 때마다 사람이 폴더를 고르고 맥락을 다시 주입한다. 일은 이미 PARA 폴더로 나뉘어 있는데, 도구는 그 구조를 모른다.
+3. **관제탑이 없다.** 프로젝트 N 개가 병행되는데 "지금 어디서 무엇이 돌고 있고, 무엇이 내 결정을 기다리나" 를 한 곳에서 못 본다.
+4. **책상을 떠나면 끊긴다.** 이동 중·소파에서 승인 하나 누르고 한 줄 지시하는 것이 실제 사용 형태인데, 세션은 노트북 뚜껑과 운명을 같이한다.
 
-### 1.1 🔴 반박 먼저 — 이 목표는 2주 전 결정과 정면으로 충돌한다
+## 2. 레퍼런스와 차이점
 
-볼트 `01_기획/` 의 기록을 시간순으로 놓으면 이렇다.
-
-| 날짜 | 결정 | 근거 |
-|---|---|---|
-| 08-28 | **Main/Remote 2체제** — Mac mini 에 Rondo Main(볼트의 유일한 주인), 나머지 기기는 Remote 창. 전송은 Tailscale(T1) | 두 맥이 같은 볼트를 각자 쓰다 `workspace.json` 충돌 → *"주인을 한 명으로"* |
-| 08-28~09-01 | Remote v1·v2 **출시** (v0.0.305~0.0.329) — 같은 renderer 를 브라우저에서 띄우는 shim, 페어링, SSE, 폰 3층 레이아웃 | |
-| 09-02 | 릴레이(Cloudflare DO) 기획 — 폰의 Tailscale 마찰을 없애려고 | |
-| **09-05** | **Remote 폐기.** *"맥미니엔 Rondo 를 설치하지 않고 원격 제어만 … Tailscale 로 Rondo 를 보는 방식은 완전히 폐기"* → 미니 = 일꾼, 폰 = 터미널 스트림 + 프롬프트, 핸드오프는 Dropbox | *"사용성이 별로"* · 폰에 Tailscale 필요 · **맥북을 닫으면 죽는다** |
-| 09-06 | 🔴 실측: 미니의 헤드리스 `claude` 가 **키체인을 못 읽는다**(SSH·launchd·osascript 전부 실패). 사람이 GUI 로 띄운 `tmux -L rondo` + `/login` 만 된다 | |
-| **09-12 (오늘)** | **"모든 작업을 Mac mini 에서 · 알파 화면이 원격 화면 · 어디서든 접속"** | = **08-28 모델로 복귀**, 그것도 더 강하게(미니가 "넘겨받는 곳"이 아니라 **유일한 작업 장소**) |
-
-**짚어야 할 것.** 09-05 의 폐기 사유 세 개 중 **두 개는 오늘 전제에서 사라진다** — "맥북을 닫으면 죽는다"는 호스트가 미니면 성립하지 않고, "미니에 Rondo 를 안 깐다"는 오늘 스스로 뒤집었다. **남는 사유는 하나, 폰 쪽 접속 마찰(Tailscale)** 이고, 그래서 오늘 "구글 로그인"이 나온 것으로 읽는다. 따라서 V1 의 진짜 새 결정은 *"원격 화면을 만드나"* 가 아니라 **"폰이 미니에 어떻게 닿고 누구로 로그인하나"** 다 (§4 Q2). 이 해석이 틀리면 알려 달라 — 아래 전부가 여기에 기댄다.
-
-또 하나: 알파 `todo.md` 의 **S 트랙(S0~S6, 핸드오프·러너)** 은 오늘 결정과 어긋난다. 미니가 유일한 작업 장소면 "맥북 → 미니로 넘기기"는 필요 없다. **S 트랙은 중단하고 V1 로 흡수**하는 것을 제안한다 (§4 Q8).
-
-## 2. 가능성 판정 — **가능하다. 절반은 이미 알파 안에 있다.**
-
-| 필요한 것 | 이미 있는 것 (2026-09-12 확인) | V1 이 할 일 |
-|---|---|---|
-| 폰·PC 에서 붙을 서버 | 알파 `main/RemoteGateway.ts` 685줄 — 페어링(6자리·메일)·기기별 토큰·RPC·SSE·정적 서빙·쓰기 정책. **출시됨** | 호스트 데몬의 뼈대로 승계 |
-| 알파 화면을 브라우저에서 | 알파 `src/remote/` 578줄 — `electron` 모듈을 HTTP 로 바꿔치는 shim. renderer 46,000줄이 **한 줄도 안 바뀌고** PWA 로 뜬다. 폰 3층 레이아웃(CSS 만) | 승계. 단 V1 은 shim 이 아니라 **이 경로가 기본**이 된다 (§3 원칙 4) |
-| 접속·로그인 | 알파 `main/Tailnet.ts` — Tailscale 상태·`up`. Tailscale 은 **구글 계정 로그인** · `serve` 로 HTTPS + identity 헤더 · iOS/Android 앱 | Q2 에서 확정 |
-| Claude 세션을 미니에 살려두기 | `claude -p --stream-json` 상주 워커 + 절전/기상(r420) + 세션 소유권(r490) + 트랜스크립트 `~/.claude/projects/` | 승계. 🔴 단 **미니 인증 벽**(§2.1) |
-| 벤더 대안 | **Claude Code Remote Control**(GA 2026-08): `claude remote-control` 서버 모드, 동시 32세션, 4시간 내 복귀, Anthropic 릴레이, Claude 앱 | 안 짓는다. "이 론도만 Claude 앱으로" 딥링크로 남긴다 |
-| Codex | 알파 `CodexSession.ts`(턴마다 `codex exec --json` 스폰). 공식 경로는 **`codex app-server`**(JSON-RPC, `thread/resume`) | app-server 로 교체 (Q4) |
-| Dropbox 동기화 확인 | 없음. Finder 아이콘뿐 | `content_hash` 대조 (§6) |
-| 폰 푸시 | 없음 (맥 알림·메일뿐) | PWA Web Push (§7 M4) |
-
-### 2.1 🔴 리스크 1 — 미니의 헤드리스 인증 벽 (2026-09-06 실측)
-
-미니에서 `claude` 는 **사람이 GUI 로 띄운 셸의 자손**일 때만 키체인을 읽는다. SSH·LaunchAgent(Aqua 포함)·`osascript` 전부 실패했고, 최종적으로 `tmux -L rondo` + `/login` 으로만 됐다. 이 사실이 V1 호스트의 **기동 방식을 결정**한다.
-
-- 가설(미검증): 실패의 실제 원인은 9/4 CLI 갱신으로 실행 파일 경로가 바뀌어 **키체인 ACL** 이 어긋난 것이고, `/login` 이 그걸 고쳤다. 그렇다면 `/login` 이후에는 **로그인 항목(Login Items)으로 자동 실행되는 GUI 앱**(= 알파 Rondo.app 와 같은 방식)이 키체인을 읽을 가능성이 높다 — 맥북의 알파가 정확히 그 조건으로 돈다.
-- **M0 에서 첫 번째로 재는 것**: 미니 재부팅 → 자동 로그인 → 로그인 항목으로 뜬 Rondo 호스트가 `claude` 를 띄워 `loggedIn:true` 인가. 되면 launchd 문제는 끝. 안 되면 호스트는 "사람이 한 번 띄우는 앱" 으로 남고, 죽음 감시만 launchd 가 한다(09-05 기획 §2 의 결론과 같음).
-- ⛔ `--bare` + API 키는 대안이 아니다 — Max 구독이 아니라 종량 과금이 된다.
-- 알파 `main/Auth.ts` 의 `loggedIn:false` 판정은 헤드리스에서 **"못 읽었다"를 "로그아웃"으로 오판**한다 — V1 은 3갈래(로그인·로그아웃·**이 문맥에선 모름**)로 가른다.
-
-### 2.2 리스크 2~4
-
-2. **미니가 항상 깨어 있고 로그인돼 있어야 한다.** 절전 0 · 자동 로그인 · 재부팅 후 자동 복귀가 호스트의 첫 책임. Codex Remote(벤더 앱)도 같은 조건을 요구한다.
-3. **Dropbox.** 알파에서 세 번 사고났다 — 충돌 사본이 수정을 되돌림(r453) · `node_modules` 심링크 파괴(r484·r532) · 볼트 경로 NFD(r422). V1 은 **리포는 Dropbox 밖, 볼트만 안**, 볼트는 오프라인 사용 가능 고정.
-4. **알파의 구조 부채를 그대로 들고 오면 "새로 만든" 의미가 없다.** `main/index.ts` 6,699줄 · `App.tsx` 20,000줄+ · 채팅 로그 정본이 두 곳(`~/.claude` 트랜스크립트 + `.aiworkspace/chats/`) · 두 화면이 동시에 론도를 만들면 last-write-wins · `RemoteLiveState` 처럼 "선언만 하고 안 이은" 계약. **재작성 대상은 이것들**이다 (§5).
-
-## 3. 시스템 구성 (제안)
-
-```
-[ Mac mini — 항상 켜짐 · 자동 로그인 ]
-  rondo-host  (GUI 로그인 항목으로 뜨는 앱 — 창 없음 · 트레이만)   ← 리스크 1 때문에 "데몬"이 아니라 "창 없는 GUI 앱"
-   ├─ 세션 엔진   Claude: stream-json 상주 워커(알파 승계) · 절전/기상 · 소유권 락
-   │              Codex : codex app-server (JSON-RPC 상주)
-   ├─ 워크스페이스 .aiworkspace/workspace.json (알파 스키마 유지) · 론도/그룹/마에스트로 · 유일한 writer
-   ├─ 채팅 정본   호스트가 단일 소유 (`chat:append`) — 화면은 캐시만 (알파 TODO 168 의 미결을 여기서 끝냄)
-   ├─ 파일 API    볼트 트리·읽기/쓰기·감시 · Dropbox content_hash 대조
-   ├─ 볼트 MCP    vault_* · rondo_* (알파 §5.4·§5.5 승계)
-   ├─ 이벤트      SSE(알파 승계, 의존성 0) — 상태 머신 브로드캐스트
-   ├─ 푸시        Web Push (VAPID) — Fermata·Coda 를 폰으로
-   └─ 인증        페어링 토큰(알파 승계) + Tailscale identity 헤더 → Q2
-        ▲ tailnet HTTPS (tailscale serve)  ← Q2 에서 릴레이 이음매를 함께 정한다
-        │
-[ 클라이언트 — 아무 기기 ]
-  rondo-client  웹(PWA) — 알파 renderer 를 **IPC 없이** 프로토콜 클라이언트로 이식. 데스크톱 4열 · 폰 3층
-  rondo-desktop 얇은 macOS 셸 — 같은 클라이언트 + 네이티브 알림·파일 대화상자·트레이 (알파 `--remote <url>` 모드의 정식판)
-  (+ Claude 앱 / ChatGPT 앱 딥링크 — "이 론도만 벤더 앱으로")
-```
-
-**원칙 (알파 §2 계승 + V1 추가)**
-1. 파일이 진실 — 볼트·세션 파일 모두 미니 디스크의 평범한 파일. 호스트가 죽어도 `claude --resume` 이 터미널에서 된다.
-2. CLI 네이티브 유지 — 세션은 벤더 CLI 가 소유. Rondo 는 스폰·관찰·지휘만.
-3. **호스트가 유일한 주인** — 볼트를 쓰고 에이전트를 띄우는 프로세스는 세상에 하나. 클라이언트는 절대 파일을 직접 안 만지고 에이전트를 안 띄운다 (08-28 기획의 핵심을 구조로 강제).
-4. **로컬은 원격의 특수 경우** — 같은 맥에서 호스트+클라이언트를 띄우면 알파와 같은 경험. 코드 경로는 하나. Electron IPC 결합은 V1 에 없다.
-5. HITL 은 어느 기기에서든 보인다 — Fermata 는 폰 푸시로 온다.
-6. **"아직 모른다" 상태를 둔다** — 인증·락·동기화 판정에 참/거짓 외 제3값 (알파 LESSONS §7).
-
-## 4. 먼저 정해야 하는 갈림길 (Dave 결정)
-
-| # | 질문 | 추천 1안 | 대안 | 왜 갈리나 |
-|---|---|---|---|---|
-| **Q1** | 폰에서 무엇까지 | **알파 Remote 와 같게 — 전체 화면(레일·채팅·문서·TODO), 폰은 3층** | 09-05 안(터미널 스트림 + 입력만) · 벤더 앱만 | Dave 오늘 원문: *"알파 화면이 원격 화면"*. 이미 만들어져 있어 비용도 낮다 |
-| **Q2** 🔴 | 폰이 미니에 어떻게 닿고 누구로 로그인하나 | **Tailscale** — 구글 계정 로그인이 곧 Tailscale 로그인. 포트 0. + **릴레이 이음매**(전송 추상화)만 미리 파 둔다 | 자체 릴레이(09-02 B안, 서버 운영 + 자체 구글 OAuth) · Tailscale Funnel(공개 URL + 자체 구글 OAuth) | 09-05 폐기 사유 중 유일하게 남은 것. "구글 로그인"이 **Tailscale 로 충족되면** 서버를 안 굴린다. 안 되면(폰에 앱 못 깐다 등) 릴레이가 V1 범위로 들어오고 일정이 한 달 늘어난다 |
-| **Q3** | Claude 세션 엔진 | **알파 stream-json 상주 워커 승계** (절전·기상·권한 stdio·소유권 락 검증됨) | Agent SDK(TS) 로 교체 | SDK 도 결국 같은 CLI 를 감싼다. 재작성 이득이 검증된 코드를 버리는 손실보다 작다. SDK 는 `listSessions()` 같은 조회에만 |
-| **Q4** | Codex | `codex app-server` JSON-RPC 상주 | 알파 `exec --json` 턴별 스폰 | app-server 가 데스크톱 앱·VS Code 가 쓰는 공식 경로. 턴별 스폰은 컨텍스트·큐 처리가 취약 |
-| **Q5** | 데스크톱 셸 | **웹 클라이언트가 정본, macOS 셸은 얇게(Electron 유지 — node-pty·알림·자동 업데이트 코드 재사용)** | Tauri 로 교체 | 셸이 하는 일이 작아지므로 프레임워크 교체 이득이 작다. 알파 배포·업데이트 파이프라인 재사용 |
-| **Q6** | 알파 → V1 전환 | 알파 **동결·태그**, V1 은 별도 앱 id 로 미니에 설치. 병행 기간엔 **V1 만 볼트를 연다** | 자동 업데이트로 밀어넣기 | 같은 볼트에 주인이 둘이면 08-28 사고 재현 |
-| **Q7** | 기획 정본 위치 | **이 리포 `docs/PRD.md`**, PARA 엔 링크 | 알파처럼 PARA | 원격 세션(이 세션 포함)이 PARA 를 항상 읽지는 못한다 |
-| **Q8** | 알파 S 트랙(핸드오프·러너) | **중단 → V1 로 흡수** (미니가 유일 호스트면 "넘기기"가 필요 없다) | 계속 진행 | 오늘 결정과 어긋난다. S0 의 인증 실측만 V1 M0 로 가져온다 |
-
-## 5. 알파에서 무엇을 가져오고 무엇을 버리나
-
-### 5.1 자산 인벤토리 (2026-09-12 탐색)
-
-| 층 | 알파 자산 | 규모 | V1 판정 |
+| | Grok Bot | Claude Code Remote Control | **Project Bot** |
 |---|---|---|---|
-| 개념·스키마 | `core/workspaceMerge.ts` (`WorkspaceDoc`: tasks·railOrder·pinned·maestro·rev·tombstones) · `.aiworkspace/{workspace.json,chats/,undo/,structure.yml,harness.json}` | — | **그대로** — 마이그레이션 0 |
-| 원격 계약 | `core/remoteContract.ts` 243줄 — 프레임·에러코드·`REMOTE_WRITE_POLICY` 22채널 | S | **승계 후 확장** — 이것이 V1 의 유일한 호스트↔클라이언트 계약이 된다 |
-| 게이트웨이 | `main/RemoteGateway.ts` 685줄 — tailnet 만 바인드·토큰·SSE·페어링·메일 속도제한 | M | **승계** (Electron 의존 0) |
-| 원격 shim | `src/remote/` 578줄 + `vite.remote.config.ts` | S | **폐기** — V1 은 shim 이 아니라 renderer 가 계약을 직접 쓴다 |
-| Tailscale | `main/Tailnet.ts` 98줄 | S | 승계 |
-| 세션 엔진 | `main/ClaudeSession.ts` · `CodexSession.ts` 272줄 · `index.ts` 의 `session:start`/절전/기상 · `claudeProjects.ts`(NFC/NFD) · `core/sessionOwnership.ts` · `core/idleReclaim.ts` · `core/workerReport.ts` | L | **승계 + 분리** — `index.ts` 6,699줄에서 떼어내 호스트 모듈로 |
-| 채팅 동기화 | `core/chatSync.ts` · `composerSync.ts` | S | 승계하되 **정본을 호스트로** 옮기면 절반은 필요 없어진다 |
-| 핸드오프 | `core/handoff.ts` 203줄 · `main/Handoff.ts` 314줄 · `scripts/rondo-handoff` | M | **보류** — Q8. 락 개념만 "호스트 단일 주인" 에 흡수 |
-| 렌더러 | `src/renderer/` 36,624줄 (`App.tsx` 20,000+) — 4열·레일·문서 편집기·채팅·하네스·온보딩·설정 | XL | **이식** — 화면은 그대로, `window.wwa`(IPC 표면) 를 계약 클라이언트로 교체. `App.tsx` 는 이 기회에 쪼갠다 |
-| 문서 편집기 | CM6 라이브 프리뷰 · churn 0 하네스 · Mark 스펙 M0~M7 | L | **그대로** — 회귀 하네스까지 통째로 |
-| 디자인 | `DESIGN.md` 557줄 · 폰 3층 CSS(r469~r473, JS 0) | — | 그대로 + 모바일 규칙 명문화 |
-| QA | `scripts/qa.mjs` · vitest · 픽스처 볼트 · 화면 검사 · 빌드 도장 · `check-remote-*` | L | 승계 + **원격 왕복 통합 테스트** 추가 (stub CLI 로) |
-| 배포 | `publish-update.sh` · `release-public.sh` · 테스트 갈래 · DMG 정리 | M | 승계 (호스트용 갈래 추가) |
-| 알림 | 맥 네이티브·트레이·HUD·Dot | M | 승계 + Web Push 추가 |
-| 메일 페어링 | `main/Mailer.ts` 198줄 | S | 승계 (Q2 에 따라 불필요할 수도) |
+| 봇이 사는 곳 | xAI 클라우드 VM (봇당 1) | 내 맥의 터미널 프로세스 | **내 Mac mini** (호스트 1, 봇 N) |
+| 봇의 단위 | 사람이 이름 붙여 만든 봇 | 세션 하나 | **폴더 = 봇** (자동) |
+| 봇의 기억 | 내부 메모리, 열람·내보내기 불가 | 세션 트랜스크립트 | **폴더 안의 파일** (CLAUDE.md·readme·todo·노트) — 열람·편집 가능 |
+| 동시 세션 | 봇당 1 | 서버 모드 최대 32 | **봇당 N**, 호스트 상한 |
+| 관제 | 없음(봇들이 같은 VM 공유) | 없음 | **오케스트레이터 1** — PARA 전체를 보고 봇을 부린다 |
+| 스케줄 | 루틴(schedule) | 없음 | **루틴(cron)** — 봇별·오케스트레이터별 |
+| 모델 | xAI 고정 | Claude | **Claude Code · Codex** (봇마다 선택, 병행 가능) |
+| 접속 | 데스크톱·iOS·Android 앱 | claude.ai · Claude 앱 | **웹(PWA)** 어디서나 + 얇은 macOS 셸 |
+| 자체 호스팅 | 불가 | 해당 없음 | **그 자체가 자체 호스팅** |
+| 가격 | $200/월 | 구독 포함 | 내 구독(Claude Max·ChatGPT) + 전기세 |
 
-**규모 감각**: main 14,625 · renderer 36,624 · core 6,591 · remote 578 줄. "완전히 새로" 는 **main 을 호스트로 재편(대부분 이동·분리)** 하고 **renderer 의 IPC 결합을 끊는** 일이지, 5만 줄을 다시 쓰는 일이 아니다.
+**차별점 두 줄**: ① **폴더가 봇이다** — 만들고 설정하는 단계가 없다. ② **오케스트레이터가 PARA 를 안다** — Inbox 분류·아카이브 이동·주간 리뷰 같은 구조 작업을 사람이 안 한다.
 
-### 5.2 알파가 남긴 미결 — V1 이 구조로 끝낼 것
+## 3. 개념 모델
 
-- 채팅 로그 정본 → 호스트 (`chat:append`) · 두 화면 동시 론도 생성 last-write-wins · 고아 워커 청소 · 화면 상태 중 무엇을 호스트가 갖나 (알파 `TODO.md` 156·168~173).
-- QR 페어링 없음 · 폰 첫 페인트 시간 미측정 · G3(7일 실사용) 미판정.
+```
+Host (Mac mini · 항상 켜짐)
+ ├─ Orchestrator ★ 1개 — cwd = PARA 루트. 봇을 만들고 부르고 정리한다. 루틴을 돌린다.
+ └─ Project Bot ★ 폴더당 1개 (자동)
+      ├─ 정체성 = 폴더의 하네스 (CLAUDE.md/AGENTS.md · .claude/ · readme.md · todo.md)
+      ├─ Session 0..N (동시) — Claude Code 또는 Codex · 각자 --resume 가능
+      ├─ Routine 0..n (cron) — 이 봇 안에서 주기적으로 도는 세션
+      └─ 참조 — 볼트의 다른 폴더(Resources 등) · 연결된 코드 리포 (~/dev/*)
+```
 
-## 6. Dropbox 볼트 — 동기화 판정 설계
+### 3.1 봇은 폴더에서 자동으로 나온다 (PARA 바인딩 규칙)
 
-- **볼트 = 미니의 Dropbox 폴더**, 에이전트 cwd 도 여기. **리포는 Dropbox 밖**(`~/dev/`).
-- **필수 설정**: 볼트 전체 **오프라인 사용 가능** 고정 · `node_modules` 류는 볼트에 두지 않는다.
-- **판정 (결정적)**: Dropbox 공식 `content_hash`(4MB 블록 SHA-256 → 이어붙여 SHA-256)를 로컬에서 계산 → API `files/get_metadata` 의 `content_hash` 와 비교. 같음=동기화됨 · 다름=전송 중/충돌 · 조회 실패=**모름**(회색). Finder 아이콘·File Provider 에 의존하지 않는다.
-- **표면**: ③ 문서 푸터·② 트리에 동기화 점. Coda 알림에 "Dropbox 반영됨" 덧붙임 가능.
-- **충돌 사본** `(conflicted copy)` 감지 → 레일 배지. 병행 기간(알파·V1)엔 **V1 만 볼트를 연다**.
-- **경로**: 항상 realpath + NFC 정규화 (알파 r422 사고).
-
-## 7. 마일스톤 (초안 — Q1~Q8 확정 후 재조정)
-
-| 단계 | 내용 | 검증 기준 |
+| PARA 폴더 | 봇 | 성격 |
 |---|---|---|
-| **M0 스파이크** (1주) | ① 🔴 미니 인증: 재부팅→자동 로그인→로그인 항목 앱이 `claude` 를 띄워 `loggedIn:true` ② Tailscale serve 로 폰 브라우저에서 알파 Remote 접속(이미 되는 것 재확인) ③ `codex app-server` 왕복 ④ Web Push 가 잠긴 iPhone 에 도착 | 네 가지 실측 결과가 문서에 적힘. ①이 실패하면 §3 의 호스트 기동 방식을 바꾼다 |
-| **M1 호스트** | 알파 main 을 호스트로 재편: 게이트웨이·세션 엔진·워크스페이스·채팅 정본·볼트 MCP · 계약 v1 확정 | 픽스처 볼트 + stub CLI 로 원격 왕복 통합 테스트 그린 |
-| **M2 클라이언트** | renderer 의 `window.wwa` 를 계약 클라이언트로 교체 · `App.tsx` 분할 · 편집기 churn 0 유지 · 폰 3층 | PC 브라우저·iPhone·Android 에서 같은 론도 조작 · 편집기 회귀 0 |
-| **M3 볼트·Dropbox** | 하네스 스캔·todo·마에스트로 이식 · content_hash 판정 · 충돌 배지 | Dave 실 PARA 볼트에서 일상 작업 1건 |
-| **M4 HITL·알림** | Fermata/Coda Web Push · 권한 카드·AskUserQuestion 카드 원격 | 폰이 잠겨 있어도 확인 요청이 온다 |
-| **M5 셸·배포** | 얇은 macOS 셸 · 호스트 갈래 배포 · 알파 데이터 무손실 인계 · 미니 셋업 가이드 | 새 미니에 30분 안에 설치 |
-| **V1.0** | 알파 동결 → 제거. tryrondo.com 가이드 갱신 | Dave 가 알파를 지운 뒤 일주일 |
+| `2. Projects/<x>` | **Project Bot** | 기한 있는 일. 폴더가 Archive 로 가면 봇은 **은퇴**(세션 기록은 남김) |
+| `3. Area/<x>` | **Area Bot** (같은 종류, 상시) | 끝나지 않는 책임. 루틴이 주로 붙는다 (예: 제품_Rondo 의 주간 회고) |
+| `1. Inbox` | 봇 없음 — **오케스트레이터의 영역** | 분류·배정이 곧 오케스트레이터의 첫 루틴 |
+| `4. Resources` · `5. Archive` | 봇 없음 — **읽기 참조** | 봇들이 `--add-dir` 로 읽는다. 쓰지 않는다 |
 
-## 8. 알파(베타) 계획 — 요약 (상세는 `rondo-app/docs/plans/ALPHA-FREEZE.md` 로 분리 예정)
+- 사람은 폴더를 고르지 않는다. **폴더 목록 = 봇 목록.** 새 폴더를 만들면(Finder 든 오케스트레이터든) 봇이 나타난다.
+- 예외는 명시적으로만: 폴더 안 `.bot.yml` 로 `enabled: false`(봇 안 만듦) · `vendor: codex` · `repo: ~/dev/foo`(코드 세션의 cwd) · `routines:` 를 선언한다. 파일이 없으면 기본값.
+- 볼트 밖 코드 리포는 **PARA 폴더가 가리킨다**(`repo:`). 문서는 PARA 에, 코드는 `~/dev` 에 — Dropbox 가 `node_modules` 를 건드리지 않게.
 
-1. **동결**: v0.0.359 를 `alpha-final` 로 태그. 이후 커밋은 치명 버그·데이터 안전만.
-2. **S 트랙 중단** (Q8) — 완료된 S1 코어는 남기고 S2 이후는 착수하지 않는다. `todo.md` 에 사유를 적는다.
-3. **계약 유지**: `workspace.json`·`.aiworkspace/`·세션 파일 위치를 바꾸지 않는다 — V1 이 그대로 읽는다.
-4. **역할**: V1 의 참조 구현. 이식이 끝난 모듈은 알파에서 더 손대지 않는다.
-5. **종료 조건**: V1.0 이 일상 작업을 전부 받은 뒤 일주일 → 알파 제거·업데이트 채널 폐쇄.
+### 3.2 오케스트레이터 (Orchestrator)
 
-## 9. 열린 질문 (Dave 에게)
+- **단 하나.** cwd = PARA 루트. 하네스는 `PARA/.claude/orchestrator.md` 에만 있어 프로젝트 봇이 상속하지 않는다.
+- 하는 일: ① 봇 목록·상태 파악 ② Inbox 분류 → 해당 봇에게 위임 ③ 봇에게 작업 지시(세션 생성) ④ 결과 취합·보고 ⑤ 완료 프로젝트 아카이브 제안 ⑥ 루틴 관리.
+- 도구 (호스트가 MCP 로 제공): `bots_list` · `bot_status` · `bot_send`(세션 생성/이어가기) · `bot_sessions` · `routine_list/set` · `vault_search/tree/recent` · `inbox_list/move`.
+- **자율 범위** (Q5): 읽기·조사·분류 제안은 알아서, **파일 이동·삭제·외부 발송은 승인** 후. 되돌리기(`undo/` 스냅샷)가 있는 동작만 자동 허용.
 
-§4 Q1~Q8 외에:
-- 미니 현황: macOS 버전 · 자동 로그인 여부 · Dropbox/Claude/Codex/Tailscale 설치 상태 · 현재 `tmux -L rondo` 러너가 떠 있는지.
-- 가장 자주 쓸 접속 기기 하나(iPhone? 맥북?). 그 경험을 먼저 완성한다.
-- 볼트 밖 폴더(`~/dev/*` 리포)를 론도 폴더로 허용하나 — 알파는 볼트 안으로 제한.
-- 당분간 Dave 전용인가, 남도 쓰는 제품인가 — Q2 의 답이 달라진다(남이 쓰면 Tailscale 강요가 어렵다).
+### 3.3 세션
 
-## 10. 사실 확인 기록 (2026-09-12)
+- 봇에게 보낸 메시지는 **세션 하나**로 간다. 기본은 봇의 "메인 세션"(가장 최근 활성), `새 세션` 은 명시적. 세션에는 이름이 있다(`--name`).
+- 동시 세션 상한: 봇당 4 · 호스트 전체 12 (메모리 기반 거절). 유휴 60분이면 워커를 내리고(절전) 다음 메시지에 같은 id 로 깨운다.
+- 코드 리포 봇은 세션마다 **git worktree** 옵션.
+- 상태 5종(단일 소스): 대기 · 실행 중 · **확인 대기(HITL)** · 완료 · 오류. 모든 표면(목록·배지·푸시)이 이 하나를 본다.
 
-- Claude Code Remote Control — `code.claude.com/docs/en/remote-control`: `claude remote-control` 서버 모드(`--spawn` · `--capacity` 32 · 4시간 내 `--continue`/`--session-id`) · 모든 플랜 · Anthropic API 경유 · 로컬 프로세스 종료 시 오프라인 · GA 2026-08.
-- Codex Remote — `learn.chatgpt.com/docs/remote-connections`: 호스트 = ChatGPT 데스크톱 앱, QR 페어링, 호스트 깨어 있고 로그인 필요, API 없음. GA 2026-06-25.
-- Codex app-server — JSON-RPC 2.0, stdio·WebSocket, `thread/resume`, `exec-server`(실험).
-- Claude Agent SDK 세션 — `~/.claude/projects/<encoded-cwd>/*.jsonl`, `resume`/`forkSession`, `listSessions()`, 같은 머신에서만 유효.
-- Tailscale Serve — tailnet 내 HTTPS, identity 헤더, 구글 로그인, iOS/Android 앱.
+### 3.4 루틴 (cron)
+
+- 정의는 파일: 봇 폴더의 `.bot.yml` → `routines: [{name, cron, prompt, vendor?, approve?}]`. 오케스트레이터 루틴은 `PARA/.claude/routines.yml`.
+- 실행 = 그 봇 안에 세션을 하나 띄워 프롬프트를 보내는 것. 결과는 봇의 대화에 메시지로 남고, 산출물은 폴더에 파일로 남는다.
+- 예: 오케스트레이터 매일 07:00 Inbox 분류 제안 · 주간 일요일 "이번 주 각 봇 진행 요약" · `제품_Rondo` 봇 매일 todo.md 미완료 리마인드.
+- 루틴은 **승인 정책을 따로** 갖는다 — 사람이 없을 때 도는 것이므로 기본은 읽기 전용 + 제안.
+
+## 4. 사용자 경험
+
+### 4.1 폰 (1순위 표면) — "동료에게 메시지"
+
+```
+[봇 목록]                          [봇 화면: 제품_Rondo]
+● 오케스트레이터   확인 대기 1        세션 ▾ 메인 · PRD 작성(실행 중) · +새 세션
+● 제품_Rondo      실행 중 2         ─────────────────────────────
+○ 강의_Founders   대기               ⏵ Read  docs/PRD.md
+○ 재무_CFO        완료 · 2h 전        ⏵ Edit  +42 −8
+  …                                 [승인 카드] Bash: npm run qa   [허용][항상][거부]
+                                    ─────────────────────────────
+                                    [메시지…                    ] ▶
+```
+
+- 목록은 **봇**(= 폴더)이고, 봇 안에 세션 탭. 그룹은 PARA 상위 폴더로 자동.
+- 확인 대기는 목록 최상단 + 푸시. 승인 카드·선택형 질문 카드는 폰에서 그대로 누른다.
+- 문서는 **읽기 + 가벼운 편집**(todo 체크·짧은 노트). 본격 편집은 데스크톱.
+
+### 4.2 데스크톱 (같은 클라이언트, 넓은 화면)
+
+좌측 봇 레일(PARA 트리) · 중앙 문서/터미널 · 우측 봇 대화. 문서 편집기·파일 트리·하네스 보기·터미널 모드는 여기서. 폰과 같은 코드, 레이아웃만 다르다.
+
+### 4.3 첫 실행 (Mac mini)
+
+호스트 설치 → PARA 루트 선택 → 폴더 스캔 → **봇 목록이 바로 채워진다** → Tailscale 로그인(구글) → 폰에서 주소 열기. 만들 것은 없다.
+
+## 5. 시스템 구성
+
+```
+[ Mac mini ]  Host 앱 (로그인 항목으로 자동 실행 · 창 없음 · 트레이)
+  ├─ Bot Registry     PARA 스캔·감시 → 봇 목록 (파생, 저장 안 함)
+  ├─ Session Engine   Claude Code: -p --stream-json 상주 워커(resume · 절전/기상 · stdio 권한)
+  │                   Codex: codex app-server (JSON-RPC 상주 · thread/resume)
+  ├─ Orchestrator     = 특별한 봇 하나 (cwd PARA 루트 · 전용 하네스 · 관제 MCP)
+  ├─ Scheduler        cron → 세션 생성 (루틴)
+  ├─ Vault MCP        vault_* · bots_* (봇·오케스트레이터가 쓰는 도구)
+  ├─ File API         트리·읽기/쓰기·감시 · Dropbox content_hash 판정
+  ├─ Gateway          HTTP + SSE · 기기 토큰 · 쓰기 정책 · 정적 서빙
+  ├─ Push             Web Push (VAPID) — 확인 대기·완료
+  └─ Auth Watchdog    claude 자격증명 3갈래 판정(로그인·로그아웃·이 문맥에선 못 읽음) → 푸시
+        ▲ tailnet HTTPS (tailscale serve) — 전송은 추상화해 두고 릴레이는 이음매만
+[ 어디서나 ]  Client (PWA) — 폰 3층 / 데스크톱 3열      [ Mac ]  얇은 셸 (알림·파일 대화상자·트레이)
+```
+
+**원칙**
+1. **파일이 진실.** 봇의 기억·설정·산출물은 폴더 안 파일. 호스트가 죽어도 `claude --resume` 이 터미널에서 된다. 호스트 전용 상태(기기 토큰·푸시 구독·세션 인덱스)만 `~/Library/Application Support/projectbot/`.
+2. **호스트가 유일한 주인.** 볼트를 쓰고 세션을 띄우는 프로세스는 하나. 클라이언트는 파일을 직접 안 만지고 세션을 직접 안 띄운다 → 동기화 충돌이 정의상 없다.
+3. **CLI 네이티브.** 세션은 벤더 CLI 가 소유. Project Bot 은 스폰·관찰·지휘만. 벤더가 발전하면 그대로 얻는다.
+4. **로컬은 원격의 특수 경우.** 호스트와 클라이언트는 프로토콜 하나로만 만난다. 같은 맥에서 띄워도 경로는 같다.
+5. **"아직 모른다" 상태를 둔다.** 인증·동기화·락 판정은 참/거짓 + 제3값.
+
+### 5.1 인증 벽 — 해결 방식
+
+Mac mini 의 헤드리스 프로세스는 `claude` 자격증명(키체인)을 못 읽을 수 있다. 해결은 **우회가 아니라 운영**이다.
+
+1. 호스트는 **로그인 항목으로 뜨는 GUI 앱**(창 없음)이다 — 사람이 GUI 로 로그인한 세션의 자손이 되도록. 미니는 자동 로그인 + 절전 0.
+2. 호스트가 30분마다 `claude auth status` 를 3갈래로 판정한다. **"못 읽음"** 이면 폰으로 푸시: *"미니에서 `/login` 이 필요합니다."*
+3. Dave 가 **Jump Desktop 으로 들어가 `/login`** 한다. 호스트는 그 뒤 자동 복귀. (Dave 확정: 이 수동 개입은 허용.)
+4. 런북을 `docs/RUNBOOK-mini.md` 로 둔다 — 재부팅·CLI 갱신·키체인 ACL 사고 시 절차.
+5. ⛔ API 키(`--bare`)로 우회하지 않는다 — 구독이 아니라 종량 과금이 된다.
+
+### 5.2 접속과 로그인 — 결정 필요 (Q2)
+
+| 안 | 구글 로그인 | 폰 설치물 | 서버 운영 | 남이 쓸 때 |
+|---|---|---|---|---|
+| **A. Tailscale** (추천) | Tailscale 계정 = 구글 | Tailscale 앱 | 없음 | "Tailscale 부터 까세요" 가 문턱 |
+| B. Tailscale Funnel + 자체 구글 OAuth | 직접 구현 | 없음(브라우저) | 없음(공개 URL 은 생김) | 됨. OAuth·세션 관리 책임 |
+| C. 자체 릴레이 + 구글 OAuth | 직접 구현 | 없음 | **있음** | 제품형. 한 달 추가 |
+
+A 로 시작하고 전송 계층을 추상화해 B/C 를 나중에 끼운다. Dave 전용 기간엔 A 로 충분하다.
+
+### 5.3 Dropbox
+
+- 볼트 = 미니의 Dropbox 폴더. **오프라인 사용 가능** 고정(온라인 전용 파일은 봇이 빈 껍데기를 읽는다).
+- 동기화 판정: Dropbox 공식 `content_hash`(4MB 블록 SHA-256) 로컬 계산 ↔ API 메타데이터 비교 → 같음/다름/**모름**. 문서·트리에 점으로 표시. "Dropbox 반영됨" 을 완료 알림에 덧붙일 수 있다.
+- `(conflicted copy)` 감지 → 봇 배지. 고빈도 상태는 볼트에 쓰지 않는다(동기화 소음).
+- 경로는 realpath + NFC 정규화.
+
+## 6. 데이터
+
+| 무엇 | 어디 | 형식 |
+|---|---|---|
+| 봇 목록 | 파생 (PARA 스캔) — 저장 안 함 | — |
+| 봇 설정·루틴 | `<폴더>/.bot.yml` (선택) | YAML |
+| 오케스트레이터 하네스·루틴 | `PARA/.claude/orchestrator.md` · `PARA/.claude/routines.yml` | md · YAML |
+| 세션 트랜스크립트 | `~/.claude/projects/<cwd-slug>/*.jsonl` · Codex 스레드 | 벤더 소유 |
+| 봇 대화 뷰(세션 인덱스·읽음 표시) | 호스트 userData | JSON |
+| 기기·푸시·토큰 | 호스트 userData | JSON (토큰은 keychain) |
+| 되돌리기 스냅샷 | `PARA/.projectbot/undo/` | JSON |
+
+## 7. 마일스톤
+
+| 단계 | 내용 | 검증 |
+|---|---|---|
+| **M0 스파이크** (1주) | ① 미니: 로그인 항목 GUI 앱이 `claude` 를 띄워 `loggedIn:true` ② Tailscale serve → 폰 브라우저 접속 ③ `codex app-server` 왕복 ④ Web Push 가 잠긴 iPhone 에 도착 ⑤ PARA 스캔 → 봇 목록 파생 | 다섯 실측이 문서에 적힘. ①이 안 되면 §5.1 을 고친다 |
+| **M1 호스트 코어** | Bot Registry · Session Engine(Claude) · Gateway · 상태 머신 · 인증 워치독 | 픽스처 볼트 + stub CLI 로 원격 왕복 테스트 그린 |
+| **M2 클라이언트** | 봇 목록 · 봇 화면(세션 탭·스트림·승인 카드) · 폰 3층 · 데스크톱 3열 | iPhone·PC 에서 같은 봇에 지시·승인 |
+| **M3 오케스트레이터·루틴** | 관제 MCP · Inbox 분류 · 스케줄러 · 승인 정책 | 아침 루틴이 폰에 Inbox 제안을 보낸다 |
+| **M4 문서·Dropbox·Codex** | 문서 뷰/편집기 이식 · content_hash · Codex app-server | 실 PARA 볼트에서 일상 작업 1주 |
+| **M5 셸·배포·런북** | 얇은 macOS 셸 · 호스트 패키징·자기 업데이트 · 미니 런북 | 새 미니에 30분 안에 설치 |
+| **V1.0** | Dave 의 일상 작업 전부가 여기서 돈다 | 2주 실사용 후 판정 |
+
+## 8. 결정할 것 (Dave)
+
+| # | 질문 | 추천 | 대안 |
+|---|---|---|---|
+| Q1 | 이름 | **Project Bot** (가제 유지) — 리포는 나중에 개명 | — |
+| **Q2** | 접속·로그인 | **A. Tailscale** + 전송 추상화 | B · C (§5.2) |
+| Q3 | 봇이 붙는 PARA 층 | **Projects + Area** | Projects 만 · Resources 까지 |
+| Q4 | 봇당 동시 세션 | 4 (호스트 12) | 무제한 + 메모리 거절만 |
+| Q5 | 오케스트레이터 자율 범위 | 읽기·분류 제안 자동, **이동·삭제·발송은 승인** | 되돌리기 가능한 건 전부 자동 |
+| Q6 | 루틴 기본 승인 정책 | 읽기 전용 + 제안 (사람 없을 때) | 봇별 "항상 허용" 규칙 |
+| Q7 | 벤더 | Claude Code 기본, Codex 봇별 선택 | Claude 만 |
+| Q8 | 폰 문서 편집 범위 | todo 체크·짧은 노트만 | 편집기 전체 |
+| Q9 | 기획 정본 | 이 리포 `docs/PRD.md` | PARA |
+
+## 9. 열린 질문
+
+- Mac mini 현황: macOS 버전 · 자동 로그인 · Dropbox·Claude·Codex·Tailscale 설치 · 절전 설정.
+- 가장 자주 쓸 기기 하나(iPhone?). 그 경험을 먼저 완성한다.
+- 오케스트레이터가 Inbox 를 **자동으로 옮겨도** 되는 순간이 있나(예: 명백한 영수증→재무_CFO).
+- 첫 루틴 3개를 정해 달라 — M3 의 검증 기준이 된다.
+
+## 10. 사실 확인 (2026-09-12)
+
+- Grok Bot — xAI, 2026-08 베타. 봇당 영속 클라우드 VM(브라우저·파일·터미널·커넥터·MCP). 데스크톱·iOS·Android. 루틴(스케줄)·다중 봇 협업. 승인: 한 번 허용/항상/거부 + Auto Review 규칙. 메모리 열람·내보내기 불가, 자체 호스팅 불가. $200/월 또는 SuperGrok Heavy·Cursor Ultra 포함.
+- Claude Code Remote Control — GA 2026-08. `claude remote-control` 서버 모드(동시 32, 4시간 내 복귀). 로컬 프로세스 종료 시 오프라인.
+- Codex — Codex Remote(ChatGPT 앱, GA 2026-06, 호스트 로그인 상태 필요, API 없음) · `codex app-server` JSON-RPC(stdio/WebSocket, `thread/resume`).
+- Claude Agent SDK — 세션 파일 `~/.claude/projects/<encoded-cwd>/*.jsonl`, `resume`/`fork`, `listSessions()`.
+- Tailscale Serve — tailnet HTTPS, identity 헤더, 구글 로그인, iOS/Android 앱.
 - Dropbox — 동기화 상태 공식 API 없음. `content_hash` 알고리즘 공개.
-- 알파 실측 — 볼트 `01_기획/2026-09-05_기획_맥미니를-세션-서버로.md` §2 · `2026-09-06_가이드_미니에-러너-셸-띄우기.md` (인증 벽 4경로) · 리포 탐색(§5.1 수치).
+- Mac mini 헤드리스 인증 — SSH·launchd·osascript 에서 `claude` 가 키체인을 못 읽는 실측 있음(2026-09-06). 사람이 GUI 로 띄운 셸 + `/login` 은 됨.
+
+---
+
+## 부록 A. Rondo 알파에서 가져올 부품 (이력 아님 — 부품 목록)
+
+| 부품 | 알파 위치 | 규모 | 용도 |
+|---|---|---|---|
+| 게이트웨이 | `main/RemoteGateway.ts` | 685줄 | tailnet 바인드·토큰·SSE·페어링·정적 서빙 → Gateway |
+| Tailscale 연동 | `main/Tailnet.ts` | 98줄 | 상태·`up` |
+| 세션 워커 | `main/ClaudeSession.ts` · 절전/기상 · `core/sessionOwnership.ts` · `core/idleReclaim.ts` · `main/claudeProjects.ts`(NFC/NFD) | L | Session Engine |
+| Codex 어댑터 | `main/CodexSession.ts` | 272줄 | 이벤트 변환 참고 (app-server 로 교체) |
+| 원격 계약 | `core/remoteContract.ts` | 243줄 | 프레임·쓰기 정책의 출발점 |
+| 채팅 동기화 | `core/chatSync.ts` · `composerSync.ts` | S | 두 화면 동시 열람 |
+| 문서 편집기 | renderer CM6 라이브 프리뷰 + churn 0 하네스 | L | 데스크톱 문서 편집 |
+| 폰 3층 레이아웃 | renderer CSS (JS 0) | S | 폰 화면 |
+| 디자인 시스템 | `DESIGN.md` | — | 표면·팔레트·상태 언어 |
+| 볼트 MCP·하네스 스캔 | main 내장 MCP · `.claude` 정적 스캔 | M | Vault MCP · 봇 정체성 표시 |
+| 알림·트레이·HUD | main | M | macOS 셸 |
+| QA 관문 | `scripts/qa.mjs` · 픽스처 볼트 · stub CLI · 화면 검사 | L | 그대로 |
+| 배포 | `publish-update.sh` · 자기 업데이트 · 테스트 갈래 | M | 호스트 갈래 추가 |
 
 ## 변경 이력
 
 | 날짜 | 버전 | 내용 |
 |---|---|---|
-| 2026-09-12 | v0.2 | 알파 탐색 반영 — Rondo Remote 자산 인벤토리(§5.1) · **§1.1 09-05 결정과의 충돌 지적** · 🔴 미니 인증 벽을 리스크 1 로(§2.1) · Q3 를 "SDK 교체"에서 "stream-json 승계"로 뒤집음 · Q8(S 트랙) 추가 · 호스트를 데몬이 아닌 창 없는 GUI 앱으로 |
-| 2026-09-12 | v0.1 | 초안 — 목표 정리 · 가능성 판정 · 시스템 구성 · Q1~Q7 · Dropbox 판정 · 마일스톤 · 알파 계획 요약 |
+| 2026-09-12 | v0.3 | **새 프로덕트로 다시 씀** — Project Bot · 폴더=봇 · 오케스트레이터 · 루틴 · Grok Bot 대조 · 인증 벽은 운영(Jump Desktop `/login`)으로 해결 · 알파 이력 제거, 부품 목록만 부록으로 |
+| 2026-09-12 | v0.2 | (폐기) 알파 연장선 관점의 초안 |
+| 2026-09-12 | v0.1 | (폐기) 첫 초안 |
