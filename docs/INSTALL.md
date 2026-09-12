@@ -60,6 +60,8 @@ folderbot start        # Jump Desktop 으로 들어가 GUI 에서 새로 연 Ter
    ```
    → `https://mac-mini.<tailnet>.ts.net` 으로 열고 홈 화면에 추가 → 설정 › 이 기기 푸시 켜기.
 
+- 홈화면 앱(standalone)은 화면 높이로 고정해 아래가 비지 않고, 비치더라도 배경과 같은 색이라 경계선이 없습니다. 위쪽 여백은 상태바 블러 아래로 한 뼘 더 둡니다.
+
 ## 4. 자동 업데이트 — 앱이 스스로 받아 재시작
 
 - 앱이 부팅 15초 뒤 + **30분마다**, 그리고 창을 띄울 때(10분에 한 번) 이 리포의 릴리스(`desktop-v*`, 공개)를 보고 **조용히 받아 둡니다**. 토큰·시크릿 필요 없음. 안 되는 것 같으면 `~/Library/Application Support/Folder Bot/updates/log.txt` 에 이유가 적혀 있어요.
