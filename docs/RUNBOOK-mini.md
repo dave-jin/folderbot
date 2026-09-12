@@ -9,7 +9,7 @@
 
 ## 1. 설치 — 🟢 권장: 메뉴바 앱 (터미널 없음)
 미니에도 맥북과 **같은 앱**을 설치합니다. 앱 안에 호스트가 들어 있어요.
-1. GitHub Releases(`dave-jin/rondo` › `desktop-v2` 이상)에서 `Folder Bot-<ver>-arm64.dmg` → `/Applications`.
+1. GitHub Releases(`dave-jin/folderbot` › `desktop-v2` 이상)에서 `Folder Bot-<ver>-arm64.dmg` → `/Applications`.
 2. ad-hoc 서명이라 처음엔 Finder 에서 **우클릭 → 열기**. "손상됨" 이 뜨면 `xattr -dr com.apple.quarantine "/Applications/Folder Bot.app"`.
 3. 첫 화면 아래 **「이 맥에서 호스트 실행」** › [루트 폴더 고르고 시작] → PARA 루트 선택.
    - 루트 `CLAUDE.md` 에 `## 폴더 규칙` 절(PARA 프리셋)을 **덧붙이고**(있는 내용은 안 건드림) 호스트가 뜹니다.

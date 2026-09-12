@@ -4,7 +4,7 @@
 
 - **설치 가이드: [docs/INSTALL.md](docs/INSTALL.md)** (미니 · 맥북 · 폰)
 - 기획: [docs/PRD.md](docs/PRD.md) · 시나리오: [docs/SCENARIOS.md](docs/SCENARIOS.md) · 미니 런북: [docs/RUNBOOK-mini.md](docs/RUNBOOK-mini.md) · UX 계획: [docs/plans/](docs/plans/)
-- 설치: 맥북·미니 공용 앱 https://github.com/dave-jin/rondo/releases (desktop-v*) · CLI `install.sh`(rondo-releases)
+- 설치: 맥북·미니 공용 앱 https://github.com/dave-jin/folderbot/releases (desktop-v*) · CLI `install.sh`(rondo-releases)
 - 목업: https://claude.ai/code/artifact/046fd71a-18f5-40df-980e-f7725380d2c2
 
 ## 구조

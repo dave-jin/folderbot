@@ -1,4 +1,4 @@
-// Folder Bot 자기 업데이트 — 이 리포(dave-jin/rondo, 공개)의 desktop-v<n> 릴리스를 받아 제자리 교체한다. 토큰 불필요.
+// Folder Bot 자기 업데이트 — 이 리포(dave-jin/folderbot, 공개 · 옛 이름 rondo 는 리다이렉트)의 desktop-v<n> 릴리스를 받아 제자리 교체한다. 토큰 불필요.
 // · 받는 것은 묻지 않고, 적용만 묻는다 (부팅 15초 뒤 + 6시간마다 확인 → 조용히 다운로드 → 다 받으면 확인창 하나)
 // · 호스트 모드(미니)에선 진행 중 세션이 있으면 기다렸다가 전부 유휴가 되는 순간 자동 적용한다 — 세션을 죽이지 않는다
 // · ad-hoc 서명이라 Squirrel/electron-updater 는 못 쓴다. 교체는 앱이 완전히 종료된 뒤 분리된 셸 스크립트가 한다.
@@ -12,7 +12,7 @@ const { spawn } = require('node:child_process')
 const { createHash } = require('node:crypto')
 
 const { pickLatest } = require('./update-pick')
-const REPO = 'dave-jin/rondo'
+const REPO = 'dave-jin/folderbot'
 const CHECK_EVERY = 6 * 60 * 60 * 1000
 const dir = () => join(app.getPath('userData'), 'updates')
 

@@ -23,7 +23,7 @@
 ## 1. Mac mini — 호스트 설치 (앱, 터미널 없음)
 
 1. 릴리스에서 `Folder Bot-<버전>-arm64.dmg` 를 받아 `/Applications` 로 끌어 놓습니다.
-   - https://github.com/dave-jin/rondo/releases (최신 `desktop-v*`)
+   - https://github.com/dave-jin/folderbot/releases (최신 `desktop-v*`)
 2. ad-hoc 서명이라 처음엔 Finder 에서 **우클릭 → 열기**. "손상됨" 이 뜨면 터미널에서 한 번:
    ```
    xattr -dr com.apple.quarantine "/Applications/Folder Bot.app"

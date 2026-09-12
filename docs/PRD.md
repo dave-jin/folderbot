@@ -1,7 +1,7 @@
 # Folder Bot — PRD
 
 > **버전**: v1.0 · 2026-09-12 · **구현 시작 (v0.1.0 테스트 빌드)** · **초안 — Dave 와 함께 수정 중. 코드 작업 금지, 계획만.**
-> **이름**: **Folder Bot** (2026-09-12 확정 · 가제 Project Bot 폐기) · 캐릭터·애칭 **폴더봇**. 리포 `dave-jin/rondo` 는 `folderbot` 으로 개명 예정(GitHub 이 옛 주소를 리다이렉트하므로 설치된 앱의 업데이트는 끊기지 않는다).
+> **이름**: **Folder Bot** (2026-09-12 확정 · 가제 Project Bot 폐기) · 캐릭터·애칭 **폴더봇**. 리포는 `dave-jin/folderbot` (2026-09-12 개명 · 옛 `rondo` 주소는 리다이렉트).
 > **목업**: https://claude.ai/code/artifact/046fd71a-18f5-40df-980e-f7725380d2c2 (v2 — 폴더봇)
 > **위치**: 완전히 새로운 프로덕트. Rondo 알파(`rondo-app`)는 **부품 창고**로만 쓴다 (부록 A). 알파의 결정·이력은 이 문서에 적지 않는다.
 > **1차 레퍼런스**: xAI **Grok Bot** (2026-08 베타). 2차: Claude Code Remote Control · Codex Remote · Cursor Cloud Agents.
@@ -292,7 +292,7 @@ A 로 시작하고 전송 계층을 추상화해 B/C 를 나중에 끼운다. Da
 
 | # | 질문 | 추천 | 대안 |
 |---|---|---|---|
-| Q1 | 이름 | **Folder Bot** (2026-09-12 확정 — 가제 Project Bot 폐기). 리포 `rondo` → `folderbot` 개명은 Dave 가 GitHub 설정에서 | ✅ |
+| Q1 | 이름 | **Folder Bot** (2026-09-12 확정 — 가제 Project Bot 폐기). 리포 `dave-jin/folderbot` 로 개명 완료 | ✅ |
 | **Q2** | 접속·로그인 | **A. Tailscale** + 전송 추상화 | B · C (§5.2) |
 | Q3 | PARA 프리셋의 `active` 기본값 | **`2. Projects/*` + `3. Area/*`** (사용자가 규칙 파일에서 바꿈) | Resources 까지 |
 | Q3b | 활성 봇 상한 | 8 (넘기면 오케스트레이터가 재울 봇 제안) | 상한 없음 |
@@ -336,7 +336,7 @@ A 로 시작하고 전송 계층을 추상화해 B/C 를 나중에 끼운다. Da
 | S10 할 일 | ✅ | `- [ ] 제목: 설명 <!-- bot -->` · 패널 4개 · 시트 · 봇에게 맡기기 · 봇 규약을 시스템 프롬프트에 주입 · `todo_add` MCP |
 | S11 목록·알림 | ✅ | 폭 드래그(64/240–420)·정렬·묶기·밀도·알림 센터·조용한 시간 · **맥북 셸(`desktop/`)**: 메뉴바 폴더봇 아이콘 + 대기 배지, 네이티브 알림 클릭 점프, Dock 배지, 로그인 시 자동 실행, `folderbot://` 딥링크. 메뉴바 팝오버(카드에서 바로 승인)는 아직 메뉴 형태 |
 
-**맥북 앱**: GitHub Actions(macOS 러너)가 `desktop/` 변경마다 DMG(arm64, ad-hoc 서명)를 빌드해 `dave-jin/rondo` Releases `desktop-v<n>` 에 올린다. 앱은 호스트 주소 + 페어링으로 미니에 붙는 셸이다.
+**맥북 앱**: GitHub Actions(macOS 러너)가 `desktop/` 변경마다 DMG(arm64, ad-hoc 서명)를 빌드해 `dave-jin/folderbot` Releases `desktop-v<n>` 에 올린다. 앱은 호스트 주소 + 페어링으로 미니에 붙는 셸이다.
 
 **v0.1.1 (desktop-v2, 2026-09-12)**: 앱 안에 호스트 내장 — 미니에서도 「이 맥에서 호스트 실행」으로 터미널 없이 상주(로그인 항목 → GUI 세션이라 키체인 벽 없음) · `claude setup-token` 장기 토큰 모드(설정 › Claude 토큰) · 인증 실패 문구 감지 → 배너·푸시 · 파일 첨부(기기 업로드 → `첨부/`, 폴더에서 고르기) · **앱 자기 업데이트**(공개 프리릴리스 → 조용히 받아 두고, 미니는 세션이 전부 유휴일 때 자동 적용 · 맥북은 확인창).
 
