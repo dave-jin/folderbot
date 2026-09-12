@@ -19,6 +19,8 @@ extraResources:
   - from: build/icon.png
     to: icon.png
 asar: true
+# ⚠ identity: null 은 서명 생략이다 — 알림 센터 등록에 필요한 ad-hoc 서명은 afterPack 이 한다
+afterPack: ./afterPack.js
 npmRebuild: false
 protocols:
   - name: Folder Bot
@@ -32,6 +34,7 @@ mac:
   icon: build/icon.png
   category: public.app-category.productivity
   identity: null
+  # 서명은 afterPack.js 의 codesign --sign - 가 한다 (electron-builder 의 identity 로는 ad-hoc 을 못 시킨다)
   darkModeSupport: true
   extendInfo:
     LSUIElement: false

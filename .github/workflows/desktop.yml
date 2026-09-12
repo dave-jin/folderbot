@@ -29,6 +29,13 @@ jobs:
         working-directory: desktop
         env: { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }
         run: npx electron-builder --mac --arm64 --publish never
+      - name: Verify ad-hoc signature (알림 센터 등록 조건)
+        working-directory: desktop
+        run: |
+          APP="dist/mac-arm64/Folder Bot.app"
+          codesign -dv --verbose=2 "$APP" 2>&1 | head -5
+          codesign --verify --deep --strict "$APP"
+          unzip -l dist/*.zip | grep -q "Folder Bot.app/Contents/_CodeSignature/CodeResources" || { echo "❌ zip 안 번들에 _CodeSignature 가 없다 — 알림이 안 온다"; exit 1; }
       - name: Checksums
         working-directory: desktop/dist
         run: |

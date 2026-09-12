@@ -354,6 +354,8 @@ A 로 시작하고 전송 계층을 추상화해 B/C 를 나중에 끼운다. Da
 
 **v0.3.5 (2026-09-12) — 권한 관문 (알파 Rondo r408·r412·r423 승계)**: 데스크톱 첫 실행·업데이트 뒤 필수 권한이 빠지면 화면 전체 관문 — 전체 디스크 접근(호스트 맥만 필수 · 보호 폴더를 실제로 열어 보는 프로브 여러 개, ENOENT 는 «모름» 이지 «없음» 이 아님) · 알림(모든 맥 필수 · Electron 이 상태를 못 주므로 테스트 한 발 → «보였어요» 대답을 perm-ack.json 에 기억, 재서명에도 유지). 판정은 `desktop/perm-core.js` 순수 함수(vitest), 재기·설정 창·대답은 `desktop/perms.js`, 화면은 `client/Perms.tsx`. 창 포커스마다 다시 재서 밀어 준다(«돌아오세요» 로 끝남). 개발 실행에선 막지 않는다. 설정 › macOS 권한 › [권한 다시 확인]. 버전 칩 클릭 → 확인 결과 토스트. 스모크: 화면 검사 실패를 «건너뜀» 으로 삼키던 것을 실패로(브라우저 없음만 건너뜀).
 
+**v0.3.6 (2026-09-12) — 알림이 안 오던 원인: 번들이 서명되지 않았다**: electron-builder 의 `identity: null` 은 «서명 생략» 이지 ad-hoc 이 아니다 — v17 까지 zip 안 번들에 `_CodeSignature` 가 0개였고(실측), macOS 알림 센터는 서명 없는 앱을 등록하지 않아 테스트 알림도 실 알림도 조용히 버려졌다. `desktop/afterPack.js` 가 dmg/zip 을 만들기 전에 `codesign --force --deep --sign -` 로 ad-hoc 서명하고 검증한다(알파 Rondo `scripts/dmg.sh` 승계). CI 는 zip 안에 `_CodeSignature/CodeResources` 가 있는지 확인하고 없으면 실패한다. ⚠ 서명이 생기면 cdhash 가 바뀌어 전체 디스크 접근이 풀린다 — 권한 관문이 그걸 받는다.
+
 **미구현·다음**: Codex(`codex app-server`) · 메뉴바 팝오버(카드에서 바로 승인) · Dropbox 동기화 점 · QR 페어링 · Johnny.Decimal 실제 스캔 규칙 · 규칙 인터뷰(custom) · 개발자 서명·공증.
 
 ## 11. 사실 확인 (2026-09-12)
