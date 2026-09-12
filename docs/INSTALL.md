@@ -42,7 +42,7 @@
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dave-jin/rondo-releases/main/folderbot/install.sh | bash
-folderbot init "/Users/dave/Library/CloudStorage/Dropbox-Cbsjin/진대연 (Dave)/PARA"
+folderbot init "$HOME/Library/CloudStorage/Dropbox/PARA"
 folderbot start        # Jump Desktop 으로 들어가 GUI 에서 새로 연 Terminal 에서. tmux 로 띄우면 창을 닫아도 살아요
 ```
 

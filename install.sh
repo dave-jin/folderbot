@@ -31,7 +31,7 @@ if [ -n "$ROOT" ]; then "$HOME/.local/bin/folderbot" init "$ROOT"; fi
 cat <<TXT
 
 다음 순서 (Mac mini 에서, 사람이 GUI 로 연 터미널에서):
-  1) folderbot init "/Users/dave/Library/CloudStorage/Dropbox-Cbsjin/진대연 (Dave)/PARA"
+  1) folderbot init "$HOME/Library/CloudStorage/Dropbox/PARA"
   2) /opt/homebrew/bin/tmux -L folderbot new -s host    # 없으면 그냥 3) 을 터미널에서
   3) folderbot start
      → 주소와 6자리 페어링 코드가 뜹니다. 폰/맥북 브라우저에서 주소를 열고 코드를 넣으세요.

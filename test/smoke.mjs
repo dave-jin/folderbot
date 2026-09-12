@@ -7,13 +7,13 @@ import { join } from 'node:path'
 const root = mkdtempSync(join(tmpdir(), 'fb-vault-'))
 const data = mkdtempSync(join(tmpdir(), 'fb-data-'))
 const claudeCfg = mkdtempSync(join(tmpdir(), 'fb-claude-'))
-for (const d of ['1. Inbox', '2. Projects/2026-09_강의-FoundersAI-2기', '2. Projects/2026-10_해커톤-제안', '3. Area/제품_Rondo', '3. Area/재무_CFO', '4. Resources', '5. Archive']) mkdirSync(join(root, d), { recursive: true })
+for (const d of ['1. Inbox', '2. Projects/2026-09_강의-창업스쿨-2기', '2. Projects/2026-10_해커톤-제안', '3. Area/제품_Rondo', '3. Area/재무_CFO', '4. Resources', '5. Archive']) mkdirSync(join(root, d), { recursive: true })
 writeFileSync(join(root, '3. Area/제품_Rondo/CLAUDE.md'), '# 제품_Rondo\n')
 writeFileSync(join(root, '3. Area/제품_Rondo/readme.md'), '# Rondo\n')
-writeFileSync(join(root, '3. Area/제품_Rondo/todo.md'), '# todo\n\n- [ ] PRD v1.0 확정: Q2·Q5\n- [ ] Tailscale 폰 설치\n- [ ] 무응답 3건 후속 연락: 9/1 발송분이 엿새째 무응답. ① 강준구 대표 문자 ② 나눔엔젤스에 「총 1회」 적용 범위 문의(김상욱+주도연 공동 수신) ③ 답 보고 코어엑스 2회차 결정. Akiflow 9/7(월) 10 — 00 배치\n\n## 완료\n')
+writeFileSync(join(root, '3. Area/제품_Rondo/todo.md'), '# todo\n\n- [ ] PRD v1.0 확정: Q2·Q5\n- [ ] Tailscale 폰 설치\n- [ ] 무응답 3건 후속 연락: 9/1 발송분이 엿새째 무응답. ① 가상 대표에게 문자 ② 예시 기관에 「총 1회」 적용 범위 문의(담당자 두 명 공동 수신) ③ 답을 보고 다음 회차를 정한다. 9/7(월) 오전에 배치\n\n## 완료\n')
 writeFileSync(join(root, '3. Area/재무_CFO/CLAUDE.md'), '# CFO\n')
-writeFileSync(join(root, '2. Projects/2026-09_강의-FoundersAI-2기/CLAUDE.md'), '# 강의\n')
-writeFileSync(join(root, '1. Inbox/유메타랩_자문자료.txt'), 'x')
+writeFileSync(join(root, '2. Projects/2026-09_강의-창업스쿨-2기/CLAUDE.md'), '# 강의\n')
+writeFileSync(join(root, '1. Inbox/예시랩_자문자료.txt'), 'x')
 mkdirSync(join(root, '.projectbot'), { recursive: true }); writeFileSync(join(root, '.projectbot/marker.txt'), 'legacy')
 const PORT = 7399
 const env = { ...process.env, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg }
@@ -40,8 +40,8 @@ try {
   // 폴더에서 시작
   const bot = await api('/bots/start', { rel: '3. Area/제품_Rondo' }); ok(`bot started ${bot.name} ${bot.color}`)
   // 새 폴더 만들기
-  const nf = await api('/folders', { section: '2. Projects', name: '하이드미플리즈-자문', start: true })
-  if (!/^2\. Projects\/\d{4}-\d{2}_하이드미플리즈-자문$/.test(nf.rel)) fail(`naming: ${nf.rel}`)
+  const nf = await api('/folders', { section: '2. Projects', name: '예시고객-자문', start: true })
+  if (!/^2\. Projects\/\d{4}-\d{2}_예시고객-자문$/.test(nf.rel)) fail(`naming: ${nf.rel}`)
   if (!existsSync(join(root, nf.rel, 'CLAUDE.md')) || !existsSync(join(root, nf.rel, 'todo.md'))) fail('scaffold'); ok(`folder created ${nf.rel}`)
   // 메시지 → 세션 생성 → 결과
   const s1 = await api(`/bots/${bot.id}/send`, { text: 'PRD 를 읽어 줘', name: '메인' })
@@ -122,10 +122,10 @@ try {
   const sent2 = await mcp('tools/call', { name: 'bot_send', arguments: { bot: '재무_CFO', text: '숫자 검토', name: '위임 · 숫자 검토' } }); if (!/보냈어요/.test(sent2.result.content[0].text)) fail('mcp bot_send')
   await wait(800)
   const cfo = (await api('/bots')).find((b) => b.name === '재무_CFO'); const cs = await api(`/bots/${cfo.id}/sessions`); if (cs[0].state !== 'done') fail('delegated session state ' + cs[0].state); ok('mcp bot_start + bot_send → delegated session done')
-  const ib = await mcp('tools/call', { name: 'inbox_list', arguments: {} }); if (!/유메타랩/.test(ib.result.content[0].text)) fail('inbox')
-  await mcp('tools/call', { name: 'folder_move', arguments: { from: '1. Inbox/유메타랩_자문자료.txt', to: '3. Area/재무_CFO/자료/유메타랩_자문자료.txt' } })
-  if (!existsSync(join(root, '3. Area/재무_CFO/자료/유메타랩_자문자료.txt'))) fail('move')
-  const undo = await api('/undo'); await api('/undo', { t: undo[0].t }); if (!existsSync(join(root, '1. Inbox/유메타랩_자문자료.txt'))) fail('undo'); ok('inbox move + undo')
+  const ib = await mcp('tools/call', { name: 'inbox_list', arguments: {} }); if (!/예시랩/.test(ib.result.content[0].text)) fail('inbox')
+  await mcp('tools/call', { name: 'folder_move', arguments: { from: '1. Inbox/예시랩_자문자료.txt', to: '3. Area/재무_CFO/자료/예시랩_자문자료.txt' } })
+  if (!existsSync(join(root, '3. Area/재무_CFO/자료/예시랩_자문자료.txt'))) fail('move')
+  const undo = await api('/undo'); await api('/undo', { t: undo[0].t }); if (!existsSync(join(root, '1. Inbox/예시랩_자문자료.txt'))) fail('undo'); ok('inbox move + undo')
   // 어디서든 시작 — Resources 의 깊은 폴더 · 그 안에 새 폴더 · ls 에 하네스/봇/역할
   mkdirSync(join(root, '4. Resources/2026_브랜딩-DAVE/02_링크드인'), { recursive: true })
   const deep = await api('/bots/start', { rel: '4. Resources/2026_브랜딩-DAVE/02_링크드인' })
@@ -140,7 +140,7 @@ try {
   let td2 = await api(`/bots/${bot.id}/todo/edit`, { line: todo[1].line, title: '알파 동결 문서 v2', desc: '내일' }); const ed = td2.find((t) => t.line === todo[1].line); if (!ed || ed.title !== '알파 동결 문서 v2' || ed.desc !== '내일') fail('todo edit ' + JSON.stringify(td2))
   td2 = await api(`/bots/${bot.id}/todo/delete`, { line: todo[1].line }); if (td2.some((t) => t.title === '알파 동결 문서 v2')) fail('todo delete'); ok('todo edit · delete')
   // 은퇴
-  const lect = await api('/bots/start', { rel: '2. Projects/2026-09_강의-FoundersAI-2기' })
+  const lect = await api('/bots/start', { rel: '2. Projects/2026-09_강의-창업스쿨-2기' })
   const rt = await api(`/bots/${lect.id}/retire`, {}); if (!existsSync(join(root, rt.to, 'CLAUDE.md'))) fail('retire move'); ok(`retire → ${rt.to}`)
   // 화면 (playwright)
   try {

@@ -23,7 +23,7 @@ SSH·launchd·원격 스크립트로 띄운 호스트는 `Not logged in · Pleas
 ## 1′. 대안: 터미널 설치 (CLI)
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dave-jin/rondo-releases/main/folderbot/install.sh | bash
-folderbot init "/Users/dave/Library/CloudStorage/Dropbox-Cbsjin/진대연 (Dave)/PARA"
+folderbot init "$HOME/Library/CloudStorage/Dropbox/PARA"
 ```
 🔴 `folderbot start` 는 **Jump Desktop 으로 들어가 GUI 에서 새로 연 Terminal** 에서. tmux 로 띄우면 창을 닫아도 삽니다:
 `/opt/homebrew/bin/tmux -L folderbot new -s host` → `folderbot start` → `Ctrl-b d`. SSH 에서 `folderbot start` 하면 키체인을 못 읽습니다.
