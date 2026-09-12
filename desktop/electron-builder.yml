@@ -36,3 +36,7 @@ mac:
     NSUserNotificationAlertStyle: alert
 dmg:
   sign: false
+  contents:
+    - { x: 140, y: 200 }
+    - { x: 420, y: 200, type: link, path: /Applications }
+    - { x: 280, y: 360, type: file, path: build/검역 해제 (우클릭-열기).command }

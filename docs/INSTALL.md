@@ -24,10 +24,7 @@
 
 1. 릴리스에서 `Folder Bot-<버전>-arm64.dmg` 를 받아 `/Applications` 로 끌어 놓습니다.
    - https://github.com/dave-jin/folderbot/releases (최신 `desktop-v*`)
-2. ad-hoc 서명이라 처음엔 Finder 에서 **우클릭 → 열기**. "손상됨" 이 뜨면 터미널에서 한 번:
-   ```
-   xattr -dr com.apple.quarantine "/Applications/Folder Bot.app"
-   ```
+2. ad-hoc 서명이라 처음엔 Gatekeeper 가 막습니다. DMG 안의 **「검역 해제 (우클릭-열기).command」** 를 우클릭 → 열기 하면 검역 딱지를 떼고 앱을 열어 줍니다. (터미널로 하려면 `xattr -dr com.apple.quarantine "/Applications/Folder Bot.app"`.) 자동 업데이트로 받은 빌드는 스크립트가 알아서 뗍니다.
 3. 첫 화면 아래 **「이 맥에서 호스트 실행」 › [루트 폴더 고르고 시작]** → PARA 루트 선택.
    - 루트 `CLAUDE.md` 에 `## 폴더 규칙` 절이 덧붙고(있는 내용은 안 건드림) 호스트가 뜹니다.
    - 로그인 항목이 자동으로 켜집니다. 재부팅 뒤 사람이 로그인만 하면 다시 뜹니다(자동 로그인을 켜 두면 전원만).
@@ -65,7 +62,7 @@ folderbot start        # Jump Desktop 으로 들어가 GUI 에서 새로 연 Ter
 
 ## 4. 자동 업데이트 — 앱이 스스로 받아 재시작
 
-- 앱이 부팅 15초 뒤 + 6시간마다 이 리포의 릴리스(`desktop-v*`, 공개)를 보고 **조용히 받아 둡니다**. 토큰·시크릿 필요 없음.
+- 앱이 부팅 15초 뒤 + **30분마다**, 그리고 창을 띄울 때(10분에 한 번) 이 리포의 릴리스(`desktop-v*`, 공개)를 보고 **조용히 받아 둡니다**. 토큰·시크릿 필요 없음. 안 되는 것 같으면 `~/Library/Application Support/Folder Bot/updates/log.txt` 에 이유가 적혀 있어요.
 - **맥북(클라이언트)**: 다 받으면 확인창 하나 — [지금 재시작해서 적용] / [나중에]. 화면 왼쪽 아래 **버전 칩**(`v0.2.8 재시작해서 적용`)이나 메뉴바 › 업데이트 적용으로도 됩니다. 칩을 누르면 수동 확인.
 - **미니(호스트)**: 진행 중 세션이 있으면 **전부 유휴가 되는 순간 자동 적용**(세션을 죽이지 않음). 칩에 「세션 N개 끝나면 적용」이 보입니다. 없으면 바로 재시작.
 - 교체는 앱이 완전히 종료된 뒤 분리된 스크립트가 zip 을 풀어 `/Applications/Folder Bot.app` 을 갈아 끼우고 다시 엽니다(`ditto --noqtn` — 검역 딱지를 떼므로 Gatekeeper 가 다시 묻지 않음). `/Applications` 밖에 있으면 자동 교체 대신 받아 둔 zip 을 열어 줍니다.

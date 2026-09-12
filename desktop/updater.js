@@ -13,13 +13,16 @@ const { createHash } = require('node:crypto')
 
 const { pickLatest } = require('./update-pick')
 const REPO = 'dave-jin/folderbot'
-const CHECK_EVERY = 6 * 60 * 60 * 1000
+const CHECK_EVERY = 30 * 60 * 1000
+const FOCUS_EVERY = 10 * 60 * 1000
 const dir = () => join(app.getPath('userData'), 'updates')
 
 let staged = null      // { version, zip, notes }
 let checking = false, downloading = null, timer = null, deferTimer = null
 let hooks = { isBusy: () => false, busyCount: () => 0, isHost: () => false, onChange: () => {}, log: (m) => console.log('[update]', m) }
-let lastCheck = 0, lastError = '', deferred = false
+let lastCheck = 0, lastError = '', deferred = false, lastFocusCheck = 0
+/** userData/updates/log.txt — 왜 안 됐는지 나중에 볼 수 있게 */
+function flog(m) { try { mkdirSync(dir(), { recursive: true }); require('node:fs').appendFileSync(join(dir(), 'log.txt'), `${new Date().toISOString()} ${m}\n`) } catch {} }
 function get(url, opts = {}) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, { headers: { 'user-agent': 'folderbot-desktop', accept: 'application/vnd.github+json', ...(opts.headers || {}) } }, (res) => {
@@ -125,6 +128,7 @@ NEW=$(find "$WORK" -maxdepth 2 -name "*.app" -print -quit)
 [ -n "$NEW" ] || exit 1
 rm -rf "$TARGET.old"; mv "$TARGET" "$TARGET.old" 2>/dev/null
 /usr/bin/ditto --noqtn "$NEW" "$TARGET" || { mv "$TARGET.old" "$TARGET"; exit 1; }
+/usr/bin/xattr -dr com.apple.quarantine "$TARGET" 2>/dev/null
 rm -rf "$TARGET.old" "$WORK"
 echo "applied $(date)" > "$(dirname "$ZIP")/applied.txt"
 /usr/bin/open -a "$TARGET"
@@ -139,10 +143,14 @@ echo "applied $(date)" > "$(dirname "$ZIP")/applied.txt"
 
 function start(h) {
   hooks = { ...hooks, ...h }
+  const log0 = hooks.log; hooks.log = (m) => { flog(m); log0(m) }
   if (process.platform !== 'darwin') return
+  hooks.log(`시작 v${app.getVersion()} · ${bundlePath() || '(번들 아님)'}`)
   setTimeout(() => void check(), 15 * 1000)
   timer = setInterval(() => void check(), CHECK_EVERY)
 }
+/** 창을 띄우거나 트레이를 누를 때 — 10분에 한 번만 */
+function checkOnFocus() { if (Date.now() - lastFocusCheck < FOCUS_EVERY) return; lastFocusCheck = Date.now(); void check() }
 function state() { return { current: app.getVersion(), staged: staged ? { version: staged.version, ready: !!staged.zip, progress: staged.progress ?? 0, notes: staged.notes || '' } : null, downloading: !!downloading, checking, lastCheck, lastError, deferred: deferred && !!staged?.zip, busy: hooks.busyCount(), host: hooks.isHost() } }
 
-module.exports = { start, check, apply, state, offer }
+module.exports = { start, check, apply, state, offer, checkOnFocus }

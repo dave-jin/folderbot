@@ -28,7 +28,7 @@ function useKeyboard(): boolean {
     const f = () => {
       // 키보드가 가린 높이 — 레이아웃 뷰포트가 같이 줄었으면(resizes-content) 0, 안 줄었으면 그만큼 컴포저를 올린다
       const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
-      const open = covered > 140 || vv.height < screen.height * 0.72
+      const open = covered > 140
       document.documentElement.style.setProperty('--kb', `${covered}px`)
       setKb(open)
       if (!open) window.scrollTo(0, 0)
