@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Bot } from '../core/types'
 import { api } from './api'
-import { Icon } from './FolderBot'
+import { Icon, Mid } from './FolderBot'
 import { Md } from './Sheets'
 import { fmtTime } from './store'
 
@@ -81,7 +81,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
   const isMd = /\.(md|markdown|txt)$/i.test(rel ?? '')
   return <div className="col doc" style={{ flex: wide ? 3 : 1.15 }}>
     <div className="hdr" style={phone ? undefined : { paddingLeft: 10 }}>
-      {phone ? <><button className="rb glassb" onClick={onBack} title="폴더로"><Icon n="back" size={20} /></button><span className="ttl">{name || '문서'}</span><span className="sp" /></> : null}
+      {phone ? <><button className="rb glassb" onClick={onBack} title="폴더로"><Icon n="back" size={20} /></button><span className="ttl"><Mid s={name || '문서'} /></span><span className="sp" /></> : null}
       <div className="tabs">{docs.tabs.slice(0, 6).map((t) => <button key={t.rel} className={`tab ${t.rel === docs.active ? 'on' : ''} ${t.pinned ? '' : 'pv'}`} onClick={() => docs.setActive(t.rel)} onDoubleClick={() => docs.pin(t.rel)} title={t.rel}>{t.rel.split('/').pop()}<span className="x" onClick={(e) => { e.stopPropagation(); docs.close(t.rel) }}><Icon n="x" size={9} /></span></button>)}{docs.tabs.length > 6 ? <span className="more">+{docs.tabs.length - 6}</span> : null}</div>
       <div className="acts"><button className={`ib ${wide ? 'on' : ''}`} onClick={onWide} title="넓게"><Icon n="expand" size={13} /></button><button className="ib" onClick={onHide} title="문서 열 접기 (⌘⇧D)"><Icon n="x" size={13} /></button></div>
     </div>
