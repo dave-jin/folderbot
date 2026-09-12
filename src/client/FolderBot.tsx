@@ -73,10 +73,12 @@ export const I = {
   mic: <><rect x="6" y="1.5" width="4" height="7.5" rx="2" /><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2.5M5.5 14.5h5" /></>
 }
 /** Finder 식 가운데 말줄임 — 앞과 뒤를 남기고 가운데를 … 로 (Dave 2026-09-12). 뒤는 최대 8자, 짧은 이름은 절반 */
-export function Mid({ s, tail = 8 }: { s: string; tail?: number }) {
-  const t = Math.min(tail, Math.floor(s.length / 2))
-  if (s.length <= 10 || t < 3) return <span className="mid"><span className="mh">{s}</span></span>
-  return <span className="mid"><span className="mh">{s.slice(0, s.length - t)}</span><span className="mt">{s.slice(s.length - t)}</span></span>
+export function Mid({ s: raw, tail = 8 }: { s: string; tail?: number }) {
+  // macOS 파일명은 NFD(자모 분리)로 온다 — 그대로 문자열 index 로 자르면 초성·중성 사이가 갈려 «전ㅊ ㅔ구조» 가 된다. NFC 로 합친 뒤 코드포인트 단위로 자른다
+  const cps = Array.from(raw.normalize('NFC'))
+  const t = Math.min(tail, Math.floor(cps.length / 2))
+  if (cps.length <= 10 || t < 3) return <span className="mid"><span className="mh">{cps.join('')}</span></span>
+  return <span className="mid"><span className="mh">{cps.slice(0, cps.length - t).join('')}</span><span className="mt">{cps.slice(cps.length - t).join('')}</span></span>
 }
 export function Icon({ n, size = 16, color, style }: { n: keyof typeof I; size?: number; color?: string; style?: React.CSSProperties }) {
   return <svg className="ico" viewBox="0 0 16 16" width={size} height={size} style={{ color, ...style }}>{I[n]}</svg>

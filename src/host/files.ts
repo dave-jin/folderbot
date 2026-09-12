@@ -11,8 +11,9 @@ const IMG_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'])
 
 /** 허용 루트(볼트·연결 리포) 안인지 — 밖이면 던진다 */
 export function guard(roots: string[], abs: string): string {
-  const a = resolve(abs).normalize('NFC')
-  for (const r of roots) { const rr = resolve(r).normalize('NFC'); if (a === rr || a.startsWith(rr + sep)) return a }
+  // ⚠ 비교만 NFC 로 하고, 돌려주는 경로는 원문 그대로 — NFC 로 바꿔 돌려주면 NFD 로 저장된 파일(맥 파일명·Dropbox·리눅스)이 ENOENT 가 난다 (스모크 실측)
+  const a = resolve(abs); const an = a.normalize('NFC')
+  for (const r of roots) { const rr = resolve(r).normalize('NFC'); if (an === rr || an.startsWith(rr + sep)) return a }
   throw new Error('허용된 폴더 밖이에요')
 }
 

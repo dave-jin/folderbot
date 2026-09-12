@@ -65,7 +65,7 @@ b,strong { color:var(--w); font-weight:600 }
 .brow .n small { display:block; font-size:10.5px; color:var(--t3); line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .sb-foot .bd { margin-left:auto; font-size:11px; color:var(--t3) } .sb-foot .bd.upd { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border-radius:6px; cursor:pointer } .sb-foot .bd.upd:hover { color:var(--t); background:var(--hover) } .sb-foot .bd + .bd { margin-left:8px }
 
 /* ── 채팅 — 스크롤 컨테이너 하나, 유리(헤더 · 고정 질문 · ↓ · 컴포저)는 그 형제 ── */
-.col.chat { position:relative; --footh:132px }
+.col.chat { position:relative; --footh:132px; min-width:360px } /* CHAT_MIN — 열 계산이 틀려도 CSS 가 마지막 방어선 */
 .chat-hdr { position:absolute; left:0; right:0; top:0; z-index:4; border-bottom:1px solid var(--hair) }
 .chat-scroll { position:absolute; inset:0; overflow:auto; display:flex; flex-direction:column; overscroll-behavior:contain }
 .chat-body { display:flex; flex-direction:column; gap:16px; padding:calc(var(--hh) + 22px) 24px calc(var(--footh) + 12px); width:100%; max-width:760px; align-self:center; flex:1 }
@@ -210,7 +210,7 @@ b,strong { color:var(--w); font-weight:600 }
   .mpill { display:flex; position:absolute; left:16px; right:16px; bottom:calc(var(--sab) + 6px); height:60px; border-radius:30px; border:1px solid var(--hair); align-items:center; gap:10px; padding:0 10px 0 8px; box-shadow:0 10px 30px rgba(0,0,0,.45); color:var(--t3); font-size:17px; z-index:5 } .mpill .pl { width:40px; height:40px; border-radius:50%; background:rgba(255,255,255,.06); display:inline-flex; align-items:center; justify-content:center; color:var(--t); flex:none } .mpill .tx { flex:1 }
   .mhome::after { content:''; position:absolute; left:0; right:0; bottom:0; height:140px; background:linear-gradient(180deg, rgba(20,20,20,0), rgba(24,24,24,.9) 70%); pointer-events:none; z-index:4 }
   /* 대화 — 위 페이드 + 둥근 버튼 · 봇 알약 · 아래 알약 컴포저 */
-  .col.chat { --footh:150px }
+  .col.chat { --footh:150px; min-width:0 }
   .chat-hdr.hdr { height:auto; padding:calc(var(--sat) + 10px) 16px 10px; border-bottom:0; background:linear-gradient(180deg, rgba(20,20,20,.94) 0%, rgba(20,20,20,.6) 70%, rgba(20,20,20,0) 100%); backdrop-filter:none; -webkit-backdrop-filter:none; gap:10px }
   .bpill { display:inline-flex; align-items:center; gap:8px; height:44px; padding:0 14px 0 8px; border-radius:22px; border:1px solid var(--hair); max-width:calc(100% - 118px); min-width:0 } .bpill b { font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 }
   .chat-body { padding:calc(var(--sat) + 72px) 18px calc(var(--footh) + 10px); gap:14px; font-size:16px; line-height:1.6 }

@@ -78,6 +78,10 @@ export function App() {
 }
 
 interface Layout { sb: number; rp: number; doc: number; sbOpen: boolean; rpOpen: boolean; sbPin: boolean; rpPin: boolean; secH: SecH }
+/** 대화 열 최소 폭 — 이 아래면 글이 한 글자씩 접혀 화면이 망가진다 (2026-09-13 Dave 스크린샷: 대화 열 ~100px) */
+const CHAT_MIN = 360
+const DOC_MIN = 380, SIDE_MIN = 200, STRIP_W = 45
+function useWinW(): number { const [w, setW] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1440)); useEffect(() => { const f = () => setW(window.innerWidth); window.addEventListener('resize', f); return () => window.removeEventListener('resize', f) }, []); return w }
 const DEF: Layout = { sb: 250, rp: 290, doc: 520, sbOpen: true, rpOpen: true, sbPin: false, rpPin: false, secH: { sessions: 120, todo: 128 } }
 interface UpdState { lastCheck: number; current: string; staged: { version: string; ready: boolean; progress: number; notes: string } | null; downloading: boolean; checking: boolean; lastError: string; deferred: boolean; busy: number; host: boolean }
 interface DesktopBridge { version?: string; update?: { state: () => Promise<UpdState>; check: () => Promise<UpdState>; apply: () => void; onChange: (cb: (st: UpdState) => void) => () => void } }
@@ -129,6 +133,7 @@ function Main() {
   const [wide, setWide] = useState(false)
   const [modal, setModal] = useState<'picker' | 'notify' | 'settings' | null>(null)
   const [drag, setDrag] = useState<'' | 'x' | 'y'>('')
+  const winW = useWinW()
   const [toast, say] = useToast()
   const [prefill, setPrefill] = useState('')
   const [attachReq, setAttachReq] = useState<Att[]>([])
@@ -158,17 +163,21 @@ function Main() {
   // 열 드래그 — 선이 핸들. 더블클릭은 기본값
   const dragX = (k: 'sb' | 'rp' | 'doc', dir: 1 | -1) => (e: React.PointerEvent) => {
     e.preventDefault(); setDrag('x'); const x0 = e.clientX; const w0 = lay[k]
-    const mv = (ev: PointerEvent) => { const w = w0 + (ev.clientX - x0) * dir; if (k === 'sb' && w < 150) { setLay((l) => ({ ...l, sbOpen: false })); return } if (k === 'rp' && w < 150) { setLay((l) => ({ ...l, rpOpen: false })); return } setLay((l) => ({ ...l, [k]: Math.max(k === 'doc' ? 380 : 200, Math.min(k === 'doc' ? 1100 : 480, w)), ...(k === 'sb' ? { sbOpen: true } : k === 'rp' ? { rpOpen: true } : {}) })) }
+    const chatEl = document.querySelector<HTMLElement>('.cols > .col.chat'); const slack = chatEl ? Math.max(0, chatEl.getBoundingClientRect().width - CHAT_MIN) : 0; const cap = w0 + slack // 대화 열이 내줄 수 있는 만큼만
+    const mv = (ev: PointerEvent) => { const w = Math.min(cap, w0 + (ev.clientX - x0) * dir); if (k === 'sb' && w < 150) { setLay((l) => ({ ...l, sbOpen: false })); return } if (k === 'rp' && w < 150) { setLay((l) => ({ ...l, rpOpen: false })); return } setLay((l) => ({ ...l, [k]: Math.max(k === 'doc' ? 380 : 200, Math.min(k === 'doc' ? 1100 : 480, w)), ...(k === 'sb' ? { sbOpen: true } : k === 'rp' ? { rpOpen: true } : {}) })) }
     const up = () => { setDrag(''); window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up) }
     window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up)
   }
   const rows = useMemo(() => {
     const items = s.bots.map((b) => ({ b, sum: botSummary(b, s.sessionsByBot[b.id] ?? [], s.notifications) }))
-    const rank = (st: string | null) => (st === 'awaiting_input' ? 0 : st === 'running' ? 1 : 2)
-    items.sort((a, c) => (a.b.orchestrator !== c.b.orchestrator ? (a.b.orchestrator ? -1 : 1) : rank(a.sum.state) - rank(c.sum.state) || c.sum.t - a.sum.t))
+    // 순서는 늘 같다 (Dave 2026-09-13: «항상 알파벳 내림차순») — 활동·상태로 자리를 바꾸지 않는다. 자리가 흔들리면 눈이 못 따라간다
+    // 섹션: 관제 → PARA 번호 오름차순(2 → 3 → 4). 행: 이름 내림차순 — 날짜 접두 폴더가 최신부터 온다
+    const cmp = (a: string, b: string) => a.localeCompare(b, 'ko', { numeric: true, sensitivity: 'base' })
     const m = new Map<string, typeof items>()
     for (const it of items) { const k = it.b.section; (m.get(k) ?? m.set(k, []).get(k)!).push(it) }
-    return [...m.entries()]
+    const secs = [...m.entries()].sort(([a], [b]) => (a === '관제' ? -1 : b === '관제' ? 1 : cmp(a, b)))
+    for (const [, list] of secs) list.sort((a, c) => (a.b.orchestrator !== c.b.orchestrator ? (a.b.orchestrator ? -1 : 1) : cmp(c.b.name, a.b.name)))
+    return secs
   }, [s.bots, s.sessionsByBot, s.notifications])
   if (!bot) return <div className="app"><div className="empty">봇이 없어요</div></div>
   const items = sessionId ? (s.chats[sessionId] ?? []) : []
@@ -177,6 +186,15 @@ function Main() {
   const touched = useMemo(() => { for (let i = items.length - 1; i >= 0; i--) { const it = items[i]; if (it.kind === 'files') return it.paths } return [] as string[] }, [items])
   // 좁은 창에서는 접힌 게 기본이고, 아이콘 열을 누르면 그 패널만 핀으로 편다
   const sbOpen = narrow ? lay.sbPin : lay.sbOpen; const rpOpen = narrow ? lay.rpPin : lay.rpOpen
+  // 창에 맞춘 실제 폭 — 저장값(lay)은 그대로 두고 그리는 값만 줄인다. 부족분은 문서 → 오른쪽 패널 → 왼쪽 목록 순으로 양보 (대화 열이 먼저 산다)
+  const fit = useMemo(() => {
+    let sb = sbOpen ? lay.sb : STRIP_W, rp = rpOpen ? lay.rp : STRIP_W, doc = showDoc && !wide && !phone ? lay.doc : 0
+    let over = sb + rp + doc + 3 + CHAT_MIN - winW
+    if (over > 0 && doc) { const d = Math.min(over, doc - DOC_MIN); doc -= d; over -= d }
+    if (over > 0 && rpOpen) { const d = Math.min(over, rp - SIDE_MIN); rp -= d; over -= d }
+    if (over > 0 && sbOpen) { const d = Math.min(over, sb - SIDE_MIN); sb -= d; over -= d }
+    return { sb, rp, doc }
+  }, [lay.sb, lay.rp, lay.doc, sbOpen, rpOpen, showDoc, wide, phone, winW])
   const openRp = (sec?: string) => { setLay((l) => ({ ...l, rpOpen: true, rpPin: true })); if (sec) setFocusSec({ sec, n: Date.now() }) }
   const closeRp = () => setLay((l) => ({ ...l, rpOpen: false, rpPin: false }))
   const openSb = () => setLay((l) => ({ ...l, sbOpen: true, sbPin: true })); const closeSb = () => setLay((l) => ({ ...l, sbOpen: false, sbPin: false }))
@@ -196,7 +214,7 @@ function Main() {
     <div className="cols">
       {/* ── 왼쪽 (폰은 홈 화면) ── */}
       {phone ? <Home rows={rows} bot={bot} go={go} setModal={setModal} waiting={waiting} unread={unread} onAsk={() => { go('orch'); setFocusReq(Date.now()) }} />
-        : sbOpen ? <div className="col side left" style={{ width: lay.sb }}>
+        : sbOpen ? <div className="col side left" style={{ width: fit.sb }}>
         <div className="hdr"><FolderBot color="#e08850" size={16} mood={waiting ? 'wait' : 'idle'} mono /><span className="ttl">Folder Bot</span><span className="sp" /><div className="acts"><button className="ib" onClick={closeSb} title="목록 접기 (⌘B)"><Icon n="panel" size={14} /></button></div></div>
         <div style={{ padding: '10px 8px 0' }}>
           <button className="nav" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span>폴더 선택 · 시작</span><span className="bd">후보 {s.candidates.filter((c) => !c.active).length}</span></button>
@@ -209,7 +227,7 @@ function Main() {
             {list.map(({ b, sum }) => <button key={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''}`} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={16} mood={sum.mood} mono /><span className="n"><Mid s={b.name} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span><span className={`dot ${stateDot(sum.state ?? undefined)}`} /><time>{fmtTime(sum.t)}</time></button>)}
           </div>)}
         </div>
-        {hovRow ? <HoverCard b={hovRow.b} sum={hovRow.sum} top={hov!.top} left={lay.sb + 6} /> : null}
+        {hovRow ? <HoverCard b={hovRow.b} sum={hovRow.sum} top={hov!.top} left={fit.sb + 6} /> : null}
         <div className="sb-foot"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} /><span>{s.hostName}</span><MrBadge />{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<UpdateChip version={s.version} st={upd} onCheck={updCheck} onApply={updApply} /></div>
       </div> : <div className="strip left"><button className="ib" onClick={openSb} title="목록 펼치기 (⌘B)"><Icon n="panel" size={14} /></button><div className="gap" />
         <button className="ib" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span className="fly"><b>폴더 선택 · 시작</b><span>후보 {s.candidates.filter((c) => !c.active).length}</span></span></button>
@@ -223,11 +241,11 @@ function Main() {
       <Chat bot={bot} sessions={sessions} cur={cur} items={items} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openDoc(rel, pin)} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={() => setView('list')} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} />
 
       {/* ── 문서 열 ── */}
-      {showDoc ? <>{!phone ? <div className="divx" onPointerDown={dragX('doc', -1)} onDoubleClick={() => setLay({ ...lay, doc: DEF.doc })} /> : null}<div className="docwrap" style={{ width: wide || phone ? undefined : lay.doc, flex: wide ? 3 : 'none', display: 'flex', minWidth: 0 }}><DocPane bot={bot} docs={docs} filesTick={s.filesTick[bot.id]} onTalk={(rel) => { setPrefill(`${rel} 파일 봐 줘: `); if (phone) setView('chat') }} onHide={() => setDocOpen((d) => ({ ...d, [bot.id]: false }))} wide={wide} onWide={() => setWide(!wide)} onAttach={(rel) => addAttach({ rel, abs: `${bot.abs}/${rel}` })} say={say} phone={phone} onBack={() => setView('panel')} /></div></> : null}
+      {showDoc ? <>{!phone ? <div className="divx" onPointerDown={dragX('doc', -1)} onDoubleClick={() => setLay({ ...lay, doc: DEF.doc })} /> : null}<div className="docwrap" style={{ width: wide || phone ? undefined : fit.doc, flex: wide ? 3 : 'none', display: 'flex', minWidth: 0 }}><DocPane bot={bot} docs={docs} filesTick={s.filesTick[bot.id]} onTalk={(rel) => { setPrefill(`${rel} 파일 봐 줘: `); if (phone) setView('chat') }} onHide={() => setDocOpen((d) => ({ ...d, [bot.id]: false }))} wide={wide} onWide={() => setWide(!wide)} onAttach={(rel) => addAttach({ rel, abs: `${bot.abs}/${rel}` })} say={say} phone={phone} onBack={() => setView('panel')} /></div></> : null}
 
       {/* ── 오른쪽 ── */}
       {!phone ? <div className="divx" onPointerDown={rpOpen ? dragX('rp', -1) : undefined} onDoubleClick={() => setLay({ ...lay, rp: DEF.rp, rpOpen: true, rpPin: true })} /> : null}
-      {rpOpen || phone ? <div className="rpwrap" style={{ width: phone ? '100%' : lay.rp, flex: 'none', display: 'flex', minWidth: 0 }}><Panel bot={bot} sessions={sessions} sessionId={sessionId} go={go} onOpenFile={openDoc} onTalk={(t) => { setPrefill(t); if (phone) setView('chat') }} onAttach={(rel, dir) => addAttach({ rel, abs: `${bot.abs}/${rel}`, dir })} onMention={(rel) => { setMentionReq((m) => [...m, rel]); if (phone) setView('chat') }} onStartAt={startAt} onNewFolderAt={newFolderAt} touched={touched} filesTick={s.filesTick[bot.id]} secH={lay.secH} onSecH={(h) => setLay({ ...lay, secH: h })} onCollapse={closeRp} focusSec={focusSec} say={say} refresh={refresh} activeDoc={showDoc ? docs.active : null} onDragY={(on) => setDrag(on ? 'y' : '')} phone={phone} onBack={() => setView('chat')} /></div>
+      {rpOpen || phone ? <div className="rpwrap" style={{ width: phone ? '100%' : fit.rp, flex: 'none', display: 'flex', minWidth: 0 }}><Panel bot={bot} sessions={sessions} sessionId={sessionId} go={go} onOpenFile={openDoc} onTalk={(t) => { setPrefill(t); if (phone) setView('chat') }} onAttach={(rel, dir) => addAttach({ rel, abs: `${bot.abs}/${rel}`, dir })} onMention={(rel) => { setMentionReq((m) => [...m, rel]); if (phone) setView('chat') }} onStartAt={startAt} onNewFolderAt={newFolderAt} touched={touched} filesTick={s.filesTick[bot.id]} secH={lay.secH} onSecH={(h) => setLay({ ...lay, secH: h })} onCollapse={closeRp} focusSec={focusSec} say={say} refresh={refresh} activeDoc={showDoc ? docs.active : null} onDragY={(on) => setDrag(on ? 'y' : '')} phone={phone} onBack={() => setView('chat')} /></div>
         : <div className="strip right"><button className="ib" onClick={() => openRp()} title="패널 펼치기 (⌘⇧B)"><Icon n="panelr" size={14} /></button><div className="gap" />
         <button className="ib" onClick={() => openRp('sessions')}><Icon n="clock" size={14} />{sessions.some((x) => x.state === 'running') ? <span className="dot run" style={{ position: 'absolute', right: 2, top: 2 }} /> : null}<span className="fly"><b>세션</b><span>{sessions.length}개</span></span></button>
         <button className="ib" onClick={() => openRp('todo')}><Icon n="list" size={14} />{(s.todos[bot.id] ?? []).filter((t) => !t.done).length ? <span className="bd">{(s.todos[bot.id] ?? []).filter((t) => !t.done).length}</span> : null}<span className="fly"><b>{bot.orchestrator ? 'Inbox' : '할 일'}</b><span>{bot.orchestrator ? `${s.inbox}개` : `미완료 ${(s.todos[bot.id] ?? []).filter((t) => !t.done).length}`}</span></span></button>
