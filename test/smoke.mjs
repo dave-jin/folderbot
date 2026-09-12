@@ -10,7 +10,7 @@ const claudeCfg = mkdtempSync(join(tmpdir(), 'fb-claude-'))
 for (const d of ['1. Inbox', '2. Projects/2026-09_강의-FoundersAI-2기', '2. Projects/2026-10_해커톤-제안', '3. Area/제품_Rondo', '3. Area/재무_CFO', '4. Resources', '5. Archive']) mkdirSync(join(root, d), { recursive: true })
 writeFileSync(join(root, '3. Area/제품_Rondo/CLAUDE.md'), '# 제품_Rondo\n')
 writeFileSync(join(root, '3. Area/제품_Rondo/readme.md'), '# Rondo\n')
-writeFileSync(join(root, '3. Area/제품_Rondo/todo.md'), '# todo\n\n- [ ] PRD v1.0 확정: Q2·Q5\n- [ ] Tailscale 폰 설치\n\n## 완료\n')
+writeFileSync(join(root, '3. Area/제품_Rondo/todo.md'), '# todo\n\n- [ ] PRD v1.0 확정: Q2·Q5\n- [ ] Tailscale 폰 설치\n- [ ] 무응답 3건 후속 연락: 9/1 발송분이 엿새째 무응답. ① 강준구 대표 문자 ② 나눔엔젤스에 「총 1회」 적용 범위 문의(김상욱+주도연 공동 수신) ③ 답 보고 코어엑스 2회차 결정. Akiflow 9/7(월) 10 — 00 배치\n\n## 완료\n')
 writeFileSync(join(root, '3. Area/재무_CFO/CLAUDE.md'), '# CFO\n')
 writeFileSync(join(root, '2. Projects/2026-09_강의-FoundersAI-2기/CLAUDE.md'), '# 강의\n')
 writeFileSync(join(root, '1. Inbox/유메타랩_자문자료.txt'), 'x')
@@ -102,8 +102,8 @@ try {
   await api('/auth/token', { token: 'sk-ant-oat01-test' }); if (!/sk-ant-oat01-test/.test(readFileSync(join(data, 'config.json'), 'utf8'))) fail('token save')
   await api('/auth/token', { token: '' }); if (/sk-ant-oat01/.test(readFileSync(join(data, 'config.json'), 'utf8'))) fail('token clear'); ok('auth token set/clear')
   // todo
-  let todo = await api(`/bots/${bot.id}/todo`); if (todo.length !== 2) fail('todo parse')
-  todo = await api(`/bots/${bot.id}/todo`, { title: '알파 동결 문서', desc: 'PRD v1.0 뒤에' }); if (todo.length !== 3) fail('todo add')
+  let todo = await api(`/bots/${bot.id}/todo`); if (todo.length !== 3) fail('todo parse')
+  todo = await api(`/bots/${bot.id}/todo`, { title: '알파 동결 문서', desc: 'PRD v1.0 뒤에' }); if (todo.length !== 4) fail('todo add')
   todo = await api(`/bots/${bot.id}/todo/toggle`, { line: todo[0].line, done: true }); if (!todo[0].done) fail('todo toggle'); ok('todo add/toggle')
   // 세션 휴면·기상 (같은 cli 세션 id 로 --resume)
   const before = chat.info.cliSessionId
@@ -162,6 +162,16 @@ try {
         if (!(await pg.$('.panel .trow'))) fail('ui tree missing')
         if (!(await pg.$('.chat-hdr.glass')) || !(await pg.$('.composer .cbar')) || !(await pg.$('.ring'))) fail('ui composer bar / glass header missing')
         if (!(await pg.$('.sb-foot .mr.main'))) fail('ui main badge')
+        // 이름은 가운데 말줄임 — 꼬리(.mt)가 남아 있다
+        if (!(await pg.$('.brow .n .mid .mt')) || !(await pg.$('.panel .trow .n .mid'))) fail('ui mid ellipsis')
+        // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
+        await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)
+        await pg.mouse.move(700, 300); await wait(200); if (await pg.$('.hcard')) fail('ui hover card stuck')
+        // 할 일 행 — 글이 오른쪽 끝까지(도구 자리를 미리 비우지 않음) · 긴 행은 2줄에서 잘리고 «…더» 로 펼친다
+        const tg = await pg.evaluate(() => { const r = document.querySelector('.todo'); const t = r.querySelector('.tt'); return r.getBoundingClientRect().right - t.getBoundingClientRect().right }); if (tg > 16) fail('ui todo right gap ' + tg)
+        if (!(await pg.$('.todo.clamp.over .more'))) fail('ui todo clamp/more missing'); const hBefore = await pg.$eval('.todo.clamp.over', (e) => e.getBoundingClientRect().height)
+        await pg.click('.todo.clamp.over .more'); await wait(150); const hAfter = await pg.$eval('.todo .fold', (e) => e.closest('.todo').getBoundingClientRect().height); if (!(hAfter > hBefore + 10)) fail(`ui todo expand ${hBefore} → ${hAfter}`)
+        await pg.click('.todo .fold'); await wait(150); if (await pg.$('.todo .fold')) fail('ui todo fold')
         // 폴더 선택 = 트리: 1단계 폴더가 뜨고 활성 폴더는 펼쳐져 있다 · Resources 를 펼치면 하위가 보인다
         await pg.click('.nav'); await pg.waitForSelector('.pk [data-rel]', { timeout: 5000 }); await wait(500)
         const top = await pg.$$eval('.pk [data-rel]', (r) => r.map((x) => x.getAttribute('data-rel'))); if (!top.includes('4. Resources') || !top.includes('3. Area/제품_Rondo')) fail('ui picker tree: ' + top.join(','))

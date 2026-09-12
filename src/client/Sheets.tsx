@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { marked } from 'marked'
 import type { Bot, Candidate, NotifyEvent, RoutineDef } from '../core/types'
 import { api, setToken, subscribePush } from './api'
-import { FolderBot, Icon } from './FolderBot'
+import { FolderBot, Icon, Mid } from './FolderBot'
 import { fmtTime, useStore } from './store'
 import { EFFORTS, MODELS } from './consts'
 
@@ -89,7 +89,7 @@ export function FolderPicker({ onClose, onStarted }: { onClose: () => void; onSt
             : <button key={n.rel} className="trow" style={{ ['--pad' as string]: `${18 + depth * 16 + 19}px`, color: 'var(--t2)' }} onClick={() => { setNewIn(n.rel.replace(NEW_MARK, '')); setNewName('') }}><Icon n="fplus" size={13} color="var(--t3)" /><span className="n">새 폴더 만들기</span></button>)
           : <button key={n.rel} data-rel={n.rel} className={`trow dir ${sel === n.rel ? 'on' : ''}`} style={{ ['--pad' as string]: `${18 + depth * 16}px`, minHeight: 32, opacity: topRole(n.rel) === 'archive' ? .7 : 1 }} onClick={() => setSel(n.rel)} onDoubleClick={() => (n.botId || botOfRel(n.rel) ? onStarted(botOfRel(n.rel)!) : void start(n.rel))} title={n.rel}>
             <span className="cv" onClick={(e) => { e.stopPropagation(); toggle(n.rel) }} style={{ width: 14, padding: 4, margin: -4 }}>{q ? null : <Icon n={exp.has(n.rel) ? 'chevd' : 'chev'} size={10} />}</span><Icon n="folder" size={13} color="var(--t2)" />
-            <span className="n" style={{ color: sel === n.rel ? 'var(--w)' : undefined }}>{q ? n.rel : n.name}</span>
+            <span className="n" style={{ color: sel === n.rel ? 'var(--w)' : undefined }}><Mid s={q ? n.rel : n.name} tail={q ? 12 : 8} /></span>
             <span style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 'none' }}>
               {!n.rel.includes('/') && n.role ? <span className="rbg" style={{ color: ROLE_T[n.role][1] }}>{ROLE_T[n.role][0]}</span> : null}
               {n.botId || botOfRel(n.rel) ? <span className="rbg" style={{ color: 'var(--run)' }}>봇 있음 · 열기</span> : n.harness ? <span className="b" style={{ fontSize: 11, color: 'var(--t3)', display: 'flex', alignItems: 'center', gap: 4 }}><Icon n="check" size={11} color="var(--done)" />하네스</span> : n.rel.includes('/') ? <span style={{ fontSize: 11, color: 'var(--t3)' }}>하네스 없음 · 시작하면 깔아 줌</span> : null}

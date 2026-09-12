@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Bot, SessionInfo, TodoItem } from '../core/types'
 import { api } from './api'
-import { FolderBot, Icon } from './FolderBot'
+import { FolderBot, Icon, Mid } from './FolderBot'
 import { RoutineSheet } from './Sheets'
 import { fmtElapsed, fmtTime, useStore } from './store'
 
@@ -61,6 +61,11 @@ function TodoSec({ bot, items, open, tog, onDelegate, reload }: { bot: Bot; item
   const [adding, setAdding] = useState(false); const [line, setLine] = useState('')
   const [edit, setEdit] = useState<number | null>(null); const [et, setEt] = useState(''); const [ed, setEd] = useState('')
   const [showDone, setShowDone] = useState(false)
+  // V11 — 행별 펼침. 잘렸는지는 그려진 뒤 scrollHeight 로 잰다(폭이 바뀌면 다시)
+  const [opened, setOpened] = useState<Set<number>>(() => new Set()); const secRef = useRef<HTMLDivElement | null>(null)
+  const toggleOpen = (line: number) => setOpened((o) => { const n = new Set(o); if (n.has(line)) n.delete(line); else n.add(line); return n })
+  const measure = () => { const el = secRef.current; if (!el) return; for (const row of Array.from(el.querySelectorAll<HTMLElement>('.todo'))) { const tt = row.querySelector<HTMLElement>('.tt'); if (!tt) continue; row.classList.toggle('over', tt.scrollHeight > tt.clientHeight + 1) } }
+  useEffect(() => { measure(); const el = secRef.current; if (!el || typeof ResizeObserver === 'undefined') return; const ro = new ResizeObserver(() => measure()); ro.observe(el); return () => ro.disconnect() })
   const [undo, setUndo] = useState<{ title: string; desc: string } | null>(null); const undoT = useRef<number | undefined>(undefined)
   const todo = items.filter((t) => !t.done); const done = items.filter((t) => t.done)
   const toggle = async (t: TodoItem) => { await api(`/bots/${bot.id}/todo/toggle`, { body: { line: t.line, done: !t.done } }); await reload() }
@@ -71,10 +76,10 @@ function TodoSec({ bot, items, open, tog, onDelegate, reload }: { bot: Bot; item
   const undoRemove = async () => { if (!undo) return; await api(`/bots/${bot.id}/todo`, { body: { title: undo.title, desc: undo.desc } }); setUndo(null); await reload() }
   const row = (t: TodoItem) => edit === t.line
     ? <div key={t.line} className="todo edit"><input autoFocus value={et} placeholder="제목" onChange={(e) => setEt(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(); if (e.key === 'Escape') setEdit(null) }} /><input value={ed} placeholder="설명 (선택)" onChange={(e) => setEd(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(); if (e.key === 'Escape') setEdit(null) }} /><div className="eh"><button onClick={() => void save()}>⏎ 저장</button><button onClick={() => setEdit(null)}>⎋ 취소</button><span style={{ flex: 1 }} /><button className="del" onClick={() => void remove(t)}>삭제</button></div></div>
-    : <div key={t.line} className={`todo ${t.done ? 'done' : ''}`}><button className="bx" onClick={() => toggle(t)} aria-label={t.done ? '되돌리기' : '완료'}>{t.done ? <Icon n="check" size={9} color="#111" /> : null}</button><span className="tt link" onClick={() => startEdit(t)} title="누르면 편집">{t.title}{t.desc ? <small> — {t.desc}</small> : null}{t.by === 'bot' ? <small> · 봇</small> : null}</span><span className="tools"><button title="편집" onClick={() => startEdit(t)}><Icon n="edit" size={12} /></button>{!t.done ? <button title="봇에게 맡기기" onClick={() => onDelegate(t)}><Icon n="sub" size={12} /></button> : null}<button title="삭제" onClick={() => void remove(t)}><Icon n="x" size={12} /></button></span></div>
+    : <div key={t.line} className={`todo ${t.done ? 'done' : ''} ${opened.has(t.line) ? '' : 'clamp'}`}><button className="bx" onClick={() => toggle(t)} aria-label={t.done ? '되돌리기' : '완료'}>{t.done ? <Icon n="check" size={9} color="#111" /> : null}</button><span className="tt link" onClick={() => startEdit(t)} title="누르면 편집"><span className="sp" />{t.title}{t.desc ? <small> — {t.desc}</small> : null}{t.by === 'bot' ? <small> · 봇</small> : null}{opened.has(t.line) ? <span className="fold" onClick={(e) => { e.stopPropagation(); toggleOpen(t.line) }}>접기</span> : null}</span><button className="more" onClick={() => toggleOpen(t.line)} title="펼치기">…더</button><span className="tools"><button title="편집" onClick={() => startEdit(t)}><Icon n="edit" size={12} /></button>{!t.done ? <button title="봇에게 맡기기" onClick={() => onDelegate(t)}><Icon n="sub" size={12} /></button> : null}<button title="삭제" onClick={() => void remove(t)}><Icon n="x" size={12} /></button></span></div>
   return <>
     <button className="sech" onClick={tog}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>할 일</span><span className="c">{todo.length}{showDone && done.length ? ` · 완료 ${done.length}` : ''}</span><span className={`tools ${showDone ? 'on' : ''}`}>{done.length ? <span className={`ib ${showDone ? 'on' : ''}`} title={showDone ? '완료 숨기기' : `완료 ${done.length}개 보기`} onClick={(e) => { e.stopPropagation(); setShowDone(!showDone) }}><Icon n="eye" size={12} /></span> : null}<span className="ib" title="추가 — 제목: 설명" onClick={(e) => { e.stopPropagation(); setAdding(true) }}><Icon n="plus" size={12} /></span></span></button>
-    {open ? <div className="secb" style={{ padding: '0 0 6px' }}>
+    {open ? <div className="secb" ref={secRef} style={{ padding: '0 0 6px' }}>
       {adding ? <div className="tadd"><span className="dot none" style={{ width: 12, height: 12, border: '1px solid var(--line2)', borderRadius: 3 }} /><input autoFocus placeholder="제목: 설명 (Enter)" value={line} onChange={(e) => setLine(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void add(); if (e.key === 'Escape') setAdding(false) }} onBlur={() => { if (!line.trim()) setAdding(false) }} /></div> : null}
       {todo.map(row)}
       {showDone ? done.map(row) : null}
@@ -90,7 +95,7 @@ function InboxSec({ open, tog, onSend }: { open: boolean; tog: () => void; onSen
   useEffect(() => { void api<typeof items>('/inbox').then(setItems).catch(() => {}) }, [s.inbox])
   return <>
     <button className="sech" onClick={tog}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>Inbox</span><span className="c">{items.length}</span>{items.length ? <span className="tools on"><span className="ib" title="정리 제안 받기" onClick={(e) => { e.stopPropagation(); onSend('Inbox 를 규칙대로 정리해 줘. 어디로 옮길지 먼저 제안해.') }}><Icon n="sub" size={12} /></span></span> : null}</button>
-    {open ? <div className="secb" style={{ padding: '0 0 6px' }}>{items.slice(0, 20).map((i) => <div key={i.rel} className="trow" style={{ ['--pad' as string]: '16px' }}><Icon n={i.dir ? 'folder' : 'doc'} size={12} color="var(--t3)" /><span className="n">{i.name}</span></div>)}{!items.length ? <div className="kv" style={{ color: 'var(--t3)' }}>정리할 게 없어요</div> : null}</div> : null}
+    {open ? <div className="secb" style={{ padding: '0 0 6px' }}>{items.slice(0, 20).map((i) => <div key={i.rel} className="trow" style={{ ['--pad' as string]: '16px' }}><Icon n={i.dir ? 'folder' : 'doc'} size={12} color="var(--t3)" /><span className="n"><Mid s={i.name} /></span></div>)}{!items.length ? <div className="kv" style={{ color: 'var(--t3)' }}>정리할 게 없어요</div> : null}</div> : null}
   </>
 }
 
@@ -146,7 +151,7 @@ function Tree({ bot, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFol
       {filter !== null ? <div className="tfilter"><Icon n="search" size={12} /><input autoFocus placeholder="이름으로 거르기…" value={filter} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setFilter(null) }} /><span onClick={() => setFilter(null)} style={{ cursor: 'pointer' }}><Icon n="x" size={11} /></span></div> : null}
       <div className="secb" style={{ padding: '0 6px 8px' }}>
         {rows.map(({ n, depth }) => <button key={n.rel} className={`trow ${n.dir ? 'dir' : ''} ${active === n.rel ? 'on' : ''} ${flash.has(n.rel) ? 'flash' : ''}`} style={{ ['--pad' as string]: `${10 + depth * 14}px` }} onClick={() => (n.dir ? toggleDir(n.rel) : onOpen(n.rel))} onDoubleClick={() => { if (!n.dir) onOpen(n.rel, true) }} onContextMenu={(e) => { e.preventDefault(); setCtx({ x: e.clientX, y: e.clientY, n }) }} title={n.rel} draggable onDragStart={(e) => { e.dataTransfer.setData('text/x-fb-rel', n.rel); e.dataTransfer.setData('text/x-fb-dir', n.dir ? '1' : '0'); e.dataTransfer.setData('text/plain', `${bot.abs}/${n.rel}`) }}>
-          <span className="cv">{n.dir ? <Icon n={exp.has(n.rel) ? 'chevd' : 'chev'} size={9} /> : null}</span><Icon n={n.dir ? 'folder' : 'doc'} size={12} color={n.dir && exp.has(n.rel) ? 'var(--wait)' : 'var(--t3)'} /><span className="n">{n.name}</span>{n.botId ? <span className="dot run" title="봇 있음" style={{ width: 5, height: 5 }} /> : null}<time>{flash.has(n.rel) ? '방금' : fmtTime(n.mtime)}</time>
+          <span className="cv">{n.dir ? <Icon n={exp.has(n.rel) ? 'chevd' : 'chev'} size={9} /> : null}</span><Icon n={n.dir ? 'folder' : 'doc'} size={12} color={n.dir && exp.has(n.rel) ? 'var(--wait)' : 'var(--t3)'} /><span className="n"><Mid s={n.name} /></span>{n.botId ? <span className="dot run" title="봇 있음" style={{ width: 5, height: 5 }} /> : null}<time>{flash.has(n.rel) ? '방금' : fmtTime(n.mtime)}</time>
         </button>)}
         {!rows.length ? <div className="kv" style={{ color: 'var(--t3)' }}>{dirs[''] ? '비어 있어요' : <><div className="skel" style={{ width: '70%' }} /></>}</div> : null}
       </div>

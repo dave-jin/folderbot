@@ -281,6 +281,8 @@ export class SessionManager extends EventEmitter {
     return w
   }
   private thinking = new Map<string, ChatItem & { kind: 'thinking' }>()
+  /** 생각 스트림을 렌더러로 보낸 마지막 시각 — 길이 나머지(%40)로 던지면 큰 청크가 오는 모델에서 한 번도 안 맞아 화면이 비어 있었다 */
+  private thinkSent = new Map<string, number>()
   private activityAt = new Map<string, number>()
   /** «지금 하는 일» 한 줄 — 0.4초에 한 번만 밖으로 (토큰마다 쏘지 않는다) */
   private setActivity(r: SessionRec, text: string, force = false): void {
@@ -312,7 +314,7 @@ export class SessionManager extends EventEmitter {
         let th = this.thinking.get(r.id)
         if (!th) { th = { id: itemId('th'), t: Date.now(), kind: 'thinking', text: '', streaming: true }; this.thinking.set(r.id, th); r.items.push(th) }
         th.text += ev.delta.thinking ?? ''
-        if (th.text.length % 40 < 8) this.emit('chat', r.id, th, true)
+        const now = Date.now(); if (now - (this.thinkSent.get(r.id) ?? 0) > 150) { this.thinkSent.set(r.id, now); this.emit('chat', r.id, th, true) }
         this.setActivity(r, `생각 중 · ${th.text.slice(-90).replace(/\s+/g, ' ')}`)
       }
       this.setState(r, { kind: 'stream_activity' })
@@ -322,8 +324,10 @@ export class SessionManager extends EventEmitter {
       const sub = this.subOf(r, parent)
       const text = assistantText(line)
       if (!parent) {
-        const th = this.thinking.get(r.id); if (th) { th.streaming = false; this.thinking.delete(r.id); this.push(r, th, true) }
-        for (const b of line.message?.content ?? []) if (b.type === 'thinking' && typeof b.thinking === 'string' && !th) this.push(r, { id: itemId('th'), t: Date.now(), kind: 'thinking', text: String(b.thinking) })
+        const th = this.thinking.get(r.id)
+        const blocks = (line.message?.content ?? []).filter((b) => b.type === 'thinking' && typeof b.thinking === 'string').map((b) => String(b.thinking)).filter(Boolean)
+        if (th) { if (!th.text.trim() && blocks.length) th.text = blocks.join('\n\n'); th.streaming = false; this.thinking.delete(r.id); this.thinkSent.delete(r.id); this.push(r, th, true) }
+        else for (const t of blocks) this.push(r, { id: itemId('th'), t: Date.now(), kind: 'thinking', text: t })
         const cur = this.streaming.get(r.id)
         if (text) {
           if (cur) { cur.text = text; cur.streaming = false; this.streaming.delete(r.id); this.push(r, cur, true) }

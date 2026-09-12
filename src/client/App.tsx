@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Bot, ChatItem, NotifyEvent, PermissionMode, PermissionRequest, SessionInfo, SlashCmd } from '../core/types'
 import { api, setToken, token, uploadFile } from './api'
-import { FolderBot, Icon, moodOf } from './FolderBot'
+import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
 import { FolderPicker, Md, NotifyCenter, Onboarding, Pairing, Settings, useToast } from './Sheets'
 import { DocPane, useDocs } from './Doc'
 import { Elapsed, Panel, type SecH } from './Panel'
@@ -144,6 +144,11 @@ function Main() {
   const closeRp = () => setLay((l) => ({ ...l, rpOpen: false, rpPin: false }))
   const openSb = () => setLay((l) => ({ ...l, sbOpen: true, sbPin: true })); const closeSb = () => setLay((l) => ({ ...l, sbOpen: false, sbPin: false }))
   const stripBots = rows.flatMap(([, it]) => it)
+  // 펼친 목록의 행 호버 → 상세 카드 (접힌 스트립의 .fly 와 같은 정보 + 세션·할 일·마지막 메시지)
+  const [hov, setHov] = useState<{ id: string; top: number } | null>(null); const hovT = useRef<number | undefined>(undefined)
+  const hovIn = (id: string, el: HTMLElement) => { const r = el.getBoundingClientRect(); window.clearTimeout(hovT.current); hovT.current = window.setTimeout(() => setHov({ id, top: r.top }), 300) }
+  const hovOut = () => { window.clearTimeout(hovT.current); setHov(null) }
+  const hovRow = hov ? stripBots.find((x) => x.b.id === hov.id) : undefined
   // 트리 우클릭 «여기서 에이전트 시작» · «새 폴더 만들기 → 시작» — 볼트 상대 경로로
   const startAt = async (rel: string, botId?: string) => { if (botId) { go(botId); return } if (!bot.orchestrator && !confirm(`상위 봇 ${bot.name} 와 폴더가 겹쳐요. 그래도 여기서 시작할까요?`)) return; try { const b = await api<Bot>('/bots/start', { body: { rel } }); await refresh(); go(b.id); say(`${b.name} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
   const newFolderAt = async (parent: string) => { const name = prompt(`${parent || '볼트'} 안에 만들 폴더 이름`); if (!name?.trim()) return; try { const r = await api<{ rel: string; bot: Bot }>('/folders', { body: { section: parent, name: name.trim(), start: true } }); await refresh(); go(r.bot.id); say(`${r.rel} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
@@ -164,15 +169,16 @@ function Main() {
         <div className="sb-list">
           {rows.map(([sec, list]) => <div key={sec}>
             <div className="secl">{sec === '관제' ? '관제' : sec}</div>
-            {list.map(({ b, sum }) => <button key={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''}`} onClick={() => go(b.id)} title={`${b.rel || '볼트'} — ${sum.text}`}><FolderBot color={b.color} size={16} mood={sum.mood} mono /><span className="n">{b.name}{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span><span className={`dot ${stateDot(sum.state ?? undefined)}`} /><time>{fmtTime(sum.t)}</time></button>)}
+            {list.map(({ b, sum }) => <button key={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''}`} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={16} mood={sum.mood} mono /><span className="n"><Mid s={b.name} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span><span className={`dot ${stateDot(sum.state ?? undefined)}`} /><time>{fmtTime(sum.t)}</time></button>)}
           </div>)}
         </div>
+        {hovRow ? <HoverCard b={hovRow.b} sum={hovRow.sum} top={hov!.top} left={lay.sb + 6} /> : null}
         <div className="sb-foot"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} /><span>{s.hostName}</span><MrBadge />{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<UpdateChip version={s.version} st={upd} onCheck={updCheck} onApply={updApply} /></div>
       </div> : <div className="strip left"><button className="ib" onClick={openSb} title="목록 펼치기 (⌘B)"><Icon n="panel" size={14} /></button><div className="gap" />
         <button className="ib" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span className="fly"><b>폴더 선택 · 시작</b><span>후보 {s.candidates.filter((c) => !c.active).length}</span></span></button>
         <button className="ib" onClick={() => setModal('notify')}><Icon n="bell" size={14} />{unread ? <span className="bd">{unread}</span> : null}<span className="fly"><b>알림</b><span>{unread ? `읽지 않음 ${unread}` : '없음'}</span></span></button>
         <div className="gap" />
-        {stripBots.map(({ b, sum }) => <button key={b.id} className={`bot ${b.id === bot.id ? 'on' : ''}`} onClick={() => go(b.id)}><FolderBot color={b.color} size={17} mood={sum.mood} mono />{stateDot(sum.state ?? undefined) !== 'none' ? <span className={`dot ${stateDot(sum.state ?? undefined)}`} /> : null}<span className="fly"><b>{b.name}</b><span><span className={`dot ${stateDot(sum.state ?? undefined)}`} style={{ marginRight: 5 }} />{sum.text}</span><span className="t3">{b.section} · {fmtTime(sum.t)}</span></span></button>)}
+        {stripBots.map(({ b, sum }) => <button key={b.id} className={`bot ${b.id === bot.id ? 'on' : ''}`} onClick={() => go(b.id)}><FolderBot color={b.color} size={17} mood={sum.mood} mono />{stateDot(sum.state ?? undefined) !== 'none' ? <span className={`dot ${stateDot(sum.state ?? undefined)}`} /> : null}<span className="fly"><b><Mid s={b.name} /></b><span><span className={`dot ${stateDot(sum.state ?? undefined)}`} style={{ marginRight: 5 }} />{sum.text}</span><span className="t3">{b.section} · {fmtTime(sum.t)}</span></span></button>)}
       </div>}
       <div className="divx" onPointerDown={sbOpen ? dragX('sb', 1) : undefined} onDoubleClick={() => setLay({ ...lay, sb: DEF.sb, sbOpen: true, sbPin: true })} />
 
@@ -196,6 +202,30 @@ function Main() {
     {modal === 'notify' ? <NotifyCenter onClose={() => setModal(null)} onJump={(n) => { setModal(null); api('/notifications/read', { body: { ids: [n.id] } }).then(refresh); go(n.botId, n.sessionId) }} /> : null}
     {modal === 'settings' ? <Settings onClose={() => setModal(null)} /> : null}
     {toast ? <div className="toast">{toast}</div> : null}
+  </div>
+}
+
+/** 레일 행 호버 카드 — 이름 · 경로 · 상태 · 세션(모델·컨텍스트) · 할 일 · 마지막 말 · 시간 */
+function HoverCard({ b, sum, top, left }: { b: Bot; sum: ReturnType<typeof botSummary>; top: number; left: number }) {
+  const { s } = useStore()
+  const ss = s.sessionsByBot[b.id] ?? []; const topS = ss.find((x) => x.state === 'awaiting_input') ?? ss.find((x) => x.state === 'running') ?? ss[0]
+  const todos = (s.todos[b.id] ?? []).filter((t) => !t.done).length
+  const chat = topS ? s.chats[topS.id] : undefined
+  const lastMsg = chat ? [...chat].reverse().find((i): i is ChatItem & { kind: 'assistant' | 'user' } => (i.kind === 'assistant' || i.kind === 'user') && !!i.text.trim()) : undefined
+  const lastN = s.notifications.find((n) => n.botId === b.id)
+  const pct = topS?.ctx?.window ? Math.round((topS.ctx.used / topS.ctx.window) * 100) : 0
+  const y = Math.max(8, Math.min(top - 8, (typeof window !== 'undefined' ? window.innerHeight : 800) - 230))
+  const say = lastMsg ? `${lastMsg.kind === 'user' ? '나' : '봇'}: ${lastMsg.text.replace(/\s+/g, ' ').slice(0, 140)}` : lastN ? `${lastN.title}: ${lastN.body}`.slice(0, 140) : ''
+  return <div className="hcard" style={{ top: y, left }}>
+    <div className="hh"><FolderBot color={b.color} size={18} mood={sum.mood} mono /><b><Mid s={b.name} /></b><span className={`dot ${stateDot(sum.state ?? undefined)}`} /></div>
+    <div className="hp mono">{b.rel || '볼트 (오케스트레이터)'}</div>
+    <div className="hs">{sum.text}</div>
+    <div className="hk">
+      <span>{topS ? `${topS.name} · ${modelLabel(topS.model)}${topS.hibernated ? ' · 절전' : ''}${pct ? ` · 컨텍스트 ${pct}%` : ''}` : '세션 없음 — 메시지를 보내면 시작'}</span>
+      <span>할 일 {todos}{b.routines.length ? ` · 루틴 ${b.routines.length}` : ''}{ss.length > 1 ? ` · 세션 ${ss.length}` : ''}</span>
+      {say ? <span className="hl">{say}</span> : null}
+      <span className="t3">{b.section} · {fmtTime(sum.t)}</span>
+    </div>
   </div>
 }
 
@@ -413,7 +443,7 @@ function Item({ it, bot, items, onFile, onDrill, state, say, isLastAssistant, is
   switch (it.kind) {
     case 'user': return <div className={`umsg ${isLastUser ? 'last' : ''}`} ref={isLastUser ? userRef : undefined}>{it.text}</div>
     case 'assistant': return <div><Md text={it.text || ' '} streaming={!!it.streaming} />{!it.streaming && isLastAssistant ? <div className="acts-row"><button onClick={() => { navigator.clipboard?.writeText(it.text); say('복사했어요') }} title="복사"><Icon n="doc" size={13} />복사</button>{onRetry && state !== 'running' ? <button onClick={onRetry} title="같은 질문 다시"><Icon n="undo" size={13} />다시</button> : null}<span>{fmtTime(it.t)}</span></div> : null}</div>
-    case 'thinking': return <div><button className={`meta ${open ? 'open' : ''}`} onClick={() => setOpen(!open)}><span>생각</span>{!open ? <span className="tx">· {it.text.replace(/\s+/g, ' ').slice(0, 100)}</span> : null}<Icon n={open ? 'chevd' : 'chev'} size={9} /></button>{open ? <div className="think">{it.text}</div> : null}</div>
+    case 'thinking': return <div><button className={`meta ${open ? 'open' : ''}`} onClick={() => setOpen(!open)}><span>생각</span>{!open ? <span className="tx">· {it.text.trim() ? it.text.replace(/\s+/g, ' ').slice(0, 100) : it.streaming ? '생각 중…' : '(내용 없음)'}</span> : null}<Icon n={open ? 'chevd' : 'chev'} size={9} /></button>{open ? <div className="think">{it.text.trim() ? it.text : it.streaming ? '생각 중…' : '모델이 생각 내용을 돌려주지 않았어요.'}</div> : null}</div>
     case 'tool': return <ToolLine it={it} onFile={onFile} base={bot.abs} />
     case 'subagent': { const kids = items.filter((x) => x.kind === 'tool' && x.parentId === it.id) as Tool[]; return <div className="sub"><div className="l"><button className="ib" style={{ width: 18, height: 18, marginLeft: -4 }} onClick={() => setOpen(!open)}><Icon n={open ? 'chevd' : 'sub'} size={12} /></button><span className="nm">{it.name}</span>{it.status === 'run' ? <span className="spin run" /> : <Icon n={it.status === 'error' ? 'x' : 'check'} size={11} color={it.status === 'error' ? 'var(--err)' : 'var(--done)'} />}<span className="m">{it.status === 'run' ? '실행 중' : it.status === 'error' ? '실패' : '끝남'} · 도구 {it.tools}회{it.last ? <> · <span className="mono">{it.last}</span></> : null}</span><button className="op" onClick={() => onDrill(it.id)}>열기 <Icon n="chev" size={10} /></button></div>{open ? <div className="in">{kids.slice(-4).map((k) => <ToolLine key={k.id} it={k} onFile={onFile} base={bot.abs} />)}{it.result && it.status !== 'run' ? <div className="meta" style={{ whiteSpace: 'pre-wrap' }}>{it.result.slice(0, 300)}</div> : null}{!kids.length ? <div className="meta">아직 도구를 안 썼어요</div> : null}</div> : null}</div> }
     case 'todos': return <TodoWidget it={it} stopped={state !== 'running'} />

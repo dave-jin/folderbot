@@ -1,0 +1,12 @@
+Folder Bot — 처음 설치 후 한 번만
+
+1. 왼쪽의 Folder Bot 을 Applications 로 끌어 놓습니다.
+2. 앱을 열었을 때 "손상되었기 때문에 열 수 없습니다" 또는 "확인되지 않은 개발자" 가 뜨면,
+   터미널(응용 프로그램 › 유틸리티 › 터미널)을 열고 아래 한 줄을 복사해 붙여 넣고 return:
+
+xattr -dr com.apple.quarantine "/Applications/Folder Bot.app"
+
+3. 다시 Folder Bot 을 엽니다. 끝.
+
+왜: Folder Bot 은 Apple 개발자 서명 없이(ad-hoc) 배포됩니다. 인터넷에서 받은 파일에 macOS 가 붙이는
+"검역" 표시만 떼면 정상적으로 열립니다. 앱 안의 자동 업데이트로 받은 새 버전은 이 과정을 스스로 처리합니다.
