@@ -3,7 +3,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/dave-jin/rondo-releases/main/folderbot/install.sh | bash
 #   (또는 이 파일을 받아서: bash install.sh [루트 폴더])
 set -euo pipefail
-VER="${FOLDERBOT_VERSION:-0.1.0}"
+VER="${FOLDERBOT_VERSION:-0.2.0}"
 URL="${FOLDERBOT_URL:-https://raw.githubusercontent.com/dave-jin/rondo-releases/main/folderbot/folderbot-${VER}.tgz}"
 DEST="${FOLDERBOT_HOME:-$HOME/.folderbot/app}"
 ROOT="${1:-}"

@@ -22,11 +22,11 @@ jobs:
           BUNDLE_ALL=1 node scripts/build.mjs
           rm -rf desktop/host && mkdir -p desktop/host && cp -r dist/host dist/client desktop/host/
           cp package.json desktop/host/package.json
-      - name: Install (desktop) + 버전 도장 0.1.<run_number>
+      - name: Install (desktop) + 버전 도장 0.2.<run_number>
         working-directory: desktop
         run: |
           npm ci --no-audit --no-fund
-          npm version 0.1.${{ github.run_number }} --no-git-tag-version
+          npm version 0.2.${{ github.run_number }} --no-git-tag-version
       - name: Build DMG + zip (arm64, ad-hoc signed)
         working-directory: desktop
         env: { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }
@@ -57,8 +57,8 @@ jobs:
         with:
           repository: dave-jin/rondo-releases
           token: ${{ env.RELEASES_TOKEN }}
-          tag_name: folderbot-desktop-v0.1.${{ github.run_number }}
-          name: Folder Bot v0.1.${{ github.run_number }}
+          tag_name: folderbot-desktop-v0.2.${{ github.run_number }}
+          name: Folder Bot v0.2.${{ github.run_number }}
           prerelease: true
           body: |
             Folder Bot 데스크톱 · Apple Silicon · ad-hoc 서명. 설치된 앱이 자동으로 받아 적용합니다.

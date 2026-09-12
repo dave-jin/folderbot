@@ -1,5 +1,7 @@
 # Folder Bot — Mac mini 런북 (v0.2)
 
+> 처음 설치라면 **[INSTALL.md](INSTALL.md)** 를 보세요 — 미니·맥북·폰을 한 번에 다룹니다. 이 문서는 미니 운영 세부.
+
 ## 0. 준비물
 - macOS (Apple Silicon) · Claude Code CLI 설치 + 로그인(`claude` → `/login`, Pro/Max)
 - Dropbox 의 PARA 볼트가 미니에 **오프라인 사용 가능**으로 내려와 있을 것
