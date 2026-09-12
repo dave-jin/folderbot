@@ -1,6 +1,6 @@
 # Project Bot — PRD
 
-> **버전**: v0.9 · 2026-09-12 · **초안 — Dave 와 함께 수정 중. 코드 작업 금지, 계획만.**
+> **버전**: v1.0 · 2026-09-12 · **구현 시작 (v0.1.0 테스트 빌드)** · **초안 — Dave 와 함께 수정 중. 코드 작업 금지, 계획만.**
 > **가제**: **Project Bot** (Dave 2026-09-12) · 캐릭터·애칭 **폴더봇**. 리포는 당분간 `dave-jin/rondo` 를 그대로 쓴다.
 > **목업**: https://claude.ai/code/artifact/046fd71a-18f5-40df-980e-f7725380d2c2 (v2 — 폴더봇)
 > **위치**: 완전히 새로운 프로덕트. Rondo 알파(`rondo-app`)는 **부품 창고**로만 쓴다 (부록 A). 알파의 결정·이력은 이 문서에 적지 않는다.
@@ -318,7 +318,27 @@ A 로 시작하고 전송 계층을 추상화해 B/C 를 나중에 끼운다. Da
 - 오케스트레이터가 Inbox 를 **자동으로 옮겨도** 되는 순간이 있나(예: 명백한 영수증→재무_CFO).
 - 첫 루틴 3개를 정해 달라 — M3 의 검증 기준이 된다.
 
-## 10. 사실 확인 (2026-09-12)
+## 10. 구현 현황 — v0.1.0 (2026-09-12)
+
+**설치**: `curl -fsSL https://raw.githubusercontent.com/dave-jin/rondo-releases/main/folderbot/install.sh | bash` · 런북 `docs/RUNBOOK-mini.md`
+
+| 시나리오 | 상태 | 비고 |
+|---|---|---|
+| S1 첫 실행 | ✅ | `folderbot init` 이 규칙 절 설치·후보 스캔, 화면 온보딩(프리셋 3종), 페어링 코드. QR 은 아직 없음(주소 직접 입력) |
+| S2 폴더에서 시작 | ✅ | 피커 · 새 폴더 만들기(naming 규칙·하네스 스캐폴드) · 오케스트레이터 `bot_start`/`folder_create` |
+| S3 이동 중 승인 | ✅ | 승인 카드·AskUserQuestion 카드·SSE 실시간·Web Push(VAPID). ⚠ 푸시는 HTTPS(`tailscale serve`) + 홈 화면 설치 필요 |
+| S4 파일 | ✅ | 칩 → 슬라이드 시트(md 렌더·이미지·PDF) · 편집(tmp+rename) · 경로 가드. Dropbox content_hash 는 미구현 |
+| S5 Inbox | ✅ | 호스트가 Inbox 감시 → 패널 "정리 제안 받기" → 오케스트레이터 `inbox_list`/`folder_move`(되돌리기 스냅샷) |
+| S6 루틴 | ✅ | `.bot.yml` cron(croner) · 승인 정책 3단(plan/acceptEdits/bypass) · 루틴 편집 시트 · 결과 푸시 |
+| S7 관제 | ✅ | MCP 15종 — `bots_list`·`bot_status`·`bot_send`(위임 세션)·`bot_sessions`·상한(봇 4·호스트 12) |
+| S8 끊김·복구 | ✅ | 30분 워치독 3갈래(loggedin/loggedout/**unreadable**) · 앰버 배너 · 푸시 · 대기열 → 복구 시 재전송 · SSE 오프라인 표시 |
+| S9 정지·은퇴 | ✅ | 정지(휴면) · Archive 이동(은퇴, 되돌리기) |
+| S10 할 일 | ✅ | `- [ ] 제목: 설명 <!-- bot -->` · 패널 4개 · 시트 · 봇에게 맡기기 · 봇 규약을 시스템 프롬프트에 주입 · `todo_add` MCP |
+| S11 목록·알림 | ◐ | 폭 드래그(64/240–420)·정렬·묶기·밀도·알림 센터·macOS 알림 센터(terminal-notifier/osascript)·조용한 시간. **메뉴바 앱은 미구현**(네이티브 셸 M5) |
+
+**미구현·다음**: Codex(`codex app-server`) · macOS 얇은 셸(메뉴바·Dock 배지·로그인 항목 자동 실행) · Dropbox 동기화 점 · QR 페어링 · Johnny.Decimal 실제 스캔 규칙 · 규칙 인터뷰(custom).
+
+## 11. 사실 확인 (2026-09-12)
 
 - Grok Bot — xAI, 2026-08 베타. 봇당 영속 클라우드 VM(브라우저·파일·터미널·커넥터·MCP). 데스크톱·iOS·Android. 루틴(스케줄)·다중 봇 협업. 승인: 한 번 허용/항상/거부 + Auto Review 규칙. 메모리 열람·내보내기 불가, 자체 호스팅 불가. $200/월 또는 SuperGrok Heavy·Cursor Ultra 포함.
 - Claude Code Remote Control — GA 2026-08. `claude remote-control` 서버 모드(동시 32, 4시간 내 복귀). 로컬 프로세스 종료 시 오프라인.
@@ -352,6 +372,7 @@ A 로 시작하고 전송 계층을 추상화해 B/C 를 나중에 끼운다. Da
 
 | 날짜 | 버전 | 내용 |
 |---|---|---|
+| 2026-09-12 | v1.0 | 구현 시작 — v0.1.0 테스트 빌드 · §10 구현 현황 신설 |
 | 2026-09-12 | v0.9 | Dave 지시 — 왼쪽 목록 폭 조절·정렬·묶기·밀도(§4.1) · **§4.5 알림**(알파 승계: 알림 센터·배너 승인·폰 푸시·앱 안 알림 센터·조용한 시간) · **§4.6 메뉴바**(폴더봇 표정 아이콘·팝오버에서 바로 승인·HUD 흡수) · Q12~Q14 · 목업 S11 |
 | 2026-09-12 | v0.8 | Dave 지시 — **§3.6 todo.md** 신설: 사람과 봇이 같이 쓰는 심플 목록, 한 줄 = 제목: 설명, 봇 표식, 봇 규약 4가지, 표면(패널·시트·카드) · 목업 S10 추가 |
 | 2026-09-12 | v0.7 | Dave 지시 — **§3.5 폴더 규칙 신설**: 규칙은 루트 `CLAUDE.md`/`AGENTS.md` 의 절(산문 + yaml 블록), PARA 는 프리셋, 사용자가 수정·인터뷰로 커스텀 · **Inbox = 정리 상자**(폴더·파일을 넣으면 오케스트레이터가 규칙대로 배정 제안) · 후보 판정을 규칙 기반으로 · Q3d·Q3e 추가 |
