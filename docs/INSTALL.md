@@ -104,7 +104,7 @@ folderbot start        # Jump Desktop 으로 들어가 GUI 에서 새로 연 Ter
 |---|---|
 | 앱 호스트 모드 설정·기기 토큰·세션 기록 | `~/Library/Application Support/Folder Bot/host/` |
 | CLI 설치 시 | `~/Library/Application Support/folderbot/` |
-| 활성 봇 목록·되돌리기 | `<루트>/.projectbot/` |
+| 활성 봇 목록·되돌리기 | `<루트>/.folderbot/` (옛 `.projectbot/` 은 첫 실행에 자동 이관) |
 | 봇 설정·루틴 | `<봇 폴더>/.bot.yml` · 오케스트레이터 지침 `<루트>/.claude/orchestrator.md` |
 | 원격에서 올린 첨부 | `<봇 폴더>/첨부/` |
 

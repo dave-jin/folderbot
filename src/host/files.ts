@@ -5,7 +5,7 @@ import { atomicWrite } from './paths'
 
 export interface TreeNode { name: string; rel: string; dir: boolean; size?: number; mtime: number; children?: TreeNode[] }
 
-const SKIP = new Set(['node_modules', '.git', '.DS_Store', '.projectbot', 'dist', '.next'])
+const SKIP = new Set(['node_modules', '.git', '.DS_Store', '.folderbot', '.projectbot', 'dist', '.next'])
 const TEXT_EXT = new Set(['.md', '.txt', '.yml', '.yaml', '.json', '.ts', '.tsx', '.js', '.mjs', '.py', '.sh', '.css', '.html', '.csv', '.toml', '.env.example', '.canvas'])
 const IMG_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'])
 

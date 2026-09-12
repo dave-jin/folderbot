@@ -8,7 +8,12 @@ import { BOT_COLORS, ORCH_COLOR } from '../core/types'
 import { atomicWrite } from './paths'
 
 export const ORCH_ID = 'orch'
-const STATE_DIR = '.projectbot'
+const STATE_DIR = '.folderbot'
+const LEGACY_STATE_DIR = '.projectbot'
+/** 가제(Project Bot) 시절 상태 폴더 → 새 이름. 새 폴더가 없고 옛 폴더만 있을 때 한 번, 통째로 옮긴다 */
+export function migrateStateDir(root: string): void {
+  try { const oldDir = join(root, LEGACY_STATE_DIR), newDir = join(root, STATE_DIR); if (existsSync(oldDir) && !existsSync(newDir)) renameSync(oldDir, newDir) } catch { /* 다음 부팅에 다시 */ }
+}
 
 interface ActiveRec { id: string; rel: string; color: string; startedAt: number; vendor?: 'claude' | 'codex' }
 
@@ -27,6 +32,7 @@ export class Registry extends EventEmitter {
   constructor(root: string) {
     super()
     this.root = canon(root)
+    migrateStateDir(this.root)
     this.loadRules()
     this.loadActive()
   }

@@ -57,7 +57,7 @@ CLI 방식: 1′ 절차로 다시.
 
 ## 6. 데이터 위치
 - 앱 호스트 모드: `~/Library/Application Support/Folder Bot/host/` · CLI: `~/Library/Application Support/folderbot/`
-- 활성 봇 목록·되돌리기: `<루트>/.projectbot/` · 봇 설정·루틴: `<봇 폴더>/.bot.yml` · 오케스트레이터 지침: `<루트>/.claude/orchestrator.md`
+- 활성 봇 목록·되돌리기: `<루트>/.folderbot/` · 봇 설정·루틴: `<봇 폴더>/.bot.yml` · 오케스트레이터 지침: `<루트>/.claude/orchestrator.md`
 
 ## 7. 자주 겪는 것
 | 증상 | 처리 |

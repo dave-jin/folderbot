@@ -1,4 +1,4 @@
-# Project Bot — 대표 유저 시나리오
+# Folder Bot — 대표 유저 시나리오
 
 > v0.1 · 2026-09-12 · PRD v0.7 기준. 각 시나리오는 목업 캔버스의 같은 이름 페이지에 스토리보드로 그려진다.
 > 목업: https://claude.ai/code/artifact/046fd71a-18f5-40df-980e-f7725380d2c2

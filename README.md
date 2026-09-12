@@ -1,4 +1,4 @@
-# Folder Bot (Project Bot)
+# Folder Bot
 
 내 Mac mini 위에서 사는, 폴더마다 하나씩 붙는 AI 동료들 — 그리고 그들을 PARA 로 관제하는 오케스트레이터.
 

@@ -14,6 +14,7 @@ writeFileSync(join(root, '3. Area/제품_Rondo/todo.md'), '# todo\n\n- [ ] PRD v
 writeFileSync(join(root, '3. Area/재무_CFO/CLAUDE.md'), '# CFO\n')
 writeFileSync(join(root, '2. Projects/2026-09_강의-FoundersAI-2기/CLAUDE.md'), '# 강의\n')
 writeFileSync(join(root, '1. Inbox/유메타랩_자문자료.txt'), 'x')
+mkdirSync(join(root, '.projectbot'), { recursive: true }); writeFileSync(join(root, '.projectbot/marker.txt'), 'legacy')
 const PORT = 7399
 const env = { ...process.env, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg }
 const run = (args) => new Promise((res, rej) => { const p = spawn('node', ['bin/folderbot.mjs', ...args], { env }); let out = ''; p.stdout.on('data', (d) => (out += d)); p.stderr.on('data', (d) => (out += d)); p.on('exit', (c) => (c === 0 ? res(out) : rej(new Error(out)))) })
@@ -29,6 +30,7 @@ try {
   for (let i = 0; i < 40; i++) { try { await fetch(base + '/api/health'); break } catch { await wait(250) } }
   const st = await api('/state')
   if (!st.rulesInstalled) fail('rules not installed'); ok(`rules installed · candidates ${st.candidates.length}`)
+  if (!existsSync(join(root, '.folderbot/marker.txt')) || existsSync(join(root, '.projectbot'))) fail('state dir migration .projectbot → .folderbot'); ok('state dir .projectbot → .folderbot')
   if (st.candidates.length !== 4) fail(`candidates expected 4, got ${st.candidates.length}`)
   if (st.candidates.filter((c) => c.harness).length !== 3) fail('harness count')
   // SSE

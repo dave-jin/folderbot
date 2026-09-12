@@ -1,7 +1,7 @@
-# Project Bot — PRD
+# Folder Bot — PRD
 
 > **버전**: v1.0 · 2026-09-12 · **구현 시작 (v0.1.0 테스트 빌드)** · **초안 — Dave 와 함께 수정 중. 코드 작업 금지, 계획만.**
-> **가제**: **Project Bot** (Dave 2026-09-12) · 캐릭터·애칭 **폴더봇**. 리포는 당분간 `dave-jin/rondo` 를 그대로 쓴다.
+> **이름**: **Folder Bot** (2026-09-12 확정 · 가제 Project Bot 폐기) · 캐릭터·애칭 **폴더봇**. 리포 `dave-jin/rondo` 는 `folderbot` 으로 개명 예정(GitHub 이 옛 주소를 리다이렉트하므로 설치된 앱의 업데이트는 끊기지 않는다).
 > **목업**: https://claude.ai/code/artifact/046fd71a-18f5-40df-980e-f7725380d2c2 (v2 — 폴더봇)
 > **위치**: 완전히 새로운 프로덕트. Rondo 알파(`rondo-app`)는 **부품 창고**로만 쓴다 (부록 A). 알파의 결정·이력은 이 문서에 적지 않는다.
 > **1차 레퍼런스**: xAI **Grok Bot** (2026-08 베타). 2차: Claude Code Remote Control · Codex Remote · Cursor Cloud Agents.
@@ -12,7 +12,7 @@
 
 **내 Mac mini 위에서 사는, 폴더마다 하나씩 붙는 AI 동료들 — 그리고 그들을 PARA 로 관제하는 오케스트레이터.**
 
-Grok Bot 이 *"봇마다 클라우드 컴퓨터 하나"* 라면, Project Bot 은 *"내 컴퓨터(Mac mini) 하나에 **폴더마다 봇 하나**"* 다. 봇을 설정하지 않는다 — **하네스가 이미 있는 PARA 폴더가 봇 후보이고, **에이전트와 함께 일할 폴더를 고르면 시작된다.** 폴더를 새로 파고 시작·정지시키는 일은 사람이 직접 하거나 **오케스트레이터**에게 맡긴다. 어디서든(PC·iPhone·Android) 동료에게 말 걸듯 봇에게 말하고, 봇은 그 폴더의 지침·기억·자료를 들고 Mac mini 에서 일한다. 내 폰이 꺼져도 일은 계속된다.
+Grok Bot 이 *"봇마다 클라우드 컴퓨터 하나"* 라면, Folder Bot 은 *"내 컴퓨터(Mac mini) 하나에 **폴더마다 봇 하나**"* 다. 봇을 설정하지 않는다 — **하네스가 이미 있는 PARA 폴더가 봇 후보이고, **에이전트와 함께 일할 폴더를 고르면 시작된다.** 폴더를 새로 파고 시작·정지시키는 일은 사람이 직접 하거나 **오케스트레이터**에게 맡긴다. 어디서든(PC·iPhone·Android) 동료에게 말 걸듯 봇에게 말하고, 봇은 그 폴더의 지침·기억·자료를 들고 Mac mini 에서 일한다. 내 폰이 꺼져도 일은 계속된다.
 
 ## 1. 문제
 
@@ -23,7 +23,7 @@ Grok Bot 이 *"봇마다 클라우드 컴퓨터 하나"* 라면, Project Bot 은
 
 ## 2. 레퍼런스와 차이점
 
-| | Grok Bot | Claude Code Remote Control | **Project Bot** |
+| | Grok Bot | Claude Code Remote Control | **Folder Bot** |
 |---|---|---|---|
 | 봇이 사는 곳 | xAI 클라우드 VM (봇당 1) | 내 맥의 터미널 프로세스 | **내 Mac mini** (호스트 1, 봇 N) |
 | 봇의 단위 | 사람이 이름 붙여 만든 봇 | 세션 하나 | **폴더 = 봇** (후보는 자동, 활성은 폴더를 고를 때) |
@@ -44,7 +44,7 @@ Grok Bot 이 *"봇마다 클라우드 컴퓨터 하나"* 라면, Project Bot 은
 Host (Mac mini · 항상 켜짐)
  ├─ Orchestrator ★ 1개 — cwd = PARA 루트. 폴더를 파고, 봇을 시작·정지시키고, 부른다. 루틴을 돌린다.
  ├─ 봇 후보 = PARA 각 범주의 **2단계 폴더** (`2. Projects/<x>` · `3. Area/<x>` …) — 하네스가 이미 구축된 폴더
- └─ Project Bot(폴더봇) ★ 시작한 폴더당 1개 (활성)
+ └─ Folder Bot(폴더봇) ★ 시작한 폴더당 1개 (활성)
       ├─ 정체성 = 폴더의 하네스 (CLAUDE.md/AGENTS.md · .claude/ · readme.md · todo.md)
       ├─ Session 0..N (동시) — Claude Code 또는 Codex · 각자 --resume 가능
       ├─ Routine 0..n (cron) — 이 봇 안에서 주기적으로 도는 세션
@@ -63,12 +63,12 @@ Host (Mac mini · 항상 켜짐)
 
 | 역할 (규칙 키) | PARA 프리셋 기본값 | 봇 |
 |---|---|---|
-| `active` — 봇 후보가 되는 폴더 | `2. Projects/*` · `3. Area/*` | 시작하면 Project Bot / Area Bot |
+| `active` — 봇 후보가 되는 폴더 | `2. Projects/*` · `3. Area/*` | 시작하면 Project Bot / Area Bot (폴더의 종류일 뿐, 제품명은 Folder Bot) |
 | `inbox` — 정리 대기 | `1. Inbox` | 봇 없음. 오케스트레이터가 규칙대로 배정 |
 | `reference` — 읽기 참조 | `4. Resources` | 봇 없음. 봇들이 `--add-dir` 로 읽는다 |
 | `archive` — 은퇴 | `5. Archive` | 봇 없음. 여기로 가면 봇은 은퇴 |
 
-- **후보는 파생**(스캔)이고 **활성 목록만 저장**한다 (`PARA/.projectbot/bots.yml`). 봇이 많아지지 않도록 **활성 상한**(기본 8)을 둔다 — 넘기면 오케스트레이터가 재울 봇을 제안한다.
+- **후보는 파생**(스캔)이고 **활성 목록만 저장**한다 (`PARA/.folderbot/bots.yml`). 봇이 많아지지 않도록 **활성 상한**(기본 8)을 둔다 — 넘기면 오케스트레이터가 재울 봇을 제안한다.
 - **시작하는 방법 넷**: ① 사람이 피커에서 폴더 선택 ② 사람이 피커에서 **새 폴더 만들기** → 하네스 스캐폴드 → 바로 시작 ③ 오케스트레이터에게 "X 폴더에서 시작해" ④ 오케스트레이터가 Inbox 분류·루틴 중 필요해서 제안(사람 승인).
 - **폴더가 없으면 만든다** — 피커의 각 PARA 범주 첫 줄 `새 폴더 만들기`, 또는 오케스트레이터가 PARA 규칙에 맞는 위치·이름으로 만든다. 어느 쪽이든 하네스 스캐폴드(CLAUDE.md·readme.md·todo.md·`.claude/`)를 깔고 시작한다. 하네스 없는 기존 폴더를 고르면 같은 스캐폴드를 깐다.
 - ⛔ **"깨우기" 라는 말을 UI 에 쓰지 않는다** (Dave 2026-09-12). 문구는 **"에이전트와 함께 일할 폴더를 선택하세요"** · 버튼 **"이 폴더에서 시작"** · 정지는 **"정지"**, 상태는 "휴면".
@@ -231,7 +231,7 @@ harness: ["CLAUDE.md", ".claude/"]            # "하네스 있음" 판정
 **원칙**
 1. **파일이 진실.** 봇의 기억·설정·산출물은 폴더 안 파일. 호스트가 죽어도 `claude --resume` 이 터미널에서 된다. 호스트 전용 상태(기기 토큰·푸시 구독·세션 인덱스)만 `~/Library/Application Support/projectbot/`.
 2. **호스트가 유일한 주인.** 볼트를 쓰고 세션을 띄우는 프로세스는 하나. 클라이언트는 파일을 직접 안 만지고 세션을 직접 안 띄운다 → 동기화 충돌이 정의상 없다.
-3. **CLI 네이티브.** 세션은 벤더 CLI 가 소유. Project Bot 은 스폰·관찰·지휘만. 벤더가 발전하면 그대로 얻는다.
+3. **CLI 네이티브.** 세션은 벤더 CLI 가 소유. Folder Bot 은 스폰·관찰·지휘만. 벤더가 발전하면 그대로 얻는다.
 4. **로컬은 원격의 특수 경우.** 호스트와 클라이언트는 프로토콜 하나로만 만난다. 같은 맥에서 띄워도 경로는 같다.
 5. **"아직 모른다" 상태를 둔다.** 인증·동기화·락 판정은 참/거짓 + 제3값.
 
@@ -267,14 +267,14 @@ A 로 시작하고 전송 계층을 추상화해 B/C 를 나중에 끼운다. Da
 | 무엇 | 어디 | 형식 |
 |---|---|---|
 | 봇 후보 | 파생 (PARA 2단계 폴더 스캔) — 저장 안 함 | — |
-| 활성 봇 목록 | `PARA/.projectbot/bots.yml` | YAML (경로·깨운 시각·벤더) |
+| 활성 봇 목록 | `PARA/.folderbot/bots.yml` | YAML (경로·깨운 시각·벤더) |
 | 봇 설정·루틴 | `<폴더>/.bot.yml` (선택) | YAML |
 | **폴더 규칙** | 루트 `CLAUDE.md`/`AGENTS.md` 의 `## 폴더 규칙` 절 (산문 + `yaml folder-rules` 블록) | md — 사용자가 직접 편집 |
 | 오케스트레이터 하네스·루틴 | `<루트>/.claude/orchestrator.md` · `<루트>/.claude/routines.yml` | md · YAML |
 | 세션 트랜스크립트 | `~/.claude/projects/<cwd-slug>/*.jsonl` · Codex 스레드 | 벤더 소유 |
 | 봇 대화 뷰(세션 인덱스·읽음 표시) | 호스트 userData | JSON |
 | 기기·푸시·토큰 | 호스트 userData | JSON (토큰은 keychain) |
-| 되돌리기 스냅샷 | `PARA/.projectbot/undo/` | JSON |
+| 되돌리기 스냅샷 | `PARA/.folderbot/undo/` | JSON |
 
 ## 7. 마일스톤
 
@@ -292,7 +292,7 @@ A 로 시작하고 전송 계층을 추상화해 B/C 를 나중에 끼운다. Da
 
 | # | 질문 | 추천 | 대안 |
 |---|---|---|---|
-| Q1 | 이름 | **Project Bot** (가제 유지) — 리포는 나중에 개명 | — |
+| Q1 | 이름 | **Folder Bot** (2026-09-12 확정 — 가제 Project Bot 폐기). 리포 `rondo` → `folderbot` 개명은 Dave 가 GitHub 설정에서 | ✅ |
 | **Q2** | 접속·로그인 | **A. Tailscale** + 전송 추상화 | B · C (§5.2) |
 | Q3 | PARA 프리셋의 `active` 기본값 | **`2. Projects/*` + `3. Area/*`** (사용자가 규칙 파일에서 바꿈) | Resources 까지 |
 | Q3b | 활성 봇 상한 | 8 (넘기면 오케스트레이터가 재울 봇 제안) | 상한 없음 |
