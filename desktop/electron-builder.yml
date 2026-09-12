@@ -1,0 +1,35 @@
+appId: com.dave.folderbot
+productName: Folder Bot
+directories:
+  output: dist
+  buildResources: build
+files:
+  - main.js
+  - preload.js
+  - connect.html
+  - package.json
+  - build/trayTemplate.png
+  - build/trayTemplate@2x.png
+extraResources:
+  - from: build/icon.png
+    to: icon.png
+asar: true
+npmRebuild: false
+protocols:
+  - name: Folder Bot
+    schemes: [folderbot]
+mac:
+  target:
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
+  icon: build/icon.png
+  category: public.app-category.productivity
+  identity: null
+  darkModeSupport: true
+  extendInfo:
+    LSUIElement: false
+    NSUserNotificationAlertStyle: alert
+dmg:
+  sign: false

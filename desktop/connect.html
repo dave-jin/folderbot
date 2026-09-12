@@ -1,0 +1,18 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>Folder Bot</title>
+<style>body{margin:0;background:#000;color:#ededea;font-family:-apple-system,'Apple SD Gothic Neo',system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh}.box{width:420px;display:flex;flex-direction:column;gap:14px;text-align:center;align-items:center}input{width:100%;background:#161616;border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:12px 14px;font-size:15px;color:#ededea;outline:0;box-sizing:border-box;font-family:Menlo,monospace}button{background:#e08850;color:#000;border:0;border-radius:10px;padding:12px 16px;font-weight:600;font-size:14px;width:100%;cursor:pointer}.dim{color:#7e7a71;font-size:12.5px;line-height:1.5}.err{color:#f0554e;font-size:12.5px}b{font-size:20px;color:#fff}</style></head>
+<body><div class="box">
+<svg viewBox="0 0 64 64" width="72" height="72"><path d="M6 14a4 4 0 0 1 4-4h14l5 5h29a4 4 0 0 1 4 4v33a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill="#e08850" opacity=".55"/><path d="M6 24a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill="#e08850"/><rect x="20" y="30" width="6" height="10" rx="3" fill="rgba(0,0,0,.6)"/><rect x="38" y="30" width="6" height="10" rx="3" fill="rgba(0,0,0,.6)"/></svg>
+<b>Folder Bot</b>
+<div class="dim">Mac mini 호스트의 주소를 넣으세요. 호스트 터미널에 보이는 주소예요 — 같은 Tailscale 이면 <span style="font-family:Menlo">http://100.x.x.x:7373</span>, HTTPS 를 붙였으면 <span style="font-family:Menlo">https://mac-mini.xxx.ts.net</span>.</div>
+<input id="u" placeholder="http://100.64.0.1:7373" autofocus>
+<div id="e" class="err"></div>
+<button id="go">연결</button>
+<div class="dim">연결되면 화면에서 6자리 페어링 코드를 넣습니다.</div>
+</div>
+<script>
+const u=document.getElementById('u'), e=document.getElementById('e')
+u.value = localStorage.getItem('fb:lastHost') || ''
+async function go(){ let url=u.value.trim(); if(!url) return; if(!/^https?:\/\//.test(url)) url='http://'+url; url=url.replace(/\/+$/,''); e.textContent='확인 중…'
+  try{ const r=await fetch(url+'/api/health',{cache:'no-store'}); const j=await r.json(); if(!j.ok) throw 0; localStorage.setItem('fb:lastHost',url); location.href='folderbot-connect://'+encodeURIComponent(url) }catch{ e.textContent='호스트에 닿지 못했어요. 미니에서 folderbot start 가 떠 있고, 이 맥의 Tailscale 이 켜져 있는지 확인하세요.' } }
+document.getElementById('go').onclick=go; u.addEventListener('keydown',ev=>{ if(ev.key==='Enter') go() })
+</script></body></html>

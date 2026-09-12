@@ -1,0 +1,35 @@
+name: desktop (macOS)
+on:
+  workflow_dispatch:
+  push:
+    tags: ['desktop-v*']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install (desktop)
+        working-directory: desktop
+        run: npm ci --no-audit --no-fund
+      - name: Build DMG + zip (arm64, ad-hoc signed)
+        working-directory: desktop
+        env: { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }
+        run: npx electron-builder --mac --arm64 --publish never
+      - name: List
+        run: ls -la desktop/dist
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-v${{ github.run_number }}
+          name: Folder Bot desktop (build ${{ github.run_number }})
+          body: |
+            맥북용 셸 · Apple Silicon · ad-hoc 서명(개발자 인증서 없음).
+            처음 열 때 "확인되지 않은 개발자" 가 뜨면 Finder 에서 우클릭 → 열기. "손상됨" 이 뜨면 터미널에서:
+            `xattr -dr com.apple.quarantine "/Applications/Folder Bot.app"`
+          files: |
+            desktop/dist/*.dmg
+            desktop/dist/*.zip
