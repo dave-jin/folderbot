@@ -29,8 +29,9 @@ export function App() {
   return <Main />
 }
 
-interface Layout { sb: number; rp: number; doc: number; sbOpen: boolean; rpOpen: boolean; secH: SecH }
-const DEF: Layout = { sb: 250, rp: 290, doc: 520, sbOpen: true, rpOpen: true, secH: { sessions: 120, todo: 128 } }
+interface Layout { sb: number; rp: number; doc: number; sbOpen: boolean; rpOpen: boolean; sbPin: boolean; rpPin: boolean; secH: SecH }
+const DEF: Layout = { sb: 250, rp: 290, doc: 520, sbOpen: true, rpOpen: true, sbPin: false, rpPin: false, secH: { sessions: 120, todo: 128 } }
+const isDesktop = typeof (window as unknown as { folderbotDesktop?: unknown }).folderbotDesktop !== 'undefined'
 
 function Main() {
   const { s, refresh, loadChat, loadTodo } = useStore()
@@ -51,6 +52,7 @@ function Main() {
   const [toast, say] = useToast()
   const [prefill, setPrefill] = useState('')
   const [attachReq, setAttachReq] = useState<string[]>([])
+  const [focusSec, setFocusSec] = useState<{ sec: string; n: number } | null>(null)
   const docs = useDocs(bot?.id ?? '')
   useEffect(() => { if (sessionId && !s.chats[sessionId]) void loadChat(sessionId) }, [sessionId])
   useEffect(() => { if (bot) void loadTodo(bot.id) }, [bot?.id, s.filesTick[bot?.id ?? '']])
@@ -89,15 +91,19 @@ function Main() {
   const pending = sessionId ? (s.pending[sessionId] ?? []) : []
   const cur = sessions.find((x) => x.id === sessionId)
   const touched = useMemo(() => { for (let i = items.length - 1; i >= 0; i--) { const it = items[i]; if (it.kind === 'files') return it.paths } return [] as string[] }, [items])
-  const sbOpen = lay.sbOpen && !narrow; const rpOpen = lay.rpOpen && !narrow
+  // 좁은 창에서는 접힌 게 기본이고, 아이콘 열을 누르면 그 패널만 핀으로 편다
+  const sbOpen = narrow ? lay.sbPin : lay.sbOpen; const rpOpen = narrow ? lay.rpPin : lay.rpOpen
+  const openRp = (sec?: string) => { setLay((l) => ({ ...l, rpOpen: true, rpPin: true })); if (sec) setFocusSec({ sec, n: Date.now() }) }
+  const closeRp = () => setLay((l) => ({ ...l, rpOpen: false, rpPin: false }))
+  const openSb = () => setLay((l) => ({ ...l, sbOpen: true, sbPin: true })); const closeSb = () => setLay((l) => ({ ...l, sbOpen: false, sbPin: false }))
   const stripBots = rows.flatMap(([, it]) => it)
-  return <div className={`app ${drag === 'x' ? 'dragx' : drag === 'y' ? 'dragy' : ''}`} data-view={view === 'doc' && !showDoc ? 'chat' : view}>
+  return <div className={`app ${isDesktop ? 'desktop' : ''} ${drag === 'x' ? 'dragx' : drag === 'y' ? 'dragy' : ''}`} data-view={view === 'doc' && !showDoc ? 'chat' : view}>
     {s.online === 'off' ? <div className="offline">Mac mini 와 다시 연결하는 중…</div> : null}
     {s.auth.verdict === 'unreadable' || s.auth.verdict === 'loggedout' ? <div className="banner"><span className="dot wait" /><span><b>Mac mini 에서 Claude 로그인이 필요해요.</b> 미니에서 <span className="mono">claude</span> → <span className="mono">/login</span>, 또는 설정 › Claude 토큰. 보낸 지시는 대기열에 두었다가 복구되면 이어서 해요.</span><span style={{ marginLeft: 'auto' }} /><button className="btn" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button></div> : null}
     <div className="cols">
       {/* ── 왼쪽 ── */}
       {sbOpen || phone ? <div className="col side left" style={{ width: lay.sb }}>
-        <div className="hdr"><FolderBot color="#e08850" size={16} mood={waiting ? 'wait' : 'idle'} mono /><span className="ttl">Folder Bot</span><span className="sp" /><div className="acts"><button className="ib" onClick={() => setLay({ ...lay, sbOpen: false })} title="목록 접기 (⌘B)"><Icon n="panel" size={14} /></button></div></div>
+        <div className="hdr"><FolderBot color="#e08850" size={16} mood={waiting ? 'wait' : 'idle'} mono /><span className="ttl">Folder Bot</span><span className="sp" /><div className="acts"><button className="ib" onClick={closeSb} title="목록 접기 (⌘B)"><Icon n="panel" size={14} /></button></div></div>
         <div style={{ padding: '10px 8px 0' }}>
           <button className="nav" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span>폴더 선택 · 시작</span><span className="bd">후보 {s.candidates.filter((c) => !c.active).length}</span></button>
           <button className="nav" onClick={() => setModal('notify')}><Icon n="bell" size={14} /><span>알림</span>{unread ? <span className="bd" style={{ color: waiting ? 'var(--wait)' : undefined }}>{unread}</span> : null}</button>
@@ -110,19 +116,29 @@ function Main() {
           </div>)}
         </div>
         <div className="sb-foot"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} /><span>Mac mini</span>{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<span className="bd mono">v{s.version}</span></div>
-      </div> : <div className="strip"><button className="ib" onClick={() => setLay({ ...lay, sbOpen: true })} title="목록 펼치기 (⌘B)"><Icon n="panel" size={14} /></button><div className="gap" /><button className="ib" onClick={() => setModal('picker')} title="폴더 선택 · 시작"><Icon n="fplus" size={14} /></button><button className="ib" onClick={() => setModal('notify')} title="알림"><Icon n="bell" size={14} />{unread ? <span className="bd">{unread}</span> : null}</button><div className="gap" />{stripBots.map(({ b, sum }) => <button key={b.id} className={`bot ${b.id === bot.id ? 'on' : ''}`} onClick={() => go(b.id)} title={b.name}><FolderBot color={b.color} size={17} mood={sum.mood} mono />{stateDot(sum.state ?? undefined) !== 'none' ? <span className={`dot ${stateDot(sum.state ?? undefined)}`} /> : null}</button>)}</div>}
-      <div className={`divx ${drag === 'x' ? '' : ''}`} onPointerDown={sbOpen ? dragX('sb', 1) : undefined} onDoubleClick={() => setLay({ ...lay, sb: DEF.sb, sbOpen: true })} />
+      </div> : <div className="strip left"><button className="ib" onClick={openSb} title="목록 펼치기 (⌘B)"><Icon n="panel" size={14} /></button><div className="gap" />
+        <button className="ib" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span className="fly"><b>폴더 선택 · 시작</b><span>후보 {s.candidates.filter((c) => !c.active).length}</span></span></button>
+        <button className="ib" onClick={() => setModal('notify')}><Icon n="bell" size={14} />{unread ? <span className="bd">{unread}</span> : null}<span className="fly"><b>알림</b><span>{unread ? `읽지 않음 ${unread}` : '없음'}</span></span></button>
+        <div className="gap" />
+        {stripBots.map(({ b, sum }) => <button key={b.id} className={`bot ${b.id === bot.id ? 'on' : ''}`} onClick={() => go(b.id)}><FolderBot color={b.color} size={17} mood={sum.mood} mono />{stateDot(sum.state ?? undefined) !== 'none' ? <span className={`dot ${stateDot(sum.state ?? undefined)}`} /> : null}<span className="fly"><b>{b.name}</b><span><span className={`dot ${stateDot(sum.state ?? undefined)}`} style={{ marginRight: 5 }} />{sum.text}</span><span className="t3">{b.section} · {fmtTime(sum.t)}</span></span></button>)}
+      </div>}
+      <div className={`divx ${drag === 'x' ? '' : ''}`} onPointerDown={sbOpen ? dragX('sb', 1) : undefined} onDoubleClick={() => setLay({ ...lay, sb: DEF.sb, sbOpen: true, sbPin: true })} />
 
       {/* ── 채팅 ── */}
-      <Chat bot={bot} sessions={sessions} cur={cur} items={items} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} attachReq={attachReq} onAttached={() => setAttachReq([])} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openDoc(rel, pin)} docBadge={docs.tabs.length} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} onPanelToggle={() => (phone ? setView('panel') : setLay({ ...lay, rpOpen: !lay.rpOpen }))} say={say} refreshAll={refresh} collapsed={wide && showDoc} onUncollapse={() => setWide(false)} />
+      <Chat bot={bot} sessions={sessions} cur={cur} items={items} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} attachReq={attachReq} onAttached={() => setAttachReq([])} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openDoc(rel, pin)} docBadge={docs.tabs.length} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={wide && showDoc} onUncollapse={() => setWide(false)} />
 
       {/* ── 문서 열 ── */}
       {showDoc ? <><div className="divx" onPointerDown={dragX('doc', -1)} onDoubleClick={() => setLay({ ...lay, doc: DEF.doc })} /><div className="docwrap" style={{ width: wide ? undefined : lay.doc, flex: wide ? 3 : 'none', display: 'flex', minWidth: 0 }}><DocPane bot={bot} docs={docs} filesTick={s.filesTick[bot.id]} onTalk={(rel) => { setPrefill(`${rel} 파일 봐 줘: `); if (phone) setView('chat') }} onHide={() => setDocOpen((d) => ({ ...d, [bot.id]: false }))} wide={wide} onWide={() => setWide(!wide)} onAttach={(rel) => setAttachReq((a) => [...a, rel])} say={say} /></div></> : null}
 
       {/* ── 오른쪽 ── */}
-      <div className="divx" onPointerDown={rpOpen ? dragX('rp', -1) : undefined} onDoubleClick={() => setLay({ ...lay, rp: DEF.rp, rpOpen: true })} />
-      {rpOpen || phone ? <div className="rpwrap" style={{ width: phone ? '100%' : lay.rp, flex: 'none', display: 'flex', minWidth: 0 }}><Panel bot={bot} sessions={sessions} sessionId={sessionId} go={go} onOpenFile={openDoc} onTalk={(t) => { setPrefill(t); if (phone) setView('chat') }} onAttach={(rel) => { setAttachReq((a) => [...a, rel]); if (phone) setView('chat') }} touched={touched} filesTick={s.filesTick[bot.id]} secH={lay.secH} onSecH={(h) => setLay({ ...lay, secH: h })} onCollapse={() => setLay({ ...lay, rpOpen: false })} say={say} refresh={refresh} activeDoc={showDoc ? docs.active : null} onDragY={(on) => setDrag(on ? 'y' : '')} /></div>
-        : <div className="strip"><button className="ib" onClick={() => setLay({ ...lay, rpOpen: true })} title="패널 펼치기 (⌘⇧B)"><Icon n="panelr" size={14} /></button><div className="gap" /><button className="ib" onClick={() => setLay({ ...lay, rpOpen: true })} title="세션"><Icon n="clock" size={14} /></button><button className="ib" onClick={() => setLay({ ...lay, rpOpen: true })} title="할 일"><Icon n="list" size={14} />{(s.todos[bot.id] ?? []).filter((t) => !t.done).length ? <span className="bd">{(s.todos[bot.id] ?? []).filter((t) => !t.done).length}</span> : null}</button><button className="ib on" onClick={() => setLay({ ...lay, rpOpen: true })} title="파일"><Icon n="folder" size={14} /></button></div>}
+      <div className="divx" onPointerDown={rpOpen ? dragX('rp', -1) : undefined} onDoubleClick={() => setLay({ ...lay, rp: DEF.rp, rpOpen: true, rpPin: true })} />
+      {rpOpen || phone ? <div className="rpwrap" style={{ width: phone ? '100%' : lay.rp, flex: 'none', display: 'flex', minWidth: 0 }}><Panel bot={bot} sessions={sessions} sessionId={sessionId} go={go} onOpenFile={openDoc} onTalk={(t) => { setPrefill(t); if (phone) setView('chat') }} onAttach={(rel) => { setAttachReq((a) => [...a, rel]); if (phone) setView('chat') }} touched={touched} filesTick={s.filesTick[bot.id]} secH={lay.secH} onSecH={(h) => setLay({ ...lay, secH: h })} onCollapse={closeRp} focusSec={focusSec} say={say} refresh={refresh} activeDoc={showDoc ? docs.active : null} onDragY={(on) => setDrag(on ? 'y' : '')} /></div>
+        : <div className="strip right"><button className="ib" onClick={() => openRp()} title="패널 펼치기 (⌘⇧B)"><Icon n="panelr" size={14} /></button><div className="gap" />
+        <button className="ib" onClick={() => openRp('sessions')}><Icon n="clock" size={14} />{sessions.some((x) => x.state === 'running') ? <span className="dot run" style={{ position: 'absolute', right: 2, top: 2 }} /> : null}<span className="fly"><b>세션</b><span>{sessions.length}개</span></span></button>
+        <button className="ib" onClick={() => openRp('todo')}><Icon n="list" size={14} />{(s.todos[bot.id] ?? []).filter((t) => !t.done).length ? <span className="bd">{(s.todos[bot.id] ?? []).filter((t) => !t.done).length}</span> : null}<span className="fly"><b>{bot.orchestrator ? 'Inbox' : '할 일'}</b><span>{bot.orchestrator ? `${s.inbox}개` : `미완료 ${(s.todos[bot.id] ?? []).filter((t) => !t.done).length}`}</span></span></button>
+        <button className="ib" onClick={() => openRp('files')}><Icon n="folder" size={14} /><span className="fly"><b>파일</b><span>{bot.rel || '볼트'}</span></span></button>
+        <button className="ib" onClick={() => openRp('routines')}><Icon n="cal" size={14} /><span className="fly"><b>루틴</b><span>{bot.routines.length}개</span></span></button>
+      </div>}
     </div>
     {phone ? <div className="mtabs">{([['list', 'panel', '목록'], ['chat', 'sub', '대화'], ['doc', 'doc', '문서'], ['panel', 'folder', '폴더']] as const).map(([v, ic, t]) => <button key={v} className={view === v ? 'on' : ''} onClick={() => setView(v)}><Icon n={ic as 'doc'} size={16} />{t}{v === 'chat' && cur?.state === 'awaiting_input' ? <span className="dot wait" /> : null}</button>)}</div> : null}
     {modal === 'picker' ? <FolderPicker onClose={() => setModal(null)} onStarted={(b) => { setModal(null); go(b.id); say(`${b.name} 에서 시작했어요`) }} /> : null}
@@ -154,7 +170,7 @@ function buildRows(items: ChatItem[], drill: string | null): Row[] {
   }
   flush(); return out
 }
-function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attachReq, onAttached, onSession, onFile, docBadge, docOn, onDocToggle, onPanelToggle, say, refreshAll, collapsed, onUncollapse }: { bot: Bot; sessions: SessionInfo[]; cur?: SessionInfo; items: ChatItem[]; pending: PermissionRequest[]; prefill: string; onPrefilled: () => void; attachReq: string[]; onAttached: () => void; onSession: (sid: string) => void; onFile: (rel: string, pin?: boolean) => void; docBadge: number; docOn: boolean; onDocToggle: () => void; onPanelToggle: () => void; say: (m: string) => void; refreshAll: () => Promise<void>; collapsed: boolean; onUncollapse: () => void }) {
+function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attachReq, onAttached, onSession, onFile, docBadge, docOn, onDocToggle, say, refreshAll, collapsed, onUncollapse }: { bot: Bot; sessions: SessionInfo[]; cur?: SessionInfo; items: ChatItem[]; pending: PermissionRequest[]; prefill: string; onPrefilled: () => void; attachReq: string[]; onAttached: () => void; onSession: (sid: string) => void; onFile: (rel: string, pin?: boolean) => void; docBadge: number; docOn: boolean; onDocToggle: () => void; say: (m: string) => void; refreshAll: () => Promise<void>; collapsed: boolean; onUncollapse: () => void }) {
   const [text, setText] = useState(''); const [sessMenu, setSessMenu] = useState(false); const [busy, setBusy] = useState(false)
   const [attach, setAttach] = useState<{ rel: string; abs: string; uploaded?: boolean }[]>([]); const [attMenu, setAttMenu] = useState(false); const [pickOpen, setPickOpen] = useState(false); const [uploading, setUploading] = useState(false)
   const [queue, setQueue] = useState<string[]>([])
@@ -191,7 +207,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
             {sessMenu ? <div className="menu" style={{ left: 0, top: 28 }} onClick={() => setSessMenu(false)}>{sessions.map((x) => <button key={x.id} className={x.id === cur?.id ? 'on' : ''} onClick={() => onSession(x.id)}><span className={`dot ${stateDot(x.state)}`} /><span style={{ flex: 1 }}>{x.name}</span><span className="k">{x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span></button>)}<hr /><button onClick={async () => { const info = await api<SessionInfo>(`/bots/${bot.id}/sessions`, { body: { name: `세션 ${sessions.length + 1}` } }); await refreshAll(); onSession(info.id) }}><Icon n="plus" size={12} /><span>새 세션</span></button>{cur ? <button onClick={async () => { const n = prompt('세션 이름', cur.name); if (n) await api(`/sessions/${cur.id}/rename`, { body: { name: n } }) }}><Icon n="edit" size={12} /><span>이름 바꾸기</span></button> : null}{cur ? <button className="warn" onClick={async () => { if (confirm('이 세션 기록을 지울까요?')) { await api(`/sessions/${cur.id}`, { method: 'DELETE' }); await refreshAll() } }}><Icon n="x" size={12} /><span>세션 삭제</span></button> : null}</div> : null}</span>
           <span className={`dot ${stateDot(state)}`} /></>}
       <span className="sp" />
-      <div className="acts"><button className={`ib ${docOn ? 'on' : ''}`} onClick={onDocToggle} title="문서 열 (⌘⇧D)"><Icon n="doc" size={14} />{!docOn && docBadge ? <span className="bd">{docBadge}</span> : null}</button><button className="ib" onClick={onPanelToggle} title="패널 (⌘⇧B)"><Icon n="panelr" size={14} /></button></div>
+      <div className="acts"><button className={`ib ${docOn ? 'on' : ''}`} onClick={onDocToggle} title="문서 열 (⌘⇧D)"><Icon n="doc" size={14} />{!docOn && docBadge ? <span className="bd">{docBadge}</span> : null}</button></div>
     </div>
     <div className="chat-scroll" ref={scRef}>
       <div className="chat-body">

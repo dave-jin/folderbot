@@ -9,12 +9,14 @@ export interface SecH { sessions: number; todo: number }
 interface Node { name: string; rel: string; dir: boolean; mtime: number; size?: number }
 
 /** 오른쪽 패널 — 세션 · 할 일(Inbox) · 파일(실제 트리) · 루틴. 섹션 사이 선이 드래그 핸들 */
-export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAttach, touched, filesTick, secH, onSecH, onCollapse, say, refresh, activeDoc, onDragY }: { bot: Bot; sessions: SessionInfo[]; sessionId?: string; go: (b: string, sid?: string) => void; onOpenFile: (rel: string, pin?: boolean) => void; onTalk: (t: string) => void; onAttach: (rel: string) => void; touched: string[]; filesTick?: number; secH: SecH; onSecH: (h: SecH) => void; onCollapse: () => void; say: (m: string) => void; refresh: () => Promise<void>; activeDoc: string | null; onDragY: (on: boolean) => void }) {
+export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAttach, touched, filesTick, secH, onSecH, onCollapse, say, refresh, activeDoc, onDragY, focusSec }: { bot: Bot; sessions: SessionInfo[]; sessionId?: string; go: (b: string, sid?: string) => void; onOpenFile: (rel: string, pin?: boolean) => void; onTalk: (t: string) => void; onAttach: (rel: string) => void; touched: string[]; filesTick?: number; secH: SecH; onSecH: (h: SecH) => void; onCollapse: () => void; say: (m: string) => void; refresh: () => Promise<void>; activeDoc: string | null; onDragY: (on: boolean) => void; focusSec?: { sec: string; n: number } | null }) {
   const { s, loadTodo } = useStore()
   const [open, setOpen] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem(`fb:secs:${bot.id}`) ?? '') } catch { return { sessions: true, todo: true, files: true, routines: false } } })
   useEffect(() => { try { setOpen(JSON.parse(localStorage.getItem(`fb:secs:${bot.id}`) ?? '')) } catch { setOpen({ sessions: true, todo: true, files: true, routines: false }) } }, [bot.id])
   useEffect(() => { localStorage.setItem(`fb:secs:${bot.id}`, JSON.stringify(open)) }, [open, bot.id])
   const tog = (k: string) => setOpen({ ...open, [k]: !open[k] })
+  // 아이콘 열에서 누른 섹션은 펼쳐진 채로 온다
+  useEffect(() => { if (focusSec) setOpen((o) => ({ ...o, [focusSec.sec]: true })) }, [focusSec?.n])
   const [routines, setRoutines] = useState(false); const [menu, setMenu] = useState(false)
   const todos = (s.todos[bot.id] ?? [])
   const dragY = (k: 'sessions' | 'todo') => (e: React.PointerEvent) => { e.preventDefault(); onDragY(true); const y0 = e.clientY; const h0 = secH[k]; const mv = (ev: PointerEvent) => onSecH({ ...secH, [k]: Math.max(56, Math.min(420, h0 + ev.clientY - y0)) }); const up = () => { onDragY(false); window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up) }; window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up) }
