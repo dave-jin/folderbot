@@ -67,6 +67,9 @@ ipcMain.handle('fb:host-available', () => hostAvailable())
 app.on('web-contents-created', (_e, wc) => {
   wc.on('will-navigate', (e, url) => { if (url.startsWith('folderbot-connect://')) { e.preventDefault(); settings.hostUrl = decodeURIComponent(url.slice('folderbot-connect://'.length)); settings.token = ''; save(); loadHome(); startSse() } })
 })
+ipcMain.handle('fb:update-state', () => updater.state())
+ipcMain.handle('fb:update-check', async () => { await updater.check(true); return updater.state() })
+ipcMain.on('fb:update-apply', () => { updater.apply() })
 ipcMain.on('fb:change-host', () => { settings.mode = ''; settings.hostUrl = ''; settings.token = ''; save(); stopSse(); if (win) loadHome() })
 ipcMain.on('fb:token', (_e, token) => { if (typeof token === 'string' && token !== settings.token) { settings.token = token; save(); startSse() } })
 
@@ -163,7 +166,8 @@ app.whenReady().then(async () => {
   app.setLoginItemSettings({ openAtLogin: !!settings.loginItem, openAsHidden: true })
   app.on('activate', showWin)
   // 자기 업데이트 — 호스트 모드에선 세션이 전부 유휴일 때만 적용한다
-  updater.start({ isHost: () => settings.mode === 'host', isBusy: () => { let b = 0; for (const st of states.values()) if (st === 'running' || st === 'awaiting_input') b++; return b > 0 }, onChange: () => { try { tray?.setContextMenu(trayMenu()) } catch {} } })
+  const busyCount = () => { let b = 0; for (const st of states.values()) if (st === 'running' || st === 'awaiting_input') b++; return b }
+  updater.start({ isHost: () => settings.mode === 'host', isBusy: () => busyCount() > 0, busyCount, onChange: () => { try { tray?.setContextMenu(trayMenu()) } catch {} try { win?.webContents.send('fb:update', updater.state()) } catch {} } })
 })
 app.on('window-all-closed', () => { /* 메뉴바에 남는다 */ })
 app.on('before-quit', () => { try { hostRun?.stop() } catch {} })

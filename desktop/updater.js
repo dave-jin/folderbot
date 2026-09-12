@@ -1,9 +1,9 @@
-// Folder Bot 자기 업데이트 — 공개 릴리스(dave-jin/rondo-releases, 태그 folderbot-desktop-v*)를 받아 제자리 교체한다.
+// Folder Bot 자기 업데이트 — 이 리포(dave-jin/rondo, 공개)의 desktop-v<n> 릴리스를 받아 제자리 교체한다. 토큰 불필요.
 // · 받는 것은 묻지 않고, 적용만 묻는다 (부팅 15초 뒤 + 6시간마다 확인 → 조용히 다운로드 → 다 받으면 확인창 하나)
 // · 호스트 모드(미니)에선 진행 중 세션이 있으면 기다렸다가 전부 유휴가 되는 순간 자동 적용한다 — 세션을 죽이지 않는다
 // · ad-hoc 서명이라 Squirrel/electron-updater 는 못 쓴다. 교체는 앱이 완전히 종료된 뒤 분리된 셸 스크립트가 한다.
 //   Gatekeeper 의 방아쇠는 서명이 아니라 검역 딱지(quarantine)이므로 `ditto --noqtn` 으로 떼고 복사한다.
-// · 프리릴리스로 올린다 — 알파 Rondo 가 같은 리포의 releases/latest 를 보므로(프리릴리스 제외) 서로 안 섞인다.
+// · 버전은 태그(desktop-v7)가 아니라 zip 이름(Folder.Bot-0.2.7-arm64-mac.zip)에 있다 — 판정은 update-pick.js(순수, vitest).
 const { app, dialog, Notification, shell } = require('electron')
 const https = require('node:https')
 const { createWriteStream, existsSync, mkdirSync, statSync, readdirSync, unlinkSync, writeFileSync, chmodSync, createReadStream } = require('node:fs')
@@ -11,16 +11,15 @@ const { join, dirname, basename } = require('node:path')
 const { spawn } = require('node:child_process')
 const { createHash } = require('node:crypto')
 
-const REPO = 'dave-jin/rondo-releases'
-const TAG_PREFIX = 'folderbot-desktop-v'
+const { pickLatest } = require('./update-pick')
+const REPO = 'dave-jin/rondo'
 const CHECK_EVERY = 6 * 60 * 60 * 1000
 const dir = () => join(app.getPath('userData'), 'updates')
 
 let staged = null      // { version, zip, notes }
 let checking = false, downloading = null, timer = null, deferTimer = null
-let hooks = { isBusy: () => false, isHost: () => false, onChange: () => {}, log: (m) => console.log('[update]', m) }
-
-function cmp(a, b) { const pa = a.split('.').map(Number), pb = b.split('.').map(Number); for (let i = 0; i < 3; i++) { const d = (pa[i] || 0) - (pb[i] || 0); if (d) return d } return 0 }
+let hooks = { isBusy: () => false, busyCount: () => 0, isHost: () => false, onChange: () => {}, log: (m) => console.log('[update]', m) }
+let lastCheck = 0, lastError = '', deferred = false
 function get(url, opts = {}) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, { headers: { 'user-agent': 'folderbot-desktop', accept: 'application/vnd.github+json', ...(opts.headers || {}) } }, (res) => {
@@ -44,31 +43,25 @@ function sha256(file) { return new Promise((resolve, reject) => { const h = crea
 async function latest() {
   const r = await get(`https://api.github.com/repos/${REPO}/releases?per_page=30`)
   if (r.status !== 200) throw new Error(`releases HTTP ${r.status}`)
-  const rels = JSON.parse(r.body).filter((x) => String(x.tag_name || '').startsWith(TAG_PREFIX) && !x.draft)
-  let best = null
-  for (const x of rels) { const v = x.tag_name.slice(TAG_PREFIX.length); if (!/^\d+\.\d+\.\d+$/.test(v)) continue; if (!best || cmp(v, best.v) > 0) best = { v, x } }
-  if (!best) return null
-  const zip = (best.x.assets || []).find((a) => /arm64.*\.zip$/i.test(a.name) && !/\.sha256$/.test(a.name))
-  const sha = (best.x.assets || []).find((a) => /\.zip\.sha256$/i.test(a.name))
-  if (!zip) return null
-  return { version: best.v, zipUrl: zip.browser_download_url, size: zip.size, shaUrl: sha?.browser_download_url, notes: String(best.x.body || '').slice(0, 800), newer: cmp(best.v, app.getVersion()) > 0 }
+  return pickLatest(JSON.parse(r.body), app.getVersion())
 }
 
 async function check(manual = false) {
   if (checking) return staged
-  checking = true
+  checking = true; lastError = ''; hooks.onChange()
   try {
     const l = await latest()
-    if (!l || !l.newer) { if (manual) new Notification({ title: 'Folder Bot', body: `최신 버전이에요 (v${app.getVersion()})` }).show(); return null }
+    lastCheck = Date.now()
+    if (!l || !l.newer) { if (manual) new Notification({ title: 'Folder Bot', body: `최신 버전이에요 (v${app.getVersion()})` }).show(); hooks.onChange(); return null }
     if (staged?.version === l.version) { if (manual) offer(); return staged }
     await download(l)
     offer()
     return staged
   } catch (e) {
-    hooks.log(`확인 실패: ${e.message}`)
+    lastError = e.message; hooks.log(`확인 실패: ${e.message}`)
     if (manual) new Notification({ title: 'Folder Bot', body: `업데이트 확인 실패 — ${e.message}` }).show()
     return null
-  } finally { checking = false }
+  } finally { checking = false; hooks.onChange() }
 }
 
 async function download(l) {
@@ -95,7 +88,7 @@ async function download(l) {
 function offer() {
   if (!staged?.zip) return
   if (hooks.isHost()) {
-    if (hooks.isBusy()) { hooks.log('세션 진행 중 — 전부 유휴가 되면 자동 적용'); scheduleDeferred(); return }
+    if (hooks.isBusy()) { deferred = true; hooks.onChange(); hooks.log('세션 진행 중 — 전부 유휴가 되면 자동 적용'); scheduleDeferred(); return }
     hooks.log('호스트 모드 · 세션 없음 → 바로 적용'); apply(); return
   }
   const show = async () => {
@@ -150,6 +143,6 @@ function start(h) {
   setTimeout(() => void check(), 15 * 1000)
   timer = setInterval(() => void check(), CHECK_EVERY)
 }
-function state() { return { current: app.getVersion(), staged: staged ? { version: staged.version, ready: !!staged.zip, progress: staged.progress ?? 0 } : null, downloading: !!downloading } }
+function state() { return { current: app.getVersion(), staged: staged ? { version: staged.version, ready: !!staged.zip, progress: staged.progress ?? 0, notes: staged.notes || '' } : null, downloading: !!downloading, checking, lastCheck, lastError, deferred: deferred && !!staged?.zip, busy: hooks.busyCount(), host: hooks.isHost() } }
 
 module.exports = { start, check, apply, state, offer }

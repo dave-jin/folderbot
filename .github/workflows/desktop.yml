@@ -10,8 +10,6 @@ permissions:
 jobs:
   build:
     runs-on: macos-14
-    env:
-      RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -42,27 +40,9 @@ jobs:
           tag_name: desktop-v${{ github.run_number }}
           name: Folder Bot desktop (build ${{ github.run_number }})
           body: |
-            맥북용 셸 · Apple Silicon · ad-hoc 서명(개발자 인증서 없음).
+            Folder Bot 데스크톱 0.2.${{ github.run_number }} · Apple Silicon · ad-hoc 서명(개발자 인증서 없음). 설치된 앱이 스스로 받아 재시작합니다.
             처음 열 때 "확인되지 않은 개발자" 가 뜨면 Finder 에서 우클릭 → 열기. "손상됨" 이 뜨면 터미널에서:
             `xattr -dr com.apple.quarantine "/Applications/Folder Bot.app"`
-          files: |
-            desktop/dist/*.dmg
-            desktop/dist/*.zip
-            desktop/dist/*.sha256
-      # 앱 자기 업데이트가 보는 곳 — 공개 리포에 프리릴리스로 (알파 Rondo 의 releases/latest 와 안 섞이게)
-      # 다른 리포에 쓰려면 PAT 가 필요하다: dave-jin/rondo › Settings › Secrets › RELEASES_TOKEN (rondo-releases Contents: write)
-      - name: Release (public, for self-update)
-        if: ${{ env.RELEASES_TOKEN != '' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          repository: dave-jin/rondo-releases
-          token: ${{ env.RELEASES_TOKEN }}
-          tag_name: folderbot-desktop-v0.2.${{ github.run_number }}
-          name: Folder Bot v0.2.${{ github.run_number }}
-          prerelease: true
-          body: |
-            Folder Bot 데스크톱 · Apple Silicon · ad-hoc 서명. 설치된 앱이 자동으로 받아 적용합니다.
-            처음 설치: DMG 를 열어 /Applications 로. "확인되지 않은 개발자" 는 우클릭 → 열기.
           files: |
             desktop/dist/*.dmg
             desktop/dist/*.zip

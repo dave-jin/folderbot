@@ -35,7 +35,31 @@ export function App() {
 
 interface Layout { sb: number; rp: number; doc: number; sbOpen: boolean; rpOpen: boolean; sbPin: boolean; rpPin: boolean; secH: SecH }
 const DEF: Layout = { sb: 250, rp: 290, doc: 520, sbOpen: true, rpOpen: true, sbPin: false, rpPin: false, secH: { sessions: 120, todo: 128 } }
-const isDesktop = typeof (window as unknown as { folderbotDesktop?: unknown }).folderbotDesktop !== 'undefined'
+interface UpdState { lastCheck: number; current: string; staged: { version: string; ready: boolean; progress: number; notes: string } | null; downloading: boolean; checking: boolean; lastError: string; deferred: boolean; busy: number; host: boolean }
+interface DesktopBridge { version?: string; update?: { state: () => Promise<UpdState>; check: () => Promise<UpdState>; apply: () => void; onChange: (cb: (st: UpdState) => void) => () => void } }
+const desk = (window as unknown as { folderbotDesktop?: DesktopBridge }).folderbotDesktop
+const isDesktop = typeof desk !== 'undefined'
+
+/** 자기 업데이트 — 셸(Electron)이 받아 두고, 여기서는 상태를 보여 주고 «재시작» 만 누른다 */
+function useUpdate(say: (m: string) => void): [UpdState | null, () => void, () => void] {
+  const [st, setSt] = useState<UpdState | null>(null)
+  const readyRef = useRef('')
+  useEffect(() => {
+    const u = desk?.update; if (!u) return
+    void u.state().then(setSt).catch(() => {})
+    return u.onChange((n) => { setSt(n); if (n.staged?.ready && readyRef.current !== n.staged.version) { readyRef.current = n.staged.version; say(n.deferred ? `v${n.staged.version} 준비됨 — 세션 ${n.busy}개가 끝나면 자동으로 적용해요` : `v${n.staged.version} 준비됨 — 아래 버전 칩에서 재시작`) } })
+  }, [])
+  const check = () => { const u = desk?.update; if (!u) return; setSt((x) => (x ? { ...x, checking: true } : x)); void u.check().then(setSt).catch(() => {}) }
+  const apply = () => { const u = desk?.update; if (!u || !st?.staged?.ready) return; if (st.busy > 0 && !confirm(`세션 ${st.busy}개가 중단됩니다. 지금 재시작해서 v${st.staged.version} 을 적용할까요?`)) return; u.apply() }
+  return [st, check, apply]
+}
+function UpdateChip({ version, st, onCheck, onApply }: { version: string; st: UpdState | null; onCheck: () => void; onApply: () => void }) {
+  if (!isDesktop || !st) return <span className="bd mono">v{version}</span>
+  if (st.staged?.ready) return st.deferred ? <span className="bd" style={{ color: 'var(--wait)' }} title="호스트 모드 — 세션이 전부 유휴가 되는 순간 자동 적용">v{st.staged.version} · 세션 {st.busy}개 끝나면 적용</span>
+    : <button className="bd" style={{ color: 'var(--done)', display: 'inline-flex', alignItems: 'center', gap: 4 }} onClick={onApply} title={st.staged.notes}><span className="dot done" style={{ width: 5, height: 5 }} />v{st.staged.version} 재시작해서 적용</button>
+  if (st.downloading) return <span className="bd" title="조용히 받는 중 — 다 받으면 알려 드려요">v{st.staged?.version} 받는 중 {Math.round((st.staged?.progress ?? 0) * 100)}%</span>
+  return <button className="bd mono" onClick={onCheck} title={st.lastError ? `마지막 확인 실패 — ${st.lastError}` : st.lastCheck ? `업데이트 확인 · 마지막 ${fmtTime(st.lastCheck)}` : '업데이트 확인'} style={st.lastError ? { color: 'var(--wait)' } : undefined}>v{st.current}{st.checking ? ' · 확인 중…' : ''}</button>
+}
 
 function Main() {
   const { s, refresh, loadChat, loadTodo } = useStore()
@@ -59,6 +83,7 @@ function Main() {
   const [mentionReq, setMentionReq] = useState<string[]>([])
   const [focusReq, setFocusReq] = useState(0)
   const [focusSec, setFocusSec] = useState<{ sec: string; n: number } | null>(null)
+  const [upd, updCheck, updApply] = useUpdate(say)
   const docs = useDocs(bot?.id ?? '')
   useEffect(() => { if (sessionId && !s.chats[sessionId]) void loadChat(sessionId) }, [sessionId])
   useEffect(() => { if (bot) void loadTodo(bot.id) }, [bot?.id, s.filesTick[bot?.id ?? '']])
@@ -124,7 +149,7 @@ function Main() {
             {list.map(({ b, sum }) => <button key={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''}`} onClick={() => go(b.id)} title={sum.text}><FolderBot color={b.color} size={16} mood={sum.mood} mono /><span className="n">{b.name}</span><span className={`dot ${stateDot(sum.state ?? undefined)}`} /><time>{fmtTime(sum.t)}</time></button>)}
           </div>)}
         </div>
-        <div className="sb-foot"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} /><span>Mac mini</span>{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<span className="bd mono">v{s.version}</span></div>
+        <div className="sb-foot"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} /><span>Mac mini</span>{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<UpdateChip version={s.version} st={upd} onCheck={updCheck} onApply={updApply} /></div>
       </div> : <div className="strip left"><button className="ib" onClick={openSb} title="목록 펼치기 (⌘B)"><Icon n="panel" size={14} /></button><div className="gap" />
         <button className="ib" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span className="fly"><b>폴더 선택 · 시작</b><span>후보 {s.candidates.filter((c) => !c.active).length}</span></span></button>
         <button className="ib" onClick={() => setModal('notify')}><Icon n="bell" size={14} />{unread ? <span className="bd">{unread}</span> : null}<span className="fly"><b>알림</b><span>{unread ? `읽지 않음 ${unread}` : '없음'}</span></span></button>

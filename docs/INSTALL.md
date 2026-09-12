@@ -63,12 +63,13 @@ folderbot start        # Jump Desktop 으로 들어가 GUI 에서 새로 연 Ter
    ```
    → `https://mac-mini.<tailnet>.ts.net` 으로 열고 홈 화면에 추가 → 설정 › 이 기기 푸시 켜기.
 
-## 4. 자동 업데이트
+## 4. 자동 업데이트 — 앱이 스스로 받아 재시작
 
-- 앱이 부팅 15초 뒤 + 6시간마다 공개 릴리스를 보고 **조용히 받아 둡니다**.
-- 맥북: 다 받으면 확인창 하나 — [지금 재시작해서 적용] / [나중에]. 메뉴바 › 업데이트 확인 으로 수동도.
-- 미니: 진행 중 세션이 있으면 **전부 유휴가 되는 순간 자동 적용**(세션을 죽이지 않음). 없으면 바로.
-- 🔴 한 번만 할 일: CI 가 공개 리포에 올리려면 PAT 가 필요합니다. github.com › Settings › Developer settings › Fine-grained token — 리포 `rondo-releases`, **Contents: Read and write** → `dave-jin/rondo` › Settings › Secrets and variables › Actions › `RELEASES_TOKEN`. 그 다음 푸시부터 설치된 앱이 스스로 받습니다.
+- 앱이 부팅 15초 뒤 + 6시간마다 이 리포의 릴리스(`desktop-v*`, 공개)를 보고 **조용히 받아 둡니다**. 토큰·시크릿 필요 없음.
+- **맥북(클라이언트)**: 다 받으면 확인창 하나 — [지금 재시작해서 적용] / [나중에]. 화면 왼쪽 아래 **버전 칩**(`v0.2.8 재시작해서 적용`)이나 메뉴바 › 업데이트 적용으로도 됩니다. 칩을 누르면 수동 확인.
+- **미니(호스트)**: 진행 중 세션이 있으면 **전부 유휴가 되는 순간 자동 적용**(세션을 죽이지 않음). 칩에 「세션 N개 끝나면 적용」이 보입니다. 없으면 바로 재시작.
+- 교체는 앱이 완전히 종료된 뒤 분리된 스크립트가 zip 을 풀어 `/Applications/Folder Bot.app` 을 갈아 끼우고 다시 엽니다(`ditto --noqtn` — 검역 딱지를 떼므로 Gatekeeper 가 다시 묻지 않음). `/Applications` 밖에 있으면 자동 교체 대신 받아 둔 zip 을 열어 줍니다.
+- ⚠ **desktop-v7 이하**는 옛 주소(비공개 리포)를 보고 있어 스스로 못 받습니다. **v8 을 한 번만 DMG 로 설치**하면 그다음부터는 자동입니다.
 
 ## 5. 로그인이 안 될 때 (`Not logged in` · `OAuth session expired`)
 
