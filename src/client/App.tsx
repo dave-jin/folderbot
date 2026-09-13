@@ -17,6 +17,8 @@ import { PermGate, usePerms } from './Perms'
 import { MODES, effortLabel, effortsFor, fmtK, modeLabel, modelLabel, modelsFor } from './consts'
 import { DEFAULT_EFFORT, DEFAULT_MODEL } from '../core/agents'
 import { cronFromText, routineName } from '../core/routineText'
+import { BARE_URL_RE, faviconHost } from '../core/favicon'
+import { GLOBE, faviconNow, onFavicon } from './favicons'
 
 type Tool = Extract<ChatItem, { kind: 'tool' }>
 type Sub = Extract<ChatItem, { kind: 'subagent' }>
@@ -635,6 +637,12 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
    *    틀릴 수 있고, 틀린 추측을 조용히 저장하면 엉뚱한 시각에 봇이 혼자 일한다.
    * ⚠ 글이 비어 있으면 **직전에 보낸 말**을 쓴다 — 「아까 그거 매일 해 줘」 가 자연스러운 흐름이다.
    */
+  /** 쓰는 중인 글 속의 주소 — 도메인 단위로 접는다(같은 사이트를 여러 번 쓰면 칩은 하나) */
+  const draftLinks = useMemo(() => {
+    const re = new RegExp(BARE_URL_RE.source, 'g'); const seen = new Set<string>(); const out: string[] = []
+    for (let m = re.exec(text); m; m = re.exec(text)) { const h = faviconHost(m[0]); if (!h || seen.has(h)) continue; seen.add(h); out.push(m[0]); if (out.length >= 4) break }
+    return out
+  }, [text])
   const routineSrc = () => (text.trim() || items.filter((x) => x.kind === 'user').pop()?.text || '').trim()
   const routinePeek = () => { const src = routineSrc(); if (!src) return '무엇을 시킬지 먼저 쓰세요'; return cronFromText(src).label }
   const openRoutine = () => {
@@ -696,6 +704,10 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
     <button className={`tobot rb glassb${showJump ? '' : ' off'}`} onClick={() => { const el = scRef.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }) }} title="최근으로" tabIndex={showJump ? 0 : -1} aria-hidden={!showJump}><Icon n="chevd" size={16} />{streaming ? <span className="dot run" /> : null}</button>
     <div className="chat-foot" ref={footRef}>
       {queue.map((q, i) => <div key={i} className="queue"><span>대기 {i + 1}</span><span className="tx">{q}</span><button onClick={() => setQueue(queue.filter((_, k) => k !== i))} style={{ color: 'var(--t3)', display: 'inline-flex' }}><Icon n="x" size={11} /></button></div>)}
+      {/* 🔴 **입력창의 링크도 아이콘을 갖는다** (2026-09-13 Dave). ⚠ `textarea` 안에는 그림을 못 넣는다 —
+          글자만 담는 칸이다. 그래서 쓰는 중인 주소를 **입력칸 위 칩**으로 올린다: 같은 캐시, 같은 아이콘,
+          그리고 «이 주소가 맞나» 를 보내기 전에 확인할 수 있다. */}
+      {draftLinks.length ? <div className="files lchips">{draftLinks.map((u) => <LinkChip key={u} url={u} />)}</div> : null}
       {attach.length ? <div className="files">{attach.map((a) => <span key={a.rel} className="chip" title={a.abs}><Icon n={a.dir ? 'folder' : 'doc'} size={11} color="var(--t3)" /><span>{a.rel}{a.dir ? '/' : ''}</span><button onClick={() => setAttach(attach.filter((x) => x.rel !== a.rel))} style={{ color: 'var(--t3)', display: 'inline-flex' }}><Icon n="x" size={10} /></button></span>)}<span style={{ fontSize: 11, color: 'var(--t3)', alignSelf: 'center' }}>{attach.length}개 · 봇이 읽어서 참고</span></div> : null}
       <input ref={fileRef} type="file" multiple hidden onChange={(e) => void upload(Array.from(e.target.files ?? []))} />
       {phone ? <div className="cchips">{modeBtn}{modelBtn}{effortBtn}</div> : null}
@@ -722,6 +734,15 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
 function Ring({ pct, size = 18, stroke = 2 }: { pct: number; size?: number; stroke?: number }) {
   const r = (size - stroke) / 2; const c = 2 * Math.PI * r
   return <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flex: 'none' }}><circle cx={size / 2} cy={size / 2} r={r} stroke="var(--line2)" strokeWidth={stroke} fill="none" /><circle cx={size / 2} cy={size / 2} r={r} stroke="currentColor" strokeWidth={stroke} fill="none" strokeDasharray={`${(c * Math.max(0, pct)) / 100} ${c}`} strokeLinecap="round" /></svg>
+}
+
+/** 입력창 위 링크 칩 — 아이콘이 도착하면 갈아 끼운다 */
+function LinkChip({ url }: { url: string }) {
+  const [ic, setIc] = useState<string | null | undefined>(() => faviconNow(url))
+  useEffect(() => onFavicon(url, setIc), [url])
+  let host = url
+  try { host = new URL(url).host } catch { /* 그대로 */ }
+  return <span className="chip lchip" title={url}><img className="fvic" alt="" width={13} height={13} src={ic || GLOBE} /><span>{host}</span></span>
 }
 
 function Live({ cur, state }: { cur: SessionInfo; state: string }) {

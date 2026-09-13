@@ -7,6 +7,8 @@ import { markdown } from '@codemirror/lang-markdown'
 import { GFM } from '@lezer/markdown'
 import { syntaxTree, syntaxHighlighting, defaultHighlightStyle, HighlightStyle } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
+import { BARE_URL_RE } from '../core/favicon'
+import { GLOBE, faviconNow, onFavicon } from './favicons'
 
 /**
  * 라이브 프리뷰 마크다운 편집기 — 서식이 보이는 채로 그 자리에서 고친다.
@@ -64,12 +66,22 @@ class WikiWidget extends WidgetType {
 }
 
 /** 단독 줄의 이미지 — 줄 전체를 그림으로 바꾼다 */
+/**
+ * 단독 줄의 이미지 — 줄 전체를 그림으로 바꾼다.
+ * ⚠ **한 번 잰 높이를 기억한다.** 그림은 늦게 도착하는데, 도착하는 순간 아래 글이 통째로 밀린다 —
+ *    그 사이에 누른 클릭은 **밀리기 전 자리**로 계산돼서 커서가 엉뚱한 곳에 선다(문서를 처음 열 때 특히).
+ *    자리를 미리 잡아 두면 도착해도 아무것도 안 움직인다.
+ */
+const imgH = new Map<string, number>()
 class ImgWidget extends WidgetType {
   constructor(readonly src: string, readonly alt: string) { super() }
   eq(o: ImgWidget) { return o.src === this.src }
   toDOM() {
     const w = document.createElement('span'); w.className = 'lp-img'
+    const known = imgH.get(this.src)
+    if (known) w.style.minHeight = `${known}px`
     const img = document.createElement('img'); img.src = this.src; img.alt = this.alt; img.loading = 'lazy'
+    img.onload = () => { const h = Math.round(img.getBoundingClientRect().height); if (h > 8) { imgH.set(this.src, h); w.style.minHeight = '' } }
     w.appendChild(img); return w
   }
 }
@@ -89,6 +101,25 @@ class FmWidget extends WidgetType {
   toDOM() { const e = document.createElement('span'); e.className = 'lp-fm'; e.textContent = this.summary; e.title = '눌러서 원문 보기'; return e }
   ignoreEvent() { return false }
 }
+
+/**
+ * 링크 앞 파비콘 — 채팅·입력창과 **같은 캐시**를 본다(`client/favicons.ts`).
+ * ⚠ 자리표시자(지구본)를 먼저 놓는다 — 비워 두면 아이콘이 도착할 때마다 글줄이 밀린다.
+ * ⚠ 커서가 든 줄에도 그대로 둔다 — 들락날락하면 그게 또 밀림이다.
+ */
+class FavWidget extends WidgetType {
+  constructor(readonly url: string) { super() }
+  eq(o: FavWidget) { return o.url === this.url }
+  toDOM() {
+    const img = document.createElement('img')
+    img.className = 'fvic'; img.alt = ''; img.width = 13; img.height = 13
+    const now = faviconNow(this.url)
+    img.src = now ?? GLOBE
+    if (now === undefined) onFavicon(this.url, (d) => { if (d) img.src = d })
+    return img
+  }
+}
+const MDLINK_RE = /\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g
 
 /** `type: reference` · `tags: [PARA, 지침]` → `REFERENCE · PARA · 지침` */
 function fmSummary(body: string): string {
@@ -322,14 +353,28 @@ function build(state: EditorState): { deco: DecorationSet; atoms: { from: number
         return
       }
       if (!MARK_NODES.has(n.name)) return
-      const line = state.doc.lineAt(n.from)
-      if (active.has(line.number)) return
       if (n.to <= n.from) return
-      // 제목 마커는 뒤따르는 공백까지 함께 숨긴다 — 안 그러면 제목이 한 칸 밀려 보인다
-      let to = n.to
-      if (n.name === 'HeaderMark' && state.doc.sliceString(to, to + 1) === ' ') to += 1
-      marks.push(HIDE.range(n.from, to))
-      atoms.push({ from: n.from, to })
+      const line = state.doc.lineAt(n.from)
+      const hide = (to: number) => { marks.push(HIDE.range(n.from, to)); atoms.push({ from: n.from, to }) }
+      /**
+       * 🔴 **서식 마커는 커서가 그 줄에 있어도 계속 숨긴다** (2026-09-13 Dave · Rondo `livePreview.tsx` 2455~).
+       *    종전에는 커서가 든 줄만 원문을 드러냈는데, 그 순간 **줄이 통째로 오른쪽으로 밀린다** —
+       *    그래서 «누른 글자» 와 «커서가 선 글자» 가 달라졌다(Dave: *«최초 클릭하면 위치가 정확하지 않을 때가 있어»*).
+       *    클릭 위치는 **누르기 직전의 배치**로 정해지는데 그 직후에 배치가 바뀌니, 드러내는 한 어긋남은 반드시 남는다.
+       * ⚠ **`#` 만 친 상태(뒤에 공백 없음)는 그대로 보여 준다** — 아직 제목이 아니고, 사람이 서식에 들어서는 중이다.
+       * ⛔ 주소(`URL`·`LinkMark`)는 예외로 **커서 줄에서 드러낸다** — 그건 서식이 아니라 **내용**이라,
+       *    안 보이면 오타 난 주소를 고칠 방법이 아예 없다.
+       */
+      if (n.name === 'HeaderMark') { if (state.doc.sliceString(n.to, n.to + 1) !== ' ') return; hide(n.to + 1); return }
+      if (n.name === 'QuoteMark') { hide(state.doc.sliceString(n.to, n.to + 1) === ' ' ? n.to + 1 : n.to); return }
+      if (n.name === 'EmphasisMark' || n.name === 'StrikethroughMark' || n.name === 'CodeMark') { hide(n.to); return }
+      /**
+       * ⛔ **맨 URL 은 숨기면 글자가 통째로 사라진다.** `[글](주소)` 의 주소는 숨겨도 «글» 이 남지만,
+       *    그냥 적어 둔 `https://…` 는 그 자체가 보이는 전부다. 여는 괄호 뒤인지로 가른다.
+       */
+      if (n.name === 'URL' && state.doc.sliceString(n.from - 1, n.from) !== '(') return
+      if (active.has(line.number)) return
+      hide(n.to)
     }
   })
   // ── 프론트매터 — 맨 위 `---` 블록 (커서가 없을 때만 접는다) ──
@@ -366,6 +411,18 @@ function build(state: EditorState): { deco: DecorationSet; atoms: { from: number
       const at = line.from + task[1].length
       marks.push(Decoration.replace({ widget: new CheckWidget(task[2] !== ' ', at + 1) }).range(at, at + 3))
       atoms.push({ from: at, to: at + 3 })
+    }
+
+    // 링크 앞 파비콘 — `[글](주소)` 는 글 앞에, 맨 URL 은 그 앞에
+    MDLINK_RE.lastIndex = 0
+    for (let m = MDLINK_RE.exec(text); m; m = MDLINK_RE.exec(text)) {
+      const at = line.from + m.index + 1
+      marks.push(Decoration.widget({ widget: new FavWidget(m[2]), side: -1 }).range(at))
+    }
+    const bare = new RegExp(BARE_URL_RE.source, 'g')
+    for (let m = bare.exec(text); m; m = bare.exec(text)) {
+      if (text[m.index - 1] === '(') continue          // `[글](주소)` 의 주소 — 위에서 이미 달았다
+      marks.push(Decoration.widget({ widget: new FavWidget(m[0]), side: -1 }).range(line.from + m.index))
     }
 
     if (!live) {

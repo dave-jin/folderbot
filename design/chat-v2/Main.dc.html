@@ -1,0 +1,151 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin:0; background:#141414; color:#d6d6d6;
+      font-family:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',system-ui,sans-serif;
+      -webkit-font-smoothing:antialiased; font-size:13.5px }
+    a { color:#e08850 } a:hover { color:#ededed }
+    .mono { font-family:'JetBrains Mono','SF Mono',Menlo,monospace }
+
+    /* 접힌 기계 줄 — 도는 동안 글자가 좌→우로 물결친다 (살아 있음은 여기 하나) */
+    @keyframes wave { 0% { background-position:120% 0 } 100% { background-position:-20% 0 } }
+    .flow { background:linear-gradient(90deg,#666666 0%,#666666 38%,#ededed 50%,#666666 62%,#666666 100%);
+      background-size:220% 100%; -webkit-background-clip:text; background-clip:text; color:transparent;
+      animation:wave 2.6s linear infinite }
+
+    /* 폴더봇이 일한다 — 몸이 숨쉬고, 앞판이 서류를 넘긴다 */
+    @keyframes breathe { 0%,100% { transform:scale(1) } 50% { transform:scale(1.07) } }
+    @keyframes leaf { 0%,100% { transform:translateY(0) rotate(0deg) } 50% { transform:translateY(-3px) rotate(-4deg) } }
+    .fb-work { animation:breathe 1.5s ease-in-out infinite; transform-origin:32px 40px }
+    .fb-work .leaf { animation:leaf 1.5s ease-in-out infinite; transform-origin:32px 30px }
+
+    .chip { display:inline-flex; align-items:center; gap:5px; font-family:'JetBrains Mono','SF Mono',Menlo,monospace;
+      font-size:11.5px; color:#9a9a9a; border:1px solid #2c2c2c; border-radius:5px; padding:1px 7px }
+  </style>
+</helmet>
+
+<div style="display:flex; flex-direction:column; height:880px; background:#141414">
+
+  <!-- 헤더 44px -->
+  <div style="height:44px; flex:none; display:flex; align-items:center; gap:8px; padding:0 14px; border-bottom:1px solid #232323">
+    <svg viewBox="0 0 64 64" width="16" height="16" style="flex:none; display:block">
+      <path d="M6 14a4 4 0 0 1 4-4h14l5 5h29a4 4 0 0 1 4 4v33a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill="#6ea6f7" opacity=".55"/>
+      <path d="M6 24a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill="#6ea6f7"/>
+      <rect x="20" y="33" width="6" height="8" rx="3" fill="#000"/><rect x="38" y="33" width="6" height="8" rx="3" fill="#000"/>
+      <path d="M27 46h10" stroke="#000" stroke-width="3" stroke-linecap="round"/>
+    </svg>
+    <b style="color:#ededed; font-weight:600; font-size:13px">제품_Rondo</b>
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="color:#d97757; flex:none"><path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" fill="#D97757"/></svg>
+    <span style="flex:1"></span>
+    <span class="mono" style="font-size:11px; color:#666666">세션 1</span>
+  </div>
+
+  <!-- 대화 -->
+  <div style="flex:1; min-height:0; overflow:hidden; padding:22px 24px; display:flex; flex-direction:column; gap:16px; max-width:760px; width:100%; align-self:center; box-sizing:border-box">
+
+    <!-- 사람 말 — cursor 처럼 입력칸 모양 상자 -->
+    <div style="background:#1c1c1c; border-radius:8px; padding:11px 14px; color:#ededed; line-height:1.65">
+      지난주 멘토링 자료 정리해서 todo 로 옮겨 줘
+    </div>
+
+    <!-- 봇 답 -->
+    <div style="line-height:1.7">
+      정리했습니다. <b style="color:#ededed; font-weight:600">4건</b>을 옮겼고, 중복 2건은 합쳤습니다. 원본 문장은 지우지 않고 상세로 내렸어요.
+      <div style="margin-top:10px; display:flex; align-items:center; gap:6px; flex-wrap:wrap">
+        바뀐 파일은
+        <span class="chip"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#666666" stroke-width="1.4"><path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3"/></svg>todo.md</span>
+        <span class="chip"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#666666" stroke-width="1.4"><path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3"/></svg>2026-09-21_멘토링/회의록.md</span>
+        입니다.
+      </div>
+    </div>
+
+    <!-- 접힌 기계 줄 — 끝난 것: 조용하다 -->
+    <button style="display:flex; align-items:center; gap:8px; min-height:22px; font-size:11.5px; color:#666666;
+      background:none; border:0; padding:2px 0; cursor:pointer; text-align:left; font-family:inherit">
+      <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>
+      <span>도구 7회 · 파일 3개 · 12.4초</span>
+    </button>
+
+    <div style="height:1px"></div>
+
+    <!-- 사람 말 2 -->
+    <div style="background:#1c1c1c; border-radius:8px; padding:11px 14px; color:#ededed; line-height:1.65">
+      좋아. 그럼 예산표도 같이 봐 줘
+    </div>
+
+    <!-- ▼ 도는 중 — 접힌 줄이 물결치고, 그 아래 폴더봇이 일한다 -->
+    <button style="display:flex; align-items:center; gap:8px; min-height:22px; font-size:11.5px;
+      background:none; border:0; padding:2px 0; cursor:pointer; text-align:left; font-family:inherit; color:#666666">
+      <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>
+      <span class="flow">예산_2026Q3.xlsx 읽는 중 · 도구 3회 · 파일 2개</span>
+    </button>
+
+    <!-- 살아 있는 줄 — 마스코트 · 시간 먼저 · 단순한 행동 -->
+    <div style="display:flex; align-items:center; gap:10px; min-height:28px">
+      <svg viewBox="0 0 64 64" width="22" height="22" class="fb-work" style="flex:none; display:block; overflow:visible">
+        <path class="leaf" d="M6 14a4 4 0 0 1 4-4h14l5 5h29a4 4 0 0 1 4 4v33a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill="#6ea6f7" opacity=".55"/>
+        <path d="M6 24a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill="#6ea6f7"/>
+        <rect x="20" y="33" width="6" height="8" rx="3" fill="rgba(0,0,0,.6)"/>
+        <rect x="38" y="33" width="6" height="8" rx="3" fill="rgba(0,0,0,.6)"/>
+        <path d="M27 46h10" stroke="rgba(0,0,0,.6)" stroke-width="3" stroke-linecap="round"/>
+      </svg>
+      <span class="mono" style="font-size:12.5px; color:#ededed">2m 48s</span>
+      <span style="color:#2c2c2c">·</span>
+      <span style="font-size:12.5px; color:#9a9a9a">파일 읽는 중</span>
+      <span style="flex:1"></span>
+      <button style="display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:#666666; background:none;
+        border:1px solid #232323; border-radius:5px; padding:2px 8px; cursor:pointer; font-family:inherit">
+        <svg width="9" height="9" viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>중단
+      </button>
+    </div>
+
+    <span style="flex:1"></span>
+
+    <!-- 승인 — 상자는 «지금 당신 차례» 에만 -->
+    <div style="border:1px solid #2c2c2c; background:#1a1a1a; border-radius:9px; padding:13px 15px; display:flex; flex-direction:column; gap:9px">
+      <div style="font-size:11px; letter-spacing:.6px; color:#e2a33b" class="mono">확인해 주세요</div>
+      <div style="font-size:13px; color:#ededed"><span class="mono" style="font-size:12px">예산_2026Q3.xlsx</span> 를 읽어도 될까요?</div>
+      <div style="display:flex; gap:7px; margin-top:2px">
+        <button style="border:1px solid #ededed; background:#ededed; color:#111111; font-weight:600; border-radius:6px;
+          padding:5px 12px; font-size:12.5px; cursor:pointer; font-family:inherit">허용</button>
+        <button style="border:1px solid #2c2c2c; background:none; color:#d6d6d6; border-radius:6px;
+          padding:5px 12px; font-size:12.5px; cursor:pointer; font-family:inherit">이 세션에서 항상</button>
+        <button style="border:1px solid transparent; background:none; color:#666666; border-radius:6px;
+          padding:5px 12px; font-size:12.5px; cursor:pointer; font-family:inherit">거절</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 컴포저 -->
+  <div style="flex:none; padding:0 24px 12px; display:flex; flex-direction:column; align-items:center">
+    <div style="width:100%; max-width:712px; border:1px solid #232323; background:#181818; border-radius:11px; padding:11px 12px 8px; display:flex; flex-direction:column; gap:9px">
+      <div style="color:#666666; font-size:13.5px">메시지…</div>
+      <div style="display:flex; align-items:center; gap:6px">
+        <button style="display:inline-flex; align-items:center; gap:5px; border:1px solid #2c2c2c; background:none; color:#9a9a9a;
+          border-radius:6px; padding:3px 9px; font-size:12px; cursor:pointer; font-family:inherit">자동</button>
+        <button style="display:inline-flex; align-items:center; justify-content:center; border:1px solid #2c2c2c; background:none; color:#9a9a9a;
+          border-radius:6px; width:26px; height:24px; cursor:pointer">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+        </button>
+        <span style="flex:1"></span>
+        <span style="font-size:12px; color:#666666">Opus 5</span>
+        <span style="font-size:12px; color:#666666">높음</span>
+        <span style="display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%; background:#ededed; color:#111111">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V4M4 8l4-4 4 4"/></svg>
+        </span>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

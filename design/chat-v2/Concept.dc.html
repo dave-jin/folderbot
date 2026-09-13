@@ -1,0 +1,126 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin:0; background:#141414; color:#d6d6d6;
+      font-family:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',system-ui,sans-serif;
+      -webkit-font-smoothing:antialiased }
+    a { color:#e08850 } a:hover { color:#ededed }
+    .mono { font-family:'JetBrains Mono','SF Mono',Menlo,monospace }
+  </style>
+</helmet>
+<div style="padding:40px 44px; display:flex; flex-direction:column; gap:26px">
+
+  <div style="display:flex; flex-direction:column; gap:8px">
+    <div style="font-size:11px; letter-spacing:1.4px; color:#666666" class="mono">CONCEPT REVIEW · 2026-09-13</div>
+    <div style="font-size:26px; font-weight:600; color:#ededed; line-height:1.3">일하는 사람 옆에 앉은 폴더</div>
+    <div style="font-size:13.5px; color:#9a9a9a; max-width:62ch; line-height:1.75">
+      Folder Bot 은 «에이전트를 쓰는 앱» 이 아니라 <b style="color:#d6d6d6; font-weight:600">폴더가 스스로 일하는 것처럼 보이는 앱</b>이다.
+      그래서 화면의 주인공은 대화 로그가 아니라 폴더봇이고, 대화는 그 옆에서 조용히 읽히면 된다.
+    </div>
+  </div>
+
+  <div style="height:1px; background:#232323"></div>
+
+  <div style="display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:20px">
+
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <div style="display:flex; align-items:center; gap:7px">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#4fbf87" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 6.2 12 13 4.5"/></svg>
+        <div style="font-size:12.5px; font-weight:600; color:#ededed">지킨다</div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:11px">
+        <div style="display:flex; flex-direction:column; gap:3px">
+          <div style="font-size:12.5px; color:#d6d6d6">기계는 접힌다</div>
+          <div style="font-size:11.5px; color:#666666; line-height:1.6">도구·생각·서브에이전트는 끝나면 한 줄. 로그가 대화를 밀어내지 않는다.</div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:3px">
+          <div style="font-size:12.5px; color:#d6d6d6">상자는 차례를 뜻한다</div>
+          <div style="font-size:11.5px; color:#666666; line-height:1.6">배경·테두리는 사람이 답해야 하는 것에만. 승인·질문.</div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:3px">
+          <div style="font-size:12.5px; color:#d6d6d6">문서 링크칩</div>
+          <div style="font-size:11.5px; color:#666666; line-height:1.6">답 속의 경로가 칩이 되고, 누르면 그 문서가 열린다.</div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:3px">
+          <div style="font-size:12.5px; color:#d6d6d6">한 화면에 한 문서</div>
+          <div style="font-size:11.5px; color:#666666; line-height:1.6">보기/편집 모드가 없다. 여는 순간이 곧 고치는 순간.</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <div style="display:flex; align-items:center; gap:7px">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#e5534b" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+        <div style="font-size:12.5px; font-weight:600; color:#ededed">버린다</div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:11px">
+        <div style="display:flex; flex-direction:column; gap:3px">
+          <div style="font-size:12.5px; color:#d6d6d6">진행 줄의 «무엇을» 먼저</div>
+          <div style="font-size:11.5px; color:#666666; line-height:1.6">지금은 <span class="mono" style="color:#9a9a9a">Read · 회의록.md … 0:08</span>. 도구 이름이 앞에 서면 대화가 터미널이 된다.</div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:3px">
+          <div style="font-size:12.5px; color:#d6d6d6">맥박 점(·) 하나로 살아 있음 표시</div>
+          <div style="font-size:11.5px; color:#666666; line-height:1.6">점은 상태지 인격이 아니다. Claude·Cursor 는 자기 얼굴이 움직인다.</div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:3px">
+          <div style="font-size:12.5px; color:#d6d6d6">편집기의 <span class="mono">##</span> <span class="mono">&gt;</span> 노출</div>
+          <div style="font-size:11.5px; color:#666666; line-height:1.6">줄 앞머리 마커가 드러나면 글이 옆으로 밀려, 클릭한 자리와 커서가 어긋난다.</div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:3px">
+          <div style="font-size:12.5px; color:#d6d6d6">앱 전체가 한 단축키 판</div>
+          <div style="font-size:11.5px; color:#666666; line-height:1.6">↑↓ 가 문서를 읽는 중에 파일 목록을 움직인다. 섹션이 자기 키를 가져야 한다.</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <div style="display:flex; align-items:center; gap:7px">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#e08850" stroke-width="1.6" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+        <div style="font-size:12.5px; font-weight:600; color:#ededed">들인다</div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:11px">
+        <div style="display:flex; flex-direction:column; gap:3px">
+          <div style="font-size:12.5px; color:#d6d6d6">폴더봇이 일한다</div>
+          <div style="font-size:11.5px; color:#666666; line-height:1.6">진행 줄의 주인공이 마스코트. 상태색은 배지가 아니라 몸이 말한다.</div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:3px">
+          <div style="font-size:12.5px; color:#d6d6d6">시간이 먼저</div>
+          <div style="font-size:11.5px; color:#666666; line-height:1.6"><span class="mono" style="color:#9a9a9a">2m 48s · 파일 읽는 중</span> — 얼마나 기다렸나가 무엇을 하나보다 급하다.</div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:3px">
+          <div style="font-size:12.5px; color:#d6d6d6">일감은 위에서 흐른다</div>
+          <div style="font-size:11.5px; color:#666666; line-height:1.6">접힌 줄의 글자가 좌→우로 물결친다. 살아 있음은 한 곳에서만 말한다.</div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:3px">
+          <div style="font-size:12.5px; color:#d6d6d6">Obsidian 한 벌</div>
+          <div style="font-size:11.5px; color:#666666; line-height:1.6">이미지 임베드 · 위키링크 · 콜아웃 · Canvas · 수식 — Rondo 에 있던 것 그대로.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="height:1px; background:#232323"></div>
+
+  <div style="display:flex; gap:14px; align-items:flex-start">
+    <div style="width:3px; align-self:stretch; background:#e08850; border-radius:2px; flex:none"></div>
+    <div style="display:flex; flex-direction:column; gap:6px">
+      <div style="font-size:12.5px; font-weight:600; color:#ededed">한 줄로 줄이면</div>
+      <div style="font-size:13px; color:#9a9a9a; line-height:1.7; max-width:72ch">
+        화려함은 더해서 나오지 않는다. <b style="color:#d6d6d6; font-weight:600">살아 있음을 한 곳(폴더봇)으로 모으고</b>, 나머지를 전부 조용하게 두는 것 —
+        Claude 와 Cursor 가 하는 일이 그것이고, 우리에겐 이미 그 «한 곳» 이 있다.
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

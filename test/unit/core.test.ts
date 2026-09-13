@@ -6,6 +6,7 @@ import { authVerdict } from '../../src/core/authVerdict'
 import { machSummary } from '../../src/core/chat'
 import { AGENT_EFFORTS, AGENT_MODELS, fitsProvider } from '../../src/core/agents'
 import { cronFromText, routineName } from '../../src/core/routineText'
+import { bestIcon, faviconHost, parentHost, parseIconLinks } from '../../src/core/favicon'
 import { toolSummary, touchedPath } from '../../src/core/chat'
 import { chosung, hitRange, isChosungQuery, rank, scoreName } from '../../src/core/search'
 import { decide, dropIndex } from '../../src/client/gesture'
@@ -366,5 +367,27 @@ describe('cronFromText — 채팅 한 줄에서 루틴 주기 뽑기', () => {
     expect(routineName('어제 한 일 정리')).toBe('어제 한 일 정리')
     expect(routineName('')).toBe('새 루틴')
     expect(routineName('아주 긴 문장을 쓰면 목록에서 한 줄로 안 보이니까 잘라야 한다').endsWith('…')).toBe(true)
+  })
+})
+
+describe('favicon — 어느 호스트의 아이콘인가', () => {
+  it('열 수 없는 것은 아이콘도 없다', () => {
+    expect(faviconHost('https://Example.COM/a?b=1')).toBe('example.com')
+    expect(faviconHost('mailto:a@b.com')).toBe(null)
+    expect(faviconHost('./img.png')).toBe(null)
+    expect(faviconHost('https://ex..com/')).toBe(null)
+  })
+  it('하위 호스트는 한 단계만 올라간다 — 3라벨에서 멈춘다', () => {
+    expect(parentHost('raw.githubusercontent.com')).toBe('githubusercontent.com')
+    expect(parentHost('a.b.co.kr')).toBe('b.co.kr')
+    expect(parentHost('example.com')).toBe(null)
+  })
+  it('32 이상 중 가장 작은 것을 고르고, mask-icon 은 뺀다', () => {
+    const html = '<link rel="icon" sizes="16x16" href="/s.png"><link rel="icon" sizes="64x64" href="/m.png"><link rel="apple-touch-icon" href="/big.png"><link rel="mask-icon" href="/k.svg">'
+    const links = parseIconLinks(html)
+    expect(links.length).toBe(4)
+    expect(bestIcon(links)).toBe('/m.png')
+    expect(bestIcon(parseIconLinks('<link rel="icon" sizes="16x16" href="/s.png">'))).toBe('/s.png')
+    expect(bestIcon(parseIconLinks('<link rel="mask-icon" href="/k.svg">'))).toBe(null)
   })
 })

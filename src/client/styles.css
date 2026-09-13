@@ -596,6 +596,12 @@ b,strong { color:var(--w); font-weight:600 }
 .krow { display:flex; align-items:center; gap:10px; min-height:26px; font-size:12.5px }
 .krow .kk { flex:none; min-width:66px; color:var(--w); font-size:11.5px }
 .krow .kt { color:var(--t) } .krow .kd { margin-left:auto; color:var(--t3); font-size:11.5px }
+/* 링크 앞 파비콘 — 자리표시자(지구본)가 먼저 놓이므로 글줄이 밀리지 않는다 */
+.fvic { width:13px; height:13px; border-radius:2.5px; vertical-align:-2px; margin-right:5px; object-fit:contain; flex:none; display:inline-block }
+.md a { text-decoration:none; border-bottom:1px solid var(--line2) } .md a:hover { border-bottom-color:var(--t3) }
+.mded .fvic { margin-right:4px }
+.lchips { display:flex; gap:6px; flex-wrap:wrap }
+.lchip { cursor:default } .lchip span { max-width:200px }
 .sempty { display:flex; align-items:center; gap:6px; color:var(--t3); width:100% } .sempty:hover { color:var(--t2) }
 .vmk { display:inline-flex; align-items:center; justify-content:center; flex:none; opacity:.9 }
 

@@ -5,6 +5,7 @@ import { api, setToken, subscribePush } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { hitRange, rank } from '../core/search'
 import { candidatePaths } from '../core/paths'
+import { decorateLinks } from './favicons'
 import { pickAgent } from './AgentPick'
 import { fmtTime, useStore } from './store'
 
@@ -54,7 +55,9 @@ export function Md({ text, streaming, botId, onPath }: { text: string; streaming
    */
   useEffect(() => {
     const el = ref.current
-    if (el) for (const a of el.querySelectorAll<HTMLAnchorElement>('a[href^="http"]')) { a.target = '_blank'; a.rel = 'noreferrer noopener' }
+    if (!el) return
+    for (const a of el.querySelectorAll<HTMLAnchorElement>('a[href^="http"]')) { a.target = '_blank'; a.rel = 'noreferrer noopener' }
+    decorateLinks(el)     // 링크 앞 파비콘 — 자리표시자를 먼저 놓고 도착하면 갈아 끼운다
   }, [html])
   useEffect(() => {
     const el = ref.current

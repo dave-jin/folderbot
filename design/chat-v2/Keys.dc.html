@@ -1,0 +1,100 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin:0; background:#141414; color:#d6d6d6;
+      font-family:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',system-ui,sans-serif;
+      -webkit-font-smoothing:antialiased }
+    a { color:#e08850 } a:hover { color:#ededed }
+    .mono { font-family:'JetBrains Mono','SF Mono',Menlo,monospace }
+    .col { border:1px solid #232323; border-radius:9px; background:#181818; padding:12px 13px; display:flex; flex-direction:column; gap:8px }
+    .col.on { border-color:#e08850; background:#1c1a18 }
+    .k { display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:19px; padding:0 5px;
+      border:1px solid #2c2c2c; border-radius:4px; font-family:'JetBrains Mono','SF Mono',Menlo,monospace;
+      font-size:11px; color:#9a9a9a }
+    .col.on .k { border-color:#3a2f28; color:#e08850 }
+    .row { display:flex; align-items:center; gap:7px; font-size:11.5px; color:#9a9a9a }
+  </style>
+</helmet>
+
+<div style="padding:32px 34px; display:flex; flex-direction:column; gap:20px">
+
+  <div style="display:flex; flex-direction:column; gap:7px">
+    <div class="mono" style="font-size:11px; letter-spacing:1.4px; color:#666666">KEYBOARD SCOPE</div>
+    <div style="font-size:20px; font-weight:600; color:#ededed">키는 지금 보고 있는 칸의 것이다</div>
+    <div style="font-size:12.5px; color:#9a9a9a; line-height:1.7; max-width:78ch">
+      지금은 단축키가 앱 전체에 하나로 걸려 있어서, 문서를 읽으며 <span class="k">↑</span><span class="k">↓</span> 를 누르면 <b style="color:#e5534b; font-weight:600">오른쪽 파일 목록이 움직인다.</b>
+      칸마다 자기 키를 갖고, 마지막으로 손댄 칸이 그 키를 먹는다.
+    </div>
+  </div>
+
+  <div style="display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:14px">
+
+    <div class="col">
+      <div style="display:flex; align-items:center; gap:6px">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#666666" stroke-width="1.4" stroke-linecap="round"><path d="M2.5 4h11M2.5 8h7M2.5 12h9"/></svg>
+        <div style="font-size:12px; font-weight:600; color:#9a9a9a">대화</div>
+      </div>
+      <div class="row"><span class="k">↵</span>보내기</div>
+      <div class="row"><span class="k">⇧↵</span>줄 바꾸기</div>
+      <div class="row"><span class="k">⌘F</span>이 대화에서 찾기</div>
+      <div class="row"><span class="k">↑</span>직전 메시지 불러오기</div>
+      <div class="row"><span class="k">⎋</span>도는 턴 중단</div>
+    </div>
+
+    <div class="col on">
+      <div style="display:flex; align-items:center; gap:6px">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#e08850" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3"/></svg>
+        <div style="font-size:12px; font-weight:600; color:#e08850">문서 <span style="color:#666666; font-weight:400">· 지금 여기</span></div>
+      </div>
+      <div class="row"><span class="k">↑</span><span class="k">↓</span>커서를 줄 단위로</div>
+      <div class="row"><span class="k">⌘F</span>이 문서에서 찾기</div>
+      <div class="row"><span class="k">⌘Z</span>편집 되돌리기</div>
+      <div class="row"><span class="k">⌘W</span>이 탭 닫기</div>
+      <div class="row"><span class="k">⎋</span>찾기 닫기</div>
+    </div>
+
+    <div class="col">
+      <div style="display:flex; align-items:center; gap:6px">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#666666" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 2h4.5A1.5 1.5 0 0 1 14 6.5v5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z"/></svg>
+        <div style="font-size:12px; font-weight:600; color:#9a9a9a">파일 · 할 일</div>
+      </div>
+      <div class="row"><span class="k">↑</span><span class="k">↓</span>줄 옮기기</div>
+      <div class="row"><span class="k">⌘F</span>이 폴더에서 파일 찾기</div>
+      <div class="row"><span class="k">↵</span>열기</div>
+      <div class="row"><span class="k">⌫</span>휴지통으로</div>
+      <div class="row"><span class="k">⎋</span>선택 풀기</div>
+    </div>
+
+  </div>
+
+  <div style="height:1px; background:#232323"></div>
+
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px">
+    <div style="display:flex; flex-direction:column; gap:8px">
+      <div style="font-size:12.5px; font-weight:600; color:#ededed">어느 칸이 «지금» 인가</div>
+      <div style="font-size:11.5px; color:#666666; line-height:1.7">
+        마지막으로 <b style="color:#9a9a9a; font-weight:600">누르거나 글을 친 칸</b>이다 — 마우스가 지나가는 칸이 아니다(지나가기만 해도 키가 옮겨 다니면 더 나쁘다).
+        칸 제목에 아주 옅은 표시 하나로 알린다. <span class="mono" style="color:#9a9a9a">⌘1 ⌘2 ⌘3</span> 으로 칸을 직접 옮긴다.
+      </div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:8px">
+      <div style="font-size:12.5px; font-weight:600; color:#ededed">앱 전체에 남는 키</div>
+      <div style="font-size:11.5px; color:#666666; line-height:1.7">
+        <span class="mono" style="color:#9a9a9a">⌘,</span> 설정 · <span class="mono" style="color:#9a9a9a">⌘/</span> 단축키 · <span class="mono" style="color:#9a9a9a">⌘K</span> 폴더 고르기 ·
+        <span class="mono" style="color:#9a9a9a">⌘N</span> 새 세션 · <span class="mono" style="color:#9a9a9a">⌘B</span> 목록 접기.
+        칸의 키와 겹치는 것은 <b style="color:#9a9a9a; font-weight:600">칸이 이긴다.</b>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

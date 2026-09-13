@@ -1,0 +1,13 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 900, "h": 880, "title": "채팅 — 일하는 중" },
+    { "file": "Concept.dc.html", "x": 1020, "y": 0, "w": 1100, "h": 800, "title": "컨셉 리뷰" },
+    { "file": "Mascot.dc.html", "x": 0, "y": 1010, "w": 1000, "h": 700, "title": "일하는 폴더봇 3안" },
+    { "file": "Keys.dc.html", "x": 1100, "y": 1010, "w": 1020, "h": 640, "title": "섹션별 키보드" },
+    { "file": "Editor.dc.html", "x": 0, "y": 1840, "w": 1120, "h": 900, "title": "문서 · 편집기" }
+  ],
+  "annotations": [
+    { "id": "ask", "x": 1240, "y": 1840, "w": 300, "text": "정해 주실 것\n\n① 일하는 폴더봇 — A 숨쉬기 / B 서류 넘기기 / C 타이핑\n\n② 진행 줄에서 «중단» 단추를 오른쪽에 둘까요, 마스코트를 누르면 멈추게 할까요\n\n③ Canvas 는 보기만 먼저 할까요, Rondo 처럼 노드 드래그·편집까지 옮길까요" }
+  ],
+  "launch": { "view": "canvas" }
+}

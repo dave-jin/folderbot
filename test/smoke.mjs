@@ -417,6 +417,38 @@ try {
             text: document.querySelector('.mded .cm-content')?.textContent ?? ''
           }))
           if (!lp.h1) fail('라이브 프리뷰: 제목 줄 클래스(.lp-h1)가 없다 ' + JSON.stringify(lp).slice(0, 200))
+          // 🔴 **누른 자리에 커서가 선다** (2026-09-13 Dave: «최초 클릭하면 위치가 정확하지 않을 때가 있어»)
+          //    ⛔ 서식 마커를 커서 줄에서 드러내면 줄이 밀려서, 클릭 좌표와 커서 좌표가 반드시 어긋난다.
+          {
+            const vis = await pg.evaluate(() => document.querySelector('.mded .cm-content')?.textContent ?? '')
+            if (/##|\*\*/.test(vis)) fail('마커: 화면에 서식 기호가 보인다 ' + JSON.stringify(vis.slice(0, 120)))
+            if (!/https:\/\/example\.com/.test(vis)) fail('맨 URL 이 통째로 사라졌다 — 숨기면 안 되는 것이다 ' + JSON.stringify(vis.slice(0, 160)))
+            // 🔴 재는 것은 «커서가 정확히 어느 글자냐» 가 아니라 **줄이 안 밀리느냐** 다.
+            //    커서는 원래 가장 가까운 글자 경계로 붙는다(제목은 한 글자가 24px 라 그만큼 떨어질 수 있다).
+            //    어긋남의 진짜 원인은 밀림이고, 밀리지 않으면 누른 자리와 고치는 자리가 같다.
+            const lineBox = (want) => pg.evaluate((w) => {
+              const l = [...document.querySelectorAll('.mded .cm-line')].find((x) => x.textContent.includes(w))
+              if (!l) return null
+              const r = l.getBoundingClientRect()
+              const t = l.firstChild && l.firstChild.nodeType === 3 ? l.firstChild : null
+              const rg = document.createRange(); let tx = null
+              if (t) { rg.selectNodeContents(t); tx = rg.getBoundingClientRect().left }
+              return { x: r.left, y: r.top + r.height / 2, w: r.width, tx }
+            }, want)
+            for (const want of ['제목', '굵게']) {
+              const before = await lineBox(want)
+              if (!before) fail(`마커: «${want}» 줄을 못 찾았다`)
+              await pg.mouse.click(before.x + Math.min(30, before.w / 2), before.y); await wait(350)
+              const after = await lineBox(want)
+              if (!after) fail(`마커: 클릭 뒤 «${want}» 줄이 사라졌다`)
+              if (Math.abs((after.tx ?? 0) - (before.tx ?? 0)) > 0.6) fail(`마커: «${want}» 줄이 클릭에 밀렸다 ${JSON.stringify({ before: before.tx, after: after.tx })} — 누른 자리와 커서가 어긋난다`)
+              const sel = await pg.evaluate(() => { const s2 = window.getSelection(); return s2 && s2.rangeCount ? 1 : 0 })
+              if (!sel) fail(`마커: «${want}» 을 눌렀는데 커서가 안 생겼다`)
+            }
+            const after = await pg.evaluate(() => document.querySelector('.mded .cm-content')?.textContent ?? '')
+            if (/##|\*\*/.test(after)) fail('마커: 커서가 들어가니 서식 기호가 나왔다 ' + JSON.stringify(after.slice(0, 120)))
+            ok('편집기 — 누른 자리에 커서가 선다(서식 마커는 계속 숨는다)')
+          }
           // 위젯 — 체크박스 · 위키링크. ⛔ 체크박스는 **한 글자만** 갈아야 churn 이 안 난다
           const w = await pg.evaluate(() => ({ check: document.querySelectorAll('.mded .lp-check').length, wiki: document.querySelectorAll('.mded .lp-wiki').length }))
           if (!w.check) fail('위젯: 체크박스가 안 그려졌다 ' + JSON.stringify(w))
@@ -491,6 +523,8 @@ try {
           if (raw.tbl) fail('표: ⋯ 를 눌러도 원문으로 안 풀린다')
           if (!raw.text.includes('| 가 | 19 |')) fail('표: 원문에 파이프가 안 보인다 ' + JSON.stringify(raw.text.slice(0, 120)))
           ok('표 — 진짜 표로 읽고, 칸만 고치고, ⋯ 로 원문')
+          // 외부 앱으로 열기 — ⋯ 안이 아니라 바깥 아이콘 (2026-09-13 Dave)
+          if (!(await pg.$('.dtb .r .ib[title$="열기"]'))) fail('문서 도구: «외부로 열기» 아이콘이 바깥에 없다')
           // 🔴 **편집 중에 다른 문서로 옮겨도 그 글이 새 문서를 덮지 않는다** (2026-09-13 실사고 — todo.md 가 표로 덮였다)
           const todoAbs = join(root, '3. Area/제품_Rondo', 'todo.md')
           const todo0 = readFileSync(todoAbs, 'utf8')
@@ -503,10 +537,11 @@ try {
         }
         // 🔴 답변 속 경로가 칩이 된다 — 있는 파일만 (2026-09-13 Dave: «채팅에서 문서 선택으로 바로 이동»)
         {
-          const ok = await api(`/bots/${bot.id}/exists`, { rels: ['todo.md', '없는파일.md', '../밖.md'] })
-          if (ok['todo.md'] !== true) fail('exists: 있는 파일을 없다고 한다 ' + JSON.stringify(ok))
-          if (ok['없는파일.md'] !== false) fail('exists: 없는 파일을 있다고 한다 ' + JSON.stringify(ok))
-          if (ok['../밖.md'] !== false) fail('exists: 루트 밖이 새어 나간다 ' + JSON.stringify(ok))
+          // ⚠ 이름을 `ok` 로 두지 마라 — 전역 `ok()` 를 가려서 같은 블록의 성공 보고가 그 자리에서 터진다
+          const ex = await api(`/bots/${bot.id}/exists`, { rels: ['todo.md', '없는파일.md', '../밖.md'] })
+          if (ex['todo.md'] !== true) fail('exists: 있는 파일을 없다고 한다 ' + JSON.stringify(ex))
+          if (ex['없는파일.md'] !== false) fail('exists: 없는 파일을 있다고 한다 ' + JSON.stringify(ex))
+          if (ex['../밖.md'] !== false) fail('exists: 루트 밖이 새어 나간다 ' + JSON.stringify(ex))
           // 화면 — 스텁이 되돌려 주는 문장 안의 경로 중 **있는 것만** 칩이 된다
           await pg.fill('.composer textarea', '첨부/회의록.txt 와 없는폴더/없음.md 를 봐')
           await pg.keyboard.press('Enter')
@@ -516,6 +551,20 @@ try {
           if (!chip.titles.some((t) => t.endsWith('첨부/회의록.txt'))) fail('경로 칩: 엉뚱한 것이 칩이 됐다 ' + JSON.stringify(chip))
           if (chip.titles.some((t) => t.includes('없는폴더'))) fail('경로 칩: 없는 파일이 칩이 됐다 — 죽은 링크가 쌓인다 ' + JSON.stringify(chip))
           await pg.fill('.composer textarea', ''); await wait(400)
+          // 🔴 **링크 앞에 파비콘** (2026-09-13 Dave) — 자리표시자를 먼저 놓으므로 인터넷이 없어도 자리는 있다.
+          //    ⛔ 비워 두고 도착할 때 넣으면 글줄이 그때마다 옆으로 밀린다.
+          {
+            await pg.fill('.composer textarea', 'https://example.com 을 봐 줘')
+            const chip = await pg.evaluate(() => { const c = document.querySelector('.lchips .lchip'); return c ? { t: c.textContent, ic: !!c.querySelector('img.fvic') } : null })
+            if (!chip || !chip.ic) fail('입력창: 쓰는 중인 주소에 아이콘 칩이 없다 ' + JSON.stringify(chip))
+            if (!/example\.com/.test(chip.t ?? '')) fail('입력창: 칩이 도메인을 안 보여 준다 ' + JSON.stringify(chip))
+            await pg.keyboard.press('Enter')
+            let fv = 0
+            for (let i = 0; i < 40; i++) { fv = await pg.evaluate(() => document.querySelectorAll('.chat-body .md a img.fvic').length); if (fv) break; await wait(300) }
+            if (!fv) fail('채팅: 답 속 링크에 파비콘 자리가 없다')
+            await pg.fill('.composer textarea', ''); await wait(300)
+            ok('링크 파비콘 — 채팅 · 문서 · 입력창이 같은 캐시를 본다')
+          }
         }
         // 🔴 채팅 외양은 **cursor 스타일**이다 (2026-09-13 Dave: «이전 스타일이 더 나»).
         //    사람 말은 상자 안에 왼쪽으로, 봇 말은 폭 제한 없는 평범한 본문.

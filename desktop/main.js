@@ -54,7 +54,7 @@ async function startHostMode(root) {
   hostRun = await mod.startHost({ root, port: settings.port || 7373, webRoot: HOST_CLIENT, log: (m) => console.log('[host]', m) })
   settings.mode = 'host'; settings.root = root; settings.hostUrl = `http://127.0.0.1:${settings.port || 7373}`; settings.token = hostRun.gateway.localToken(); save()
   pairing = hostRun.gateway.openPairing()
-  startSse(); refreshTray(); void pollUsage(); setInterval(() => void pollUsage(), 60_000)
+  startSse(); refreshTray(); startUsagePoll()
   return hostRun
 }
 function newPairing() { if (!hostRun) return null; pairing = hostRun.gateway.openPairing(); refreshTray(); return pairing }
@@ -63,6 +63,17 @@ async function chooseRootAndStart() {
   if (r.canceled || !r.filePaths[0]) return
   try { await startHostMode(r.filePaths[0]); if (!settings.loginItem) { settings.loginItem = true; save(); app.setLoginItemSettings({ openAtLogin: true, openAsHidden: true }) } showWin(); loadHome() }
   catch (e) { dialog.showErrorBox('호스트를 못 띄웠어요', String(e && e.message || e)) }
+}
+/**
+ * 🔴 **사용량 폴링은 모드와 상관없이 돈다** (2026-09-13 Dave 제보 — 원격 맥의 메뉴에 사용량이 아예 없었다).
+ *    종전에는 `startHostMode()` 안에서만 시작해서, 호스트에 **붙어 쓰는** 맥은 영영 안 받아 왔다.
+ *    받아 오는 쪽(`pollUsage`)은 원래부터 두 모드를 다 알고 있었다 — 시작해 주는 사람이 없었을 뿐이다.
+ */
+let usageTimer = null
+function startUsagePoll() {
+  if (usageTimer) return
+  void pollUsage()
+  usageTimer = setInterval(() => void pollUsage(), 60_000)
 }
 ipcMain.on('fb:host-mode', () => { void chooseRootAndStart() })
 ipcMain.handle('fb:host-available', () => hostAvailable())
@@ -181,19 +192,31 @@ function leftTxt(ms, now) {
   const s2 = Math.max(0, Math.round((ms - now) / 1000)), h = Math.floor(s2 / 3600), m = Math.floor((s2 % 3600) / 60)
   return h ? `${h}시간 ${m}분` : `${m}분`
 }
+/**
+ * 게이지 한 줄 — 네이티브 메뉴는 HTML 을 못 그린다. 🔴 그래서 **글자로 된 막대**가 정답이다
+ * (이미지를 메뉴 항목에 넣을 수는 있지만 테마·해상도마다 따로 만들어야 하고, 글자는 그냥 따라간다).
+ * ⚠ 블록 문자(`▰▱`)는 폭이 고르다 — 칸 수가 곧 길이라 눈금이 흔들리지 않는다.
+ */
+function gauge(pct, n = 10) {
+  const on = Math.max(0, Math.min(n, Math.round((pct / 100) * n)))
+  return '▰'.repeat(on) + '▱'.repeat(n - on)
+}
 function usageItems() {
   if (!usage) return []
   const money = (n) => `$${n < 10 ? n.toFixed(2) : Math.round(n)}`
-  const out = [{ label: `사용량 — ${usage.left}% 남음${usage.resetAt ? ` · ${leftTxt(usage.resetAt, usage.now)} 뒤 채워져요` : ''}`, enabled: false }]
-  for (const t of usage.tools) out.push({ label: `   ${t.tool === 'claude' ? 'Claude' : 'Codex'}  ${t.left}% · ${money(t.leftCost)} 남음`, enabled: false })
-  out.push({ label: `   오늘 ${money(usage.day.left)} · 이번 주 ${money(usage.week.left)} 남음`, enabled: false })
+  const out = [{ label: `사용량 ${gauge(usage.left)}  ${usage.left}% 남음${usage.resetAt ? ` · ${leftTxt(usage.resetAt, usage.now)} 뒤` : ''}`, enabled: false }]
+  for (const t of usage.tools) out.push({ label: `   ${(t.tool === 'claude' ? 'Claude' : 'Codex').padEnd(6)} ${gauge(t.left)}  ${t.left}% · ${money(t.leftCost)}`, enabled: false })
+  out.push({ label: `   오늘   ${money(usage.day.left)} 남음 · 이번 주 ${money(usage.week.left)} 남음`, enabled: false })
   out.push({ type: 'separator' })
   return out
 }
 
 function refreshTray() {
   if (!tray) return
-  tray.setTitle(waiting ? String(waiting) : usage ? `${usage.left}%` : '', { fontType: 'monospacedDigit' })
+  // 🔴 **메뉴바에도 게이지가 보여야 한다** (2026-09-13 Dave) — 숫자만 있으면 «62%» 가 무엇의 62% 인지
+  //    열어 봐야 안다. 다섯 칸 막대는 폭이 일정해서 메뉴바가 들썩이지 않는다.
+  //    ⚠ 확인 대기가 있으면 그게 이긴다 — 지금 사람을 기다리는 일이 잔량보다 급하다.
+  tray.setTitle(waiting ? String(waiting) : usage ? `${gauge(usage.left, 5)} ${usage.left}%` : '', { fontType: 'monospacedDigit' })
   tray.setToolTip(waiting ? `Folder Bot · 확인 대기 ${waiting}` : 'Folder Bot')
   if (app.dock) app.dock.setBadge(waiting ? String(waiting) : '')
 }
@@ -248,7 +271,7 @@ app.whenReady().then(async () => {
   if (settings.mode === 'host' && settings.root) {
     try { await startHostMode(settings.root) } catch (e) { console.error(e); settings.mode = ''; save() }
   }
-  createWin(); startSse()
+  createWin(); startSse(); startUsagePoll()
   app.setLoginItemSettings({ openAtLogin: !!settings.loginItem, openAsHidden: true })
   app.on('activate', showWin)
   // 자기 업데이트 — 호스트 모드에선 세션이 전부 유휴일 때만 적용한다

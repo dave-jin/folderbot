@@ -1,0 +1,142 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin:0; background:#141414; color:#d6d6d6;
+      font-family:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',system-ui,sans-serif;
+      -webkit-font-smoothing:antialiased }
+    a { color:#e08850 } a:hover { color:#ededed }
+    .mono { font-family:'JetBrains Mono','SF Mono',Menlo,monospace }
+    .lbl { font-size:10.5px; letter-spacing:.5px; color:#e08850 }
+    .panel { border:1px solid #232323; border-radius:10px; background:#181818; overflow:hidden }
+    .ln { display:flex; align-items:baseline; gap:0; line-height:1.9; font-size:14.5px }
+    .caret { display:inline-block; width:2px; height:17px; background:#ededed; vertical-align:-3px; margin:0 -1px }
+    .bad { color:#e5534b }
+  </style>
+</helmet>
+
+<div style="padding:34px 36px; display:flex; flex-direction:column; gap:24px">
+
+  <div style="display:flex; flex-direction:column; gap:7px">
+    <div class="mono" style="font-size:11px; letter-spacing:1.4px; color:#666666">DOCUMENT · EDITOR</div>
+    <div style="font-size:20px; font-weight:600; color:#ededed">클릭한 자리에 커서가 선다</div>
+    <div style="font-size:12.5px; color:#9a9a9a; line-height:1.7; max-width:80ch">
+      Rondo 의 규칙: <b style="color:#d6d6d6; font-weight:600">줄 앞머리 마커(<span class="mono">##</span>, <span class="mono">&gt;</span>, 목록 기호, 백틱)는 커서가 그 줄에 있어도 계속 숨긴다.</b>
+      드러나는 순간 줄 전체가 오른쪽으로 밀려서, 내가 누른 글자와 커서가 선 글자가 달라진다.
+    </div>
+  </div>
+
+  <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:18px">
+
+    <!-- 지금 -->
+    <div style="display:flex; flex-direction:column; gap:9px">
+      <div style="display:flex; align-items:center; gap:6px">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#e5534b" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+        <span style="font-size:12.5px; font-weight:600; color:#ededed">지금 — 커서가 들어오면 마커가 나온다</span>
+      </div>
+      <div class="panel" style="padding:18px 20px">
+        <div class="ln" style="color:#666666"><span class="mono" style="font-size:13px">## </span><span style="font-size:19px; font-weight:600; color:#ededed">분기 계획<span class="caret"></span></span></div>
+        <div class="ln" style="color:#9a9a9a"><span class="mono bad" style="font-size:13px">&gt; </span>여기까지가 1안이다.</div>
+        <div class="ln" style="color:#d6d6d6"><span class="mono bad">**</span>중요<span class="mono bad">**</span> 한 줄.</div>
+      </div>
+      <div style="font-size:11.5px; color:#666666; line-height:1.65">
+        «분기» 의 ㅂ 을 눌렀는데 <span class="mono">## </span> 가 튀어나오며 글이 밀려, 커서는 «기» 뒤에 선다.
+        읽을 때와 고칠 때의 글자 자리가 다르다.
+      </div>
+    </div>
+
+    <!-- 바꾼 뒤 -->
+    <div style="display:flex; flex-direction:column; gap:9px">
+      <div style="display:flex; align-items:center; gap:6px">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#4fbf87" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 6.2 12 13 4.5"/></svg>
+        <span style="font-size:12.5px; font-weight:600; color:#ededed">바꾼 뒤 — 앞머리 마커는 계속 숨는다</span>
+      </div>
+      <div class="panel" style="padding:18px 20px">
+        <div class="ln"><span style="font-size:19px; font-weight:600; color:#ededed">분기<span class="caret"></span> 계획</span></div>
+        <div class="ln" style="color:#9a9a9a; padding-left:12px; border-left:2px solid #2c2c2c">여기까지가 1안이다.</div>
+        <div class="ln" style="color:#d6d6d6"><b style="color:#ededed">중요</b> 한 줄.</div>
+      </div>
+      <div style="font-size:11.5px; color:#666666; line-height:1.65">
+        누른 자리에 그대로 선다. <span style="color:#9a9a9a">인라인 마커(<span class="mono">**</span>, 링크)는 커서가 든 줄에서만 드러난다 — 그건 줄을 밀지 않는다.</span>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="height:1px; background:#232323"></div>
+
+  <div style="display:grid; grid-template-columns:1.15fr 1fr; gap:18px">
+
+    <!-- 이미지 hover 확대 -->
+    <div style="display:flex; flex-direction:column; gap:10px">
+      <div class="lbl mono">HOVER · 260ms</div>
+      <div style="font-size:12.5px; font-weight:600; color:#ededed">칩에 머물면 그 위에서 커진다</div>
+      <div class="panel" style="padding:20px; display:flex; flex-direction:column; align-items:flex-start; gap:0; position:relative; min-height:200px">
+        <!-- 팝오버 -->
+        <div style="border:1px solid #2c2c2c; background:#1c1c1c; border-radius:9px; padding:7px; box-shadow:0 14px 40px rgba(0,0,0,.55); width:230px">
+          <div style="height:118px; border-radius:5px; background:linear-gradient(150deg,#2a2f38 0%,#1f242b 55%,#262b33 100%); display:flex; align-items:center; justify-content:center">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#4a5260" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="M4 17l5-5 4 4 3-2 4 3"/>
+            </svg>
+          </div>
+          <div class="mono" style="font-size:10.5px; color:#666666; padding:6px 3px 1px">회의록-화이트보드.png · 1440×960</div>
+        </div>
+        <!-- 꼬리 -->
+        <div style="width:9px; height:9px; background:#1c1c1c; border-right:1px solid #2c2c2c; border-bottom:1px solid #2c2c2c; transform:rotate(45deg); margin:-5px 0 0 26px"></div>
+        <div style="display:inline-flex; align-items:center; gap:5px; margin-top:9px; border:1px solid #e08850; border-radius:5px; padding:2px 8px">
+          <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#e08850" stroke-width="1.4"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5"/><path d="M3 11l3.5-3 2.5 2.5 2-1.5 3 2.5"/></svg>
+          <span class="mono" style="font-size:11.5px; color:#e08850">회의록-화이트보드.png</span>
+        </div>
+      </div>
+      <div style="font-size:11.5px; color:#666666; line-height:1.65">
+        첨부 칩·문서 속 이미지·대화의 파일 칩 전부. <span style="color:#9a9a9a">떠났는지는 <span class="mono">mouseleave</span> 가 아니라 포인터 좌표로 판정한다 —
+        칩이 다시 그려지면 그 이벤트는 영영 안 온다(Rondo 가 겪은 사고).</span>
+      </div>
+    </div>
+
+    <!-- Obsidian 한 벌 -->
+    <div style="display:flex; flex-direction:column; gap:10px">
+      <div class="lbl mono">OBSIDIAN</div>
+      <div style="font-size:12.5px; font-weight:600; color:#ededed">Rondo 에 있던 것 그대로</div>
+      <div class="panel" style="padding:14px 16px; display:flex; flex-direction:column; gap:9px">
+        <div style="display:flex; align-items:center; gap:9px">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9a9a9a" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M10 6.5h4M10 17h4"/></svg>
+          <div style="display:flex; flex-direction:column; gap:1px">
+            <div style="font-size:12.5px; color:#ededed">Canvas <span class="mono" style="font-size:11px; color:#666666">.canvas</span></div>
+            <div style="font-size:11px; color:#666666">JSON Canvas 1.0 — 노드·엣지·그룹, 팬/줌, 드래그 이동</div>
+          </div>
+        </div>
+        <div style="height:1px; background:#232323"></div>
+        <div style="display:flex; align-items:center; gap:9px">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9a9a9a" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="M4 17l5-5 4 4 3-2 4 3"/></svg>
+          <div style="display:flex; flex-direction:column; gap:1px">
+            <div style="font-size:12.5px; color:#ededed">이미지 임베드 <span class="mono" style="font-size:11px; color:#666666">![[img.png]]</span></div>
+            <div style="font-size:11px; color:#666666">문서 폴더 기준 상대경로 · 높이를 기억해 스크롤이 안 튄다</div>
+          </div>
+        </div>
+        <div style="height:1px; background:#232323"></div>
+        <div style="display:flex; align-items:center; gap:9px">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9a9a9a" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+          <div style="display:flex; flex-direction:column; gap:1px">
+            <div style="font-size:12.5px; color:#ededed">위키링크 · 콜아웃 · 수식 · mermaid</div>
+            <div style="font-size:11px; color:#666666"><span class="mono">[[노트]]</span> <span class="mono">&gt; [!note]</span> <span class="mono">$x^2$</span> — 이미 있는 것 위에 얹는다</div>
+          </div>
+        </div>
+      </div>
+      <div style="font-size:11.5px; color:#666666; line-height:1.65">
+        ⚠ 전부 <b style="color:#9a9a9a; font-weight:600">churn 0</b> 아래에서. 파싱해서 다시 쓰지 않고 보여 주기만 한다.
+      </div>
+    </div>
+
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>
