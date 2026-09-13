@@ -67,6 +67,21 @@ export function UsageCard({ u, compact }: { u: UsageReport; compact?: boolean })
   </div>
 }
 
+/**
+ * 폰 첫 화면 — **한 줄짜리 띠**. 카드는 자리를 너무 먹는다(2026-09-13 Dave: «너무 커»).
+ * 얼굴 · 남은 % · 줄어드는 막대 · 다시 채워질 때까지 한 줄. 누르면 아래에서 카드가 올라온다.
+ */
+export function UsageStrip({ u, onOpen }: { u: UsageReport; onOpen: () => void }) {
+  const c = colorLeft(u.left)
+  return <button className="ustrip" onClick={onOpen}>
+    <FolderBot color={c} size={18} mood={moodLeft(u.left)} mono />
+    <b style={{ color: c }}>{u.left}%</b><span className="lb">남음</span>
+    <span className="bar"><span style={{ width: `${u.left}%`, background: c }} /></span>
+    <span className="rs">{u.resetAt ? `${until(u.resetAt, u.now)} 뒤` : '아직'}</span>
+    <Icon n="chev" size={10} />
+  </button>
+}
+
 /** 상태바·메뉴 칩 — 얼굴 + 남은 % + 줄어드는 막대 */
 export function UsageChip({ u, onClick }: { u: UsageReport; onClick?: () => void }) {
   const c = colorLeft(u.left)

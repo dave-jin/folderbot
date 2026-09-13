@@ -222,6 +222,15 @@ b,strong { color:var(--w); font-weight:600 }
 .ucard .un { display:flex; align-items:center; gap:5px; margin-top:11px; font-size:10.5px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
 .ucard .un b { color:var(--t2); font-weight:500 }
 .ucard.sm { padding:12px 13px } .ucard.sm .uf b { font-size:13.5px }
+/* 폰 첫 화면 — 한 줄 띠 (2026-09-13 Dave: 카드가 너무 크다). 누르면 카드가 시트로 올라온다 */
+.ustrip { display:flex; align-items:center; gap:9px; width:100%; height:38px; padding:0 12px; border-radius:11px; background:var(--bg2); border:1px solid var(--line); color:var(--t3); font-size:12.5px }
+.ustrip:active { background:var(--sel) }
+.ustrip b { font-size:14.5px; font-family:var(--mono); font-weight:700 }
+.ustrip .lb { margin-left:-4px }
+.ustrip .bar { flex:1; min-width:30px; height:7px; border-radius:4px; background:var(--line); overflow:hidden }
+.ustrip .bar > span { display:block; height:7px; border-radius:4px }
+.ustrip .rs { white-space:nowrap; color:var(--t3) }
+.tsheet.usheet { padding:10px 14px calc(var(--sab) + 16px) }
 /* 상태바 칩 */
 .uchip { display:inline-flex; align-items:center; gap:7px; height:23px; padding:0 9px; border-radius:6px; background:var(--box); color:var(--t2); font-size:11.5px; flex:none }
 .uchip:hover { background:var(--sel) } .uchip .pc { font-family:var(--mono) }

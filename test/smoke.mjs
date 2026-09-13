@@ -558,10 +558,17 @@ try {
         // ── 폰 폴더 고르기 (V17 B안) — 한 단계씩 들어가고, 푸터가 안 넘치고, 이름이 폭을 전부 쓴다 ──
         // 홈으로 — 화면 상태는 React 가 쥐고 있으니 해시를 지우고 **다시 연다**(부팅 시 목록 화면)
         await pg.goto(base + '/'); await pg.waitForSelector('.mhome .mtop', { timeout: 15000 }); await wait(800)
-        if (!(await pg.$('.mhome .ucard'))) fail('사용량: 폰 홈에 카드가 없다')
-        const pu = await pg.evaluate(() => { const c = document.querySelector('.mhome .ucard'); const r = c.getBoundingClientRect(); const b = c.querySelector('.ubar').getBoundingClientRect(); return { right: r.right, iw: innerWidth, barW: b.width, cardW: r.width } })
-        if (pu.right > pu.iw + 1) fail('사용량: 폰 카드가 화면을 넘는다 ' + JSON.stringify(pu))
-        if (pu.barW < pu.cardW - 40) fail('사용량: 폰에서 막대가 가로를 안 쓴다 ' + JSON.stringify(pu))
+        // 폰 첫 화면은 **한 줄 띠** 다 — 카드는 누를 때만 (2026-09-13 Dave: «너무 커»)
+        if (!(await pg.$('.mhome .ustrip'))) fail('사용량: 폰 홈에 한 줄 띠가 없다')
+        if (await pg.$('.mhome .ucard')) fail('사용량: 폰 홈에 카드가 그대로 있다(띠여야 한다)')
+        const pu = await pg.evaluate(() => { const st = document.querySelector('.mhome .ustrip'); const r = st.getBoundingClientRect(); return { right: r.right, iw: innerWidth, h: r.height, barW: st.querySelector('.bar').getBoundingClientRect().width } })
+        if (pu.right > pu.iw + 1) fail('사용량: 폰 띠가 화면을 넘는다 ' + JSON.stringify(pu))
+        if (pu.h > 44) fail('사용량: 폰 띠가 너무 높다 ' + JSON.stringify(pu))
+        if (pu.barW < 30) fail('사용량: 폰 띠의 막대가 안 보인다 ' + JSON.stringify(pu))
+        await pg.click('.mhome .ustrip'); await wait(500)
+        if (!(await pg.$('.tsheet.usheet .ucard .ubar'))) fail('사용량: 띠를 눌러도 카드 시트가 안 뜬다')
+        await pg.screenshot({ path: 'test/tmp/phone-usage-sheet.png' })
+        await pg.evaluate(() => document.querySelector('.backdrop').click()); await wait(400)
         await pg.screenshot({ path: 'test/tmp/phone-usage.png' })
         // ── 빡센 폰 QA: 라이트 테마 · 좁은 폭 · 안전 영역 · 가로 넘침 ──
         const lum2 = (c) => { const [r, g, b] = c.match(/\d+/g).map(Number); return 0.299 * r + 0.587 * g + 0.114 * b }
@@ -570,15 +577,15 @@ try {
           const v = await pg.evaluate(() => {
             const bad = []
             for (const el of document.querySelectorAll('.mhome *')) { const r = el.getBoundingClientRect(); if (r.width > 0 && (r.right > innerWidth + 1 || r.left < -1)) bad.push((el.className || el.tagName) + ' ' + Math.round(r.left) + '..' + Math.round(r.right)) }
-            const card = document.querySelector('.mhome .ucard')
-            return { bad: bad.slice(0, 4), scrollW: document.documentElement.scrollWidth, iw: innerWidth, cardBg: card ? getComputedStyle(card).backgroundColor : '', pc: card ? getComputedStyle(card.querySelector('.urow .pc')).color : '', bodyBg: getComputedStyle(document.body).backgroundColor }
+            const st = document.querySelector('.mhome .ustrip')
+            return { bad: bad.slice(0, 4), scrollW: document.documentElement.scrollWidth, iw: innerWidth, cardBg: st ? getComputedStyle(st).backgroundColor : '', pc: st ? getComputedStyle(st.querySelector('b')).color : '', bodyBg: getComputedStyle(document.body).backgroundColor }
           })
           if (v.bad.length) fail(`폰 ${th}: 가로로 넘치는 것 ` + JSON.stringify(v.bad))
           if (v.scrollW > v.iw + 1) fail(`폰 ${th}: 가로 스크롤이 생긴다 ` + JSON.stringify(v))
           const dark = lum2(v.bodyBg) < 90
           if ((th === 'light') === dark) fail(`폰 ${th}: 배경이 테마와 반대 ` + v.bodyBg)
           // 카드 글자가 배경에 묻히지 않는가
-          if (Math.abs(lum2(v.pc) - lum2(v.cardBg)) < 40) fail(`폰 ${th}: 사용량 숫자가 배경에 묻힌다 ` + JSON.stringify(v))
+          if (v.pc && Math.abs(lum2(v.pc) - lum2(v.cardBg)) < 40) fail(`폰 ${th}: 사용량 숫자가 배경에 묻힌다 ` + JSON.stringify(v))
           await pg.screenshot({ path: `test/tmp/phone-home-${th}.png` })
         }
         // 아주 좁은 폰(320px)에서도 안 깨진다

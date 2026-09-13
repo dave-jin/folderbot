@@ -8,7 +8,7 @@ import { Elapsed, Panel, type SecH } from './Panel'
 import { norm, scoreName } from '../core/search'
 import { fmtTime, useStore } from './store'
 import { ICON_PX, useIconSize, useTheme } from './theme'
-import { UsageCard, UsageChip, useUsage } from './Usage'
+import { UsageCard, UsageChip, UsageStrip, useUsage } from './Usage'
 import { PermGate, usePerms } from './Perms'
 import { EFFORTS, MODELS, MODES, effortLabel, fmtK, modeLabel, modelLabel } from './consts'
 
@@ -334,7 +334,8 @@ function botSummary(bot: Bot, sessions: SessionInfo[], notif: NotifyEvent[]) {
 /* ── 폰 홈 — 큰 제목 · 카드 4 · 봇 목록 · 떠 있는 알약 (탭바 없음) ── */
 type Row = [string, { b: Bot; sum: ReturnType<typeof botSummary> }[]]
 function Home({ rows, bot, go, setModal, waiting, unread, onAsk }: { rows: Row[]; bot: Bot; go: (b: string) => void; setModal: (m: 'picker' | 'notify' | 'settings') => void; waiting: number; unread: number; onAsk: () => void }) {
-  const usage = useUsage() // 폰 홈 맨 위 — 남은 양 카드 (기록이 없는 도구는 줄 자체가 안 나온다)
+  const usage = useUsage() // 폰 홈 맨 위 — 한 줄 띠. 누르면 카드가 시트로 올라온다
+  const [uSheet, setUSheet] = useState(false)
   const { s } = useStore()
   const all = rows.flatMap(([, l]) => l)
   const running = all.filter((x) => x.sum.state === 'running')
@@ -344,7 +345,7 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk }: { rows: Row[]
     <div className="mscroll">
       <div className="mtitle">Folder Bot</div>
       <div className="msub"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} style={{ width: 7, height: 7 }} />{s.hostName}<MrBadge /><span>· 봇 {s.bots.length} · 후보 {cands}</span></div>
-      {usage && usage.tools.length ? <div style={{ padding: '2px 16px 12px' }}><UsageCard u={usage} compact /></div> : null}
+      {usage && usage.tools.length ? <div style={{ padding: '0 16px 12px' }}><UsageStrip u={usage} onOpen={() => setUSheet(true)} /></div> : null}
       <div className="mcards">
         <button onClick={() => setModal('notify')}><Icon n="bell" size={22} color="var(--wait)" /><span className="n">확인 필요<span>{waiting}</span></span></button>
         <button onClick={() => (running[0] ? go(running[0].b.id) : go(bot.id))}><Icon n="run" size={22} color="var(--run)" /><span className="n">일하는 중<span>{running.length}</span></span></button>
@@ -357,7 +358,7 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk }: { rows: Row[]
       </div>)}
     </div>
     <button className="mpill glassb" onClick={onAsk}><span className="pl"><Icon n="plus" size={20} /></span><span className="tx">폴더에 시키기…</span><Icon n="sub" size={20} color="var(--t2)" /></button>
-  </div>
+  {uSheet && usage ? <><div className="backdrop" onClick={() => setUSheet(false)} /><div className="tsheet usheet"><div className="grip" /><UsageCard u={usage} /></div></> : null}</div>
 }
 
 /* ── 대화 ───────────────────────────────────────────────────────────────── */
