@@ -190,7 +190,10 @@ export class SessionManager extends EventEmitter {
     super()
     for (const f of readdirSync(this.dir).filter((f) => f.endsWith('.json'))) {
       try {
-        const r = JSON.parse(readFileSync(join(this.dir, f), 'utf8')) as SessionRec
+        const r = JSON.parse(readFileSync(join(this.dir, f), 'utf8')) as SessionRec & { deleted?: boolean }
+        // 🔴 지운 세션은 되살리지 않는다 — remove() 가 «지웠다» 표식을 남기는데 종전에는 그걸 안 읽어
+        //    호스트를 다시 띄우면 삭제한 세션이 목록에 그대로 돌아왔다 (2026-09-13)
+        if (r.deleted) continue
         if (r.state === 'running' || r.state === 'awaiting_input') r.state = 'idle' // 호스트가 다시 뜨면 워커는 없다
         if (closeOpenItems(r.items, 'restore').length) atomicWrite(join(this.dir, f), JSON.stringify({ ...r, items: r.items.slice(-1500) })) // 스피너로 남은 항목도 함께 마감
         this.recs.set(r.id, r)

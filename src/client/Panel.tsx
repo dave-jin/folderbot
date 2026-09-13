@@ -22,13 +22,28 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
   useEffect(() => { if (focusSec) setOpen((o) => ({ ...o, [focusSec.sec]: true })) }, [focusSec?.n])
   const [routines, setRoutines] = useState(false); const [menu, setMenu] = useState(false)
   const todos = (s.todos[bot.id] ?? [])
+  /**
+   * 세션 삭제 — 워커를 내리고 기록을 지운다. 되돌릴 수 없으니 한 번 묻는다.
+   * 지운 게 지금 보고 있는 세션이면 남은 첫 세션으로 옮긴다(없으면 세션 없는 상태로).
+   * ⚠ 호스트는 파일에 «지웠다» 표식을 남긴다 — 부팅 때 그 표식을 건너뛰지 않으면 되살아난다(session.ts 생성자).
+   */
+  const delSession = async (x: SessionInfo) => {
+    const warn = x.state === 'running' ? '\n\n지금 돌고 있는 턴이 중단돼요.' : ''
+    if (!confirm(`«${x.name}» 세션을 지울까요?${warn}\n\n대화 기록이 사라지고 되돌릴 수 없어요.`)) return
+    try {
+      await api(`/sessions/${x.id}`, { method: 'DELETE' })
+      const left = sessions.filter((y) => y.id !== x.id)
+      if (x.id === sessionId) go(bot.id, left[0]?.id)
+      say(`«${x.name}» 세션을 지웠어요`)
+    } catch (e) { say((e as Error).message) }
+  }
   const dragY = (k: 'sessions' | 'todo') => (e: React.PointerEvent) => { e.preventDefault(); onDragY(true); const y0 = e.clientY; const h0 = secH[k]; const panel = (e.currentTarget as HTMLElement).closest('.panel'); const room = panel ? panel.getBoundingClientRect().height - (secH.sessions + secH.todo - h0) - 260 : 420; /* 파일 트리 160 + 헤더·루틴·푸터 100 는 남긴다 */ const cap = Math.max(56, Math.min(420, room)); const mv = (ev: PointerEvent) => onSecH({ ...secH, [k]: Math.max(56, Math.min(cap, h0 + ev.clientY - y0)) }); const up = () => { onDragY(false); window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up) }; window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up) }
   return <div className="col side panel" style={{ width: '100%' }}>
     <div className="hdr">{phone ? <button className="rb glassb" onClick={onBack} title="대화로"><Icon n="back" size={20} /></button> : null}<span className="ttl">{bot.orchestrator ? '이 볼트에서' : '이 폴더에서'}</span><span className="sp" />{!phone ? <div className="acts"><button className="ib on" onClick={onCollapse} title="패널 접기 (⌘⇧B)"><Icon n="panelr" size={14} /></button></div> : null}</div>
     {/* 세션 */}
     <div className={`sec ${open.sessions ? 'fix' : 'fix'}`} style={open.sessions ? { height: secH.sessions } : undefined}>
       <button className="sech" onClick={() => tog('sessions')}><Icon n={open.sessions ? 'chevd' : 'chev'} size={9} /><span>세션</span><span className="c">{sessions.length}</span><span className="tools on"><span className="ib" title="새 세션" onClick={async (e) => { e.stopPropagation(); const info = await api<SessionInfo>(`/bots/${bot.id}/sessions`, { body: { name: `세션 ${sessions.length + 1}` } }); await refresh(); go(bot.id, info.id) }}><Icon n="plus" size={12} /></span></span></button>
-      {open.sessions ? <div className="secb" style={{ padding: '0 0 6px' }}>{sessions.map((x) => <button key={x.id} className={`srow ${x.id === sessionId ? 'on' : ''}`} onClick={() => go(bot.id, x.id)}><span className={`dot ${x.state === 'running' ? 'run' : x.state === 'awaiting_input' ? 'wait' : x.state === 'error' ? 'err' : 'none'}`} /><span className="n">{x.name}</span><span className="m">{x.state === 'running' ? <Elapsed from={x.turnStartedAt} /> : x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span></button>)}{!sessions.length ? <div className="kv" style={{ color: 'var(--t3)' }}>메시지를 보내면 생겨요</div> : null}</div> : null}
+      {open.sessions ? <div className="secb" style={{ padding: '0 0 6px' }}>{sessions.map((x) => <button key={x.id} className={`srow ${x.id === sessionId ? 'on' : ''}`} onClick={() => go(bot.id, x.id)}><span className={`dot ${x.state === 'running' ? 'run' : x.state === 'awaiting_input' ? 'wait' : x.state === 'error' ? 'err' : 'none'}`} /><span className="n">{x.name}</span><span className="m">{x.state === 'running' ? <Elapsed from={x.turnStartedAt} /> : x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span><span className="ib del" title="세션 삭제" onClick={(e) => { e.stopPropagation(); void delSession(x) }}><Icon n="x" size={11} /></span></button>)}{!sessions.length ? <div className="kv" style={{ color: 'var(--t3)' }}>메시지를 보내면 생겨요</div> : null}</div> : null}
     </div>
     <div className="divy" onPointerDown={dragY('sessions')} onDoubleClick={() => onSecH({ ...secH, sessions: 112 })} />
     {/* 할 일 / Inbox */}

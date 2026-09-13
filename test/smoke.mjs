@@ -297,6 +297,25 @@ try {
         await pg.screenshot({ path: 'test/tmp/desktop-rail-big.png' })
         await pg.mouse.move(900, 700); await wait(300)
         await pg.evaluate(() => { localStorage.setItem('fb:icon', 'm'); window.dispatchEvent(new Event('fb:iconsize')) }); await wait(200)
+
+        await pg.keyboard.press('Escape'); await wait(200); if (await pg.$('.pk')) { await pg.click('.pk .modal-h .ib'); await wait(300) }
+        // 세션 삭제 버튼 — 행에 있고, 누르면 한 번 묻고, 목록에서 사라진다. 원래 보던 세션은 건드리지 않는다
+        const keep = (await pg.textContent('.panel .srow.on .n')).trim()
+        await pg.click('.panel .sech:has-text("세션") .tools .ib'); await wait(1000) // 지울 세션 하나 더 만든다
+        const names = await pg.$$eval('.panel .srow .n', (r) => r.map((x) => x.textContent.trim()))
+        const victim = names.find((n) => n !== keep)
+        if (!victim) fail('세션 삭제 UI: 지울 세션이 안 생김 ' + JSON.stringify(names))
+        const row = `.panel .srow:has(.n:text-is("${victim}"))`
+        if (!(await pg.$(`${row} .del`))) fail('세션 삭제 UI: 삭제 버튼 없음')
+        pg.once('dialog', (d) => d.dismiss())          // 취소하면 안 지운다
+        await pg.click(`${row} .del`); await wait(700)
+        if (!(await pg.$(row))) fail('세션 삭제 UI: 취소했는데 지워졌다')
+        pg.once('dialog', (d) => d.accept())
+        await pg.click(`${row} .del`); await wait(1200)
+        if (await pg.$(row)) fail('세션 삭제 UI: 확인했는데 안 지워졌다 · ' + victim)
+        const back = await pg.$$eval('.panel .srow .n', (r) => r.map((x) => x.textContent.trim()))
+        if (!back.includes(keep)) fail('세션 삭제 UI: 남겨야 할 세션이 사라졌다 ' + JSON.stringify({ keep, back }))
+        await pg.click(`.panel .srow:has(.n:text-is("${keep}"))`); await wait(1000)
         await pg.click('.col.side.left .nav:has-text("폴더 선택")'); await pg.waitForSelector('.pk [data-rel]', { timeout: 5000 }); await wait(300)
 
         await pg.screenshot({ path: 'test/tmp/desktop-picker.png' }); await pg.keyboard.press('Escape'); await wait(200); if (await pg.$('.pk')) await pg.click('.pk .modal-h .ib'); await wait(200)
@@ -423,5 +442,27 @@ try {
     }
     await br.close(); ok('ui renders (desktop · phone) → test/tmp/*.png')
   } catch (e) { try { await globalThis.__br?.close() } catch {} if (/executablePath|Executable doesn't exist|Cannot find (module|package) 'playwright/.test(String(e.message))) console.log('(화면 검사 건너뜀 — 브라우저 없음:', e.message.split('\n')[0], ')'); else fail('ui: ' + e.stack.split('\n').slice(0, 4).join(' | ')) }
+  // ── 세션 삭제 — 워커가 내려가고, 목록에서 사라지고, **호스트를 다시 띄워도 안 돌아온다** (2026-09-13 Dave 요청)
+  {
+    const b = await api('/bots')
+    const target = b.find((x) => x.rel === '3. Area/제품_Rondo') ?? b[0]
+    const made = await api(`/bots/${target.id}/sessions`, { name: '지울 세션' })
+    let list = await api(`/bots/${target.id}/sessions`)
+    if (!list.find((x) => x.id === made.id)) fail('세션 삭제: 만든 세션이 목록에 없다')
+    await api(`/sessions/${made.id}`, undefined, 'DELETE')
+    list = await api(`/bots/${target.id}/sessions`)
+    if (list.find((x) => x.id === made.id)) fail('세션 삭제: 지웠는데 목록에 남았다')
+    const gone = await fetch(base + `/api/sessions/${made.id}/chat`); if (gone.status !== 404) fail('세션 삭제: 지운 세션이 아직 읽힌다 ' + gone.status)
+    // 호스트 재시작 — «지웠다» 표식을 안 읽으면 여기서 되살아난다
+    host.kill(); await wait(900)
+    const host2 = spawn('node', ['bin/folderbot.mjs', 'start', '--port', String(PORT)], { env })
+    host2.stdout.on('data', (d) => (hostLog += d)); host2.stderr.on('data', (d) => (hostLog += d))
+    for (let i = 0; i < 60; i++) { try { await api('/state'); break } catch { await wait(250) } }
+    const after = await api(`/bots/${target.id}/sessions`)
+    host2.kill()
+    if (after.find((x) => x.id === made.id)) fail('세션 삭제: 호스트를 다시 띄우니 되살아났다')
+    ok('세션 삭제 → 목록·기록에서 사라지고 재시작에도 안 돌아온다')
+  }
+
   console.log('\nSMOKE OK')
 } catch (e) { fail(e.stack) } finally { host.kill(); rmSync(root, { recursive: true, force: true }); rmSync(data, { recursive: true, force: true }); rmSync(claudeCfg, { recursive: true, force: true }) }
