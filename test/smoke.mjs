@@ -325,11 +325,13 @@ try {
           const ag = await pg.textContent('.sp-b'); if (!/Claude Code/.test(ag)) fail('설정 › 에이전트: 깔린 CLI 가 없다')
           if (!(await pg.$('.sp-b .hitem .scp'))) fail('설정 › 에이전트: 범위 칩이 없다')
           if (!/Folder Bot/.test(ag)) fail('설정 › 에이전트: 내장 커넥터가 없다')
+          await pg.screenshot({ path: 'test/tmp/desktop-settings-agents.png' })
           // 하네스 — 폴더별 표(보기 전용). 고치는 버튼이 있으면 계약 위반이다
           await pg.click('.snav .nv:has-text("하네스")'); await wait(500)
           if (!(await pg.$('.sp-b .htab .hrow'))) fail('설정 › 하네스: 표가 비었다')
           const hz = await pg.textContent('.sp-b .htab'); if (!/CLAUDE\.md/.test(hz)) fail('설정 › 하네스: CLAUDE.md 칸이 없다 · ' + hz.slice(0, 120))
           if (await pg.$('.sp-b .htab button')) fail('설정 › 하네스: 보기 전용인데 고치는 버튼이 있다')
+          await pg.screenshot({ path: 'test/tmp/desktop-settings-harness.png' })
           // 검색 — 제목과 설명을 함께 찾는다
           await pg.fill('.snav .sfind input', '토큰'); await wait(300)
           const found = await pg.$$eval('.snav .nv', (ns) => ns.map((n) => n.textContent))
