@@ -1,13 +1,19 @@
 import type { TodoItem } from './types'
 
 const LINE = /^(\s*)- \[( |x|X)\] (.*)$/
+const HEAD = /^#{1,6}\s+(.*)$/
+/** «완료» 절인가 — 한국어·영어 둘 다 */
+export const isDoneSection = (s: string): boolean => /^(완료|done|completed)/i.test(s.trim())
 const BOT_MARK = /\s*<!--\s*bot\s*-->\s*$/
 
-/** `- [ ] 제목: 설명 <!-- bot -->` 줄들을 읽는다. 중첩은 평평하게. */
+/** `- [ ] 제목: 설명 <!-- bot -->` 줄들을 읽는다. 중첩은 평평하게. 각 줄에 위쪽 `## 제목`(절)을 붙인다. */
 export function parseTodo(md: string): TodoItem[] {
   const out: TodoItem[] = []
   const lines = md.split(/\r?\n/)
+  let section = ''
   lines.forEach((raw, i) => {
+    const hm = HEAD.exec(raw)
+    if (hm) { const t = hm[1].trim(); if (!/^todo$/i.test(t)) section = t; return } // 맨 위 «# todo» 는 문서 제목이지 절이 아니다
     const m = LINE.exec(raw)
     if (!m) return
     let body = m[3]
@@ -16,7 +22,7 @@ export function parseTodo(md: string): TodoItem[] {
     const c = body.indexOf(':')
     const title = c > 0 ? body.slice(0, c).trim() : body
     const desc = c > 0 ? body.slice(c + 1).trim() : ''
-    out.push({ line: i, done: m[2] !== ' ', title, desc, by })
+    out.push({ line: i, done: m[2] !== ' ', title, desc, by, section })
   })
   return out
 }
@@ -56,11 +62,22 @@ export function deleteLine(md: string, line: number): string {
   return lines.join(nl)
 }
 
-/** 새 항목 추가 — 첫 `## 완료` 절 앞, 없으면 마지막 체크박스 뒤, 없으면 파일 끝. */
-export function addLine(md: string, title: string, desc: string, by: TodoItem['by']): string {
+/** 새 항목 추가 — `section` 이 있으면 그 절의 마지막 항목 뒤, 없으면 첫 `## 완료` 절 앞 → 마지막 체크박스 뒤 → 파일 끝. */
+export function addLine(md: string, title: string, desc: string, by: TodoItem['by'], section = ''): string {
   const nl = md.includes('\r\n') ? '\r\n' : '\n'
   const lines = md.length ? md.split(/\r?\n/) : []
   const entry = formatLine(title, desc, by)
+  if (section) { // 그 절 안 마지막 항목 뒤 (절 끝의 빈 줄 위)
+    const start = lines.findIndex((l) => { const hm = HEAD.exec(l); return !!hm && hm[1].trim() === section })
+    if (start >= 0) {
+      let end = lines.length
+      for (let i = start + 1; i < lines.length; i++) if (HEAD.test(lines[i])) { end = i; break }
+      let at = end
+      while (at > start + 1 && lines[at - 1].trim() === '') at--
+      lines.splice(at, 0, entry)
+      return lines.join(nl)
+    }
+  }
   const doneIdx = lines.findIndex((l) => /^##\s*완료/.test(l))
   if (doneIdx >= 0) {
     let at = doneIdx
@@ -78,6 +95,42 @@ export function addLine(md: string, title: string, desc: string, by: TodoItem['b
   if (lines[lines.length - 1] !== '') lines.push('')
   lines.push(entry)
   return lines.join(nl)
+}
+
+/**
+ * 줄 하나를 다른 자리로 옮긴다 — 끌어서 순서 바꾸기(V15). `before` 줄 **앞**에 놓고, null 이면 마지막 항목 뒤.
+ * 다른 줄(절 제목·빈 줄·주석)은 건드리지 않는다. 옮기면 줄 번호가 바뀌므로 화면은 다시 parseTodo 한 결과를 쓴다.
+ */
+export function moveLine(md: string, from: number, before: number | null): string {
+  const nl = md.includes('\r\n') ? '\r\n' : '\n'
+  const lines = md.split(/\r?\n/)
+  if (!LINE.test(lines[from] ?? '')) return md
+  if (before === from || before === from + 1) return md
+  const [row] = lines.splice(from, 1)
+  let at: number
+  if (before === null) { let last = -1; lines.forEach((l, i) => { if (LINE.test(l)) last = i }); at = last + 1 }
+  else at = Math.max(0, Math.min(lines.length, before > from ? before - 1 : before))
+  lines.splice(at, 0, row)
+  return lines.join(nl)
+}
+
+/**
+ * 체크 — `[x]` 로 바꾸고 «완료» 절이 있으면 그 절 끝으로 내린다 (V15).
+ * 체크를 풀 때는 제자리에서 `[ ]` 로만 바꾼다 — 원래 어느 절이었는지는 파일에 없으니 지어내지 않는다.
+ */
+export function toggleAndMove(md: string, line: number, done: boolean): string {
+  const next = toggleLine(md, line, done)
+  if (!done || next === md) return next
+  const lines = next.split(/\r?\n/)
+  let secStart = -1
+  for (let i = 0; i < lines.length; i++) { const hm = HEAD.exec(lines[i]); if (hm && isDoneSection(hm[1])) { secStart = i; break } }
+  if (secStart < 0) return next // 완료 절이 없으면 제자리
+  if (line > secStart && !lines.slice(secStart + 1, line).some((l) => HEAD.test(l))) return next // 이미 완료 절 안
+  let end = lines.length
+  for (let i = secStart + 1; i < lines.length; i++) if (HEAD.test(lines[i])) { end = i; break }
+  let at = end
+  while (at > secStart + 1 && lines[at - 1].trim() === '') at--
+  return moveLine(next, line, at)
 }
 
 export const TODO_RULES_PROMPT = `이 폴더의 todo.md 는 사람과 봇이 같이 쓰는 할 일 목록이다. 규약:

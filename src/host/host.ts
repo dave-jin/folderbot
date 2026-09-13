@@ -162,8 +162,8 @@ export class Host {
     if (n !== this.lastInbox) { this.lastInbox = n; this.broadcast({ ev: 'inbox', count: n }) }
   }
 
-  todoAdd(bot: Bot, title: string, desc: string, by: 'me' | 'bot', notify = false): void {
-    const items = todoAdd(bot.abs, title, desc, by)
+  todoAdd(bot: Bot, title: string, desc: string, by: 'me' | 'bot', notify = false, section = ''): void {
+    const items = todoAdd(bot.abs, title, desc, by, section)
     this.broadcast({ ev: 'todo', botId: bot.id, items })
     if (notify && by === 'bot') this.notifier.emit('todo', bot.id, `${bot.name} · 할 일 남김`, `${title}${desc ? `: ${desc}` : ''}`)
   }

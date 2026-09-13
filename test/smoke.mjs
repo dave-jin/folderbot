@@ -10,7 +10,7 @@ const claudeCfg = mkdtempSync(join(tmpdir(), 'fb-claude-'))
 for (const d of ['1. Inbox', '2. Projects/2026-09_강의-창업스쿨-2기', '2. Projects/2026-10_해커톤-제안', '3. Area/제품_Rondo', '3. Area/재무_CFO', '4. Resources', '5. Archive']) mkdirSync(join(root, d), { recursive: true })
 writeFileSync(join(root, '3. Area/제품_Rondo/CLAUDE.md'), '# 제품_Rondo\n')
 writeFileSync(join(root, '3. Area/제품_Rondo/readme.md'), '# Rondo\n')
-writeFileSync(join(root, '3. Area/제품_Rondo/todo.md'), '# todo\n\n- [ ] PRD v1.0 확정: Q2·Q5\n- [ ] Tailscale 폰 설치\n- [ ] 무응답 3건 후속 연락: 9/1 발송분이 엿새째 무응답. ① 가상 대표에게 문자 ② 예시 기관에 「총 1회」 적용 범위 문의(담당자 두 명 공동 수신) ③ 답을 보고 다음 회차를 정한다. 9/7(월) 오전에 배치\n\n## 완료\n')
+writeFileSync(join(root, '3. Area/제품_Rondo/todo.md'), '# todo\n\n## 요청 · 할 일\n- [ ] PRD v1.0 확정: Q2·Q5\n- [ ] Tailscale 폰 설치\n- [ ] 무응답 3건 후속 연락: 9/1 발송분이 엿새째 무응답. ① 가상 대표에게 문자 ② 예시 기관에 「총 1회」 적용 범위 문의 ③ 답을 보고 다음 회차를 정한다\n\n## 진행 중\n- [ ] 표지 문구 3안: 편집자에게 보냄\n\n## 완료\n')
 writeFileSync(join(root, '3. Area/재무_CFO/CLAUDE.md'), '# CFO\n')
 writeFileSync(join(root, '2. Projects/2026-09_강의-창업스쿨-2기/CLAUDE.md'), '# 강의\n')
 writeFileSync(join(root, '1. Inbox/예시랩_자문자료.txt'), 'x')
@@ -111,9 +111,9 @@ try {
   await api('/auth/token', { token: 'sk-ant-oat01-test' }); if (!/sk-ant-oat01-test/.test(readFileSync(join(data, 'config.json'), 'utf8'))) fail('token save')
   await api('/auth/token', { token: '' }); if (/sk-ant-oat01/.test(readFileSync(join(data, 'config.json'), 'utf8'))) fail('token clear'); ok('auth token set/clear')
   // todo
-  let todo = await api(`/bots/${bot.id}/todo`); if (todo.length !== 3) fail('todo parse')
-  todo = await api(`/bots/${bot.id}/todo`, { title: '알파 동결 문서', desc: 'PRD v1.0 뒤에' }); if (todo.length !== 4) fail('todo add')
-  todo = await api(`/bots/${bot.id}/todo/toggle`, { line: todo[0].line, done: true }); if (!todo[0].done) fail('todo toggle'); ok('todo add/toggle')
+  let todo = await api(`/bots/${bot.id}/todo`); if (todo.length !== 4) fail('todo parse')
+  todo = await api(`/bots/${bot.id}/todo`, { title: '알파 동결 문서', desc: 'PRD v1.0 뒤에' }); if (todo.length !== 5) fail('todo add')
+  { const target = todo[0]; todo = await api(`/bots/${bot.id}/todo/toggle`, { line: target.line, done: true }); const t2 = todo.find((t) => t.title === target.title); if (!t2 || !t2.done) fail('todo toggle: ' + JSON.stringify(todo.map((t) => [t.title, t.done]))) } ok('todo add/toggle')
   // 세션 휴면·기상 (같은 cli 세션 id 로 --resume)
   const before = chat.info.cliSessionId
   await api(`/sessions/${s1.sessionId}/hibernate`, {})
@@ -148,6 +148,24 @@ try {
   // 할 일 편집 · 삭제
   let td2 = await api(`/bots/${bot.id}/todo/edit`, { line: todo[1].line, title: '알파 동결 문서 v2', desc: '내일' }); const ed = td2.find((t) => t.line === todo[1].line); if (!ed || ed.title !== '알파 동결 문서 v2' || ed.desc !== '내일') fail('todo edit ' + JSON.stringify(td2))
   td2 = await api(`/bots/${bot.id}/todo/delete`, { line: todo[1].line }); if (td2.some((t) => t.title === '알파 동결 문서 v2')) fail('todo delete'); ok('todo edit · delete')
+  // 할 일 2.0 — 절(section) 파싱 · 끌어서 이동 · 체크하면 완료 절로 내려간다
+  {
+    // 앞 단계에서 지웠을 수 있으니 그 절에 두 줄을 확보한다 (새 할 일은 절 안 마지막에 붙는다)
+    await api(`/bots/${bot.id}/todo`, { title: '이동 검사 A', desc: '첫째', section: '요청 · 할 일' })
+    await api(`/bots/${bot.id}/todo`, { title: '이동 검사 B', desc: '둘째', section: '요청 · 할 일' })
+    const its = await api(`/bots/${bot.id}/todo`)
+    if (!its.some((t) => t.section === '요청 · 할 일') || !its.some((t) => t.section === '진행 중')) fail('todo sections: ' + JSON.stringify(its.map((t) => t.section)))
+    const sec1 = its.filter((t) => t.section === '요청 · 할 일')
+    if (sec1.length < 2) fail('todo add with section: ' + JSON.stringify(its.map((t) => [t.title, t.section])))
+    const first = sec1[0]; const second = sec1[1]
+    const moved = await api(`/bots/${bot.id}/todo/move`, { line: second.line, before: first.line })
+    if (moved.filter((t) => t.section === '요청 · 할 일')[0].title !== second.title) fail('todo move: ' + JSON.stringify(moved.map((t) => t.title)))
+    const wip = moved.find((t) => t.section === '진행 중')
+    const after = await api(`/bots/${bot.id}/todo/toggle`, { line: wip.line, done: true })
+    const nowDone = after.find((t) => t.title === wip.title)
+    if (!nowDone || !nowDone.done || !/완료/.test(nowDone.section)) fail('todo check should move into 완료: ' + JSON.stringify(nowDone))
+    ok('todo 2.0 — 절 · 이동 · 체크하면 완료 절로')
+  }
   // 은퇴
   const lect = await api('/bots/start', { rel: '2. Projects/2026-09_강의-창업스쿨-2기' })
   const rt = await api(`/bots/${lect.id}/retire`, {}); if (!existsSync(join(root, rt.to, 'CLAUDE.md'))) fail('retire move'); ok(`retire → ${rt.to}`)
@@ -223,11 +241,6 @@ try {
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
         await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)
         await pg.mouse.move(700, 300); await wait(200); if (await pg.$('.hcard')) fail('ui hover card stuck')
-        // 할 일 행 — 글이 오른쪽 끝까지(도구 자리를 미리 비우지 않음) · 긴 행은 2줄에서 잘리고 «…더» 로 펼친다
-        const tg = await pg.evaluate(() => { const r = document.querySelector('.todo'); const t = r.querySelector('.tt'); return r.getBoundingClientRect().right - t.getBoundingClientRect().right }); if (tg > 16) fail('ui todo right gap ' + tg)
-        if (!(await pg.$('.todo.clamp.over .more'))) fail('ui todo clamp/more missing'); const hBefore = await pg.$eval('.todo.clamp.over', (e) => e.getBoundingClientRect().height)
-        await pg.click('.todo.clamp.over .more'); await wait(150); const hAfter = await pg.$eval('.todo .fold', (e) => e.closest('.todo').getBoundingClientRect().height); if (!(hAfter > hBefore + 10)) fail(`ui todo expand ${hBefore} → ${hAfter}`)
-        await pg.click('.todo .fold'); await wait(150); if (await pg.$('.todo .fold')) fail('ui todo fold')
         // 폴더 선택 = 트리: 1단계 폴더가 뜨고 활성 폴더는 펼쳐져 있다 · Resources 를 펼치면 하위가 보인다
         await pg.click('.nav'); await pg.waitForSelector('.pk [data-rel]', { timeout: 5000 }); await wait(500)
         const top = await pg.$$eval('.pk [data-rel]', (r) => r.map((x) => x.getAttribute('data-rel'))); if (!top.includes('4. Resources') || !top.includes('3. Area/제품_Rondo')) fail('ui picker tree: ' + top.join(','))
@@ -240,8 +253,20 @@ try {
         await pg.click('.panel .secb button.trow:not(.dir)', { button: 'right' }); await wait(200); await pg.click('.menu.ctx button:has-text("이름 바꾸기")'); await wait(200)
         if (!(await pg.$('.modal.ask input.askin'))) fail('ui rename modal missing'); await pg.fill('.modal.ask input.askin', 'renamed-by-smoke.md'); await pg.keyboard.press('Enter'); await wait(700)
         if (!/renamed-by-smoke\.md/.test((await pg.textContent('.panel')) ?? '')) fail('ui rename did not apply'); if (await pg.$('.modal.ask')) fail('ui rename modal stuck')
-        // 할 일 — 제목을 누르면 편집, ⏎ 저장
-        await pg.click('.todo .tt.link'); await wait(150); if (!(await pg.$('.todo.edit input'))) fail('ui todo edit'); await pg.fill('.todo.edit input', 'Tailscale 폰 설치 (편집됨)'); await pg.keyboard.press('Enter'); await wait(500); if (!/편집됨/.test((await pg.textContent('.panel')) ?? '')) fail('ui todo edit save')
+        // 할 일 2.0 — 절 제목이 보이고, 목록은 제목만. 더블클릭하면 그 행에 설명이 펼쳐진다
+        if (!/요청 · 할 일/.test((await pg.textContent('.panel')) ?? '')) fail('ui todo sections missing')
+        const withDesc = await pg.$('.todo .mk')
+        if (!withDesc) fail('ui todo: row with desc should show a › mark')
+        if (await pg.$('.todo .dsc')) fail('ui todo: desc must be hidden until opened')
+        const rowEl = await pg.$('.todo:has(.mk)'); await rowEl.dblclick(); await wait(200)
+        if (!(await pg.$('.todo.on .dsc'))) fail('ui todo: double-click should reveal the description')
+        await rowEl.dblclick(); await wait(150); if (await pg.$('.todo .dsc')) fail('ui todo: second double-click should collapse')
+        // 편집 — 한 칸에 «제목: 설명»
+        await pg.hover('.todo'); await pg.click('.todo .tools button[title="편집"]'); await wait(200)
+        if (!(await pg.$('.todo.edit .ein'))) fail('ui todo edit box'); const cur = await pg.inputValue('.todo.edit .ein'); if (!/:/.test(cur) && !/PRD/.test(cur)) fail('ui todo edit value: ' + cur)
+        await pg.fill('.todo.edit .ein', 'PRD v1.0 확정 (편집됨): Q2·Q5'); await pg.keyboard.press('Enter'); await wait(600)
+        if (!/편집됨/.test((await pg.textContent('.panel')) ?? '')) fail('ui todo edit save')
+        if (!(await pg.$('.sech .ib.mdb'))) fail('ui todo: todo.md button missing')
         const cbar = await pg.textContent('.composer .cbar'); if (!/Fable 5.1|Sonnet 5/.test(cbar) || !/자동|계획/.test(cbar) || !/높음/.test(cbar)) fail('ui cbar labels: ' + cbar)
         // 슬래시 자동완성 → 스킬이 뜬다 · @ → 파일이 뜬다
         await pg.fill('.composer textarea', '/st'); await wait(300); const sp = await pg.textContent('.cpop'); if (!/standup/.test(sp ?? '') || !/status/.test(sp ?? '')) fail('ui slash popup: ' + sp)
@@ -265,7 +290,7 @@ try {
         await pg.click('.files .chip'); await pg.waitForSelector('.doc .dbody', { timeout: 5000 }); await wait(400)
         const tabs = await pg.$$eval('.doc .tab', (r) => r.length); if (tabs < 1) fail('doc tab')
         await pg.screenshot({ path: 'test/tmp/desktop-doc.png' })
-        await pg.keyboard.press('Meta+Shift+D'); await wait(200); if (await pg.$('.doc')) fail('doc column should hide on ⌘⇧D')
+        await pg.keyboard.press('Meta+Shift+D'); await wait(500); if (await pg.$('.doc')) fail('doc column should hide on ⌘⇧D · tabs=' + (await pg.$$eval('.doc .tab', (r) => r.length)) + ' · focus=' + (await pg.evaluate(() => document.activeElement?.tagName + '.' + document.activeElement?.className)))
         if (errs.length) fail('page errors: ' + errs.join(' | '))
       }
       if (name === 'phone') {

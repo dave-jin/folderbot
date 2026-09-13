@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Bot, SessionInfo, TodoItem } from '../core/types'
 import { api } from './api'
+import { isDoneSection } from '../core/todo'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { RoutineSheet, askName } from './Sheets'
 import { fmtElapsed, fmtTime, useStore } from './store'
@@ -30,7 +31,7 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
     <div className="divy" onPointerDown={dragY('sessions')} onDoubleClick={() => onSecH({ ...secH, sessions: 112 })} />
     {/* 할 일 / Inbox */}
     <div className="sec fix" style={open.todo ? { height: secH.todo } : undefined}>
-      {bot.orchestrator ? <InboxSec open={!!open.todo} tog={() => tog('todo')} onSend={onTalk} /> : <TodoSec bot={bot} items={todos} open={!!open.todo} tog={() => tog('todo')} onDelegate={(t) => onTalk(`${t.title}${t.desc ? ` — ${t.desc}` : ''}`)} reload={() => loadTodo(bot.id)} />}
+      {bot.orchestrator ? <InboxSec open={!!open.todo} tog={() => tog('todo')} onSend={onTalk} /> : <TodoSec bot={bot} items={todos} open={!!open.todo} tog={() => tog('todo')} onDelegate={(t) => onTalk(`${t.title}${t.desc ? ` — ${t.desc}` : ''}`)} onOpenFile={onOpenFile} reload={() => loadTodo(bot.id)} phone={phone} />}
     </div>
     <div className="divy" onPointerDown={dragY('todo')} onDoubleClick={() => onSecH({ ...secH, todo: 84 })} />
     {/* 파일 */}
@@ -57,34 +58,108 @@ export function Elapsed({ from }: { from?: number }) {
   return <>{fmtElapsed(from)}</>
 }
 
-function TodoSec({ bot, items, open, tog, onDelegate, reload }: { bot: Bot; items: TodoItem[]; open: boolean; tog: () => void; onDelegate: (t: TodoItem) => void; reload: () => Promise<void> }) {
-  const [adding, setAdding] = useState(false); const [line, setLine] = useState('')
-  const [edit, setEdit] = useState<number | null>(null); const [et, setEt] = useState(''); const [ed, setEd] = useState('')
-  const [showDone, setShowDone] = useState(false)
-  // V11 — 행별 펼침. 잘렸는지는 그려진 뒤 scrollHeight 로 잰다(폭이 바뀌면 다시)
-  const [opened, setOpened] = useState<Set<number>>(() => new Set()); const secRef = useRef<HTMLDivElement | null>(null)
-  const toggleOpen = (line: number) => setOpened((o) => { const n = new Set(o); if (n.has(line)) n.delete(line); else n.add(line); return n })
-  const measure = () => { const el = secRef.current; if (!el) return; for (const row of Array.from(el.querySelectorAll<HTMLElement>('.todo'))) { const tt = row.querySelector<HTMLElement>('.tt'); if (!tt) continue; row.classList.toggle('over', tt.scrollHeight > tt.clientHeight + 1) } }
-  useEffect(() => { measure(); const el = secRef.current; if (!el || typeof ResizeObserver === 'undefined') return; const ro = new ResizeObserver(() => measure()); ro.observe(el); return () => ro.disconnect() })
+/**
+ * 할 일 2.0 (V15, Dave 승인 2026-09-13) — 패널은 todo.md 의 거울.
+ * · 목록은 **제목 한 줄만**. 설명은 더블클릭(폰은 탭)으로 그 행을 펼칠 때만 보인다 — 설명이 있는 행에만 › 표식.
+ * · 편집은 펼친 자리에서 **한 칸**에 «제목: 설명» (첫 «:» 앞이 제목 — 파일 형식 그대로).
+ * · 문서의 `## 제목`(절)이 그대로 섹션이고, «완료» 절은 접힌 채로 시작한다.
+ * · 체크하면 «완료» 절 끝으로 내려가고(파일에서도), 끌면 그 줄이 파일에서 옮겨진다.
+ * · 「todo.md」 버튼으로 원문을 열어 자유롭게 고칠 수 있다 — 저장하면 이 패널이 따라온다(파일 감시).
+ */
+function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone }: { bot: Bot; items: TodoItem[]; open: boolean; tog: () => void; onDelegate: (t: TodoItem) => void; onOpenFile: (rel: string) => void; reload: () => Promise<void>; phone?: boolean }) {
+  const [adding, setAdding] = useState<string | null>(null); const [line, setLine] = useState('')
+  const [edit, setEdit] = useState<number | null>(null); const [draft, setDraft] = useState('')
+  const [openRows, setOpenRows] = useState<Set<number>>(() => new Set())
+  const [openSecs, setOpenSecs] = useState<Record<string, boolean>>({})
+  const [drag, setDrag] = useState<number | null>(null); const [over, setOver] = useState<number | null>(null)
   const [undo, setUndo] = useState<{ title: string; desc: string } | null>(null); const undoT = useRef<number | undefined>(undefined)
-  const todo = items.filter((t) => !t.done); const done = items.filter((t) => t.done)
-  const toggle = async (t: TodoItem) => { await api(`/bots/${bot.id}/todo/toggle`, { body: { line: t.line, done: !t.done } }); await reload() }
-  const add = async () => { const [t, ...rest] = line.split(':'); if (!t.trim()) { setAdding(false); return } await api(`/bots/${bot.id}/todo`, { body: { title: t.trim(), desc: rest.join(':').trim() } }); setLine(''); await reload() }
-  const startEdit = (t: TodoItem) => { setEdit(t.line); setEt(t.title); setEd(t.desc) }
-  const save = async () => { if (edit === null) return; if (!et.trim()) { setEdit(null); return } await api(`/bots/${bot.id}/todo/edit`, { body: { line: edit, title: et.trim(), desc: ed.trim() } }); setEdit(null); await reload() }
-  const remove = async (t: TodoItem) => { await api(`/bots/${bot.id}/todo/delete`, { body: { line: t.line } }); setEdit(null); setUndo({ title: t.title, desc: t.desc }); window.clearTimeout(undoT.current); undoT.current = window.setTimeout(() => setUndo(null), 5000); await reload() }
+
+  // 절 순서는 파일 순서 그대로. 절이 없는 파일이면 빈 이름 하나로 모인다
+  const secs = useMemo(() => {
+    const m = new Map<string, TodoItem[]>()
+    for (const t of items) { const k = t.section; (m.get(k) ?? m.set(k, []).get(k)!).push(t) }
+    return [...m.entries()]
+  }, [items])
+  const left = items.filter((t) => !t.done).length
+  const doneN = items.filter((t) => t.done).length
+  const secOpen = (name: string) => openSecs[name] ?? !isDoneSection(name)
+
+  const toggle = async (t: TodoItem) => { await api(`/bots/${bot.id}/todo/toggle`, { body: { line: t.line, done: !t.done } }); setOpenRows(new Set()); setEdit(null); await reload() }
+  const startEdit = (t: TodoItem) => { setEdit(t.line); setDraft(t.desc ? `${t.title}: ${t.desc}` : t.title) }
+  const save = async () => {
+    if (edit === null) return
+    const raw = draft.trim(); if (!raw) { setEdit(null); return }
+    const c = raw.indexOf(':')
+    const title = c > 0 ? raw.slice(0, c).trim() : raw
+    const desc = c > 0 ? raw.slice(c + 1).trim() : ''
+    await api(`/bots/${bot.id}/todo/edit`, { body: { line: edit, title, desc } }); setEdit(null); await reload()
+  }
+  const add = async (section: string) => {
+    const raw = line.trim(); if (!raw) { setAdding(null); setLine(''); return }
+    const c = raw.indexOf(':')
+    await api(`/bots/${bot.id}/todo`, { body: { title: c > 0 ? raw.slice(0, c).trim() : raw, desc: c > 0 ? raw.slice(c + 1).trim() : '', section } })
+    setLine(''); await reload()
+  }
+  const remove = async (t: TodoItem) => {
+    await api(`/bots/${bot.id}/todo/delete`, { body: { line: t.line } }); setEdit(null)
+    setUndo({ title: t.title, desc: t.desc }); window.clearTimeout(undoT.current); undoT.current = window.setTimeout(() => setUndo(null), 5000)
+    await reload()
+  }
   const undoRemove = async () => { if (!undo) return; await api(`/bots/${bot.id}/todo`, { body: { title: undo.title, desc: undo.desc } }); setUndo(null); await reload() }
-  const row = (t: TodoItem) => edit === t.line
-    ? <div key={t.line} className="todo edit"><input autoFocus value={et} placeholder="제목" onChange={(e) => setEt(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(); if (e.key === 'Escape') setEdit(null) }} /><input value={ed} placeholder="설명 (선택)" onChange={(e) => setEd(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(); if (e.key === 'Escape') setEdit(null) }} /><div className="eh"><button onClick={() => void save()}>⏎ 저장</button><button onClick={() => setEdit(null)}>⎋ 취소</button><span style={{ flex: 1 }} /><button className="del" onClick={() => void remove(t)}>삭제</button></div></div>
-    : <div key={t.line} className={`todo ${t.done ? 'done' : ''} ${opened.has(t.line) ? '' : 'clamp'}`}><button className="bx" onClick={() => toggle(t)} aria-label={t.done ? '되돌리기' : '완료'}>{t.done ? <Icon n="check" size={9} color="#111" /> : null}</button><span className="tt link" onClick={() => startEdit(t)} title="누르면 편집"><span className="sp" />{t.title}{t.desc ? <small> — {t.desc}</small> : null}{t.by === 'bot' ? <small> · 봇</small> : null}{opened.has(t.line) ? <span className="fold" onClick={(e) => { e.stopPropagation(); toggleOpen(t.line) }}>접기</span> : null}</span><button className="more" onClick={() => toggleOpen(t.line)} title="펼치기">…더</button><span className="tools"><button title="편집" onClick={() => startEdit(t)}><Icon n="edit" size={12} /></button>{!t.done ? <button title="봇에게 맡기기" onClick={() => onDelegate(t)}><Icon n="sub" size={12} /></button> : null}<button title="삭제" onClick={() => void remove(t)}><Icon n="x" size={12} /></button></span></div>
+  const drop = async (before: number | null) => {
+    const from = drag; setDrag(null); setOver(null)
+    if (from === null || from === before) return
+    await api(`/bots/${bot.id}/todo/move`, { body: { line: from, before } }); setOpenRows(new Set()); await reload()
+  }
+  const toggleRow = (t: TodoItem) => { if (!t.desc) return; setOpenRows((o) => { const n = new Set(o); if (n.has(t.line)) n.delete(t.line); else n.add(t.line); return n }) }
+
+  const row = (t: TodoItem) => {
+    const isOpen = openRows.has(t.line)
+    if (edit === t.line) return <div key={t.line} className="todo edit">
+      <span className="bx ghost" />
+      <div className="bd">
+        <input autoFocus className="ein" value={draft} placeholder="제목: 설명" onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(); if (e.key === 'Escape') setEdit(null) }} onBlur={() => void save()} />
+        <div className="eh"><span>⏎ 저장</span><span>⎋ 취소</span><span className="sp" /><span>«:» 뒤는 설명</span></div>
+      </div>
+    </div>
+    return <div key={t.line}
+      className={`todo ${t.done ? 'done' : ''} ${isOpen ? 'on' : ''} ${over === t.line ? 'over' : ''} ${drag === t.line ? 'dragging' : ''}`}
+      draggable={!phone} onDragStart={() => setDrag(t.line)} onDragEnd={() => { setDrag(null); setOver(null) }}
+      onDragOver={(e) => { if (drag === null) return; e.preventDefault(); setOver(t.line) }} onDragLeave={() => setOver((o) => (o === t.line ? null : o))}
+      onDrop={(e) => { e.preventDefault(); void drop(t.line) }}
+      onDoubleClick={phone ? undefined : () => toggleRow(t)} onClick={phone ? () => toggleRow(t) : undefined}>
+      <button className="bx" onClick={(e) => { e.stopPropagation(); void toggle(t) }} aria-label={t.done ? '되돌리기' : '완료'}>{t.done ? <Icon n="check" size={9} color="#111" /> : null}</button>
+      <div className="bd">
+        <div className="tt" onClick={(e) => { if (isOpen) { e.stopPropagation(); startEdit(t) } }} title={phone ? '누르면 펼치기' : '더블클릭하면 펼치기'}>{t.title}{t.by === 'bot' ? <span className="byb" title="봇이 적음"><Icon n="sub" size={10} /></span> : null}</div>
+        {isOpen && t.desc ? <div className="dsc" onClick={(e) => { e.stopPropagation(); startEdit(t) }}>{t.desc}</div> : null}
+      </div>
+      {t.desc ? <span className="mk"><Icon n={isOpen ? 'chevd' : 'chev'} size={9} /></span> : null}
+      <span className="tools" onClick={(e) => e.stopPropagation()}>
+        <button title="편집" onClick={() => startEdit(t)}><Icon n="edit" size={12} /></button>
+        {!t.done ? <button title="봇에게 맡기기" onClick={() => onDelegate(t)}><Icon n="sub" size={12} /></button> : null}
+        <button title="삭제" onClick={() => void remove(t)}><Icon n="x" size={12} /></button>
+      </span>
+    </div>
+  }
+
   return <>
-    <button className="sech" onClick={tog}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>할 일</span><span className="c">{todo.length}{showDone && done.length ? ` · 완료 ${done.length}` : ''}</span><span className={`tools ${showDone ? 'on' : ''}`}>{done.length ? <span className={`ib ${showDone ? 'on' : ''}`} title={showDone ? '완료 숨기기' : `완료 ${done.length}개 보기`} onClick={(e) => { e.stopPropagation(); setShowDone(!showDone) }}><Icon n="eye" size={12} /></span> : null}<span className="ib" title="추가 — 제목: 설명" onClick={(e) => { e.stopPropagation(); setAdding(true) }}><Icon n="plus" size={12} /></span></span></button>
-    {open ? <div className="secb" ref={secRef} style={{ padding: '0 0 6px' }}>
-      {adding ? <div className="tadd"><span className="dot none" style={{ width: 12, height: 12, border: '1px solid var(--line2)', borderRadius: 3 }} /><input autoFocus placeholder="제목: 설명 (Enter)" value={line} onChange={(e) => setLine(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void add(); if (e.key === 'Escape') setAdding(false) }} onBlur={() => { if (!line.trim()) setAdding(false) }} /></div> : null}
-      {todo.map(row)}
-      {showDone ? done.map(row) : null}
-      {undo ? <div className="kv" style={{ color: 'var(--t3)' }}><span className="n">삭제했어요</span><button style={{ color: 'var(--t)' }} onClick={() => void undoRemove()}>되돌리기</button></div> : null}
-      {!todo.length && !adding ? <div className="kv" style={{ color: 'var(--t3)' }}>미완료 없음 · <span style={{ color: 'var(--t2)', cursor: 'pointer' }} onClick={() => setAdding(true)}>＋ 추가</span></div> : null}
+    <button className="sech" onClick={tog}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>할 일</span><span className="c">{left}{doneN ? ` · 완료 ${doneN}` : ''}</span>
+      <span className="tools">
+        <span className="ib" title="새 할 일" onClick={(e) => { e.stopPropagation(); setAdding(secs[0]?.[0] ?? '') }}><Icon n="plus" size={12} /></span>
+        <span className="ib mdb" title="todo.md 를 열어 원문 고치기" onClick={(e) => { e.stopPropagation(); onOpenFile('todo.md') }}><Icon n="doc" size={11} /><span>todo.md</span></span>
+      </span>
+    </button>
+    {open ? <div className="secb" style={{ padding: '0 0 6px' }} onDragOver={(e) => { if (drag !== null) e.preventDefault() }} onDrop={(e) => { e.preventDefault(); void drop(null) }}>
+      {!items.length ? <div className="kv" style={{ color: 'var(--t3)' }}>할 일이 없어요 — + 로 적거나 todo.md 를 여세요</div> : null}
+      {secs.map(([name, list]) => <div key={name || '_'}>
+        {name ? <button className="tsec" onClick={() => setOpenSecs({ ...openSecs, [name]: !secOpen(name) })}><Icon n={secOpen(name) ? 'chevd' : 'chev'} size={9} /><span>{name}</span><span className="c">{list.length}</span></button> : null}
+        {secOpen(name) ? <>
+          {list.map(row)}
+          {adding === name ? <div className="todo add"><span className="bx ghost" /><input autoFocus className="ein" placeholder="제목: 설명 (Enter)" value={line} onChange={(e) => setLine(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void add(name); if (e.key === 'Escape') { setAdding(null); setLine('') } }} onBlur={() => { if (!line.trim()) setAdding(null) }} /></div>
+            : !isDoneSection(name) ? <button className="todo addbtn" onClick={() => setAdding(name)}><span className="bx ghost dash" /><span>새 할 일</span></button> : null}
+        </> : null}
+      </div>)}
+      {undo ? <div className="kv" style={{ color: 'var(--t3)' }}><span className="n">삭제했어요</span><button style={{ color: 'var(--t2)' }} onClick={() => void undoRemove()}>되돌리기</button></div> : null}
     </div> : null}
   </>
 }

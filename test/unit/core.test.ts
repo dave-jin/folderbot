@@ -120,3 +120,32 @@ describe('closeOpenItems', () => {
     closeOpenItems(items, 'restore'); expect((items[0] as { status: string }).status).toBe('error') // 호스트가 죽으면 그 에이전트도 없다
   })
 })
+
+import { isDoneSection, moveLine, toggleAndMove } from '../../src/core/todo'
+describe('todo 2.0 — 절 · 이동 · 완료', () => {
+  const MD = ['# todo', '', '## 요청 · 할 일', '- [ ] 가: 하나', '- [ ] 나', '', '## 진행 중', '- [ ] 다: 셋', '', '## 완료', '- [x] 라'].join('\n')
+  it('parseTodo 가 절을 붙인다 — 맨 위 «# todo» 는 절이 아니다', () => {
+    const it2 = parseTodo(MD)
+    expect(it2.map((t) => [t.title, t.section])).toEqual([['가', '요청 · 할 일'], ['나', '요청 · 할 일'], ['다', '진행 중'], ['라', '완료']])
+    expect(it2[0].desc).toBe('하나')
+  })
+  it('isDoneSection — 한글에 \\b 를 쓰면 안 된다', () => {
+    expect(isDoneSection('완료')).toBe(true); expect(isDoneSection('Done')).toBe(true); expect(isDoneSection('진행 중')).toBe(false)
+  })
+  it('moveLine — 그 줄만 옮기고 절 제목·빈 줄은 그대로', () => {
+    const out = moveLine(MD, 4, 3).split('\n')
+    expect(out[3]).toBe('- [ ] 나'); expect(out[4]).toBe('- [ ] 가: 하나'); expect(out[2]).toBe('## 요청 · 할 일'); expect(out[9]).toBe('## 완료')
+  })
+  it('toggleAndMove — 체크하면 완료 절 끝으로, 풀면 제자리', () => {
+    const done = toggleAndMove(MD, 7, true)
+    const items = parseTodo(done)
+    expect(items.find((t) => t.title === '다')?.section).toBe('완료')
+    expect(items.find((t) => t.title === '다')?.done).toBe(true)
+    const back = toggleAndMove(done, parseTodo(done).find((t) => t.title === '다')!.line, false)
+    expect(parseTodo(back).find((t) => t.title === '다')?.section).toBe('완료') // 되돌려도 자리는 그대로
+  })
+  it('완료 절이 없으면 제자리에서 체크만', () => {
+    const md = ['- [ ] 가', '- [ ] 나'].join('\n')
+    expect(toggleAndMove(md, 0, true).split('\n')[0]).toBe('- [x] 가')
+  })
+})

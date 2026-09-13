@@ -133,6 +133,8 @@ export interface TodoItem {
   title: string
   desc: string
   by: 'me' | 'bot'
+  /** 이 줄 위의 가장 가까운 `## 제목` — 없으면 ''. 화면의 섹션이 된다 (V15) */
+  section: string
 }
 
 export interface AuthState {
