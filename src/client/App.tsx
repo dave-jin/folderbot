@@ -6,6 +6,7 @@ import { AskHost, FolderPicker, Md, NotifyCenter, Onboarding, Pairing, Settings,
 import { DocPane, useDocs } from './Doc'
 import { Elapsed, Panel, type SecH } from './Panel'
 import { fmtTime, useStore } from './store'
+import { useTheme } from './theme'
 import { PermGate, usePerms } from './Perms'
 import { EFFORTS, MODELS, MODES, effortLabel, fmtK, modeLabel, modelLabel } from './consts'
 
@@ -75,6 +76,7 @@ export function App() {
   const [authed, setAuthed] = useState(() => { const h = new URLSearchParams(location.hash.slice(1)); const t = h.get('token'); if (t) { setToken(t); h.delete('token'); location.hash = h.toString(); location.reload() } return !!token() })
   useEffect(() => { const f = () => setAuthed(false); window.addEventListener('fb:authlost', f); return () => window.removeEventListener('fb:authlost', f) }, [])
   const perm = usePerms() // ⚠ 훅은 early return 앞에 — 뒤에 두면 React #310(훅 수 변동)
+  useTheme() // 저장된 테마를 부팅 즉시 적용
   if (!authed) return <div className="app"><Pairing onDone={() => location.reload()} /></div>
   if (!s.loaded) return <div className="app"><div className="empty"><FolderBot color="#e08850" size={40} mood="work" />호스트에 연결하는 중…</div></div>
   if (perm.open && perm.items) return <div className="app"><PermGate items={perm.items} refresh={perm.refresh} onDone={() => perm.setOpen(false)} /></div>
