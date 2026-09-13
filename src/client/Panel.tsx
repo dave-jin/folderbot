@@ -5,6 +5,7 @@ import { isDoneSection } from '../core/todo'
 import { ACT_COLOR, ACT_ICON, ACT_LABEL, LONG, actOf, buzz, slotOf, useSwipeCfg, type SwipeAct } from './swipe'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { RoutineSheet, askName } from './Sheets'
+import { scoreName } from '../core/search'
 import { fmtElapsed, fmtTime, useStore } from './store'
 
 export interface SecH { sessions: number; todo: number }
@@ -258,12 +259,12 @@ function Tree({ bot, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFol
   useEffect(() => { if (!ctx) return; const off = () => setCtx(null); window.addEventListener('click', off); window.addEventListener('keydown', off); return () => { window.removeEventListener('click', off); window.removeEventListener('keydown', off) } }, [ctx])
   const rows = useMemo(() => {
     const out: { n: Node; depth: number }[] = []
-    const q = filter?.toLowerCase() ?? ''
+    const q = filter?.trim() ?? ''
     const walk = (rel: string, depth: number) => {
       let list = dirs[rel] ?? []
       if (sort === 'mtime') list = [...list].sort((a, b) => (a.dir === b.dir ? b.mtime - a.mtime : a.dir ? -1 : 1))
       for (const n of list) {
-        const hit = !q || n.name.toLowerCase().includes(q)
+        const hit = !q || scoreName(q, n.name, n.rel) > 0
         if (n.dir) { if (q ? true : true) { const before = out.length; if (exp.has(n.rel) || q) { out.push({ n, depth }); walk(n.rel, depth + 1); if (q && out.length === before + 1 && !hit) out.pop() } else out.push({ n, depth }) } }
         else if (hit) out.push({ n, depth })
       }

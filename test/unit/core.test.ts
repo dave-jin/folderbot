@@ -4,6 +4,7 @@ import { parseTodo, addLine, toggleLine, formatLine, editLine, deleteLine } from
 import { transition, shouldNotify } from '../../src/core/stateMachine'
 import { authVerdict } from '../../src/core/authVerdict'
 import { toolSummary, touchedPath } from '../../src/core/chat'
+import { chosung, hitRange, isChosungQuery, rank, scoreName } from '../../src/core/search'
 
 describe('folder rules', () => {
   it('설치한 절을 다시 파싱하면 같은 규칙', () => {
@@ -168,5 +169,48 @@ describe('쓸어서 처리 — 임계와 자리', () => {
   })
   it("'없음' 을 고른 자리는 예고도 실행도 하지 않는다", () => {
     expect(actOf({ ...SWIPE_DEFAULT, rightShort: 'none' }, 'rightShort')).toBe(null)
+  })
+})
+
+/* ── 이름 찾기 (2026-09-13) — 한글이 «아예» 안 찾히던 NFD 사고 ── */
+describe('search', () => {
+  const NFD = (s: string) => s.normalize('NFD')
+
+  it('맥의 NFD 이름을 NFC 질의로 찾는다 (이 버그가 한글 검색을 통째로 죽였다)', () => {
+    expect(NFD('2026-09_트레바리-북클럽').includes('트레바리')).toBe(false) // 원인
+    expect(scoreName('트레바리', NFD('2026-09_트레바리-북클럽'))).toBeGreaterThan(0)
+  })
+
+  it('가운데 낱말로도 찾는다 — 앞머리만 되던 게 이번 수정의 핵심', () => {
+    expect(scoreName('트레바리', '2026-09_트레바리-북클럽')).toBe(60)
+    expect(scoreName('2026', '2026-09_트레바리-북클럽')).toBe(80) // 앞머리가 더 높다
+    expect(scoreName('2026-09_트레바리-북클럽', '2026-09_트레바리-북클럽')).toBe(100)
+  })
+
+  it('대소문자·경로도 본다', () => {
+    expect(scoreName('SEOUL', '2026-09-18_AI-Google-Seoul')).toBe(60)
+    expect(scoreName('projects', '트레바리', '2. Projects/트레바리')).toBe(40)
+  })
+
+  it('초성으로도 찾는다 — ㅌㄹㅂㄹ → 트레바리', () => {
+    expect(chosung('트레바리')).toBe('ㅌㄹㅂㄹ')
+    expect(scoreName('ㅌㄹㅂㄹ', NFD('2026_트레바리'))).toBe(30)
+    expect(isChosungQuery('ㅌㄹㅂㄹ')).toBe(true)
+    expect(isChosungQuery('트레')).toBe(false)
+  })
+
+  it('안 걸리면 0', () => {
+    expect(scoreName('zzzz', '트레바리')).toBe(0)
+    expect(scoreName('', '트레바리')).toBe(1) // 빈 질의는 전부 통과
+  })
+
+  it('점수순으로 줄을 세운다 — 이름 일치가 경로 일치보다 위', () => {
+    const xs = [{ name: '메모', rel: '트레바리/메모' }, { name: '트레바리', rel: '2. Projects/트레바리' }]
+    expect(rank('트레바리', xs, (x) => ({ name: x.name, path: x.rel })).map((x) => x.name)).toEqual(['트레바리', '메모'])
+  })
+
+  it('걸린 자리를 돌려준다 (굵게 칠하려고)', () => {
+    expect(hitRange('트레바리', '2026_트레바리')).toEqual([5, 9])
+    expect(hitRange('없음', '2026_트레바리')).toBe(null)
   })
 })

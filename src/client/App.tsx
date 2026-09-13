@@ -5,6 +5,7 @@ import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
 import { AskHost, FolderPicker, Md, NotifyCenter, Onboarding, Pairing, Settings, askName, useToast } from './Sheets'
 import { DocPane, useDocs } from './Doc'
 import { Elapsed, Panel, type SecH } from './Panel'
+import { norm, scoreName } from '../core/search'
 import { fmtTime, useStore } from './store'
 import { useTheme } from './theme'
 import { PermGate, usePerms } from './Perms'
@@ -348,7 +349,8 @@ function buildRows(items: ChatItem[], drill: string | null): ChatRow[] {
 }
 const BUILTIN_SLASH: SlashCmd[] = [{ name: 'compact', desc: '대화 압축 — 컨텍스트 줄이기', kind: 'cli', scope: 'cli' }, { name: 'context', desc: '컨텍스트 사용 내역', kind: 'cli', scope: 'cli' }, { name: 'clear', desc: '새 대화로 (새 세션)', kind: 'cli', scope: 'cli' }]
 interface FileNode { rel: string; dir: boolean; mtime: number }
-const fuzzy = (q: string, s: string): number => { if (!q) return 1; const t = s.toLowerCase(); if (t.includes(q)) return t.startsWith(q) ? 3 : 2; let i = 0; for (const c of t) if (c === q[i]) i++; return i === q.length ? 1 : 0 }
+// ⚠ 맥 파일 이름은 NFD 로 저장된다 — 비교 전에 양쪽을 NFC 로 맞추지 않으면 한글이 «아예» 안 걸린다(core/search 머리말)
+const fuzzy = (q: string, s: string): number => { if (!q) return 1; const t = norm(s); const nq = norm(q); if (t.includes(nq)) return t.startsWith(nq) ? 3 : 2; let i = 0; for (const c of t) if (c === nq[i]) i++; return i === nq.length ? 1 : 0 }
 
 function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attachReq, onAttached, mentionReq, onMentioned, focusReq, onSession, onFile, docBadge, docTabs, docOn, onDocToggle, say, refreshAll, collapsed, onUncollapse, phone, onBack, onPanel, newSession, filesTick }: { bot: Bot; sessions: SessionInfo[]; cur?: SessionInfo; items: ChatItem[]; pending: PermissionRequest[]; prefill: string; onPrefilled: () => void; attachReq: Att[]; onAttached: () => void; mentionReq: string[]; onMentioned: () => void; focusReq: number; onSession: (sid: string) => void; onFile: (rel: string, pin?: boolean) => void; docBadge: number; docTabs: string[]; docOn: boolean; onDocToggle: () => void; say: (m: string) => void; refreshAll: () => Promise<void>; collapsed: boolean; onUncollapse: () => void; phone: boolean; onBack: () => void; onPanel: () => void; newSession: () => Promise<void>; filesTick?: number }) {
   const { s } = useStore()
@@ -553,7 +555,7 @@ function FilePickModal({ bot, onClose, onPick }: { bot: Bot; onClose: () => void
   const flat: { rel: string; mtime: number }[] = []
   const walk = (n: typeof tree) => { for (const x of n) { if (!x.dir) flat.push({ rel: x.rel, mtime: x.mtime }); if (x.children) walk(x.children as typeof tree) } }
   walk(tree)
-  const list = flat.filter((f) => !q || f.rel.toLowerCase().includes(q.toLowerCase())).sort((a, b) => b.mtime - a.mtime).slice(0, 200)
+  const list = flat.filter((f) => scoreName(q, f.rel.split('/').pop() ?? f.rel, f.rel) > 0).sort((a, b) => b.mtime - a.mtime).slice(0, 200)
   return <>
     <div className="backdrop" onClick={onClose} />
     <div className="modal" style={{ width: 'min(560px,calc(100% - 24px))' }}>

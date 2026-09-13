@@ -37,6 +37,34 @@ export function tree(base: string, depth = 2, max = 400): TreeNode[] {
   return walk(base, depth)
 }
 
+/**
+ * 폴더만 평평하게 — «폴더 찾기» 가 쓰는 목록.
+ * 🔴 종전에는 `tree(base, 4)` 를 썼는데 그 함수는 **파일까지 세면서 400개에서 끊는다**.
+ * 볼트 앞쪽 400개만 색인되어 뒤쪽 폴더는 «검색이 아예 안 되는» 상태였다(2026-09-13 Dave 보고).
+ * 여기서는 파일을 세지 않으므로 같은 상한으로 훨씬 깊고 넓게 닿는다.
+ */
+export function allDirs(base: string, depth = 6, max = 4000): TreeNode[] {
+  const out: TreeNode[] = []
+  const walk = (dir: string, rel: string, d: number): void => {
+    if (d <= 0 || out.length >= max) return
+    let names: string[] = []
+    try { names = readdirSync(dir) } catch { return }
+    for (const name of names) {
+      if (out.length >= max) return
+      if (SKIP.has(name) || name.startsWith('.')) continue
+      if (/\.(app|key|numbers|pages|bundle|framework)$/i.test(name)) continue
+      const abs = join(dir, name)
+      let st; try { st = statSync(abs) } catch { continue }
+      if (!st.isDirectory()) continue
+      const r = rel ? `${rel}/${name}` : name
+      out.push({ name, rel: r, dir: true, mtime: st.mtimeMs })
+      walk(abs, r, d - 1)
+    }
+  }
+  walk(base, '', depth)
+  return out
+}
+
 /** 한 단계만 읽는다 — 트리는 펼칠 때마다 이걸 부른다(게으른 로드). 폴더 먼저 · 한글 이름순 · 숨김·.git 제외 · 번들(.app/.key)은 파일 취급 */
 export function listDir(base: string, rel: string): TreeNode[] {
   const dir = rel ? join(base, rel) : base

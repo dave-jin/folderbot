@@ -15,6 +15,8 @@ writeFileSync(join(root, '3. Area/재무_CFO/CLAUDE.md'), '# CFO\n')
 writeFileSync(join(root, '2. Projects/2026-09_강의-창업스쿨-2기/CLAUDE.md'), '# 강의\n')
 writeFileSync(join(root, '1. Inbox/예시랩_자문자료.txt'), 'x')
 writeFileSync(join(root, '3. Area/제품_Rondo', '_MAP_전체구조.md'.normalize('NFD')), '# map\n') // 맥 파일명처럼 NFD
+// 맥 파일명처럼 NFD 인, 깊고 뒤쪽에 있는 폴더 — «가운데 낱말로 검색» 회귀 방어 (2026-09-13)
+mkdirSync(join(root, '5. Archive', '2025-04_트레바리-북클럽'.normalize('NFD'), '01_기획'), { recursive: true })
 mkdirSync(join(root, '.projectbot'), { recursive: true }); writeFileSync(join(root, '.projectbot/marker.txt'), 'legacy')
 const PORT = 7399
 const env = { ...process.env, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg }
@@ -141,6 +143,11 @@ try {
   if (deep.section !== '4. Resources' || deep.name !== '02_링크드인' || !existsSync(join(root, deep.rel, 'CLAUDE.md'))) fail('deep start ' + JSON.stringify(deep))
   const nf2 = await api('/folders', { section: '4. Resources/2026_브랜딩-DAVE', name: '03_뉴스레터', start: true }); if (nf2.rel !== '4. Resources/2026_브랜딩-DAVE/03_뉴스레터' || !nf2.bot) fail('folder anywhere ' + JSON.stringify(nf2))
   const vls = await api('/bots/orch/ls?dir='); const res4 = vls.find((n) => n.name === '4. Resources'); if (!res4 || res4.role !== 'reference' || (vls.find((n) => n.name === '2. Projects') ?? {}).role !== 'active') fail('ls role ' + JSON.stringify(vls))
+  const dirs = await api('/bots/orch/dirs?depth=6')
+  if (!dirs.every((n) => n.dir)) fail('dirs: 파일이 섞였다')
+  if (!dirs.find((n) => n.rel.normalize('NFC') === '5. Archive/2025-04_트레바리-북클럽')) fail('dirs: 깊은 NFD 폴더 없음')
+  if (!dirs.find((n) => n.rel.normalize('NFC') === '5. Archive/2025-04_트레바리-북클럽/01_기획')) fail('dirs: 4단계 아래 없음')
+  ok('dirs index · 폴더만 · 깊이 · NFD')
   const dls = await api(`/bots/orch/ls?dir=${encodeURIComponent('4. Resources/2026_브랜딩-DAVE')}`); if (!dls.find((n) => n.name === '02_링크드인' && n.botId === deep.id && n.harness === true)) fail('ls botId/harness ' + JSON.stringify(dls)); ok('start anywhere · folder anywhere · ls annotations')
   // 이름 — 메인/원격 · 호스트 이름 설정
   let st2 = await api('/state'); if (!st2.hostName || !st2.device?.main) fail('names default ' + JSON.stringify({ h: st2.hostName, d: st2.device }))
@@ -257,6 +264,19 @@ try {
         const top = await pg.$$eval('.pk [data-rel]', (r) => r.map((x) => x.getAttribute('data-rel'))); if (!top.includes('4. Resources') || !top.includes('3. Area/제품_Rondo')) fail('ui picker tree: ' + top.join(','))
         await pg.click('.pk [data-rel="4. Resources"] .cv'); await wait(500); const top2 = await pg.$$eval('.pk [data-rel]', (r) => r.map((x) => x.getAttribute('data-rel'))); if (!top2.includes('4. Resources/2026_브랜딩-DAVE')) fail('ui picker expand: ' + top2.join(','))
         const ft = await pg.evaluate(() => { const f = document.querySelector('.pk .modal-f'); return f.getBoundingClientRect().height }); if (ft > 70) fail('ui picker footer wraps ' + ft)
+        // 🔴 폴더 찾기 — 가운데 낱말·NFD·초성 (2026-09-13 Dave: "'트레바리' 같은 경우에는 아예 검색이 안 돼요")
+        await pg.fill('.pk .search input', '트레바리'); await wait(700)
+        const hit = await pg.$$eval('.pk [data-rel]', (r) => r.map((x) => x.getAttribute('data-rel').normalize('NFC')))
+        if (!hit.includes('5. Archive/2025-04_트레바리-북클럽')) fail('ui picker 가운데 낱말 검색: ' + hit.join(','))
+        if (!(await pg.$('.pk .hit'))) fail('ui picker 걸린 자리 강조 없음')
+        const hl = await pg.evaluate(() => { const h = document.querySelector('.pk .hit'); const row = h.closest('.trow'); return { hit: getComputedStyle(h).color, row: getComputedStyle(row).color, txt: h.textContent } })
+        if (hl.txt.normalize('NFC') !== '트레바리' || hl.hit === hl.row) fail('ui picker 강조 색/범위: ' + JSON.stringify(hl))
+        await pg.fill('.pk .search input', 'ㅌㄹㅂㄹ'); await wait(700)
+        const cho = await pg.$$eval('.pk [data-rel]', (r) => r.map((x) => x.getAttribute('data-rel').normalize('NFC')))
+        if (!cho.includes('5. Archive/2025-04_트레바리-북클럽')) fail('ui picker 초성 검색: ' + cho.join(','))
+        await pg.fill('.pk .search input', '트레바리'); await wait(500); await pg.screenshot({ path: 'test/tmp/desktop-picker-search.png' })
+        await pg.fill('.pk .search input', ''); await wait(400)
+
         await pg.screenshot({ path: 'test/tmp/desktop-picker.png' }); await pg.keyboard.press('Escape'); await wait(200); if (await pg.$('.pk')) await pg.click('.pk .modal-h .ib'); await wait(200)
         // 트리 우클릭 — 폴더면 «새 봇 시작» 항목이 있다
         await pg.click('.panel .secb button.trow.dir', { button: 'right' }); await wait(200); const cm = await pg.textContent('.menu.ctx'); if (!/새 봇 시작|에이전트 시작|봇 열기/.test(cm ?? '')) fail('ui tree ctx: ' + cm); await pg.keyboard.press('Escape'); await wait(150)

@@ -5,6 +5,7 @@ import { api, setToken, subscribePush } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { useTheme, type Theme } from './theme'
 import { ACT_ICON, ACT_LABEL, SWIPE_DEFAULT, useSwipeCfg, type SwipeAct, type SwipeSlot } from './swipe'
+import { hitRange, rank } from '../core/search'
 import { fmtTime, useStore } from './store'
 import { EFFORTS, MODELS } from './consts'
 
@@ -12,6 +13,13 @@ marked.setOptions({ gfm: true, breaks: true })
 export function Md({ text, streaming }: { text: string; streaming?: boolean }) {
   const html = useMemo(() => marked.parse(text) as string, [text])
   return <div className={`md ${streaming ? 'streaming' : ''}`} dangerouslySetInnerHTML={{ __html: html }} />
+}
+
+/** 걸린 자리를 굵게 — 왜 이 폴더가 나왔는지 눈으로 보이게 (자리 판정은 core/search) */
+function Hit({ s, q }: { s: string; q: string }) {
+  const r = hitRange(q, s); if (!r) return <>{s.normalize('NFC')}</>
+  const t = s.normalize('NFC')
+  return <>{t.slice(0, r[0])}<b className="hit">{t.slice(r[0], r[1])}</b>{t.slice(r[1])}</>
 }
 
 /* ── 폴더 선택 (시작) — PARA 를 Finder 처럼 접었다 펴는 트리. 어디든 시작할 수 있다 ── */
@@ -31,14 +39,17 @@ export function FolderPicker({ onClose, onStarted }: { onClose: () => void; onSt
   const listRef = useRef<HTMLDivElement>(null)
   const load = async (rel: string) => { try { const l = await api<PNode[]>(`/bots/orch/ls?dir=${encodeURIComponent(rel)}`); setDirs((d) => ({ ...d, [rel]: l.filter((n) => n.dir) })) } catch { /* */ } }
   useEffect(() => { for (const d of exp) if (!dirs[d]) void load(d) }, [exp])
-  useEffect(() => { if (q && !flat) void api<PNode[]>('/bots/orch/files?depth=4').then((t) => { const out: PNode[] = []; const walk = (n: (PNode & { children?: unknown[] })[]) => { for (const x of n) { if (x.dir) { out.push(x); if (x.children) walk(x.children as never) } } }; walk(t as never); setFlat(out) }).catch(() => setFlat([])) }, [q])
+  // 🔴 색인은 «폴더만» 받는다 — 종전의 files?depth=4 는 파일까지 세며 400개에서 끊겨
+  //    볼트 뒤쪽 폴더가 검색에 아예 안 잡혔다 (2026-09-13 Dave 보고)
+  useEffect(() => { if (q && !flat) void api<PNode[]>('/bots/orch/dirs?depth=6').then(setFlat).catch(() => setFlat([])) }, [q])
   const byRel = useMemo(() => { const m = new Map<string, PNode>(); for (const l of Object.values(dirs)) for (const n of l) m.set(n.rel, n); for (const n of flat ?? []) if (!m.has(n.rel)) m.set(n.rel, n); return m }, [dirs, flat])
   const botOfRel = (rel: string) => s.bots.find((b) => b.rel === rel)
   const topRole = (rel: string) => byRel.get(rel.split('/')[0])?.role
   // 보이는 행 — 검색 중이면 평평하게, 아니면 트리
   const rows = useMemo(() => {
     const out: { n: PNode; depth: number; kind: 'dir' | 'new' }[] = []
-    if (q.trim()) { const qq = q.trim().toLowerCase(); for (const n of flat ?? []) if (n.name.toLowerCase().includes(qq) || n.rel.toLowerCase().includes(qq)) out.push({ n, depth: 0, kind: 'dir' }); return out.slice(0, 200) }
+    // 찾는 중 — 평평하게. 판정은 core/search 한 곳에서(NFC 맞춤 · 가운데 일치 · 초성)
+    if (q.trim()) return rank(q, flat ?? [], (n) => ({ name: n.name, path: n.rel }), 200).map((n) => ({ n, depth: 0, kind: 'dir' as const }))
     const walk = (rel: string, depth: number) => {
       const list = dirs[rel] ?? []
       if (rel && exp.has(rel)) out.push({ n: { name: '새 폴더 만들기', rel: `${rel}${NEW_MARK}`, dir: true, mtime: 0 }, depth, kind: 'new' })
@@ -91,7 +102,7 @@ export function FolderPicker({ onClose, onStarted }: { onClose: () => void; onSt
             : <button key={n.rel} className="trow" style={{ ['--pad' as string]: `${18 + depth * 16 + 19}px`, color: 'var(--t2)' }} onClick={() => { setNewIn(n.rel.replace(NEW_MARK, '')); setNewName('') }}><Icon n="fplus" size={13} color="var(--t3)" /><span className="n">새 폴더 만들기</span></button>)
           : <button key={n.rel} data-rel={n.rel} className={`trow dir ${sel === n.rel ? 'on' : ''}`} style={{ ['--pad' as string]: `${18 + depth * 16}px`, minHeight: 32, opacity: topRole(n.rel) === 'archive' ? .7 : 1 }} onClick={() => setSel(n.rel)} onDoubleClick={() => (n.botId || botOfRel(n.rel) ? onStarted(botOfRel(n.rel)!) : void start(n.rel))} title={n.rel}>
             <span className="cv" onClick={(e) => { e.stopPropagation(); toggle(n.rel) }} style={{ width: 14, padding: 4, margin: -4 }}>{q ? null : <Icon n={exp.has(n.rel) ? 'chevd' : 'chev'} size={10} />}</span><Icon n="folder" size={13} color="var(--t2)" />
-            <span className="n" style={{ color: sel === n.rel ? 'var(--w)' : undefined }}><Mid s={q ? n.rel : n.name} tail={q ? 12 : 8} /></span>
+            <span className="n" style={{ color: sel === n.rel ? 'var(--w)' : undefined }}>{q ? <span className="hitn"><span className="nm"><Hit s={n.name} q={q} /></span>{n.rel.includes('/') ? <span className="pth"><Mid s={n.rel.slice(0, n.rel.lastIndexOf('/'))} tail={10} /></span> : null}</span> : <Mid s={n.name} tail={8} />}</span>
             <span style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 'none' }}>
               {!n.rel.includes('/') && n.role ? <span className="rbg" style={{ color: ROLE_T[n.role][1] }}>{ROLE_T[n.role][0]}</span> : null}
               {n.botId || botOfRel(n.rel) ? <span className="rbg" style={{ color: 'var(--run)' }}>봇 있음 · 열기</span> : n.harness ? <span className="b" style={{ fontSize: 11, color: 'var(--t3)', display: 'flex', alignItems: 'center', gap: 4 }}><Icon n="check" size={11} color="var(--done)" />하네스</span> : n.rel.includes('/') ? <span style={{ fontSize: 11, color: 'var(--t3)' }}>하네스 없음 · 시작하면 깔아 줌</span> : null}
