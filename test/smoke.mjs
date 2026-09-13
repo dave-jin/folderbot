@@ -450,7 +450,9 @@ try {
           const opened = await pg.evaluate((r) => { const hit = [...document.querySelectorAll('.trow')].find((x) => (x.textContent ?? '').includes(r)); if (hit) { hit.click(); return true } return false }, rel)
           if (!opened) fail('표: 트리에 새 파일이 안 나타난다')
           await pg.waitForSelector('.dbody', { timeout: 6000 }); await wait(600)
-          await pg.dblclick('.dbody')
+          // 모드 전환은 눈·연필 두 아이콘뿐 — 「편집 중」 을 크게 알리지 않는다 (「A · 문서처럼」)
+          if (!(await pg.$('.dtb .r .ib'))) fail('문서 도구: 연필(편집) 아이콘이 없다')
+          await pg.click('.dtb .r .ib')
           await pg.waitForSelector('.mded .cm-content', { timeout: 8000 }); await wait(700)
           const shape = await pg.evaluate(() => {
             const t = document.querySelector('.mded .lp-tbl')
@@ -483,6 +485,11 @@ try {
           if (raw.tbl) fail('표: ⋯ 를 눌러도 원문으로 안 풀린다')
           if (!raw.text.includes('| 가 | 19 |')) fail('표: 원문에 파이프가 안 보인다 ' + JSON.stringify(raw.text.slice(0, 120)))
           ok('표 — 진짜 표로 읽고, 칸만 고치고, ⋯ 로 원문')
+          // 눈 아이콘으로 읽기로 돌아온다 — 「완료」 단추가 아니라 같은 자리의 같은 단추다
+          await pg.click('.dtb .r .ib'); await wait(1200)
+          if (await pg.$('.mded')) fail('문서 도구: 눈을 눌러도 읽기로 안 돌아온다')
+          if (!(await pg.$('.dbody .md table'))) fail('읽기: 표가 안 그려졌다')
+          ok('눈·연필 두 아이콘으로만 읽기↔편집')
           // 🔴 **편집 중에 다른 문서로 옮겨도 그 글이 새 문서를 덮지 않는다** (2026-09-13 실사고 — todo.md 가 표로 덮였다)
           const todoAbs = join(root, '3. Area/제품_Rondo', 'todo.md')
           const todo0 = readFileSync(todoAbs, 'utf8')
