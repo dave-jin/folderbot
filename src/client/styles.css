@@ -164,9 +164,21 @@ b,strong { color:var(--w); font-weight:600 }
 .todo .ein { width:100%; background:var(--bg); border:1px solid var(--t3); border-radius:6px; padding:6px 9px; font-size:13px; color:var(--w); outline:0; line-height:1.4 }
 .todo.edit { background:var(--hover); padding-bottom:8px } .todo .eh { display:flex; gap:10px; font-size:11px; color:var(--t3); margin-top:5px } .todo .eh .sp { flex:1 }
 .sech .tools:has(.ib.mdb) { opacity:1 } .sech .tools .ib:not(.mdb) { opacity:0 } .sech:hover .tools .ib { opacity:1 }
+/* 폰 — 쓸어서 처리 (V16). 행은 껍데기 안에서 좌우로 움직이고, 뒤에서 색·아이콘이 무엇이 일어날지 미리 말한다 */
+.swwrap { position:relative; overflow:hidden; background:var(--bg); touch-action:pan-y }
+.swrow { position:relative; transition:transform .18s cubic-bezier(.2,.8,.2,1); background:var(--bg); will-change:transform }
+.swwrap.armed .swrow { box-shadow:0 0 22px rgba(0,0,0,.5) }
+.swhint { position:absolute; top:0; bottom:0; display:flex; align-items:center; gap:10px; padding:0 18px; pointer-events:none; color:#fff }
+.swhint.l { left:0; flex-direction:row } .swhint.r { right:0; flex-direction:row-reverse }
+.swhint .cir { width:34px; height:34px; border-radius:50%; flex:none; display:inline-flex; align-items:center; justify-content:center; border:1.5px solid rgba(255,255,255,.8); color:rgba(255,255,255,.92) }
+.swhint .cir.on { background:#fff; border-color:#fff } .swhint b { font-size:13px; font-weight:500; white-space:nowrap }
+.tsheet { position:fixed; left:0; right:0; bottom:0; z-index:90; background:var(--box); border-radius:18px 18px 0 0; padding:10px 10px calc(var(--sab) + 22px); box-shadow:0 -12px 34px rgba(0,0,0,.5); display:flex; flex-direction:column }
+.tsheet .grip { width:36px; height:4px; border-radius:2px; background:var(--line2); margin:0 auto 10px }
+.tsheet .ti { font-size:12.5px; color:var(--t3); padding:0 14px 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.tsheet button { display:flex; align-items:center; gap:14px; height:50px; padding:0 14px; font-size:16px; color:var(--w) } .tsheet button:active { background:var(--sel) }
 .sech .tools .ib.mdb { display:inline-flex; align-items:center; justify-content:center; gap:4px; width:22px; height:20px; border:1px solid var(--line2); border-radius:5px; font-size:10.5px; color:var(--t2) } .sech .tools .ib.mdb span { display:none } .sech .tools .ib.mdb:hover { color:var(--w); background:var(--hover) }
 .tadd { display:flex; align-items:center; gap:8px; padding:4px 16px; font-size:12.5px; color:var(--t3) } .tadd input { flex:1; background:none; border:0; outline:0; color:var(--t) } .tadd input::placeholder { color:var(--t3) }
-.seg { display:inline-flex; gap:2px; padding:2px; background:var(--box); border:1px solid var(--line); border-radius:8px } .seg button { padding:4px 10px; border-radius:6px; font-size:12px; color:var(--t2); white-space:nowrap } .seg button:hover { color:var(--t) } .seg button.on { background:var(--sel); color:var(--w) }
+.seg { display:inline-flex; gap:2px; padding:2px; background:var(--box); border:1px solid var(--line); border-radius:8px } .seg button { padding:4px 10px; border-radius:6px; font-size:12px; color:var(--t2); white-space:nowrap } .seg button:hover { color:var(--t) } .seg button.on { background:var(--sel); color:var(--w) } .seg.wrap { flex-wrap:wrap; justify-content:flex-end; max-width:330px } .seg button { display:inline-flex; align-items:center; gap:4px } .kv.swk { align-items:flex-start; min-height:auto; padding:6px 0 } .kv.swk .n small { color:var(--t3); font-size:11px; margin-left:4px }
 .kv { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--t2); padding:4px 16px; width:100%; min-height:26px } .kv:hover { color:var(--t) } .kv .n { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
 .pfoot { margin-top:auto; padding:8px 14px; font-size:12px; color:var(--t3); display:flex; gap:6px; align-items:center; border-top:1px solid var(--line); flex:none; position:relative; width:100% } .pfoot:hover { color:var(--t2) }
 
@@ -292,7 +304,7 @@ b,strong { color:var(--w); font-weight:600 }
   .doc .tabs { display:none } .dtb { padding:0 18px; height:38px; font-size:13px }
   .dbody { padding:16px 18px } .dbody .md { font-size:16px; line-height:1.7 }
   .dfoot { display:flex; flex:none; gap:10px; align-items:center; padding:8px 16px calc(var(--sab) + 10px) } .dfoot .talk { height:44px; padding:0 18px; border-radius:22px; background:var(--box); border:1px solid var(--hair); display:inline-flex; align-items:center; font-size:14px; color:var(--t); margin-left:auto }
-  .todo .tools { visibility:visible; background:linear-gradient(90deg, var(--fade0), var(--bg) 30%) } .todo .tt { font-size:16px } .todo .dsc { font-size:13.5px } .todo .ein { font-size:16px } .todo { padding:8px 84px 8px 18px } .pk .fl .hint { display:none }
+  .todo .tools { display:none } .todo .mk { margin-top:4px } .todo .tt { font-size:16px } .todo .dsc { font-size:13.5px } .todo .ein { font-size:16px } .todo { padding:8px 84px 8px 18px } .pk .fl .hint { display:none }
   .modal, .sheet { left:8px; right:8px; top:calc(var(--sat) + 8px); bottom:calc(var(--sab) + 8px); width:auto; height:auto; max-height:none; transform:none; border-radius:16px }
   .modal-b { flex:1 } .modal-h { padding-top:18px }
   .modal.ask { top:calc(var(--sat) + 40px); bottom:auto; height:auto; left:12px; right:12px }

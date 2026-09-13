@@ -149,3 +149,24 @@ describe('todo 2.0 — 절 · 이동 · 완료', () => {
     expect(toggleAndMove(md, 0, true).split('\n')[0]).toBe('- [x] 가')
   })
 })
+
+import { SWIPE_DEFAULT, actOf, slotOf } from '../../src/client/swipe'
+describe('쓸어서 처리 — 임계와 자리', () => {
+  it('25% 미만이면 아무 자리도 아니다(놓으면 제자리)', () => {
+    expect(slotOf(30, 300)).toBe(null); expect(slotOf(-30, 300)).toBe(null)
+  })
+  it('짧게 25~45% · 길게 45%+ · 좌우 구분', () => {
+    expect(slotOf(90, 300)).toBe('rightShort'); expect(slotOf(150, 300)).toBe('rightLong')
+    expect(slotOf(-90, 300)).toBe('leftShort'); expect(slotOf(-150, 300)).toBe('leftLong')
+  })
+  it('기본값 — → 짧게 편집 · → 길게 완료 · ← 짧게 메뉴 · ← 길게 삭제', () => {
+    expect(actOf(SWIPE_DEFAULT, slotOf(90, 300))).toBe('edit')
+    expect(actOf(SWIPE_DEFAULT, slotOf(150, 300))).toBe('done')
+    expect(actOf(SWIPE_DEFAULT, slotOf(-90, 300))).toBe('menu')
+    expect(actOf(SWIPE_DEFAULT, slotOf(-150, 300))).toBe('delete')
+    expect(actOf(SWIPE_DEFAULT, null)).toBe(null)
+  })
+  it("'없음' 을 고른 자리는 예고도 실행도 하지 않는다", () => {
+    expect(actOf({ ...SWIPE_DEFAULT, rightShort: 'none' }, 'rightShort')).toBe(null)
+  })
+})

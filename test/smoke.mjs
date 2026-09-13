@@ -330,6 +330,28 @@ try {
         const ov = await pg.evaluate(() => { const m = document.querySelector('.mscroll'); return { sw: m.scrollWidth, cw: m.clientWidth, dw: document.documentElement.scrollWidth, iw: innerWidth } }); if (ov.sw > ov.cw || ov.dw > ov.iw) fail('phone: horizontal overflow ' + JSON.stringify(ov))
         await pg.click('.mtop .rb'); await wait(300); const mr = await pg.evaluate(() => { const r = document.querySelector('.modal').getBoundingClientRect(); return { top: r.top, bottom: r.bottom, h: innerHeight } }); if (!(mr.top >= 0 && mr.bottom <= mr.h)) fail('phone: settings modal out of viewport ' + JSON.stringify(mr)); await pg.screenshot({ path: 'test/tmp/phone-settings.png' }); await pg.click('.modal .modal-h .ib'); await wait(200)
         await pg.click('.mrow'); await wait(300); await pg.click('.chat-hdr .rb:last-child'); await wait(300); if (!(await pg.$('.rpwrap .rb'))) fail('phone: panel page'); await pg.screenshot({ path: 'test/tmp/phone-panel.png' })
+        // 쓸어서 처리 — 행 도구는 없고, 오른쪽으로 길게 쓸면 완료된다 (터치 흉내)
+        {
+          if (!(await pg.$('.panel .swwrap'))) { // 오케스트레이터는 인박스를 쓴다 — 할 일이 있는 봇으로 옮긴다
+            await pg.click('.rpwrap .rb'); await wait(250); await pg.click('.chat-hdr .rb'); await wait(350)
+            for (const r of await pg.$$('.mrow')) { if (/제품_Rondo/.test((await r.textContent()) ?? '')) { await r.click(); break } }
+            await wait(400); await pg.click('.chat-hdr .rb:last-child'); await wait(450)
+          }
+          await pg.waitForSelector('.panel .swwrap .swrow', { timeout: 5000 })
+          const box = await pg.$eval('.panel .swwrap .swrow', (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height } })
+          if (await pg.$('.panel .todo .tools')) fail('phone: row tools should be replaced by swipe')
+          const title = await pg.$eval('.panel .swwrap .tt', (e) => e.textContent)
+          const cy = box.y + box.h / 2
+          await pg.dispatchEvent('.panel .swwrap .swrow', 'pointerdown', { pointerId: 7, pointerType: 'touch', clientX: box.x + 20, clientY: cy, buttons: 1 })
+          for (const f of [0.1, 0.3, 0.55, 0.6]) await pg.dispatchEvent('.panel .swwrap .swrow', 'pointermove', { pointerId: 7, pointerType: 'touch', clientX: box.x + 20 + box.w * f, clientY: cy, buttons: 1 })
+          await wait(120); const hint = await pg.textContent('.panel .swwrap .swhint'); if (!/완료/.test(hint ?? '')) fail('phone: swipe hint should say 완료 · ' + hint)
+          await pg.dispatchEvent('.panel .swwrap .swrow', 'pointerup', { pointerId: 7, pointerType: 'touch', clientX: box.x + 20 + box.w * 0.6, clientY: cy })
+          await wait(700)
+          const done = await pg.$$eval('.panel .todo.done .tt', (r) => r.map((e) => e.textContent))
+          const items = await pg.textContent('.panel')
+          if (!(done.includes(title) || /완료/.test(items ?? ''))) fail('phone: swipe right-long should complete · ' + JSON.stringify({ title, done }))
+          await pg.screenshot({ path: 'test/tmp/phone-swipe.png' })
+        }
         await pg.click('.panel .secb button.trow:not(.dir)'); await wait(600); if (!(await pg.$('.docwrap .dfoot'))) fail('phone: doc page'); await pg.screenshot({ path: 'test/tmp/phone-doc.png' })
         if (errs.length) fail('page errors: ' + errs.join(' | '))
       }

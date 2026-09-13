@@ -4,6 +4,7 @@ import type { Bot, Candidate, NotifyEvent, RoutineDef } from '../core/types'
 import { api, setToken, subscribePush } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { useTheme, type Theme } from './theme'
+import { ACT_ICON, ACT_LABEL, SWIPE_DEFAULT, useSwipeCfg, type SwipeAct, type SwipeSlot } from './swipe'
 import { fmtTime, useStore } from './store'
 import { EFFORTS, MODELS } from './consts'
 
@@ -213,6 +214,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           {isLocal ? <div className="kv"><span className="n">새 기기 연결</span>{pair ? <span className="mono" style={{ fontSize: 22, letterSpacing: '.18em', color: 'var(--strong)' }}>{pair.code}</span> : null}<button className="btn" onClick={async () => setPair(await api('/pairing', { body: {} }))}>페어링 코드</button></div> : <div className="kv" style={{ color: 'var(--faint)' }}>새 기기 연결은 미니의 화면(127.0.0.1)이나 터미널(p + Enter)에서</div>}</div>
         {(window as unknown as { folderbotDesktop?: { perms?: unknown } }).folderbotDesktop?.perms ? <div><div className="secl" style={{ padding: '8px 0 4px' }}>macOS 권한</div><div className="kv"><span className="n">전체 디스크 접근 · 알림</span><button className="btn" onClick={() => { onClose(); window.dispatchEvent(new Event('fb:perm-gate')) }}>권한 다시 확인</button></div></div> : null}
         <div><div className="secl" style={{ padding: '8px 0 4px' }}>화면</div><div className="kv"><span className="n">테마</span><ThemePick /></div></div>
+        <SwipeBox />
         <div><div className="secl" style={{ padding: '8px 0 4px' }}>알림</div><div className="kv"><span className="n">이 기기 푸시</span><button className="btn" onClick={async () => setPushOn(await subscribePush(s.vapidPublic, navigator.userAgent.slice(0, 30)))}>{pushOn === true ? '켜짐' : pushOn === false ? '실패 · HTTPS + 홈 화면 설치 필요' : '켜기'}</button></div><div className="kv" style={{ color: 'var(--faint)' }}>조용한 시간 23:00–07:00 (확인해 주세요만 통과). 폰 푸시는 Tailscale serve 로 HTTPS 를 붙이고 홈 화면에 설치해야 동작해요.</div></div>
         <div><div className="secl" style={{ padding: '8px 0 4px' }}>연결</div><button className="btn" onClick={() => { setToken(''); location.reload() }}>이 기기 로그아웃</button></div>
       </div>
@@ -243,6 +245,21 @@ export function AskHost() {
       <div className="modal-f"><span className="sp" /><button className="btn" onClick={() => done(null)}>취소 (⎋)</button><button className="btn on" onClick={() => done(v.trim() || null)}>확인 (⏎)</button></div>
     </div>
   </>
+}
+
+/** 폰 «쓸어서 처리» — 네 자리에 각각 동작을 고른다 (V16) */
+function SwipeBox() {
+  const [cfg, save] = useSwipeCfg()
+  const slots: [SwipeSlot, string, string][] = [['rightShort', '오른쪽으로 짧게', '→ 25~45%'], ['rightLong', '오른쪽으로 길게', '→ 45% 이상'], ['leftShort', '왼쪽으로 짧게', '← 25~45%'], ['leftLong', '왼쪽으로 길게', '← 45% 이상']]
+  const acts: SwipeAct[] = ['edit', 'done', 'menu', 'delete', 'delegate', 'expand', 'none']
+  return <div><div className="secl" style={{ padding: '8px 0 4px' }}>할 일 — 폰에서 쓸어서 처리</div>
+    {slots.map(([k, l, sub]) => <div className="kv swk" key={k}>
+      <span className="n">{l} <small>{sub}</small></span>
+      <span className="seg wrap">{acts.map((a) => <button key={a} className={cfg[k] === a ? 'on' : ''} onClick={() => save({ ...cfg, [k]: a })} title={ACT_LABEL[a]}><Icon n={ACT_ICON[a] as 'edit'} size={11} />{ACT_LABEL[a]}</button>)}</span>
+    </div>)}
+    <div className="kv"><span className="n">진동</span><span className="seg">{[[true, '켬'], [false, '끔']].map(([v, l]) => <button key={String(v)} className={cfg.haptics === v ? 'on' : ''} onClick={() => save({ ...cfg, haptics: v as boolean })}>{l as string}</button>)}</span></div>
+    <div className="kv"><span className="n" style={{ color: 'var(--t3)' }}>데스크톱은 마우스를 올리면 나오는 도구를 씁니다</span><button className="btn" onClick={() => save(SWIPE_DEFAULT)}>기본값</button></div>
+  </div>
 }
 
 /** 테마 고르기 — 시스템 · 라이트 · 다크 */

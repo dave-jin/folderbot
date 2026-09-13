@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Bot, SessionInfo, TodoItem } from '../core/types'
 import { api } from './api'
 import { isDoneSection } from '../core/todo'
+import { ACT_COLOR, ACT_ICON, ACT_LABEL, LONG, actOf, buzz, slotOf, useSwipeCfg, type SwipeAct } from './swipe'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { RoutineSheet, askName } from './Sheets'
 import { fmtElapsed, fmtTime, useStore } from './store'
@@ -72,6 +73,9 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
   const [openRows, setOpenRows] = useState<Set<number>>(() => new Set())
   const [openSecs, setOpenSecs] = useState<Record<string, boolean>>({})
   const [drag, setDrag] = useState<number | null>(null); const [over, setOver] = useState<number | null>(null)
+  const [cfg] = useSwipeCfg()
+  const [sw, setSw] = useState<{ line: number; dx: number; w: number } | null>(null); const swRef = useRef<{ line: number; x0: number; y0: number; w: number; on: boolean; last: SwipeAct | null } | null>(null)
+  const [sheet, setSheet] = useState<TodoItem | null>(null)
   const [undo, setUndo] = useState<{ title: string; desc: string } | null>(null); const undoT = useRef<number | undefined>(undefined)
 
   // 절 순서는 파일 순서 그대로. 절이 없는 파일이면 빈 이름 하나로 모인다
@@ -113,6 +117,49 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
   }
   const toggleRow = (t: TodoItem) => { if (!t.desc) return; setOpenRows((o) => { const n = new Set(o); if (n.has(t.line)) n.delete(t.line); else n.add(t.line); return n }) }
 
+  /** 쓸어서 처리 — 폰에서만. 처음 움직임이 세로면 목록 스크롤에 양보하고 다시는 가로로 보지 않는다 */
+  const run = async (t: TodoItem, act: SwipeAct) => {
+    if (act === 'edit') startEdit(t)
+    else if (act === 'done') await toggle(t)
+    else if (act === 'delete') await remove(t)
+    else if (act === 'delegate') onDelegate(t)
+    else if (act === 'expand') toggleRow(t)
+    else if (act === 'menu') setSheet(t)
+  }
+  const swipeOn = (t: TodoItem) => (!phone ? {} : {
+    onPointerDown: (e: React.PointerEvent) => {
+      if (e.pointerType === 'mouse' || edit === t.line) return
+      swRef.current = { line: t.line, x0: e.clientX, y0: e.clientY, w: (e.currentTarget as HTMLElement).getBoundingClientRect().width, on: false, last: null }
+    },
+    onPointerMove: (e: React.PointerEvent) => {
+      const r = swRef.current; if (!r || r.line !== t.line) return
+      const dx = e.clientX - r.x0, dy = e.clientY - r.y0
+      if (!r.on) { if (Math.abs(dy) > Math.abs(dx) || Math.abs(dx) < 8) { if (Math.abs(dy) > 10) swRef.current = null; return } r.on = true; try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* 캡처 없이도 동작한다 */ } }
+      const act = actOf(cfg, slotOf(dx, r.w))
+      if (act !== r.last) { r.last = act; if (act) buzz(cfg.haptics) }
+      setSw({ line: t.line, dx, w: r.w })
+    },
+    onPointerUp: () => {
+      const r = swRef.current; swRef.current = null
+      const cur = sw; setSw(null)
+      if (!r || !r.on || !cur) return
+      const act = actOf(cfg, slotOf(cur.dx, cur.w)); if (act) void run(t, act)
+    },
+    onPointerCancel: () => { swRef.current = null; setSw(null) }
+  })
+
+  /** 행 알맹이 — 체크 + 제목(+펼친 설명) + 표식 + 도구. 폰에서는 스와이프 껍데기 안에 들어간다 */
+  const rowInner = (t: TodoItem, isOpen: boolean) => <div
+      className={`todo ${t.done ? 'done' : ''} ${isOpen ? 'on' : ''}`}
+      onDoubleClick={phone ? undefined : () => toggleRow(t)} onClick={phone ? () => toggleRow(t) : undefined}>
+      <button className="bx" onClick={(e) => { e.stopPropagation(); void toggle(t) }} aria-label={t.done ? '되돌리기' : '완료'}>{t.done ? <Icon n="check" size={9} color="var(--onAccent)" /> : null}</button>
+      <div className="bd">
+        <div className="tt">{t.title}{t.by === 'bot' ? <span className="byb" title="봇이 적음"><Icon n="sub" size={10} /></span> : null}</div>
+        {isOpen && t.desc ? <div className="dsc">{t.desc}</div> : null}
+      </div>
+      {t.desc ? <span className="mk"><Icon n={isOpen ? 'chevd' : 'chev'} size={9} /></span> : null}
+    </div>
+
   const row = (t: TodoItem) => {
     const isOpen = openRows.has(t.line)
     if (edit === t.line) return <div key={t.line} className="todo edit">
@@ -121,6 +168,13 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
         <input autoFocus className="ein" value={draft} placeholder="제목: 설명" onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(); if (e.key === 'Escape') setEdit(null) }} onBlur={() => void save()} />
         <div className="eh"><span>⏎ 저장</span><span>⎋ 취소</span><span className="sp" /><span>«:» 뒤는 설명</span></div>
       </div>
+    </div>
+    const cur = sw && sw.line === t.line ? sw : null
+    const act = cur ? actOf(cfg, slotOf(cur.dx, cur.w)) : null
+    const long = !!cur && Math.abs(cur.dx) / Math.max(1, cur.w) >= LONG
+    if (phone) return <div key={t.line} className={`swwrap ${act ? 'armed' : ''}`} style={act ? { background: `color-mix(in srgb, ${ACT_COLOR[act]} ${long ? 100 : 45}%, var(--bg))` } : undefined}>
+      {act ? <div className={`swhint ${cur!.dx > 0 ? 'l' : 'r'}`}><span className={`cir ${long ? 'on' : ''}`} style={long ? { color: ACT_COLOR[act] } : undefined}><Icon n={ACT_ICON[act] as 'edit'} size={15} /></span>{long ? <b>{ACT_LABEL[act]}</b> : null}</div> : null}
+      <div className="swrow" style={cur ? { transform: `translateX(${Math.max(-0.72 * cur.w, Math.min(0.72 * cur.w, cur.dx))}px)`, transition: 'none' } : undefined} {...swipeOn(t)}>{rowInner(t, isOpen)}</div>
     </div>
     return <div key={t.line}
       className={`todo ${t.done ? 'done' : ''} ${isOpen ? 'on' : ''} ${over === t.line ? 'over' : ''} ${drag === t.line ? 'dragging' : ''}`}
@@ -161,6 +215,11 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
       </div>)}
       {undo ? <div className="kv" style={{ color: 'var(--t3)' }}><span className="n">삭제했어요</span><button style={{ color: 'var(--t2)' }} onClick={() => void undoRemove()}>되돌리기</button></div> : null}
     </div> : null}
+    {sheet ? <><div className="backdrop" onClick={() => setSheet(null)} /><div className="tsheet">
+      <div className="grip" />
+      <div className="ti">{sheet.title}</div>
+      {([['edit', '편집'], ['delegate', '봇에게 맡기기'], ['done', sheet.done ? '되돌리기' : '완료로'], ['delete', '삭제']] as [SwipeAct, string][]).map(([a2, l]) => <button key={a2} onClick={() => { const t = sheet; setSheet(null); void run(t, a2) }}><Icon n={ACT_ICON[a2] as 'edit'} size={16} />{l}</button>)}
+    </div></> : null}
   </>
 }
 
