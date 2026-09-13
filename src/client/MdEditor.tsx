@@ -9,7 +9,7 @@ import { syntaxTree, syntaxHighlighting, defaultHighlightStyle, HighlightStyle }
 import { tags as t } from '@lezer/highlight'
 import { BARE_URL_RE } from '../core/favicon'
 import { GLOBE, faviconNow, onFavicon } from './favicons'
-import { formatKeymap, selectionBar, slashMenu } from './mdFormat'
+import { formatKeymap, selectionBar, setWikiFiles, slashMenu } from './mdFormat'
 
 /**
  * 라이브 프리뷰 마크다운 편집기 — 서식이 보이는 채로 그 자리에서 고친다.
@@ -506,6 +506,49 @@ function activeLines(state: EditorState): Set<number> {
 
 const HIDE = Decoration.replace({})
 
+/**
+ * 그림 붙여넣기·끌어다 놓기 (Rondo 이식 B6) — 🔴 **편집기는 업로드를 모른다.**
+ * 어디에 둘지·무슨 이름으로 둘지는 문서 열(Doc)이 정하고, 여기는 **받은 경로를 글로 넣을 뿐**이다.
+ * ⚠ 넣기 전에 «올리는 중…» 자리표시자를 박고, 끝나면 그 자리를 갈아 끼운다 — 큰 그림은 몇 초가
+ *    걸리는데 그동안 화면에 아무 일도 안 일어나면 사람이 한 번 더 붙여넣는다.
+ * ⚠ 실패하면 자리표시자를 **지운다** — 남겨 두면 문서에 «올리는 중…» 이 박혀 저장된다.
+ */
+const pasteRef: { current?: ((f: File) => Promise<string | null>) | undefined } = {}
+function imageDrop(): Extension {
+  const put = async (view: EditorView, files: File[], at: number) => {
+    const up = pasteRef.current
+    if (!up) return
+    for (const f of files) {
+      const mark = `![올리는 중… ${f.name}]()`
+      view.dispatch({ changes: { from: at, insert: mark }, selection: { anchor: at + mark.length } })
+      const rel = await up(f).catch(() => null)
+      const cur = view.state.doc.toString().indexOf(mark)
+      if (cur < 0) continue                            // 사람이 그 사이에 지웠다 — 건드리지 않는다
+      const done = rel ? `![${f.name.replace(/\.[^.]+$/, '')}](${rel})` : ''
+      view.dispatch({ changes: { from: cur, to: cur + mark.length, insert: done } })
+      at = cur + done.length
+    }
+  }
+  return EditorView.domEventHandlers({
+    paste(e, view) {
+      const imgs = Array.from(e.clipboardData?.items ?? []).filter((i) => i.type.startsWith('image/')).map((i) => i.getAsFile()).filter((f): f is File => !!f)
+      if (!imgs.length || !pasteRef.current) return false
+      e.preventDefault()
+      const d = new Date()
+      void put(view, imgs.map((f, i) => new File([f], `스크린샷_${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}_${d.getHours()}${String(d.getMinutes()).padStart(2, '0')}${i ? `-${i + 1}` : ''}.${(f.type.split('/')[1] ?? 'png').replace('jpeg', 'jpg')}`, { type: f.type })), view.state.selection.main.from)
+      return true
+    },
+    drop(e, view) {
+      const imgs = Array.from(e.dataTransfer?.files ?? []).filter((f) => f.type.startsWith('image/'))
+      if (!imgs.length || !pasteRef.current) return false
+      e.preventDefault()
+      const at = view.posAtCoords({ x: e.clientX, y: e.clientY }) ?? view.state.selection.main.from
+      void put(view, imgs, at)
+      return true
+    }
+  })
+}
+
 interface BuildOpts { onOpen?: (t: string) => void; rawUrl?: (rel: string) => string }
 let opts: BuildOpts = {}
 export function setEditorOpts(o: BuildOpts): void { opts = o }
@@ -689,6 +732,16 @@ export interface MdEditorProps {
   /** 글자가 바뀔 때마다 — 「저장 안 됨」 표시용 */
   onChange?: (text: string) => void
   readOnly?: boolean
+  /**
+   * `[[` 자동완성이 고를 목록 — 이 봇 폴더의 문서들(봇 폴더 기준 상대 경로).
+   * ⚠ **부를 때 받아 온다**(Promise) — 편집기를 열 때마다 트리를 통째로 들고 있지 않으려고.
+   */
+  files?: () => Promise<string[]>
+  /**
+   * 그림을 붙여넣거나 끌어다 놓으면 — 파일로 저장하고 **넣을 경로**를 돌려준다(없으면 null).
+   * ⛔ 편집기는 업로드를 모른다 — 어디에 둘지는 문서 열(Doc)이 정한다.
+   */
+  onPasteImage?: (f: File) => Promise<string | null>
   /** 위키링크를 눌렀을 때 — 문서 탭에서 연다 */
   onOpen?: (target: string) => void
   /** 이미지 경로 → 실제로 받을 수 있는 주소 */
@@ -702,8 +755,12 @@ export interface MdEditorProps {
  */
 function eolOf(s: string): '\r\n' | '\n' { return /\r\n/.test(s) && !/(^|[^\r])\n/.test(s) ? '\r\n' : '\n' }
 
-export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, rawUrl }: MdEditorProps) {
+export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, rawUrl, files, onPasteImage }: MdEditorProps) {
   setEditorOpts({ onOpen, rawUrl })
+  // ⚠ 자동완성·붙여넣기는 CodeMirror 확장 안에서 돈다 — React 클로저가 아니라 **모듈 한 곳**을 본다
+  //    (편집기는 한 번만 만들어지므로, 여기서 최신 것을 계속 갈아 끼워야 한다)
+  setWikiFiles(files)
+  pasteRef.current = onPasteImage
   const box = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const commitRef = useRef(onCommit); commitRef.current = onCommit
@@ -724,7 +781,7 @@ export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, 
     const ext: Extension[] = [
       history(), formatKeymap, keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
       // 서식 — `/` 메뉴 · 고른 글 위 막대 · ⌘B/⌘I/⌘K (`mdFormat.ts`)
-      slashMenu(), selectionBar(),
+      slashMenu(), selectionBar(), imageDrop(),
       markdown({ extensions: [GFM] }), syntaxHighlighting(HL), syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       /* ⛔ `highlightSelectionMatches()` 를 켜지 않는다 (2026-09-13 Dave: *«어떤 텍스트를 선택하면 같은
          텍스트가 왜 같이 선택되는거야?»*). CodeMirror 의 «찾기» 편의 기능이라 고른 낱말과 **같은 글자를

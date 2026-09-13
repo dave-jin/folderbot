@@ -517,7 +517,17 @@ try {
             if (!menu || !menu.length) fail('서식: `/` 메뉴가 안 뜬다')
             if (!menu.some((x) => /체크박스/.test(x ?? ''))) fail('서식: `/` 메뉴에 체크박스가 없다 ' + JSON.stringify(menu))
             await pg.keyboard.press('Escape'); await pg.keyboard.press('Backspace'); await wait(400)
-            ok('서식 — 고른 글 위 막대 · `/` 메뉴 (파일에는 마크다운 글자 그대로)')
+            /**
+             * 🔴 **`[[` 자동완성** (Rondo 이식 B5) — 이 폴더의 문서를 골라 넣는다.
+             * ⚠ 목록은 편집기가 모른다(어느 폴더인지는 문서 열이 안다) — 한 번 받아 캐시한다.
+             */
+            await pg.keyboard.type('[[')
+            await wait(800)
+            const wiki = await pg.evaluate(() => { const t = document.querySelector('.cm-tooltip-autocomplete'); return t ? [...t.querySelectorAll('li')].map((x) => x.textContent) : null })
+            if (!wiki || !wiki.length) fail('`[[` 자동완성이 안 뜬다')
+            if (!wiki.some((x) => /todo|CLAUDE|readme/i.test(x ?? ''))) fail('`[[` 자동완성에 이 폴더 문서가 없다 ' + JSON.stringify(wiki.slice(0, 6)))
+            await pg.keyboard.press('Escape'); await pg.keyboard.press('Backspace'); await pg.keyboard.press('Backspace'); await wait(400)
+            ok('서식 — 고른 글 위 막대 · `/` 메뉴 · `[[` 문서 고르기')
           }
           // 콜아웃 — `> [!note]` 는 표시를 숨기고 줄에 색을 준다
           if (!(await pg.$('.mded .lp-cal'))) fail('콜아웃이 안 그려졌다')
@@ -718,6 +728,32 @@ try {
             if (hp.pos !== 'fixed') fail('미리보기: position 이 fixed 가 아니다 ' + JSON.stringify(hp))
             await pg.fill('.composer textarea', ''); await wait(300)
             ok('링크 박스 — 혼자 선 링크만 박스 · 오버하면 body 에 미리보기')
+          }
+          /**
+           * 🔴 **코드 블록에 언어 이름과 복사 단추** (Rondo 이식 B3).
+           * ⚠ 머리줄은 `pre` **밖**에 있어야 한다 — 안에 두면 코드 글자에 섞여 **복사에 딸려 온다**.
+           */
+          {
+            await pg.fill('.composer textarea', '코드블록 테스트')
+            await pg.keyboard.press('Enter')
+            let cb = null
+            for (let i = 0; i < 40; i++) {
+              cb = await pg.evaluate(() => {
+                const w = document.querySelector('.chat-body .md .cbwrap')
+                if (!w) return null
+                const pre = w.querySelector('pre')
+                return { lang: w.querySelector('.cbbar .lg')?.textContent ?? '', cp: !!w.querySelector('.cbbar .cp'), inPre: !!pre?.querySelector('.cbbar'), code: (pre?.textContent ?? '').trim() }
+              })
+              if (cb) break
+              await wait(300)
+            }
+            if (!cb) fail('코드 블록: 머리줄이 안 붙었다')
+            if (cb.lang !== 'ts') fail('코드 블록: 언어 이름이 없다 ' + JSON.stringify(cb))
+            if (!cb.cp) fail('코드 블록: 복사 단추가 없다 ' + JSON.stringify(cb))
+            if (cb.inPre) fail('🔴 코드 블록: 머리줄이 pre 안에 있다 — 복사에 딸려 온다 ' + JSON.stringify(cb))
+            if (cb.code !== 'const a = 1') fail('코드 블록: 코드 글자에 다른 게 섞였다 ' + JSON.stringify(cb))
+            await pg.fill('.composer textarea', ''); await wait(300)
+            ok('코드 블록 — 언어 이름 · 복사 단추 (코드 글자에는 안 섞인다)')
           }
         }
         // 🔴 채팅 외양은 **cursor 스타일**이다 (2026-09-13 Dave: «이전 스타일이 더 나»).

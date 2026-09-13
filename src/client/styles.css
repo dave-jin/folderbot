@@ -818,3 +818,13 @@ b,strong { color:var(--w); font-weight:600 }
 .tdrop { margin:4px 4px 0; padding:5px 0; border:1px dashed var(--line2); border-radius:6px; text-align:center; font-size:11px; color:var(--t3); opacity:0; transition:opacity .12s }
 .secb:hover .tdrop, .tdrop.dover { opacity:1 }
 .tdrop.dover { border-color:var(--run); color:var(--w) }
+
+/* 코드 블록 머리 — 언어 이름 · 복사 (Rondo 이식 B3)
+   ⚠ 머리줄은 `pre` **밖**에 있다(`.cbwrap` 이 둘을 감싼다) — 안에 두면 코드 글자에 섞여 복사에 딸려 온다. */
+.md .cbwrap { position:relative; margin:8px 0 }
+.md .cbwrap pre { margin:0 }
+.cbbar { position:absolute; right:6px; top:5px; display:flex; align-items:center; gap:8px; opacity:0; transition:opacity .12s; pointer-events:none }
+.md .cbwrap:hover .cbbar { opacity:1; pointer-events:auto }
+.cbbar .lg { font-family:var(--mono); font-size:10.5px; color:var(--t3); text-transform:uppercase; letter-spacing:.04em }
+.cbbar .cp { font-size:11px; line-height:1.6; color:var(--t2); background:var(--bg2); border:1px solid var(--line2); border-radius:5px; padding:0 7px }
+.cbbar .cp:hover { color:var(--w); border-color:var(--t3) }

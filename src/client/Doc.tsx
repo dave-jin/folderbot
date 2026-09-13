@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 /** ⚠ 지연 로드 — CodeMirror 와 마크다운 파서는 문서를 열 때만 받는다 (번들 계약) */
 const MdEditor = lazy(() => import('./MdEditor'))
@@ -6,7 +6,7 @@ const MdEditor = lazy(() => import('./MdEditor'))
 const Canvas = lazy(() => import('./Canvas'))
 import type { Bot } from '../core/types'
 import { copySay } from './clip'
-import { api } from './api'
+import { api, uploadFile } from './api'
 import { Icon, Mid } from './FolderBot'
 import { Md } from './Sheets'
 import { Float, anchorOf, type Anchor } from './Float'
@@ -114,6 +114,22 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
     }
     window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
   })
+  /**
+   * `[[` 자동완성이 고를 목록 (Rondo 이식 B5) — 이 봇 폴더의 **문서**만.
+   * ⚠ 깊이는 4단이다 — 더 깊이 훑으면 큰 볼트에서 첫 `[[` 가 몇 초씩 멎는다.
+   * ⛔ 캐시는 `mdFormat` 쪽이 쥔다(문서 탭이 바뀌면 새 함수가 들어가 캐시도 버려진다).
+   */
+  const wikiFiles = useCallback(async () => {
+    const l = await api<{ rel: string; dir: boolean }[]>(`/bots/${bot.id}/files?depth=4`).catch(() => [])
+    return l.filter((n) => !n.dir && /\.(md|canvas)$/i.test(n.rel)).map((n) => n.rel)
+  }, [bot.id])
+  /**
+   * 그림을 붙여넣거나 끌어다 놓으면 (Rondo 이식 B6) — **봇 폴더의 `첨부/`** 에 올리고 그 경로를 돌려준다.
+   * ⚠ 채팅의 붙여넣기와 **같은 창구**(`/upload`)를 쓴다 — 두 길이 갈리면 한쪽만 이름이 겹치거나 상한이 다르다.
+   */
+  const pasteImage = useCallback(async (f: File) => {
+    try { const r = await uploadFile(bot.id, f); return r.rel } catch { return null }
+  }, [bot.id])
   const save = async (text: string) => { if (!rel) return; setSaveSt('saving'); try { await api(`/bots/${bot.id}/file`, { body: { rel, text } }); setSaveSt('saved'); dirtyRef.current = false; const d = await api<DocData>(`/bots/${bot.id}/file?rel=${encodeURIComponent(rel)}`); mtimeRef.current = d.mtime ?? 0 } catch { setSaveSt('fail') } }
   const onDraft = (v: string) => { setDraft(v); dirtyRef.current = true; window.clearTimeout(saveT.current); saveT.current = window.setTimeout(() => void save(v), 800) }
   const idx = rel ? sibs.indexOf(rel) : -1
@@ -153,7 +169,8 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
             <Suspense fallback={<div className="dbody"><div className="skel" style={{ width: '70%' }} /></div>}>
               {/* ⛔ `key={rel}` 을 빼지 마라 — 문서마다 편집기를 따로 둬야 떠날 때의 저장이 옛 문서로 간다
                   (되돌리기 기록이 문서를 넘나드는 것도 함께 막는다). */}
-              <MdEditor key={rel} value={draft} onChange={onDraft} onCommit={(t) => { onDraft(t); void save(t) }} onOpen={(target) => docs.open(target.endsWith('.md') ? target : `${target}.md`)} rawUrl={(p) => (/^(https?:|data:)/.test(p) ? p : raw(p.replace(/^\.\//, '')))} />
+              <MdEditor key={rel} value={draft} onChange={onDraft} onCommit={(t) => { onDraft(t); void save(t) }} onOpen={(target) => docs.open(target.endsWith('.md') ? target : `${target}.md`)} rawUrl={(p) => (/^(https?:|data:)/.test(p) ? p : raw(p.replace(/^\.\//, '')))}
+                files={wikiFiles} onPasteImage={pasteImage} />
             </Suspense>
           </div>
         : doc.truncated

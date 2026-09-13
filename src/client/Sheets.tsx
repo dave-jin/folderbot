@@ -6,7 +6,8 @@ import { FolderBot, Icon, Mid } from './FolderBot'
 import { hitRange, rank } from '../core/search'
 import { candidatePaths } from '../core/paths'
 import { decorateLinks } from './favicons'
-import { boxifyLinks, hoverLinks, hoverable } from './previews'
+import { boxifyLinks, decorateCode, hoverLinks, hoverable } from './previews'
+import { copyText } from './clip'
 import { pickAgent } from './AgentPick'
 import { fmtTime, useStore } from './store'
 
@@ -70,6 +71,7 @@ export function Md({ text, streaming, botId, onPath }: { text: string; streaming
     boxifyLinks(el)
     decorateLinks(el)     // 링크 앞 파비콘 — 자리표시자를 먼저 놓고 도착하면 갈아 끼운다
     hoverLinks(el)        // 글 속 링크 — 오버하면 같은 미리보기 카드
+    decorateCode(el, copyText)   // 코드 블록 — 언어 이름 · 복사 단추 (B3)
   }, [html])
   useEffect(() => {
     const el = ref.current

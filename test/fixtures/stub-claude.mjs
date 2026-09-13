@@ -36,6 +36,12 @@ rl.on('line', (raw) => {
     say({ type: 'result', subtype: 'success', duration_ms: 40, total_cost_usd: 0.001 })
     return
   }
+  // 「코드 블록 머리줄」 검사용 — 언어가 붙은 펜스
+  if (/코드블록/.test(text)) {
+    say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '이렇게요\n\n```ts\nconst a = 1\n```\n' }], stop_reason: 'end_turn' } })
+    say({ type: 'result', subtype: 'success', duration_ms: 40, total_cost_usd: 0.001 })
+    return
+  }
   // 「혼자 선 링크 → 박스」 검사용 — 문단 하나가 링크뿐인 답과, 문장 속 링크를 같이 낸다
   if (/링크박스/.test(text)) {
     say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '찾았습니다\n\nhttps://example.com/article\n\n자세한 건 https://example.org/docs 를 보세요.' }], stop_reason: 'end_turn' } })

@@ -219,3 +219,33 @@ export function hoverLinks(root: HTMLElement): void {
     hoverable(a, { kind: 'link', url: a.href })
   }
 }
+
+/* ── 코드 블록 — 언어 이름 · 복사 (Rondo 이식 B3) ──────────────────────────────
+   🔴 **코드는 읽으려고 쓰는 게 아니라 가져가려고 쓴다.** 답 속의 코드를 끌어서 고르는 일이
+      제일 흔한데, 긴 블록은 스크롤과 싸워야 한다 — 단추 하나면 끝난다.
+   ⚠ 언어 이름은 `marked` 가 붙인 `language-…` 클래스에서 읽는다. 없으면 줄만 그린다. */
+export function decorateCode(root: HTMLElement, copy: (s: string) => Promise<boolean>, say?: (m: string) => void): void {
+  for (const pre of Array.from(root.querySelectorAll<HTMLElement>('pre'))) {
+    if (pre.dataset.cb) continue
+    const code = pre.querySelector('code')
+    if (!code) continue
+    pre.dataset.cb = '1'
+    const lang = (/language-([\w+#-]+)/.exec(code.className ?? '')?.[1] ?? '').toLowerCase()
+    const bar = document.createElement('div')
+    bar.className = 'cbbar'
+    const l = document.createElement('span'); l.className = 'lg'; l.textContent = lang
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'cp'; b.textContent = '복사'; b.title = '이 블록을 복사'
+    b.onclick = async (e) => {
+      e.preventDefault(); e.stopPropagation()
+      const ok = await copy(code.textContent ?? '')
+      b.textContent = ok ? '복사됨' : '실패'
+      say?.(ok ? '코드를 복사했어요' : '복사를 못 했어요')
+      setTimeout(() => { b.textContent = '복사' }, 1400)
+    }
+    bar.append(l, b)
+    // ⚠ `pre` **안**에 넣지 않는다 — 그러면 코드 글자에 섞여 복사·선택에 딸려 온다
+    pre.parentElement?.insertBefore(Object.assign(document.createElement('div'), { className: 'cbwrap' }), pre)
+    const wrap = pre.previousElementSibling as HTMLElement
+    wrap.append(bar, pre)
+  }
+}

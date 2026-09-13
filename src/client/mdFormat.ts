@@ -124,8 +124,46 @@ function slashSource(ctx: CompletionContext): CompletionResult | null {
   return { from, options, validFor: /^[^/\s]*$/ }
 }
 
+/* ── `[[` 위키링크 자동완성 (Rondo 이식 B5) ─────────────────────────────────
+   🔴 **목록은 편집기가 모른다** — 어느 폴더의 문서인지는 문서 열(Doc)이 안다. 그래서 여기는
+      «불러다 주는 함수» 한 개만 들고 있는다(`setWikiFiles`).
+   ⚠ 목록은 **한 번만 받아 캐시한다** — 글자를 칠 때마다 트리를 다시 훑으면 두 글자째부터 버벅인다.
+      문서 탭이 바뀌면 Doc 이 새 함수를 넣어 주므로 캐시도 함께 버려진다. */
+let wikiGet: (() => Promise<string[]>) | undefined
+let wikiCache: Promise<string[]> | null = null
+export function setWikiFiles(f?: () => Promise<string[]>): void { if (f !== wikiGet) { wikiGet = f; wikiCache = null } }
+
+/** `[[…` 안에서 문서 이름을 고른다. ⚠ `from` 은 **여는 괄호 다음** (슬래시 메뉴와 같은 이유) */
+function wikiSource(ctx: CompletionContext): Promise<CompletionResult | null> | null {
+  const line = ctx.state.doc.lineAt(ctx.pos)
+  const head = line.text.slice(0, ctx.pos - line.from)
+  const m = /\[\[([^\]|[]*)$/.exec(head)
+  if (!m || !wikiGet) return null
+  const from = line.from + m.index + 2
+  if (!wikiCache) wikiCache = wikiGet().catch(() => [])
+  return wikiCache.then((all): CompletionResult | null => {
+    if (!all.length) return null
+    const options: Completion[] = all.slice(0, 400).map((rel) => {
+      const name = (rel.split('/').pop() ?? rel).replace(/\.md$/i, '')
+      const dir = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : ''
+      return {
+        label: name,
+        detail: dir,
+        // ⚠ 닫는 `]]` 는 **이미 있으면 또 넣지 않는다** — 자동 짝맞춤과 겹쳐 `]]]]` 가 된다
+        apply: (v: EditorView, _c: Completion, a: number, b: number) => {
+          const after = v.state.doc.sliceString(b, b + 2)
+          const insert = after === ']]' ? name : `${name}]]`
+          v.dispatch({ changes: { from: a, to: b, insert }, selection: { anchor: a + insert.length + (after === ']]' ? 2 : 0) }, userEvent: 'input.format' })
+        },
+        filterText: `${name} ${rel}`
+      } as unknown as Completion
+    })
+    return { from, options, validFor: /^[^\]|[]*$/ }
+  })
+}
+
 export function slashMenu(): Extension {
-  return autocompletion({ override: [slashSource], icons: false, defaultKeymap: true, activateOnTyping: true })
+  return autocompletion({ override: [slashSource, wikiSource], icons: false, defaultKeymap: true, activateOnTyping: true })
 }
 
 export const formatKeymap = keymap.of([
