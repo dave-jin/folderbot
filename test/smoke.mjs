@@ -401,7 +401,7 @@ try {
         {
           const rel = 'churn.md'
           const abs = join(root, '3. Area/제품_Rondo', rel)
-          const src = ['---', 'type: reference', 'tags: [PARA, 지침]', '---', '', '# 제목', '', '**굵게** 와 *기울임* 과 `코드`.', '', '- [ ] 할 일', '- 항목', '', '> 인용', '', '[[위키링크]] 와 https://example.com', ''].join('\n')
+          const src = ['---', 'type: reference', 'tags: [PARA, 지침]', '---', '', '# 제목', '', '**굵게** 와 *기울임* 과 `코드`.', '', '- [ ] 할 일', '- 항목', '', '---', '', '> 인용', '', '[[위키링크]] 와 https://example.com', ''].join('\n')
           // ⚠ API 로 만든다 — 파일을 직접 쓰면 호스트가 모르고 트리가 안 새로 그려진다
           await api(`/bots/${bot.id}/file`, { rel, text: src })
           const before = readFileSync(abs)
@@ -447,7 +447,19 @@ try {
             }
             const after = await pg.evaluate(() => document.querySelector('.mded .cm-content')?.textContent ?? '')
             if (/##|\*\*/.test(after)) fail('마커: 커서가 들어가니 서식 기호가 나왔다 ' + JSON.stringify(after.slice(0, 120)))
-            ok('편집기 — 누른 자리에 커서가 선다(서식 마커는 계속 숨는다)')
+            // 🔴 **↑↓ 는 지금 보고 있는 칸의 것** (2026-09-13 Dave: «문서에서 위아래로 가려는데 파일 선택이 움직인다»)
+          //    편집기는 contenteditable 이라 «입력칸이 아니면 글 쓰는 중이 아니다» 는 옛 판정에 안 걸렸다.
+          {
+            const tab0 = await pg.evaluate(() => document.querySelector('.dtb .nm')?.textContent ?? '')
+            await pg.keyboard.press('ArrowDown'); await wait(300)
+            await pg.keyboard.press('ArrowUp'); await wait(300)
+            const tab1 = await pg.evaluate(() => document.querySelector('.dtb .nm')?.textContent ?? '')
+            if (tab1 !== tab0) fail(`↑↓: 문서 안에서 눌렀는데 다른 파일로 넘어갔다 ${tab0} → ${tab1}`)
+            ok('↑↓ 는 문서 안에서 커서를 옮긴다 (파일 선택이 안 따라간다)')
+          }
+          // `---` 는 가로줄로 (2026-09-13 Dave)
+          if (!(await pg.$('.mded .lp-hr'))) fail('`---` 가 가로줄이 안 됐다')
+          ok('편집기 — 누른 자리에 커서가 선다(서식 마커는 계속 숨는다)')
           }
           // 위젯 — 체크박스 · 위키링크. ⛔ 체크박스는 **한 글자만** 갈아야 churn 이 안 난다
           const w = await pg.evaluate(() => ({ check: document.querySelectorAll('.mded .lp-check').length, wiki: document.querySelectorAll('.mded .lp-wiki').length }))
@@ -737,6 +749,26 @@ try {
           if (!existsSync(join(root, moved.to))) fail('폴더 삭제: 휴지통에도 없다 — 진짜로 지웠다')
           if ((await api('/bots')).some((b) => b.id === tb.id)) fail('폴더 삭제: 레일에 아직 남아 있다')
           ok('레일 우클릭 — 정지 · 은퇴 · 폴더 삭제(휴지통으로)')
+        }
+        // 🔴 **팝업은 절(section) 경계를 넘어 보인다** (2026-09-13 Dave: «지금 팝업이 짤리니깐»)
+        //    ⛔ `z-index` 로는 못 푼다 — 잘림은 쌓임 순서가 아니라 **부모의 overflow** 라서, 밖으로 나가야 한다.
+        {
+          await pg.click('.panel .secb button.trow:not(.dir)', { button: 'right' }); await wait(300)
+          const m = await pg.evaluate(() => {
+            const el = document.querySelector('.menu.ctx'); if (!el) return null
+            const r = el.getBoundingClientRect()
+            const sec = el.closest('.sec, .secb')          // 절 안에 남아 있으면 거기서 잘린다
+            const vis = r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1 && r.left >= -1 && r.top >= -1
+            return { inSec: !!sec, body: el.parentElement?.parentElement === document.body, pos: getComputedStyle(el).position, vis, h: r.height }
+          })
+          if (!m) fail('팝업: 우클릭 메뉴가 안 떴다')
+          if (m.inSec) fail('팝업: 아직 절 안에 있다 — 거기서 잘린다 ' + JSON.stringify(m))
+          if (m.pos !== 'fixed') fail('팝업: 고정 위치가 아니다 ' + JSON.stringify(m))
+          if (!m.vis) fail('팝업: 화면 밖으로 나갔다 ' + JSON.stringify(m))
+          if (m.h < 40) fail('팝업: 높이가 잘렸다 ' + JSON.stringify(m))
+          await pg.keyboard.press('Escape'); await wait(200)
+          if (await pg.$('.menu.ctx')) fail('팝업: ⎋ 로 안 닫힌다')
+          ok('팝업은 절 경계를 넘어 body 에 뜬다 (⎋ · 바깥 클릭 · 스크롤에 닫힌다)')
         }
         // 트리 우클릭 — 폴더면 «새 봇 시작» 항목이 있다
         await pg.click('.panel .secb button.trow.dir', { button: 'right' }); await wait(200); const cm = await pg.textContent('.menu.ctx'); if (!/새 봇 시작|에이전트 시작|봇 열기/.test(cm ?? '')) fail('ui tree ctx: ' + cm); await pg.keyboard.press('Escape'); await wait(150)

@@ -6,6 +6,7 @@ import type { Bot } from '../core/types'
 import { api } from './api'
 import { Icon, Mid } from './FolderBot'
 import { Md } from './Sheets'
+import { Float, anchorOf, type Anchor } from './Float'
 import { fmtTime, useStore } from './store'
 
 /** 문서 탭 — 봇별로 기억. 미리보기 탭(pinned=false)은 다음 클릭에 바뀐다 */
@@ -49,7 +50,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
    */
   const [draft, setDraft] = useState(''); const [saveSt, setSaveSt] = useState<'' | 'saving' | 'saved' | 'fail'>('')
   const [conflict, setConflict] = useState(false); const [botTouched, setBotTouched] = useState<number | null>(null)
-  const [menu, setMenu] = useState(false)
+  const [menu, setMenu] = useState<Anchor | null>(null)
   const [sibs, setSibs] = useState<string[]>([])
   const mtimeRef = useRef<number>(0); const saveT = useRef<number | undefined>(undefined)
   /** 「고치는 중」이 아니라 **「아직 안 낸 글이 있다」** — 봇이 같은 파일을 건드렸을 때 덮어쓸지 물을 근거다 */
@@ -84,9 +85,19 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if (!rel) return
-      const t = e.target as HTMLElement | null; const typing = t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT')
+      const t = e.target as HTMLElement | null
       if ((e.metaKey || e.ctrlKey) && e.key === 'w') { e.preventDefault(); docs.close(rel) }
-      if (!typing && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && sibs.length) { const i = sibs.indexOf(rel); const n = sibs[(i + (e.key === 'ArrowDown' ? 1 : -1) + sibs.length) % sibs.length]; if (n) { e.preventDefault(); docs.open(n) } }
+      /**
+       * 🔴 **↑↓ 는 지금 보고 있는 칸의 것이다** (2026-09-13 Dave: *«문서에서 위아래로 이동하려는데 폴더에서 파일 선택이 움직인다»*).
+       *    종전 판정은 «`textarea`·`input` 이 아니면 글 쓰는 중이 아니다» 였는데, 문서 편집기는
+       *    **`contenteditable`** 이라 그 그물에 안 걸렸다 — 그래서 문서에서 화살표를 누르면 커서 대신
+       *    **옆 칸의 파일 선택**이 움직였다.
+       * ⚠ 고치는 방법은 두 겹이다: ① 글 쓰는 중인가(`isContentEditable` 포함) ② **포커스가 문서 열 안인가**.
+       *    ②가 없으면 편집기를 눌러 두고 마우스를 뗀 순간(포커스는 그대로) 또 같은 일이 난다.
+       */
+      const typing = !!t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable)
+      const inDoc = !!t?.closest?.('.col.doc')
+      if (!typing && !inDoc && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && sibs.length) { const i = sibs.indexOf(rel); const n = sibs[(i + (e.key === 'ArrowDown' ? 1 : -1) + sibs.length) % sibs.length]; if (n) { e.preventDefault(); docs.open(n) } }
     }
     window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
   })
@@ -110,10 +121,10 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
             생각은 자주 들고, 그때마다 ⋯ 를 거치면 두 번 누르게 된다. ⚠ 여는 주체는 언제나 호스트라
             원격이면 이름이 「메인 맥에서」 로 바뀐다. */}
         <button className="ib" title={main ? '기본 앱으로 열기' : '메인 맥에서 열기'} onClick={async () => { try { await api(`/bots/${bot.id}/open`, { body: { rel } }); say(main ? '기본 앱으로 열었어요' : '메인 맥에서 열었어요') } catch (e) { say((e as Error).message) } }}><Icon n="open" size={13} /></button>
-        <span style={{ position: 'relative' }}><button className="ib" onClick={() => setMenu(!menu)}><Icon n="more" size={13} /></button>
-            {menu ? <div className="menu" style={{ right: 0, top: 26 }} onClick={() => setMenu(false)}><button onClick={() => onTalk(rel)}><Icon n="sub" size={13} /><span>봇에게 이 파일 말하기</span></button><button onClick={() => onAttach(rel)}><Icon n="plus" size={13} /><span>첨부로 보내기</span></button><button onClick={() => { navigator.clipboard?.writeText(`${bot.abs}/${rel}`); say('경로를 복사했어요') }}><Icon n="file" size={13} /><span>경로 복사</span></button><button onClick={async () => { try { await api(`/bots/${bot.id}/open`, { body: { rel } }); say(main ? '기본 앱으로 열었어요' : '메인 맥에서 열었어요') } catch (e) { say((e as Error).message) } }}><Icon n="open" size={13} /><span>{main ? '기본 앱으로 열기' : '메인 맥에서 열기'}</span>{main ? null : <span className="k">메인에서</span>}</button>
+        <span style={{ position: 'relative' }}><button className="ib" onClick={(e) => setMenu(menu ? null : anchorOf(e.currentTarget, { right: true }))}><Icon n="more" size={13} /></button>
+            {menu ? <Float at={menu} onClose={() => setMenu(null)}><div style={{ display: 'contents' }} onClick={() => setMenu(null)}><button onClick={() => onTalk(rel)}><Icon n="sub" size={13} /><span>봇에게 이 파일 말하기</span></button><button onClick={() => onAttach(rel)}><Icon n="plus" size={13} /><span>첨부로 보내기</span></button><button onClick={() => { navigator.clipboard?.writeText(`${bot.abs}/${rel}`); say('경로를 복사했어요') }}><Icon n="file" size={13} /><span>경로 복사</span></button><button onClick={async () => { try { await api(`/bots/${bot.id}/open`, { body: { rel } }); say(main ? '기본 앱으로 열었어요' : '메인 맥에서 열었어요') } catch (e) { say((e as Error).message) } }}><Icon n="open" size={13} /><span>{main ? '기본 앱으로 열기' : '메인 맥에서 열기'}</span>{main ? null : <span className="k">메인에서</span>}</button>
               {main ? null : <a className="menu-a" href={raw(rel)} download style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="doc" size={13} /><span>이 기기로 내려받기</span></a>}
-              <a className="menu-a" href={raw(rel)} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="open" size={13} /><span>새 창에서 열기</span></a><hr /><button onClick={() => docs.pin(rel)}><Icon n="doc" size={13} /><span>탭 고정</span><span className="k">더블클릭</span></button></div> : null}</span>
+              <a className="menu-a" href={raw(rel)} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="open" size={13} /><span>새 창에서 열기</span></a><hr /><button onClick={() => docs.pin(rel)}><Icon n="doc" size={13} /><span>탭 고정</span><span className="k">더블클릭</span></button></div></Float> : null}</span>
       </span></div> : null}
     {conflict ? <div className="dbanner"><span className="dot wait" /><span>봇이 이 파일을 바꿨어요 — 아직 안 낸 내 글과 다릅니다</span><button onClick={() => { setConflict(false); void save(draft) }}>내 것 유지</button><button onClick={() => { setConflict(false); dirtyRef.current = false; if (rel) void load(rel) }}>봇 것 받기</button></div>
       : botTouched ? <div className="dbanner"><span className="dot run" /><span>봇이 {fmtTime(botTouched)} 수정</span><button onClick={() => setBotTouched(null)}>닫기</button></div> : null}

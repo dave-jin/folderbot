@@ -7,6 +7,7 @@ import { HOLD_MS, decide, dropIndex } from './gesture'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { RoutineSheet, askName } from './Sheets'
 import { Mark, VendorMark, useProviders } from './Brand'
+import { Float, anchorOf, type Anchor } from './Float'
 import { PROVIDER_LABEL, type ProviderId } from '../core/agents'
 import { scoreName } from '../core/search'
 import { fmtElapsed, fmtTime, useStore } from './store'
@@ -23,17 +24,16 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
   const tog = (k: string) => setOpen({ ...open, [k]: !open[k] })
   // 아이콘 열에서 누른 섹션은 펼쳐진 채로 온다
   useEffect(() => { if (focusSec) setOpen((o) => ({ ...o, [focusSec.sec]: true })) }, [focusSec?.n])
-  const [routines, setRoutines] = useState(false); const [menu, setMenu] = useState(false)
+  const [routines, setRoutines] = useState(false); const [menu, setMenu] = useState<Anchor | null>(null)
   /**
    * 새 세션 — 🔴 **누가 맡을지(Claude / ChatGPT)는 세션마다 고른다.** 벤더는 폴더가 아니라 세션의 성질이라
    *    한 폴더에 둘이 섞여 산다(그래서 표식도 폴더 레일이 아니라 이 목록에 붙는다).
    * ⚠ 깔린 에이전트가 하나면 묻지 않는다 — 고를 게 없는데 묻는 건 문턱만 하나 더 만드는 것이다.
    */
   const provs = useProviders()
-  const [pick, setPick] = useState(false)
+  const [pick, setPick] = useState<Anchor | null>(null)
   const newSession = async (vendor?: ProviderId) => {
-    if (!vendor && provs.length > 1) { setPick(true); return }
-    setPick(false)
+    setPick(null)
     try {
       const info = await api<SessionInfo>(`/bots/${bot.id}/sessions`, { body: { name: `세션 ${sessions.length + 1}`, vendor: vendor ?? provs[0]?.id } })
       await refresh(); go(bot.id, info.id)
@@ -60,13 +60,13 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
     <div className="hdr">{phone ? <button className="rb glassb" onClick={onBack} title="대화로"><Icon n="back" size={20} /></button> : null}<span className="ttl">{bot.orchestrator ? '이 볼트에서' : '이 폴더에서'}</span><span className="sp" />{!phone ? <div className="acts"><button className="ib on" onClick={onCollapse} title="패널 접기 (⌘⇧B)"><Icon n="panelr" size={14} /></button></div> : null}</div>
     {/* 세션 */}
     <div className={`sec ${open.sessions ? 'fix' : 'fix'}`} style={open.sessions ? { height: secH.sessions } : undefined}>
-      <button className="sech" onClick={() => tog('sessions')}><Icon n={open.sessions ? 'chevd' : 'chev'} size={9} /><span>세션</span><span className="c">{sessions.length}</span><span className="tools on"><span className="ib" title="새 세션" onClick={(e) => { e.stopPropagation(); void newSession() }}><Icon n="plus" size={12} /></span></span></button>
+      <button className="sech" onClick={() => tog('sessions')}><Icon n={open.sessions ? 'chevd' : 'chev'} size={9} /><span>세션</span><span className="c">{sessions.length}</span><span className="tools on"><span className="ib" title="새 세션" onClick={(e) => { e.stopPropagation(); if (provs.length > 1) { setPick(anchorOf(e.currentTarget as HTMLElement)); setOpen((o) => ({ ...o, sessions: true })) } else void newSession() }}><Icon n="plus" size={12} /></span></span></button>
       {open.sessions ? <div className="secb" style={{ padding: '0 0 6px' }}>{sessions.map((x) => <button key={x.id} className={`srow ${x.id === sessionId ? 'on' : ''}`} onClick={() => go(bot.id, x.id)}><span className={`dot ${x.state === 'running' ? 'run' : x.state === 'awaiting_input' ? 'wait' : x.state === 'error' ? 'err' : 'none'}`} /><span className="n">{x.name}</span><VendorMark vendor={x.vendor} size={11} /><span className="m">{x.state === 'running' ? <Elapsed from={x.turnStartedAt} /> : x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span><span className="ib del" title="세션 삭제" onClick={(e) => { e.stopPropagation(); void delSession(x) }}><Icon n="x" size={11} /></span></button>)}
         {/* 🔴 **세션이 없을 때도 여기서 시작한다** (2026-09-13 Dave). 종전 「메시지를 보내면 생겨요」 는
             **막다른 안내**였다 — 누가 이 폴더를 맡을지(Claude / ChatGPT) 고를 자리가 어디에도 없었다.
             ⚠ 깔린 에이전트가 하나면 묻지 않는다 — 고를 게 없는데 묻는 건 문턱만 하나 더 만드는 것이다. */}
-        {!sessions.length ? <button className="kv sempty" onClick={() => void newSession()}><Icon n="plus" size={11} /><span>{provs.length > 1 ? 'Claude 나 ChatGPT 로 시작' : '세션 시작'}</span></button> : null}
-        {pick ? <div className="menu" style={{ left: 10, top: 34 }}>{provs.map((pv) => <button key={pv.id} onClick={() => void newSession(pv.id)}><Mark id={pv.id} size={14} /><span>{PROVIDER_LABEL[pv.id]}</span></button>)}<hr /><button onClick={() => setPick(false)}><span>취소</span></button></div> : null}</div> : null}
+        {!sessions.length ? <button className="kv sempty" onClick={(e) => { if (provs.length > 1) setPick(anchorOf(e.currentTarget as HTMLElement)); else void newSession() }}><Icon n="plus" size={11} /><span>{provs.length > 1 ? 'Claude 나 ChatGPT 로 시작' : '세션 시작'}</span></button> : null}
+        {pick ? <Float at={pick} onClose={() => setPick(null)}>{provs.map((pv) => <button key={pv.id} onClick={() => void newSession(pv.id)}><Mark id={pv.id} size={14} /><span>{PROVIDER_LABEL[pv.id]}</span></button>)}<hr /><button onClick={() => setPick(null)}><span>취소</span></button></Float> : null}</div> : null}
     </div>
     <div className="divy" onPointerDown={dragY('sessions')} onDoubleClick={() => onSecH({ ...secH, sessions: 112 })} />
     {/* 할 일 / Inbox */}
@@ -89,9 +89,9 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
       <button className="sech" onClick={() => tog('routines')}><Icon n={open.routines ? 'chevd' : 'chev'} size={9} /><span>루틴</span><span className="c">{bot.routines.length}</span></button>
       {open.routines ? <div style={{ padding: '0 0 6px' }}>{bot.routines.map((r) => <div key={r.name} className="kv"><Icon n="clock" size={12} color="var(--t3)" /><span className="n">{r.name}</span><span className="mono" style={{ fontSize: 11, color: 'var(--t3)' }}>{r.cron}</span></div>)}<button className="kv" onClick={() => setRoutines(true)}><Icon n="plus" size={12} /><span className="n">{bot.routines.length ? '루틴 편집' : '루틴 추가'}</span></button></div> : null}
     </div>
-    <div className="pfoot"><button style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'inherit' }} onClick={() => setMenu(!menu)}><Icon n="more" size={12} />이 봇{bot.orchestrator ? '' : ' · 정지 · 은퇴'}</button>
-      {menu && !bot.orchestrator ? <div className="menu" style={{ left: 8, bottom: 36 }} onClick={() => setMenu(false)}><button onClick={async () => { await api(`/bots/${bot.id}/stop`, { body: {} }); say(`${bot.name} 정지(휴면)`); await refresh(); go('orch') }}><Icon n="pause" size={13} /><span style={{ flex: 1 }}>정지 (휴면)</span><span className="k">기록 유지</span></button><button className="warn" onClick={async () => { if (!confirm(`${bot.name} 을 Archive 로 옮기고 은퇴시킬까요? 세션 기록은 보관돼요.`)) return; try { await api(`/bots/${bot.id}/retire`, { body: {} }); say('옮기고 은퇴했어요'); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="archive" size={13} /><span style={{ flex: 1 }}>Archive 로 이동 (은퇴)</span></button></div> : null}
-      {menu && bot.orchestrator ? <div className="menu" style={{ left: 8, bottom: 36 }} onClick={() => setMenu(false)}><button onClick={() => onTalk('지금 뭐 돌고 있어? 봇별로 한 줄씩.')}><Icon n="sub" size={13} /><span>현황 물어보기</span></button></div> : null}
+    <div className="pfoot"><button style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'inherit' }} onClick={(e) => setMenu(menu ? null : anchorOf(e.currentTarget as HTMLElement, { gap: 6 }))}><Icon n="more" size={12} />이 봇{bot.orchestrator ? '' : ' · 정지 · 은퇴'}</button>
+      {menu && !bot.orchestrator ? <Float at={menu} onClose={() => setMenu(null)}><div onClick={() => setMenu(null)} style={{ display: 'contents' }}><button onClick={async () => { await api(`/bots/${bot.id}/stop`, { body: {} }); say(`${bot.name} 정지(휴면)`); await refresh(); go('orch') }}><Icon n="pause" size={13} /><span style={{ flex: 1 }}>정지 (휴면)</span><span className="k">기록 유지</span></button><button className="warn" onClick={async () => { if (!confirm(`${bot.name} 을 Archive 로 옮기고 은퇴시킬까요? 세션 기록은 보관돼요.`)) return; try { await api(`/bots/${bot.id}/retire`, { body: {} }); say('옮기고 은퇴했어요'); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="archive" size={13} /><span style={{ flex: 1 }}>Archive 로 이동 (은퇴)</span></button></div></Float> : null}
+      {menu && bot.orchestrator ? <Float at={menu} onClose={() => setMenu(null)}><div onClick={() => setMenu(null)} style={{ display: 'contents' }}><button onClick={() => onTalk('지금 뭐 돌고 있어? 봇별로 한 줄씩.')}><Icon n="sub" size={13} /><span>현황 물어보기</span></button></div></Float> : null}
     </div>
     {routines ? <RoutineSheet bot={bot} onClose={() => setRoutines(false)} /> : null}
   </div>
@@ -426,6 +426,23 @@ function Tree({ bot, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFol
     setExp((e) => { const n = new Set(e); for (const r of rels) { const parts = r.split('/'); for (let i = 1; i < parts.length; i++) n.add(parts.slice(0, i).join('/')) } return n })
     setFlash(new Set(rels)); const t = window.setTimeout(() => setFlash(new Set()), 1400); return () => window.clearTimeout(t)
   }, [touched])
+  /**
+   * ⌘F — 🔴 **지금 보고 있는 칸에서 찾는다** (2026-09-13 Dave). 문서 열에 커서가 있으면 편집기의
+   *    찾기(CodeMirror)가 이기고, 파일 칸이면 여기서 이름을 거른다.
+   * ⚠ 판정 순서가 중요하다: 글 쓰는 중(입력칸·`contenteditable`)이면 **아무것도 가로채지 않는다** —
+   *    맥 기본과 편집기의 것이 이겨야 한다(단축키 계약).
+   */
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'f' || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      if (t?.closest?.('.col.doc')) return
+      e.preventDefault()
+      setFilter((f) => (f === null ? '' : f))
+    }
+    window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
+  }, [])
   useEffect(() => { if (!ctx) return; const off = () => setCtx(null); window.addEventListener('click', off); window.addEventListener('keydown', off); return () => { window.removeEventListener('click', off); window.removeEventListener('keydown', off) } }, [ctx])
   const rows = useMemo(() => {
     const out: { n: Node; depth: number }[] = []
@@ -461,13 +478,13 @@ function Tree({ bot, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFol
         {!rows.length ? <div className="kv" style={{ color: 'var(--t3)' }}>{dirs[''] ? '비어 있어요' : <><div className="skel" style={{ width: '70%' }} /></>}</div> : null}
       </div>
     </> : null}
-    {ctx ? <div className="menu ctx" style={{ left: Math.min(ctx.x, window.innerWidth - 200), top: Math.min(ctx.y, window.innerHeight - 220) }}>
+    {ctx ? <Float at={{ x: ctx.x, y: ctx.y }} onClose={() => setCtx(null)} className="menu ctx">
       {!ctx.n.dir ? <><button onClick={() => onOpen(ctx.n.rel, true)}><span style={{ flex: 1 }}>열기 (고정 탭)</span><span className="k">⏎</span></button><button onClick={() => onAttach(ctx.n.rel)}><span style={{ flex: 1 }}>첨부로 보내기</span></button><button onClick={() => onMention(ctx.n.rel)}><span style={{ flex: 1 }}>@ 로 언급하기</span><span className="k">@</span></button></>
         : <>{ctx.n.botId ? <button className="on" onClick={() => onStartAt(vaultRel(ctx.n.rel), ctx.n.botId)}><Icon n="sub" size={12} /><span style={{ flex: 1 }}>봇 열기</span><span className="k">⏎</span></button> : <button className="on" onClick={() => onStartAt(vaultRel(ctx.n.rel))}><Icon n="sub" size={12} /><span style={{ flex: 1 }}>{bot.orchestrator ? '여기서 에이전트 시작' : '이 하위 폴더로 새 봇 시작'}</span><span className="k">⏎</span></button>}<button onClick={() => onNewFolderAt(vaultRel(ctx.n.rel))}><Icon n="fplus" size={12} /><span style={{ flex: 1 }}>새 폴더 만들기 → 시작</span></button><hr /><button onClick={() => toggleDir(ctx.n.rel)}><span style={{ flex: 1 }}>{exp.has(ctx.n.rel) ? '접기' : '펼치기'}</span></button><button onClick={() => onAttach(ctx.n.rel, true)}><span style={{ flex: 1 }}>폴더째 첨부</span></button></>}
       <button onClick={() => { navigator.clipboard?.writeText(`${bot.abs}/${ctx.n.rel}`); say('경로를 복사했어요') }}><span style={{ flex: 1 }}>경로 복사</span><span className="k">⌘C</span></button>
       <button onClick={() => rename(ctx.n)}><span style={{ flex: 1 }}>이름 바꾸기</span></button>
       <hr /><button onClick={() => setExp(new Set(['']))}><span style={{ flex: 1 }}>모두 접기</span></button>
-    </div> : null}
+    </Float> : null}
   </>
 }
 

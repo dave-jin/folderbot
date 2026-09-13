@@ -13,7 +13,14 @@ export function moodOf(state?: SessionState | null, hibernated = false): Mood {
  * 모서리 배지 = 상태 색(일하는 중 주황 · 확인 노랑 · 끝남 초록 · 오류 빨강) — 레일 18px 에서도 읽힌다. 그래서 행 옆의 별도 점은 뺐다.
  * 작은 크기(≤20)는 .sm — 입 애니메이션은 끄고 시선·깜빡임·배지만 남긴다.
  */
-export function FolderBot({ color, size = 36, mood = 'idle', mono = false }: { color: string; size?: number; mood?: Mood; mono?: boolean }) {
+/**
+ * `work` — 일하는 중일 때 **무엇을 하는 중인지**까지 몸짓으로 말한다 (2026-09-13 Dave 확정).
+ *  · `think` 숨쉬기 — 몸이 부풀고 뒷판이 살짝 들린다(생각 중·명령 실행 중)
+ *  · `file`  서류 넘기기 — 폴더에서 종이가 한 장씩 올라와 사라진다(읽기·쓰기·찾기)
+ *  · `type`  타이핑 — 눈이 글을 훑고 입이 점 셋으로 깜빡인다(답 쓰는 중)
+ * ⚠ 셋 다 CSS 키프레임뿐이다 — JS 타이머 없음. `prefers-reduced-motion` 에서 멈춘다.
+ */
+export function FolderBot({ color, size = 36, mood = 'idle', mono = false, work }: { color: string; size?: number; mood?: Mood; mono?: boolean; work?: 'think' | 'file' | 'type' }) {
   const d = mono ? '#000' : 'rgba(0,0,0,.6)'
   const eyes: Record<Mood, React.ReactNode> = {
     idle: <g className="eyes"><rect x="20" y="30" width="6" height="10" rx="3" fill={d} /><rect x="38" y="30" width="6" height="10" rx="3" fill={d} /></g>,
@@ -25,9 +32,12 @@ export function FolderBot({ color, size = 36, mood = 'idle', mono = false }: { c
   }
   const badge: Partial<Record<Mood, string>> = { work: 'var(--run)', wait: 'var(--wait)', done: 'var(--done)', error: 'var(--err)' }
   return (
-    <svg viewBox="0 0 64 64" width={size} height={size} style={{ flex: 'none', display: 'block', overflow: 'visible' }} className={`fb fb-${mood} ${size <= 20 ? 'sm' : ''}`}>
+    <svg viewBox="0 0 64 64" width={size} height={size} style={{ flex: 'none', display: 'block', overflow: 'visible' }} className={`fb fb-${mood} ${work ? `fbw fbw-${work}` : ''} ${size <= 20 ? 'sm' : ''}`}>
+      {/* 서류 — `file` 일 때만 보인다(그 외에는 CSS 가 감춘다). 탭 위로 올라와 사라진다 */}
+      <rect className="pg p1" x="24" y="6" width="16" height="12" rx="2" fill={mono ? '#ededed' : 'var(--w)'} opacity="0" />
+      <rect className="pg p2" x="28" y="6" width="13" height="10" rx="2" fill={mono ? '#9a9a9a' : 'var(--t2)'} opacity="0" />
       <g className="body">
-        <path d="M6 14a4 4 0 0 1 4-4h14l5 5h29a4 4 0 0 1 4 4v33a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill={color} opacity=".55" />
+        <path className="leaf" d="M6 14a4 4 0 0 1 4-4h14l5 5h29a4 4 0 0 1 4 4v33a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill={color} opacity=".55" />
         <path d="M6 24a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill={color} />
         {eyes[mood]}
       </g>

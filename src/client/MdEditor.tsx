@@ -305,6 +305,16 @@ function addCol(view: EditorView, t: Tbl): void {
   view.dispatch({ changes })
 }
 
+/**
+ * `---` · `***` · `___` → **가로줄** (2026-09-13 Dave). 줄 전체가 마커라 통째로 바꾼다.
+ * ⚠ 프론트매터의 `---` 는 건드리지 않는다 — 거기선 구분선이 아니라 **경계**다(위에서 따로 접는다).
+ */
+class HrWidget extends WidgetType {
+  eq() { return true }
+  toDOM() { const e = document.createElement('span'); e.className = 'lp-hr'; return e }
+}
+const HR_RE = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/
+
 const TASK_RE = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]\s/
 const WIKI_RE = /\[\[([^\]|]+)(\|[^\]]*)?\]\]/g
 const IMG_LINE_RE = /^!\[([^\]]*)\]\(([^)\s]+)\)\s*$/
@@ -378,10 +388,12 @@ function build(state: EditorState): { deco: DecorationSet; atoms: { from: number
     }
   })
   // ── 프론트매터 — 맨 위 `---` 블록 (커서가 없을 때만 접는다) ──
+  let fmEnd = 0
   if (state.doc.line(1).text.trim() === '---') {
     let end = 0
     for (let n = 2; n <= Math.min(state.doc.lines, 60); n++) { if (state.doc.line(n).text.trim() === '---') { end = n; break } }
     if (end) {
+      fmEnd = end
       const touched = [...active].some((n) => n >= 1 && n <= end)
       if (!touched) {
         const from = state.doc.line(1).from, to = state.doc.line(end).to
@@ -399,6 +411,13 @@ function build(state: EditorState): { deco: DecorationSet; atoms: { from: number
     const line = state.doc.line(n)
     const live = active.has(n)
     const text = line.text
+
+    // 가로줄 — 프론트매터 안(경계)은 빼고
+    if (n > fmEnd && HR_RE.test(text) && text.trim()) {
+      marks.push(Decoration.replace({ widget: new HrWidget(), block: true }).range(line.from, line.to))
+      atoms.push({ from: line.from, to: line.to })
+      continue
+    }
 
     const img = IMG_LINE_RE.exec(text)
     if (img && !live && opts.rawUrl) {

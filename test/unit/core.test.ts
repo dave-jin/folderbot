@@ -7,6 +7,7 @@ import { machSummary } from '../../src/core/chat'
 import { AGENT_EFFORTS, AGENT_MODELS, fitsProvider } from '../../src/core/agents'
 import { cronFromText, routineName } from '../../src/core/routineText'
 import { bestIcon, faviconHost, parentHost, parseIconLinks } from '../../src/core/favicon'
+import { workLabel, workMood } from '../../src/core/work'
 import { toolSummary, touchedPath } from '../../src/core/chat'
 import { chosung, hitRange, isChosungQuery, rank, scoreName } from '../../src/core/search'
 import { decide, dropIndex } from '../../src/client/gesture'
@@ -389,5 +390,24 @@ describe('favicon — 어느 호스트의 아이콘인가', () => {
     expect(bestIcon(links)).toBe('/m.png')
     expect(bestIcon(parseIconLinks('<link rel="icon" sizes="16x16" href="/s.png">'))).toBe('/s.png')
     expect(bestIcon(parseIconLinks('<link rel="mask-icon" href="/k.svg">'))).toBe(null)
+  })
+})
+
+describe('work — 활동 한 줄 → 몸짓과 짧은 말', () => {
+  it('상황에 따라 마스코트가 바뀐다', () => {
+    expect(workMood('생각 중 · 무엇을 먼저 읽을지')).toBe('think')
+    expect(workMood('답 쓰는 중')).toBe('type')
+    expect(workMood('Read · 회의록.md')).toBe('file')
+    expect(workMood('하위 조사 › Grep · todo')).toBe('file')
+    expect(workMood('Bash · npm run qa')).toBe('think')
+    expect(workMood(undefined)).toBe('think')
+  })
+  it('짧은 말에는 파일 이름·명령이 안 들어간다', () => {
+    expect(workLabel('Read · 2026-09/회의록.md')).toBe('파일 읽는 중')
+    expect(workLabel('Edit · todo.md · 4줄 추가')).toBe('파일 고치는 중')
+    expect(workLabel('Bash · npm run qa')).toBe('명령 실행 중')
+    expect(workLabel('생각 중 · 어쩌고')).toBe('생각 중')
+    expect(workLabel('')).toBe('일하는 중')
+    for (const a of ['Read · x', 'Bash · y', '에이전트 · z']) expect(workLabel(a)).not.toMatch(/·/)
   })
 })

@@ -6,6 +6,7 @@ import { AskHost, FolderPicker, Md, NotifyCenter, Onboarding, Pairing, RoutineSh
 import { AgentPickHost, pickAgent } from './AgentPick'
 import type { SecId } from './Settings'
 import { VendorMark } from './Brand'
+import { Float } from './Float'
 import { DocPane, useDocs } from './Doc'
 import { Elapsed, Panel, type SecH } from './Panel'
 import { machSummary } from '../core/chat'
@@ -18,6 +19,7 @@ import { MODES, effortLabel, effortsFor, fmtK, modeLabel, modelLabel, modelsFor 
 import { DEFAULT_EFFORT, DEFAULT_MODEL } from '../core/agents'
 import { cronFromText, routineName } from '../core/routineText'
 import { BARE_URL_RE, faviconHost } from '../core/favicon'
+import { workLabel, workMood } from '../core/work'
 import { GLOBE, faviconNow, onFavicon } from './favicons'
 
 type Tool = Extract<ChatItem, { kind: 'tool' }>
@@ -275,7 +277,7 @@ function Main() {
   const hovOut = () => { window.clearTimeout(hovT.current); setHov(null) }
   /** 레일 우클릭 메뉴 — 폴더 줄에서 정지·은퇴·삭제 */
   const [railCtx, setRailCtx] = useState<{ x: number; y: number; id: string; name: string } | null>(null)
-  useEffect(() => { if (!railCtx) return; const off = () => setRailCtx(null); window.addEventListener('click', off); window.addEventListener('keydown', off); return () => { window.removeEventListener('click', off); window.removeEventListener('keydown', off) } }, [railCtx])
+
   const hovRow = hov ? stripBots.find((x) => x.b.id === hov.id) : undefined
   // 트리 우클릭 «여기서 에이전트 시작» · «새 폴더 만들기 → 시작» — 볼트 상대 경로로
   const startAt = async (rel: string, botId?: string) => { if (botId) { go(botId); return } if (!bot.orchestrator && !confirm(`상위 봇 ${bot.name} 와 폴더가 겹쳐요. 그래도 여기서 시작할까요?`)) return; const provider = await pickAgent(rel); if (!provider) return; try { const b = await api<Bot>('/bots/start', { body: { rel, provider } }); await refresh(); go(b.id); say(`${b.name} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
@@ -347,13 +349,13 @@ function Main() {
         {hovRow ? <HoverCard b={hovRow.b} sum={hovRow.sum} top={hov!.top} left={fit.sb + 6} /> : null}
         {/* 레일 우클릭 — 정지 · 은퇴 · 삭제 (2026-09-13 Dave). ⚠ 셋은 서로 다른 일이다:
             정지는 목록에서만 내리고, 은퇴는 Archive 로 보내 볼트에 남기고, 삭제는 볼트에서 치운다. */}
-        {railCtx ? <div className="menu ctx" style={{ left: Math.min(railCtx.x, window.innerWidth - 210), top: Math.min(railCtx.y, window.innerHeight - 140) }} onClick={() => setRailCtx(null)}>
+        {railCtx ? <Float at={{ x: railCtx.x, y: railCtx.y }} onClose={() => setRailCtx(null)} className="menu ctx"><div style={{ display: 'contents' }} onClick={() => setRailCtx(null)}>
           <div className="h">{railCtx.name}</div>
           <button onClick={async () => { try { await api(`/bots/${railCtx.id}/stop`, { body: {} }); say('정지(휴면)'); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="pause" size={13} /><span style={{ flex: 1 }}>정지 (휴면)</span><span className="k">기록 유지</span></button>
           <button onClick={async () => { if (!confirm(`${railCtx.name} 을 Archive 로 옮기고 은퇴시킬까요? 세션 기록은 보관돼요.`)) return; try { const r = await api<{ to: string }>(`/bots/${railCtx.id}/retire`, { body: {} }); say(`${r.to} 로 은퇴`); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="archive" size={13} /><span style={{ flex: 1 }}>은퇴 (Archive 로)</span></button>
           <hr />
           <button className="warn" onClick={async () => { if (!confirm(`${railCtx.name} 폴더를 지울까요?\n\n볼트 안 .folderbot/trash 로 옮겨요 — 파인더에서 꺼내면 그대로 돌아옵니다.`)) return; try { const r = await api<{ to: string }>(`/bots/${railCtx.id}/trash`, { body: {} }); say(`${r.to} 로 옮겼어요`); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="x" size={13} /><span style={{ flex: 1 }}>폴더 삭제</span><span className="k">휴지통</span></button>
-        </div> : null}
+        </div></Float> : null}
         {/* ⛔ 맥에서는 사용량을 앱 안에 안 그린다 — **메뉴바에서만** 본다 (2026-09-13 Dave: «맥에서는 그냥 메뉴바 안에서만 이게 보이면 좋겠어»).
             폰은 첫 화면 위 스트립 하나로 남는다. 두 표면 다 있으면 같은 숫자가 두 번 보이고 아래 줄이 또 비좁아진다. */}
         <div className="sb-foot two">
@@ -697,7 +699,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
           : <Item key={r.it.id} it={r.it} bot={bot} items={items} onFile={(p) => { const rel = relOf(p); if (rel) onFile(rel) }} onDrill={(id) => setDrill(id)} state={state} say={say} isLastAssistant={r.it.id === lastAssistant} isLastUser={r.it.id === lastUser?.id} userRef={lastUserRef} onRetry={lastUser ? () => void sendText(lastUser.text) : undefined} />)}
         {cur && !drill ? pending.map((p) => <PermCard key={p.requestId} p={p} sid={cur.id} />) : null}
         <div style={{ flex: 1 }} />
-        {cur && (running || state === 'awaiting_input') ? <Live cur={cur} state={state} /> : null}
+        {cur && (running || state === 'awaiting_input') ? <Live cur={cur} state={state} color={bot.color} /> : null}
         <div ref={endRef} />
       </div>
     </div>
@@ -745,10 +747,24 @@ function LinkChip({ url }: { url: string }) {
   return <span className="chip lchip" title={url}><img className="fvic" alt="" width={13} height={13} src={ic || GLOBE} /><span>{host}</span></span>
 }
 
-function Live({ cur, state }: { cur: SessionInfo; state: string }) {
+/**
+ * 진행 줄 — 🔴 **폴더봇 · 시간 · 짧은 행동**, 그리고 오른쪽 끝에 중단 (2026-09-13 Dave 확정).
+ *  ⚠ **시간이 먼저다** — 기다리는 사람이 제일 먼저 보는 값이라 오른쪽 끝이 아니라 왼쪽에 둔다.
+ *  ⛔ 도구 이름·파일 이름을 여기 쓰지 않는다. 무엇을 하는지는 **바로 위 접힌 줄**이 말하고,
+ *     그 줄이 도는 동안 물결친다(`core/work.ts` 머리말).
+ *  ⛔ 맥박 점(·)은 뺐다 — 마스코트가 이미 같은 말을 한다.
+ */
+function Live({ cur, state, color }: { cur: SessionInfo; state: string; color: string }) {
   if (state === 'awaiting_input') return <div className="live"><span className="glow" /><span className="tx">확인 대기 — 위 요청에 응답해 주세요</span><span className="el"><Elapsed from={cur.turnStartedAt} /></span></div>
-  const a = cur.activity || '일하는 중'; const think = a.startsWith('생각 중 · ')
-  return <div className="live run"><span className="pulse" /><span className="tx">{think ? '생각 중' : a}</span>{think ? <span className="th">— {a.slice(6)}</span> : null}<span className="el"><Elapsed from={cur.turnStartedAt} /></span><button className="stop" onClick={() => api(`/sessions/${cur.id}/interrupt`, { body: {} })} title="중단"><span className="w">중단</span><Icon n="stop" size={12} /></button></div>
+  const a = cur.activity ?? ''
+  return <div className="live run work">
+    <FolderBot color={color} size={22} mood="work" work={workMood(a)} mono />
+    <span className="el mono"><Elapsed from={cur.turnStartedAt} /></span>
+    <span className="sl">·</span>
+    <span className="tx">{workLabel(a)}</span>
+    <span className="sp" />
+    <button className="stop" title="중단" onClick={() => api(`/sessions/${cur.id}/interrupt`, { body: {} })}><Icon n="stop" size={9} /><span>중단</span></button>
+  </div>
 }
 
 function Item({ it, bot, items, onFile, onDrill, state, say, isLastAssistant, isLastUser, userRef, onRetry }: { it: ChatItem; bot: Bot; items: ChatItem[]; onFile: (p: string) => void; onDrill: (id: string) => void; state: string; say: (m: string) => void; isLastAssistant: boolean; isLastUser: boolean; userRef: React.MutableRefObject<HTMLDivElement | null>; onRetry?: () => void }) {
@@ -795,7 +811,7 @@ function ToolGroup({ items, onFile, base, endT }: { items: Tool[]; onFile: (p: s
   return <div className="grp"><button className={`mach ${open ? 'open' : ''}`} onClick={() => setOpen(!open)}>
     <Icon n={open ? 'chevd' : 'chev'} size={9} />
     {running ? <span className="spin" /> : null}
-    <span className="n">{bits}</span>
+    <span className={`n${running ? ' flow' : ''}`}>{bits}</span>
     {fails ? <span className="bad">실패 {fails}</span> : null}
   </button>{open ? <div className="in">{items.map((t) => <ToolLine key={t.id} it={t} onFile={onFile} base={base} />)}</div> : null}</div>
 }
