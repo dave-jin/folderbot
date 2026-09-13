@@ -629,6 +629,24 @@ try {
           ok('라이트 테마에서 단추 글자가 다 보인다')
         }
         await pg.screenshot({ path: 'test/tmp/desktop-picker.png' }); await pg.keyboard.press('Escape'); await wait(200); if (await pg.$('.pk')) await pg.click('.pk .modal-h .ib'); await wait(200)
+        // 🔴 **맥 기본 단축키** (2026-09-13 Dave: «키보드 단축키를 전 영역에 적용해줘. 맥 기본 단축키로»)
+        //    ⛔ 맨 글자 단축키는 두지 않는다 — 글 쓰는 화면이 대부분이라 치는 순간 명령이 돈다.
+        {
+          const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+          await pg.keyboard.press(`${mod}+Slash`); await wait(350)
+          if (!(await pg.$('.modal.keys'))) fail('단축키: ⌘/ 로 표가 안 뜬다')
+          const rows = await pg.$$eval('.modal.keys .krow .kk', (r) => r.map((x) => x.textContent))
+          for (const want of ['⌘,', '⌘K', '⌘N', '⌘Z']) if (!rows.includes(want)) fail(`단축키 표에 ${want} 가 없다 ` + JSON.stringify(rows))
+          await pg.keyboard.press('Escape'); await wait(250)
+          await pg.keyboard.press(`${mod}+Comma`); await wait(500)
+          if (!(await pg.$('.snav'))) fail('단축키: ⌘, 로 설정이 안 열린다')
+          await pg.keyboard.press('Escape'); await wait(300)
+          // ⛔ 입력칸에서 글을 칠 때는 단축키가 돌면 안 된다 — ⌘ 없이 치는 글자는 그냥 글자다
+          await pg.fill('.composer textarea', 'nk,/')
+          if (await pg.$('.modal.keys')) fail('단축키: 글자를 쳤는데 명령이 돌았다')
+          await pg.fill('.composer textarea', ''); await wait(200)
+          ok('맥 기본 단축키 — ⌘, 설정 · ⌘/ 표 · 글 칠 때는 안 돈다')
+        }
         // 🔴 **레일 우클릭 — 정지 · 은퇴 · 폴더 삭제** (2026-09-13 Dave: «폴더 자체를 삭제할 수 있어야 해»)
         //    ⚠ 삭제는 «지우기» 가 아니라 «치우기» 다 — .folderbot/trash 로 옮기고 파인더에서 꺼내면 돌아온다.
         {

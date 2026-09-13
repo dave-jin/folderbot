@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron')
 contextBridge.exposeInMainWorld('folderbotDesktop', {
   version: process.env.FOLDERBOT_DESKTOP_VERSION || '',
+  // 맥 메뉴바가 보낸 명령 — 같은 일을 하는 문이 둘이어도 동작은 화면 한 곳에 있다
+  onCmd: (cb) => { const f = (_e, c) => cb(c); ipcRenderer.on('fb:cmd', f); return () => ipcRenderer.removeListener('fb:cmd', f) },
   changeHost: () => ipcRenderer.send('fb:change-host'),
   hostMode: () => ipcRenderer.send('fb:host-mode'),
   hostAvailable: () => ipcRenderer.invoke('fb:host-available'),

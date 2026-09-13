@@ -34,6 +34,7 @@ function createWin() {
   win.on('closed', () => { win = null })
   win.on('focus', () => { try { win.webContents.send('fb:perms', perms.list({ host: settings.mode === 'host' })) } catch {} })
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' } })
+  Menu.setApplicationMenu(appMenu())
   loadHome()
 }
 function loadHome() {
@@ -100,6 +101,41 @@ function createTray() {
   tray.on('click', () => { if (win && win.isVisible() && win.isFocused()) win.hide(); else showWin() })
   tray.on('right-click', () => tray.popUpContextMenu(trayMenu()))
   refreshTray()
+}
+/**
+ * 맥 메뉴바 — 🔴 **맥 앱이면 메뉴가 있어야 한다.** 기본 메뉴만 두면 우리 것(설정·새 세션·단축키)이
+ *    어디에도 안 보이고, 사람은 «이 앱엔 단축키가 없나» 로 읽는다.
+ * ⛔ **편집 메뉴의 역할(role)을 직접 구현하지 않는다** — `undo`·`redo`·`cut`·`copy`·`paste`·`selectAll`
+ *    은 role 로 둬야 입력칸과 편집기에서 **맥 기본 동작 그대로** 돈다. 손으로 만들면 그 순간 깨진다.
+ * ⚠ 우리 항목은 **화면으로 보낸다**(`fb:cmd`) — 동작은 렌더러 한 곳(App.tsx 의 KEYS)에만 둔다.
+ */
+function appMenu() {
+  const cmd = (c) => () => { try { win?.webContents.send('fb:cmd', c) } catch {} }
+  const isMac = process.platform === 'darwin'
+  return Menu.buildFromTemplate([
+    ...(isMac ? [{ label: app.name, submenu: [
+      { role: 'about' }, { type: 'separator' },
+      { label: '설정…', accelerator: 'CmdOrCtrl+,', click: cmd('settings') },
+      { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
+      { type: 'separator' }, { role: 'quit' }
+    ] }] : []),
+    { label: '파일', submenu: [
+      { label: '새 세션', accelerator: 'CmdOrCtrl+N', click: cmd('new-session') },
+      { label: '폴더 고르기 · 시작', accelerator: 'CmdOrCtrl+K', click: cmd('picker') },
+      { type: 'separator' }, { role: isMac ? 'close' : 'quit' }
+    ] },
+    { label: '편집', submenu: [
+      { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+      { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }
+    ] },
+    { label: '보기', submenu: [
+      { label: '알림', accelerator: 'CmdOrCtrl+Shift+U', click: cmd('notify') },
+      { type: 'separator' }, { role: 'reload' }, { role: 'togglefullscreen' }, { role: 'toggleDevTools' }
+    ] },
+    { label: '도움말', submenu: [
+      { label: '단축키', accelerator: 'CmdOrCtrl+/', click: cmd('keys') }
+    ] }
+  ])
 }
 function trayMenu() {
   return Menu.buildFromTemplate([

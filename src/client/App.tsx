@@ -125,7 +125,39 @@ const DOC_MIN = 380, SIDE_MIN = 200, STRIP_W = 45
 function useWinW(): number { const [w, setW] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1440)); useEffect(() => { const f = () => setW(window.innerWidth); window.addEventListener('resize', f); return () => window.removeEventListener('resize', f) }, []); return w }
 const DEF: Layout = { sb: 250, rp: 290, doc: 520, sbOpen: true, rpOpen: true, sbPin: false, rpPin: false, secH: { sessions: 120, todo: 128 } }
 interface UpdState { lastCheck: number; current: string; staged: { version: string; ready: boolean; progress: number; notes: string } | null; downloading: boolean; checking: boolean; lastError: string; deferred: boolean; busy: number; host: boolean }
-interface DesktopBridge { version?: string; update?: { state: () => Promise<UpdState>; check: () => Promise<UpdState>; apply: () => void; onChange: (cb: (st: UpdState) => void) => () => void } }
+/**
+ * 단축키 표 — 🔴 **여기가 정본이고 ⌘/ 가 이걸 그대로 보여 준다.**
+ *    표를 따로 쓰면 실제 동작과 갈리고, 갈린 표는 없느니만 못하다.
+ * ⚠ 맥 표기(⌘·⇧)로 적되, 윈도·리눅스에서도 같은 키가 ⌃ 로 돈다(핸들러가 둘 다 받는다).
+ */
+export const KEYS: { k: string; t: string; d?: string }[] = [
+  { k: '⌘,', t: '설정' },
+  { k: '⌘/', t: '단축키 보기' },
+  { k: '⌘K', t: '폴더 고르기 · 시작' },
+  { k: '⌘N', t: '새 세션', d: '지금 폴더' },
+  { k: '⌘⇧N', t: '새 폴더에서 시작' },
+  { k: '⌘1…9', t: 'n번째 폴더로' },
+  { k: '⌘[ ⌘]', t: '이전 · 다음 폴더' },
+  { k: '⌘B', t: '폴더 목록 접기' },
+  { k: '⌘⇧B', t: '오른쪽 패널 접기' },
+  { k: '⌘⇧D', t: '문서 열 접기' },
+  { k: '⌘⇧U', t: '알림' },
+  { k: '⌘W', t: '문서 탭 닫기' },
+  { k: '↩', t: '보내기' },
+  { k: '⇧↩', t: '줄 바꾸기' },
+  { k: '⎋', t: '닫기 · 편집 끝내기' },
+  { k: '⌘Z', t: '실행 취소', d: '맥 기본 — 우리가 안 가로챈다' },
+  { k: '⌘F', t: '문서에서 찾기', d: '편집기 기본' }
+]
+
+function KeysSheet({ onClose }: { onClose: () => void }) {
+  return <div className="modal-w" onClick={onClose}><div className="modal keys" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-h"><b>단축키</b><span className="sp" /><button className="ib" onClick={onClose}><Icon n="x" size={13} /></button></div>
+    <div className="modal-b">{KEYS.map((x) => <div className="krow" key={x.k}><span className="kk mono">{x.k}</span><span className="kt">{x.t}</span>{x.d ? <span className="kd">{x.d}</span> : null}</div>)}</div>
+  </div></div>
+}
+
+interface DesktopBridge { version?: string; onCmd?: (cb: (c: string) => void) => () => void; update?: { state: () => Promise<UpdState>; check: () => Promise<UpdState>; apply: () => void; onChange: (cb: (st: UpdState) => void) => () => void } }
 const desk = (window as unknown as { folderbotDesktop?: DesktopBridge }).folderbotDesktop
 const isDesktop = typeof desk !== 'undefined'
 
@@ -173,7 +205,7 @@ function Main() {
   const [docOpen, setDocOpen] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem('fb:docopen') ?? '{}') } catch { return {} } })
   useEffect(() => { localStorage.setItem('fb:docopen', JSON.stringify(docOpen)) }, [docOpen])
   const [wide, setWide] = useState(false)
-  const [modal, setModal] = useState<'picker' | 'notify' | 'settings' | null>(null)
+  const [modal, setModal] = useState<'picker' | 'notify' | 'settings' | 'keys' | null>(null)
   // «설정의 그 칸을 열어 줘» — 에이전트 고르기 화면의 «바꾸기» 가 이걸 쏜다 (V24)
   const [setSec, setSetSec] = useState<SecId | undefined>(undefined)
   useEffect(() => { const f = (e: Event) => { setSetSec((e as CustomEvent).detail as SecId); setModal('settings') }; window.addEventListener('fb:settings', f); return () => window.removeEventListener('fb:settings', f) }, [])
@@ -195,16 +227,6 @@ function Main() {
   const showDoc = !!bot && (phone || !!docOpen[bot.id]) && docs.tabs.length > 0
   const openDoc = (rel: string, pin = false) => { if (!bot) return; docs.open(rel, pin); setDocOpen((d) => ({ ...d, [bot.id]: true })); if (phone) setView('doc') }
   const addAttach = (a: Att) => { setAttachReq((q) => [...q, { ...a, abs: a.abs || `${bot?.abs}/${a.rel}` }]); if (phone) setView('chat') }
-  // 단축키 — ⌘B 목록 · ⌘⇧B 패널 · ⌘⇧D 문서 열
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey)) return
-      if (e.key === 'b' && !e.shiftKey) { e.preventDefault(); setLay((l) => ({ ...l, sbOpen: !l.sbOpen })) }
-      if (e.key.toLowerCase() === 'b' && e.shiftKey) { e.preventDefault(); setLay((l) => ({ ...l, rpOpen: !l.rpOpen })) }
-      if (e.key.toLowerCase() === 'd' && e.shiftKey && bot) { e.preventDefault(); setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] })) }
-    }
-    window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
-  }, [bot?.id])
   // 열 드래그 — 선이 핸들. 더블클릭은 기본값
   const dragX = (k: 'sb' | 'rp' | 'doc', dir: 1 | -1) => (e: React.PointerEvent) => {
     e.preventDefault(); setDrag('x'); const x0 = e.clientX; const w0 = lay[k]
@@ -256,6 +278,50 @@ function Main() {
   const startAt = async (rel: string, botId?: string) => { if (botId) { go(botId); return } if (!bot.orchestrator && !confirm(`상위 봇 ${bot.name} 와 폴더가 겹쳐요. 그래도 여기서 시작할까요?`)) return; const provider = await pickAgent(rel); if (!provider) return; try { const b = await api<Bot>('/bots/start', { body: { rel, provider } }); await refresh(); go(b.id); say(`${b.name} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
   const newFolderAt = async (parent: string) => { const name = await askName(`${parent || '볼트'} 안에 만들 폴더 이름`); if (!name?.trim()) return; const provider = await pickAgent(`${parent ? parent + '/' : ''}${name.trim()}`); if (!provider) return; try { const r = await api<{ rel: string; bot: Bot }>('/folders', { body: { section: parent, name: name.trim(), start: true, provider } }); await refresh(); go(r.bot.id); say(`${r.rel} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
   const newSession = async () => { const info = await api<SessionInfo>(`/bots/${bot.id}/sessions`, { body: { name: `세션 ${sessions.length + 1}` } }); await refresh(); go(bot.id, info.id) }
+  /**
+   * 전역 단축키 — **맥 앱의 상식대로** (2026-09-13 Dave: «맥 기본 단축키로»).
+   *
+   * 🔴 **전부 ⌘(⌃) 를 낀다.** 맨 글자 단축키를 두면 **입력칸에 글자를 치는 순간 명령이 돈다** —
+   *    채팅·문서·이름 바꾸기가 전부 글 쓰는 화면이라 여기서는 맨 글자를 절대 쓰지 않는다.
+   * ⛔ **텍스트 편집 단축키(⌘Z·⌘C·⌘V·⌘A·⌘F)는 우리가 가로채지 않는다** — 맥의 기본 동작과
+   *    편집기(CodeMirror)의 것이 이긴다. 가로채는 순간 «실행 취소가 안 되는 앱» 이 된다.
+   * ⚠ 목록은 `KEYS` 한 곳에 있고 ⌘/ 가 그 목록을 그대로 보여 준다 — 표와 동작이 갈리지 않게.
+   */
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return
+      const key = e.key.toLowerCase()
+      const hit = (want: string, shift = false) => key === want && e.shiftKey === shift && !e.altKey
+      if (hit('b')) { e.preventDefault(); setLay((l) => ({ ...l, sbOpen: !l.sbOpen })); return }
+      if (hit('b', true)) { e.preventDefault(); setLay((l) => ({ ...l, rpOpen: !l.rpOpen })); return }
+      if (hit('d', true) && bot) { e.preventDefault(); setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] })); return }
+      if (hit(',')) { e.preventDefault(); setModal('settings'); return }
+      if (hit('/') || key === '?') { e.preventDefault(); setModal((m) => (m === 'keys' ? null : 'keys')); return }
+      if (hit('k')) { e.preventDefault(); setModal('picker'); return }
+      if (hit('n')) { e.preventDefault(); void newSession(); return }
+      if (hit('n', true)) { e.preventDefault(); setModal('picker'); return }
+      if (hit('u', true)) { e.preventDefault(); setModal('notify'); return }
+      // ⌘1..9 · ⌘[ ⌘] — 폴더 사이를 옮긴다 (레일 순서 그대로)
+      const flat = rows.flatMap(([, l]) => l.map((x) => x.b.id))
+      if (/^[1-9]$/.test(key)) { const t = flat[Number(key) - 1]; if (t) { e.preventDefault(); go(t) } return }
+      if (key === '[' || key === ']') {
+        const i = flat.indexOf(bot?.id ?? ''); if (i < 0 || flat.length < 2) return
+        e.preventDefault(); go(flat[(i + (key === ']' ? 1 : -1) + flat.length) % flat.length])
+      }
+    }
+    window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
+  }, [bot?.id, rows, sessions.length])
+  /** 맥 메뉴바에서 온 명령 — 같은 일을 하는 문이 둘이어도 **동작은 한 곳**이다 */
+  useEffect(() => {
+    const off = desk?.onCmd?.((c: string) => {
+      if (c === 'settings') setModal('settings')
+      else if (c === 'keys') setModal('keys')
+      else if (c === 'picker') setModal('picker')
+      else if (c === 'notify') setModal('notify')
+      else if (c === 'new-session') void newSession()
+    })
+    return off
+  }, [bot?.id, sessions.length])
   return <div className={`app ${isDesktop ? 'desktop' : ''} ${phone ? 'phone' : ''} ${kb ? 'kb' : ''} ${drag === 'x' ? 'dragx' : drag === 'y' ? 'dragy' : ''}`} data-view={view === 'doc' && !showDoc ? 'panel' : view}>
     {s.online === 'off' ? <div className="offline">{s.hostName || '호스트'} 와 다시 연결하는 중…</div> : null}
     {s.auth.verdict === 'unreadable' || s.auth.verdict === 'loggedout' ? <div className="banner"><span className="dot wait" /><span><b>{s.hostName} 에서 Claude 로그인이 필요해요.</b> 호스트 맥에서 <span className="mono">claude</span> → <span className="mono">/login</span>, 또는 설정 › Claude 토큰. 보낸 지시는 대기열에 두었다가 복구되면 이어서 해요.</span><span style={{ marginLeft: 'auto' }} /><button className="btn" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button></div> : null}
@@ -317,6 +383,7 @@ function Main() {
     {modal === 'picker' ? <FolderPicker onClose={() => setModal(null)} onStarted={(b) => { setModal(null); go(b.id); say(`${b.name} 에서 시작했어요`) }} /> : null}
     {modal === 'notify' ? <NotifyCenter onClose={() => setModal(null)} onJump={(n) => { setModal(null); api('/notifications/read', { body: { ids: [n.id] } }).then(refresh); go(n.botId, n.sessionId) }} /> : null}
     {modal === 'settings' ? <Settings onClose={() => { setModal(null); setSetSec(undefined) }} start={setSec} /> : null}
+    {modal === 'keys' ? <KeysSheet onClose={() => setModal(null)} /> : null}
     <AskHost />
     <AgentPickHost />
     {toast ? <div className="toast">{toast}</div> : null}

@@ -56,6 +56,12 @@ export function Settings({ onClose, start }: { onClose: () => void; start?: SecI
   const hits = useMemo(() => (q.trim() ? searchRows(q) : []), [q])
   const cur = SECS.find((x) => x.id === sec)!
   const body = <Pane sec={sec} onClose={onClose} />
+  /** ⎋ 로 닫는다 — 맥에서 시트를 닫는 기본 동작이고, 우리 단축키 표(⌘/)도 그렇게 적어 뒀다.
+      ⚠ 찾기 칸에 글을 치는 중이면 ⎋ 는 **찾기를 먼저 비운다**(한 번 더 누르면 닫힌다). */
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key !== 'Escape') return; e.preventDefault(); if (q) setQ(''); else onClose() }
+    window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
+  }, [q, onClose])
 
   // ── 폰: 목차가 목록이 되고, 누르면 그 칸만 한 화면으로 ──
   if (phone) {
