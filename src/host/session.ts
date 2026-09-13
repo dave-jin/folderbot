@@ -9,6 +9,7 @@ import { transition, shouldNotify } from '../core/stateMachine'
 import { assistantText, closeOpenItems, contextOf, itemId, toolSummary, touchedPath, type StreamLine } from '../core/chat'
 import { CodexWorker } from './codex'
 import { fitsProvider } from '../core/agents'
+import { CODEX_LOCAL, parseLocalSlash } from '../core/slashLocal'
 import type { Bot, ChatItem, PermissionMode, PermissionRequest, SessionInfo, SessionState } from '../core/types'
 import { atomicWrite, dataDir, ensureDir } from './paths'
 
@@ -460,6 +461,31 @@ export class SessionManager extends EventEmitter {
   }
 
   send(r: SessionRec, bot: Bot, text: string): void {
+    /**
+     * 🔴 **Codex 의 슬래시 명령은 우리가 처리한다** (2026-09-13 Dave: «codex 에서는 /clear 와 같은
+     *    메시지도 동작을 안해»). `codex exec` 는 한 턴짜리 명령이라 «세션 명령» 이 없다 —
+     *    `/clear` 를 보내면 **그 글자를 프롬프트로** 받아 엉뚱한 답을 한다.
+     * ⚠ `/clear` 의 진짜 뜻은 «이어가기를 끊는다» 다 — 다음 턴이 `resume` 없이 새로 시작한다.
+     *    대화 기록은 **지우지 않는다**: 사람이 쓴 말은 사람 것이고, 지우려면 «세션 삭제» 가 따로 있다.
+     */
+    if (r.vendor === 'codex') {
+      const hit = parseLocalSlash(text, CODEX_LOCAL)
+      if (hit) {
+        this.push(r, { id: itemId('u'), t: Date.now(), kind: 'user', text })
+        if (hit.name === 'clear' || hit.name === 'new') {
+          const w0 = this.workers.get(r.id)
+          if (w0) { w0.kill(); this.workers.delete(r.id) }
+          r.cliSessionId = null
+          this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: '새 대화로 — 여기까지의 맥락을 끊었어요. 다음 메시지는 처음부터 시작합니다.' })
+        }
+        // ⚠ 명령 뒤에 글이 붙어 있으면(«/clear 그리고 …») 그 글은 **새 대화의 첫 말**로 보낸다
+        if (hit.rest) { const w2 = this.ensureWorker(r, bot); w2.send(hit.rest); this.setActivity(r, '시작하는 중', true); this.setState(r, { kind: 'user_sent' }) }
+        else this.setState(r, { kind: 'result_received', isError: false })   // ⚠ 턴이 없었으니 곧바로 «끝남» 으로 되돌린다
+        this.persist(r)
+        this.emit('sessions', r.botId)
+        return
+      }
+    }
     const w = this.ensureWorker(r, bot)
     this.push(r, { id: itemId('u'), t: Date.now(), kind: 'user', text })
     w.send(text)

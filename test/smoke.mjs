@@ -1724,6 +1724,32 @@ try {
       if (!note) fail('빈 턴: 이유를 안 적었다 — 화면이 조용히 빈다 ' + JSON.stringify(epChat.items.map((x) => [x.kind, (x.text ?? '').slice(0, 40)])))
       if (!/something went wrong/.test(note.text)) fail('빈 턴: CLI 가 한 말이 안 들어갔다 ' + note.text)
       /**
+       * 🔴 **Codex 의 `/clear` 는 우리가 처리한다** (2026-09-13 Dave: «codex 에서는 /clear 와 같은
+       *    메시지도 동작을 안해»). `codex exec` 는 한 턴짜리라 «세션 명령» 이 없다 — 그 글자가
+       *    **프롬프트로** 들어가 엉뚱한 답이 왔다.
+       * ⚠ `/clear` 의 뜻은 «이어가기를 끊는다» 다. 대화 기록은 **안 지운다**(사람이 쓴 말은 사람 것).
+       * ⛔ 목록에 Claude 의 명령이 섞이면 안 된다 — 고르는 순간 그 글자가 프롬프트로 들어간다.
+       */
+      {
+        const cl = await api2(`/bots/${b1.id}/sessions`, { name: '클리어', vendor: 'codex' })
+        await api2(`/sessions/${cl.id}/send`, { text: '첫 말' })
+        for (let i = 0; i < 60; i++) { const c = await api2(`/sessions/${cl.id}/chat`); if (c.items.some((x) => x.kind === 'assistant')) break; await wait(250) }
+        const before = await api2(`/sessions/${cl.id}/chat`)
+        if (!before.info.cliSessionId) fail('/clear: 첫 턴 뒤에 이어갈 세션 id 가 없다')
+        await api2(`/sessions/${cl.id}/send`, { text: '/clear' })
+        await wait(700)
+        const after = await api2(`/sessions/${cl.id}/chat`)
+        if (after.info.cliSessionId) fail('🔴 /clear 가 이어가기를 안 끊었다 ' + after.info.cliSessionId)
+        if (after.items.length < before.items.length) fail('🔴 /clear 가 대화 기록을 지웠다 — 사람이 쓴 말은 사람 것이다')
+        if (!after.items.some((x) => x.kind === 'system' && /새 대화로/.test(x.text ?? ''))) fail('/clear: 무슨 일이 났는지 안 알려 준다 ' + JSON.stringify(after.items.slice(-2)))
+        // 목록 — Codex 세션에는 Claude 의 명령이 안 보인다
+        const menu = await api2(`/bots/${b1.id}/slash?sid=${cl.id}`)
+        const names = menu.map((c) => c.name)
+        if (!names.includes('clear')) fail('Codex 슬래시 목록에 clear 가 없다 ' + JSON.stringify(names))
+        if (names.includes('compact') || names.includes('review')) fail('🔴 Codex 목록에 Claude 의 명령이 섞였다 ' + JSON.stringify(names))
+        ok('Codex — /clear 가 이어가기를 끊고, 목록에 Claude 의 명령이 안 섞인다')
+      }
+      /**
        * 🔴 **두 번째 턴(resume)** — `codex exec resume` 는 깃발이 좁다(`--sandbox` 가 없다).
        *    한 벌로 묶어 넘겼더니 **첫 턴은 멀쩡하고 두 번째 턴부터** 전부 죽었다
        *    («tip: to pass '--sandbox' as a value…» · 2026-09-13 Dave 실측).
