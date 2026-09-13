@@ -7,7 +7,7 @@ import { DocPane, useDocs } from './Doc'
 import { Elapsed, Panel, type SecH } from './Panel'
 import { norm, scoreName } from '../core/search'
 import { fmtTime, useStore } from './store'
-import { useTheme } from './theme'
+import { ICON_PX, useIconSize, useTheme } from './theme'
 import { PermGate, usePerms } from './Perms'
 import { EFFORTS, MODELS, MODES, effortLabel, fmtK, modeLabel, modelLabel } from './consts'
 
@@ -45,7 +45,15 @@ function useKeyboard(): boolean {
     const f = () => {
       const ae = document.activeElement as HTMLElement | null
       const editing = !!ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)
-      const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+      /**
+       * 🔴 «키보드 높이» 에서 offsetTop 을 빼면 안 된다 (2026-09-13 Dave 2차 사고).
+       * iOS 는 포커스된 칸을 보이게 하려고 **시각 뷰포트를 아래로 민다** — 그때 offsetTop 이 커진다.
+       * 종전 식(innerHeight − vv.height − offsetTop)은 그만큼 줄어들어 140 아래로 떨어지고,
+       * «키보드가 닫혔다» 고 잘못 판정해 --vvh 를 지웠다. 루트가 100dvh 로 돌아가니 컴포저가
+       * 키보드 밑에 묻혔다(«다시 키보드 올라갔을 때 타이핑 위치 안 잡혀»).
+       * 키보드가 먹은 높이는 레이아웃 뷰포트와 시각 뷰포트의 차이 하나다. 밀린 만큼은 --vvt 가 갚는다.
+       */
+      const covered = Math.max(0, window.innerHeight - vv.height)
       const open = editing && covered > 140
       const st = document.documentElement.style
       if (open) { st.setProperty('--vvh', `${Math.round(vv.height)}px`); st.setProperty('--vvt', `${Math.round(vv.offsetTop)}px`) }
@@ -135,6 +143,7 @@ function Main() {
   const sessions = s.sessionsByBot[bot?.id ?? ''] ?? []
   const sessionId = hash.s && sessions.some((x) => x.id === hash.s) ? hash.s : sessions[0]?.id
   const narrow = useMedia('(max-width: 1100px)'); const phone = useMedia('(max-width: 760px)'); const kb = useKeyboard()
+  const [iconSz] = useIconSize() // 레일 폴더봇 크기 — 설정에서 고른다(--fbi 도 함께 나간다)
   const [view, setView] = useState<'list' | 'chat' | 'doc' | 'panel'>(hash.bot ? 'chat' : 'list')
   const [lay, setLay] = useState<Layout>(() => { try { return { ...DEF, ...JSON.parse(localStorage.getItem('fb:layout') ?? '') } } catch { return DEF } })
   useEffect(() => { localStorage.setItem('fb:layout', JSON.stringify(lay)) }, [lay])
@@ -234,7 +243,7 @@ function Main() {
         <div className="sb-list">
           {rows.map(([sec, list]) => <div key={sec}>
             <div className="secl">{sec === '관제' ? '관제' : sec}</div>
-            {list.map(({ b, sum }) => <button key={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''}`} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={16} mood={sum.mood} mono /><span className="n"><Mid s={b.name} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span><time>{fmtTime(sum.t)}</time></button>)}
+            {list.map(({ b, sum }) => <button key={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''}`} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={ICON_PX[iconSz]} mood={sum.mood} mono /><span className="n"><Mid s={b.name} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span><time>{fmtTime(sum.t)}</time></button>)}
           </div>)}
         </div>
         {hovRow ? <HoverCard b={hovRow.b} sum={hovRow.sum} top={hov!.top} left={fit.sb + 6} /> : null}
@@ -283,7 +292,7 @@ function HoverCard({ b, sum, top, left }: { b: Bot; sum: ReturnType<typeof botSu
   const y = Math.max(8, Math.min(top - 8, (typeof window !== 'undefined' ? window.innerHeight : 800) - 230))
   const say = lastMsg ? `${lastMsg.kind === 'user' ? '나' : '봇'}: ${lastMsg.text.replace(/\s+/g, ' ').slice(0, 140)}` : lastN ? `${lastN.title}: ${lastN.body}`.slice(0, 140) : ''
   return <div className="hcard" style={{ top: y, left }}>
-    <div className="hh"><FolderBot color={b.color} size={18} mood={sum.mood} mono /><b><Mid s={b.name} /></b><span className={`dot ${stateDot(sum.state ?? undefined)}`} /></div>
+    <div className="hh"><FolderBot color={b.color} size={28} mood={sum.mood} mono /><b><Mid s={b.name} /></b><span className={`dot ${stateDot(sum.state ?? undefined)}`} /></div>
     <div className="hp mono">{b.rel || '볼트 (오케스트레이터)'}</div>
     <div className="hs">{sum.text}</div>
     <div className="hk">
@@ -362,6 +371,12 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const [slash, setSlash] = useState<SlashCmd[]>([]); const [files, setFiles] = useState<FileNode[] | null>(null); const [sel, setSel] = useState(0); const [dismissed, setDismissed] = useState('')
   const [pinned, setPinned] = useState(false); const [atBottom, setAtBottom] = useState(true); const atBottomRef = useRef(true); atBottomRef.current = atBottom
   useEffect(() => { const el = scRef.current; if (!el || typeof ResizeObserver === 'undefined') return; const ro = new ResizeObserver(() => { if (atBottomRef.current) el.scrollTop = el.scrollHeight }); ro.observe(el); return () => ro.disconnect() }, [])
+  /**
+   * 폰에서 키보드가 올라오면 **대화를 맨 아래로 붙인다** — 읽으려고 위로 올려 둔 채 입력칸을 누르면
+   * 종전에는 그 자리에 그대로 멈춰 있어 «무엇에 답하는지» 가 안 보였다(Dave: «타이핑 위치 안 잡혀»).
+   * 키보드가 자리를 잡는 데 몇 프레임 걸리므로 두 번 더 붙인다. 위로 올려 둔 것은 키보드를 내리면 그대로다.
+   */
+  const stickBottom = () => { const el = scRef.current; if (!el) return; const go = () => { el.scrollTop = el.scrollHeight }; go(); setTimeout(go, 120); setTimeout(go, 400); setTimeout(go, 800) }
   const [draft, setDraft] = useState<{ model?: string; effort?: string; permissionMode?: PermissionMode }>({})
   const fileRef = useRef<HTMLInputElement>(null); const endRef = useRef<HTMLDivElement>(null); const taRef = useRef<HTMLTextAreaElement>(null); const scRef = useRef<HTMLDivElement>(null); const footRef = useRef<HTMLDivElement>(null); const colRef = useRef<HTMLDivElement>(null); const lastUserRef = useRef<HTMLDivElement | null>(null)
   const state = cur?.state ?? 'idle'; const running = state === 'running'
@@ -485,7 +500,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
         {drop ? <div className="drophint"><Icon n="plus" size={13} />{drop === 'files' ? '놓으면 첨부/ 에 복사하고 첨부' : '놓으면 첨부'}</div> : null}
         <div className="crow">
           {phone ? plusBtn : null}
-          <textarea ref={taRef} rows={1} placeholder={drill ? '메인 대화로 보냅니다 — 이 안에는 직접 말을 걸 수 없어요' : running ? '⏎ 로 대기열에 넣습니다' : state === 'awaiting_input' ? '답을 기다리는 중 — 보내면 대기열에' : '메시지…  / 스킬 · @ 파일'} value={text} onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(180, e.target.scrollHeight)}px` }} onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? 0)} onClick={(e) => setCaret(e.currentTarget.selectionStart ?? 0)} onKeyDown={onKey} />
+          <textarea ref={taRef} rows={1} onFocus={() => { if (phone) stickBottom() }} placeholder={drill ? '메인 대화로 보냅니다 — 이 안에는 직접 말을 걸 수 없어요' : running ? '⏎ 로 대기열에 넣습니다' : state === 'awaiting_input' ? '답을 기다리는 중 — 보내면 대기열에' : '메시지…  / 스킬 · @ 파일'} value={text} onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(180, e.target.scrollHeight)}px` }} onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? 0)} onClick={(e) => setCaret(e.currentTarget.selectionStart ?? 0)} onKeyDown={onKey} />
           {phone ? <>{ringBtn}{sendBtn}</> : null}
         </div>
         {!phone ? <div className="cbar">{modeBtn}{plusBtn}<span className="sp" />{modelBtn}{effortBtn}{ringBtn}{sendBtn}</div> : null}

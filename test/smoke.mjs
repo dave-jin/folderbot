@@ -189,7 +189,9 @@ try {
         const H = window.innerHeight, W = window.innerWidth, t = new EventTarget()
         const vv = { width: W, height: H, offsetTop: 0, offsetLeft: 0, pageTop: 0, pageLeft: 0, scale: 1, addEventListener: t.addEventListener.bind(t), removeEventListener: t.removeEventListener.bind(t), dispatchEvent: t.dispatchEvent.bind(t) }
         Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true })
-        window.__kb = (h) => { vv.height = H - h; vv.dispatchEvent(new Event('resize')) }
+        window.__kb = (h) => { vv.height = H - h; vv.offsetTop = 0; vv.dispatchEvent(new Event('resize')) }
+        // iOS 는 포커스된 칸을 보이려고 «시각 뷰포트를 아래로 민다» — 그때 offsetTop 이 커진다(2026-09-13 2차 사고의 방아쇠)
+        window.__kbOff = (h, top) => { vv.height = H - h; vv.offsetTop = top; vv.dispatchEvent(new Event('resize')) }
       })
       const errs = []; pg.on('pageerror', (e) => errs.push(e.message)); pg.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()) })
       await pg.goto(base + `/#bot=${bot.id}`)
@@ -275,7 +277,27 @@ try {
         const cho = await pg.$$eval('.pk [data-rel]', (r) => r.map((x) => x.getAttribute('data-rel').normalize('NFC')))
         if (!cho.includes('5. Archive/2025-04_트레바리-북클럽')) fail('ui picker 초성 검색: ' + cho.join(','))
         await pg.fill('.pk .search input', '트레바리'); await wait(500); await pg.screenshot({ path: 'test/tmp/desktop-picker-search.png' })
-        await pg.fill('.pk .search input', ''); await wait(400)
+        await pg.fill('.pk .search input', ''); await wait(300); if (await pg.$('.pk')) { await pg.click('.pk .modal-h .ib'); await wait(300) }
+        // 레일 폴더봇 크기 — 설정에서 고르고(작게·보통·크게), 마우스를 올리면 한 번 더 커진다
+        // (2026-09-13 Dave: «너무 작게 보여서 귀여운 폴더 표정이 잘 안 보여» · «마우스 오버했을 때는 크게 보이면 더 좋아»)
+        const iconOf = () => pg.evaluate(() => { const el = document.querySelector('.brow .fb'); return { w: el.getBoundingClientRect().width, attr: Number(el.getAttribute('width')) } })
+        const before = await iconOf()
+        await pg.click('.col.side.left .nav:has-text("설정")'); await pg.waitForSelector('.modal', { timeout: 4000 }); await wait(300)
+        const segs = await pg.$$eval('.modal .seg', (ss) => ss.map((x) => x.textContent))
+        if (!segs.some((t) => /작게.*보통.*크게/.test(t))) fail('설정에 폴더봇 크기 없음: ' + JSON.stringify(segs))
+        await pg.click('.modal .kv:has-text("폴더봇 크기") .seg button:has-text("크게")'); await wait(400)
+        await pg.click('.modal .modal-h .ib'); await wait(300)
+        const big = await iconOf()
+        if (big.attr <= before.attr) fail('폴더봇 «크게» 가 안 커짐 ' + JSON.stringify({ before, big }))
+        const rowH = await pg.evaluate(() => document.querySelector('.brow').getBoundingClientRect().height)
+        if (rowH < big.attr) fail('줄 높이가 아이콘을 못 담음 ' + JSON.stringify({ rowH, big }))
+        await pg.hover('.brow'); await wait(350)
+        const hovW = await pg.evaluate(() => document.querySelector('.brow .fb').getBoundingClientRect().width)
+        if (hovW < big.w * 1.2) fail('마우스 오버에 안 커짐 ' + JSON.stringify({ big, hovW }))
+        await pg.screenshot({ path: 'test/tmp/desktop-rail-big.png' })
+        await pg.mouse.move(900, 700); await wait(300)
+        await pg.evaluate(() => { localStorage.setItem('fb:icon', 'm'); window.dispatchEvent(new Event('fb:iconsize')) }); await wait(200)
+        await pg.click('.col.side.left .nav:has-text("폴더 선택")'); await pg.waitForSelector('.pk [data-rel]', { timeout: 5000 }); await wait(300)
 
         await pg.screenshot({ path: 'test/tmp/desktop-picker.png' }); await pg.keyboard.press('Escape'); await wait(200); if (await pg.$('.pk')) await pg.click('.pk .modal-h .ib'); await wait(200)
         // 트리 우클릭 — 폴더면 «새 봇 시작» 항목이 있다
@@ -345,6 +367,23 @@ try {
         const over = await pg.evaluate(() => ({ rootH: document.querySelector('#root').getBoundingClientRect().height, ih: innerHeight, compBottom: document.querySelector('.composer').getBoundingClientRect().bottom }))
         if (over.rootH > over.ih + 1 || over.compBottom > over.ih + 1) fail('phone: composer must stay on screen ' + JSON.stringify(over))
         await pg.evaluate(() => window.__kb(0)); await wait(200)
+        // 🔴 iOS 가 시각 뷰포트를 아래로 밀어도(offsetTop) «키보드가 닫혔다» 고 착각하지 않는다
+        //    종전 식은 offsetTop 을 빼서 140 아래로 떨어졌고, --vvh 를 지워 컴포저가 키보드 밑에 묻혔다
+        //    (2026-09-13 Dave: «다시 키보드 올라갔을 때 채팅 화면 타이핑 위치 안 잡혀»)
+        await pg.focus('.composer textarea'); await pg.evaluate(() => window.__kbOff(336, 300)); await wait(400)
+        const push = await pg.evaluate(() => { const r = document.querySelector('#root').getBoundingClientRect(); const c = document.querySelector('.composer').getBoundingClientRect(); return { kb: document.querySelector('.app').classList.contains('kb'), rootTop: r.top, rootH: r.height, compBottom: c.bottom, ih: innerHeight, vh: visualViewport.height, top: visualViewport.offsetTop } })
+        if (!push.kb) fail('phone: 밀린 시각 뷰포트를 «닫힘» 으로 착각 ' + JSON.stringify(push))
+        if (Math.abs(push.rootH - push.vh) > 2 || Math.abs(push.rootTop - push.top) > 2) fail('phone: 밀린 만큼 루트가 안 따라감 ' + JSON.stringify(push))
+        if (push.compBottom > push.top + push.vh + 1) fail('phone: 밀렸을 때 컴포저가 보이는 영역 밖 ' + JSON.stringify(push))
+        await pg.evaluate(() => window.__kb(0)); await pg.evaluate(() => document.activeElement.blur()); await wait(300)
+
+        // 입력칸을 누르면 대화가 맨 아래로 붙는다 — «무엇에 답하는지» 가 보여야 한다
+        await pg.evaluate(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop = 0 }); await wait(200)
+        await pg.focus('.composer textarea'); await pg.evaluate(() => window.__kb(336)); await wait(900)
+        const stick = await pg.evaluate(() => { const el = document.querySelector('.chat-scroll'); return { d: el.scrollHeight - el.scrollTop - el.clientHeight, sh: el.scrollHeight, ch: el.clientHeight } })
+        if (stick.sh > stick.ch + 20 && stick.d > 20) fail('phone: 키보드가 올라와도 맨 아래로 안 붙음 ' + JSON.stringify(stick))
+        await pg.evaluate(() => window.__kb(0)); await pg.evaluate(() => document.activeElement.blur()); await wait(300)
+
         // iOS 26 이 키보드를 내린 뒤 시각 뷰포트를 60px 덜 돌려줘도(입력 중 아님) 루트는 전체 높이를 유지한다 — 아래 빈 띠 없음
         await pg.evaluate(() => window.__kb(60)); await wait(300)
         const stuck = await pg.evaluate(() => ({ rootH: document.querySelector('#root').getBoundingClientRect().height, ih: innerHeight, compBottom: document.querySelector('.composer').getBoundingClientRect().bottom }))

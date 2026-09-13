@@ -3,7 +3,7 @@ import { marked } from 'marked'
 import type { Bot, Candidate, NotifyEvent, RoutineDef } from '../core/types'
 import { api, setToken, subscribePush } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
-import { useTheme, type Theme } from './theme'
+import { ICON_LABEL, ICON_PX, useIconSize, useTheme, type IconSize, type Theme } from './theme'
 import { ACT_ICON, ACT_LABEL, SWIPE_DEFAULT, useSwipeCfg, type SwipeAct, type SwipeSlot } from './swipe'
 import { hitRange, rank } from '../core/search'
 import { fmtTime, useStore } from './store'
@@ -224,7 +224,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         <div><div className="secl" style={{ padding: '8px 0 4px' }}>기기</div>{s.devices.map((d) => <div className="kv" key={d.id}><Icon n="phone" size={13} /><span className="n">{d.name}</span><time style={{ fontSize: 11 }}>{fmtTime(d.lastSeen)}</time><button className="btn ghost" onClick={() => api('/devices/revoke', { body: { id: d.id } }).then(refresh)}>끊기</button></div>)}
           {isLocal ? <div className="kv"><span className="n">새 기기 연결</span>{pair ? <span className="mono" style={{ fontSize: 22, letterSpacing: '.18em', color: 'var(--strong)' }}>{pair.code}</span> : null}<button className="btn" onClick={async () => setPair(await api('/pairing', { body: {} }))}>페어링 코드</button></div> : <div className="kv" style={{ color: 'var(--faint)' }}>새 기기 연결은 미니의 화면(127.0.0.1)이나 터미널(p + Enter)에서</div>}</div>
         {(window as unknown as { folderbotDesktop?: { perms?: unknown } }).folderbotDesktop?.perms ? <div><div className="secl" style={{ padding: '8px 0 4px' }}>macOS 권한</div><div className="kv"><span className="n">전체 디스크 접근 · 알림</span><button className="btn" onClick={() => { onClose(); window.dispatchEvent(new Event('fb:perm-gate')) }}>권한 다시 확인</button></div></div> : null}
-        <div><div className="secl" style={{ padding: '8px 0 4px' }}>화면</div><div className="kv"><span className="n">테마</span><ThemePick /></div></div>
+        <div><div className="secl" style={{ padding: '8px 0 4px' }}>화면</div><div className="kv"><span className="n">테마</span><ThemePick /></div><div className="kv"><span className="n">폴더봇 크기</span><IconPick /></div><div className="kv" style={{ color: 'var(--faint)' }}>목록의 폴더봇 크기예요. 마우스를 올리면 한 번 더 커져서 표정이 보여요.</div></div>
         <SwipeBox />
         <div><div className="secl" style={{ padding: '8px 0 4px' }}>알림</div><div className="kv"><span className="n">이 기기 푸시</span><button className="btn" onClick={async () => setPushOn(await subscribePush(s.vapidPublic, navigator.userAgent.slice(0, 30)))}>{pushOn === true ? '켜짐' : pushOn === false ? '실패 · HTTPS + 홈 화면 설치 필요' : '켜기'}</button></div><div className="kv" style={{ color: 'var(--faint)' }}>조용한 시간 23:00–07:00 (확인해 주세요만 통과). 폰 푸시는 Tailscale serve 로 HTTPS 를 붙이고 홈 화면에 설치해야 동작해요.</div></div>
         <div><div className="secl" style={{ padding: '8px 0 4px' }}>연결</div><button className="btn" onClick={() => { setToken(''); location.reload() }}>이 기기 로그아웃</button></div>
@@ -278,6 +278,13 @@ function ThemePick() {
   const [theme, setTheme] = useTheme()
   const opt: [Theme, string][] = [['auto', '시스템'], ['light', '라이트'], ['dark', '다크']]
   return <span className="seg">{opt.map(([v, l]) => <button key={v} className={theme === v ? 'on' : ''} onClick={() => setTheme(v)}>{l}</button>)}</span>
+}
+
+/** 폴더봇 크기 — 고른 즉시 레일에 반영된다(다른 창·탭도 fb:iconsize 로 함께 바뀐다) */
+function IconPick() {
+  const [sz, setSz] = useIconSize()
+  const opt: IconSize[] = ['s', 'm', 'l']
+  return <span className="seg">{opt.map((v) => <button key={v} className={sz === v ? 'on' : ''} onClick={() => setSz(v)} title={`${ICON_PX[v]}px`}>{ICON_LABEL[v]}</button>)}</span>
 }
 
 export function useToast(): [string, (m: string) => void] {

@@ -2,7 +2,10 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <!-- interactive-widget=resizes-content: 키보드가 올라오면 브라우저가 **레이아웃 뷰포트를 줄인다**.
+       그러면 100dvh 가 곧 «키보드 위 남은 높이» 라 JS 가 할 일이 없다. 지원 안 하는 판에서는 무시되고
+       App.tsx 의 useKeyboard(--vvh) 가 대신 받는다 — 둘 다 같은 답을 내므로 겹쳐도 안전하다. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
   <meta name="theme-color" content="#141414" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
