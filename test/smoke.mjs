@@ -833,6 +833,26 @@ try {
           ok('맥 기본 단축키 — ⌘, 설정 · ⌘/ 표 · 글 칠 때는 안 돈다')
         }
         /**
+         * ⛔ **고른 줄에 주황 네모가 씌워지면 안 된다** (2026-09-13 Dave: *«선택시 생기는 오렌지 박스는
+         *    없애줘. 불필요해»*). 맥의 강조색이 주황이면 크롬 기본 초점 테두리가 그 색으로 나온다.
+         * ⚠ 같은 라운드에 «회사 표식은 세션 이름 오른쪽에» 도 넣었지만 **여기서는 못 잰다** —
+         *    표식은 깔린 제공자가 둘 이상일 때만 그린다(Brand.tsx 의 오래된 계약: «Codex가 없으면
+         *    아예 안보여야 해»). 이 스모크 호스트에는 Claude 하나뿐이라 마크업이 아예 없다.
+         *    ⛔ 그 계약을 이 검사 하나 때문에 풀지 마라 — 두 제공자 호스트는 아래 «에이전트 고르기»
+         *    블록에 따로 있고, 거기에는 화면이 안 붙어 있다.
+         */
+        {
+          // ⚠ 재는 것은 «테두리가 있나» 가 아니라 «**시스템이 칠하는 테두리**인가» 다. 크롬 기본값은
+          //    `outline: -webkit-focus-ring-color auto` → 계산값 `auto` 이고, 그 색이 맥의 강조색(주황)이다.
+          //    우리는 그걸 끄고 키보드 초점에만 **우리 색 1px** 를 남겼다.
+          const ring = await pg.evaluate(() => { const e = document.querySelector('.brow'); e.focus(); const c = getComputedStyle(e); return { style: c.outlineStyle, w: c.outlineWidth, color: c.outlineColor } })
+          if (ring.style === 'auto') fail('초점 테두리: 시스템 강조색 네모가 그대로다 ' + JSON.stringify(ring))
+          if (ring.style !== 'none' && ring.w !== '1px') fail('초점 테두리: 우리 선이 1px 가 아니다 ' + JSON.stringify(ring))
+          const marks = await pg.evaluate(() => ({ menu: document.querySelectorAll('.menu .vmk').length, side: document.querySelectorAll('.srow .vmk').length, rows: document.querySelectorAll('.srow').length }))
+          if (marks.rows && marks.side && marks.side !== marks.rows) fail('회사 표식: 우측 세션 목록에 빠진 줄이 있다 ' + JSON.stringify(marks))
+          ok('주황 초점 네모 없음 · 회사 표식은 세션 줄마다')
+        }
+        /**
          * 🔴 **레일 차례 — 끌어 놓기 · 상태별** (2026-09-13 Dave: *«각 폴더가 위아래로 드래그 드롭으로
          *    소팅이 안돼. 그리고 상태별로도 소팅되면 좋겠어. (상위 폴더 PARA는 유지)»*).
          * ⚠ 섹션(PARA)은 갈래를 무엇으로 바꾸든 **그대로**여야 한다 — 여기서 정하는 건 섹션 안의 차례뿐이다.

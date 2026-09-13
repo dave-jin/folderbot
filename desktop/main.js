@@ -6,6 +6,7 @@ const { join } = require('node:path')
 const http = require('node:http'); const https = require('node:https')
 const updater = require('./updater')
 const perms = require('./perms')
+const { folderIcon } = require('./trayIcon')
 
 const SETTINGS = () => join(app.getPath('userData'), 'settings.json')
 let settings = { mode: '', hostUrl: '', token: '', loginItem: false, root: '', port: 7373 }
@@ -105,7 +106,20 @@ ipcMain.on('fb:change-host', () => { settings.mode = ''; settings.hostUrl = ''; 
 ipcMain.on('fb:token', (_e, token) => { if (typeof token === 'string' && token !== settings.token) { settings.token = token; save(); startSse() } })
 
 // ── 트레이 (폴더봇 · 표정 = 합친 상태 · 배지 = 확인 대기 수) ──
-function trayIcon() { const p = join(__dirname, 'build', 'trayTemplate.png'); const img = nativeImage.createFromPath(p); img.setTemplateImage(true); return img }
+/**
+ * 메뉴바 아이콘 — 🔴 **남은 사용량만큼 폴더가 차 있다**(배터리처럼). 2026-09-13 Dave:
+ * *«상단 메뉴 이름에 폴더가 얼마나 채워졌는지 정도로 (마치 배터리) 남은 사용량을 표시하고
+ * 숫자랑 게이지는 없애줘»* — 그래서 제목(`setTitle`)은 비우고 그림 하나로 말한다.
+ * ⚠ 2배 버퍼를 `scaleFactor: 2` 로 준다 — 레티나에서 22pt 로 또렷하게 앉는다.
+ * ⚠ 사용량을 아직 모르면 예전 그림(`build/trayTemplate.png`)으로 떨어진다.
+ */
+function trayIcon() {
+  const pct = usage && typeof usage.left === 'number' ? usage.left : null
+  if (pct === null) { const img = nativeImage.createFromPath(join(__dirname, 'build', 'trayTemplate.png')); img.setTemplateImage(true); return img }
+  const img = nativeImage.createFromBuffer(folderIcon(pct, 44), { scaleFactor: 2 })
+  img.setTemplateImage(true)
+  return img
+}
 function createTray() {
   tray = new Tray(trayIcon())
   tray.setToolTip('Folder Bot')
@@ -295,10 +309,12 @@ function usageItems() {
 
 function refreshTray() {
   if (!tray) return
-  // 🔴 **메뉴바에도 게이지가 보여야 한다** (2026-09-13 Dave) — 숫자만 있으면 «62%» 가 무엇의 62% 인지
-  //    열어 봐야 안다. 다섯 칸 막대는 폭이 일정해서 메뉴바가 들썩이지 않는다.
-  //    ⚠ 확인 대기가 있으면 그게 이긴다 — 지금 사람을 기다리는 일이 잔량보다 급하다.
-  tray.setTitle(waiting ? String(waiting) : usage ? `${gauge(usage.left, 5)} ${usage.left}%` : '', { fontType: 'monospacedDigit' })
+  // 🔴 **잔량은 아이콘이 말한다 — 글자로 적지 않는다** (2026-09-13 Dave 정정).
+  //    종전에는 `▰▱▱▱▱ 27%` 를 제목에 적었다. 메뉴바에서 **글자는 읽는 것**인데 이건 읽을 필요가
+  //    없는 정보다 — 배터리처럼 «얼마나 남았나» 만 보이면 된다(`trayIcon.js`).
+  //    ⚠ 확인 대기 수만 글자로 남긴다 — 그건 잔량이 아니라 **지금 사람을 기다리는 일**의 개수다.
+  tray.setImage(trayIcon())
+  tray.setTitle(waiting ? String(waiting) : '', { fontType: 'monospacedDigit' })
   tray.setToolTip(waiting ? `Folder Bot · 확인 대기 ${waiting}` : 'Folder Bot')
   if (app.dock) app.dock.setBadge(waiting ? String(waiting) : '')
   pushTrayState() // ⚠ 패널이 떠 있으면 «한가함 → 일하는 중» 이 그 자리에서 바뀌어야 한다

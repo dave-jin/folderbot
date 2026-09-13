@@ -14,6 +14,12 @@
 html,body { height:100%; margin:0; background:var(--bg); overscroll-behavior-x:none }
 #root { position:fixed; inset:0; margin:0; background:var(--bg); color:var(--t); font-family:var(--ui); font-size:13.5px; line-height:1.65; -webkit-font-smoothing:antialiased; overflow-x:hidden; overscroll-behavior:none; -webkit-text-size-adjust:100% }
 button { font:inherit; color:inherit; background:none; border:0; cursor:pointer; padding:0; text-align:left }
+/* ⛔ **시스템 강조색 초점 테두리를 쓰지 않는다** (2026-09-13 Dave: *«선택시 생기는 오렌지 박스는
+   없애줘. 불필요해»*). 맥의 강조색이 주황이면 크롬 기본 초점 테두리가 그 색으로 나와, 고른 줄마다
+   주황 네모가 씌워진다 — 우리 «선택» 표시(배경 한 단계)와 뜻이 겹치고 색만 시끄럽다.
+   ⚠ 키보드로 다니는 길은 남긴다 — `:focus-visible` 에만 **우리 색의 얇은 선**을 둔다(마우스 클릭에는 안 뜬다). */
+:focus { outline:none }
+:focus-visible { outline:1px solid var(--t3); outline-offset:-1px }
 input,textarea,select { font:inherit; color:inherit }
 a { color:var(--w) }
 b,strong { color:var(--w); font-weight:600 }
