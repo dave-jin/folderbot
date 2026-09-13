@@ -213,6 +213,28 @@ export class Gateway {
      *    같은 뿌리다). 사람이 할 수 있는 일은 «앱 다시 켜기» 뿐이었다.
      * ⛔ 일하는 중인 워커는 그 자리에서 안 죽인다 — 턴이 끝나면 스스로 내려간다(`recycleAll`).
      */
+    /**
+     * **터미널에서 로그인** (2026-09-13 Dave: *«설정에서 claude code / codex 로그인 연결 기능이
+     * 안보여서 진행이 안돼»*).
+     *
+     * 🔴 **우리가 대신 로그인할 수는 없다** — `claude /login` 도 `codex login` 도 브라우저를 열고
+     *    사람이 승인하는 대화형 절차다. 하지만 **그 창을 대신 열어 줄 수는 있다**: 종전에는 설정에
+     *    «터미널에서 claude 를 치세요» 라는 **글자만** 있었고, 그건 기능이 아니라 안내문이었다.
+     * ⚠ **호스트 맥에서만** 연다 — 폰·원격 맥에서 눌러도 터미널은 저쪽에 떠야 한다. 그래서
+     *    로컬(메인) 요청일 때만 받는다.
+     * ⚠ 작업 폴더를 볼트 루트로 잡는다 — 로그인 뒤 바로 `claude` 를 이어 쓸 수 있게.
+     * ⛔ 토큰을 만들게 하지 않는다(`setup-token`) — 그 길로 가면 claude.ai 커넥터가 안 붙는다
+     *    (`session.ts` 의 `cleanClaudeEnv` 머리말). 우리가 원하는 것은 **키체인 로그인**이다.
+     */
+    if (p === '/api/auth/login-terminal' && m === 'POST') {
+      const b = await body()
+      if (!who.main) return json(400, { error: '호스트 맥에서 눌러 주세요 — 터미널은 그쪽에 떠야 해요' })
+      if (process.platform !== 'darwin') return json(400, { error: '맥에서만 열 수 있어요' })
+      const cmd = b.agent === 'codex' ? 'codex login' : 'claude'
+      const script = `cd ${JSON.stringify(reg.root)}; clear; ${cmd}`
+      execFile('/usr/bin/osascript', ['-e', `tell application "Terminal" to do script ${JSON.stringify(script)}`, '-e', 'tell application "Terminal" to activate'], () => {})
+      return json(200, { ok: true, cmd })
+    }
     if (p === '/api/auth/reconnect' && m === 'POST') {
       const b = await body()
       const vendor = b.agent === 'codex' ? 'codex' : b.agent === 'claude' ? 'claude' : undefined

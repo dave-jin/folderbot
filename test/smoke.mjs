@@ -404,7 +404,8 @@ try {
         {
           const rel = 'churn.md'
           const abs = join(root, '3. Area/제품_Rondo', rel)
-          const src = ['---', 'type: reference', 'tags: [PARA, 지침]', '---', '', '# 제목', '', '**굵게** 와 *기울임* 과 `코드`.', '', '- [ ] 할 일', '- 항목', '', '---', '', '> 인용', '', '> [!note] 콜아웃 줄', '', '[[위키링크]] 와 https://example.com', ''].join('\n')
+          // ⚠ 제목이 **둘** 이어야 목차 단추가 나온다(하나짜리 문서에 목차는 자리만 먹는다)
+          const src = ['---', 'type: reference', 'tags: [PARA, 지침]', '---', '', '# 제목', '', '**굵게** 와 *기울임* 과 `코드`.', '', '- [ ] 할 일', '- 항목', '', '## 두 번째 제목', '', '---', '', '> 인용', '', '> [!note] 콜아웃 줄', '', '[[위키링크]] 와 https://example.com', ''].join('\n')
           // ⚠ API 로 만든다 — 파일을 직접 쓰면 호스트가 모르고 트리가 안 새로 그려진다
           await api(`/bots/${bot.id}/file`, { rel, text: src })
           const before = readFileSync(abs)
@@ -528,6 +529,43 @@ try {
             if (!wiki.some((x) => /todo|CLAUDE|readme/i.test(x ?? ''))) fail('`[[` 자동완성에 이 폴더 문서가 없다 ' + JSON.stringify(wiki.slice(0, 6)))
             await pg.keyboard.press('Escape'); await pg.keyboard.press('Backspace'); await pg.keyboard.press('Backspace'); await wait(400)
             ok('서식 — 고른 글 위 막대 · `/` 메뉴 · `[[` 문서 고르기')
+          }
+          /**
+           * 🔴 **문서 목차 · 글자 크기 · 문서 안에서 찾기** (Rondo 이식 B4·B9·B10).
+           * ⚠ ⌘F 는 **편집기의 것**이 이겨야 한다(단축키 계약) — 파일 목록의 거르기가 열리면 회귀다.
+           * ⚠ 목차는 편집기와 **형제**여야 한다 — 안에 넣으면 CodeMirror 가 제 DOM 으로 알고 지운다.
+           */
+          {
+            // 목차 — 제목이 둘 이상이어야 단추가 나온다
+            const tocBtn = '.dtb .r .ib[title="목차"]'
+            if (!(await pg.$(tocBtn))) fail('목차: 단추가 없다 (제목이 둘 이상인 문서인데도)')
+            await pg.click(tocBtn); await wait(400)
+            const tocTxt = await pg.evaluate(() => { const n = document.querySelector('.dtoc'); return n ? { in: !!document.querySelector('.mded .dtoc'), items: [...n.querySelectorAll('button')].map((b) => b.textContent) } : null })
+            if (!tocTxt) fail('목차: 안 열린다')
+            if (tocTxt.in) fail('🔴 목차가 편집기 안에 있다 — CodeMirror 가 지운다')
+            if (!tocTxt.items.some((t) => /제목/.test(t ?? ''))) fail('목차: 제목이 안 들어왔다 ' + JSON.stringify(tocTxt.items))
+            // 눌러서 그 줄로 — 커서가 그 제목 줄에 선다
+            await pg.click('.dtoc button'); await wait(400)
+            const at = await pg.evaluate(() => document.querySelector('.mded .cm-activeLine, .mded .cm-line')?.textContent ?? '')
+            if (!at) fail('목차: 눌러도 편집기가 반응이 없다')
+            await pg.click(tocBtn); await wait(300)   // 다시 접는다(이어지는 검사의 좌표가 흔들리지 않게)
+            // 글자 크기 — ⋯ 메뉴에서 줄이면 CSS 변수가 따라간다
+            await pg.click('.dtb .r .ib[title="더 보기"]'); await wait(400)
+            const before = await pg.evaluate(() => getComputedStyle(document.querySelector('.mded .cm-scroller')).fontSize)
+            await pg.click('.menu .mrow .mb:has-text("−")'); await wait(300)
+            const after = await pg.evaluate(() => getComputedStyle(document.querySelector('.mded .cm-scroller')).fontSize)
+            if (parseFloat(after) >= parseFloat(before)) fail(`글자 크기: 줄어들지 않았다 ${before} → ${after}`)
+            await pg.keyboard.press('Escape'); await wait(300)
+            // ⌘F — 편집기 안에서는 편집기의 찾기가 뜬다
+            await pg.evaluate(() => document.querySelector('.mded .cm-content').focus())
+            // ⚠ CodeMirror 의 `Mod` 는 **맥에서만 ⌘** 다 — 리눅스로 도는 이 검사에서는 ⌃ 를 눌러야 한다
+            //    (우리 손으로 만든 단축키는 `metaKey || ctrlKey` 라 둘 다 먹어서 이 차이가 여기서만 드러난다)
+            await pg.keyboard.press('Control+f'); await wait(600)
+            const find = await pg.evaluate(() => ({ cm: !!document.querySelector('.mded .cm-search'), tree: !!document.querySelector('.tfilter') }))
+            if (!find.cm) fail('문서 찾기: ⌘F 로 편집기 찾기가 안 뜬다')
+            if (find.tree) fail('🔴 ⌘F 가 문서 안인데 파일 목록 거르기가 열렸다 — 단축키가 칸을 안 본다')
+            await pg.keyboard.press('Escape'); await wait(300)
+            ok('문서 — 목차 · 글자 크기 · ⌘F 는 편집기의 것')
           }
           // 콜아웃 — `> [!note]` 는 표시를 숨기고 줄에 색을 준다
           if (!(await pg.$('.mded .lp-cal'))) fail('콜아웃이 안 그려졌다')

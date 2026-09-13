@@ -209,6 +209,7 @@ const VERDICT_D: Record<string, string> = {
 
 function AgentsPane() {
   const { s, refresh } = useStore()
+  const main = s.device.main     // 터미널은 호스트 맥에서만 열린다
   const [list, setList] = useState<Provider[] | null>(null)
   const [gh, setGh] = useState<{ skills: HarnessItem[]; mcp: HarnessItem[] } | null>(null)
   const [all, setAll] = useState(false)
@@ -222,6 +223,18 @@ function AgentsPane() {
   const hasCodex = (list ?? []).some((p) => p.id === 'codex')
   const cxAuth = s.defaults.codex?.auth
   const saveT = async (t: string) => { setBusy(true); try { await api('/auth/token', { body: { token: t } }); await refresh(); setMsg(t ? '토큰을 저장했어요.' : '토큰을 지웠어요.'); setTok('') } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) } }
+  /**
+   * 🔴 **터미널에서 로그인** — 우리가 대신 로그인할 수는 없지만(브라우저 승인이 필요한 대화형 절차)
+   *    **그 창을 열어 줄 수는 있다**. 종전에는 «터미널에서 claude 를 치세요» 라는 글자만 있었고,
+   *    그건 기능이 아니라 안내문이었다 (2026-09-13 Dave: «로그인 연결 기능이 안보여서 진행이 안돼»).
+   */
+  const openLogin = async (agent: 'claude' | 'codex') => {
+    setBusy(true)
+    try {
+      await api('/auth/login-terminal', { body: { agent } })
+      setMsg(agent === 'codex' ? '터미널을 열었어요 — codex login 이 돌아가면 마치고 [다시 연결]' : '터미널을 열었어요 — claude 가 뜨면 /login 을 치고, 끝나면 [다시 연결]')
+    } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) }
+  }
   /** 다시 연결 — 인증을 다시 읽고 일꾼을 내린다. 몇이 지금 내려갔고 몇이 턴 뒤에 내려갈지 말해 준다 */
   const reconnect = async (agent?: 'claude' | 'codex') => {
     setBusy(true)
@@ -231,6 +244,13 @@ function AgentsPane() {
       setMsg(r.pending ? `${r.now}개를 다시 연결했어요 · ${r.pending}개는 턴이 끝나면 이어서 합니다.` : r.now ? `${r.now}개를 다시 연결했어요 — 다음 메시지부터 새 환경이에요.` : '연결할 일꾼이 없었어요 — 다음 메시지부터 새 환경으로 뜹니다.')
     } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) }
   }
+  /** ⚠ 긴 설명은 JSX 밖에서 만든다 — 프롭 안 삼항에 조각을 통째로 넣으면 읽기도 어렵고 파서도 헷갈린다 */
+  const loginD = main
+    ? <span>누르면 호스트 맥에 터미널이 열립니다. <span className="mono">claude</span> 가 뜨면 <span className="mono">/login</span> 을 치고 브라우저에서 마치세요 — 그러면 <b>claude.ai 커넥터도 함께 붙습니다</b>.</span>
+    : <span>로그인은 <b>호스트 맥</b>({s.hostName})에서 해야 해요. 그 맥의 Folder Bot 설정에서 누르거나, 터미널에서 <span className="mono">claude</span> → <span className="mono">/login</span>.</span>
+  const cxLoginD = main
+    ? <span>누르면 호스트 맥에 터미널이 열리고 <span className="mono">codex login</span> 이 돌아갑니다. 브라우저에서 마치고 [다시 연결] 을 누르세요.</span>
+    : <span>로그인은 <b>호스트 맥</b>({s.hostName})에서 해야 해요.</span>
   const cut = (xs: HarnessItem[]) => (all ? xs : xs.slice(0, 4))
   return <>
     <p className="lead">모든 봇이 함께 쓰는 것들입니다. 폴더마다 다른 것은 <b>하네스</b> 칸에 있어요.</p>
@@ -265,13 +285,21 @@ function AgentsPane() {
       <input className="sin mono" type="password" placeholder="sk-…" value={cxKey} onChange={(e) => setCxKey(e.target.value)} />
       <button className="btn" disabled={busy || !cxKey.trim()} onClick={() => { void saveCx({ apiKey: cxKey }); setCxKey('') }}>저장</button>
     </Row> : null}
+    {hasCodex ? <Row t="Codex 로그인" d={cxLoginD}>
+      <button className="btn on" disabled={busy || !main} onClick={() => void openLogin('codex')}>터미널에서 로그인</button>
+    </Row> : null}
     {hasCodex ? <Row t="Codex 다시 연결" d={<>터미널에서 <span className="mono">codex login</span> 을 새로 했거나 키를 바꿨으면 눌러 주세요. Codex 세션의 일꾼만 내려 다음 메시지에 새로 뜹니다.</>} data-t="Codex 다시 연결">
       <button className="btn" disabled={busy} onClick={() => void reconnect('codex')}>다시 연결</button>
     </Row> : null}
     {hasCodex && cxAuth?.how === 'key' ? <Row t="Codex 키 지우기" d="터미널 로그인(codex login) 모드로 돌아갑니다." danger><button className="btn danger" disabled={busy} onClick={() => void saveCx({ apiKey: '' })}>지우기</button></Row> : null}
 
     <Group t="Claude 인증" />
-    <Row t="Claude 로그인" d={msg || VERDICT_D[s.auth.verdict]}>
+    {/* 🔴 **로그인은 한 번 누르면 시작된다** — 안내문이 아니라 단추다(Dave, 2026-09-13).
+        ⚠ 터미널은 **호스트 맥**에 뜬다 — 원격에서 눌러도 저쪽 화면에 떠서 소용이 없으므로 안내로 바꾼다. */}
+    <Row t="Claude Code 로그인" d={loginD}>
+      <button className="btn on" disabled={busy || !main} onClick={() => void openLogin('claude')}>터미널에서 로그인</button>
+    </Row>
+    <Row t="Claude 로그인 상태" d={msg || VERDICT_D[s.auth.verdict]}>
       <span className="sv" style={{ color: s.auth.verdict === 'loggedin' ? 'var(--done)' : 'var(--wait)' }}>{VERDICT_T[s.auth.verdict]}{s.auth.email ? ` · ${s.auth.email}` : ''}</span>
       <button className="btn ghost" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button>
     </Row>

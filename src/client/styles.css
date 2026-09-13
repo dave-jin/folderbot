@@ -684,12 +684,20 @@ b,strong { color:var(--w); font-weight:600 }
 .pchip:hover { background:var(--sel); color:var(--w) }
 
 /* 라이브 프리뷰 마크다운 편집기 — 읽을 때와 **같은 활자**여야 «모드가 없다» 는 말이 성립한다 */
-.dbody.md-edit { padding:0; overflow:hidden }
-.mded { height:100%; overflow:auto }
+/* 목차(B4) · 글자 크기·폭(B9) — 값은 `--docfs`·`--docw` 로 내려온다(Doc 이 정한다).
+   ⚠ 목차는 편집기와 **형제**다 — 안에 넣으면 CodeMirror 가 제 DOM 으로 알고 지운다. */
+.dbody.md-edit { padding:0; overflow:hidden; display:flex; min-height:0 }
+.dtoc { flex:none; width:190px; overflow:auto; padding:26px 6px 26px 14px; border-right:1px solid var(--line); display:flex; flex-direction:column; gap:1px }
+.dtoc button { font-size:12px; line-height:1.5; color:var(--t3); padding:3px 8px; border-radius:5px; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.dtoc button:hover { background:var(--hover); color:var(--w) }
+.dtoc .l1 { color:var(--t2); font-weight:600 }
+.dtoc .l2 { padding-left:18px } .dtoc .l3 { padding-left:28px } .dtoc .l4, .dtoc .l5, .dtoc .l6 { padding-left:38px }
+@media (max-width: 900px) { .dtoc { display:none } }
+.mded { height:100%; flex:1; min-width:0; overflow:auto }
 .mded .cm-editor { height:100%; background:none; color:var(--t) }
 .mded .cm-editor.cm-focused { outline:none }
-.mded .cm-scroller { font-family:var(--ui); font-size:14.5px; line-height:1.9; padding:26px 32px }
-.mded .cm-content { max-width:58ch; caret-color:var(--w) }
+.mded .cm-scroller { font-family:var(--ui); font-size:var(--docfs, 14.5px); line-height:1.9; padding:26px 32px }
+.mded .cm-content { max-width:var(--docw, 58ch); caret-color:var(--w) }
 .mded .cm-line { padding:0 }
 .mded .cm-cursor { border-left-color:var(--w) }
 .mded .cm-selectionBackground, .mded .cm-editor ::selection { background:var(--sel) }
@@ -828,3 +836,26 @@ b,strong { color:var(--w); font-weight:600 }
 .cbbar .lg { font-family:var(--mono); font-size:10.5px; color:var(--t3); text-transform:uppercase; letter-spacing:.04em }
 .cbbar .cp { font-size:11px; line-height:1.6; color:var(--t2); background:var(--bg2); border:1px solid var(--line2); border-radius:5px; padding:0 7px }
 .cbbar .cp:hover { color:var(--w); border-color:var(--t3) }
+
+/* ⋯ 메뉴 안의 «값 조절» 줄 — 누를 때마다 메뉴가 닫히면 안 되므로 단추에서 전파를 멈춘다 */
+.menu .mrow { display:flex; align-items:center; gap:8px; padding:5px 8px; font-size:12.5px; color:var(--t) }
+.menu .mrow b { min-width:30px; text-align:center; color:var(--w); font-size:12px }
+.menu .mrow .mb { width:20px; height:20px; border:1px solid var(--line2); border-radius:5px; display:inline-flex; align-items:center; justify-content:center; color:var(--t2); margin-left:auto }
+.menu .mrow .mb + b + .mb { margin-left:0 }
+.menu .mrow .mb:hover { color:var(--w); border-color:var(--t3) }
+
+/* 문서 안에서 찾기 (Rondo 이식 B10) — ⌘F 는 **CodeMirror 의 것**이 이긴다(단축키 계약).
+   ⚠ 기본 패널은 밝은 회색 상자라 우리 검은 화면에서 통째로 튄다 — 토큰으로 갈아입힌다.
+   ⚠ 패널은 스크롤러 **밖**(cm-panels)에 있어서 글을 가리지 않는다 — 위치는 건드리지 않는다. */
+.mded .cm-panels { background:var(--bg2); color:var(--t); border-color:var(--line) }
+.mded .cm-panels.cm-panels-top { border-bottom:1px solid var(--line) }
+.mded .cm-panels.cm-panels-bottom { border-top:1px solid var(--line) }
+.mded .cm-search { padding:7px 10px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:12.5px }
+.mded .cm-search input { background:var(--bg); border:1px solid var(--line2); border-radius:6px; padding:4px 8px; color:var(--w); font:inherit; outline:0 }
+.mded .cm-search input:focus { border-color:var(--t3) }
+.mded .cm-search button { background:var(--box); border:1px solid var(--line2); border-radius:6px; padding:3px 8px; color:var(--t2); font:inherit; font-size:12px }
+.mded .cm-search button:hover { color:var(--w); border-color:var(--t3) }
+.mded .cm-search label { color:var(--t3); display:inline-flex; align-items:center; gap:4px }
+.mded .cm-searchMatch { background:rgba(224,136,80,.22); border-radius:2px }
+.mded .cm-searchMatch-selected { background:rgba(224,136,80,.45) }
+.mded .cm-button { background-image:none }

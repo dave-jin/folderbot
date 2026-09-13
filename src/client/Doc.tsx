@@ -7,6 +7,7 @@ const Canvas = lazy(() => import('./Canvas'))
 import type { Bot } from '../core/types'
 import { copySay } from './clip'
 import { api, uploadFile } from './api'
+import { normalizeDepth, outline } from '../core/outline'
 import { Icon, Mid } from './FolderBot'
 import { Md } from './Sheets'
 import { Float, anchorOf, type Anchor } from './Float'
@@ -132,6 +133,18 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
   }, [bot.id])
   const save = async (text: string) => { if (!rel) return; setSaveSt('saving'); try { await api(`/bots/${bot.id}/file`, { body: { rel, text } }); setSaveSt('saved'); dirtyRef.current = false; const d = await api<DocData>(`/bots/${bot.id}/file?rel=${encodeURIComponent(rel)}`); mtimeRef.current = d.mtime ?? 0 } catch { setSaveSt('fail') } }
   const onDraft = (v: string) => { setDraft(v); dirtyRef.current = true; window.clearTimeout(saveT.current); saveT.current = window.setTimeout(() => void save(v), 800) }
+  /**
+   * 목차 (B4) · 글자 크기 · 폭 (B9) — 셋 다 **이 기기에만** 남는다(localStorage).
+   * ⚠ 문서마다 다르게 두지 않는다 — 「내가 읽기 편한 크기」는 문서의 성질이 아니라 사람의 성질이다.
+   */
+  const [toc, setToc] = useState(() => localStorage.getItem('fb:toc') === '1')
+  const [fs, setFs] = useState(() => Number(localStorage.getItem('fb:docfs')) || 14.5)
+  const [wideText, setWideText] = useState(() => localStorage.getItem('fb:docw') === '1')
+  useEffect(() => { localStorage.setItem('fb:toc', toc ? '1' : '0') }, [toc])
+  useEffect(() => { localStorage.setItem('fb:docfs', String(fs)) }, [fs])
+  useEffect(() => { localStorage.setItem('fb:docw', wideText ? '1' : '0') }, [wideText])
+  const heads = useMemo(() => (/\.(md|markdown)$/i.test(rel ?? '') ? normalizeDepth(outline(draft)) : []), [draft, rel])
+  const edApi = useRef<{ goToLine: (n: number) => void } | null>(null)
   const idx = rel ? sibs.indexOf(rel) : -1
   const name = rel?.split('/').pop() ?? ''; const dir = rel && rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : (bot.orchestrator ? '볼트' : bot.name)
   const isMd = /\.(md|markdown|txt)$/i.test(rel ?? '')
@@ -149,11 +162,17 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
         {/* 🔴 **외부로 열기는 메뉴 밖에 둔다** (2026-09-13 Dave) — 문서를 보다가 «진짜 앱에서 열자» 는
             생각은 자주 들고, 그때마다 ⋯ 를 거치면 두 번 누르게 된다. ⚠ 여는 주체는 언제나 호스트라
             원격이면 이름이 「메인 맥에서」 로 바뀐다. */}
+        {/* 목차 (B4) — 제목이 둘 이상일 때만 나온다. 하나짜리 문서에 목차는 자리만 먹는다 */}
+        {heads.length > 1 ? <button className={`ib ${toc ? 'on' : ''}`} title="목차" onClick={() => setToc(!toc)}><Icon n="list" size={13} /></button> : null}
         <button className="ib" title={main ? '기본 앱으로 열기' : '메인 맥에서 열기'} onClick={async () => { try { await api(`/bots/${bot.id}/open`, { body: { rel } }); say(main ? '기본 앱으로 열었어요' : '메인 맥에서 열었어요') } catch (e) { say((e as Error).message) } }}><Icon n="open" size={13} /></button>
-        <span style={{ position: 'relative' }}><button className="ib" onClick={(e) => setMenu(menu ? null : anchorOf(e.currentTarget, { right: true }))}><Icon n="more" size={13} /></button>
+        <span style={{ position: 'relative' }}><button className="ib" title="더 보기" onClick={(e) => setMenu(menu ? null : anchorOf(e.currentTarget, { right: true }))}><Icon n="more" size={13} /></button>
             {menu ? <Float at={menu} onClose={() => setMenu(null)}><div style={{ display: 'contents' }} onClick={() => setMenu(null)}><button onClick={() => onTalk(rel)}><Icon n="sub" size={13} /><span>봇에게 이 파일 말하기</span></button><button onClick={() => onAttach(rel)}><Icon n="plus" size={13} /><span>첨부로 보내기</span></button><button onClick={() => { void copySay(`${bot.abs}/${rel}`, say, '경로를 복사했어요') }}><Icon n="file" size={13} /><span>경로 복사</span></button><button onClick={async () => { try { await api(`/bots/${bot.id}/open`, { body: { rel } }); say(main ? '기본 앱으로 열었어요' : '메인 맥에서 열었어요') } catch (e) { say((e as Error).message) } }}><Icon n="open" size={13} /><span>{main ? '기본 앱으로 열기' : '메인 맥에서 열기'}</span>{main ? null : <span className="k">메인에서</span>}</button>
               {main ? null : <a className="menu-a" href={raw(rel)} download style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="doc" size={13} /><span>이 기기로 내려받기</span></a>}
-              <a className="menu-a" href={raw(rel)} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="open" size={13} /><span>새 창에서 열기</span></a><hr /><button onClick={() => docs.pin(rel)}><Icon n="doc" size={13} /><span>탭 고정</span><span className="k">더블클릭</span></button></div></Float> : null}</span>
+              <a className="menu-a" href={raw(rel)} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="open" size={13} /><span>새 창에서 열기</span></a><hr /><button onClick={() => docs.pin(rel)}><Icon n="doc" size={13} /><span>탭 고정</span><span className="k">더블클릭</span></button>
+              {/* 🔴 **읽기 편한 크기는 사람의 성질이다** (B9) — 문서마다 따로 두지 않고 이 기기에 남긴다.
+                  ⚠ 폭은 «넓게»(문서 열을 키우는 것)와 다른 일이다 — 이건 **글줄 길이**다. */}
+              <hr /><div className="mrow"><span>글자 크기</span><button className="mb" onClick={(e) => { e.stopPropagation(); setFs((v) => Math.max(11, +(v - 0.5).toFixed(1))) }}>−</button><b className="mono">{fs}</b><button className="mb" onClick={(e) => { e.stopPropagation(); setFs((v) => Math.min(22, +(v + 0.5).toFixed(1))) }}>＋</button></div>
+              <button onClick={() => setWideText(!wideText)}><Icon n="expand" size={13} /><span>글줄 넓게</span>{wideText ? <Icon n="check" size={11} /> : null}</button></div></Float> : null}</span>
       </span></div> : null}
     {conflict ? <div className="dbanner"><span className="dot wait" /><span>봇이 이 파일을 바꿨어요 — 아직 안 낸 내 글과 다릅니다</span><button onClick={() => { setConflict(false); void save(draft) }}>내 것 유지</button><button onClick={() => { setConflict(false); dirtyRef.current = false; if (rel) void load(rel) }}>봇 것 받기</button></div>
       : botTouched ? <div className="dbanner"><span className="dot run" /><span>봇이 {fmtTime(botTouched)} 수정</span><button onClick={() => setBotTouched(null)}>닫기</button></div> : null}
@@ -161,7 +180,9 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
       : err ? <div className="empty">{err}</div>
       : !doc ? <div className="dbody"><div className="skel" style={{ width: '60%', marginBottom: 10 }} /><div className="skel" style={{ width: '85%', marginBottom: 10 }} /><div className="skel" style={{ width: '70%' }} /></div>
       : doc.kind === 'text' ? (isMd && !doc.truncated
-        ? <div className="dbody edit md-edit">
+        ? <div className="dbody edit md-edit" style={{ ['--docfs' as string]: `${fs}px`, ['--docw' as string]: wideText ? '86ch' : '58ch' }}>
+            {/* 목차 — 왼쪽에 붙는다. ⚠ 편집기와 **형제**로 둔다: 안에 넣으면 CodeMirror 가 제 DOM 으로 알고 지운다 */}
+            {toc && heads.length > 1 ? <nav className="dtoc">{heads.map((h) => <button key={`${h.line}`} className={`l${h.level}`} onClick={() => edApi.current?.goToLine(h.line)} title={h.text}>{h.text}</button>)}</nav> : null}
             {/* 🔴 마크다운은 **서식이 보이는 채로** 읽고 그대로 고친다 — 보기/편집이 한 화면이다.
                 원문 textarea 는 마크다운이 아닌 텍스트에만 남는다 — 코드·설정 파일은 서식이라는 게 없어서
                 원문이 곧 정답이다.
@@ -170,7 +191,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
               {/* ⛔ `key={rel}` 을 빼지 마라 — 문서마다 편집기를 따로 둬야 떠날 때의 저장이 옛 문서로 간다
                   (되돌리기 기록이 문서를 넘나드는 것도 함께 막는다). */}
               <MdEditor key={rel} value={draft} onChange={onDraft} onCommit={(t) => { onDraft(t); void save(t) }} onOpen={(target) => docs.open(target.endsWith('.md') ? target : `${target}.md`)} rawUrl={(p) => (/^(https?:|data:)/.test(p) ? p : raw(p.replace(/^\.\//, '')))}
-                files={wikiFiles} onPasteImage={pasteImage} />
+                files={wikiFiles} onPasteImage={pasteImage} onReady={(a) => { edApi.current = a }} />
             </Suspense>
           </div>
         : doc.truncated

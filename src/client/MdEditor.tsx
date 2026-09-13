@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { EditorState, StateField, type Extension, type Range } from '@codemirror/state'
 import { EditorView, Decoration, WidgetType, keymap, type DecorationSet } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
-import { searchKeymap } from '@codemirror/search'
+import { search, searchKeymap } from '@codemirror/search'
 import { markdown } from '@codemirror/lang-markdown'
 import { GFM } from '@lezer/markdown'
 import { syntaxTree, syntaxHighlighting, defaultHighlightStyle, HighlightStyle } from '@codemirror/language'
@@ -742,6 +742,11 @@ export interface MdEditorProps {
    * ⛔ 편집기는 업로드를 모른다 — 어디에 둘지는 문서 열(Doc)이 정한다.
    */
   onPasteImage?: (f: File) => Promise<string | null>
+  /**
+   * 편집기가 준비되면 **밖에서 쓸 손잡이**를 넘긴다 — 지금은 «그 줄로 가기» 하나뿐이다(목차가 쓴다).
+   * ⛔ 편집기 인스턴스를 통째로 넘기지 않는다 — 밖에서 아무 `dispatch` 나 하면 churn 0 계약이 샌다.
+   */
+  onReady?: (api: { goToLine: (n: number) => void }) => void
   /** 위키링크를 눌렀을 때 — 문서 탭에서 연다 */
   onOpen?: (target: string) => void
   /** 이미지 경로 → 실제로 받을 수 있는 주소 */
@@ -755,7 +760,7 @@ export interface MdEditorProps {
  */
 function eolOf(s: string): '\r\n' | '\n' { return /\r\n/.test(s) && !/(^|[^\r])\n/.test(s) ? '\r\n' : '\n' }
 
-export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, rawUrl, files, onPasteImage }: MdEditorProps) {
+export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, rawUrl, files, onPasteImage, onReady }: MdEditorProps) {
   setEditorOpts({ onOpen, rawUrl })
   // ⚠ 자동완성·붙여넣기는 CodeMirror 확장 안에서 돈다 — React 클로저가 아니라 **모듈 한 곳**을 본다
   //    (편집기는 한 번만 만들어지므로, 여기서 최신 것을 계속 갈아 끼워야 한다)
@@ -780,6 +785,13 @@ export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, 
     let timer = 0
     const ext: Extension[] = [
       history(), formatKeymap, keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+      /**
+       * 🔴 **문서 안에서 찾기 (⌘F)** — `searchKeymap` 만으로는 안 뜬다. `openSearchPanel` 이 읽는
+       *    상태(패널·검색어)는 **`search()` 확장**이 만든다 — 키만 꽂아 두면 명령이 조용히 false 를
+       *    돌려주고 아무 일도 안 일어난다(실측: ⌘F 가 먹통).
+       * ⚠ 패널은 **위**에 붙인다 — 아래에 두면 폰에서 키보드와 겹친다.
+       */
+      search({ top: true }),
       // 서식 — `/` 메뉴 · 고른 글 위 막대 · ⌘B/⌘I/⌘K (`mdFormat.ts`)
       slashMenu(), selectionBar(), imageDrop(),
       markdown({ extensions: [GFM] }), syntaxHighlighting(HL), syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
@@ -810,6 +822,21 @@ export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, 
     }
     const view = new EditorView({ state: EditorState.create({ doc: doc0, selection: { anchor }, extensions: ext }), parent: el })
     viewRef.current = view
+    /**
+     * 밖에서 쓸 손잡이 — 목차가 «그 줄로» 부른다.
+     * ⚠ `scrollIntoView` 는 **가운데**로 맞춘다(`y: 'center'`) — 맨 위로 붙이면 그 제목이 화면
+     *    꼭대기에 걸려 바로 위 문맥이 안 보인다.
+     * ⚠ 커서도 함께 옮긴다 — 안 옮기면 곧바로 타이핑했을 때 글이 **딴 곳에** 들어간다.
+     */
+    onReady?.({
+      goToLine: (n: number) => {
+        const v = viewRef.current
+        if (!v || n < 1 || n > v.state.doc.lines) return
+        const line = v.state.doc.line(n)
+        v.dispatch({ selection: { anchor: line.from }, effects: EditorView.scrollIntoView(line.from, { y: 'center' }) })
+        v.focus()
+      }
+    })
     view.focus()
     return () => {
       // ⚠ 떠나기 전에 못 낸 저장을 낸다 — 안 그러면 «쓰고 탭을 닫으면 사라진다»

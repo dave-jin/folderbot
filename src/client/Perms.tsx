@@ -101,6 +101,12 @@ function AgentConn() {
     try { await api('/auth/reconnect', { body: { agent } }); await refresh(); setMsg('다시 확인했어요') }
     catch (e) { setMsg((e as Error).message) } finally { setBusy(false) }
   }
+  /** 🔴 안내문이 아니라 단추다 — 누르면 호스트 맥에 터미널이 열린다(설정의 그것과 같은 길) */
+  const login = async (agent: 'claude' | 'codex') => {
+    setBusy(true)
+    try { await api('/auth/login-terminal', { body: { agent } }); setMsg(agent === 'codex' ? '터미널을 열었어요 — codex login 을 마치고 [연결 확인]' : '터미널을 열었어요 — claude 가 뜨면 /login 을 치고 [연결 확인]') }
+    catch (e) { setMsg((e as Error).message) } finally { setBusy(false) }
+  }
   if (!list) return null
   return <div className="perm-rows">
     <div className={`perm-row ${claudeOn ? 'granted' : 'missing'}`}>
@@ -108,11 +114,11 @@ function AgentConn() {
       {!claudeOn ? <>
         <p className="why">{!has('claude')
           ? 'Claude Code 가 안 깔려 있어요. 터미널에서 설치한 뒤 [다시 확인] 을 누르세요.'
-          : '터미널을 열고 claude → /login 을 하면 키체인에 로그인이 남아요. 그러면 claude.ai 커넥터(Akiflow 같은 것)도 함께 붙습니다.'}</p>
+          : '아래 [터미널에서 로그인] 을 누르면 이 맥에 터미널이 열려요. claude 가 뜨면 /login 을 치고 브라우저에서 마치세요 — 그러면 claude.ai 커넥터(Akiflow 같은 것)도 함께 붙습니다.'}</p>
         <ol className="how">{(!has('claude')
           ? ['터미널에서 Claude Code 를 설치하세요', '설치 뒤 [연결 확인]']
           : ['터미널에서 claude 를 치고 /login', '브라우저에서 로그인을 마치세요', '이 창으로 돌아와 [연결 확인]']).map((h, i) => <li key={i}>{h}</li>)}</ol>
-        <div className="acts"><button className="btn" disabled={busy} onClick={() => void act('claude')}>연결 확인</button></div>
+        <div className="acts">{has('claude') && s.device.main ? <button className="btn on" disabled={busy} onClick={() => void login('claude')}>터미널에서 로그인</button> : null}<button className="btn" disabled={busy} onClick={() => void act('claude')}>연결 확인</button></div>
       </> : null}
     </div>
     <div className={`perm-row ${cx?.ok ? 'granted' : 'unknown'}`}>
@@ -120,7 +126,7 @@ function AgentConn() {
       {has('codex') && !cx?.ok ? <>
         <p className="why">Codex 는 없어도 됩니다 — 있으면 세션마다 Claude 와 골라 쓸 수 있어요.</p>
         <ol className="how">{['터미널에서 codex login', '또는 설정 › 에이전트에 OpenAI API 키를 넣으세요', '이 창으로 돌아와 [연결 확인]'].map((h, i) => <li key={i}>{h}</li>)}</ol>
-        <div className="acts"><button className="btn" disabled={busy} onClick={() => void act('codex')}>연결 확인</button></div>
+        <div className="acts">{s.device.main ? <button className="btn on" disabled={busy} onClick={() => void login('codex')}>터미널에서 로그인</button> : null}<button className="btn" disabled={busy} onClick={() => void act('codex')}>연결 확인</button></div>
       </> : null}
     </div>
     {msg ? <div className="hint">{msg}</div> : null}
