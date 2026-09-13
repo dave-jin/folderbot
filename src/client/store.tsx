@@ -33,7 +33,7 @@ export interface StateShape {
 }
 const init: StateShape = { version: '', root: '', rules: null, rulesInstalled: false, bots: [], candidates: [], sessionsByBot: {}, chats: {}, pending: {}, todos: {}, auth: { verdict: 'unknown', checkedAt: 0 }, inbox: 0, notifications: [], vapidPublic: '', tailnet: null, addrs: [], port: 7373, botLimit: 8, devices: [], defaults: { model: 'claude-fable-5-1', effort: 'high' }, hostName: '', device: { id: '', name: '', main: false }, online: 'off', loaded: false, filesTick: {} }
 
-type Action = { type: 'state'; s: Partial<StateShape> } | { type: 'frame'; f: Frame } | { type: 'chat'; sessionId: string; items: ChatItem[]; pending: PermissionRequest[] } | { type: 'online'; v: 'on' | 'off' } | { type: 'todos'; botId: string; items: TodoItem[] }
+type Action = { type: 'state'; s: Partial<StateShape> } | { type: 'frame'; f: Frame } | { type: 'chat'; sessionId: string; items: ChatItem[]; pending: PermissionRequest[] } | { type: 'online'; v: 'on' | 'off' } | { type: 'todos'; botId: string; items: TodoItem[] } | { type: 'refiles' }
 
 function reducer(s: StateShape, a: Action): StateShape {
   switch (a.type) {
@@ -41,6 +41,8 @@ function reducer(s: StateShape, a: Action): StateShape {
     case 'online': return { ...s, online: a.v }
     case 'chat': return { ...s, chats: { ...s.chats, [a.sessionId]: a.items }, pending: { ...s.pending, [a.sessionId]: a.pending } }
     case 'todos': return { ...s, todos: { ...s.todos, [a.botId]: a.items } }
+    // 다시 붙었다 — 파일을 읽는 화면(트리 · 문서 탭)에게 «다시 읽어라» 를 한 번에 알린다
+    case 'refiles': { const t = Date.now(); return { ...s, filesTick: Object.fromEntries(s.bots.map((b) => [b.id, t])) } }
     case 'frame': {
       const f = a.f
       switch (f.ev) {
@@ -82,10 +84,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }
   const loadChat = async (sid: string) => { const r = await api<{ info: SessionInfo; items: ChatItem[] }>(`/sessions/${sid}/chat`); dispatch({ type: 'chat', sessionId: sid, items: r.items, pending: r.info.pending }) }
   const loadTodo = async (botId: string) => { const items = await api<TodoItem[]>(`/bots/${botId}/todo`); dispatch({ type: 'todos', botId, items }) }
+  /**
+   * 🔴 **다시 붙으면 «본 것» 을 전부 다시 읽는다** (2026-09-13 Dave: «원격 모바일에서 수정된 파일이 바로 적용이 안 돼»).
+   *
+   * 왜 맥은 되고 폰은 안 됐나 — 화면이 사는 길은 **SSE 한 줄**뿐인데, 맥은 그 줄이 안 끊겨 `todo`·`chat`·`files`
+   * 프레임을 계속 받는다. 폰은 잠그거나 다른 앱에 갔다 오는 사이 줄이 끊기고, **그 동안 온 프레임은 영영 없다.**
+   * 다시 붙을 때 하던 일은 `/api/state` 새로 읽기 하나뿐인데 그 응답에는 **할 일도 대화도 문서도 없다** —
+   * 그래서 봇 목록·알림만 최신이고 할 일 패널과 열린 문서는 옛날 것 그대로였다.
+   *
+   * ⛔ **«다시 붙었다» 를 상태 새로고침과 같은 뜻으로 쓰지 않는다.** 끊긴 동안 놓친 것은 프레임이지 상태가 아니다.
+   *    화면이 들고 있는 것(할 일 · 열어 둔 대화 · 파일)을 이름으로 하나씩 다시 읽어야 한다.
+   * ⚠ 새 화면이 «프레임으로만 최신이 되는» 것을 들고 있게 되면 **여기에도 넣어야 한다** — 안 넣으면
+   *    맥에서는 멀쩡하고 폰에서만 조용히 낡는다(이 버그의 모양 그대로다).
+   */
+  const seen = useRef<{ todos: Set<string>; chats: Set<string> }>({ todos: new Set(), chats: new Set() })
+  seen.current.todos = new Set(Object.keys(s.todos))
+  seen.current.chats = new Set(Object.keys(s.chats))
+  const resync = async () => {
+    await refresh()
+    await Promise.allSettled([
+      ...[...seen.current.todos].map((b) => loadTodo(b)),
+      ...[...seen.current.chats].map((sid) => loadChat(sid))
+    ])
+    dispatch({ type: 'refiles' })
+  }
   useEffect(() => {
     if (!token()) return
+    let first = true
     void refresh()
-    stopRef.current = connectEvents((f) => { dispatch({ type: 'frame', f }); if (f.ev === 'hello') void refresh() }, (v) => dispatch({ type: 'online', v }))
+    stopRef.current = connectEvents((f) => { dispatch({ type: 'frame', f }); if (f.ev === 'hello') { if (first) { first = false; void refresh() } else void resync() } }, (v) => dispatch({ type: 'online', v }))
     return () => stopRef.current?.()
   }, [])
   const v = useMemo(() => ({ s, refresh, loadChat, loadTodo, dispatch }), [s])

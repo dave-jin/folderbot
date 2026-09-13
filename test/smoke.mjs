@@ -540,6 +540,25 @@ try {
           await pg.screenshot({ path: 'test/tmp/phone-swipe.png' })
           // ── 새 폰 할 일 (V19) — 행 생김새 · 오른쪽 여백 · 길게 눌러 옮기기 · 편집 시트 ──
           await pg.waitForSelector('.panel .ptodo', { timeout: 5000 })
+        // 🔴 끊겼다 붙는 동안 바뀐 파일이 화면에 온다 (2026-09-13 Dave: «원격 모바일에서 수정된 파일이 바로 적용이 안 돼»)
+        //    맥은 SSE 가 안 끊겨 프레임으로 최신이 됐고, 폰은 그 프레임을 놓친 채 /state 만 다시 읽어 할 일이 낡아 있었다.
+        {
+          const relBot = await pg.evaluate(() => location.hash)   // 지금 보고 있는 봇은 그대로 둔다
+          const todoFile = join(root, '3. Area/제품_Rondo/todo.md')
+          const before = readFileSync(todoFile, 'utf8')
+          await pg.evaluate(() => { window.__sseOff?.() })         // 없으면 아래 오프라인 흉내로 끊는다
+          await pg.context().setOffline(true); await wait(600)
+          writeFileSync(todoFile, before.replace('## 요청 · 할 일\n', '## 요청 · 할 일\n- [ ] 끊긴-사이-에-생긴-할일: 다시 붙으면 보여야 한다\n'))
+          await wait(700)
+          await pg.context().setOffline(false)
+          await pg.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+          let seen = false
+          for (let i = 0; i < 40; i++) { if (/끊긴-사이-에-생긴-할일/.test((await pg.textContent('body')) ?? '')) { seen = true; break } await wait(300) }
+          writeFileSync(todoFile, before)                          // 원상복구
+          if (!seen) fail('다시 붙어도 할 일이 안 온다 — 재접속 때 화면이 든 것을 다시 안 읽는다 ' + relBot)
+          await wait(500)
+        }
+
           const shape = await pg.evaluate(() => {
             const row = document.querySelector('.panel .ptodo'); const r = row.getBoundingClientRect()
             const ring = row.querySelector('.ring').getBoundingClientRect()
