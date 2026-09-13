@@ -99,6 +99,8 @@ b,strong { color:var(--w); font-weight:600 }
 .chat-foot .queue, .chat-foot .files { width:100%; max-width:712px; margin-bottom:8px }
 /* 사람 말 — 🔴 **상자를 걷었다.** 상자는 «지금 당신 차례» 를 뜻하는 자리라(승인·질문) 아껴 쓴다.
    사람 말은 오른쪽 정렬과 폭 제한만으로 충분히 갈린다. */
+/* 턴 경계 — 1px 한 줄. 음수 여백으로 26px 리듬 한가운데 앉는다(리듬을 늘리지 않는다) */
+.chat-body .tsep { align-self:stretch; height:0; border-top:1px solid var(--line); margin:-13px 0 }
 .umsg { align-self:flex-end; max-width:74%; text-align:right; color:var(--t); white-space:pre-wrap; word-break:break-word; line-height:1.7; font-size:14px }
 /* 봇 말 — 읽기 폭 58ch. 넓은 화면에서 줄이 끝까지 늘어나면 한 줄을 눈으로 되짚게 된다 */
 .chat-body .md { max-width:58ch; font-size:14px; line-height:1.85 }
@@ -433,6 +435,7 @@ b,strong { color:var(--w); font-weight:600 }
   /* 키보드가 올라오면 아래는 전부 키보드가 덮는다 — `--sab`(홈 인디케이터) 를 비워 둘 이유가 없다 */
   .app.kb .cchips, .app.kb .tobot { display:none } .app.kb .chat-foot { padding-bottom:6px } .app.kb .chat-hdr { display:none }
   .app.kb .composer { box-shadow:none }
+  .chat-body .tsep { margin:-7px 0 }
   .umsg { border-radius:18px 18px 6px 18px; align-self:flex-end; max-width:88%; padding:10px 16px }
   .md h1,.md h2,.md h3 { font-size:17px }
   .acts-row { font-size:13px; gap:18px }

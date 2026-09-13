@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { Bot, ChatItem, NotifyEvent, PermissionMode, PermissionRequest, SessionInfo, SlashCmd } from '../core/types'
 import { api, setToken, token, uploadFile } from './api'
 import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
@@ -569,8 +569,16 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
       <div className="chat-body">
         {!cur && !drill ? <div className="empty" style={{ flex: 1 }}><FolderBot color={bot.color} size={40} mood="idle" /><div><b>{bot.name}</b>{bot.orchestrator ? ' — 볼트 전체를 보는 관제 봇이에요. "지금 뭐 돌고 있어?", "Inbox 정리해 줘", "X 폴더에서 시작해".' : ' 봇이에요. 이 폴더의 지침·기억·자료를 들고 일해요.'}</div></div> : null}
         {drillSub ? <div className="drill-p"><div className="meta" style={{ cursor: 'default' }}>무엇을 시켰나</div><div className="tx">{drillSub.prompt || drillSub.name}</div><hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '4px 0', width: '100%' }} /></div> : null}
-        {rows.map((r) => r.k === 'group' ? <ToolGroup key={r.items[0].id} items={r.items} endT={r.endT} base={bot.abs} onFile={(p) => { const rel = relOf(p); if (rel) onFile(rel) }} />
-          : <Item key={r.it.id} it={r.it} bot={bot} items={items} onFile={(p) => { const rel = relOf(p); if (rel) onFile(rel) }} onDrill={(id) => setDrill(id)} state={state} say={say} isLastAssistant={r.it.id === lastAssistant} isLastUser={r.it.id === lastUser?.id} userRef={lastUserRef} onRetry={lastUser ? () => void sendText(lastUser.text) : undefined} />)}
+        {/* ⚠ **턴 경계는 「A · 문서처럼」의 약점이다** — 배경도 카드도 안 쓰기로 했으니, 새 턴이 시작되는
+            자리(= 사람이 말한 자리)에 **1px 선 하나**만 긋는다. 굵히거나 배경을 깔면 그 순간 B(카드)가 된다.
+            선은 세로 리듬을 안 늘린다 — 음수 여백으로 26px 한가운데에 앉힌다(styles.css `.tsep`). */}
+        {rows.map((r, i) => {
+          const node = r.k === 'group'
+            ? <ToolGroup key={r.items[0].id} items={r.items} endT={r.endT} base={bot.abs} onFile={(p) => { const rel = relOf(p); if (rel) onFile(rel) }} />
+            : <Item key={r.it.id} it={r.it} bot={bot} items={items} onFile={(p) => { const rel = relOf(p); if (rel) onFile(rel) }} onDrill={(id) => setDrill(id)} state={state} say={say} isLastAssistant={r.it.id === lastAssistant} isLastUser={r.it.id === lastUser?.id} userRef={lastUserRef} onRetry={lastUser ? () => void sendText(lastUser.text) : undefined} />
+          if (i === 0 || r.k !== 'item' || r.it.kind !== 'user') return node
+          return <Fragment key={`${r.it.id}-turn`}><div className="tsep" />{node}</Fragment>
+        })}
         {cur && !drill ? pending.map((p) => <PermCard key={p.requestId} p={p} sid={cur.id} />) : null}
         <div style={{ flex: 1 }} />
         {cur && (running || state === 'awaiting_input') ? <Live cur={cur} state={state} /> : null}

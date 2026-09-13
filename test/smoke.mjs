@@ -540,6 +540,20 @@ try {
           if (look.mdW && look.mdW > 620) fail('A 안: 봇 말의 읽기 폭이 안 걸렸다(58ch) ' + JSON.stringify(look))
           if (look.toolLines) fail('A 안: 도구가 대화에 펴져 있다 — 언제나 접혀야 한다 ' + JSON.stringify(look))
           if (!look.mach) fail('A 안: 접힌 기계 줄(.mach)이 없다 ' + JSON.stringify(look))
+          // 턴 경계 — A 의 약점이라 1px 선 하나로만 끊는다. ⛔ 굵히거나 배경을 깔면 B(카드)가 된다
+          const sep = await pg.evaluate(() => {
+            const e = document.querySelector('.chat-body .tsep')
+            if (!e) return { has: false }
+            const cs = getComputedStyle(e)
+            const us = [...document.querySelectorAll('.chat-body .umsg')]
+            const prev = e.previousElementSibling, next = e.nextElementSibling
+            const gap = prev && next ? next.getBoundingClientRect().top - prev.getBoundingClientRect().bottom : 0
+            return { has: true, w: parseFloat(cs.borderTopWidth), bg: cs.backgroundColor, full: e.getBoundingClientRect().width > (us[0]?.getBoundingClientRect().width ?? 0), gap }
+          })
+          if (!sep.has) fail('A 안: 턴 경계 선(.tsep)이 없다 — 훑을 때 어디서 끊기는지 안 보인다')
+          if (sep.w > 1) fail('A 안: 턴 경계가 굵다(1px 이어야 한다) ' + JSON.stringify(sep))
+          if (!clear(sep.bg)) fail('A 안: 턴 경계에 배경이 깔렸다 — 그 순간 B(카드)가 된다 ' + JSON.stringify(sep))
+          if (sep.gap > 30) fail('A 안: 턴 경계가 세로 리듬(26px)을 늘렸다 ' + JSON.stringify(sep))
           // 접힌 줄에 «걸린 시간» 까지 — 「얼마나 했나」의 마지막 조각
           const machTx = await pg.textContent('.mach')
           if (!/도구 \d+회/.test(machTx ?? '')) fail('A 안: 접힌 줄이 «도구 N회» 가 아니다 ' + machTx)
