@@ -3,6 +3,7 @@ import { parseRules, rulesSection, PARA_PRESET, globMatch, globParents, roleOf, 
 import { parseTodo, addLine, toggleLine, formatLine, editLine, deleteLine } from '../../src/core/todo'
 import { transition, shouldNotify } from '../../src/core/stateMachine'
 import { authVerdict } from '../../src/core/authVerdict'
+import { machSummary } from '../../src/core/chat'
 import { toolSummary, touchedPath } from '../../src/core/chat'
 import { chosung, hitRange, isChosungQuery, rank, scoreName } from '../../src/core/search'
 import { decide, dropIndex } from '../../src/client/gesture'
@@ -303,5 +304,16 @@ describe('usage', () => {
     expect(parseEvent('{"t":1,"tool":"claude"}')).not.toBe(null)
     expect(parseEvent('{잘린')).toBe(null)
     expect(parseEvent('{"t":1,"tool":"gemini"}')).toBe(null)
+  })
+})
+
+describe('machSummary — 접힌 기계 한 줄', () => {
+  it('«얼마나 했나» 만 적는다 — 도구 이름은 펼쳤을 때', () => {
+    expect(machSummary(7, 3, 12400)).toBe('도구 7회 · 파일 3개 · 12.4초')
+  })
+  it('파일이 없으면 파일 칸을 빼고, 0.1초 미만은 안 적는다 (0.0초 는 잡음이다)', () => {
+    expect(machSummary(1, 0, 40)).toBe('도구 1회')
+    expect(machSummary(2, 1, 99)).toBe('도구 2회 · 파일 1개')
+    expect(machSummary(2, 1, 100)).toBe('도구 2회 · 파일 1개 · 0.1초')
   })
 })

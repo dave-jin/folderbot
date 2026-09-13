@@ -90,3 +90,14 @@ export function closeOpenItems(items: ChatItem[], reason: 'result' | 'exit' | 'r
   }
   return changed
 }
+
+/**
+ * 접힌 기계 한 줄의 글귀 — 「도구 7회 · 파일 3개 · 12.4초」.
+ *
+ * ⛔ **도구 이름을 늘어놓지 않는다.** 접힌 상태에서 필요한 건 «얼마나 했나» 뿐이고,
+ *    «무엇을 했나» 는 펼쳤을 때 답한다(승인된 「A · 문서처럼」).
+ * ⚠ 0.1초 미만은 안 적는다 — 「0.0초」 는 정보가 아니라 잡음이다.
+ */
+export function machSummary(tools: number, files: number, ms: number): string {
+  return [`도구 ${tools}회`, files ? `파일 ${files}개` : '', ms >= 100 ? `${(ms / 1000).toFixed(1)}초` : ''].filter(Boolean).join(' · ')
+}

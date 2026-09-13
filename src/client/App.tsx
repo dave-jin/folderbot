@@ -8,6 +8,7 @@ import type { SecId } from './Settings'
 import { VendorMark } from './Brand'
 import { DocPane, useDocs } from './Doc'
 import { Elapsed, Panel, type SecH } from './Panel'
+import { machSummary } from '../core/chat'
 import { norm, scoreName } from '../core/search'
 import { fmtTime, useStore } from './store'
 import { ICON_PX, useIconSize, useTheme } from './theme'
@@ -375,7 +376,7 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk }: { rows: Row[]
 }
 
 /* ── 대화 ───────────────────────────────────────────────────────────────── */
-type ChatRow = { k: 'item'; it: ChatItem } | { k: 'group'; items: Tool[] }
+type ChatRow = { k: 'item'; it: ChatItem } | { k: 'group'; items: Tool[]; endT?: number }
 /**
  * 대화를 줄로 편다 — 「A · 문서처럼」(2026-09-13 Dave 확정).
  *
@@ -389,13 +390,14 @@ type ChatRow = { k: 'item'; it: ChatItem } | { k: 'group'; items: Tool[] }
  */
 function buildRows(items: ChatItem[], drill: string | null): ChatRow[] {
   const out: ChatRow[] = []; let run: Tool[] = []
-  const flush = () => { if (run.length) out.push({ k: 'group', items: run }); run = [] }
+  /** ⚠ 도구 줄에는 «끝난 시각» 이 없다 — 묶음이 끝난 시각은 **다음 줄이 생긴 시각**으로 잰다 */
+  const flush = (endT?: number) => { if (run.length) out.push({ k: 'group', items: run, endT }); run = [] }
   for (const it of items) {
     if (drill) { if ((it.kind === 'tool' && it.parentId === drill)) out.push({ k: 'item', it }); continue }
     if (it.kind === 'tool' && it.parentId) continue
     if (it.kind === 'result' && it.ok) continue
     if (it.kind === 'tool') { run.push(it); continue }
-    flush(); out.push({ k: 'item', it })
+    flush(it.t); out.push({ k: 'item', it })
   }
   flush(); return out
 }
@@ -567,7 +569,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
       <div className="chat-body">
         {!cur && !drill ? <div className="empty" style={{ flex: 1 }}><FolderBot color={bot.color} size={40} mood="idle" /><div><b>{bot.name}</b>{bot.orchestrator ? ' — 볼트 전체를 보는 관제 봇이에요. "지금 뭐 돌고 있어?", "Inbox 정리해 줘", "X 폴더에서 시작해".' : ' 봇이에요. 이 폴더의 지침·기억·자료를 들고 일해요.'}</div></div> : null}
         {drillSub ? <div className="drill-p"><div className="meta" style={{ cursor: 'default' }}>무엇을 시켰나</div><div className="tx">{drillSub.prompt || drillSub.name}</div><hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '4px 0', width: '100%' }} /></div> : null}
-        {rows.map((r) => r.k === 'group' ? <ToolGroup key={r.items[0].id} items={r.items} base={bot.abs} onFile={(p) => { const rel = relOf(p); if (rel) onFile(rel) }} />
+        {rows.map((r) => r.k === 'group' ? <ToolGroup key={r.items[0].id} items={r.items} endT={r.endT} base={bot.abs} onFile={(p) => { const rel = relOf(p); if (rel) onFile(rel) }} />
           : <Item key={r.it.id} it={r.it} bot={bot} items={items} onFile={(p) => { const rel = relOf(p); if (rel) onFile(rel) }} onDrill={(id) => setDrill(id)} state={state} say={say} isLastAssistant={r.it.id === lastAssistant} isLastUser={r.it.id === lastUser?.id} userRef={lastUserRef} onRetry={lastUser ? () => void sendText(lastUser.text) : undefined} />)}
         {cur && !drill ? pending.map((p) => <PermCard key={p.requestId} p={p} sid={cur.id} />) : null}
         <div style={{ flex: 1 }} />
@@ -616,7 +618,12 @@ function Item({ it, bot, items, onFile, onDrill, state, say, isLastAssistant, is
   const [open, setOpen] = useState(false)
   switch (it.kind) {
     case 'user': return <div className={`umsg ${isLastUser ? 'last' : ''}`} ref={isLastUser ? userRef : undefined}>{it.text}</div>
-    case 'assistant': return <div><Md text={it.text || ' '} streaming={!!it.streaming} botId={bot.id} onPath={onFile} />{!it.streaming && isLastAssistant ? <div className="acts-row"><button onClick={() => { navigator.clipboard?.writeText(it.text); say('복사했어요') }} title="복사"><Icon n="doc" size={13} />복사</button>{onRetry && state !== 'running' ? <button onClick={onRetry} title="같은 질문 다시"><Icon n="undo" size={13} />다시</button> : null}<span>{fmtTime(it.t)}</span></div> : null}</div>
+    /**
+     * 봇 답의 **첫 줄**은 활자 위계를 한 단 올린다(17/600) — 승인된 「A · 문서처럼」의 여섯 단계 중 하나.
+     * ⚠ **짧은 한 줄이 문단 하나로 끝날 때만** 올린다. 길면 굵은 덩어리가 돼서 오히려 시끄럽고,
+     *    빈 줄로 끝나지 않았으면 스트리밍 중에 커졌다 작아졌다 한다(그래서 «뒤에 빈 줄» 을 조건에 둔다).
+     */
+    case 'assistant': return <div className={/^([^\n]{1,42})\n\s*\n/.test(it.text.trimStart()) && !/^[#>\-*\d`|!\[]/.test(it.text.trimStart()) ? 'amsg lede' : 'amsg'}><Md text={it.text || ' '} streaming={!!it.streaming} botId={bot.id} onPath={onFile} />{!it.streaming && isLastAssistant ? <div className="acts-row"><button onClick={() => { navigator.clipboard?.writeText(it.text); say('복사했어요') }} title="복사"><Icon n="doc" size={13} />복사</button>{onRetry && state !== 'running' ? <button onClick={onRetry} title="같은 질문 다시"><Icon n="undo" size={13} />다시</button> : null}<span>{fmtTime(it.t)}</span></div> : null}</div>
     case 'thinking': return <div><button className={`meta ${open ? 'open' : ''}`} onClick={() => setOpen(!open)}><span className="lb">생각</span>{!open ? <span className="tx">· {it.text.trim() ? it.text.replace(/\s+/g, ' ').slice(0, 100) : it.streaming ? '생각 중…' : '(내용 없음)'}</span> : null}<Icon n={open ? 'chevd' : 'chev'} size={9} /></button>{open ? <div className="think">{it.text.trim() ? it.text : it.streaming ? '생각 중…' : 'Claude Code 가 headless 출력에서는 생각 내용을 주지 않아요 (서명만 옵니다).'}</div> : null}</div>
     case 'tool': return <ToolLine it={it} onFile={onFile} base={bot.abs} />
     case 'subagent': { const kids = items.filter((x) => x.kind === 'tool' && x.parentId === it.id) as Tool[]; return <div className="sub"><div className="l"><button className="ib" style={{ width: 18, height: 18, marginLeft: -4 }} onClick={() => setOpen(!open)}><Icon n={open ? 'chevd' : 'sub'} size={12} /></button><span className="nm">{it.name}</span>{it.status === 'run' ? <span className="spin run" /> : <Icon n={it.status === 'error' ? 'x' : 'check'} size={11} color={it.status === 'error' ? 'var(--err)' : 'var(--done)'} />}<span className="m"><span className="w">{it.status === 'run' ? '실행 중' : it.status === 'error' ? '실패' : '끝남'} · 도구 {it.tools}회</span><span className="ic" title={`도구 ${it.tools}회`}><Icon n="task" size={11} />{it.tools}</span>{it.last ? <> · <span className="mono">{it.last}</span></> : null}</span><button className="op" onClick={() => onDrill(it.id)} title="열기"><span className="w">열기</span><Icon n="chev" size={10} /></button></div>{open ? <div className="in">{kids.slice(-4).map((k) => <ToolLine key={k.id} it={k} onFile={onFile} base={bot.abs} />)}{it.result && it.status !== 'run' ? <div className="meta" style={{ whiteSpace: 'pre-wrap' }}>{it.result.slice(0, 300)}</div> : null}{!kids.length ? <div className="meta">아직 도구를 안 썼어요</div> : null}</div> : null}</div> }
@@ -645,12 +652,14 @@ function ToolLine({ it, onFile, base }: { it: Tool; onFile: (p: string) => void;
  *    **«얼마나 했나»** 뿐이고, **«무엇을 했나»** 는 펼쳤을 때 답한다.
  * ⚠ 실패만은 접힌 채로도 말한다 — 조용히 접어 버리면 사람이 실패를 영영 못 본다.
  */
-function ToolGroup({ items, onFile, base }: { items: Tool[]; onFile: (p: string) => void; base?: string }) {
+function ToolGroup({ items, onFile, base, endT }: { items: Tool[]; onFile: (p: string) => void; base?: string; endT?: number }) {
   const [open, setOpen] = useState(false)
   const fails = items.filter((t) => t.isError).length
   const running = items.some((t) => t.result === undefined)
   const files = new Set(items.map((t) => { const i = t.input ?? {}; const v = i.file_path ?? i.path ?? i.notebook_path; return typeof v === 'string' ? v : '' }).filter(Boolean))
-  const bits = [`도구 ${items.length}회`, files.size ? `파일 ${files.size}개` : ''].filter(Boolean).join(' · ')
+  // 「얼마나 했나」의 마지막 한 조각 — 걸린 시간. 도는 중에는 안 적는다(진행 줄이 이미 세고 있다)
+  const ms = !running && endT ? endT - items[0].t : 0
+  const bits = machSummary(items.length, files.size, ms)
   return <div className="grp"><button className={`mach ${open ? 'open' : ''}`} onClick={() => setOpen(!open)}>
     <Icon n={open ? 'chevd' : 'chev'} size={9} />
     {running ? <span className="spin" /> : null}

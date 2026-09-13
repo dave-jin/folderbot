@@ -30,6 +30,12 @@ rl.on('line', (raw) => {
   if (msg.type !== 'user') return
   const text = msg.message?.content?.map?.((b) => b.text ?? '').join('') ?? ''
   const u = randomUUID().slice(0, 6)
+  // 「봇 답의 첫 줄」 검사용 — 짧은 한 줄 + 빈 줄 + 본문
+  if (/머리줄/.test(text)) {
+    say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '정리했습니다\n\n**4건**을 옮겼고, 중복 2건은 합쳤습니다. 원본 문장은 지우지 않고 상세로 내렸어요.' }], stop_reason: 'end_turn' } })
+    say({ type: 'result', subtype: 'success', duration_ms: 40, total_cost_usd: 0.001 })
+    return
+  }
   if (/백그라운드/.test(text)) {
     // 실제 CLI 2.1.269 의 백그라운드 Agent 이벤트 순서를 그대로 흉내 낸다
     const tid = `stub-bg-${u}`, task = `task-${u}`

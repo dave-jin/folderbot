@@ -540,6 +540,27 @@ try {
           if (look.mdW && look.mdW > 620) fail('A 안: 봇 말의 읽기 폭이 안 걸렸다(58ch) ' + JSON.stringify(look))
           if (look.toolLines) fail('A 안: 도구가 대화에 펴져 있다 — 언제나 접혀야 한다 ' + JSON.stringify(look))
           if (!look.mach) fail('A 안: 접힌 기계 줄(.mach)이 없다 ' + JSON.stringify(look))
+          // 접힌 줄에 «걸린 시간» 까지 — 「얼마나 했나」의 마지막 조각
+          const machTx = await pg.textContent('.mach')
+          if (!/도구 \d+회/.test(machTx ?? '')) fail('A 안: 접힌 줄이 «도구 N회» 가 아니다 ' + machTx)
+          // ⚠ 걸린 시간은 «0.1초 이상일 때만» 적는다 — 스텁은 즉답이라 여기선 안 나온다. 글귀 규칙은 유닛(machSummary)이 고정한다
+          if (/도구 .*·.*·.*·/.test(machTx ?? '')) fail('A 안: 접힌 줄이 길어졌다 — 도구 이름을 늘어놓지 마라 ' + machTx)
+          // 봇 답의 첫 줄 — 짧은 한 줄일 때만 17/600 으로 올라간다(길면 굵은 덩어리가 된다)
+          await pg.fill('.composer textarea', '머리줄 검사'); await pg.keyboard.press('Enter')
+          let lede = null
+          for (let i = 0; i < 40; i++) {
+            lede = await pg.evaluate(() => {
+              const e = document.querySelector('.chat-body .amsg.lede .md > p:first-child')
+              const plain = [...document.querySelectorAll('.chat-body .amsg:not(.lede) .md > p:first-child')].pop()
+              return { has: !!e, size: e ? parseFloat(getComputedStyle(e).fontSize) : 0, weight: e ? getComputedStyle(e).fontWeight : '', plainSize: plain ? parseFloat(getComputedStyle(plain).fontSize) : 0 }
+            })
+            if (lede.has) break
+            await wait(300)
+          }
+          if (!lede.has) fail('첫 줄: 짧은 머리줄이 안 올라갔다 ' + JSON.stringify(lede))
+          if (lede.size < 16.5 || lede.weight !== '600') fail('첫 줄: 활자 단계가 17/600 이 아니다 ' + JSON.stringify(lede))
+          if (lede.plainSize && lede.plainSize > 15) fail('첫 줄: 긴 답의 첫 문단까지 커졌다 — 굵은 덩어리가 된다 ' + JSON.stringify(lede))
+          await pg.fill('.composer textarea', ''); await wait(400)
         }
         // 🔴 쓰다 만 메시지는 새로고침해도 남는다 (2026-09-13 Dave: «앱을 껐다가 켜면 날라가»)
         {
