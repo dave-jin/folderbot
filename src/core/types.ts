@@ -70,6 +70,13 @@ export interface SessionInfo {
   id: string
   botId: string
   name: string
+  /**
+   * 이 세션을 도는 에이전트 (2026-09-13 Dave 재정의).
+   * 🔴 **벤더는 폴더가 아니라 세션의 성질이다** — 한 폴더에 Claude 세션과 Codex 세션이 **섞여** 산다.
+   *    그래서 회사 표식도 왼쪽 폴더 레일이 아니라 **세션 목록**에 붙는다.
+   * ⚠ 안 주면 봇의 값(= 폴더를 시작할 때 고른 것)을 따른다 — 옛 세션 파일에는 이 칸이 없다.
+   */
+  vendor?: Vendor
   state: SessionState
   cliSessionId: string | null
   createdAt: number

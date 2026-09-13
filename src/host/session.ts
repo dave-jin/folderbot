@@ -159,6 +159,8 @@ export interface SessionRec {
   lastError?: string
   routine?: string
   permissionMode?: PermissionMode
+  /** 이 세션을 도는 에이전트 — 없으면 봇의 것. 벤더는 폴더가 아니라 세션의 성질이다 */
+  vendor?: 'claude' | 'codex'
   model?: string
   effort?: string
   activity?: string
@@ -211,14 +213,14 @@ export class SessionManager extends EventEmitter {
   }
   info(r: SessionRec): SessionInfo {
     const w = this.workers.get(r.id)
-    return { id: r.id, botId: r.botId, name: r.name, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
+    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
   }
   get(id: string): SessionRec | undefined { return this.recs.get(id) }
   items(id: string): ChatItem[] { return this.recs.get(id)?.items ?? [] }
 
-  create(bot: Bot, name: string, opts: { permissionMode?: PermissionMode; model?: string; effort?: string; routine?: string } = {}): SessionRec {
+  create(bot: Bot, name: string, opts: { permissionMode?: PermissionMode; model?: string; effort?: string; routine?: string; vendor?: 'claude' | 'codex' } = {}): SessionRec {
     const id = `s_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-    const r: SessionRec = { id, botId: bot.id, name, cwd: bot.repo ?? bot.abs, cliSessionId: null, state: 'idle', createdAt: Date.now(), lastActivity: Date.now(), items: [], routine: opts.routine, permissionMode: opts.permissionMode, model: opts.model ?? this.defaults.model, effort: opts.effort ?? this.defaults.effort }
+    const r: SessionRec = { id, botId: bot.id, name, cwd: bot.repo ?? bot.abs, cliSessionId: null, state: 'idle', createdAt: Date.now(), lastActivity: Date.now(), items: [], routine: opts.routine, permissionMode: opts.permissionMode, vendor: opts.vendor ?? bot.vendor, model: opts.model ?? this.defaults.model, effort: opts.effort ?? this.defaults.effort }
     this.recs.set(id, r)
     this.persist(r)
     this.emit('sessions', bot.id)
@@ -273,7 +275,8 @@ export class SessionManager extends EventEmitter {
   ensureWorker(r: SessionRec, bot: Bot): Worker {
     const existing = this.workers.get(r.id)
     if (existing?.alive) return existing
-    const w: Worker = bot.vendor === 'codex'
+    // 🔴 **세션이 벤더를 정한다** — 봇의 값은 «안 고른 세션» 의 폴백일 뿐이다(한 폴더에 둘이 섞인다)
+    const w: Worker = (r.vendor ?? bot.vendor) === 'codex'
       // ⚠ 모델 이름은 CLI 마다 다르다 — Claude 이름(claude-opus-5)을 Codex 에 넘기면 그 자리에서 죽는다.
       //    Codex 것처럼 보이는 이름만 넘기고 아니면 CLI 의 기본값에 맡긴다.
       ? new CodexWorker({ cwd: r.cwd, resume: r.cliSessionId, model: /^(gpt|o\d|codex)/i.test(r.model ?? '') ? r.model : undefined })

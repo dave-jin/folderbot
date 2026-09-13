@@ -1019,20 +1019,21 @@ try {
       const ps2 = await (await fetch(`http://127.0.0.1:${p2}/api/agents`)).json()
       if (ps2.length !== 2 || !ps2.some((x) => x.id === 'codex')) fail('고르기: 둘이 깔렸는데 목록이 ' + JSON.stringify(ps2.map((x) => x.id)))
       if (!/9\.9\.9/.test(ps2.find((x) => x.id === 'codex').version ?? '')) fail('고르기: codex 버전을 못 읽었다 ' + JSON.stringify(ps2))
-      // 같은 폴더에 형제로 — rel 이 같아도 vendor 가 다르면 다른 봇이고, 이름 뒤에 «· Codex» 가 붙는다
+      // 🔴 **폴더 하나 = 줄 하나.** 벤더는 폴더가 아니라 **세션**의 성질이다 (2026-09-13 Dave 재정의) —
+      //    같은 폴더를 다른 에이전트로 또 시작해도 봇은 하나고, 이름에 «· Codex» 를 박지 않는다.
       const api2 = async (path, body) => { const r = await fetch(`http://127.0.0.1:${p2}/api${path}`, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); const j = await r.json(); if (!r.ok) throw new Error(`${path}: ${j.error}`); return j }
       const b1 = await api2('/bots/start', { rel: '3. Area/재무_CFO', provider: 'claude' })
       const b2 = await api2('/bots/start', { rel: '3. Area/재무_CFO', provider: 'codex' })
-      if (b1.id === b2.id) fail('형제: 같은 봇이 돌아왔다 — vendor 로 안 가른다')
-      if (b2.vendor !== 'codex') fail('형제: 고른 벤더가 안 남았다 ' + JSON.stringify(b2))
-      const again = await api2('/bots/start', { rel: '3. Area/재무_CFO', provider: 'codex' })
-      if (again.id !== b2.id) fail('형제: 같은 벤더로 또 시작했는데 봇이 새로 생겼다')
+      if (b1.id !== b2.id) fail('폴더 하나 = 줄 하나: 벤더가 다르다고 봇이 또 생겼다')
       const both = (await api2('/bots')).filter((b) => b.rel === '3. Area/재무_CFO')
-      if (both.length !== 2) fail('형제: 둘이 아니다 ' + JSON.stringify(both.map((b) => b.name)))
-      // 기본이 아닌 쪽에만 «· Codex» — 둘 다 붙이면 좁은 레일에서 폴더 이름이 잘린다
-      if (!both.some((b) => /· Codex$/.test(b.name)) || !both.some((b) => b.name === '재무_CFO')) fail('형제: 이름으로 안 갈린다 ' + JSON.stringify(both.map((b) => b.name)))
+      if (both.length !== 1) fail('폴더 하나 = 줄 하나: 줄이 ' + both.length + '개다 ' + JSON.stringify(both.map((b) => b.name)))
+      if (both[0].name !== '재무_CFO') fail('폴더 이름에 회사를 박지 않는다 ' + both[0].name)
+      // 🔴 **세션마다 에이전트를 고른다** — Claude 로 시작한 폴더 안에 Codex 세션을 만든다
+      const cxs = await api2(`/bots/${b1.id}/sessions`, { name: '코덱스', vendor: 'codex' })
+      if (cxs.vendor !== 'codex') fail('세션 벤더: 고른 값이 안 남았다 ' + JSON.stringify(cxs))
       // Codex 로 한 턴 — `codex exec --json` 을 우리 stream 모양으로 옮긴다 (host/codex.ts)
-      const cs = await api2(`/bots/${b2.id}/send`, { text: '안녕', name: '코덱스' })
+      await api2(`/sessions/${cxs.id}/send`, { text: '안녕' })
+      const cs = { sessionId: cxs.id }
       let cchat = null
       for (let i = 0; i < 50; i++) { cchat = await api2(`/sessions/${cs.sessionId}/chat`); if ((cchat.items ?? []).some((x) => /확인했어요/.test(x.text ?? ''))) break; await wait(250) }
       const items = cchat?.items ?? []
@@ -1044,7 +1045,10 @@ try {
       let c2 = null
       for (let i = 0; i < 50; i++) { c2 = await api2(`/sessions/${cs.sessionId}/chat`); if ((c2.items ?? []).some((x) => /«이어서»/.test(x.text ?? ''))) break; await wait(250) }
       if (c2.info.cliSessionId !== cchat.info.cliSessionId) fail('Codex: 두 번째 턴이 새 세션으로 갔다')
-      ok('에이전트 고르기 — 둘이 깔리면 둘 다 · 형제(· Codex) · Codex 로 한 턴')
+      // 같은 폴더의 다른 세션은 Claude 다 — 한 폴더 안에 둘이 섞여 산다
+      const mix = await api2(`/bots/${b1.id}/sessions`, { name: '클로드', vendor: 'claude' })
+      if (mix.vendor !== 'claude') fail('세션 벤더: 같은 폴더의 다른 세션이 Claude 가 아니다 ' + JSON.stringify(mix))
+      ok('에이전트 고르기 — 폴더 하나 = 줄 하나 · 벤더는 세션마다 · Codex 로 한 턴')
     } finally { two.kill() }
   }
 

@@ -6,7 +6,8 @@ import { ACT_COLOR, ACT_ICON, ACT_LABEL, LONG, actOf, buzz, slotOf, useSwipeCfg,
 import { HOLD_MS, decide, dropIndex } from './gesture'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { RoutineSheet, askName } from './Sheets'
-import { Mark } from './Brand'
+import { Mark, VendorMark, useProviders } from './Brand'
+import { PROVIDER_LABEL, type ProviderId } from '../core/agents'
 import { scoreName } from '../core/search'
 import { fmtElapsed, fmtTime, useStore } from './store'
 
@@ -23,6 +24,21 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
   // 아이콘 열에서 누른 섹션은 펼쳐진 채로 온다
   useEffect(() => { if (focusSec) setOpen((o) => ({ ...o, [focusSec.sec]: true })) }, [focusSec?.n])
   const [routines, setRoutines] = useState(false); const [menu, setMenu] = useState(false)
+  /**
+   * 새 세션 — 🔴 **누가 맡을지(Claude / ChatGPT)는 세션마다 고른다.** 벤더는 폴더가 아니라 세션의 성질이라
+   *    한 폴더에 둘이 섞여 산다(그래서 표식도 폴더 레일이 아니라 이 목록에 붙는다).
+   * ⚠ 깔린 에이전트가 하나면 묻지 않는다 — 고를 게 없는데 묻는 건 문턱만 하나 더 만드는 것이다.
+   */
+  const provs = useProviders()
+  const [pick, setPick] = useState(false)
+  const newSession = async (vendor?: ProviderId) => {
+    if (!vendor && provs.length > 1) { setPick(true); return }
+    setPick(false)
+    try {
+      const info = await api<SessionInfo>(`/bots/${bot.id}/sessions`, { body: { name: `세션 ${sessions.length + 1}`, vendor: vendor ?? provs[0]?.id } })
+      await refresh(); go(bot.id, info.id)
+    } catch (e) { say((e as Error).message) }
+  }
   const todos = (s.todos[bot.id] ?? [])
   /**
    * 세션 삭제 — 워커를 내리고 기록을 지운다. 되돌릴 수 없으니 한 번 묻는다.
@@ -44,8 +60,13 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
     <div className="hdr">{phone ? <button className="rb glassb" onClick={onBack} title="대화로"><Icon n="back" size={20} /></button> : null}<span className="ttl">{bot.orchestrator ? '이 볼트에서' : '이 폴더에서'}</span><span className="sp" />{!phone ? <div className="acts"><button className="ib on" onClick={onCollapse} title="패널 접기 (⌘⇧B)"><Icon n="panelr" size={14} /></button></div> : null}</div>
     {/* 세션 */}
     <div className={`sec ${open.sessions ? 'fix' : 'fix'}`} style={open.sessions ? { height: secH.sessions } : undefined}>
-      <button className="sech" onClick={() => tog('sessions')}><Icon n={open.sessions ? 'chevd' : 'chev'} size={9} /><span>세션</span><span className="c">{sessions.length}</span><span className="tools on"><span className="ib" title="새 세션" onClick={async (e) => { e.stopPropagation(); const info = await api<SessionInfo>(`/bots/${bot.id}/sessions`, { body: { name: `세션 ${sessions.length + 1}` } }); await refresh(); go(bot.id, info.id) }}><Icon n="plus" size={12} /></span></span></button>
-      {open.sessions ? <div className="secb" style={{ padding: '0 0 6px' }}>{sessions.map((x) => <button key={x.id} className={`srow ${x.id === sessionId ? 'on' : ''}`} onClick={() => go(bot.id, x.id)}><span className={`dot ${x.state === 'running' ? 'run' : x.state === 'awaiting_input' ? 'wait' : x.state === 'error' ? 'err' : 'none'}`} /><span className="n">{x.name}</span><span className="m">{x.state === 'running' ? <Elapsed from={x.turnStartedAt} /> : x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span><span className="ib del" title="세션 삭제" onClick={(e) => { e.stopPropagation(); void delSession(x) }}><Icon n="x" size={11} /></span></button>)}{!sessions.length ? <div className="kv" style={{ color: 'var(--t3)' }}>메시지를 보내면 생겨요</div> : null}</div> : null}
+      <button className="sech" onClick={() => tog('sessions')}><Icon n={open.sessions ? 'chevd' : 'chev'} size={9} /><span>세션</span><span className="c">{sessions.length}</span><span className="tools on"><span className="ib" title="새 세션" onClick={(e) => { e.stopPropagation(); void newSession() }}><Icon n="plus" size={12} /></span></span></button>
+      {open.sessions ? <div className="secb" style={{ padding: '0 0 6px' }}>{sessions.map((x) => <button key={x.id} className={`srow ${x.id === sessionId ? 'on' : ''}`} onClick={() => go(bot.id, x.id)}><span className={`dot ${x.state === 'running' ? 'run' : x.state === 'awaiting_input' ? 'wait' : x.state === 'error' ? 'err' : 'none'}`} /><span className="n">{x.name}</span><VendorMark vendor={x.vendor} size={11} /><span className="m">{x.state === 'running' ? <Elapsed from={x.turnStartedAt} /> : x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span><span className="ib del" title="세션 삭제" onClick={(e) => { e.stopPropagation(); void delSession(x) }}><Icon n="x" size={11} /></span></button>)}
+        {/* 🔴 **세션이 없을 때도 여기서 시작한다** (2026-09-13 Dave). 종전 「메시지를 보내면 생겨요」 는
+            **막다른 안내**였다 — 누가 이 폴더를 맡을지(Claude / ChatGPT) 고를 자리가 어디에도 없었다.
+            ⚠ 깔린 에이전트가 하나면 묻지 않는다 — 고를 게 없는데 묻는 건 문턱만 하나 더 만드는 것이다. */}
+        {!sessions.length ? <button className="kv sempty" onClick={() => void newSession()}><Icon n="plus" size={11} /><span>{provs.length > 1 ? 'Claude 나 ChatGPT 로 시작' : '세션 시작'}</span></button> : null}
+        {pick ? <div className="menu" style={{ left: 10, top: 34 }}>{provs.map((pv) => <button key={pv.id} onClick={() => void newSession(pv.id)}><Mark id={pv.id} size={14} /><span>{PROVIDER_LABEL[pv.id]}</span></button>)}<hr /><button onClick={() => setPick(false)}><span>취소</span></button></div> : null}</div> : null}
     </div>
     <div className="divy" onPointerDown={dragY('sessions')} onDoubleClick={() => onSecH({ ...secH, sessions: 112 })} />
     {/* 할 일 / Inbox */}

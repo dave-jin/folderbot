@@ -89,7 +89,7 @@ export class Host {
   }
 
   /** 세션에 지시 — 없으면 만든다 */
-  sendToBot(bot: Bot, text: string, sessionId?: string, name?: string, from?: string, opts: { model?: string; effort?: string; permissionMode?: PermissionMode } = {}): string {
+  sendToBot(bot: Bot, text: string, sessionId?: string, name?: string, from?: string, opts: { model?: string; effort?: string; permissionMode?: PermissionMode; vendor?: 'claude' | 'codex' } = {}): string {
     let r = sessionId ? this.sessions.get(sessionId) : undefined
     if (!r) {
       const list = this.sessions.list(bot.id)

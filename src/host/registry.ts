@@ -163,17 +163,13 @@ export class Registry extends EventEmitter {
     return [orch, ...rest]
   }
   /**
-   * 같은 폴더에 형제가 있으면 **기본이 아닌 쪽에만** 이름 뒤에 «· Codex» 를 붙인다 (V24 목업 그대로).
-   * ⚠ 둘 다에 붙이면 레일이 좁아 «제품_R… · Claude» 처럼 **정작 폴더 이름이 잘린다**(실측).
-   *   어느 쪽인지는 폴더봇 옆 회사 표식이 이미 말해 주므로, 글자는 다른 쪽에만 쓴다.
+   * 레일에 뜨는 이름은 **폴더 이름 그대로**다.
+   * ⛔ «· Codex» 를 뒤에 붙이지 않는다 (2026-09-13 Dave 재정의) — 벤더는 폴더가 아니라 **세션**의
+   *    성질이라 한 폴더에 Claude 세션과 Codex 세션이 섞여 산다. 폴더 이름에 회사를 박으면
+   *    그 폴더가 한 회사 것처럼 보인다. 회사 표식은 **세션 목록**에만 붙는다.
+   *    (옛 형제 봇이 이미 있으면 두 줄로 남지만, 새로 만들지는 않는다 — 지우는 건 사람 몫이다.)
    */
-  private botName(a: ActiveRec): string {
-    const base = basename(a.rel)
-    const v = a.vendor ?? 'claude'
-    if (v === 'claude') return base
-    if (this.active.filter((x) => x.rel === a.rel).length < 2) return base
-    return `${base} · Codex`
-  }
+  private botName(a: ActiveRec): string { return basename(a.rel) }
   /** ⚠ 벤더는 **시작할 때 고른 것**(a.vendor)이 이긴다 — `.bot.yml` 은 고르기 화면이 없던 시절의 폴백이다 */
   private toBot(a: ActiveRec): Bot | null {
     const abs = join(this.root, a.rel)
@@ -193,11 +189,11 @@ export class Registry extends EventEmitter {
     const abs = join(this.root, rel)
     if (!existsSync(abs) || !statSync(abs).isDirectory()) throw new Error(`폴더가 없어요: ${rel}`)
     if (!abs.startsWith(this.root + sep)) throw new Error('루트 밖 폴더는 시작할 수 없어요')
-    // 같은 폴더에 **형제**를 둘 수 있다 (V24) — 폴더 하나에 에이전트 하나가 원칙이지만
-    // Claude 와 Codex 는 읽는 지침(CLAUDE.md · AGENTS.md)이 달라 나란히 두는 게 자연스럽다.
-    // 그래서 «이미 있나» 판정은 rel 이 아니라 **rel + vendor** 다.
+    // 🔴 **폴더 하나 = 줄 하나.** 종전에는 «이미 있나» 를 rel + vendor 로 봐서 같은 폴더가 Claude/Codex
+    //    **두 줄**로 섰다(V24 의 «형제»). 2026-09-13 Dave 재정의로 벤더는 세션의 성질이 됐다 —
+    //    시작할 때 고르는 것은 **첫 세션을 누가 맡나** 일 뿐이고, 그 뒤는 세션 목록의 + 에서 고른다.
     const v = vendor ?? 'claude'
-    const existing = this.active.find((a) => a.rel === rel && (a.vendor ?? 'claude') === v)
+    const existing = this.active.find((a) => a.rel === rel)
     if (existing) return this.toBot(existing)!
     if (this.active.length >= this.botLimit) throw new Error(`활성 봇이 상한(${this.botLimit})에 닿았어요. 휴면 봇을 은퇴시키거나 상한을 올리세요.`)
     if (!this.hasHarness(abs)) this.scaffold(abs, basename(rel))
