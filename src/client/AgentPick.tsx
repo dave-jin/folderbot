@@ -46,11 +46,13 @@ export function AgentPickHost() {
   const done = (v: ProviderId | null) => { setQ(null); const r = pickResolve; pickResolve = null; r?.(v) }
   const model = MODELS.find((m) => m.v === (s.defaults.model || 'claude-fable-5-1'))?.t ?? s.defaults.model
   const guide = hz ? [hz.claudeMd ? 'CLAUDE.md' : null, hz.agentsMd ? 'AGENTS.md' : null].filter(Boolean).join(' · ') : ''
-  const env: [string, string, boolean][] = [
-    ['폴더', q.rel, false],
-    ['지침', hz ? `${guide || '없음'}${hz.skills ? ` · 스킬 ${hz.skills}` : ''}${hz.mcp ? ` · 커넥터 ${hz.mcp}` : ''}` : '읽는 중…', !!(hz && (sel === 'codex' ? hz.agentsMd : hz.claudeMd))],
-    ['모델', `${model} · 생각 ${s.defaults.effort || 'high'}`, false],
-    ['권한', '물어봄 — 쓰기 전에 확인', false]
+  // ⚠ «바꾸기» 는 **정말 바꿀 수 있는 줄에만** 붙인다. 권한 모드는 세션마다 정하는 것이라
+  //    아직 세션이 없는 이 화면에서 바꿀 자리가 없다 — 가짜 링크를 다느니 값만 보여 준다.
+  const env: [string, string, boolean, (() => void) | null][] = [
+    ['폴더', q.rel, false, null],
+    ['지침', hz ? `${guide || '없음'}${hz.skills ? ` · 스킬 ${hz.skills}` : ''}${hz.mcp ? ` · 커넥터 ${hz.mcp}` : ''}` : '읽는 중…', !!(hz && (sel === 'codex' ? hz.agentsMd : hz.claudeMd)), null],
+    ['모델', `${model} · 생각 ${s.defaults.effort || 'high'}`, false, () => { done(null); window.dispatchEvent(new CustomEvent('fb:settings', { detail: 'agents' })) }],
+    ['권한', '물어봄 — 쓰기 전에 확인', false, null]
   ]
   return <>
     <div className="backdrop" onClick={() => done(null)} />
@@ -70,7 +72,7 @@ export function AgentPickHost() {
       </div>
       <div className="ap-env">
         <div className="cap">환경 — 고른 에이전트가 이 조건으로 뜹니다</div>
-        {env.map(([k, v, ok]) => <div className="er" key={k}><span className="k">{k}</span><span className="v mono">{v}</span>{ok ? <Icon n="check" size={11} color="var(--done)" /> : null}</div>)}
+        {env.map(([k, v, ok, go]) => <div className="er" key={k}><span className="k">{k}</span><span className="v mono">{v}</span>{ok ? <Icon n="check" size={11} color="var(--done)" /> : null}{go ? <button className="lk" onClick={go}>바꾸기</button> : null}</div>)}
       </div>
       <div className="ap-f">
         <span className="sp" />

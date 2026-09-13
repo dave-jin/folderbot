@@ -4,6 +4,7 @@ import { api, setToken, token, uploadFile } from './api'
 import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
 import { AskHost, FolderPicker, Md, NotifyCenter, Onboarding, Pairing, Settings, askName, useToast } from './Sheets'
 import { AgentPickHost, pickAgent } from './AgentPick'
+import type { SecId } from './Settings'
 import { BotFace } from './Brand'
 import { DocPane, useDocs } from './Doc'
 import { Elapsed, Panel, type SecH } from './Panel'
@@ -164,6 +165,9 @@ function Main() {
   useEffect(() => { localStorage.setItem('fb:docopen', JSON.stringify(docOpen)) }, [docOpen])
   const [wide, setWide] = useState(false)
   const [modal, setModal] = useState<'picker' | 'notify' | 'settings' | null>(null)
+  // «설정의 그 칸을 열어 줘» — 에이전트 고르기 화면의 «바꾸기» 가 이걸 쏜다 (V24)
+  const [setSec, setSetSec] = useState<SecId | undefined>(undefined)
+  useEffect(() => { const f = (e: Event) => { setSetSec((e as CustomEvent).detail as SecId); setModal('settings') }; window.addEventListener('fb:settings', f); return () => window.removeEventListener('fb:settings', f) }, [])
   const [drag, setDrag] = useState<'' | 'x' | 'y'>('')
   const winW = useWinW()
   const [toast, say] = useToast()
@@ -291,7 +295,7 @@ function Main() {
     </div>
     {modal === 'picker' ? <FolderPicker onClose={() => setModal(null)} onStarted={(b) => { setModal(null); go(b.id); say(`${b.name} 에서 시작했어요`) }} /> : null}
     {modal === 'notify' ? <NotifyCenter onClose={() => setModal(null)} onJump={(n) => { setModal(null); api('/notifications/read', { body: { ids: [n.id] } }).then(refresh); go(n.botId, n.sessionId) }} /> : null}
-    {modal === 'settings' ? <Settings onClose={() => setModal(null)} /> : null}
+    {modal === 'settings' ? <Settings onClose={() => { setModal(null); setSetSec(undefined) }} start={setSec} /> : null}
     <AskHost />
     <AgentPickHost />
     {toast ? <div className="toast">{toast}</div> : null}

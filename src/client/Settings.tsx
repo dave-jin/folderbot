@@ -21,7 +21,7 @@ import { norm } from '../core/search'
  * ⛔ **위험한 것은 그 칸의 맨 아래에** — 로그아웃·토큰 지우기처럼 되돌리기 어려운 것.
  */
 
-type SecId = 'general' | 'host' | 'agents' | 'harness' | 'usage' | 'screen' | 'todo' | 'notify' | 'security'
+export type SecId = 'general' | 'host' | 'agents' | 'harness' | 'usage' | 'screen' | 'todo' | 'notify' | 'security'
 const SECS: { id: SecId; label: string; icon: 'gear' }[] = [
   { id: 'general', label: '일반', icon: 'gear' },
   { id: 'host', label: '호스트 · 연결', icon: 'phone' as 'gear' },
@@ -47,11 +47,11 @@ function Group({ t, right }: { t: string; right?: ReactNode }) {
 const SCOPE_T: Record<HarnessItem['scope'], string> = { folder: '폴더', root: '볼트', user: '사용자', builtin: '내장' }
 function Scope({ s }: { s: HarnessItem['scope'] }) { return <span className={`scp ${s}`}>{SCOPE_T[s]}</span> }
 
-export function Settings({ onClose }: { onClose: () => void }) {
+export function Settings({ onClose, start }: { onClose: () => void; start?: SecId }) {
   const { s } = useStore()
-  const [sec, setSec] = useState<SecId>('general')
+  const [sec, setSec] = useState<SecId>(start ?? 'general')
   const [q, setQ] = useState('')
-  const [drill, setDrill] = useState(false)      // 폰: 한 칸 안에 들어와 있나
+  const [drill, setDrill] = useState(!!start)   // 폰: 한 칸 안에 들어와 있나 (지정해서 열면 바로 그 칸)
   const phone = usePhone()
   const hits = useMemo(() => (q.trim() ? searchRows(q) : []), [q])
   const cur = SECS.find((x) => x.id === sec)!
