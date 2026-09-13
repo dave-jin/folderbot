@@ -737,3 +737,20 @@ b,strong { color:var(--w); font-weight:600 }
 .mded .lp-tblw:hover .lp-tbtn, .mded .lp-tblw:focus-within .lp-tbtn { opacity:1 }
 .mded .lp-tb { font-size:11px; line-height:1.5; color:var(--t3); border:1px solid var(--line); border-radius:5px; padding:0 6px; background:var(--bg) }
 .mded .lp-tb:hover { color:var(--w); border-color:var(--line2) }
+
+/* ── 메뉴바 패널 (`tray.html`) ───────────────────────────────────────────────
+   🔴 **맥 기본 메뉴가 아니라 우리가 그린 창이다** (2026-09-13 Dave). 테두리 없는 창이라
+      **모서리·그림자·배경을 우리가 칠한다** — body 가 투명하면 검은 사각형이 비친다.
+   ⚠ 창 높이는 내용이 정한다(`fbTray.size`) — 여기서 높이를 고정하지 마라. */
+.traybody { background:transparent; overflow:hidden; -webkit-user-select:none; user-select:none }
+.traypanel { background:var(--bg2); border:1px solid var(--line2); border-radius:12px; padding:6px; font-size:13.5px; box-shadow:0 12px 40px rgba(0,0,0,.45) }
+.traypanel .th { padding:6px 10px 4px; font-size:12px; color:var(--t3) }
+.traypanel .tu { padding:0 2px 4px }
+.traypanel .tu .ucard { background:transparent; border:0; padding:6px 8px }
+.traypanel hr { border:0; border-top:1px solid var(--line); margin:5px 8px }
+.traypanel .tmi { display:flex; align-items:center; gap:8px; width:100%; padding:5px 10px; border-radius:6px; color:var(--w); text-align:left; background:none; border:0; font-size:13.5px; line-height:1.5 }
+.traypanel button.tmi:hover { background:var(--sel) }
+.traypanel button.tmi:hover .k { color:var(--t2) }
+.traypanel .tmi .l { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.traypanel .tmi .k { font-size:12px; color:var(--t3); font-family:var(--mono) }
+.traypanel .tmi.dim { color:var(--t3); font-size:12.5px; padding-top:3px; padding-bottom:3px }

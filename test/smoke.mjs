@@ -1253,9 +1253,13 @@ try {
     const dir = join(process.cwd(), 'dist/client/assets')
     const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.js')) : []
     const ed = files.filter((f) => /MdEditor/.test(f))
-    const main = files.filter((f) => /^index-/.test(f))
+    // ⚠ 화면이 둘이 되면서(본 앱 + 메뉴바 패널) 본체 청크 이름이 `index-` → `main-` 으로 바뀌었다
+    const main = files.filter((f) => /^main-/.test(f))
+    const tray = files.filter((f) => /^tray-/.test(f))
     if (!ed.length) fail('번들: 편집기가 별도 청크가 아니다 — 지연 로드가 깨졌다 ' + JSON.stringify(files))
     if (!main.length) fail('번들: 본체 청크를 못 찾겠다 ' + JSON.stringify(files))
+    if (!tray.length) fail('번들: 메뉴바 패널 청크가 없다 — tray.html 이 빌드에서 빠졌다 ' + JSON.stringify(files))
+    if (!existsSync(join(process.cwd(), 'dist/client/tray.html'))) fail('번들: tray.html 이 안 나왔다')
     const mainSrc = readFileSync(join(dir, main[0]), 'utf8')
     if (/@codemirror\/state|cm-content/.test(mainSrc)) fail('번들: CodeMirror 가 본체에 섞였다 — 문서를 안 열어도 받게 된다')
     ok(`번들 — 편집기 지연 로드 (본체 ${Math.round(readFileSync(join(dir, main[0])).length / 1024)}KB · 편집기 ${Math.round(readFileSync(join(dir, ed[0])).length / 1024)}KB)`)

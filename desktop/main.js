@@ -109,8 +109,9 @@ function trayIcon() { const p = join(__dirname, 'build', 'trayTemplate.png'); co
 function createTray() {
   tray = new Tray(trayIcon())
   tray.setToolTip('Folder Bot')
-  tray.on('click', () => { if (win && win.isVisible() && win.isFocused()) win.hide(); else showWin() })
-  tray.on('right-click', () => tray.popUpContextMenu(trayMenu()))
+  // 🔴 **누르면 우리가 그린 패널이 뜬다** — 네이티브 메뉴가 아니다(`trayPanel` 머리말).
+  tray.on('click', () => toggleTrayPanel())
+  tray.on('right-click', () => toggleTrayPanel())
   refreshTray()
 }
 /**
@@ -148,6 +149,87 @@ function appMenu() {
     ] }
   ])
 }
+/**
+ * 메뉴바 패널 — 🔴 **맥 기본 메뉴 대신 우리가 그린 창** (2026-09-13 Dave:
+ * *«상단의 메뉴이미지는 맥 기본 OS 메뉴바가 아니라 직접 렌더링된 두번째 이미지 모습이어야 해»*).
+ *
+ * 종전 주석은 *«네이티브 메뉴는 HTML 을 못 그리니 글자 막대(`▰▱`)가 정답»* 이라고 적어 뒀다.
+ * 전제가 틀렸다 — **메뉴를 안 쓰면 된다.** 테두리 없는 작은 창을 띄우면 앱 안의 사용량 카드를
+ * **그대로** 그릴 수 있고, 색·문구·숫자가 두 곳에서 갈리지 않는다.
+ *
+ * ⚠ 패널은 **호스트가 주는 페이지**(`/tray.html`)다 — 사용량은 그 화면이 `/api/usage` 로 직접 묻는다.
+ *    셸이 아는 것(모드·호스트 주소·페어링·업데이트·로그인 항목)만 `fb:tray-state` 로 내려보낸다.
+ * ⚠ 호스트가 아직 없으면(연결 전) 그릴 게 없다 — 그때만 옛 네이티브 메뉴로 떨어진다.
+ * ⛔ 높이를 여기서 정하지 마라 — 항목 수가 모드마다 다르다. 화면이 `fb:tray-size` 로 알려 준다.
+ */
+const TRAY_W = 320
+let panel = null
+function trayPanelUrl() {
+  if (!settings.hostUrl) return null
+  const t = settings.mode === 'host' && hostRun ? hostRun.gateway.localToken() : settings.token
+  return `${settings.hostUrl.replace(/\/$/, '')}/tray.html${t ? `#token=${encodeURIComponent(t)}` : ''}`
+}
+function trayPanel() {
+  if (panel && !panel.isDestroyed()) return panel
+  panel = new BrowserWindow({
+    width: TRAY_W, height: 420, show: false, frame: false, transparent: true, hasShadow: false,
+    resizable: false, movable: false, minimizable: false, maximizable: false, fullscreenable: false,
+    skipTaskbar: true, alwaysOnTop: true, backgroundColor: '#00000000',
+    webPreferences: { preload: join(__dirname, 'tray-preload.js'), contextIsolation: true, sandbox: false }
+  })
+  panel.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  // ⛔ 링크는 패널 안에서 열지 않는다 — 여기는 창이 아니라 «메뉴» 다
+  panel.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' } })
+  panel.on('blur', () => { if (panel && !panel.isDestroyed()) panel.hide() })
+  panel.on('closed', () => { panel = null })
+  return panel
+}
+function trayState() {
+  const u = updater.state()
+  return {
+    waiting, mood, mode: settings.mode, root: settings.root,
+    hostLabel: settings.hostUrl ? settings.hostUrl.replace(/^https?:\/\//, '') : '',
+    pairing: pairing && Date.now() < pairing.expiresAt ? { code: pairing.code, expiresAt: pairing.expiresAt } : null,
+    update: { current: u.current, downloading: u.downloading, staged: u.staged ?? null },
+    loginItem: settings.loginItem
+  }
+}
+function pushTrayState() { try { if (panel && !panel.isDestroyed()) panel.webContents.send('fb:tray-state', trayState()) } catch {} }
+function toggleTrayPanel() {
+  const url = trayPanelUrl()
+  if (!url) { tray.popUpContextMenu(trayMenu()); return } // 연결 전에는 그릴 화면이 없다
+  const w = trayPanel()
+  if (w.isVisible()) { w.hide(); return }
+  const b = tray.getBounds(); const { screen } = require('electron')
+  const area = screen.getDisplayMatching(b).workArea
+  const x = Math.round(Math.min(Math.max(area.x + 4, b.x + b.width / 2 - TRAY_W / 2), area.x + area.width - TRAY_W - 4))
+  w.setPosition(x, Math.round(b.y + b.height + 2), false)
+  if (w.webContents.getURL().split('#')[0] !== url.split('#')[0]) w.loadURL(url).catch(() => {})
+  w.showInactive(); w.focus(); pushTrayState()
+}
+ipcMain.on('fb:tray-ready', () => pushTrayState())
+ipcMain.on('fb:tray-size', (_e, h) => {
+  if (!panel || panel.isDestroyed() || !h) return
+  const b = tray.getBounds(); const { screen } = require('electron')
+  const max = screen.getDisplayMatching(b).workArea.height - 40
+  panel.setBounds({ ...panel.getBounds(), height: Math.max(120, Math.min(max, h + 2)) })
+})
+ipcMain.on('fb:tray-act', (_e, id) => {
+  const hide = () => { try { panel?.hide() } catch {} }
+  const copyPair = (p) => { if (!p) return; clipboard.writeText(p.code); new Notification({ title: 'Folder Bot 페어링 코드', body: `${p.code} · 2분 안에 폰·맥북에서 입력` }).show() }
+  if (id === 'open') { hide(); showWin(); return }
+  if (id === 'notify') { hide(); navigate('#notify=1'); return }
+  if (id === 'pairing') { copyPair(pairing && Date.now() < pairing.expiresAt ? pairing : newPairing()); hide(); return }
+  if (id === 'pairing-new') { copyPair(newPairing()); hide(); return }
+  if (id === 'copy-addr') { const urls = hostRun ? hostRun.urls.filter((u) => !u.includes('127.0.0.1')) : []; clipboard.writeText(urls[0] || settings.hostUrl); new Notification({ title: 'Folder Bot', body: urls[0] ? `${urls[0]} 복사됨 (같은 Tailscale)` : 'Tailscale 주소가 아직 없어요 — Tailscale 을 켜세요' }).show(); hide(); return }
+  if (id === 'change-root') { hide(); hostRun?.stop(); hostRun = null; void chooseRootAndStart(); return }
+  if (id === 'change-host') { hide(); settings.mode = ''; settings.hostUrl = ''; settings.token = ''; save(); stopSse(); showWin(); loadHome(); return }
+  if (id === 'update-check') { void updater.check(true); pushTrayState(); return }
+  if (id === 'update-apply') { hide(); updater.apply(); return }
+  if (id === 'login-toggle') { settings.loginItem = !settings.loginItem; save(); app.setLoginItemSettings({ openAtLogin: settings.loginItem, openAsHidden: true }); pushTrayState(); return }
+  if (id === 'quit') { app.quit(); return }
+})
+/** ⚠ 폴백 전용 — 아직 호스트에 붙기 전(그릴 화면이 없을 때)만 뜬다. 평소 메뉴는 위 `trayPanel` 이다. */
 function trayMenu() {
   return Menu.buildFromTemplate([
     { label: waiting ? `확인 대기 ${waiting}` : mood === 'work' ? '일하는 중' : mood === 'error' ? '문제 있어요' : '한가함', enabled: false },
@@ -219,6 +301,7 @@ function refreshTray() {
   tray.setTitle(waiting ? String(waiting) : usage ? `${gauge(usage.left, 5)} ${usage.left}%` : '', { fontType: 'monospacedDigit' })
   tray.setToolTip(waiting ? `Folder Bot · 확인 대기 ${waiting}` : 'Folder Bot')
   if (app.dock) app.dock.setBadge(waiting ? String(waiting) : '')
+  pushTrayState() // ⚠ 패널이 떠 있으면 «한가함 → 일하는 중» 이 그 자리에서 바뀌어야 한다
 }
 
 // ── 호스트 SSE — 알림·배지의 단일 소스 ──
@@ -276,7 +359,7 @@ app.whenReady().then(async () => {
   app.on('activate', showWin)
   // 자기 업데이트 — 호스트 모드에선 세션이 전부 유휴일 때만 적용한다
   const busyCount = () => { let b = 0; for (const st of states.values()) if (st === 'running' || st === 'awaiting_input') b++; return b }
-  updater.start({ isHost: () => settings.mode === 'host', isBusy: () => busyCount() > 0, busyCount, onChange: () => { try { tray?.setContextMenu(trayMenu()) } catch {} try { win?.webContents.send('fb:update', updater.state()) } catch {} } })
+  updater.start({ isHost: () => settings.mode === 'host', isBusy: () => busyCount() > 0, busyCount, onChange: () => { pushTrayState(); try { win?.webContents.send('fb:update', updater.state()) } catch {} } })
 })
 app.on('window-all-closed', () => { /* 메뉴바에 남는다 */ })
 app.on('before-quit', () => { try { hostRun?.stop() } catch {} })
