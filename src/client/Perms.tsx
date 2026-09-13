@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react'
 import { FolderBot, Icon } from './FolderBot'
+import { Mark } from './Brand'
+import { api } from './api'
+import { useStore } from './store'
+import type { ProviderId } from '../core/agents'
 
 /** 데스크톱 셸이 재 주는 권한 한 줄 */
 export interface PermRow { id: 'full-disk' | 'notifications'; required: boolean; probeable: boolean; status: 'granted' | 'missing' | 'unknown' }
@@ -63,6 +67,7 @@ export function PermGate({ items, onDone, refresh }: { items: PermRow[]; onDone:
         </> : null}
       </div> })}
     </div>
+    <AgentConn />
     {msg ? <div className="hint">{msg}</div> : null}
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
       <span style={{ color: 'var(--t3)', fontSize: 12.5 }}>{ok ? '권한이 모두 확인됐어요' : '필수 권한을 켜면 계속할 수 있어요'}</span><span style={{ flex: 1 }} />
@@ -70,4 +75,54 @@ export function PermGate({ items, onDone, refresh }: { items: PermRow[]; onDone:
       <button className="btn on" disabled={!ok} onClick={onDone}>계속</button>
     </div>
   </div></div>
+}
+
+/**
+ * 에이전트 연결 — 🔴 **권한과 같은 화면에서 끝낸다** (2026-09-13 Dave: *«첫 설정화면 … 설정할때
+ * claude, codex 연결도 되게 해주고»*).
+ *
+ * 파일·알림 권한을 다 켜도 **에이전트가 안 붙어 있으면 앱은 아무것도 못 한다** — 그런데 종전에는
+ * 그 사실을 처음 화면에서 말해 주지 않았고, 사람은 첫 메시지를 보내고 나서야 알았다.
+ *
+ * ⛔ **여기서 막지는 않는다.** 로그인은 터미널에서 하는 일이라 우리가 대신 해 줄 수 없고,
+ *    못 한 채로 들어가도 앱은 뜬다(대기열에 두었다가 복구되면 이어서 한다). 막으면 갇힌다.
+ * ⚠ [다시 연결] 은 설정의 그것과 **같은 길**이다 — 일꾼만 내리고 대화는 남긴다.
+ */
+function AgentConn() {
+  const { s, refresh } = useStore()
+  const [list, setList] = useState<{ id: ProviderId; version?: string }[] | null>(null)
+  const [busy, setBusy] = useState(false); const [msg, setMsg] = useState('')
+  useEffect(() => { void api<{ id: ProviderId; version?: string }[]>('/agents').then(setList).catch(() => setList([])) }, [])
+  const cx = s.defaults.codex?.auth
+  const claudeOn = s.auth.verdict === 'loggedin' || (s.auth.verdict === 'unreadable' && s.auth.mode === 'token')
+  const has = (id: string) => (list ?? []).some((p) => p.id === id)
+  const act = async (agent?: 'claude' | 'codex') => {
+    setBusy(true)
+    try { await api('/auth/reconnect', { body: { agent } }); await refresh(); setMsg('다시 확인했어요') }
+    catch (e) { setMsg((e as Error).message) } finally { setBusy(false) }
+  }
+  if (!list) return null
+  return <div className="perm-rows">
+    <div className={`perm-row ${claudeOn ? 'granted' : 'missing'}`}>
+      <div className="ph"><Mark id="claude" size={14} /><b>Claude Code</b><span className="tag">필요</span><span className={`badge ${claudeOn ? 'granted' : 'missing'}`}>{!has('claude') ? '안 깔림' : claudeOn ? '✓ 연결됨' : '로그인 필요'}</span></div>
+      {!claudeOn ? <>
+        <p className="why">{!has('claude')
+          ? 'Claude Code 가 안 깔려 있어요. 터미널에서 설치한 뒤 [다시 확인] 을 누르세요.'
+          : '터미널을 열고 claude → /login 을 하면 키체인에 로그인이 남아요. 그러면 claude.ai 커넥터(Akiflow 같은 것)도 함께 붙습니다.'}</p>
+        <ol className="how">{(!has('claude')
+          ? ['터미널에서 Claude Code 를 설치하세요', '설치 뒤 [연결 확인]']
+          : ['터미널에서 claude 를 치고 /login', '브라우저에서 로그인을 마치세요', '이 창으로 돌아와 [연결 확인]']).map((h, i) => <li key={i}>{h}</li>)}</ol>
+        <div className="acts"><button className="btn" disabled={busy} onClick={() => void act('claude')}>연결 확인</button></div>
+      </> : null}
+    </div>
+    <div className={`perm-row ${cx?.ok ? 'granted' : 'unknown'}`}>
+      <div className="ph"><Mark id="codex" size={14} /><b>Codex</b><span className="tag">선택</span><span className={`badge ${cx?.ok ? 'granted' : ''}`}>{!has('codex') ? '안 깔림' : cx?.ok ? (cx.how === 'key' ? '✓ API 키' : '✓ 연결됨') : '로그인 필요'}</span></div>
+      {has('codex') && !cx?.ok ? <>
+        <p className="why">Codex 는 없어도 됩니다 — 있으면 세션마다 Claude 와 골라 쓸 수 있어요.</p>
+        <ol className="how">{['터미널에서 codex login', '또는 설정 › 에이전트에 OpenAI API 키를 넣으세요', '이 창으로 돌아와 [연결 확인]'].map((h, i) => <li key={i}>{h}</li>)}</ol>
+        <div className="acts"><button className="btn" disabled={busy} onClick={() => void act('codex')}>연결 확인</button></div>
+      </> : null}
+    </div>
+    {msg ? <div className="hint">{msg}</div> : null}
+  </div>
 }

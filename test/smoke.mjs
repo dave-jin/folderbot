@@ -260,6 +260,9 @@ try {
           })
           await pg2.goto(base + `/#bot=${bot.id}`); await pg2.waitForSelector('.perm-gate', { timeout: 10000 }); await wait(300); await pg2.screenshot({ path: 'test/tmp/desktop-perms-0.png' })
           const gt = await pg2.textContent('.perm-gate'); if (!/전체 디스크 접근/.test(gt) || !/알림/.test(gt) || !/필수/.test(gt)) fail('ui perm gate rows: ' + gt)
+          // 🔴 **첫 화면에서 에이전트 연결까지** (2026-09-13 Dave) — 권한을 다 켜도 에이전트가 안 붙어
+          //    있으면 앱은 아무것도 못 한다. ⛔ 다만 여기서 **막지는 않는다**(로그인은 터미널의 일이다).
+          if (!/Claude Code/.test(gt) || !/Codex/.test(gt)) fail('첫 화면에 에이전트 연결 줄이 없다: ' + gt.slice(0, 300))
           if (!(await pg2.$('.perm-gate button.on[disabled]'))) fail('ui perm gate continue should be disabled')
           await pg2.click('.perm-gate button:has-text("테스트 알림 보내기")'); await pg2.click('.perm-gate button:has-text("보였어요")'); await wait(200)
           await pg2.evaluate(() => { window.__perm = window.__perm.map((p) => p.id === 'full-disk' ? { ...p, status: 'granted' } : p) }); await pg2.click('.perm-gate button:has-text("다시 확인")'); await wait(300)
