@@ -275,7 +275,7 @@ function Main() {
   const [hov, setHov] = useState<{ id: string; top: number } | null>(null); const hovT = useRef<number | undefined>(undefined)
   const hovIn = (id: string, el: HTMLElement) => { const r = el.getBoundingClientRect(); window.clearTimeout(hovT.current); hovT.current = window.setTimeout(() => setHov({ id, top: r.top }), 300) }
   const hovOut = () => { window.clearTimeout(hovT.current); setHov(null) }
-  /** 레일 우클릭 메뉴 — 폴더 줄에서 정지·은퇴·삭제 */
+  /** 레일 우클릭 메뉴 — 폴더 줄에서 지우기(연결 해지)·은퇴 */
   const [railCtx, setRailCtx] = useState<{ x: number; y: number; id: string; name: string } | null>(null)
 
   const hovRow = hov ? stripBots.find((x) => x.b.id === hov.id) : undefined
@@ -347,14 +347,17 @@ function Main() {
           </div>)}
         </div>
         {hovRow ? <HoverCard b={hovRow.b} sum={hovRow.sum} top={hov!.top} left={fit.sb + 6} /> : null}
-        {/* 레일 우클릭 — 정지 · 은퇴 · 삭제 (2026-09-13 Dave). ⚠ 셋은 서로 다른 일이다:
-            정지는 목록에서만 내리고, 은퇴는 Archive 로 보내 볼트에 남기고, 삭제는 볼트에서 치운다. */}
+        {/* 레일 우클릭 — **지우기 · 은퇴** (2026-09-13 Dave 정정).
+            🔴 **«지우기» 는 폴더를 지우지 않는다 — 에이전트 연결을 끊어 레일에서 덜어낼 뿐이다**
+               (Dave: *«실제 폴더를 삭제하는게 아니라 에이전트 연동 삭제라는 뜻이야. 즉 좌측에서 덜어내는거지»*).
+               폴더·문서·세션 기록은 디스크에 그대로 있고, 같은 폴더를 다시 고르면 그 자리에서 이어진다.
+            ⛔ **폴더를 실제로 옮기는 «폴더 삭제» 는 뺐다** — 한 번의 우클릭 뒤에 되돌리기 어려운 일을
+               두지 않는다. 파일을 치우는 건 파인더(또는 트리의 휴지통)의 몫이다.
+            ⚠ 은퇴는 남아 있다 — 그건 «끝난 일» 을 Archive 로 옮겨 **볼트의 일부로 남기는** 다른 일이다. */}
         {railCtx ? <Float at={{ x: railCtx.x, y: railCtx.y }} onClose={() => setRailCtx(null)} className="menu ctx"><div style={{ display: 'contents' }} onClick={() => setRailCtx(null)}>
           <div className="h">{railCtx.name}</div>
-          <button onClick={async () => { try { await api(`/bots/${railCtx.id}/stop`, { body: {} }); say('정지(휴면)'); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="pause" size={13} /><span style={{ flex: 1 }}>정지 (휴면)</span><span className="k">기록 유지</span></button>
+          <button onClick={async () => { try { await api(`/bots/${railCtx.id}/stop`, { body: {} }); say(`${railCtx.name} 을 레일에서 덜어냈어요 — 폴더는 그대로예요`); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="x" size={13} /><span style={{ flex: 1 }}>지우기 (연결 해지)</span><span className="k">폴더 유지</span></button>
           <button onClick={async () => { if (!confirm(`${railCtx.name} 을 Archive 로 옮기고 은퇴시킬까요? 세션 기록은 보관돼요.`)) return; try { const r = await api<{ to: string }>(`/bots/${railCtx.id}/retire`, { body: {} }); say(`${r.to} 로 은퇴`); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="archive" size={13} /><span style={{ flex: 1 }}>은퇴 (Archive 로)</span></button>
-          <hr />
-          <button className="warn" onClick={async () => { if (!confirm(`${railCtx.name} 폴더를 지울까요?\n\n볼트 안 .folderbot/trash 로 옮겨요 — 파인더에서 꺼내면 그대로 돌아옵니다.`)) return; try { const r = await api<{ to: string }>(`/bots/${railCtx.id}/trash`, { body: {} }); say(`${r.to} 로 옮겼어요`); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="x" size={13} /><span style={{ flex: 1 }}>폴더 삭제</span><span className="k">휴지통</span></button>
         </div></Float> : null}
         {/* ⛔ 맥에서는 사용량을 앱 안에 안 그린다 — **메뉴바에서만** 본다 (2026-09-13 Dave: «맥에서는 그냥 메뉴바 안에서만 이게 보이면 좋겠어»).
             폰은 첫 화면 위 스트립 하나로 남는다. 두 표면 다 있으면 같은 숫자가 두 번 보이고 아래 줄이 또 비좁아진다. */}

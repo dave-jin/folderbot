@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { EditorState, StateField, type Extension, type Range } from '@codemirror/state'
 import { EditorView, Decoration, WidgetType, keymap, type DecorationSet } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
-import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
+import { searchKeymap } from '@codemirror/search'
 import { markdown } from '@codemirror/lang-markdown'
 import { GFM } from '@lezer/markdown'
 import { syntaxTree, syntaxHighlighting, defaultHighlightStyle, HighlightStyle } from '@codemirror/language'
@@ -552,7 +552,10 @@ export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, 
       // 서식 — `/` 메뉴 · 고른 글 위 막대 · ⌘B/⌘I/⌘K (`mdFormat.ts`)
       slashMenu(), selectionBar(),
       markdown({ extensions: [GFM] }), syntaxHighlighting(HL), syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-      highlightSelectionMatches(),
+      /* ⛔ `highlightSelectionMatches()` 를 켜지 않는다 (2026-09-13 Dave: *«어떤 텍스트를 선택하면 같은
+         텍스트가 왜 같이 선택되는거야?»*). CodeMirror 의 «찾기» 편의 기능이라 고른 낱말과 **같은 글자를
+         문서 전체에서 물들인다** — 코드 편집기에서는 도움이 되지만 글을 쓰는 화면에서는 «내가 고르지
+         않은 곳이 골라진 것»처럼 보인다. 찾기는 ⌘F 가 따로 한다. */
       lpField, atomic, caretGuard,
       EditorView.lineWrapping,
       EditorView.editable.of(!readOnly),

@@ -29,7 +29,6 @@ export class Host {
   constructor(public cfg: HostConfig, version: string) {
     this.version = version
     this.registry = new Registry(absRoot(cfg))
-    this.registry.botLimit = cfg.botLimit ?? 8
     this.notifier = new Notifier(cfg)
     this.notifier.onEvent = (n) => this.broadcast({ ev: 'notify', n })
     this.sessions.bin = cfg.claudeBin

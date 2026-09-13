@@ -27,7 +27,6 @@ export class Registry extends EventEmitter {
   readonly root: string
   rules: FolderRules = PARA_PRESET
   private active: ActiveRec[] = []
-  botLimit = 8
 
   constructor(root: string) {
     super()
@@ -195,7 +194,10 @@ export class Registry extends EventEmitter {
     const v = vendor ?? 'claude'
     const existing = this.active.find((a) => a.rel === rel)
     if (existing) return this.toBot(existing)!
-    if (this.active.length >= this.botLimit) throw new Error(`활성 봇이 상한(${this.botLimit})에 닿았어요. 휴면 봇을 은퇴시키거나 상한을 올리세요.`)
+    // ⛔ **활성 봇 수에 상한을 두지 않는다** (2026-09-13 Dave: *«활성봇 상한이 왜 있어? 상한 없애줘»*).
+    //    종전 8개 문턱은 «동시에 도는 CLI» 를 걱정한 것이었는데, 레일에 서 있는 것과 워커가 도는 것은
+    //    다른 일이다 — 폴더를 목록에 올리는 데는 프로세스가 하나도 안 든다. 동시 실행은 세션 쪽
+    //    상한(봇당 4)이 이미 막고 있다.
     if (!this.hasHarness(abs)) this.scaffold(abs, basename(rel))
     const color = BOT_COLORS[this.active.length % BOT_COLORS.length]
     const rec: ActiveRec = { id: `b_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, rel, color, startedAt: Date.now(), vendor: v }
@@ -223,25 +225,37 @@ export class Registry extends EventEmitter {
     return relative(this.root, dest)
   }
   /**
-   * 폴더 삭제 (2026-09-13 Dave: *«좌측 폴더 레일에 마우스 우측키로 폴더 자체를 삭제»*).
+   * 휴지통 — 볼트 안 경로 하나를 `.folderbot/trash/<시각>_<이름>` 으로 **옮긴다**.
    *
-   * 🔴 **지우지 않고 옮긴다.** 되돌릴 수 없는 일을 한 번의 우클릭 뒤에 두지 않는다 — 폴더는
-   *    볼트 안 `.folderbot/trash/<시각>_<이름>` 으로 통째로 옮긴다. 파인더에서 꺼내면 그대로 돌아온다.
-   * ⚠ **은퇴(`retire`)와 다르다** — 은퇴는 «끝난 일» 을 Archive 로 보내 **볼트의 일부로 남기는** 것이고,
-   *    삭제는 볼트에서 **치우는** 것이다. 둘을 한 항목으로 합치면 둘 다 무슨 뜻인지 흐려진다.
-   * ⛔ 루트 자체·오케스트레이터는 못 지운다.
+   * 🔴 **지우지 않고 옮긴다.** 되돌릴 수 없는 일을 한 번의 클릭 뒤에 두지 않는다 — 파인더에서
+   *    꺼내면 그대로 돌아오고, `undoList()` 에도 남는다.
+   * ⚠ **레일의 «지우기» 는 이걸 부르지 않는다** (2026-09-13 Dave 정정). 레일에서 덜어내는 것은
+   *    `stop()` — 에이전트 연결만 끊고 폴더는 손대지 않는다. 이 함수는 **트리에서 파일을 치울 때**만 쓴다.
+   * ⛔ 루트 자체는 못 치운다.
    */
-  trash(id: string): string {
-    const b = this.bot(id)
-    if (!b || b.orchestrator) throw new Error('지울 수 없는 봇')
-    if (!b.abs.startsWith(this.root + sep)) throw new Error('루트 밖 폴더는 지울 수 없어요')
+  trashPath(rel: string): string {
+    rel = rel.replace(/^\/+|\/+$/g, '').normalize('NFC')
+    if (!rel) throw new Error('루트는 치울 수 없어요')
+    const abs = join(this.root, rel)
+    if (!abs.startsWith(this.root + sep)) throw new Error('루트 밖은 치울 수 없어요')
+    if (!existsSync(abs)) throw new Error(`없는 경로: ${rel}`)
     const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 13)
-    const dest = join(this.root, '.folderbot', 'trash', `${stamp}_${basename(b.rel)}`)
+    const dest = join(this.root, '.folderbot', 'trash', `${stamp}_${basename(rel)}`)
     mkdirSync(dirname(dest), { recursive: true })
-    this.snapshot({ op: 'move', from: b.rel, to: relative(this.root, dest) })
-    renameSync(b.abs, dest)
-    this.stop(id)
+    this.snapshot({ op: 'move', from: rel, to: relative(this.root, dest) })
+    renameSync(abs, dest)
     return relative(this.root, dest)
+  }
+  /**
+   * 볼트 안에서 경로 하나를 옮긴다 — 되돌리기 기록(`snapshot`)을 함께 남긴다.
+   * ⚠ 경계(봇 폴더 안인지)는 **부르는 쪽**이 본다(`gateway.inBot`). 여기서는 볼트 밖만 막는다.
+   */
+  movePath(fromRel: string, toRel: string): void {
+    const from = join(this.root, fromRel); const to = join(this.root, toRel)
+    if (!from.startsWith(this.root + sep) || !to.startsWith(this.root + sep)) throw new Error('루트 밖으로는 못 옮겨요')
+    mkdirSync(dirname(to), { recursive: true })
+    this.snapshot({ op: 'move', from: fromRel, to: toRel })
+    renameSync(from, to)
   }
   /** 새 폴더 만들기 — 규칙 naming 적용 + 하네스 스캐폴드. 반환: rel */
   createFolder(section: string, name: string): string {

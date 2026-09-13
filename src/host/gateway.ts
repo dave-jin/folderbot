@@ -164,7 +164,7 @@ export class Gateway {
     }
     if (p === '/api/state') {
       const tn = await tailnetInfo()
-      return json(200, { version: h.version, root: reg.root, rules: reg.rules, rulesInstalled: reg.rulesInstalled(), bots: reg.bots(), candidates: reg.candidates(), auth: h.auth, inbox: reg.inboxItems().length, notifications: h.notifier.events.slice(0, 50), vapidPublic: h.notifier.vapidPublic(), tailnet: tn, addrs: this.addrs, port: h.cfg.port, botLimit: reg.botLimit, devices: h.cfg.devices.map((d) => ({ id: d.id, name: d.name, lastSeen: d.lastSeen })), sessionsByBot: Object.fromEntries(reg.bots().map((b) => [b.id, h.sessions.list(b.id)])), defaults: { model: h.cfg.defaultModel ?? '', effort: h.cfg.defaultEffort ?? '', codex: { model: h.cfg.defaultCodexModel ?? '', effort: h.cfg.defaultCodexEffort ?? '', sandbox: h.cfg.codexSandbox ?? 'read-only', auth: codexAuth(h.cfg.openaiApiKey) } }, hostName: h.hostName(), device: { id: who.id, name: who.main ? h.hostName() : who.device, main: who.main } })
+      return json(200, { version: h.version, root: reg.root, rules: reg.rules, rulesInstalled: reg.rulesInstalled(), bots: reg.bots(), candidates: reg.candidates(), auth: h.auth, inbox: reg.inboxItems().length, notifications: h.notifier.events.slice(0, 50), vapidPublic: h.notifier.vapidPublic(), tailnet: tn, addrs: this.addrs, port: h.cfg.port, devices: h.cfg.devices.map((d) => ({ id: d.id, name: d.name, lastSeen: d.lastSeen })), sessionsByBot: Object.fromEntries(reg.bots().map((b) => [b.id, h.sessions.list(b.id)])), defaults: { model: h.cfg.defaultModel ?? '', effort: h.cfg.defaultEffort ?? '', codex: { model: h.cfg.defaultCodexModel ?? '', effort: h.cfg.defaultCodexEffort ?? '', sandbox: h.cfg.codexSandbox ?? 'read-only', auth: codexAuth(h.cfg.openaiApiKey) } }, hostName: h.hostName(), device: { id: who.id, name: who.main ? h.hostName() : who.device, main: who.main } })
     }
     if (p === '/api/bots' && m === 'GET') return json(200, reg.bots())
     if (p === '/api/candidates') return json(200, reg.candidates())
@@ -202,8 +202,9 @@ export class Gateway {
       const bot = botOf(seg[2]); const sub = seg[3]
       if (sub === 'stop' && m === 'POST') { if (bot.orchestrator) throw new Error('오케스트레이터는 정지할 수 없어요'); reg.stop(bot.id); h.afterBotsChanged(); return json(200, { ok: true }) }
       if (sub === 'retire' && m === 'POST') { const to = reg.retire(bot.id); h.afterBotsChanged(); return json(200, { to }) }
-      // ⚠ 삭제는 «지우기» 가 아니라 «치우기» 다 — 볼트 안 .folderbot/trash 로 옮긴다(registry.trash 머리말)
-      if (sub === 'trash' && m === 'POST') { const to = reg.trash(bot.id); h.afterBotsChanged(); return json(200, { to }) }
+      // ⛔ **봇(폴더) 자체를 치우는 길은 없다** (2026-09-13 Dave 정정: *«실제 폴더를 삭제하는게 아니라
+      //    에이전트 연동 삭제»*). 레일의 «지우기» 는 위 `stop` — 목록에서만 덜어낸다. 파일을 치우는 것은
+      //    아래 트리의 `sub === 'trash'` 로, **봇 폴더 안 파일**에만 닿는다.
       if (sub === 'sessions' && m === 'GET') return json(200, h.sessions.list(bot.id))
       // ⚠ `vendor` 는 **세션마다** 고를 수 있다 — 한 폴더에 Claude 세션과 Codex 세션이 섞여 산다
       if (sub === 'sessions' && m === 'POST') { const b = await body(); const vd = b.vendor === 'codex' || b.vendor === 'claude' ? b.vendor : undefined; const s = h.sessions.create(bot, String(b.name ?? '새 세션'), { permissionMode: b.permissionMode as never, model: b.model ? String(b.model) : undefined, vendor: vd }); return json(200, h.sessions.info(s)) }
@@ -327,6 +328,51 @@ export class Gateway {
         cpSync(abs, inBot(bot.abs, to), { recursive: true })
         h.broadcast({ ev: 'files', botId: bot.id })
         return json(200, { rel: to })
+      }
+      /**
+       * 휴지통으로 — 트리에서 고른 것을 **여럿 한꺼번에** 치운다.
+       *
+       * 🔴 **지우지 않고 옮긴다** — 볼트 안 `.folderbot/trash/` 로 간다(`registry.trashPath` 머리말).
+       *    되돌리기(⌘Z)가 이걸 다시 제자리로 돌린다.
+       * ⚠ 대상은 **이 봇 폴더 안**이어야 한다(`inBot`) — `guard(roots)` 는 볼트 루트까지 통과시키므로
+       *    지우는 일에는 넓다(실제로 `../..` 가 뚫렸던 자리).
+       * ⚠ 하나가 실패해도 **나머지는 계속한다** — 여럿을 고른 사람에게 «아무것도 안 됐다» 는 최악이다.
+       */
+      if (sub === 'trash' && m === 'POST') {
+        const b = await body()
+        const rels = (Array.isArray(b.rels) ? b.rels : [b.rel]).map((x: unknown) => String(x ?? '')).filter(Boolean)
+        if (!rels.length) return json(400, { error: '고른 것이 없어요' })
+        const to: string[] = []; const failed: string[] = []
+        for (const rel of rels) {
+          try { inBot(bot.abs, rel); to.push(reg.trashPath(relative(reg.root, join(bot.abs, rel)))) } catch { failed.push(rel) }
+        }
+        h.broadcast({ ev: 'files', botId: bot.id })
+        return json(200, { to, failed })
+      }
+      /**
+       * 옮기기 — 트리에서 끌어다 놓기(A7)와 «여기로 옮기기»(A6) 가 같이 쓴다.
+       * ⚠ 목적지도 **봇 폴더 안**이어야 하고, **자기 자신 안으로는 못 옮긴다**(폴더를 자기 자손으로 넣으면 사라진다).
+       * ⚠ 같은 이름이 있으면 `freeName` 으로 비킨다 — 끌어 놓기 한 번에 덮어쓰기는 없다.
+       */
+      if (sub === 'move' && m === 'POST') {
+        const b = await body()
+        const dir = String(b.dir ?? '').replace(/^\/+|\/+$/g, '')
+        const dirAbs = inBot(bot.abs, dir)
+        if (!exists(dirAbs)) return json(404, { error: '없는 폴더' })
+        const rels = (Array.isArray(b.rels) ? b.rels : [b.rel]).map((x: unknown) => String(x ?? '')).filter(Boolean)
+        const moved: { from: string; to: string }[] = []; const failed: string[] = []
+        for (const rel of rels) {
+          try {
+            const from = inBot(bot.abs, rel)
+            if (dirAbs === from || dirAbs.startsWith(from + sep)) throw new Error('자기 안으로는 못 옮겨요')
+            if (join(from, '..') === dirAbs) { moved.push({ from: rel, to: rel }); continue }
+            const to = freeName(bot.abs, dir, rel.split('/').pop() ?? rel)
+            reg.movePath(relative(reg.root, from), relative(reg.root, inBot(bot.abs, to)))
+            moved.push({ from: rel, to })
+          } catch { failed.push(rel) }
+        }
+        h.broadcast({ ev: 'files', botId: bot.id })
+        return json(200, { moved, failed })
       }
       if (sub === 'raw') { const abs = guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')); if (!exists(abs)) return json(404, { error: 'none' }); res.writeHead(200, { 'content-type': mime(abs), 'cache-control': 'no-store' }); stream(abs).pipe(res); return }
       if (sub === 'routines' && m === 'GET') return json(200, bot.routines)

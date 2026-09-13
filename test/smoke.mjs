@@ -799,25 +799,43 @@ try {
           await pg.fill('.composer textarea', ''); await wait(200)
           ok('맥 기본 단축키 — ⌘, 설정 · ⌘/ 표 · 글 칠 때는 안 돈다')
         }
-        // 🔴 **레일 우클릭 — 정지 · 은퇴 · 폴더 삭제** (2026-09-13 Dave: «폴더 자체를 삭제할 수 있어야 해»)
-        //    ⚠ 삭제는 «지우기» 가 아니라 «치우기» 다 — .folderbot/trash 로 옮기고 파인더에서 꺼내면 돌아온다.
+        // 🔴 **레일 우클릭 — 지우기(연결 해지) · 은퇴** (2026-09-13 Dave 정정)
+        //    ⛔ «지우기» 는 **폴더를 건드리지 않는다** — 레일에서만 덜어낸다. 폴더가 사라지면 회귀다.
         {
-          // ⚠ 첫 줄은 **관제(오케스트레이터)** 다 — 그 줄에는 정지·은퇴·삭제가 없다(있으면 볼트를 지운다)
+          // ⚠ 첫 줄은 **관제(오케스트레이터)** 다 — 그 줄에는 지우기·은퇴가 없다(있으면 볼트를 지운다)
           await pg.click('.sb-list .brow:has-text("제품_Rondo")', { button: 'right' }); await wait(300)
           const mtx = await pg.textContent('.menu.ctx')
-          if (!/폴더 삭제/.test(mtx ?? '')) fail('레일 우클릭: 삭제 항목이 없다 · ' + mtx)
-          if (!/정지/.test(mtx ?? '') || !/은퇴/.test(mtx ?? '')) fail('레일 우클릭: 정지·은퇴가 사라졌다 · ' + mtx)
+          if (!/지우기/.test(mtx ?? '')) fail('레일 우클릭: 지우기 항목이 없다 · ' + mtx)
+          if (/폴더 삭제/.test(mtx ?? '')) fail('레일 우클릭: 폴더를 지우는 항목이 되살아났다 · ' + mtx)
+          if (!/은퇴/.test(mtx ?? '')) fail('레일 우클릭: 은퇴가 사라졌다 · ' + mtx)
           await pg.keyboard.press('Escape'); await wait(200)
-          // 실제 삭제는 API 로 잰다 — 화면에서 지우면 이어지는 검사들이 쓰는 봇이 사라진다
-          const tmpRel = '2. Projects/2026-09_지울폴더'
+          // 실제 동작은 API 로 잰다 — 화면에서 지우면 이어지는 검사들이 쓰는 봇이 사라진다
+          const tmpRel = '2. Projects/2026-09_덜어낼폴더'
           mkdirSync(join(root, tmpRel), { recursive: true })
           const tb = await api('/bots/start', { rel: tmpRel })
-          const moved = await api(`/bots/${tb.id}/trash`, {})
-          if (!/^\.folderbot\/trash\//.test(moved.to)) fail('폴더 삭제: 휴지통으로 안 갔다 ' + JSON.stringify(moved))
-          if (existsSync(join(root, tmpRel))) fail('폴더 삭제: 원래 자리가 그대로다')
-          if (!existsSync(join(root, moved.to))) fail('폴더 삭제: 휴지통에도 없다 — 진짜로 지웠다')
-          if ((await api('/bots')).some((b) => b.id === tb.id)) fail('폴더 삭제: 레일에 아직 남아 있다')
-          ok('레일 우클릭 — 정지 · 은퇴 · 폴더 삭제(휴지통으로)')
+          await api(`/bots/${tb.id}/stop`, {})
+          if ((await api('/bots')).some((b) => b.id === tb.id)) fail('지우기: 레일에 아직 남아 있다')
+          if (!existsSync(join(root, tmpRel))) fail('🔴 지우기가 폴더를 지웠다 — 연결만 끊어야 한다')
+          ok('레일 우클릭 — 지우기는 연결만 끊는다(폴더는 그대로) · 은퇴는 남아 있다')
+        }
+        // 🔴 **파일 휴지통 · 옮기기** — 트리에서 치우고 끌어 놓는 길(A6·A7·A8)
+        {
+          const f1 = await api(`/bots/${bot.id}/new`, { dir: '', name: '치울메모', kind: 'note' })
+          const f2 = await api(`/bots/${bot.id}/new`, { dir: '', name: '옮길메모', kind: 'note' })
+          const d1 = await api(`/bots/${bot.id}/new`, { dir: '', name: '받을폴더', kind: 'folder' })
+          const mv = await api(`/bots/${bot.id}/move`, { rels: [f2.rel], dir: d1.rel })
+          if (mv.failed.length || !mv.moved.length) fail('옮기기: 실패 ' + JSON.stringify(mv))
+          if (!existsSync(join(root, '3. Area/제품_Rondo', d1.rel, '옮길메모.md'))) fail('옮기기: 목적지에 없다')
+          if (existsSync(join(root, '3. Area/제품_Rondo', f2.rel))) fail('옮기기: 원래 자리가 그대로다')
+          const tr = await api(`/bots/${bot.id}/trash`, { rels: [f1.rel] })
+          if (!tr.to.length || !/^\.folderbot\/trash\//.test(tr.to[0])) fail('휴지통: 안 갔다 ' + JSON.stringify(tr))
+          if (existsSync(join(root, '3. Area/제품_Rondo', f1.rel))) fail('휴지통: 원래 자리가 그대로다')
+          if (!existsSync(join(root, tr.to[0]))) fail('휴지통: 거기에도 없다 — 진짜로 지웠다')
+          // ⛔ 봇 폴더 밖으로는 못 나간다
+          const esc = await api(`/bots/${bot.id}/trash`, { rels: ['../../어딘가'] })
+          if (esc.to.length) fail('🔴 휴지통이 봇 폴더 밖을 치웠다')
+          try { rmSync(join(root, '3. Area/제품_Rondo', d1.rel), { recursive: true }) } catch {}
+          ok('파일 휴지통 · 옮기기 — 봇 폴더 안에서만, 지우지 않고 옮긴다')
         }
         // 🔴 **Finder 급 파일 조작** (2026-09-13 Dave: «finder에서 보기 · 새 노트/새 폴더 · 복사»)
         {

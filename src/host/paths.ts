@@ -11,7 +11,6 @@ export interface HostConfig {
   vapid?: { publicKey: string; privateKey: string }
   pushSubs?: { endpoint: string; keys: { p256dh: string; auth: string }; device: string }[]
   quiet?: { from: string; to: string }
-  botLimit?: number
   claudeBin?: string
   /** claude setup-token 으로 만든 1년짜리 토큰 — 키체인을 못 읽는 문맥(헤드리스)의 대안 */
   claudeOauthToken?: string
@@ -48,9 +47,9 @@ const CONFIG = () => join(ensureDir(dataDir()), 'config.json')
 export function loadConfig(): HostConfig {
   try {
     const j = JSON.parse(readFileSync(CONFIG(), 'utf8')) as Partial<HostConfig>
-    return { root: j.root ?? null, port: j.port ?? DEFAULT_PORT, devices: j.devices ?? [], vapid: j.vapid, pushSubs: j.pushSubs ?? [], quiet: j.quiet, botLimit: j.botLimit ?? 8, claudeBin: j.claudeBin, claudeOauthToken: j.claudeOauthToken, defaultModel: j.defaultModel ?? 'claude-fable-5-1', defaultEffort: j.defaultEffort ?? 'high', defaultCodexModel: j.defaultCodexModel, defaultCodexEffort: j.defaultCodexEffort, codexSandbox: j.codexSandbox, openaiApiKey: j.openaiApiKey, hostName: j.hostName }
+    return { root: j.root ?? null, port: j.port ?? DEFAULT_PORT, devices: j.devices ?? [], vapid: j.vapid, pushSubs: j.pushSubs ?? [], quiet: j.quiet, claudeBin: j.claudeBin, claudeOauthToken: j.claudeOauthToken, defaultModel: j.defaultModel ?? 'claude-fable-5-1', defaultEffort: j.defaultEffort ?? 'high', defaultCodexModel: j.defaultCodexModel, defaultCodexEffort: j.defaultCodexEffort, codexSandbox: j.codexSandbox, openaiApiKey: j.openaiApiKey, hostName: j.hostName }
   } catch {
-    return { root: null, port: DEFAULT_PORT, devices: [], pushSubs: [], botLimit: 8, defaultModel: 'claude-fable-5-1', defaultEffort: 'high' }
+    return { root: null, port: DEFAULT_PORT, devices: [], pushSubs: [], defaultModel: 'claude-fable-5-1', defaultEffort: 'high' }
   }
 }
 
