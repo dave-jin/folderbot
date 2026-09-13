@@ -210,6 +210,20 @@ export class Gateway {
         return json(200, { kind, rel: url.searchParams.get('rel'), size: statSync(abs).size, mtime: statSync(abs).mtimeMs })
       }
       if (sub === 'file' && m === 'POST') { const b = await body(); const abs = guard(roots(bot), join(bot.abs, String(b.rel))); writeText(abs, String(b.text)); h.broadcast({ ev: 'files', botId: bot.id }); return json(200, { ok: true }) }
+      /**
+       * 어느 경로가 실제로 있나 — 채팅 답변의 «경로처럼 보이는 글자» 를 칩으로 만들기 전에 묻는다.
+       * 🔴 확인 없이 칩을 만들면 죽은 링크가 대화에 쌓이고, 한 번 눌러 본 사람은 다시 안 누른다.
+       * ⚠ 후보는 봇 폴더 기준 상대 경로다. 루트 밖은 `guard` 가 막고 조용히 false 로 답한다.
+       */
+      if (sub === 'exists' && m === 'POST') {
+        const b = await body()
+        const rels = (Array.isArray(b.rels) ? b.rels : []).slice(0, 40).map(String)
+        const out: Record<string, boolean> = {}
+        for (const rel of rels) {
+          try { const abs = guard(roots(bot), join(bot.abs, rel)); out[rel] = exists(abs) && !statSync(abs).isDirectory() } catch { out[rel] = false }
+        }
+        return json(200, out)
+      }
       if (sub === 'raw') { const abs = guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')); if (!exists(abs)) return json(404, { error: 'none' }); res.writeHead(200, { 'content-type': mime(abs), 'cache-control': 'no-store' }); stream(abs).pipe(res); return }
       if (sub === 'routines' && m === 'GET') return json(200, bot.routines)
       if (sub === 'routines' && m === 'PUT') { const b = await body(); const cfg = reg.botConfig(bot.abs); cfg.routines = b.routines as never; reg.saveBotConfig(bot.abs, cfg); h.afterBotsChanged(); return json(200, { ok: true }) }

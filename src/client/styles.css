@@ -151,7 +151,8 @@ b,strong { color:var(--w); font-weight:600 }
 .tabs .more { display:flex; align-items:center; font-size:12px; color:var(--t3); padding:0 8px; flex:none }
 .dtb { display:flex; align-items:center; gap:8px; height:34px; flex:none; padding:0 20px; font-size:12px; color:var(--t3); white-space:nowrap; min-width:0 } .dtb .nm { color:var(--t2); overflow:hidden; text-overflow:ellipsis; min-width:0 } .dtb .r { margin-left:auto; display:flex; align-items:center; gap:8px; flex:none } .dtb .pos { font-family:var(--mono); font-size:11px } .dtb .nb { display:inline-flex; color:var(--t3) } .dtb .nb:hover { color:var(--t) } .dtb .st { font-size:11.5px; color:var(--t3) } .dtb .st.err { color:var(--err) }
 .dbanner { display:flex; align-items:center; gap:8px; padding:4px 20px 0; font-size:12px; color:var(--t3); flex:none } .dbanner button { color:var(--t2) } .dbanner button:hover { color:var(--w) }
-.dbody { flex:1; overflow:auto; padding:18px 28px } .dbody .md { font-size:13.5px } .dbody .md h1 { font-size:22px; margin:0 0 10px } .dbody .md h2 { font-size:17px } .dbody .md h3 { font-size:15px } .dbody pre.raw { font-family:var(--mono); font-size:12.5px; white-space:pre-wrap; margin:0; color:var(--t) }
+/* 문서 — 읽기 폭 58ch (A 안). 넓은 화면에서 줄이 끝까지 늘어나면 한 줄을 눈으로 되짚게 된다 */
+.dbody { flex:1; overflow:auto; padding:26px 32px } .dbody .md { font-size:14.5px; line-height:1.9; max-width:58ch } .dbody .md h1 { font-size:22px; margin:0 0 10px } .dbody .md h2 { font-size:17px } .dbody .md h3 { font-size:15px } .dbody pre.raw { font-family:var(--mono); font-size:12.5px; white-space:pre-wrap; margin:0; color:var(--t) }
 .dbody.edit { padding:0 } .dbody.edit textarea { width:100%; height:100%; background:var(--bg); border:0; outline:0; padding:18px 28px; font-family:var(--mono); font-size:12.5px; line-height:1.7; color:var(--t); resize:none }
 .dbody.center { display:flex; align-items:center; justify-content:center }
 .dfoot { display:none }
@@ -588,3 +589,7 @@ b,strong { color:var(--w); font-weight:600 }
 
 /* 이름 옆 회사 표식 (C 안) — 아이콘 모서리는 상태 배지의 자리다 */
 .vmk { display:inline-flex; align-items:center; justify-content:center; flex:none; opacity:.9 }
+
+/* 답변 속 경로 칩 — 눌러서 문서로 (A 안: 색이 아니라 아주 옅은 바탕 하나로만 가른다) */
+.pchip { display:inline-flex; align-items:center; height:22px; padding:0 8px; margin:0 1px; border-radius:6px; background:var(--box); color:var(--t); font-size:12.5px; font-family:inherit; vertical-align:-4px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.pchip:hover { background:var(--sel); color:var(--w) }

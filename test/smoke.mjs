@@ -386,6 +386,22 @@ try {
         await pg.evaluate(() => { localStorage.setItem('fb:icon', 'm'); window.dispatchEvent(new Event('fb:iconsize')) }); await wait(200)
 
         await pg.keyboard.press('Escape'); await wait(200); if (await pg.$('.pk')) { await pg.click('.pk .modal-h .ib'); await wait(300) }
+        // 🔴 답변 속 경로가 칩이 된다 — 있는 파일만 (2026-09-13 Dave: «채팅에서 문서 선택으로 바로 이동»)
+        {
+          const ok = await api(`/bots/${bot.id}/exists`, { rels: ['todo.md', '없는파일.md', '../밖.md'] })
+          if (ok['todo.md'] !== true) fail('exists: 있는 파일을 없다고 한다 ' + JSON.stringify(ok))
+          if (ok['없는파일.md'] !== false) fail('exists: 없는 파일을 있다고 한다 ' + JSON.stringify(ok))
+          if (ok['../밖.md'] !== false) fail('exists: 루트 밖이 새어 나간다 ' + JSON.stringify(ok))
+          // 화면 — 스텁이 되돌려 주는 문장 안의 경로 중 **있는 것만** 칩이 된다
+          await pg.fill('.composer textarea', '첨부/회의록.txt 와 없는폴더/없음.md 를 봐')
+          await pg.keyboard.press('Enter')
+          let chip = null
+          for (let i = 0; i < 40; i++) { chip = await pg.evaluate(() => { const c = [...document.querySelectorAll('.chat-body .pchip')]; return { n: c.length, titles: c.map((x) => x.title), last: (document.querySelector('.chat-body .md:last-of-type')?.textContent ?? '') } }); if (chip.n) break; await wait(300) }
+          if (!chip.n) fail('경로 칩: 있는 파일이 칩이 안 됐다 ' + JSON.stringify(chip))
+          if (!chip.titles.some((t) => t.endsWith('첨부/회의록.txt'))) fail('경로 칩: 엉뚱한 것이 칩이 됐다 ' + JSON.stringify(chip))
+          if (chip.titles.some((t) => t.includes('없는폴더'))) fail('경로 칩: 없는 파일이 칩이 됐다 — 죽은 링크가 쌓인다 ' + JSON.stringify(chip))
+          await pg.fill('.composer textarea', ''); await wait(400)
+        }
         // 🔴 「A · 문서처럼」 — 기계는 접히고, 사람 말은 상자가 없고, 봇 말은 읽기 폭을 지킨다
         //    (2026-09-13 Dave 확정: «단순함을 지키되 고급스럽게» → 더하기가 아니라 빼기로)
         {

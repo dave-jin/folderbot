@@ -4,13 +4,64 @@ import type { Bot, NotifyEvent, RoutineDef } from '../core/types'
 import { api, setToken, subscribePush } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { hitRange, rank } from '../core/search'
+import { candidatePaths } from '../core/paths'
 import { pickAgent } from './AgentPick'
 import { fmtTime, useStore } from './store'
 
 marked.setOptions({ gfm: true, breaks: true })
-export function Md({ text, streaming }: { text: string; streaming?: boolean }) {
+
+/**
+ * 답변 속 «경로처럼 보이는 글자» 를 눌러서 여는 칩으로 (2026-09-13 Dave).
+ *
+ * 🔴 **실제로 있는 것만 칩이 된다.** 후보는 `core/paths` 가 내고, 있는지는 호스트가 답한다
+ *    (`POST /api/bots/:id/exists`). 확인 없이 만들면 죽은 링크가 대화에 쌓인다.
+ * 🔴 **렌더된 HTML 문자열을 정규식으로 건드리지 않는다** — 태그 안쪽을 잘못 물면 마크업이 깨진다.
+ *    대신 **그린 뒤에 텍스트 노드만 걸어** 바꾼다. `code`·`pre`·`a` 안은 건너뛴다.
+ * ⚠ 스트리밍 중에는 하지 않는다 — 글자가 계속 바뀌는 동안 DOM 을 갈아 대면 선택이 튄다.
+ */
+function decorate(root: HTMLElement, hits: string[], open: (rel: string) => void): void {
+  if (!hits.length) return
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => (n.parentElement?.closest('code,pre,a,.pchip') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT)
+  })
+  const texts: Text[] = []
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) texts.push(n as Text)
+  for (const node of texts) {
+    let cur = node
+    for (const hit of hits) {
+      const i = cur.data.indexOf(hit)
+      if (i < 0) continue
+      const after = cur.splitText(i)
+      const rest = after.splitText(hit.length)
+      const b = document.createElement('button')
+      b.className = 'pchip'; b.type = 'button'; b.textContent = hit.split('/').pop() ?? hit; b.title = hit
+      b.addEventListener('click', (e) => { e.preventDefault(); open(hit) })
+      after.replaceWith(b)
+      cur = rest
+    }
+  }
+}
+
+export function Md({ text, streaming, botId, onPath }: { text: string; streaming?: boolean; botId?: string; onPath?: (rel: string) => void }) {
   const html = useMemo(() => marked.parse(text) as string, [text])
-  return <div className={`md ${streaming ? 'streaming' : ''}`} dangerouslySetInnerHTML={{ __html: html }} />
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !botId || !onPath || streaming) return
+    const cands = candidatePaths(text)
+    if (!cands.length) return
+    let live = true
+    void api<Record<string, boolean>>(`/bots/${botId}/exists`, { body: { rels: cands } })
+      .then((ok) => {
+        if (!live || !ref.current) return
+        // 한 자리에서 여러 후보가 걸리면 **긴 것**이 이긴다 — `3. Area/…` 가 `Area/…` 보다 맞다
+        const hits = cands.filter((c) => ok[c]).sort((a, b) => b.length - a.length)
+        decorate(ref.current, hits, onPath)
+      })
+      .catch(() => { /* 못 물어봤으면 그냥 글자로 둔다 */ })
+    return () => { live = false }
+  }, [html, streaming, botId])
+  return <div ref={ref} className={`md ${streaming ? 'streaming' : ''}`} dangerouslySetInnerHTML={{ __html: html }} />
 }
 
 /** 걸린 자리를 굵게 — 왜 이 폴더가 나왔는지 눈으로 보이게 (자리 판정은 core/search) */
