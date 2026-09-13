@@ -603,6 +603,38 @@ b,strong { color:var(--w); font-weight:600 }
 .krow { display:flex; align-items:center; gap:10px; min-height:26px; font-size:12.5px }
 .krow .kk { flex:none; min-width:66px; color:var(--w); font-size:11.5px }
 .krow .kt { color:var(--t) } .krow .kd { margin-left:auto; color:var(--t3); font-size:11.5px }
+/* ═══ Canvas — Obsidian 의 .canvas (JSON Canvas 1.0) ═══
+   🔴 화면 변환은 판 하나의 transform 뿐이다 — 노드마다 좌표를 다시 계산하지 않는다. */
+.dbody.cvswrap { padding:0; overflow:hidden; position:relative }
+.cvs { position:absolute; inset:0; overflow:hidden; background:var(--bg2); cursor:grab; touch-action:none }
+.cvs:active { cursor:grabbing }
+.cvs-plane { position:absolute; left:0; top:0; transform-origin:0 0; width:1px; height:1px }
+.cvs-edges { position:absolute; left:0; top:0; pointer-events:none; color:var(--t3) }
+.cvs-edges g { pointer-events:auto }
+.cvs-n { position:absolute; border:1px solid var(--line2); border-radius:8px; background:var(--box); overflow:hidden; color:var(--t); font-size:13px }
+.cvs-n.on { border-color:var(--w); box-shadow:0 0 0 1px var(--w) }
+.cvs-n.grp { background:transparent; border-style:dashed; border-radius:10px }
+.cvs-glabel { position:absolute; left:8px; top:-19px; font-size:11.5px; color:var(--t2); white-space:nowrap }
+.cvs-md { padding:8px 10px; height:100%; overflow:auto; font-size:12.5px; line-height:1.6 }
+.cvs-md .md { max-width:none }
+.cvs-ta { width:100%; height:100%; background:none; border:0; outline:none; resize:none; padding:8px 10px; color:var(--t); font:inherit; line-height:1.6 }
+.cvs-media { width:100%; height:100%; border:0; display:block; background:#111 }
+.cvs-media img { width:100%; height:100%; object-fit:contain; display:block }
+.cvs-file, .cvs-link { display:flex; align-items:center; gap:6px; padding:8px 10px; color:var(--t2); font-size:12.5px; text-decoration:none; width:100% }
+.cvs-file:hover, .cvs-link:hover { color:var(--w) }
+.cvs-port { position:absolute; width:11px; height:11px; border-radius:50%; background:var(--bg); border:1.5px solid var(--t3); opacity:0; cursor:crosshair }
+.cvs-n:hover .cvs-port, .cvs-n.on .cvs-port { opacity:1 }
+.cvs-port:hover { border-color:var(--w); background:var(--w) }
+.cvs-port.top { left:calc(50% - 5.5px); top:-6px } .cvs-port.bottom { left:calc(50% - 5.5px); bottom:-6px }
+.cvs-port.left { top:calc(50% - 5.5px); left:-6px } .cvs-port.right { top:calc(50% - 5.5px); right:-6px }
+.cvs-size { position:absolute; right:0; bottom:0; width:14px; height:14px; cursor:nwse-resize; opacity:0 }
+.cvs-n:hover .cvs-size, .cvs-n.on .cvs-size { opacity:1; background:linear-gradient(135deg, transparent 50%, var(--t3) 50%) }
+.cvs-bar { position:absolute; right:12px; bottom:12px; display:flex; align-items:center; gap:6px; background:var(--glassB); backdrop-filter:var(--blur); border:1px solid var(--hair); border-radius:9px; padding:4px 6px; z-index:3 }
+.cvs-z { font-size:11px; color:var(--t3); min-width:38px; text-align:right }
+.cvs-pal { display:flex; gap:3px; align-items:center; padding-right:4px; margin-right:2px; border-right:1px solid var(--line) }
+.cvs-pal button { width:13px; height:13px; border-radius:50%; border:1px solid rgba(0,0,0,.3) }
+.cvs-pal button.none { background:none; border:1px dashed var(--line2) }
+
 /* ═══ 일하는 폴더봇 — 상황에 따라 셋 (2026-09-13 Dave) ═══
    ⛔ 진행 줄에서 움직이는 것은 이 하나뿐이다. 맥박 점(·)은 뺐다 — 같은 말을 두 번 하는 자리였다. */
 .fb .pg { display:none }
@@ -657,6 +689,23 @@ b,strong { color:var(--w); font-weight:600 }
 .mded .lp-h2 { font-size:1.34em; font-weight:600; color:var(--w); line-height:1.4 }
 .mded .lp-h3 { font-size:1.14em; font-weight:600; color:var(--w) }
 .mded .lp-h4, .mded .lp-h5, .mded .lp-h6 { font-weight:600; color:var(--w) }
+/* 고른 글 위 서식 막대 — 고른 것이 있을 때만 뜬다 */
+.mded { position:relative }
+.mdbar { position:absolute; z-index:6; display:none; gap:1px; background:var(--box); border:1px solid var(--line2); border-radius:7px; padding:3px; box-shadow:0 8px 24px var(--shadow) }
+.mdbar.on { display:flex }
+.mdbar button { min-width:26px; height:24px; padding:0 6px; border-radius:5px; color:var(--t2); font-size:12px; display:inline-flex; align-items:center; justify-content:center }
+.mdbar button:hover { background:var(--sel); color:var(--w) }
+.mdbar button.b { font-weight:700 } .mdbar button.i { font-style:italic } .mdbar button.s { text-decoration:line-through }
+/* `/` 메뉴 — CodeMirror 자동완성 껍데기를 우리 색으로 */
+.mded .cm-tooltip.cm-tooltip-autocomplete { background:var(--box); border:1px solid var(--line2); border-radius:8px; box-shadow:0 10px 30px var(--shadow); overflow:hidden }
+.mded .cm-tooltip-autocomplete ul li { padding:5px 10px; color:var(--t); font-size:12.5px; font-family:var(--ui) }
+.mded .cm-tooltip-autocomplete ul li[aria-selected] { background:var(--sel); color:var(--w) }
+.mded .cm-completionDetail { color:var(--t3); font-style:normal; margin-left:8px; font-size:11.5px }
+/* 콜아웃 — Obsidian 의 `> [!note]` */
+.mded .lp-cal { padding-left:12px; border-left:2px solid var(--t3) }
+.mded .lp-cal-note { border-left-color:#6ea6f7 } .mded .lp-cal-tip, .mded .lp-cal-success { border-left-color:var(--done) }
+.mded .lp-cal-warning { border-left-color:var(--wait) } .mded .lp-cal-danger { border-left-color:var(--err) }
+.mded .lp-cal-info { border-left-color:var(--t2) }
 .mded .lp-hr { display:block; height:1px; background:var(--line2); margin:10px 0 }
 .mded .lp-quote { padding-left:12px; border-left:2px solid var(--line2); color:var(--t2) }
 

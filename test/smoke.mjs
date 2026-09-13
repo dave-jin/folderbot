@@ -401,7 +401,7 @@ try {
         {
           const rel = 'churn.md'
           const abs = join(root, '3. Area/제품_Rondo', rel)
-          const src = ['---', 'type: reference', 'tags: [PARA, 지침]', '---', '', '# 제목', '', '**굵게** 와 *기울임* 과 `코드`.', '', '- [ ] 할 일', '- 항목', '', '---', '', '> 인용', '', '[[위키링크]] 와 https://example.com', ''].join('\n')
+          const src = ['---', 'type: reference', 'tags: [PARA, 지침]', '---', '', '# 제목', '', '**굵게** 와 *기울임* 과 `코드`.', '', '- [ ] 할 일', '- 항목', '', '---', '', '> 인용', '', '> [!note] 콜아웃 줄', '', '[[위키링크]] 와 https://example.com', ''].join('\n')
           // ⚠ API 로 만든다 — 파일을 직접 쓰면 호스트가 모르고 트리가 안 새로 그려진다
           await api(`/bots/${bot.id}/file`, { rel, text: src })
           const before = readFileSync(abs)
@@ -488,11 +488,80 @@ try {
           const after = readFileSync(abs)
           if (!before.equals(after)) fail('churn 0: 열고 쳤다 지웠는데 바이트가 바뀌었다\n--- 전\n' + JSON.stringify(before.toString()) + '\n--- 후\n' + JSON.stringify(after.toString()))
           ok('churn 0 — 라이브 프리뷰로 열고 저장해도 바이트가 그대로')
+          // 🔴 **서식 — 글자를 외우지 않아도 된다** (2026-09-13 Dave: «# 같은 마크다운 단축어, 선택시 상단 메뉴»)
+          //    ⚠ 단추가 하는 일은 «글자 넣기» 다 — 파일에는 `**굵게**` 가 그대로 들어간다(churn 0 이 그대로 산다).
+          {
+            // 고른 글 위 막대 — 고른 것이 있을 때만 뜬다
+            const on0 = await pg.evaluate(() => document.querySelector('.mdbar')?.classList.contains('on') ?? null)
+            if (on0 === null) fail('서식: 막대가 아예 없다')
+            if (on0) fail('서식: 아무것도 안 골랐는데 막대가 떠 있다 — 조용한 문서가 아니게 된다')
+            // ⚠ 선택은 **진짜로** 만든다 — DOM Range 를 손으로 만들면 CodeMirror 가 자기 상태로 안 받는다
+            const line = await pg.evaluate(() => { const l = [...document.querySelectorAll('.mded .cm-line')].find((x) => x.textContent.includes('항목')); if (!l) return null; const r = l.getBoundingClientRect(); return { x: r.left + 4, y: r.top + r.height / 2 } })
+            if (!line) fail('서식: «항목» 줄을 못 찾았다')
+            // ⚠ 더블클릭 = 낱말 고르기. `Home` 뒤 Shift→ 로 고르면 **불릿(`- `)** 이 잡힌다(실제로 그랬다)
+            await pg.mouse.dblclick(line.x + 18, line.y); await wait(500)
+            const bar = await pg.evaluate(() => { const b = document.querySelector('.mdbar'); return { on: b?.classList.contains('on'), n: b?.querySelectorAll('button').length } })
+            if (!bar.on) fail('서식: 글을 골랐는데 막대가 안 뜬다 ' + JSON.stringify(bar) + ' · 콘솔=' + JSON.stringify(errs.slice(-3)))
+            if (!bar.n || bar.n < 6) fail('서식: 막대에 단추가 모자라다 ' + JSON.stringify(bar))
+            await pg.click('.mdbar button.b'); await wait(1500)
+            const bold = readFileSync(abs, 'utf8')
+            if (!/\*\*항목\*\*/.test(bold)) fail('서식: 굵게가 파일에 안 들어갔다 ' + JSON.stringify(bold))
+            // `/` 메뉴 — 줄 앞에서만 뜬다
+            await pg.evaluate(() => { const c = document.querySelector('.mded .cm-content'); c.focus() })
+            await pg.keyboard.press('Control+End'); await pg.keyboard.press('Enter'); await pg.keyboard.type('/')
+            await wait(600)
+            const menu = await pg.evaluate(() => { const t = document.querySelector('.cm-tooltip-autocomplete'); return t ? [...t.querySelectorAll('li')].map((x) => x.textContent) : null })
+            if (!menu || !menu.length) fail('서식: `/` 메뉴가 안 뜬다')
+            if (!menu.some((x) => /체크박스/.test(x ?? ''))) fail('서식: `/` 메뉴에 체크박스가 없다 ' + JSON.stringify(menu))
+            await pg.keyboard.press('Escape'); await pg.keyboard.press('Backspace'); await wait(400)
+            ok('서식 — 고른 글 위 막대 · `/` 메뉴 (파일에는 마크다운 글자 그대로)')
+          }
+          // 콜아웃 — `> [!note]` 는 표시를 숨기고 줄에 색을 준다
+          if (!(await pg.$('.mded .lp-cal'))) fail('콜아웃이 안 그려졌다')
           // ⚠ 열어 둔 채로 파일을 지우면 문서 열이 다시 읽으며 404 를 낸다 — 먼저 다른 파일로 옮긴다
           await pg.evaluate(() => { const t = [...document.querySelectorAll('.trow')].find((x) => /todo\.md/.test(x.textContent ?? '')); t?.click() })
           await wait(700)
           try { rmSync(abs) } catch {}
           await wait(400)
+        }
+        // 🔴 **Canvas — Obsidian 의 .canvas 를 보고 고친다** (2026-09-13 Dave: «편집 기능까지 다 만들어줘»)
+        {
+          const rel = '보드.canvas'
+          const abs = join(root, '3. Area/제품_Rondo', rel)
+          const src = JSON.stringify({
+            nodes: [
+              { id: '1111111111111111', type: 'text', x: 0, y: 0, width: 200, height: 80, text: '첫 칸', zzz: 'keep' },
+              { id: '2222222222222222', type: 'text', x: 320, y: 0, width: 200, height: 80, text: '둘째 칸' }
+            ],
+            edges: [{ id: '3333333333333333', fromNode: '1111111111111111', toNode: '2222222222222222', toEnd: 'arrow' }],
+            myExt: { keep: true }
+          }, null, '\t')
+          await api(`/bots/${bot.id}/file`, { rel, text: src })
+          await wait(900)
+          const opened = await pg.evaluate((r) => { const hit = [...document.querySelectorAll('.trow')].find((x) => (x.textContent ?? '').includes(r)); if (hit) { hit.click(); return true } return false }, rel)
+          if (!opened) fail('캔버스: 트리에 안 나타난다')
+          await pg.waitForSelector('.cvs', { timeout: 8000 }); await wait(700)
+          const shape = await pg.evaluate(() => ({
+            nodes: document.querySelectorAll('.cvs-n').length,
+            edges: document.querySelectorAll('.cvs-edges path[marker-end]').length,
+            raw: !!document.querySelector('.mded, .dbody pre.raw')     // 원문으로 떨어지면 안 된다
+          }))
+          if (shape.raw) fail('캔버스: 원문(JSON)으로 떨어졌다 — 갈래를 못 가렸다')
+          if (shape.nodes !== 2 || shape.edges !== 1) fail('캔버스: 노드·엣지가 안 그려졌다 ' + JSON.stringify(shape))
+          // 노드를 끌어 옮기면 저장된다. ⛔ 모르는 필드(zzz·myExt)는 그대로 남아야 한다
+          const box = await pg.evaluate(() => { const n = document.querySelector('.cvs-n'); const r = n.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })
+          await pg.mouse.move(box.x, box.y); await pg.mouse.down()
+          await pg.mouse.move(box.x + 60, box.y + 40, { steps: 6 }); await pg.mouse.up()
+          let saved = null
+          for (let i = 0; i < 40; i++) { saved = JSON.parse(readFileSync(abs, 'utf8')); if (saved.nodes[0].x !== 0) break; await wait(150) }
+          if (saved.nodes[0].x === 0) fail('캔버스: 끌어 옮겼는데 저장이 안 됐다')
+          if (saved.nodes[0].zzz !== 'keep' || !saved.myExt?.keep) fail('캔버스: 모르는 필드를 버렸다 ' + JSON.stringify(saved).slice(0, 200))
+          if (!readFileSync(abs, 'utf8').includes('\t"nodes"')) fail('캔버스: 탭 들여쓰기가 아니다 — Obsidian 과 diff 가 난다')
+          ok('Canvas — 노드·엣지를 그리고, 끌어 옮기면 저장되고, 모르는 필드는 남는다')
+          await pg.evaluate(() => { const t = [...document.querySelectorAll('.trow')].find((x) => /todo\.md/.test(x.textContent ?? '')); t?.click() })
+          await wait(700)
+          try { rmSync(abs) } catch {}
+          await wait(300)
         }
         // 🔴 표 — 읽을 땐 진짜 표, 칸을 고치면 **그 칸의 글자만** 바뀐다 (Rondo 는 통째로 다시 쓴다 = churn)
         {

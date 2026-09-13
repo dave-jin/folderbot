@@ -8,6 +8,7 @@ import { AGENT_EFFORTS, AGENT_MODELS, fitsProvider } from '../../src/core/agents
 import { cronFromText, routineName } from '../../src/core/routineText'
 import { bestIcon, faviconHost, parentHost, parseIconLinks } from '../../src/core/favicon'
 import { workLabel, workMood } from '../../src/core/work'
+import { autoSide, canvasId, insideGroup, parseCanvas, serializeCanvas } from '../../src/core/canvas'
 import { toolSummary, touchedPath } from '../../src/core/chat'
 import { chosung, hitRange, isChosungQuery, rank, scoreName } from '../../src/core/search'
 import { decide, dropIndex } from '../../src/client/gesture'
@@ -409,5 +410,38 @@ describe('work — 활동 한 줄 → 몸짓과 짧은 말', () => {
     expect(workLabel('생각 중 · 어쩌고')).toBe('생각 중')
     expect(workLabel('')).toBe('일하는 중')
     for (const a of ['Read · x', 'Bash · y', '에이전트 · z']) expect(workLabel(a)).not.toMatch(/·/)
+  })
+})
+
+describe('canvas — Obsidian 과 같은 파일을 다룬다', () => {
+  it('모르는 필드를 버리지 않고 탭 들여쓰기로 되돌린다', () => {
+    const src = '{\n\t"nodes": [{"id":"a","type":"text","x":0,"y":0,"width":100,"height":60,"text":"hi","zzz":1}],\n\t"edges": [],\n\t"myExt": {"k":1}\n}'
+    const d = parseCanvas(src)
+    expect(d.error).toBe(false)
+    expect(d.nodes[0].zzz).toBe(1)
+    expect(d.extra.myExt).toEqual({ k: 1 })
+    const out = serializeCanvas(d)
+    expect(out).toContain('\t"nodes"')
+    expect(JSON.parse(out).nodes[0].zzz).toBe(1)
+    expect(JSON.parse(out).myExt).toEqual({ k: 1 })
+  })
+  it('깨진 파일은 빈 캔버스가 아니라 «깨졌다» 로 답한다', () => {
+    expect(parseCanvas('{nope').error).toBe(true)
+  })
+  it('면을 안 정해 두면 상대 위치로 고른다', () => {
+    const a = { id: 'a', type: 'text', x: 0, y: 0, width: 100, height: 100 }
+    const b = { id: 'b', type: 'text', x: 300, y: 0, width: 100, height: 100 }
+    expect(autoSide(a, b)).toEqual({ from: 'right', to: 'left' })
+    expect(autoSide(b, a)).toEqual({ from: 'left', to: 'right' })
+    expect(autoSide(a, { ...b, x: 0, y: 300 })).toEqual({ from: 'bottom', to: 'top' })
+  })
+  it('그룹 안에 완전히 들어간 노드만 함께 움직인다', () => {
+    const g = { id: 'g', type: 'group', x: 0, y: 0, width: 200, height: 200 }
+    const inside = { id: 'i', type: 'text', x: 10, y: 10, width: 50, height: 50 }
+    const half = { id: 'h', type: 'text', x: 180, y: 10, width: 50, height: 50 }
+    expect(insideGroup(g, [g, inside, half])).toEqual(['i'])
+  })
+  it('id 는 16자리 hex', () => {
+    expect(canvasId(() => 0.5)).toMatch(/^[0-9a-f]{16}$/)
   })
 })

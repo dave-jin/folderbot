@@ -2,6 +2,8 @@ import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 
 /** ⚠ 지연 로드 — CodeMirror 와 마크다운 파서는 문서를 열 때만 받는다 (번들 계약) */
 const MdEditor = lazy(() => import('./MdEditor'))
+/** ⚠ 캔버스도 지연 로드 — `.canvas` 를 한 번도 안 연 사람이 이 코드를 받을 이유가 없다 */
+const Canvas = lazy(() => import('./Canvas'))
 import type { Bot } from '../core/types'
 import { api } from './api'
 import { Icon, Mid } from './FolderBot'
@@ -146,6 +148,12 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
         : doc.truncated
           ? <div className="dbody">{isMd ? <Md text={doc.text ?? ''} /> : <pre className="raw">{doc.text}</pre>}<div style={{ color: 'var(--t3)', fontSize: 12, marginTop: 12 }}>큰 파일이라 앞부분만 보여요 — 그래서 여기서는 못 고쳐요</div></div>
           : <div className="dbody edit"><textarea value={draft} onChange={(e) => onDraft(e.target.value)} spellCheck={false} /></div>)
+      : doc.kind === 'canvas' ? <div className="dbody cvswrap">
+          {/* Obsidian 의 `.canvas` — 보기만이 아니라 **고치기까지** (2026-09-13 Dave 확정) */}
+          <Suspense fallback={<div className="dbody"><div className="skel" style={{ width: '70%' }} /></div>}>
+            <Canvas key={rel} text={doc.text ?? ''} onCommit={(t) => { onDraft(t); void save(t) }} onOpenFile={(f) => docs.open(f)} raw={(f) => raw(f.replace(/^\.\//, ''))} readOnly={!!doc.truncated} />
+          </Suspense>
+        </div>
       : doc.kind === 'image' ? <div className="dbody center"><img src={raw(rel)} style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 6 }} /></div>
       : doc.kind === 'html' ? <div className="dbody htmlv">
           {/* 🔴 **샌드박스 안에서 그린다.** 에이전트가 만든 리포트를 앱 안에서 그대로 보되,

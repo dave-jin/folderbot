@@ -9,6 +9,7 @@ import { syntaxTree, syntaxHighlighting, defaultHighlightStyle, HighlightStyle }
 import { tags as t } from '@lezer/highlight'
 import { BARE_URL_RE } from '../core/favicon'
 import { GLOBE, faviconNow, onFavicon } from './favicons'
+import { formatKeymap, selectionBar, slashMenu } from './mdFormat'
 
 /**
  * 라이브 프리뷰 마크다운 편집기 — 서식이 보이는 채로 그 자리에서 고친다.
@@ -412,6 +413,17 @@ function build(state: EditorState): { deco: DecorationSet; atoms: { from: number
     const live = active.has(n)
     const text = line.text
 
+    // 콜아웃 `> [!note] …` — 표시는 숨기고 줄에 색을 준다 (Obsidian 표기)
+    const cal = /^\s*>\s*\[!([a-zA-Z]+)\]\s?/.exec(text)
+    if (cal) {
+      const kind = cal[1].toLowerCase()
+      marks.push(Decoration.line({ class: `lp-cal lp-cal-${['note', 'tip', 'warning', 'danger', 'info', 'success'].includes(kind) ? kind : 'note'}` }).range(line.from))
+      const at = line.from + cal[0].indexOf('[')
+      const to = line.from + cal[0].length
+      marks.push(HIDE.range(at, to))
+      atoms.push({ from: at, to })
+    }
+
     // 가로줄 — 프론트매터 안(경계)은 빼고
     if (n > fmEnd && HR_RE.test(text) && text.trim()) {
       marks.push(Decoration.replace({ widget: new HrWidget(), block: true }).range(line.from, line.to))
@@ -536,7 +548,9 @@ export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, 
     const el = box.current; if (!el) return
     let timer = 0
     const ext: Extension[] = [
-      history(), keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+      history(), formatKeymap, keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+      // 서식 — `/` 메뉴 · 고른 글 위 막대 · ⌘B/⌘I/⌘K (`mdFormat.ts`)
+      slashMenu(), selectionBar(),
       markdown({ extensions: [GFM] }), syntaxHighlighting(HL), syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       highlightSelectionMatches(),
       lpField, atomic, caretGuard,

@@ -99,8 +99,10 @@ export function recent(base: string, limit = 12): TreeNode[] {
   return out.sort((a, b) => b.mtime - a.mtime).slice(0, limit)
 }
 
-export function kindOf(abs: string): 'text' | 'image' | 'pdf' | 'html' | 'other' {
+export function kindOf(abs: string): 'text' | 'image' | 'pdf' | 'html' | 'canvas' | 'other' {
   const e = extname(abs).toLowerCase()
+  // ⚠ `.canvas` 는 JSON 이라 TEXT_EXT 로 떨어지면 원문이 보인다 — 먼저 가른다(Obsidian JSON Canvas)
+  if (e === '.canvas') return 'canvas'
   // ⚠ html 은 TEXT_EXT 에도 들어 있다 — **먼저** 보지 않으면 원문으로 떨어진다.
   //    에이전트가 만든 리포트·차트를 앱 안에서 그대로 보려는 것이 이 갈래의 존재 이유다.
   if (e === '.html' || e === '.htm') return 'html'
