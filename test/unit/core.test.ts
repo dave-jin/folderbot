@@ -93,3 +93,25 @@ describe('todo edit · delete', () => {
     expect(deleteLine(md, 0)).toBe(md)
   })
 })
+
+import { closeOpenItems } from '../../src/core/chat'
+describe('closeOpenItems', () => {
+  const mk = () => ([
+    { id: 'a1', t: 1, kind: 'assistant', text: 'x', streaming: true },
+    { id: 't_1', t: 1, kind: 'tool', name: 'Bash', summary: 'ls' },
+    { id: 't_2', t: 1, kind: 'tool', name: 'Read', summary: 'a', result: 'ok' },
+    { id: 't_3', t: 1, kind: 'subagent', name: '조사', prompt: '', tools: 3, last: '', status: 'run' },
+    { id: 't_4', t: 1, kind: 'subagent', name: '끝', prompt: '', tools: 1, last: '', status: 'done' }
+  ] as unknown as import('../../src/core/types').ChatItem[])
+  it('result — 스트리밍 끝, 결과 없는 도구·run 서브에이전트는 done', () => {
+    const items = mk(); const ch = closeOpenItems(items, 'result')
+    expect(ch.map((c) => c.id)).toEqual(['a1', 't_1', 't_3'])
+    expect((items[3] as { status: string }).status).toBe('done'); expect((items[0] as { streaming?: boolean }).streaming).toBe(false)
+  })
+  it('restore/exit — 중단으로 표시하고 이유를 남긴다', () => {
+    const items = mk(); closeOpenItems(items, 'restore')
+    expect((items[1] as { isError?: boolean; result?: string }).isError).toBe(true); expect((items[1] as { result?: string }).result).toMatch(/다시 떠서/)
+    expect((items[3] as { status: string; result?: string }).status).toBe('error')
+    expect(closeOpenItems(items, 'exit')).toEqual([]) // 두 번 부르면 바뀔 게 없다
+  })
+})

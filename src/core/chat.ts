@@ -66,3 +66,20 @@ export function itemId(prefix = 'i'): string {
   seq = (seq + 1) % 1_000_000
   return `${prefix}${Date.now().toString(36)}${seq.toString(36)}`
 }
+
+/**
+ * 턴이 끝났거나(result) 워커가 죽었거나 호스트가 다시 떴을 때 — 아직 «진행 중» 으로 남은 항목을 마감한다.
+ * 종전엔 호스트 재시작 시 세션 state 만 idle 로 바꾸고 items 는 그대로 둬서, 스트리밍 답·결과 없는 도구·
+ * run 상태 서브에이전트가 **영원히 스피너**로 남았다 (2026-09-13 Dave: 업데이트로 호스트가 재시작된 뒤 «실행 중 · 도구 42회»).
+ * @returns 바뀐 항목들 (렌더러에 replace 로 밀어 준다)
+ */
+export function closeOpenItems(items: ChatItem[], reason: 'result' | 'exit' | 'restore'): ChatItem[] {
+  const changed: ChatItem[] = []
+  const note = reason === 'result' ? undefined : reason === 'exit' ? '세션이 끝나 중단됨' : '호스트가 다시 떠서 중단됨'
+  for (const it of items) {
+    if ((it.kind === 'assistant' || it.kind === 'thinking') && it.streaming) { it.streaming = false; changed.push(it) }
+    else if (it.kind === 'tool' && it.result === undefined && !it.isError) { if (reason === 'result') it.result = ''; else { it.result = note; it.isError = true } changed.push(it) }
+    else if (it.kind === 'subagent' && it.status === 'run') { if (reason === 'result') it.status = 'done'; else { it.status = 'error'; it.result = note } changed.push(it) }
+  }
+  return changed
+}

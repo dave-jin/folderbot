@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { transition, shouldNotify } from '../core/stateMachine'
-import { assistantText, contextOf, itemId, toolSummary, touchedPath, type StreamLine } from '../core/chat'
+import { assistantText, closeOpenItems, contextOf, itemId, toolSummary, touchedPath, type StreamLine } from '../core/chat'
 import type { Bot, ChatItem, PermissionMode, PermissionRequest, SessionInfo, SessionState } from '../core/types'
 import { atomicWrite, dataDir, ensureDir } from './paths'
 
@@ -192,6 +192,7 @@ export class SessionManager extends EventEmitter {
       try {
         const r = JSON.parse(readFileSync(join(this.dir, f), 'utf8')) as SessionRec
         if (r.state === 'running' || r.state === 'awaiting_input') r.state = 'idle' // 호스트가 다시 뜨면 워커는 없다
+        if (closeOpenItems(r.items, 'restore').length) atomicWrite(join(this.dir, f), JSON.stringify({ ...r, items: r.items.slice(-1500) })) // 스피너로 남은 항목도 함께 마감
         this.recs.set(r.id, r)
       } catch { /* skip */ }
     }
@@ -268,6 +269,8 @@ export class SessionManager extends EventEmitter {
     w.on('exit', (code: number | null, _sig: string | null, err: string) => {
       if (this.workers.get(r.id) === w) this.workers.delete(r.id)
       if (w.cliSessionId) r.cliSessionId = w.cliSessionId
+      for (const it of closeOpenItems(r.items, 'exit')) this.push(r, it, true)
+      this.streaming.delete(r.id); this.thinking.delete(r.id); this.thinkSent.delete(r.id); this.thinkShown.delete(r.id)
       if (code !== 0 && code !== 143 && code !== 137 && code !== null) {
         r.lastError = (err || `exit ${code}`).trim().slice(-600)
         const authErr = AUTH_ERROR.test(r.lastError)
@@ -386,7 +389,7 @@ export class SessionManager extends EventEmitter {
       if (parent) return
       const cur = this.streaming.get(r.id); if (cur) { cur.streaming = false; this.streaming.delete(r.id); this.push(r, cur, true) }
       this.endThinking(r)
-      for (const it of r.items) if (it.kind === 'subagent' && it.status === 'run') { it.status = 'done'; this.push(r, it, true) }
+      for (const it of closeOpenItems(r.items, 'result')) this.push(r, it, true)
       this.push(r, { id: itemId('r'), t: Date.now(), kind: 'result', ok: !line.is_error, durationMs: line.duration_ms ?? 0, costUsd: line.total_cost_usd, error: line.is_error ? String(line.error ?? line.result ?? '') : undefined })
       const ctx = contextOf(line); if (ctx) r.ctx = ctx
       this.setActivity(r, '', true)
