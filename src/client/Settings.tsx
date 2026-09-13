@@ -198,6 +198,15 @@ function HostPane() {
 }
 
 /** 설정 › 에이전트 — 모든 봇이 함께 쓰는 것. 폴더마다 다른 것은 «하네스» 칸에 있다 */
+/** ⚠ 화면에는 영문 판정(`loggedin`)을 그대로 내지 않는다 — 사람이 읽을 말이어야 한다 */
+const VERDICT_T: Record<string, string> = { loggedin: '로그인됨', loggedout: '로그아웃', unreadable: '못 읽음', unknown: '확인 전' }
+const VERDICT_D: Record<string, string> = {
+  loggedin: '키체인 로그인이 읽혀요.',
+  loggedout: '호스트 맥 터미널에서 claude → /login 을 해 주세요.',
+  unreadable: '로그인은 있는데 이 문맥에서 못 읽어요 — 호스트를 GUI 터미널에서 띄우거나 장기 토큰을 넣으세요.',
+  unknown: '아직 확인하지 않았어요.'
+}
+
 function AgentsPane() {
   const { s, refresh } = useStore()
   const [list, setList] = useState<Provider[] | null>(null)
@@ -213,6 +222,15 @@ function AgentsPane() {
   const hasCodex = (list ?? []).some((p) => p.id === 'codex')
   const cxAuth = s.defaults.codex?.auth
   const saveT = async (t: string) => { setBusy(true); try { await api('/auth/token', { body: { token: t } }); await refresh(); setMsg(t ? '토큰을 저장했어요.' : '토큰을 지웠어요.'); setTok('') } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) } }
+  /** 다시 연결 — 인증을 다시 읽고 일꾼을 내린다. 몇이 지금 내려갔고 몇이 턴 뒤에 내려갈지 말해 준다 */
+  const reconnect = async (agent?: 'claude' | 'codex') => {
+    setBusy(true)
+    try {
+      const r = await api<{ now: number; pending: number }>('/auth/reconnect', { body: { agent } })
+      await refresh()
+      setMsg(r.pending ? `${r.now}개를 다시 연결했어요 · ${r.pending}개는 턴이 끝나면 이어서 합니다.` : r.now ? `${r.now}개를 다시 연결했어요 — 다음 메시지부터 새 환경이에요.` : '연결할 일꾼이 없었어요 — 다음 메시지부터 새 환경으로 뜹니다.')
+    } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) }
+  }
   const cut = (xs: HarnessItem[]) => (all ? xs : xs.slice(0, 4))
   return <>
     <p className="lead">모든 봇이 함께 쓰는 것들입니다. 폴더마다 다른 것은 <b>하네스</b> 칸에 있어요.</p>
@@ -247,12 +265,27 @@ function AgentsPane() {
       <input className="sin mono" type="password" placeholder="sk-…" value={cxKey} onChange={(e) => setCxKey(e.target.value)} />
       <button className="btn" disabled={busy || !cxKey.trim()} onClick={() => { void saveCx({ apiKey: cxKey }); setCxKey('') }}>저장</button>
     </Row> : null}
+    {hasCodex ? <Row t="Codex 다시 연결" d={<>터미널에서 <span className="mono">codex login</span> 을 새로 했거나 키를 바꿨으면 눌러 주세요. Codex 세션의 일꾼만 내려 다음 메시지에 새로 뜹니다.</>} data-t="Codex 다시 연결">
+      <button className="btn" disabled={busy} onClick={() => void reconnect('codex')}>다시 연결</button>
+    </Row> : null}
     {hasCodex && cxAuth?.how === 'key' ? <Row t="Codex 키 지우기" d="터미널 로그인(codex login) 모드로 돌아갑니다." danger><button className="btn danger" disabled={busy} onClick={() => void saveCx({ apiKey: '' })}>지우기</button></Row> : null}
 
     <Group t="Claude 인증" />
-    <Row t="Claude 로그인" d={msg || '키체인 로그인 상태예요.'}>
-      <span className="sv" style={{ color: s.auth.verdict === 'loggedin' ? 'var(--done)' : 'var(--wait)' }}>{s.auth.verdict}{s.auth.email ? ` · ${s.auth.email}` : ''}</span>
+    <Row t="Claude 로그인" d={msg || VERDICT_D[s.auth.verdict]}>
+      <span className="sv" style={{ color: s.auth.verdict === 'loggedin' ? 'var(--done)' : 'var(--wait)' }}>{VERDICT_T[s.auth.verdict]}{s.auth.email ? ` · ${s.auth.email}` : ''}</span>
       <button className="btn ghost" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button>
+    </Row>
+    {/* 🔴 **지금 무엇으로 붙어 있나** — 이 한 줄이 «왜 Akiflow 가 안 뜨지» 를 그 자리에서 답한다
+        (2026-09-13 Dave 보고). 토큰을 쓰면 CLI 가 claude.ai 커넥터 로딩을 통째로 건너뛴다. */}
+    <Row t="쓰는 인증" d={s.auth.mode === 'token'
+      ? <>장기 토큰으로 붙어 있어요. ⚠ <b>이 모드에서는 claude.ai 커넥터(Akiflow 같은 것)가 안 붙습니다</b> — 토큰 스코프에 <span className="mono">user:mcp_servers</span> 가 없어요. 호스트 맥 터미널에서 <span className="mono">claude</span> → <span className="mono">/login</span> 을 하면 키체인 로그인이 자동으로 우선합니다.</>
+      : <>키체인 로그인으로 붙어 있어요 — <b>claude.ai 커넥터가 함께 뜹니다</b>. (장기 토큰이 저장돼 있어도 키체인이 읽히면 그쪽을 씁니다.)</>} data-t="쓰는 인증">
+      <span className="sv" style={{ color: s.auth.mode === 'token' ? 'var(--wait)' : 'var(--done)' }}>{s.auth.mode === 'token' ? '장기 토큰' : '키체인 로그인'}</span>
+    </Row>
+    {/* 🔴 **다시 연결** — 도구 목록·인증은 워커가 뜰 때 고정된다. 터미널에서 로그인을 새로 해도
+        이미 떠 있는 세션에는 안 닿는다. 그래서 워커만 내리고 대화는 남긴다. */}
+    <Row t="다시 연결" d={<>로그인을 새로 했거나 커넥터를 붙였으면 눌러 주세요. <b>대화는 그대로 두고 일꾼만 내립니다</b> — 다음 메시지에 새 환경으로 다시 떠요. 일하는 중인 세션은 <b>턴이 끝나면</b> 내려갑니다.</>} data-t="다시 연결">
+      <button className="btn" disabled={busy} onClick={() => void reconnect()}>다시 연결</button>
     </Row>
 
     <Group t={`커넥터 (MCP)${gh ? ` · ${gh.mcp.length}` : ''}`} right={gh && gh.mcp.length > 4 ? <button className="lk" onClick={() => setAll(!all)}>{all ? '접기' : '모두 보기'}</button> : undefined} />

@@ -961,6 +961,22 @@ try {
           ok('파일 휴지통 · 옮기기 — 봇 폴더 안에서만, 지우지 않고 옮긴다')
         }
         /**
+         * 🔴 **다시 연결** (2026-09-13 Dave: *«현재 연결된 claude code 나 codex 를 재 연결하는 기능이 없어»*).
+         *    도구 목록·인증은 **워커가 뜰 때 고정된다** — 터미널에서 로그인을 새로 해도 이미 떠 있는
+         *    세션에는 안 닿는다. 그래서 워커만 내리고 **대화·세션 id 는 남긴다**.
+         * ⛔ 일하는 중인 워커는 그 자리에서 안 죽인다(턴이 끝나면 내려간다).
+         */
+        {
+          const before = await api(`/bots/${bot.id}/sessions`)
+          const r = await api('/auth/reconnect', {})
+          if (typeof r.now !== 'number' || typeof r.pending !== 'number') fail('다시 연결: 몇 개를 다뤘는지 안 알려 준다 ' + JSON.stringify(r))
+          const after = await api(`/bots/${bot.id}/sessions`)
+          if (after.length !== before.length) fail('🔴 다시 연결이 세션을 지웠다 — 일꾼만 내려야 한다 ' + JSON.stringify({ b: before.length, a: after.length }))
+          const chat = await api(`/sessions/${before[0].id}/chat`)
+          if (!chat.items.length) fail('🔴 다시 연결이 대화를 지웠다')
+          ok('다시 연결 — 일꾼만 내리고 세션·대화는 남는다')
+        }
+        /**
          * 🔴 **답 아래 줄은 아이콘만** (2026-09-13 Dave) — 글자를 빼고 툴팁이 말한다.
          * ⛔ **복사는 원격에서 조용히 안 됐다** — `navigator.clipboard` 는 보안 컨텍스트에만 있고,
          *    폰·다른 맥이 여는 `http://100.x.x.x:7373` 에는 **그 객체가 없다**(`?.` 라 오류도 안 났다).

@@ -12,13 +12,27 @@ import { fitsProvider } from '../core/agents'
 import type { Bot, ChatItem, PermissionMode, PermissionRequest, SessionInfo, SessionState } from '../core/types'
 import { atomicWrite, dataDir, ensureDir } from './paths'
 
-/** 워커 env — 중첩 마커를 지우고, 설정된 장기 토큰이 있으면 넣는다 */
+/**
+ * 워커 env — 중첩 마커를 지우고, **필요할 때만** 장기 토큰을 넣는다.
+ *
+ * 🔴 **키체인 로그인이 있으면 토큰을 안 넣는다** (2026-09-13 Dave 보고 — Akiflow MCP 가 안 뜸).
+ *    `CLAUDE_CODE_OAUTH_TOKEN` 이 있으면 CLI 는 «다른 인증 소스가 우선» 으로 판정해
+ *    **claude.ai 커넥터(MCP) 로딩을 통째로 건너뛴다**. 게다가 `claude setup-token` 토큰의 스코프는
+ *    `user:inference user:profile` 뿐이라 `user:mcp_servers` 가 없어, 그 단계를 넘어도 못 쓴다.
+ *    → GUI 앱(Folder Bot.app)은 키체인을 읽을 수 있으므로, 읽히면 **그쪽이 낫다**.
+ * ⚠ 토큰은 «키체인을 못 읽는 자리»(SSH·launchd 로 띄운 미니)를 위한 **보험**으로 남는다 —
+ *    그 자리에서는 `keychain` 이 거짓이라 자동으로 토큰이 다시 들어간다.
+ * ⛔ 이 판정을 워커마다 다시 계산하지 마라 — `host.refreshAuth()` 한 곳이 정하고 여기에 알려 준다.
+ *    두 곳이 각자 물어보면 «어떤 세션은 커넥터가 뜨고 어떤 세션은 안 뜨는» 상태가 된다.
+ */
 let oauthToken = ''
+let keychainOk = false
 export function setOauthToken(t: string | undefined): void { oauthToken = (t ?? '').trim() }
-export function cleanClaudeEnv(): Record<string, string> {
+export function setKeychainLogin(ok: boolean): void { keychainOk = ok }
+export function cleanClaudeEnv(opts: { noToken?: boolean } = {}): Record<string, string> {
   const env = { ...process.env } as Record<string, string>
   for (const k of Object.keys(env)) if (/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_EFFORT)/.test(k)) delete env[k]
-  if (oauthToken) env.CLAUDE_CODE_OAUTH_TOKEN = oauthToken
+  if (oauthToken && !keychainOk && !opts.noToken) env.CLAUDE_CODE_OAUTH_TOKEN = oauthToken
   // GUI 앱(Electron)에서 띄우면 셸 PATH 가 없다 — claude 가 부르는 node·git 이 보이게
   env.PATH = [env.PATH, '/opt/homebrew/bin', '/usr/local/bin', `${process.env.HOME ?? ''}/.local/bin`].filter(Boolean).join(':')
   return env
@@ -480,6 +494,29 @@ export class SessionManager extends EventEmitter {
       if (r.items.some((it) => it.kind === 'subagent' && it.bg && it.status === 'run')) continue // 백그라운드 에이전트가 돌면 워커를 죽이지 않는다 — 죽이면 결과가 사라진다
       if (now - r.lastActivity > this.idleTtlMs) { w.kill(); this.workers.delete(id); this.emit('sessions', r.botId) }
     }
+  }
+  /**
+   * **다시 연결** (2026-09-13 Dave: *«현재 연결된 claude code 나 codex 를 재 연결하는 기능이 없어»*).
+   *
+   * 인증이 바뀌었을 때 **살아 있는 워커는 옛 환경을 그대로 쥐고 있다** — 로그인을 새로 해도,
+   * 토큰을 지워도, 이미 뜬 프로세스에는 닿지 않는다(도구 목록·인증은 시작 시점에 고정된다).
+   * 그래서 워커만 내린다: 세션 id·대화·레일 카드는 그대로 남고, 다음 메시지에 **같은 id 로**
+   * 새 환경으로 다시 뜬다.
+   *
+   * ⛔ **일하는 중인 워커를 그 자리에서 죽이지 않는다** — 턴이 끊기면 사람이 쓴 지시가 사라진다.
+   *    `restartPending` 으로 표시해 두고 **턴이 끝나면** 스스로 내려간다(설정 변경과 같은 길).
+   * ⚠ 되돌아오는 수는 «지금 내린 것 · 끝나면 내릴 것» 둘이다 — 화면이 그대로 사람에게 말해 준다.
+   */
+  recycleAll(vendor?: 'claude' | 'codex'): { now: number; pending: number } {
+    let now = 0, pending = 0
+    for (const [id, w] of [...this.workers]) {
+      const r = this.recs.get(id)
+      if (!r || (vendor && r.vendor !== vendor)) continue
+      if (r.state === 'running' || r.state === 'awaiting_input' || w.pending.size) { r.restartPending = true; pending++; continue }
+      w.kill(); this.workers.delete(id); now++
+      this.emit('sessions', r.botId)
+    }
+    return { now, pending }
   }
   hibernate(id: string): void { const w = this.workers.get(id); if (w) { w.kill(); this.workers.delete(id) } const r = this.recs.get(id); if (r) this.emit('sessions', r.botId) }
   stopAll(): void { for (const w of this.workers.values()) w.kill() }

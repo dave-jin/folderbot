@@ -16,9 +16,24 @@ function credentialsExpiresAt(): number | null {
   } catch { return null }
 }
 
-export function checkAuth(bin?: string): Promise<AuthState> {
+/**
+ * 인증 상태 — 🔴 **두 번 묻는다.**
+ * ① 평소 환경 그대로(= 워커가 보는 것) ② **장기 토큰을 뺀 채**(= 키체인만).
+ * ②가 참이면 `cleanClaudeEnv` 가 토큰을 안 넣고, 그래야 claude.ai 커넥터가 뜬다
+ * (`session.ts` 의 `cleanClaudeEnv` 머리말 — Dave 의 Akiflow MCP 사고).
+ * ⚠ 토큰이 설정돼 있지 않으면 ②를 따로 묻지 않는다 — 같은 답이라 프로세스만 하나 더 뜬다.
+ */
+export async function checkAuth(bin?: string): Promise<AuthState> {
+  const main = await probe(bin)
+  const hasToken = !!cleanClaudeEnv().CLAUDE_CODE_OAUTH_TOKEN
+  if (!hasToken) return { ...main, keychain: main.verdict === 'loggedin' }
+  const bare = await probe(bin, { noToken: true })
+  return { ...main, keychain: bare.verdict === 'loggedin' }
+}
+
+function probe(bin?: string, opts: { noToken?: boolean } = {}): Promise<AuthState> {
   return new Promise((resolve) => {
-    execFile(claudeBin(bin), ['auth', 'status', '--json'], { env: cleanClaudeEnv(), timeout: 15000 }, (err, stdout) => {
+    execFile(claudeBin(bin), ['auth', 'status', '--json'], { env: cleanClaudeEnv(opts), timeout: 15000 }, (err, stdout) => {
       const now = Date.now()
       if (err && !stdout) return resolve({ verdict: 'unknown', checkedAt: now, reason: err.message.slice(0, 200) })
       try {

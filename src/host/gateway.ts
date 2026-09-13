@@ -206,6 +206,20 @@ export class Gateway {
     if (p === '/api/push/test' && m === 'POST') { h.notifier.emit('done', 'orch', 'Folder Bot', '푸시가 도착하면 성공이에요', undefined, { mac: false }); return json(200, { ok: true }) }
     if (p === '/api/tailnet') return json(200, await tailnetInfo())
     if (p === '/api/auth/refresh' && m === 'POST') return json(200, await h.refreshAuth())
+    /**
+     * **다시 연결** — 인증을 다시 읽고, 살아 있는 워커를 내려 **다음 메시지가 새 환경으로 뜨게** 한다.
+     * 🔴 이게 필요한 이유: 도구 목록과 인증은 **워커가 뜰 때 고정된다.** 터미널에서 `claude /login`
+     *    을 새로 해도, 토큰을 지워도, 이미 떠 있는 세션에는 닿지 않는다(Dave 의 Akiflow MCP 사고와
+     *    같은 뿌리다). 사람이 할 수 있는 일은 «앱 다시 켜기» 뿐이었다.
+     * ⛔ 일하는 중인 워커는 그 자리에서 안 죽인다 — 턴이 끝나면 스스로 내려간다(`recycleAll`).
+     */
+    if (p === '/api/auth/reconnect' && m === 'POST') {
+      const b = await body()
+      const vendor = b.agent === 'codex' ? 'codex' : b.agent === 'claude' ? 'claude' : undefined
+      const auth = await h.refreshAuth()
+      const r = h.sessions.recycleAll(vendor)
+      return json(200, { auth, codex: codexAuth(h.cfg.openaiApiKey), ...r })
+    }
     if (p === '/api/names' && m === 'POST') { const b = await body(); h.setNames({ hostName: b.hostName === undefined ? undefined : String(b.hostName), deviceId: who.id, deviceName: b.deviceName === undefined ? undefined : String(b.deviceName) }); return json(200, { hostName: h.hostName(), device: { id: who.id, name: who.main ? h.hostName() : (h.cfg.devices.find((d) => d.id === who.id)?.name ?? who.device), main: who.main } }) }
     if (p === '/api/defaults' && m === 'POST') { const b = await body(); h.setDefaults(String(b.model ?? ''), String(b.effort ?? ''), b.agent === 'codex' ? 'codex' : 'claude'); return json(200, { model: h.cfg.defaultModel ?? '', effort: h.cfg.defaultEffort ?? '' }) }
     // Codex 설정 — 샌드박스(= 우리가 승인 화면을 못 띄우므로 이게 곧 권한 정책이다)와 API 키

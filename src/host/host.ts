@@ -10,7 +10,7 @@ import { Notifier } from './notify'
 import { type HostConfig, absRoot, saveConfig } from './paths'
 import { ORCH_ID, Registry } from './registry'
 import { Routines, approveToMode } from './routines'
-import { SessionManager, setOauthToken, AUTH_ERROR, type SessionRec } from './session'
+import { SessionManager, setOauthToken, setKeychainLogin, AUTH_ERROR, type SessionRec } from './session'
 import { readTodo, todoAdd, todoContext } from './todoStore'
 import { recent as recentFiles, tree as fileTree } from './files'
 
@@ -161,7 +161,14 @@ export class Host {
     this.auth = await checkAuth(this.cfg.claudeBin)
     // 세션이 인증 오류로 죽었는데 status 가 «로그인됨» 이라고 하면, status 가 틀린 것 — 문맥에서 못 읽는 경우다
     if (fromFailure && this.auth.verdict === 'loggedin') this.auth = { ...this.auth, verdict: 'unreadable', reason: '세션 프로세스가 자격증명을 못 읽었어요' }
-    this.auth.mode = this.cfg.claudeOauthToken ? 'token' : 'login'
+    /**
+     * 🔴 **어느 인증을 쓸지 여기서 한 번만 정한다** — 워커 env 가 그 결정을 따른다.
+     *    키체인 로그인이 읽히면 장기 토큰을 **안 넣는다**: 토큰이 있으면 CLI 가 claude.ai 커넥터(MCP)
+     *    로딩을 건너뛴다(`session.ts` 의 `cleanClaudeEnv` 머리말 · Dave 의 Akiflow 사고).
+     * ⚠ `mode` 는 «실제로 무엇을 쓰고 있나» 다 — 토큰이 설정돼 있어도 키체인이 이기면 `login` 이다.
+     */
+    setKeychainLogin(!!this.auth.keychain)
+    this.auth.mode = this.cfg.claudeOauthToken && !this.auth.keychain ? 'token' : 'login'
     this.broadcast({ ev: 'auth', auth: this.auth })
     if (this.auth.verdict === 'unreadable' && prev !== 'unreadable') this.notifier.emit('error', ORCH_ID, `${this.hostName()} 에서 Claude 로그인이 필요해요`, '호스트 맥에서 터미널 → claude → /login. 대기 중인 지시는 복구되면 이어서 해요.')
     if (this.auth.verdict === 'loggedout' && prev !== 'loggedout') this.notifier.emit('error', ORCH_ID, 'Claude 가 로그아웃됐어요', `${this.hostName()} 에서 claude → /login 을 해 주세요.`)

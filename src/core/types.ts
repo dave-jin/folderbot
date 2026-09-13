@@ -170,6 +170,12 @@ export interface AuthState {
   reason?: string
   /** login = 키체인 로그인 · token = setup-token 장기 토큰 */
   mode?: 'login' | 'token'
+  /**
+   * 키체인에 **쓸 수 있는 로그인**이 있나 — 장기 토큰을 빼고 따로 물어본 답이다.
+   * 🔴 이 값이 참이면 워커에 `CLAUDE_CODE_OAUTH_TOKEN` 을 **안 넣는다**: 토큰이 있으면 CLI 가
+   *    claude.ai 커넥터(MCP) 로딩을 통째로 건너뛴다(`session.ts` 의 `cleanClaudeEnv` 머리말).
+   */
+  keychain?: boolean
 }
 
 export type NotifyKind = 'awaiting' | 'done' | 'error' | 'todo' | 'routine'
