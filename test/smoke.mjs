@@ -178,6 +178,9 @@ try {
         if (!(await pg.$('.panel .trow'))) fail('ui tree missing')
         if (!(await pg.$('.chat-hdr.glass')) || !(await pg.$('.composer .cbar')) || !(await pg.$('.ring'))) fail('ui composer bar / glass header missing')
         if (!(await pg.$('.sb-foot .mr.main'))) fail('ui main badge')
+        // 표정 C — 아이콘 안에 눈 그룹, 상태가 있으면 모서리 배지. 행 옆의 별도 점은 없다
+        if (!(await pg.$('.brow .fb .eyes'))) fail('ui folderbot eyes group'); if (await pg.$('.brow > .dot')) fail('ui rail should not have a separate dot')
+        const hdrBg = await pg.$eval('.chat-hdr', (e) => getComputedStyle(e).backgroundColor); if (/rgba\(\d+, \d+, \d+, 0/.test(hdrBg)) fail('ui chat header should be opaque: ' + hdrBg)
         // 열 최소 폭 — 저장된 레이아웃이 과해도(목록 480 · 문서 1100) 대화 열은 360 이상, 문서 열은 380 이상
         {
           const pg3 = await br.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })

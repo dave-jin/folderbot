@@ -116,8 +116,8 @@ function useUpdate(say: (m: string) => void): [UpdState | null, () => void, () =
 }
 function UpdateChip({ version, st, onCheck, onApply }: { version: string; st: UpdState | null; onCheck: () => void; onApply: () => void }) {
   if (!isDesktop || !st) return <button className="bd mono upd" onClick={onCheck} title={isDesktop ? '업데이트 확인' : '호스트 버전'}>v{version}</button>
-  if (st.staged?.ready) return st.deferred ? <span className="bd" style={{ color: 'var(--wait)' }} title="호스트 모드 — 세션이 전부 유휴가 되는 순간 자동 적용">v{st.staged.version} · 세션 {st.busy}개 끝나면 적용</span>
-    : <button className="bd" style={{ color: 'var(--done)', display: 'inline-flex', alignItems: 'center', gap: 4 }} onClick={onApply} title={st.staged.notes}><span className="dot done" style={{ width: 5, height: 5 }} />v{st.staged.version} 재시작해서 적용</button>
+  if (st.staged?.ready) return st.deferred ? <span className="bd upd" style={{ color: 'var(--wait)' }} title={`v${st.staged.version} 준비됨 — 세션 ${st.busy}개가 끝나면 자동으로 적용`}>v{st.staged.version} · {st.busy}개 끝나면</span>
+    : <button className="bd upd" style={{ color: 'var(--done)' }} onClick={onApply} title={`v${st.staged.version} 준비됨 — 눌러서 재시작·적용\n${st.staged.notes}`}><span className="dot done" style={{ width: 5, height: 5 }} />v{st.staged.version} · 적용</button>
   if (st.downloading) return <span className="bd" title="조용히 받는 중 — 다 받으면 알려 드려요">v{st.staged?.version} 받는 중 {Math.round((st.staged?.progress ?? 0) * 100)}%</span>
   return <button className="bd mono upd" onClick={onCheck} title={st.lastError ? `마지막 확인 실패 — ${st.lastError}` : st.lastCheck ? `업데이트 확인 · 마지막 ${fmtTime(st.lastCheck)}` : '업데이트 확인'} style={st.lastError ? { color: 'var(--wait)' } : undefined}><Icon n="undo" size={10} style={st.checking ? { animation: 'spin 1s linear infinite' } : undefined} />v{st.current}{st.checking ? ' · 확인 중…' : ''}</button>
 }
@@ -229,7 +229,7 @@ function Main() {
         <div className="sb-list">
           {rows.map(([sec, list]) => <div key={sec}>
             <div className="secl">{sec === '관제' ? '관제' : sec}</div>
-            {list.map(({ b, sum }) => <button key={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''}`} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={16} mood={sum.mood} mono /><span className="n"><Mid s={b.name} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span><span className={`dot ${stateDot(sum.state ?? undefined)}`} /><time>{fmtTime(sum.t)}</time></button>)}
+            {list.map(({ b, sum }) => <button key={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''}`} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={16} mood={sum.mood} mono /><span className="n"><Mid s={b.name} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span><time>{fmtTime(sum.t)}</time></button>)}
           </div>)}
         </div>
         {hovRow ? <HoverCard b={hovRow.b} sum={hovRow.sum} top={hov!.top} left={fit.sb + 6} /> : null}
@@ -238,7 +238,7 @@ function Main() {
         <button className="ib" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span className="fly"><b>폴더 선택 · 시작</b><span>후보 {s.candidates.filter((c) => !c.active).length}</span></span></button>
         <button className="ib" onClick={() => setModal('notify')}><Icon n="bell" size={14} />{unread ? <span className="bd">{unread}</span> : null}<span className="fly"><b>알림</b><span>{unread ? `읽지 않음 ${unread}` : '없음'}</span></span></button>
         <div className="gap" />
-        {stripBots.map(({ b, sum }) => <button key={b.id} className={`bot ${b.id === bot.id ? 'on' : ''}`} onClick={() => go(b.id)}><FolderBot color={b.color} size={17} mood={sum.mood} mono />{stateDot(sum.state ?? undefined) !== 'none' ? <span className={`dot ${stateDot(sum.state ?? undefined)}`} /> : null}<span className="fly"><b><Mid s={b.name} /></b><span><span className={`dot ${stateDot(sum.state ?? undefined)}`} style={{ marginRight: 5 }} />{sum.text}</span><span className="t3">{b.section} · {fmtTime(sum.t)}</span></span></button>)}
+        {stripBots.map(({ b, sum }) => <button key={b.id} className={`bot ${b.id === bot.id ? 'on' : ''}`} onClick={() => go(b.id)}><FolderBot color={b.color} size={17} mood={sum.mood} mono /><span className="fly"><b><Mid s={b.name} /></b><span><span className={`dot ${stateDot(sum.state ?? undefined)}`} style={{ marginRight: 5 }} />{sum.text}</span><span className="t3">{b.section} · {fmtTime(sum.t)}</span></span></button>)}
       </div>}
       <div className="divx" onPointerDown={sbOpen ? dragX('sb', 1) : undefined} onDoubleClick={() => setLay({ ...lay, sb: DEF.sb, sbOpen: true, sbPin: true })} />
 
@@ -321,7 +321,7 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk }: { rows: Row[]
       </div>
       {rows.map(([sec, list]) => <div key={sec}>
         <div className="secl">{sec}</div>
-        {list.map(({ b, sum }) => <button key={b.id} className="mrow" onClick={() => go(b.id)}><span className="av"><FolderBot color={b.color} size={46} mood={sum.mood} mono />{stateDot(sum.state ?? undefined) !== 'none' ? <span className={`dot ${stateDot(sum.state ?? undefined)}`} /> : null}</span><span className="t"><span className="l1"><b><Mid s={b.name} /></b><time>{fmtTime(sum.t)}</time></span><span className="l2">{sum.text}</span></span></button>)}
+        {list.map(({ b, sum }) => <button key={b.id} className="mrow" onClick={() => go(b.id)}><span className="av"><FolderBot color={b.color} size={46} mood={sum.mood} mono /></span><span className="t"><span className="l1"><b><Mid s={b.name} /></b><time>{fmtTime(sum.t)}</time></span><span className="l2">{sum.text}</span></span></button>)}
       </div>)}
     </div>
     <button className="mpill glassb" onClick={onAsk}><span className="pl"><Icon n="plus" size={20} /></span><span className="tx">폴더에 시키기…</span><Icon n="sub" size={20} color="var(--t2)" /></button>
@@ -498,7 +498,7 @@ function Ring({ pct, size = 18, stroke = 2 }: { pct: number; size?: number; stro
 function Live({ cur, state }: { cur: SessionInfo; state: string }) {
   if (state === 'awaiting_input') return <div className="live"><span className="glow" /><span className="tx">확인 대기 — 위 요청에 응답해 주세요</span><span className="el"><Elapsed from={cur.turnStartedAt} /></span></div>
   const a = cur.activity || '일하는 중'; const think = a.startsWith('생각 중 · ')
-  return <div className="live"><span className="pulse" /><span className="tx">{think ? '생각 중' : a}</span>{think ? <span className="th">— {a.slice(6)}</span> : null}<span className="el"><Elapsed from={cur.turnStartedAt} /></span><button className="stop" onClick={() => api(`/sessions/${cur.id}/interrupt`, { body: {} })} title="중단"><span className="w">중단</span><Icon n="stop" size={12} /></button></div>
+  return <div className="live run"><span className="pulse" /><span className="tx">{think ? '생각 중' : a}</span>{think ? <span className="th">— {a.slice(6)}</span> : null}<span className="el"><Elapsed from={cur.turnStartedAt} /></span><button className="stop" onClick={() => api(`/sessions/${cur.id}/interrupt`, { body: {} })} title="중단"><span className="w">중단</span><Icon n="stop" size={12} /></button></div>
 }
 
 function Item({ it, bot, items, onFile, onDrill, state, say, isLastAssistant, isLastUser, userRef, onRetry }: { it: ChatItem; bot: Bot; items: ChatItem[]; onFile: (p: string) => void; onDrill: (id: string) => void; state: string; say: (m: string) => void; isLastAssistant: boolean; isLastUser: boolean; userRef: React.MutableRefObject<HTMLDivElement | null>; onRetry?: () => void }) {

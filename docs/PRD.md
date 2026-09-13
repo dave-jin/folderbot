@@ -374,6 +374,8 @@ A 로 시작하고 전송 계층을 추상화해 B/C 를 나중에 끼운다. Da
 
 **v0.3.15 (2026-09-13) — 백그라운드 서브에이전트 생애**: CLI 2.1.269 를 직접 돌려 잰 순서 — `Agent{run_in_background}` → `system/task_started{tool_use_id,is_backgrounded}` → 즉시 `tool_result «Async agent launched…»` → `result`(턴 끝) → 부모 id 단 줄들 → `system/task_notification{tool_use_id,status,summary}` → CLI 가 스스로 새 턴(`init`→답→`result`). 종전엔 즉시 tool_result 로 «끝남» 을 찍어 돌고 있는데 끝난 듯 보였다. 이제 `bg` 표시 → 턴이 끝나도 «실행 중», 알림이 오면 끝남+요약. 세션 정보 `bg`(도는 수) — 유휴 회수와 데스크톱 업데이트 적용은 bg=0 일 때만. 스텁이 같은 순서를 흉내 내고 스모크가 launch→running→notification→done→후속 턴을 검사한다. 호스트가 재시작되면(자동 업데이트 포함) 그 에이전트는 사라지므로 «호스트가 다시 떠서 중단됨» 으로 마감된다 — 이게 Dave 스크린샷의 원인(업데이트 재시작 뒤 «실행 중 · 도구 42회» 고착).
 
+**v0.3.16 (2026-09-13) — 진행 애니메이션 1번 · 표정 C · 자잘한 3건**: (Dave 선택) 상태줄의 점을 8px 로 키우고 물결(ripple), 활동 문구는 시머. 폴더봇은 눈·입·표식 그룹에 CSS 키프레임(깜빡임 4.2s · 시선+타이핑 · 눈썹+! · z · 미소 2회 · 흔들림) + 모서리 상태 배지(일하는 중 숨쉬기 · 확인 튕김). 레일·스트립·폰 목록의 별도 점은 배지가 대신. `prefers-reduced-motion` 이면 전부 정지, ≤20px 는 입 애니메이션 생략. 자잘한 것: 신호등을 헤더 44px 중앙에(`trafficLightPosition`), 업데이트 칩 문구 축약+말줄임, 데스크톱 대화 헤더 불투명 + 아래 28px 페이드 띠(글이 헤더에 걸치지 않음).
+
 **미구현·다음**: Codex(`codex app-server`) · 메뉴바 팝오버(카드에서 바로 승인) · Dropbox 동기화 점 · QR 페어링 · Johnny.Decimal 실제 스캔 규칙 · 규칙 인터뷰(custom) · 개발자 서명·공증.
 
 ## 11. 사실 확인 (2026-09-12)

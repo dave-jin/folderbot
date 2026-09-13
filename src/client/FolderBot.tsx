@@ -7,22 +7,31 @@ export function moodOf(state?: SessionState | null, hibernated = false): Mood {
   switch (state) { case 'running': return 'work'; case 'awaiting_input': return 'wait'; case 'done': return 'done'; case 'error': return 'error'; default: return 'idle' }
 }
 
-/** 폴더봇 — 탭 달린 뒷판 + 얼굴 있는 앞판. 표정 = 상태 */
+/**
+ * 폴더봇 — 탭 달린 뒷판 + 얼굴 있는 앞판. 표정 = 상태. (V12 C 안, 2026-09-13 Dave 선택)
+ * 눈·입·표식은 그룹 클래스라 CSS 키프레임이 움직인다(깜빡임·시선·타이핑·눈썹·!·z·미소·흔들림). JS 타이머 없음.
+ * 모서리 배지 = 상태 색(일하는 중 주황 · 확인 노랑 · 끝남 초록 · 오류 빨강) — 레일 18px 에서도 읽힌다. 그래서 행 옆의 별도 점은 뺐다.
+ * 작은 크기(≤20)는 .sm — 입 애니메이션은 끄고 시선·깜빡임·배지만 남긴다.
+ */
 export function FolderBot({ color, size = 36, mood = 'idle', mono = false }: { color: string; size?: number; mood?: Mood; mono?: boolean }) {
   const d = mono ? '#000' : 'rgba(0,0,0,.6)'
   const eyes: Record<Mood, React.ReactNode> = {
-    idle: <><rect x="20" y="30" width="6" height="10" rx="3" fill={d} /><rect x="38" y="30" width="6" height="10" rx="3" fill={d} /></>,
-    work: <><rect x="20" y="33" width="6" height="8" rx="3" fill={d} /><rect x="38" y="33" width="6" height="8" rx="3" fill={d} /><path d="M27 46h10" stroke={d} strokeWidth="3" strokeLinecap="round" /></>,
-    wait: <><rect x="20" y="30" width="6" height="10" rx="3" fill={d} /><rect x="38" y="30" width="6" height="10" rx="3" fill={d} /><circle cx="32" cy="47" r="3" fill={d} /><path d="M50 14v10M50 28v2" stroke="#f5a623" strokeWidth="4" strokeLinecap="round" /></>,
-    done: <><path d="M19 34c2-3 6-3 8 0M37 34c2-3 6-3 8 0" stroke={d} strokeWidth="3" fill="none" strokeLinecap="round" /><path d="M26 44c3 4 9 4 12 0" stroke={d} strokeWidth="3" fill="none" strokeLinecap="round" /></>,
-    sleep: <><path d="M19 36h8M37 36h8" stroke={d} strokeWidth="3" strokeLinecap="round" /><text x="46" y="20" fontSize="12" fontWeight="700" fill={d} fontFamily="system-ui">z</text></>,
-    error: <><path d="M19 30l7 7M26 30l-7 7M37 30l7 7M44 30l-7 7" stroke={d} strokeWidth="3" strokeLinecap="round" /><path d="M27 47c3-3 9-3 12 0" stroke={d} strokeWidth="3" fill="none" strokeLinecap="round" /></>
+    idle: <g className="eyes"><rect x="20" y="30" width="6" height="10" rx="3" fill={d} /><rect x="38" y="30" width="6" height="10" rx="3" fill={d} /></g>,
+    work: <><g className="eyes"><rect x="20" y="33" width="6" height="8" rx="3" fill={d} /><rect x="38" y="33" width="6" height="8" rx="3" fill={d} /></g><path className="mouth" d="M27 46h10" stroke={d} strokeWidth="3" strokeLinecap="round" /></>,
+    wait: <><g className="eyes"><rect x="20" y="30" width="6" height="10" rx="3" fill={d} /><rect x="38" y="30" width="6" height="10" rx="3" fill={d} /></g><circle className="mouth" cx="32" cy="47" r="3" fill={d} /><path className="mark" d="M50 14v10M50 28v2" stroke="#fff" strokeWidth="4" strokeLinecap="round" style={{ filter: 'drop-shadow(0 0 1px rgba(0,0,0,.6))' }} /></>,
+    done: <><g className="eyes"><path d="M19 34c2-3 6-3 8 0M37 34c2-3 6-3 8 0" stroke={d} strokeWidth="3" fill="none" strokeLinecap="round" /></g><path className="mouth" d="M26 44c3 4 9 4 12 0" stroke={d} strokeWidth="3" fill="none" strokeLinecap="round" /></>,
+    sleep: <><g className="eyes"><path d="M19 36h8M37 36h8" stroke={d} strokeWidth="3" strokeLinecap="round" /></g><text className="mark" x="46" y="20" fontSize="12" fontWeight="700" fill={d} fontFamily="system-ui">z</text></>,
+    error: <><g className="eyes"><path d="M19 30l7 7M26 30l-7 7M37 30l7 7M44 30l-7 7" stroke={d} strokeWidth="3" strokeLinecap="round" /></g><path className="mouth" d="M27 47c3-3 9-3 12 0" stroke={d} strokeWidth="3" fill="none" strokeLinecap="round" /></>
   }
+  const badge: Partial<Record<Mood, string>> = { work: 'var(--run)', wait: 'var(--wait)', done: 'var(--done)', error: 'var(--err)' }
   return (
-    <svg viewBox="0 0 64 64" width={size} height={size} style={{ flex: 'none', display: 'block' }} className={`fb fb-${mood}`}>
-      <path d="M6 14a4 4 0 0 1 4-4h14l5 5h29a4 4 0 0 1 4 4v33a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill={color} opacity=".55" />
-      <path d="M6 24a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill={color} />
-      {eyes[mood]}
+    <svg viewBox="0 0 64 64" width={size} height={size} style={{ flex: 'none', display: 'block', overflow: 'visible' }} className={`fb fb-${mood} ${size <= 20 ? 'sm' : ''}`}>
+      <g className="body">
+        <path d="M6 14a4 4 0 0 1 4-4h14l5 5h29a4 4 0 0 1 4 4v33a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill={color} opacity=".55" />
+        <path d="M6 24a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill={color} />
+        {eyes[mood]}
+      </g>
+      {badge[mood] ? <circle className="badge" cx="56" cy="56" r="7" fill={badge[mood]} stroke="var(--bg)" strokeWidth="3" /> : null}
     </svg>
   )
 }
