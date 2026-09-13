@@ -9,6 +9,9 @@ import { RoutineSheet, askName } from './Sheets'
 import { Mark, VendorMark, useProviders } from './Brand'
 import { Float, anchorOf, type Anchor } from './Float'
 import { PROVIDER_LABEL, type ProviderId } from '../core/agents'
+
+/** 클립보드에 «그림 그대로» 넣을 수 있는 것들 */
+const IMG_RE = /\.(png|jpe?g|gif|webp|bmp|avif)$/i
 import { scoreName } from '../core/search'
 import { fmtElapsed, fmtTime, useStore } from './store'
 
@@ -443,6 +446,45 @@ function Tree({ bot, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFol
     }
     window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
   }, [])
+  /**
+   * 새로 만들기 · 복제 · Finder — 전부 **호스트**가 한다(가드도 거기 있다).
+   * ⚠ 만드는 자리는 «누른 것이 폴더면 그 안, 파일이면 그 옆» 이다 — 사람이 기대하는 자리가 그쪽이다.
+   */
+  const main = useStore().s.device.main     // Finder 는 호스트 맥에서만 열린다
+  const dirOf = (n: Node) => (n.dir ? n.rel : n.rel.includes('/') ? n.rel.slice(0, n.rel.lastIndexOf('/')) : '')
+  const makeNew = async (n: Node, kind: 'note' | 'folder') => {
+    const name = await askName(kind === 'folder' ? '새 폴더 이름' : '새 노트 이름 (.md 는 자동)', kind === 'folder' ? '새 폴더' : '새 노트')
+    if (!name) return
+    try {
+      const r = await api<{ rel: string }>(`/bots/${bot.id}/new`, { body: { dir: dirOf(n), name, kind } })
+      say(`${r.rel} 만들었어요`)
+      if (kind === 'note') onOpen(r.rel, true)
+    } catch (e) { say((e as Error).message) }
+  }
+  const dup = async (n: Node) => {
+    try { const r = await api<{ rel: string }>(`/bots/${bot.id}/copy`, { body: { rel: n.rel } }); say(`${r.rel} 로 복제했어요`) } catch (e) { say((e as Error).message) }
+  }
+  const reveal = async (n: Node) => {
+    try { await api(`/bots/${bot.id}/reveal`, { body: { rel: n.rel } }) } catch (e) { say((e as Error).message) }
+  }
+  /**
+   * 이미지 복사 — 🔴 **그림 그대로** 클립보드에. 경로를 복사해 봐야 붙여넣는 쪽은 글자를 받는다.
+   * ⚠ 브라우저가 클립보드에 바로 받아 주는 것은 **PNG 뿐**이라, 다른 형식은 캔버스로 한 번 굽는다.
+   */
+  const copyImage = async (rel: string) => {
+    try {
+      const res = await fetch(`/api/bots/${bot.id}/raw?rel=${encodeURIComponent(rel)}&token=${encodeURIComponent(localStorage.getItem('folderbot:token') ?? '')}`)
+      let blob = await res.blob()
+      if (blob.type !== 'image/png') {
+        const bmp = await createImageBitmap(blob)
+        const cv = document.createElement('canvas'); cv.width = bmp.width; cv.height = bmp.height
+        cv.getContext('2d')?.drawImage(bmp, 0, 0)
+        blob = await new Promise<Blob>((ok2, no) => cv.toBlob((b) => (b ? ok2(b) : no(new Error('못 구웠어요'))), 'image/png'))
+      }
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+      say('이미지를 복사했어요')
+    } catch { say('이 브라우저에서는 이미지 복사를 못 해요') }
+  }
   useEffect(() => { if (!ctx) return; const off = () => setCtx(null); window.addEventListener('click', off); window.addEventListener('keydown', off); return () => { window.removeEventListener('click', off); window.removeEventListener('keydown', off) } }, [ctx])
   const rows = useMemo(() => {
     const out: { n: Node; depth: number }[] = []
@@ -481,8 +523,17 @@ function Tree({ bot, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFol
     {ctx ? <Float at={{ x: ctx.x, y: ctx.y }} onClose={() => setCtx(null)} className="menu ctx">
       {!ctx.n.dir ? <><button onClick={() => onOpen(ctx.n.rel, true)}><span style={{ flex: 1 }}>열기 (고정 탭)</span><span className="k">⏎</span></button><button onClick={() => onAttach(ctx.n.rel)}><span style={{ flex: 1 }}>첨부로 보내기</span></button><button onClick={() => onMention(ctx.n.rel)}><span style={{ flex: 1 }}>@ 로 언급하기</span><span className="k">@</span></button></>
         : <>{ctx.n.botId ? <button className="on" onClick={() => onStartAt(vaultRel(ctx.n.rel), ctx.n.botId)}><Icon n="sub" size={12} /><span style={{ flex: 1 }}>봇 열기</span><span className="k">⏎</span></button> : <button className="on" onClick={() => onStartAt(vaultRel(ctx.n.rel))}><Icon n="sub" size={12} /><span style={{ flex: 1 }}>{bot.orchestrator ? '여기서 에이전트 시작' : '이 하위 폴더로 새 봇 시작'}</span><span className="k">⏎</span></button>}<button onClick={() => onNewFolderAt(vaultRel(ctx.n.rel))}><Icon n="fplus" size={12} /><span style={{ flex: 1 }}>새 폴더 만들기 → 시작</span></button><hr /><button onClick={() => toggleDir(ctx.n.rel)}><span style={{ flex: 1 }}>{exp.has(ctx.n.rel) ? '접기' : '펼치기'}</span></button><button onClick={() => onAttach(ctx.n.rel, true)}><span style={{ flex: 1 }}>폴더째 첨부</span></button></>}
+      {/* 이미지는 **그림 그대로** 클립보드에 — 붙여넣기로 슬랙·문서에 바로 들어간다 */}
+      {!ctx.n.dir && IMG_RE.test(ctx.n.rel) ? <button onClick={() => void copyImage(ctx.n.rel)}><span style={{ flex: 1 }}>이미지 복사</span></button> : null}
       <button onClick={() => { navigator.clipboard?.writeText(`${bot.abs}/${ctx.n.rel}`); say('경로를 복사했어요') }}><span style={{ flex: 1 }}>경로 복사</span><span className="k">⌘C</span></button>
+      <button onClick={() => { navigator.clipboard?.writeText(ctx.n.rel); say('상대 경로를 복사했어요') }}><span style={{ flex: 1 }}>경로 복사 (폴더 기준)</span></button>
       <button onClick={() => rename(ctx.n)}><span style={{ flex: 1 }}>이름 바꾸기</span></button>
+      <button onClick={() => void dup(ctx.n)}><span style={{ flex: 1 }}>복제</span></button>
+      {/* ⚠ 「열기」와 다른 일이다 — 파일을 여는 게 아니라 **어디 있는지** 보여 준다 */}
+      {main ? <button onClick={() => void reveal(ctx.n)}><span style={{ flex: 1 }}>Finder 에서 보기</span></button> : null}
+      <hr />
+      <button onClick={() => void makeNew(ctx.n, 'note')}><Icon n="doc" size={12} /><span style={{ flex: 1 }}>새 노트</span></button>
+      <button onClick={() => void makeNew(ctx.n, 'folder')}><Icon n="folder" size={12} /><span style={{ flex: 1 }}>새 폴더</span></button>
       <hr /><button onClick={() => setExp(new Set(['']))}><span style={{ flex: 1 }}>모두 접기</span></button>
     </Float> : null}
   </>

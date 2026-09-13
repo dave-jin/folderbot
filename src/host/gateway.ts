@@ -1,8 +1,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { execFile } from 'node:child_process'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { join, extname, normalize, relative } from 'node:path'
+import { cpSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { join, extname, normalize, relative, resolve, sep } from 'node:path'
 import type { Frame } from '../core/types'
 import type { Host } from './host'
 import { bindAddresses, tailnetInfo } from './tailnet'
@@ -10,6 +10,33 @@ import { saveConfig } from './paths'
 import { handleMcp } from './mcp'
 import { providers } from './providers'
 import { codexAuth } from './auth'
+
+/**
+ * 안 겹치는 이름 — `이름`, 없으면 `이름 2`, `이름 3` …
+ * 🔴 **덮어쓰지 않는다.** 새로 만들기·복제는 한 번 누르면 끝인 동작이라, 덮어쓰면 되돌릴 방법이 없다.
+ */
+/**
+ * 🔴 **만드는 곳은 «이 봇의 폴더 안» 이다.** `guard(roots(bot), …)` 만으로는 모자라다 —
+ *    roots 에는 볼트 루트·참조 폴더도 들어 있어서 `../..` 가 **통과한다**(스모크가 잡았다).
+ *    읽기는 넓게 허용해도 되지만 **새로 만드는 것은 자기 폴더 안**이어야 한다.
+ */
+function inBot(botAbs: string, rel: string): string {
+  const abs = resolve(botAbs, rel)
+  if (abs !== botAbs && !abs.startsWith(botAbs + sep)) throw new Error('이 폴더 밖에는 만들 수 없어요')
+  return abs
+}
+
+function freeName(botAbs: string, dir: string, name: string): string {
+  const dot = name.lastIndexOf('.')
+  const stem = dot > 0 ? name.slice(0, dot) : name
+  const ext = dot > 0 ? name.slice(dot) : ''
+  for (let i = 1; i < 200; i++) {
+    const cand = i === 1 ? name : `${stem} ${i}${ext}`
+    const rel = dir ? `${dir}/${cand}` : cand
+    if (!existsSync(join(botAbs, rel))) return rel
+  }
+  return dir ? `${dir}/${Date.now()}-${name}` : `${Date.now()}-${name}`
+}
 import { favicon } from './favicon'
 import { hookState, setBudget, setHook, usageReport } from './usage'
 import { allDirs, guard, kindOf, mime, readText, recent, stream, tree, writeText, exists, listDir, renameEntry } from './files'
@@ -252,6 +279,54 @@ export class Gateway {
         if (process.platform !== 'darwin') return json(400, { error: '메인이 맥일 때만 열 수 있어요' })
         execFile('/usr/bin/open', [abs], () => {})
         return json(200, { ok: true })
+      }
+      /**
+       * Finder 에서 보기 — **열지 않고 위치를 보여 준다**(`open -R`).
+       * ⚠ 「기본 앱으로 열기」와 다른 일이다: 저것은 파일을 열고, 이것은 **그 파일이 어디 있는지** 보여 준다.
+       *    파일을 옮기거나 다른 앱에 끌어다 놓으려는 사람이 원하는 것은 늘 이쪽이다.
+       */
+      if (sub === 'reveal' && m === 'POST') {
+        const b = await body()
+        const abs = guard(roots(bot), join(bot.abs, String(b.rel ?? '')))
+        if (!exists(abs)) return json(404, { error: '없는 파일' })
+        if (process.platform !== 'darwin') return json(400, { error: '메인이 맥일 때만 열 수 있어요' })
+        execFile('/usr/bin/open', ['-R', abs], () => {})
+        return json(200, { ok: true })
+      }
+      /**
+       * 새 노트 · 새 폴더 — 봇 폴더 **안**에서 만든다(`guard`).
+       * ⚠ `.md` 는 **자동으로 붙인다** — 사람이 확장자를 기억하게 하지 않는다. 다른 확장자를 직접 쓰면 그대로 둔다.
+       * ⚠ 같은 이름이 있으면 `이름 2`, `이름 3` 으로 비킨다 — 덮어쓰기는 되돌릴 수 없다.
+       */
+      if (sub === 'new' && m === 'POST') {
+        const b = await body()
+        const dir = String(b.dir ?? '').replace(/^\/+|\/+$/g, '')
+        const folder = b.kind === 'folder'
+        let name = String(b.name ?? '').trim().replace(/[/\\]/g, '-')
+        if (!name) return json(400, { error: '이름이 비었어요' })
+        if (!folder && !/\.[A-Za-z0-9]{1,8}$/.test(name)) name += '.md'
+        const rel = freeName(bot.abs, dir, name)
+        const abs = inBot(bot.abs, rel)
+        if (folder) mkdirSync(abs, { recursive: true })
+        else { mkdirSync(join(abs, '..'), { recursive: true }); writeFileSync(abs, '') }
+        h.broadcast({ ev: 'files', botId: bot.id })
+        return json(200, { rel })
+      }
+      /** 복제 — 같은 폴더에 «이름 사본». ⛔ 폴더는 통째로(재귀) 복사한다 */
+      if (sub === 'copy' && m === 'POST') {
+        const b = await body()
+        const rel = String(b.rel ?? '')
+        const abs = guard(roots(bot), join(bot.abs, rel))
+        if (!exists(abs)) return json(404, { error: '없는 파일' })
+        const dir = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : ''
+        const base = rel.split('/').pop() ?? rel
+        const dot = base.lastIndexOf('.')
+        const stem = dot > 0 ? base.slice(0, dot) : base
+        const ext = dot > 0 ? base.slice(dot) : ''
+        const to = freeName(bot.abs, dir, `${stem} 사본${ext}`)
+        cpSync(abs, inBot(bot.abs, to), { recursive: true })
+        h.broadcast({ ev: 'files', botId: bot.id })
+        return json(200, { rel: to })
       }
       if (sub === 'raw') { const abs = guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')); if (!exists(abs)) return json(404, { error: 'none' }); res.writeHead(200, { 'content-type': mime(abs), 'cache-control': 'no-store' }); stream(abs).pipe(res); return }
       if (sub === 'routines' && m === 'GET') return json(200, bot.routines)

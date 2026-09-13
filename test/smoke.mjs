@@ -819,6 +819,35 @@ try {
           if ((await api('/bots')).some((b) => b.id === tb.id)) fail('폴더 삭제: 레일에 아직 남아 있다')
           ok('레일 우클릭 — 정지 · 은퇴 · 폴더 삭제(휴지통으로)')
         }
+        // 🔴 **Finder 급 파일 조작** (2026-09-13 Dave: «finder에서 보기 · 새 노트/새 폴더 · 복사»)
+        {
+          // 새 노트 — `.md` 는 자동으로 붙고, 같은 이름이 있으면 비킨다
+          const n1 = await api(`/bots/${bot.id}/new`, { dir: '', name: '메모', kind: 'note' })
+          if (n1.rel !== '메모.md') fail('새 노트: .md 가 안 붙었다 ' + JSON.stringify(n1))
+          if (!existsSync(join(root, '3. Area/제품_Rondo', '메모.md'))) fail('새 노트: 파일이 안 생겼다')
+          const n2 = await api(`/bots/${bot.id}/new`, { dir: '', name: '메모', kind: 'note' })
+          if (n2.rel !== '메모 2.md') fail('새 노트: 같은 이름을 덮어썼다(되돌릴 수 없는 일이다) ' + JSON.stringify(n2))
+          // 새 폴더 — 확장자를 붙이지 않는다
+          const f1 = await api(`/bots/${bot.id}/new`, { dir: '', name: '새 폴더', kind: 'folder' })
+          if (f1.rel !== '새 폴더' || !existsSync(join(root, '3. Area/제품_Rondo', '새 폴더'))) fail('새 폴더: 안 만들어졌다 ' + JSON.stringify(f1))
+          // 복제 — 「이름 사본」
+          writeFileSync(join(root, '3. Area/제품_Rondo', '메모.md'), '내용')
+          const c1 = await api(`/bots/${bot.id}/copy`, { rel: '메모.md' })
+          if (c1.rel !== '메모 사본.md') fail('복제: 이름이 다르다 ' + JSON.stringify(c1))
+          if (readFileSync(join(root, '3. Area/제품_Rondo', '메모 사본.md'), 'utf8') !== '내용') fail('복제: 내용이 안 따라왔다')
+          // ⛔ 루트 밖은 막힌다
+          let blocked = false
+          try { await api(`/bots/${bot.id}/new`, { dir: '../..', name: '밖', kind: 'note' }) } catch { blocked = true }
+          if (!blocked) fail('새 노트: 루트 밖에 만들어졌다')
+          // 화면 — 우클릭 메뉴에 새 항목들이 있다
+          await pg.click('.panel .secb button.trow:not(.dir)', { button: 'right' }); await wait(300)
+          const mtx = await pg.textContent('.menu.ctx')
+          for (const want of ['새 노트', '새 폴더', '복제', '경로 복사 (폴더 기준)']) if (!(mtx ?? '').includes(want)) fail(`파일 메뉴에 «${want}» 가 없다 · ` + mtx)
+          await pg.keyboard.press('Escape'); await wait(200)
+          for (const f of ['메모.md', '메모 2.md', '메모 사본.md']) { try { rmSync(join(root, '3. Area/제품_Rondo', f)) } catch {} }
+          try { rmSync(join(root, '3. Area/제품_Rondo', '새 폴더'), { recursive: true }) } catch {}
+          ok('파일 조작 — 새 노트(.md 자동·안 덮어씀) · 새 폴더 · 복제 · 메뉴')
+        }
         // 🔴 **팝업은 절(section) 경계를 넘어 보인다** (2026-09-13 Dave: «지금 팝업이 짤리니깐»)
         //    ⛔ `z-index` 로는 못 푼다 — 잘림은 쌓임 순서가 아니라 **부모의 overflow** 라서, 밖으로 나가야 한다.
         {
