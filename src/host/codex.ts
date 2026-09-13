@@ -42,16 +42,27 @@ export interface CodexSpec {
 const CODEX_EFFORT = new Set(['minimal', 'low', 'medium', 'high'])
 
 /**
- * 이 판이 아는 깃발 — **한 번만 묻는다**(`codex exec --help`). 못 읽으면 다 있다고 본다.
+ * 이 판이 아는 깃발 — **부속 명령마다 따로** 묻는다(`codex exec --help` · `codex exec resume --help`).
+ *
+ * 🔴 **`resume` 은 깃발이 다르다** (2026-09-13 Dave 신고 · 실측 오류 그대로):
+ *      tip: to pass '--sandbox' as a value, use '-- --sandbox'
+ *      Usage: codex exec resume --json <SESSION_ID> [PROMPT]
+ *    `exec` 이 받는 `--sandbox`·`--skip-git-repo-check` 를 `resume` 은 안 받는다. 한 벌로 묶어
+ *    두었더니 **두 번째 턴부터** 전부 죽었다(첫 턴은 멀쩡해서 더 헷갈린다).
  * ⛔ 세션마다 묻지 마라 — 턴마다 프로세스를 띄우는 구조라 그때마다 도움말을 읽으면 두 배로 뜬다.
+ * ⚠ 못 읽으면 **다 있다고 본다** — 못 읽었다고 빼면 멀쩡한 판에서 샌드박스가 통째로 빠진다.
  */
-let flagCache: Set<string> | null = null
-export function codexFlags(bin: string): Set<string> {
-  if (flagCache) return flagCache
+const flagCache = new Map<string, Set<string>>()
+const WANT = ['--json', '--sandbox', '--skip-git-repo-check', '--model', '-c']
+export function codexFlags(bin: string, sub: 'exec' | 'resume' = 'exec'): Set<string> {
+  const hit = flagCache.get(sub)
+  if (hit) return hit
+  const args = sub === 'resume' ? ['exec', 'resume', '--help'] : ['exec', '--help']
   let help = ''
-  try { help = String(execFileSync(bin, ['exec', '--help'], { encoding: 'utf8', timeout: 6000, env: cleanClaudeEnv() })) } catch { help = '' }
-  flagCache = supportedFlags(help, ['--json', '--sandbox', '--skip-git-repo-check', '--model'])
-  return flagCache
+  try { help = String(execFileSync(bin, args, { encoding: 'utf8', timeout: 6000, env: cleanClaudeEnv() })) } catch { help = '' }
+  const set = supportedFlags(help, WANT)
+  flagCache.set(sub, set)
+  return set
 }
 
 export class CodexWorker extends EventEmitter {
@@ -81,8 +92,10 @@ export class CodexWorker extends EventEmitter {
     if (this.proc) return false
     const bin = providerBin('codex')
     if (!bin) { this.lastError = 'Codex CLI 를 찾지 못했어요'; this.emit('exit', 1, null, this.lastError); return false }
-    const flags = codexFlags(bin)
-    const args = this.cliSessionId ? ['exec', 'resume', this.cliSessionId] : ['exec']
+    const resuming = !!this.cliSessionId
+    const flags = codexFlags(bin, resuming ? 'resume' : 'exec')
+    // ⚠ 깃발을 **세션 id 앞**에 둔다 — `codex exec resume --json <SESSION_ID> [PROMPT]` 가 그 모양이다
+    const args = resuming ? ['exec', 'resume'] : ['exec']
     // ⚠ **있는 깃발만 넘긴다** — 없는 것을 넘기면 CLI 가 그 자리에서 죽고, 그 죽음은 «답이 안 오는»
     //    모양으로 보인다(`codexFlags` 머리말 · 2026-09-13 Dave 신고).
     if (flags.has('--json')) args.push('--json')
@@ -91,7 +104,13 @@ export class CodexWorker extends EventEmitter {
     if (this.spec.model && !this.dropModel && flags.has('--model')) args.push('--model', this.spec.model)
     // ⚠ 노력은 `-c` 로 준다 — Codex 에는 `--effort` 플래그가 없고 설정 키(`model_reasoning_effort`)다.
     //    ⛔ 아는 값만 넘긴다. Claude 의 `xhigh`·`max` 를 그대로 넘기면 CLI 가 그 자리에서 죽는다.
-    if (this.spec.effort && CODEX_EFFORT.has(this.spec.effort)) args.push('-c', `model_reasoning_effort="${this.spec.effort}"`)
+    if (this.spec.effort && CODEX_EFFORT.has(this.spec.effort) && flags.has('-c')) args.push('-c', `model_reasoning_effort="${this.spec.effort}"`)
+    /**
+     * 🔴 **자리 있는 인자는 맨 뒤에, 순서대로** — `codex exec resume <SESSION_ID> [PROMPT]`.
+     *    깃발을 세션 id 뒤에 붙였더니 clap 이 그걸 **자리 인자로 읽어** 그 자리에서 죽었다
+     *    («tip: to pass '--sandbox' as a value, use '-- --sandbox'» · 2026-09-13 Dave 실측).
+     */
+    if (resuming) args.push(this.cliSessionId as string)
     args.push(prompt)
     this.text = ''
     // ⚠ 키는 **환경에만** 넣는다 — 사용자의 `~/.codex` 설정 파일을 우리가 고쳐 쓰지 않는다

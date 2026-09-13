@@ -16,7 +16,7 @@ import { ICON_PX, useIconSize, useTheme } from './theme'
 import { UsageCard, UsageStrip, useUsage } from './Usage'
 import { PermGate, usePerms } from './Perms'
 import { Palette } from './Palette'
-import { MODES, effortLabel, effortsFor, fmtK, modeLabel, modelLabel, modelsFor } from './consts'
+import { MODES, effortLabel, effortsFor, fmtK, modeLabel, modelLabel, modelsFor, setFoundModels } from './consts'
 import { DEFAULT_EFFORT, DEFAULT_MODEL } from '../core/agents'
 import { cronFromText, routineName } from '../core/routineText'
 import { BARE_URL_RE, faviconHost } from '../core/favicon'
@@ -118,6 +118,12 @@ export function App() {
   const [authed, setAuthed] = useState(() => { const h = new URLSearchParams(location.hash.slice(1)); const t = h.get('token'); if (t) { setToken(t); h.delete('token'); location.hash = h.toString(); location.reload() } return !!token() })
   useEffect(() => { const f = () => setAuthed(false); window.addEventListener('fb:authlost', f); return () => window.removeEventListener('fb:authlost', f) }, [])
   const perm = usePerms() // ⚠ 훅은 early return 앞에 — 뒤에 두면 React #310(훅 수 변동)
+  /**
+   * 🔴 **모델 목록을 기계에서 받아 온다** — 앱이 뜰 때 한 번(2026-09-13 Dave: «미리 설정에 fixed
+   *    하지 말고»). 설정과 입력창이 **같은 목록**을 보도록 `consts` 한 곳에 둔다.
+   * ⚠ 실패해도 그냥 넘어간다 — 못 받아 오면 빌트인 목록이 그대로 쓰인다.
+   */
+  useEffect(() => { void api<{ claude: string[]; codex: string[] }>('/agents/models').then(setFoundModels).catch(() => {}) }, [])
   useTheme() // 저장된 테마를 부팅 즉시 적용
   if (!authed) return <div className="app"><Pairing onDone={() => location.reload()} /></div>
   if (!s.loaded) return <div className="app"><div className="empty"><FolderBot color="#e08850" size={40} mood="work" />호스트에 연결하는 중…</div></div>

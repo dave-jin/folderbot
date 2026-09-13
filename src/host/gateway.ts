@@ -9,7 +9,7 @@ import { bindAddresses, tailnetInfo } from './tailnet'
 import { saveConfig } from './paths'
 import { handleMcp } from './mcp'
 import { providers } from './providers'
-import { codexAuth, diagnose } from './auth'
+import { agentModels, codexAuth, diagnose } from './auth'
 
 /**
  * 안 겹치는 이름 — `이름`, 없으면 `이름 2`, `이름 3` …
@@ -164,6 +164,8 @@ export class Gateway {
       return
     }
     if (p === '/api/agents' && m === 'GET') return json(200, providers())
+    // 쓸 수 있는 모델 — **기계에서 주워 온다**(빌트인 목록은 화면이 빈 자리를 메울 때만 쓴다)
+    if (p === '/api/agents/models' && m === 'GET') return json(200, agentModels())
     if (p === '/api/usage' && m === 'GET') return json(200, { ...usageReport(), hook: hookState().installed })
     if (p === '/api/usage/hook' && m === 'POST') { const b = await body(); return json(200, setHook(!!b.on)) }
     if (p === '/api/usage/budget' && m === 'POST') { const b = await body(); return json(200, setBudget({ window: b.window === undefined ? undefined : Number(b.window), day: b.day === undefined ? undefined : Number(b.day), week: b.week === undefined ? undefined : Number(b.week) } as never)) }

@@ -6,12 +6,37 @@ import { randomUUID } from 'node:crypto'
 import { appendFileSync } from 'node:fs'
 const argv = process.argv.slice(2)
 if (argv[0] === '--version') { process.stdout.write('codex-cli 9.9.9\n'); process.exit(0) }
-// ⚠ 우리는 넘기기 전에 **도움말을 읽어** 있는 깃발만 쓴다 — 그 길도 여기서 잰다
+/**
+ * ⚠ 우리는 넘기기 전에 **부속 명령마다 도움말을 읽어** 있는 깃발만 쓴다 — 그 길도 여기서 잰다.
+ * 🔴 **`resume` 은 깃발이 좁다** (진짜 codex 가 그렇다):
+ *      Usage: codex exec resume --json <SESSION_ID> [PROMPT]
+ *    `--sandbox`·`--skip-git-repo-check` 가 없다. 한 벌로 묶으면 **두 번째 턴부터** 전부 죽는다.
+ */
 if (argv[0] === 'exec' && argv.includes('--help')) {
-  process.stdout.write('Usage: codex exec [OPTIONS] [PROMPT]\n  --json\n  --sandbox <MODE>\n  --skip-git-repo-check\n  --model <M>\n')
+  if (argv[1] === 'resume') process.stdout.write('Usage: codex exec resume --json <SESSION_ID> [PROMPT]\n  --json\n  -c <KEY=VALUE>\n')
+  else process.stdout.write('Usage: codex exec [OPTIONS] [PROMPT]\n  --json\n  --sandbox <MODE>\n  --skip-git-repo-check\n  --model <M>\n  -c <KEY=VALUE>\n')
   process.exit(0)
 }
-const resume = argv[0] === 'exec' && argv[1] === 'resume' ? argv[2] : null
+// 🔴 진짜 codex 처럼 **모르는 깃발에 죽는다** — 안 그러면 이 스텁은 아무 실수도 안 잡는다
+{
+  const known = new Set(['--json', '--sandbox', '--skip-git-repo-check', '--model', '-c', '--help'])
+  const sub = argv[0] === 'exec' && argv[1] === 'resume' ? 'resume' : 'exec'
+  const allowed = sub === 'resume' ? new Set(['--json', '-c', '--help']) : known
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]
+    if (!a.startsWith('-')) continue
+    if (!allowed.has(a)) {
+      process.stderr.write(`error: unexpected argument '${a}' found\nUsage: codex ${sub === 'resume' ? 'exec resume --json <SESSION_ID> [PROMPT]' : 'exec [OPTIONS] [PROMPT]'}\n`)
+      process.exit(2)
+    }
+    if (a !== '--json' && a !== '--skip-git-repo-check' && a !== '--help') i++   // 값을 먹는 깃발
+  }
+}
+/**
+ * ⚠ 세션 id 는 **깃발 뒤, 프롬프트 앞**이다(`codex exec resume --json <SESSION_ID> [PROMPT]`).
+ *    `argv[2]` 로 못 박아 두면 호스트가 자리를 고쳐도 스텁이 눈치를 못 챈다.
+ */
+const resume = argv[0] === 'exec' && argv[1] === 'resume' ? argv.slice(2).filter((a) => !a.startsWith('-') && !/^model_reasoning_effort=/.test(a))[0] ?? null : null
 const sid = resume ?? `cx-${randomUUID()}`
 const prompt = argv[argv.length - 1]
 // ⚠ 우리가 무엇을 넘겼는지 **파일로 남긴다** — 모델·노력·샌드박스·키가 실제로 CLI 까지 가는지는

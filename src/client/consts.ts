@@ -1,5 +1,6 @@
 import type { PermissionMode } from '../core/types'
 import { AGENT_EFFORTS, AGENT_MODELS, DEFAULT_EFFORT, DEFAULT_MODEL, type AgentModel, type ProviderId } from '../core/agents'
+import { mergeModels } from '../core/modelList'
 
 /**
  * 모델·노력 — 🔴 **정본은 `core/agents.ts` 다.** 여기는 «Claude 것» 이라는 이름의 별칭일 뿐이다.
@@ -8,7 +9,18 @@ import { AGENT_EFFORTS, AGENT_MODELS, DEFAULT_EFFORT, DEFAULT_MODEL, type AgentM
  */
 export const MODELS = AGENT_MODELS.claude
 export const EFFORTS = AGENT_EFFORTS.claude
-export const modelsFor = (v?: ProviderId): AgentModel[] => AGENT_MODELS[v ?? 'claude']
+
+/**
+ * 🔴 **기계에서 받아 온 모델 목록** (2026-09-13 Dave: «미리 설정에 fixed 하지 말고 정보를 받아와서
+ *    채워줘»). 앱이 뜰 때 한 번 `/api/agents/models` 로 받아 여기에 둔다 — **설정과 입력창이 같은
+ *    목록을 본다**(두 곳이 갈리면 «설정엔 있는데 대화에선 못 고르는» 모델이 생긴다).
+ * ⚠ 못 받아 왔으면 빌트인 그대로다 — 빈 칸보다 낫다.
+ */
+let found: { claude: string[]; codex: string[] } = { claude: [], codex: [] }
+export function setFoundModels(f: { claude?: string[]; codex?: string[] }): void {
+  found = { claude: f.claude ?? [], codex: f.codex ?? [] }
+}
+export const modelsFor = (v?: ProviderId): AgentModel[] => mergeModels(found[v ?? 'claude'], AGENT_MODELS[v ?? 'claude']) as AgentModel[]
 export const effortsFor = (v?: ProviderId): { v: string; t: string }[] => AGENT_EFFORTS[v ?? 'claude']
 export const MODES: { v: PermissionMode; t: string; d: string }[] = [
   { v: 'default', t: '자동', d: '읽기는 바로, 쓰기·실행은 물어봄' },

@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -6,6 +6,7 @@ import { authVerdict } from '../core/authVerdict'
 import type { AuthState } from '../core/types'
 import { claudeBin, cleanClaudeEnv } from './session'
 import { providers } from './providers'
+import { MODEL_RE, extractModels, modelsFromHelp } from '../core/modelList'
 
 function credentialsExpiresAt(): number | null {
   const dir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
@@ -156,4 +157,44 @@ function run(bin: string, args: string[]): Promise<string> {
       resolve(out || (err ? `오류: ${err.message.slice(0, 120)}` : '(답 없음)'))
     })
   })
+}
+
+/**
+ * 쓸 수 있는 모델 목록 — **기계에서 받아 온다** (2026-09-13 Dave: *«미리 설정에 fixed 하지 말고
+ * 정보를 받아와서 채워줘»*). 박아 둔 목록은 반드시 낡고, 낡은 이름을 넘기면 그 계정에서 턴이 죽는다.
+ *
+ * 주우는 곳 (있는 대로, 순서대로):
+ *  ① CLI 도움말의 `[possible values: …]`
+ *  ② CLI 가 쥔 캐시·설정 파일 — Codex 는 `$CODEX_HOME/*.json`, Claude 는 `~/.claude.json`
+ * ⚠ **구조를 외우지 않는다** — 파일 모양은 판마다 바뀐다. JSON 을 훑어 «이름처럼 생긴 글자» 를 줍는다
+ *    (`core/modelList.ts`). 못 주우면 빌트인으로 떨어진다 — 빈 칸보다 낫다.
+ * ⛔ 큰 파일은 건너뛴다(2MB) — 모델 캐시가 수십 MB 로 자란 판이 있다.
+ */
+const MODEL_MAX = 2 * 1024 * 1024
+function readJson(p: string): unknown {
+  try { if (statSync(p).size > MODEL_MAX) return null; return JSON.parse(readFileSync(p, 'utf8')) } catch { return null }
+}
+function helpOf(bin: string, args: string[]): string {
+  try { return String(execFileSync(bin, args, { encoding: 'utf8', timeout: 6000, env: cleanClaudeEnv({ noToken: true }) })) } catch { return '' }
+}
+
+export function agentModels(): { claude: string[]; codex: string[] } {
+  const ps = providers()
+  const out = { claude: [] as string[], codex: [] as string[] }
+  const cx = ps.find((p) => p.id === 'codex')
+  if (cx?.bin) {
+    const found = new Set(modelsFromHelp(helpOf(cx.bin, ['exec', '--help']), MODEL_RE.codex))
+    for (const f of codexJsonFiles()) for (const v of extractModels(readJson(join(codexHome(), f)), MODEL_RE.codex)) found.add(v)
+    out.codex = [...found]
+  }
+  const cl = ps.find((p) => p.id === 'claude')
+  if (cl?.bin) {
+    const found = new Set(modelsFromHelp(helpOf(cl.bin, ['--help']), MODEL_RE.claude))
+    const dir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
+    for (const p of [join(homedir(), '.claude.json'), join(dir, 'config.json'), join(dir, 'settings.json')]) {
+      for (const v of extractModels(readJson(p), MODEL_RE.claude)) found.add(v)
+    }
+    out.claude = [...found]
+  }
+  return out
 }

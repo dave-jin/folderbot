@@ -8,7 +8,7 @@ import { Mark } from './Brand'
 import { ICON_LABEL, ICON_PX, useIconSize, useTheme, type IconSize, type Theme } from './theme'
 import { ACT_ICON, ACT_LABEL, SWIPE_DEFAULT, useSwipeCfg, type SwipeAct, type SwipeSlot } from './swipe'
 import { fmtTime, useStore } from './store'
-import { EFFORTS, MODELS } from './consts'
+import { EFFORTS, MODELS, modelsFor, setFoundModels } from './consts'
 import { norm } from '../core/search'
 
 /**
@@ -218,7 +218,16 @@ function AgentsPane() {
   const [cxModel, setCxModel] = useState(s.defaults.codex?.model || DEFAULT_MODEL.codex); const [cxEffort, setCxEffort] = useState(s.defaults.codex?.effort || DEFAULT_EFFORT.codex)
   const [cxKey, setCxKey] = useState('')
   const [tok, setTok] = useState(''); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(''); const [diag, setDiag] = useState('')
-  useEffect(() => { void api<Provider[]>('/agents').then(setList).catch(() => setList([])); void api<typeof gh>('/harness/global').then(setGh).catch(() => setGh(null)) }, [])
+  /**
+   * 🔴 **모델 목록은 기계에서 받아 온다** (2026-09-13 Dave: «미리 설정에 fixed 하지 말고 정보를
+   *    받아와서 채워줘»). 박아 둔 목록은 반드시 낡고, 낡은 이름을 넘기면 그 계정에서 턴이 죽는다.
+   * ⚠ 못 받아 오면 빌트인으로 떨어진다 — 빈 칸보다 낫다(`mergeModels` 가 합친다).
+   */
+  const [found, setFound] = useState<{ claude: string[]; codex: string[] }>({ claude: [], codex: [] })
+  useEffect(() => { void api<Provider[]>('/agents').then(setList).catch(() => setList([])); void api<typeof gh>('/harness/global').then(setGh).catch(() => setGh(null)); void api<{ claude: string[]; codex: string[] }>('/agents/models').then((f) => { setFoundModels(f); setFound(f) }).catch(() => {}) }, [])
+  // ⚠ 합치기는 `consts` 한 곳에서 한다 — 설정과 입력창이 **같은 목록**을 봐야 한다
+  const clModels = useMemo(() => modelsFor('claude'), [found.claude])
+  const cxModels = useMemo(() => modelsFor('codex'), [found.codex])
   const saveD = async (m: string, e: string, agent: 'claude' | 'codex' = 'claude') => { await api('/defaults', { body: { model: m, effort: e, agent } }); await refresh(); setMsg('저장했어요 — 다음 세션부터 적용돼요.') }
   const saveCx = async (o: { sandbox?: string; apiKey?: string }) => { setBusy(true); try { await api('/codex', { body: o }); await refresh(); setMsg('Codex 설정을 저장했어요.') } finally { setBusy(false) } }
   const hasCodex = (list ?? []).some((p) => p.id === 'codex')
@@ -268,7 +277,7 @@ function AgentsPane() {
 
     <Group t="기본값" />
     <Row t="모델 · 생각 레벨" d="모든 봇의 새 세션이 이 값으로 뜹니다. 세션마다 바꾸려면 입력창 아래 줄에서.">
-      <select className="ssel" value={model} onChange={(e) => { setModel(e.target.value); void saveD(e.target.value, effort) }}>{MODELS.map((m) => <option key={m.v} value={m.v}>{m.t}</option>)}</select>
+      <select className="ssel" value={model} onChange={(e) => { setModel(e.target.value); void saveD(e.target.value, effort) }}>{clModels.map((m) => <option key={m.v} value={m.v}>{m.t}</option>)}</select>
       <select className="ssel sm" value={effort} onChange={(e) => { setEffort(e.target.value); void saveD(model, e.target.value) }}>{EFFORTS.map((e) => <option key={e.v} value={e.v}>{e.t}</option>)}</select>
     </Row>
     {/* 🔴 **Codex 도 Claude 와 같은 칸을 갖는다** (2026-09-13 Dave: «codex도 claude와 같이 영구 토큰
@@ -278,7 +287,7 @@ function AgentsPane() {
         다르다. 이름을 박아 넘기면 그 계정에서 **모든 턴이 400 으로 죽는다**. */}
     {hasCodex ? <Row t="Codex 기본 모델 · 노력" d={<>Codex 세션이 이 값으로 뜹니다. <b>비워 두면 CLI 가 계정에 맞는 모델을 고릅니다</b> — ChatGPT 계정으로 쓰신다면 그대로 두세요(쓸 수 있는 모델이 구독마다 달라서, 이름을 박으면 그 계정에서 안 돌 수 있어요). API 키로 쓰신다면 골라도 됩니다.</>} data-t="Codex 기본 모델">
       <input className="sin mono" list="cx-models" value={cxModel} onChange={(e) => setCxModel(e.target.value)} onBlur={() => void saveD(cxModel, cxEffort, 'codex')} placeholder="비워 두면 CLI 기본" />
-      <datalist id="cx-models">{AGENT_MODELS.codex.map((m) => <option key={m.v} value={m.v}>{m.t}</option>)}</datalist>
+      <datalist id="cx-models">{cxModels.map((m) => <option key={m.v} value={m.v}>{m.t}</option>)}</datalist>
       <select className="ssel sm" value={cxEffort} onChange={(e) => { setCxEffort(e.target.value); void saveD(cxModel, e.target.value, 'codex') }}>{AGENT_EFFORTS.codex.map((e) => <option key={e.v} value={e.v}>{e.t}</option>)}</select>
     </Row> : null}
     {hasCodex ? <Row t="Codex 권한" d={<>🔴 Codex 는 <b>우리가 승인 화면을 못 띄웁니다</b> — stdio 권한 프로토콜이 없어요. 그래서 이 값이 곧 권한 정책입니다.</>} data-t="Codex 권한">

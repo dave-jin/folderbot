@@ -215,6 +215,15 @@ try {
       })
       const errs = []; pg.on('pageerror', (e) => errs.push(e.message)); pg.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()) })
       await pg.goto(base + `/#bot=${bot.id}`)
+      /**
+       * 🔴 **보기 설정을 매 판 같은 자리에서 시작한다.**
+       *    목차·글자 크기·정렬 갈래·숨김 파일은 `localStorage` 에 남는다 — Electron 프로필이 판을
+       *    넘어 살아 있으므로, **앞 판이 켜 둔 값이 다음 판의 좌표를 바꾼다**(목차를 켜면 편집기가
+       *    190px 밀린다). 그게 «어떤 날은 되고 어떤 날은 안 되는» 표 검사의 실체였다.
+       * ⚠ 지우고 **다시 불러야** 한다 — 앱은 뜰 때 한 번 읽는다.
+       */
+      await pg.evaluate(() => { for (const k of ['fb:toc', 'fb:docfs', 'fb:docw', 'fb:railsort', 'fb:thidden', 'fb:tsort', 'fb:theme']) localStorage.removeItem(k) })
+      await pg.reload()
       try { await pg.waitForSelector('.col.chat .hdr', { timeout: 15000 }) } catch (e) { mkdirSync('test/tmp', { recursive: true }); await pg.screenshot({ path: `test/tmp/${name}-fail.png` }); console.log('page errors:', errs.join(' | ').slice(0, 1500)); console.log('html:', (await pg.content()).slice(0, 800)); throw e }
       await wait(800)
       mkdirSync('test/tmp', { recursive: true }); await pg.screenshot({ path: `test/tmp/${name}.png` })
@@ -555,6 +564,8 @@ try {
             await pg.click('.menu .mrow .mb:has-text("−")'); await wait(300)
             const after = await pg.evaluate(() => getComputedStyle(document.querySelector('.mded .cm-scroller')).fontSize)
             if (parseFloat(after) >= parseFloat(before)) fail(`글자 크기: 줄어들지 않았다 ${before} → ${after}`)
+            // ⚠ 줄인 글자 크기를 **되돌린다** — 남기면 뒤 검사의 줄 높이·좌표가 달라진다
+            await pg.click('.menu .mrow .mb:has-text("＋")'); await wait(250)
             await pg.keyboard.press('Escape'); await wait(300)
             // ⌘F — 편집기 안에서는 편집기의 찾기가 뜬다
             await pg.evaluate(() => document.querySelector('.mded .cm-content').focus())
@@ -1712,6 +1723,21 @@ try {
       const note = epChat.items.find((x) => x.kind === 'assistant' && /답 없이/.test(x.text ?? ''))
       if (!note) fail('빈 턴: 이유를 안 적었다 — 화면이 조용히 빈다 ' + JSON.stringify(epChat.items.map((x) => [x.kind, (x.text ?? '').slice(0, 40)])))
       if (!/something went wrong/.test(note.text)) fail('빈 턴: CLI 가 한 말이 안 들어갔다 ' + note.text)
+      /**
+       * 🔴 **두 번째 턴(resume)** — `codex exec resume` 는 깃발이 좁다(`--sandbox` 가 없다).
+       *    한 벌로 묶어 넘겼더니 **첫 턴은 멀쩡하고 두 번째 턴부터** 전부 죽었다
+       *    («tip: to pass '--sandbox' as a value…» · 2026-09-13 Dave 실측).
+       * ⚠ 스텁이 진짜 codex 처럼 **모르는 깃발에 죽으므로**, 이 한 번이 그 자리를 지킨다.
+       */
+      const rs = await api2(`/bots/${b1.id}/sessions`, { name: '이어가기', vendor: 'codex' })
+      await api2(`/sessions/${rs.id}/send`, { text: '첫 턴' })
+      let rsChat = null
+      for (let i = 0; i < 60; i++) { rsChat = await api2(`/sessions/${rs.id}/chat`); if (rsChat.items.some((x) => x.kind === 'assistant' && /첫 턴/.test(x.text ?? ''))) break; await wait(250) }
+      if (!rsChat.items.some((x) => x.kind === 'assistant' && /첫 턴/.test(x.text ?? ''))) fail('이어가기: 첫 턴부터 답이 없다')
+      await api2(`/sessions/${rs.id}/send`, { text: '둘째 턴' })
+      for (let i = 0; i < 60; i++) { rsChat = await api2(`/sessions/${rs.id}/chat`); if (rsChat.items.some((x) => x.kind === 'assistant' && /둘째 턴/.test(x.text ?? ''))) break; await wait(250) }
+      const second = rsChat.items.filter((x) => x.kind === 'assistant').map((x) => x.text ?? '')
+      if (!second.some((t) => /둘째 턴/.test(t))) fail('🔴 이어가기(resume): 둘째 턴에 답이 없다 — 깃발을 그대로 넘겼나 ' + JSON.stringify(second.slice(-2)))
       /**
        * 🔴 **계정이 모델을 거절하면 모델 없이 한 번 더 보낸다** (2026-09-13 Dave 신고).
        *    ChatGPT 계정은 쓸 수 있는 모델이 구독마다 다른데 우리가 이름을 박아 넘겨 **모든 턴이
