@@ -6,7 +6,7 @@ import type { Bot } from '../core/types'
 import { api } from './api'
 import { Icon, Mid } from './FolderBot'
 import { Md } from './Sheets'
-import { fmtTime } from './store'
+import { fmtTime, useStore } from './store'
 
 /** 문서 탭 — 봇별로 기억. 미리보기 탭(pinned=false)은 다음 클릭에 바뀐다 */
 export interface DocTab { rel: string; pinned: boolean }
@@ -36,6 +36,7 @@ interface DocData { kind: string; text?: string; size?: number; mtime?: number; 
 
 /** 문서 열 — 헤더(탭) · 툴바(폴더/파일 · 위치 · ⋯) · 본문. 편집은 자동 저장, 봇이 고치면 한 줄 배너 */
 export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, onAttach, say, phone, onBack }: { bot: Bot; docs: DocsApi; filesTick?: number; onTalk: (rel: string) => void; onHide: () => void; wide: boolean; onWide: () => void; onAttach: (rel: string) => void; say: (m: string) => void; phone?: boolean; onBack?: () => void }) {
+  const main = useStore().s.device.main   // ⚠ «외부 앱» 은 언제나 호스트에서 열린다 — 원격이면 이름을 바꾼다
   const rel = docs.active
   const [doc, setDoc] = useState<DocData | null>(null)
   const [err, setErr] = useState('')
@@ -93,7 +94,9 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
         {sibs.length > 1 ? <><button className="nb" onClick={() => docs.open(sibs[(idx - 1 + sibs.length) % sibs.length])}><Icon n="back" size={10} /></button><span className="pos">{idx + 1} / {sibs.length}</span><button className="nb" style={{ transform: 'scaleX(-1)' }} onClick={() => docs.open(sibs[(idx + 1) % sibs.length])}><Icon n="back" size={10} /></button></> : null}
         {edit ? <><span className={`st ${saveSt === 'fail' ? 'err' : ''}`}>{saveSt === 'saving' ? '저장 중' : saveSt === 'saved' ? '저장됨 · 방금' : saveSt === 'fail' ? '저장 실패' : '편집 중'}</span><button className="btn" style={{ minHeight: 24, padding: '2px 8px', fontSize: 11.5 }} onClick={finishEdit}>완료</button></>
           : <span style={{ position: 'relative' }}><button className="ib" onClick={() => setMenu(!menu)}><Icon n="more" size={13} /></button>
-            {menu ? <div className="menu" style={{ right: 0, top: 26 }} onClick={() => setMenu(false)}>{doc?.kind === 'text' ? <button onClick={startEdit}><Icon n="edit" size={13} /><span>편집</span><span className="k">⏎ 자동 저장</span></button> : null}<button onClick={() => onTalk(rel)}><Icon n="sub" size={13} /><span>봇에게 이 파일 말하기</span></button><button onClick={() => onAttach(rel)}><Icon n="plus" size={13} /><span>첨부로 보내기</span></button><button onClick={() => { navigator.clipboard?.writeText(`${bot.abs}/${rel}`); say('경로를 복사했어요') }}><Icon n="file" size={13} /><span>경로 복사</span></button><a className="menu-a" href={raw(rel)} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="open" size={13} /><span>새 창에서 열기</span></a><hr /><button onClick={() => docs.pin(rel)}><Icon n="doc" size={13} /><span>탭 고정</span><span className="k">더블클릭</span></button></div> : null}</span>}
+            {menu ? <div className="menu" style={{ right: 0, top: 26 }} onClick={() => setMenu(false)}>{doc?.kind === 'text' ? <button onClick={startEdit}><Icon n="edit" size={13} /><span>편집</span><span className="k">⏎ 자동 저장</span></button> : null}<button onClick={() => onTalk(rel)}><Icon n="sub" size={13} /><span>봇에게 이 파일 말하기</span></button><button onClick={() => onAttach(rel)}><Icon n="plus" size={13} /><span>첨부로 보내기</span></button><button onClick={() => { navigator.clipboard?.writeText(`${bot.abs}/${rel}`); say('경로를 복사했어요') }}><Icon n="file" size={13} /><span>경로 복사</span></button><button onClick={async () => { try { await api(`/bots/${bot.id}/open`, { body: { rel } }); say(main ? '기본 앱으로 열었어요' : '메인 맥에서 열었어요') } catch (e) { say((e as Error).message) } }}><Icon n="open" size={13} /><span>{main ? '기본 앱으로 열기' : '메인 맥에서 열기'}</span>{main ? null : <span className="k">메인에서</span>}</button>
+              {main ? null : <a className="menu-a" href={raw(rel)} download style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="doc" size={13} /><span>이 기기로 내려받기</span></a>}
+              <a className="menu-a" href={raw(rel)} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="open" size={13} /><span>새 창에서 열기</span></a><hr /><button onClick={() => docs.pin(rel)}><Icon n="doc" size={13} /><span>탭 고정</span><span className="k">더블클릭</span></button></div> : null}</span>}
       </span></div> : null}
     {conflict ? <div className="dbanner"><span className="dot wait" /><span>봇이 이 파일을 바꿨어요 — 편집 중인 내용과 다릅니다</span><button onClick={() => { setConflict(false); void save(draft) }}>내 것 유지</button><button onClick={() => { setConflict(false); setEdit(false); editingRef.current = false; if (rel) void load(rel) }}>봇 것 받기</button></div>
       : botTouched ? <div className="dbanner"><span className="dot run" /><span>봇이 {fmtTime(botTouched)} 수정</span><button onClick={() => setBotTouched(null)}>닫기</button></div> : null}
@@ -112,6 +115,13 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
         : <div className="dbody edit"><textarea value={draft} onChange={(e) => onDraft(e.target.value)} spellCheck={false} autoFocus /></div>)
       : doc.kind === 'text' ? <div className="dbody" onDoubleClick={startEdit}>{isMd ? <Md text={doc.text ?? ''} /> : <pre className="raw">{doc.text}</pre>}{doc.truncated ? <div style={{ color: 'var(--t3)', fontSize: 12, marginTop: 12 }}>큰 파일이라 앞부분만 보여요</div> : null}</div>
       : doc.kind === 'image' ? <div className="dbody center"><img src={raw(rel)} style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 6 }} /></div>
+      : doc.kind === 'html' ? <div className="dbody htmlv">
+          {/* 🔴 **샌드박스 안에서 그린다.** 에이전트가 만든 리포트를 앱 안에서 그대로 보되,
+              그 안의 스크립트가 볼트를 읽거나 우리 화면을 만지지 못하게 가둔다.
+              ⛔ `allow-same-origin` 을 주지 않는다 — 주는 순간 샌드박스가 사실상 없는 것과 같다. */}
+          <div className="hbar"><span className="dots"><i /><i /><i /></span><span className="addr mono">{rel.split('/').pop()}</span></div>
+          <iframe className="hframe" sandbox="allow-scripts allow-popups" src={raw(rel)} title={rel} />
+        </div>
       : doc.kind === 'pdf' ? <iframe className="dbody" style={{ padding: 0, border: 0, background: '#fff' }} src={raw(rel)} />
       : <div className="empty">미리보기가 없는 형식이에요 · {doc.size} bytes<a href={raw(rel)} target="_blank" rel="noreferrer" className="btn">새 창에서 열기</a></div>}
     {phone && rel ? <div className="dfoot">{sibs.length > 1 ? <><button className="rb" onClick={() => docs.open(sibs[(idx - 1 + sibs.length) % sibs.length])}><Icon n="up" size={18} /></button><button className="rb" onClick={() => docs.open(sibs[(idx + 1) % sibs.length])}><Icon n="chevd" size={18} /></button></> : null}<button className="talk" onClick={() => onAttach(rel)}>봇에게 이 문서로 말하기</button></div> : null}

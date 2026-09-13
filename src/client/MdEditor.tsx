@@ -74,6 +74,35 @@ class ImgWidget extends WidgetType {
   }
 }
 
+/**
+ * 프론트매터 — 문서 맨 위 `---` 블록을 **작은 라벨 한 줄**로 접는다.
+ *
+ * 🔴 **문서를 열자마자 YAML 이 먼저 보이면 안 된다.** 그건 문서가 아니라 설정이고, 읽으러 온 사람에게
+ *    제일 먼저 보여 줄 것이 아니다. 커서가 그 안에 들어오면 원문이 그대로 돌아온다.
+ * ⛔ **YAML 을 파싱해서 다시 쓰지 않는다.** Rondo 는 속성 패널에서 고치면 블록을 통째로 재직렬화하는데,
+ *    그 순간 서식이 정규화된다(그쪽도 churn 리스크로 적어 뒀다). 여기서는 **보여 주기만** 한다 —
+ *    고치는 것은 커서를 넣어 원문에서. 그래야 churn 0 이 예외 없이 성립한다.
+ */
+class FmWidget extends WidgetType {
+  constructor(readonly summary: string) { super() }
+  eq(o: FmWidget) { return o.summary === this.summary }
+  toDOM() { const e = document.createElement('span'); e.className = 'lp-fm'; e.textContent = this.summary; e.title = '눌러서 원문 보기'; return e }
+  ignoreEvent() { return false }
+}
+
+/** `type: reference` · `tags: [PARA, 지침]` → `REFERENCE · PARA · 지침` */
+function fmSummary(body: string): string {
+  const bits: string[] = []
+  for (const line of body.split('\n')) {
+    const m = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(line.trim())
+    if (!m || !m[2]) continue
+    const v = m[2].replace(/^\[|\]$/g, '').trim()
+    if (m[1].toLowerCase() === 'type') bits.unshift(v.toUpperCase())
+    else if (/^(tags?|status|kind)$/i.test(m[1])) bits.push(...v.split(',').map((x) => x.trim()).filter(Boolean))
+  }
+  return bits.slice(0, 5).join(' · ') || '속성'
+}
+
 const TASK_RE = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]\s/
 const WIKI_RE = /\[\[([^\]|]+)(\|[^\]]*)?\]\]/g
 const IMG_LINE_RE = /^!\[([^\]]*)\]\(([^)\s]+)\)\s*$/
@@ -123,6 +152,21 @@ function build(state: EditorState): { deco: DecorationSet; atoms: { from: number
       atoms.push({ from: n.from, to })
     }
   })
+  // ── 프론트매터 — 맨 위 `---` 블록 (커서가 없을 때만 접는다) ──
+  if (state.doc.line(1).text.trim() === '---') {
+    let end = 0
+    for (let n = 2; n <= Math.min(state.doc.lines, 60); n++) { if (state.doc.line(n).text.trim() === '---') { end = n; break } }
+    if (end) {
+      const touched = [...active].some((n) => n >= 1 && n <= end)
+      if (!touched) {
+        const from = state.doc.line(1).from, to = state.doc.line(end).to
+        const body = state.doc.sliceString(state.doc.line(2).from, state.doc.line(Math.max(2, end - 1)).to)
+        marks.push(Decoration.replace({ widget: new FmWidget(fmSummary(body)) }).range(from, to))
+        atoms.push({ from, to })
+      }
+    }
+  }
+
   // ── 파서가 모르는 것들은 줄을 직접 훑는다 (위키링크·체크박스·단독 이미지) ──
   // ⚠ lezer 는 `[[ ]]` 를 모르고, 체크박스는 한 글자만 갈아야 해서 줄 스캔이 더 정확하다.
   for (let n = 1; n <= state.doc.lines; n++) {
@@ -249,7 +293,17 @@ export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, 
         timer = window.setTimeout(() => commitRef.current(eol.current === '\r\n' ? text.replace(/\n/g, '\r\n') : text), 800)
       })
     ]
-    const view = new EditorView({ state: EditorState.create({ doc: initial.current.replace(/\r\n/g, '\n'), extensions: ext }), parent: el })
+    /**
+     * ⚠ **처음 커서는 프론트매터 뒤에 둔다.** 기본값(0)이면 1번 줄이 «활성» 이라 프론트매터가 안 접히고,
+     *    문서를 열자마자 YAML 이 먼저 보인다 — 게다가 사람이 제일 먼저 고칠 곳도 거기가 아니다.
+     */
+    const doc0 = initial.current.replace(/\r\n/g, '\n')
+    let anchor = 0
+    if (doc0.startsWith('---\n')) {
+      const end = doc0.indexOf('\n---', 4)
+      if (end > 0) anchor = Math.min(doc0.length, doc0.indexOf('\n', end + 1) + 1)
+    }
+    const view = new EditorView({ state: EditorState.create({ doc: doc0, selection: { anchor }, extensions: ext }), parent: el })
     viewRef.current = view
     view.focus()
     return () => {

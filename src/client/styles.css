@@ -621,3 +621,12 @@ b,strong { color:var(--w); font-weight:600 }
 .mded .lp-wiki:hover { color:var(--w) }
 .mded .lp-img { display:block; margin:6px 0 }
 .mded .lp-img img { max-width:100%; border-radius:6px; display:block }
+
+/* HTML 문서 — 문서 열 안에서 브라우저처럼. 크롬은 «여기서부터는 남의 페이지» 라는 표시다 */
+.dbody.htmlv { padding:0; display:flex; flex-direction:column; overflow:hidden }
+.htmlv .hbar { display:flex; align-items:center; gap:9px; padding:7px 11px; background:var(--bg2); border-bottom:1px solid var(--line); flex:none }
+.htmlv .hbar .dots { display:flex; gap:5px } .htmlv .hbar .dots i { width:9px; height:9px; border-radius:50%; background:var(--line2) }
+.htmlv .hbar .addr { flex:1; height:22px; border-radius:11px; background:var(--bg); display:flex; align-items:center; padding:0 10px; font-size:10.5px; color:var(--t3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.htmlv .hframe { flex:1; width:100%; border:0; background:#fff }
+.mded .lp-fm { display:inline-block; font-family:var(--mono); font-size:10.5px; letter-spacing:.4px; color:var(--t3); padding:2px 0; cursor:text }
+.mded .lp-fm:hover { color:var(--t2) }

@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { execFile } from 'node:child_process'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, extname, normalize, relative } from 'node:path'
@@ -223,6 +224,20 @@ export class Gateway {
           try { const abs = guard(roots(bot), join(bot.abs, rel)); out[rel] = exists(abs) && !statSync(abs).isDirectory() } catch { out[rel] = false }
         }
         return json(200, out)
+      }
+      /**
+       * 기본 앱으로 열기 — 🔴 **여는 주체는 언제나 호스트(메인 맥)다.**
+       *    폰에서 눌러도 미리보기는 **메인에서** 뜬다. 그래서 화면이 원격일 때는 이름을 «메인 맥에서 열기»
+       *    로 바꾸고 «이 기기로 내려받기» 를 함께 준다 — 안 그러면 눌러도 아무 일이 없는 것처럼 보인다.
+       * ⛔ 임의 경로를 열지 않는다 — `guard` 가 봇 폴더 밖을 막는다.
+       */
+      if (sub === 'open' && m === 'POST') {
+        const b = await body()
+        const abs = guard(roots(bot), join(bot.abs, String(b.rel ?? '')))
+        if (!exists(abs)) return json(404, { error: '없는 파일' })
+        if (process.platform !== 'darwin') return json(400, { error: '메인이 맥일 때만 열 수 있어요' })
+        execFile('/usr/bin/open', [abs], () => {})
+        return json(200, { ok: true })
       }
       if (sub === 'raw') { const abs = guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')); if (!exists(abs)) return json(404, { error: 'none' }); res.writeHead(200, { 'content-type': mime(abs), 'cache-control': 'no-store' }); stream(abs).pipe(res); return }
       if (sub === 'routines' && m === 'GET') return json(200, bot.routines)

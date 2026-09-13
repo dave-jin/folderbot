@@ -411,6 +411,10 @@ try {
           const w = await pg.evaluate(() => ({ check: document.querySelectorAll('.mded .lp-check').length, wiki: document.querySelectorAll('.mded .lp-wiki').length }))
           if (!w.check) fail('위젯: 체크박스가 안 그려졌다 ' + JSON.stringify(w))
           if (!w.wiki) fail('위젯: 위키링크가 안 그려졌다 ' + JSON.stringify(w))
+          // 프론트매터는 접혀서 작은 라벨 한 줄 — 문서를 열자마자 YAML 이 먼저 보이면 안 된다
+          const fm = await pg.evaluate(() => { const e = document.querySelector('.mded .lp-fm'); return { has: !!e, text: e?.textContent ?? '' } })
+          if (!fm.has) fail('프론트매터: 안 접혔다 — 열자마자 YAML 이 보인다')
+          if (!/REFERENCE/.test(fm.text)) fail('프론트매터: 요약이 이상하다 ' + JSON.stringify(fm))
           {
             const raw0 = readFileSync(abs, 'utf8')
             await pg.click('.mded .lp-check'); await wait(1400)
@@ -870,6 +874,17 @@ try {
     for (const x of ps) { if (!x.bin) fail('제공자: 실행 파일 없이 줄이 생겼다 ' + JSON.stringify(x)) }
     if (ps.some((x) => x.id === 'codex') && !existsSync(ps.find((x) => x.id === 'codex').bin)) fail('제공자: 없는 codex 가 나왔다')
     ok(`에이전트 제공자 ${ps.length}개 — 깔린 것만`)
+  }
+
+  // ── HTML 은 제 갈래로 · 외부 앱 열기는 루트 밖을 막는다 ──
+  {
+    await api(`/bots/${bot.id}/file`, { rel: 'report.html', text: '<!doctype html><h1>리포트</h1>' })
+    const d = await api(`/bots/${bot.id}/file?rel=report.html`)
+    if (d.kind !== 'html') fail('HTML: 원문 텍스트로 떨어졌다 — 브라우저처럼 못 본다 · kind=' + d.kind)
+    let blocked = false
+    try { await api(`/bots/${bot.id}/open`, { rel: '../../밖.md' }) } catch { blocked = true }
+    if (!blocked) fail('외부 앱 열기: 루트 밖이 새어 나간다')
+    ok('HTML 갈래 · 외부 앱 열기(루트 밖 차단)')
   }
 
   // ── 번들 계약 — 편집기는 **지연 로드**다 (문서를 한 번도 안 연 폰이 마크다운 파서를 받으면 안 된다) ──
