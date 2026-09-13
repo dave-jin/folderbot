@@ -630,6 +630,30 @@ try {
         await pg.click(`.panel .srow:has(.n:text-is("${keep}"))`); await wait(1000)
         await pg.click('.col.side.left .nav:has-text("폴더 선택")'); await pg.waitForSelector('.pk [data-rel]', { timeout: 5000 }); await wait(300)
 
+        // 🔴 **라이트 테마에서 글자가 배경에 묻히지 않는다** (2026-09-13 Dave: «여기서 시작 이 안 보여»)
+        //    `color:#111` 처럼 박아 두면 --w 가 #111 인 라이트에서 배경과 글자가 같은 색이 된다.
+        //    ⚠ 칠해진(불투명) 단추만 잰다 — 투명 단추는 부모 배경을 물려받아 여기서 잴 값이 아니다.
+        {
+          const bad = await pg.evaluate(() => {
+            const root = document.documentElement
+            const was = root.getAttribute('data-theme')
+            root.setAttribute('data-theme', 'light')
+            const lum = (c) => { const m = c.match(/[\d.]+/g); if (!m) return null; const [r, g, b, a] = [+m[0], +m[1], +m[2], m[3] === undefined ? 1 : +m[3]]; if (a < 1) return null; const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b) }
+            const out = []
+            for (const el of document.querySelectorAll('button, .btn, a.menu-a')) {
+              const r = el.getBoundingClientRect(); if (r.width < 8 || r.height < 8) continue
+              const cs = getComputedStyle(el)
+              const bg = lum(cs.backgroundColor), fg = lum(cs.color)
+              if (bg === null || fg === null) continue                 // 투명 배경 = 부모 것, 여기서 안 잰다
+              const ratio = (Math.max(bg, fg) + 0.05) / (Math.min(bg, fg) + 0.05)
+              if (ratio < 3) out.push({ t: (el.textContent ?? '').trim().slice(0, 20), cls: el.className, bg: cs.backgroundColor, fg: cs.color, ratio: +ratio.toFixed(2) })
+            }
+            if (was) root.setAttribute('data-theme', was); else root.removeAttribute('data-theme')
+            return out
+          })
+          if (bad.length) fail('라이트 테마: 글자가 배경에 묻힌 단추 ' + JSON.stringify(bad))
+          ok('라이트 테마에서 단추 글자가 다 보인다')
+        }
         await pg.screenshot({ path: 'test/tmp/desktop-picker.png' }); await pg.keyboard.press('Escape'); await wait(200); if (await pg.$('.pk')) await pg.click('.pk .modal-h .ib'); await wait(200)
         // 트리 우클릭 — 폴더면 «새 봇 시작» 항목이 있다
         await pg.click('.panel .secb button.trow.dir', { button: 'right' }); await wait(200); const cm = await pg.textContent('.menu.ctx'); if (!/새 봇 시작|에이전트 시작|봇 열기/.test(cm ?? '')) fail('ui tree ctx: ' + cm); await pg.keyboard.press('Escape'); await wait(150)
@@ -680,7 +704,18 @@ try {
         await pg.screenshot({ path: 'test/tmp/desktop-scrolled.png' })
         await pg.setViewportSize({ width: 1440, height: 900 }); await wait(200)
         await pg.evaluate(() => { document.querySelector('.chat-scroll').scrollTop = 0 }); await wait(300)
-        await pg.click('.tobot'); await wait(800); if (await pg.$('.tobot')) fail('ui ↓ should hide at bottom')
+        // 🔴 **「최근으로」 단추는 다가가면 도망가지 않는다** (2026-09-13 Dave)
+        //    ⛔ DOM 에서 빼고 다시 넣지 않는다(등장 애니메이션이 다시 돌아 4px 씩 튄다) — 투명도만 낮춘다.
+        {
+          const on = await pg.evaluate(() => { const e = document.querySelector('.tobot'); const r = e.getBoundingClientRect(); return { off: e.classList.contains('off'), anim: getComputedStyle(e).animationName, x: r.x, y: r.y } })
+          if (on.off) fail('↓: 위로 올렸는데 안 뜬다 ' + JSON.stringify(on))
+          if (on.anim !== 'none') fail('↓: 등장 애니메이션이 남아 있다 — 다시 뜰 때마다 자리가 튄다 ' + JSON.stringify(on))
+          await pg.hover('.tobot'); await wait(600)
+          const after = await pg.evaluate(() => { const r = document.querySelector('.tobot').getBoundingClientRect(); return { x: r.x, y: r.y } })
+          if (Math.abs(after.x - on.x) > 0.5 || Math.abs(after.y - on.y) > 0.5) fail('↓: 마우스를 올리니 자리가 움직였다 ' + JSON.stringify({ on, after }))
+        }
+        await pg.click('.tobot'); await wait(900)
+        if (!(await pg.evaluate(() => document.querySelector('.tobot')?.classList.contains('off')))) fail('ui ↓ should hide at bottom')
         // 파일 칩 → 문서 열이 열린다 · 트리 클릭 → 미리보기 탭
         await pg.click('.files .chip'); await pg.waitForSelector('.doc .dbody', { timeout: 5000 }); await wait(400)
         const tabs = await pg.$$eval('.doc .tab', (r) => r.length); if (tabs < 1) fail('doc tab')

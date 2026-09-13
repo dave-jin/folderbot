@@ -45,6 +45,17 @@ function decorate(root: HTMLElement, hits: string[], open: (rel: string) => void
 export function Md({ text, streaming, botId, onPath }: { text: string; streaming?: boolean; botId?: string; onPath?: (rel: string) => void }) {
   const html = useMemo(() => marked.parse(text) as string, [text])
   const ref = useRef<HTMLDivElement>(null)
+  /**
+   * 🔴 **바깥 링크는 바깥에서 연다** (2026-09-13 Dave). 앱 안에서 열면 **Folder Bot 이 그 자리에서
+   *    사라진다** — 데스크톱 셸은 창을 통째로 그 사이트로 끌고 가고(뒤로 가기도 없다), 폰 웹앱은
+   *    홈 화면에 담긴 창 하나뿐이라 대화로 돌아올 길이 없다.
+   * ⚠ `marked` 는 `target` 을 안 달아 준다 — 그린 뒤에 우리가 단다. 데스크톱 셸의
+   *    `setWindowOpenHandler` 가 이 `_blank` 를 받아 기본 브라우저로 넘긴다(desktop/main.js).
+   */
+  useEffect(() => {
+    const el = ref.current
+    if (el) for (const a of el.querySelectorAll<HTMLAnchorElement>('a[href^="http"]')) { a.target = '_blank'; a.rel = 'noreferrer noopener' }
+  }, [html])
   useEffect(() => {
     const el = ref.current
     if (!el || !botId || !onPath || streaming) return

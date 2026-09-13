@@ -22,9 +22,12 @@ b,strong { color:var(--w); font-weight:600 }
 .dot { width:6px; height:6px; border-radius:50%; display:inline-block; flex:none }
 .dot.run { background:var(--run) } .dot.wait { background:var(--wait) } .dot.done { background:var(--done) } .dot.err { background:var(--err) } .dot.none { background:transparent }
 .ib { position:relative; display:inline-flex; width:24px; height:24px; border-radius:6px; align-items:center; justify-content:center; color:var(--t3); flex:none } .ib:hover { color:var(--t2); background:var(--hover) } .ib.on { color:var(--w); background:var(--sel) }
-.ib .bd, .strip .ib .bd, .rb .bd { position:absolute; right:-4px; top:-3px; min-width:12px; height:12px; border-radius:6px; background:var(--t); color:#111; font-size:9px; font-weight:700; display:flex; align-items:center; justify-content:center; padding:0 3px; line-height:1 }
+.ib .bd, .strip .ib .bd, .rb .bd { position:absolute; right:-4px; top:-3px; min-width:12px; height:12px; border-radius:6px; background:var(--t); color:var(--onAccent); font-size:9px; font-weight:700; display:flex; align-items:center; justify-content:center; padding:0 3px; line-height:1 }
 .btn { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line2); border-radius:6px; padding:5px 12px; font-size:12.5px; color:var(--t); white-space:nowrap; min-height:30px } .btn:hover { background:var(--hover) }
-.btn.primary { background:var(--w); color:#111; border-color:var(--w); font-weight:600 } .btn.primary:hover { background:#fff }
+/* 🔴 **«글자 위 색» 은 언제나 --onAccent 다.** `color:#111` 로 박아 두면 라이트 테마에서 --w 가 #111 이라
+   배경과 글자가 **같은 색**이 된다 — 「여기서 시작」 단추가 통째로 안 보였다(2026-09-13 Dave 제보).
+   ⛔ hover 도 `#fff` 로 박지 않는다. 라이트에서 흰 배경 + 흰 글자가 된다 — 투명도로 민다. */
+.btn.primary { background:var(--w); color:var(--onAccent); border-color:var(--w); font-weight:600 } .btn.primary:hover { opacity:.86 }
 .btn.ghost { border-color:transparent; color:var(--t3) } .btn.ghost:hover { color:var(--t2) }
 .btn:disabled { opacity:.45; cursor:default }
 .chip { display:inline-flex; align-items:center; gap:5px; font-family:var(--mono); font-size:11.5px; color:var(--t2); border:1px solid var(--line2); border-radius:5px; padding:1px 7px; max-width:100%; cursor:pointer } .chip:hover { color:var(--w); border-color:var(--t3) } .chip span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
@@ -93,7 +96,9 @@ b,strong { color:var(--w); font-weight:600 }
 /* 「A · 문서처럼」 — 턴 사이 26px 세로 리듬. ⛔ 더 갈라야 하면 선이 아니라 여백을 쓴다 */
 .chat-body { display:flex; flex-direction:column; gap:26px; padding:calc(var(--hh) + 26px) 24px calc(var(--footh) + 12px); width:100%; max-width:760px; align-self:center; flex:1 }
 .pinq { position:absolute; top:calc(var(--hh) + 10px); left:50%; transform:translateX(-50%); width:calc(100% - 48px); max-width:712px; z-index:4; border:1px solid var(--hair); border-radius:8px; padding:8px 14px; color:var(--w); font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:0 8px 24px rgba(0,0,0,.35); cursor:pointer; animation:fadein .18s ease-out }
-.tobot { position:absolute; left:50%; transform:translateX(-50%); bottom:calc(var(--footh) + 14px); z-index:5; width:32px; height:32px; animation:fadein .18s ease-out } .tobot .dot { position:absolute; right:-1px; top:-1px; width:8px; height:8px; border:2px solid var(--bg) }
+/* ⛔ 등장 애니메이션(4px 떠오르기)을 쓰지 않는다 — 글이 흘러드는 동안 다시 돌면 «다가가면 도망가는» 단추가 된다 */
+.tobot { position:absolute; left:50%; transform:translateX(-50%); bottom:calc(var(--footh) + 14px); z-index:5; width:32px; height:32px; opacity:1; transition:opacity .14s ease }
+.tobot.off { opacity:0; pointer-events:none } .tobot .dot { position:absolute; right:-1px; top:-1px; width:8px; height:8px; border:2px solid var(--bg) }
 .chat-foot { position:absolute; left:0; right:0; bottom:0; z-index:5; display:flex; flex-direction:column; align-items:center; padding:0 24px 8px; pointer-events:none } .chat-foot > * { pointer-events:auto }
 .chat-foot::before { content:''; position:absolute; left:0; right:0; top:-56px; bottom:0; background:linear-gradient(180deg, var(--fade0) 0%, var(--fadeA) 40%, var(--fadeB) 100%); pointer-events:none; z-index:-1 }
 .chat-foot .queue, .chat-foot .files { width:100%; max-width:712px; margin-bottom:8px }
@@ -134,7 +139,7 @@ b,strong { color:var(--w); font-weight:600 }
 .cbar { display:flex; align-items:center; gap:2px; font-size:12.5px; color:var(--t2) } .cbar .sp { flex:1 }
 .cbtn { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:6px; font-size:12.5px; color:var(--t2); white-space:nowrap; position:relative } .cbtn:hover { color:var(--w); background:var(--hover) } .cbtn.on { color:var(--w); background:var(--sel) } .cbtn .chev { color:var(--t3) }
 .ring { display:inline-flex; align-items:center; justify-content:center; padding:0 6px; color:var(--t2) } .ring svg { transform:rotate(-90deg) } .ring.hot { color:var(--run) }
-.sendb { width:26px; height:26px; border-radius:50%; background:var(--w); color:#111; display:inline-flex; align-items:center; justify-content:center; flex:none; position:relative } .sendb.off { background:var(--line2); color:var(--t3) } .sendb .bd { position:absolute; right:-6px; top:-5px; font-size:9.5px; font-weight:700; background:var(--run); color:#000; border-radius:7px; padding:0 4px; line-height:1.4 }
+.sendb { width:26px; height:26px; border-radius:50%; background:var(--w); color:var(--onAccent); display:inline-flex; align-items:center; justify-content:center; flex:none; position:relative } .sendb.off { background:var(--line2); color:var(--t2) }   /* ⚠ --t3 는 라이트에서 배경과 거의 같은 밝기다(대비 2.4) */ .sendb .bd { position:absolute; right:-6px; top:-5px; font-size:9.5px; font-weight:700; background:var(--run); color:#000; border-radius:7px; padding:0 4px; line-height:1.4 }
 .cfoot { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--t3); padding:6px 4px 0; width:100%; max-width:712px } .cfoot .sp { flex:1 }
 /* 컴포저 팝업 — 슬래시 · @ · 모드 · 모델 · 노력 · 컨텍스트 · + 메뉴 */
 .cpop { position:absolute; bottom:calc(100% + 8px); left:0; width:min(440px, 100%); background:var(--box); border:1px solid var(--line2); border-radius:10px; box-shadow:0 14px 40px rgba(0,0,0,.55); padding:6px; z-index:8; display:flex; flex-direction:column; gap:1px; max-height:min(420px, 60vh); overflow:auto }

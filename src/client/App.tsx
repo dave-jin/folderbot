@@ -442,6 +442,14 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const [drop, setDrop] = useState<'' | 'tree' | 'files'>('')
   const [slash, setSlash] = useState<SlashCmd[]>([]); const [files, setFiles] = useState<FileNode[] | null>(null); const [sel, setSel] = useState(0); const [dismissed, setDismissed] = useState('')
   const [pinned, setPinned] = useState(false); const [atBottom, setAtBottom] = useState(true); const atBottomRef = useRef(true); atBottomRef.current = atBottom
+  /**
+   * 🔴 **「최근으로」 단추는 자동 스크롤과 **다른 눈금**을 쓴다** (2026-09-13 Dave: «누르려고 하면 도망가네»).
+   *    하나의 문턱(80px)으로 둘을 같이 쓰면, 글이 흘러드는 동안 그 선을 오가며 단추가 **붙었다 떨어졌다** 한다
+   *    — 붙을 때마다 4px 떠오르는 등장 애니메이션이 다시 돌아서 «다가가면 움직이는» 것처럼 보였다.
+   *    그래서 ① 이력(hysteresis)을 준다: **240px 넘게 멀어져야 뜨고, 40px 안으로 와야 사라진다**
+   *    ② 사라질 때도 **DOM 에서 빼지 않고** 투명도만 낮춘다 — 다시 뜰 때 제자리에 그대로 있다.
+   */
+  const [showJump, setShowJump] = useState(false)
   useEffect(() => { const el = scRef.current; if (!el || typeof ResizeObserver === 'undefined') return; const ro = new ResizeObserver(() => { if (atBottomRef.current) el.scrollTop = el.scrollHeight }); ro.observe(el); return () => ro.disconnect() }, [])
   /**
    * 폰에서 키보드가 올라오면 **대화를 맨 아래로 붙인다** — 읽으려고 위로 올려 둔 채 입력칸을 누르면
@@ -467,7 +475,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   // 컴포저 높이 → 본문 아래 여백 (유리 뒤로 글이 지나가되 가려지진 않게)
   useEffect(() => { const el = footRef.current, col = colRef.current; if (!el || !col) return; const ro = new ResizeObserver(() => col.style.setProperty('--footh', `${el.offsetHeight}px`)); ro.observe(el); return () => ro.disconnect() }, [collapsed])
   // 스크롤 위치 → ↓ 버튼(맨 아래가 아닐 때) · 직전 질문 고정(원래 메시지가 헤더 위로 사라졌을 때)
-  const measure = () => { const el = scRef.current; if (!el) return; setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80); const u = lastUserRef.current; setPinned(!!u && u.getBoundingClientRect().bottom < el.getBoundingClientRect().top + (phone ? 60 : 44)) }
+  const measure = () => { const el = scRef.current; if (!el) return; const d = el.scrollHeight - el.scrollTop - el.clientHeight; setAtBottom(d < 80); setShowJump((was) => (was ? d > 40 : d > 240)); const u = lastUserRef.current; setPinned(!!u && u.getBoundingClientRect().bottom < el.getBoundingClientRect().top + (phone ? 60 : 44)) }
   useEffect(() => { const el = scRef.current; if (!el) return; measure(); el.addEventListener('scroll', measure, { passive: true }); return () => el.removeEventListener('scroll', measure) }, [collapsed, cur?.id, phone])
   useEffect(() => { const el = scRef.current; if (atBottom && el) el.scrollTop = el.scrollHeight; measure() }, [items.length, last && (last.kind === 'assistant' || last.kind === 'thinking') ? last.text.length : 0, pending.length, cur?.activity, lastUser?.id])
   useEffect(() => { if (!pop) return; const off = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest('.cpop, .cbtn, .ring, .plusb')) setPop('') }; const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setPop(''); if (pop === 'mode' && /^[1-4]$/.test(e.key) && !(e.target as HTMLElement).matches('textarea,input')) { e.preventDefault(); void applyCfg({ permissionMode: MODES[Number(e.key) - 1].v }) } }; window.addEventListener('mousedown', off); window.addEventListener('keydown', key); return () => { window.removeEventListener('mousedown', off); window.removeEventListener('keydown', key) } }, [pop])
@@ -585,7 +593,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
         <div ref={endRef} />
       </div>
     </div>
-    {!atBottom ? <button className="tobot rb glassb" onClick={() => { const el = scRef.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }) }} title="최근으로"><Icon n="chevd" size={16} />{streaming ? <span className="dot run" /> : null}</button> : null}
+    <button className={`tobot rb glassb${showJump ? '' : ' off'}`} onClick={() => { const el = scRef.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }) }} title="최근으로" tabIndex={showJump ? 0 : -1} aria-hidden={!showJump}><Icon n="chevd" size={16} />{streaming ? <span className="dot run" /> : null}</button>
     <div className="chat-foot" ref={footRef}>
       {queue.map((q, i) => <div key={i} className="queue"><span>대기 {i + 1}</span><span className="tx">{q}</span><button onClick={() => setQueue(queue.filter((_, k) => k !== i))} style={{ color: 'var(--t3)', display: 'inline-flex' }}><Icon n="x" size={11} /></button></div>)}
       {attach.length ? <div className="files">{attach.map((a) => <span key={a.rel} className="chip" title={a.abs}><Icon n={a.dir ? 'folder' : 'doc'} size={11} color="var(--t3)" /><span>{a.rel}{a.dir ? '/' : ''}</span><button onClick={() => setAttach(attach.filter((x) => x.rel !== a.rel))} style={{ color: 'var(--t3)', display: 'inline-flex' }}><Icon n="x" size={10} /></button></span>)}<span style={{ fontSize: 11, color: 'var(--t3)', alignSelf: 'center' }}>{attach.length}개 · 봇이 읽어서 참고</span></div> : null}

@@ -67,7 +67,17 @@ ipcMain.on('fb:host-mode', () => { void chooseRootAndStart() })
 ipcMain.handle('fb:host-available', () => hostAvailable())
 // connect.html 이 주소를 확인하면 folderbot-connect://<url> 로 알려 준다
 app.on('web-contents-created', (_e, wc) => {
-  wc.on('will-navigate', (e, url) => { if (url.startsWith('folderbot-connect://')) { e.preventDefault(); settings.hostUrl = decodeURIComponent(url.slice('folderbot-connect://'.length)); settings.token = ''; save(); loadHome(); startSse() } })
+  wc.on('will-navigate', (e, url) => {
+    if (url.startsWith('folderbot-connect://')) { e.preventDefault(); settings.hostUrl = decodeURIComponent(url.slice('folderbot-connect://'.length)); settings.token = ''; save(); loadHome(); startSse(); return }
+    // 🔴 **바깥 링크는 바깥에서 연다.** `setWindowOpenHandler` 는 `target=_blank` 만 받는다 —
+    //    답변 속 평범한 `<a href>` 는 **창을 통째로** 그 사이트로 끌고 가서 앱이 그 자리에서 사라진다
+    //    (뒤로 갈 길도 없다). 우리 화면(호스트 주소·file://)만 남기고 나머지 http(s) 는 기본 브라우저로.
+    if (!/^https?:/i.test(url)) return
+    let mine = false
+    try { mine = new URL(url).origin === new URL(wc.getURL() || 'http://x.invalid').origin } catch {}
+    if (mine) return
+    e.preventDefault(); shell.openExternal(url)
+  })
 })
 // 권한 — 목록 · 설정 창 · 사용자 대답 · 테스트 알림 · 다시 시작
 ipcMain.handle('fb:perm-list', () => perms.list({ host: settings.mode === 'host' }))
