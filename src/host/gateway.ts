@@ -7,6 +7,7 @@ import type { Host } from './host'
 import { bindAddresses, tailnetInfo } from './tailnet'
 import { saveConfig } from './paths'
 import { handleMcp } from './mcp'
+import { providers } from './providers'
 import { hookState, setBudget, setHook, usageReport } from './usage'
 import { allDirs, guard, kindOf, mime, readText, recent, stream, tree, writeText, exists, listDir, renameEntry } from './files'
 import { todoDelete, todoEdit, todoMove, todoToggle } from './todoStore'
@@ -120,6 +121,7 @@ export class Gateway {
       req.on('close', () => this.clients.delete(c))
       return
     }
+    if (p === '/api/agents' && m === 'GET') return json(200, providers())
     if (p === '/api/usage' && m === 'GET') return json(200, { ...usageReport(), hook: hookState().installed })
     if (p === '/api/usage/hook' && m === 'POST') { const b = await body(); return json(200, setHook(!!b.on)) }
     if (p === '/api/usage/budget' && m === 'POST') { const b = await body(); return json(200, setBudget({ window: b.window === undefined ? undefined : Number(b.window), day: b.day === undefined ? undefined : Number(b.day), week: b.week === undefined ? undefined : Number(b.week) } as never)) }

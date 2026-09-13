@@ -550,6 +550,15 @@ try {
     }
     await br.close(); ok('ui renders (desktop · phone) → test/tmp/*.png')
   } catch (e) { try { await globalThis.__br?.close() } catch {} if (/executablePath|Executable doesn't exist|Cannot find (module|package) 'playwright/.test(String(e.message))) console.log('(화면 검사 건너뜀 — 브라우저 없음:', e.message.split('\n')[0], ')'); else fail('ui: ' + e.stack.split('\n').slice(0, 4).join(' | ')) }
+  // ── 에이전트 제공자 — 깔린 것만 나온다 (Dave: Codex가 없으면 아예 안보여야 해) ──
+  {
+    const ps = await api('/agents')
+    if (!Array.isArray(ps)) fail('제공자: 목록이 아니다')
+    for (const x of ps) { if (!x.bin) fail('제공자: 실행 파일 없이 줄이 생겼다 ' + JSON.stringify(x)) }
+    if (ps.some((x) => x.id === 'codex') && !existsSync(ps.find((x) => x.id === 'codex').bin)) fail('제공자: 없는 codex 가 나왔다')
+    ok(`에이전트 제공자 ${ps.length}개 — 깔린 것만`)
+  }
+
   // ── 사용량 — 남은 양 · 훅 설치 · 예산 (V23) ──
   {
     const u = await api('/usage')
