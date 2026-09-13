@@ -8,8 +8,8 @@ import { execFileSync } from 'node:child_process'
  * ⛔ **없는 것은 화면에 안 보인다** (2026-09-13 Dave: «Codex가 없으면 아예 안보여야 해»).
  *    그래서 판정은 «이름이 있나» 가 아니라 **실행 파일이 실제로 있나** 다.
  */
-export type ProviderId = 'claude' | 'codex'
-export interface Provider { id: ProviderId; name: string; bin: string | null; version: string | null }
+export type { Provider, ProviderId } from '../core/agents'
+import type { Provider, ProviderId } from '../core/agents'
 
 const CANDIDATES: Record<ProviderId, string[]> = {
   claude: [join(homedir(), '.local/bin/claude'), '/opt/homebrew/bin/claude', '/usr/local/bin/claude'],

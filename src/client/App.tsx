@@ -260,7 +260,10 @@ function Main() {
         </div>
         {hovRow ? <HoverCard b={hovRow.b} sum={hovRow.sum} top={hov!.top} left={fit.sb + 6} /> : null}
         {uOpen && usage ? <><div className="backdrop" style={{ background: 'transparent' }} onClick={() => setUOpen(false)} /><div className="upop" style={{ left: 10, bottom: 44 }}><UsageCard u={usage} /></div></> : null}
-        <div className="sb-foot"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} /><span>{s.hostName}</span>{usage && usage.tools.length ? <UsageChip u={usage} onClick={() => setUOpen(!uOpen)} /> : null}<MrBadge />{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<UpdateChip version={s.version} st={upd} onCheck={updCheck} onApply={updApply} /></div>
+        <div className="sb-foot two">
+          {usage && usage.tools.length ? <div className="r1"><UsageChip u={usage} onClick={() => setUOpen(!uOpen)} /></div> : null}
+          <div className="r2"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} /><span className="hn">{s.hostName}</span><MrBadge />{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<UpdateChip version={s.version} st={upd} onCheck={updCheck} onApply={updApply} /></div>
+        </div>
       </div> : <div className="strip left"><button className="ib" onClick={openSb} title="목록 펼치기 (⌘B)"><Icon n="panel" size={14} /></button><div className="gap" />
         <button className="ib" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span className="fly"><b>폴더 선택 · 시작</b><span>후보 {s.candidates.filter((c) => !c.active).length}</span></span></button>
         <button className="ib" onClick={() => setModal('notify')}><Icon n="bell" size={14} />{unread ? <span className="bd">{unread}</span> : null}<span className="fly"><b>알림</b><span>{unread ? `읽지 않음 ${unread}` : '없음'}</span></span></button>
@@ -433,14 +436,31 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const drillSub = drill ? (items.find((x) => x.id === drill) as Sub | undefined) : undefined
   // 슬래시 · @ — 캐럿 앞 토큰으로 판단
   const before = text.slice(0, caret)
-  const slashQ = /^\/(\S*)$/.test(text) && dismissed !== text ? text.slice(1) : null
+  /**
+   * 슬래시 — **캐럿 앞 토큰**으로 본다(@ 와 같은 규칙). 종전에는 «메시지 전체가 /낱말» 일 때만 떴다
+   * (`/^\/(\S*)$/`) — 그래서 «안녕 /» 처럼 문장 중간에 치면 목록이 안 나왔다 (2026-09-13 Dave).
+   * 낱말 경계 뒤의 `/` 만 인정한다 — 경로(`src/client`)의 슬래시에는 안 뜬다.
+   */
+  const slashM = dismissed !== text ? /(?:^|\s)\/([^\s/]*)$/.exec(before) : null
+  const slashQ = slashM ? slashM[1] : null
   const atM = dismissed !== text ? /(?:^|\s)@([^\s@]*)$/.exec(before) : null
   const atQ = atM ? atM[1] : null
   const slashList = useMemo(() => { if (slashQ === null) return []; const all = [...slash, ...BUILTIN_SLASH.filter((b) => !slash.some((x) => x.name === b.name))]; const q = slashQ.toLowerCase(); return all.filter((c) => fuzzy(q, c.name) > 0).sort((a, b) => fuzzy(q, b.name) - fuzzy(q, a.name)).slice(0, 12) }, [slashQ, slash])
   useEffect(() => { if (atQ !== null && !files) { void api<{ rel: string; dir: boolean; mtime: number; children?: unknown[] }[]>(`/bots/${bot.id}/files?depth=6`).then((tree) => { const out: FileNode[] = []; const walk = (n: typeof tree) => { for (const x of n) { out.push({ rel: x.rel, dir: x.dir, mtime: x.mtime }); if (x.children) walk(x.children as typeof tree) } }; walk(tree); setFiles(out) }).catch(() => setFiles([])) } }, [atQ, files])
   const atList = useMemo(() => { if (atQ === null || !files) return []; const q = atQ.toLowerCase(); return files.map((f) => ({ f, sc: fuzzy(q, f.rel.split('/').pop() ?? '') * 2 + fuzzy(q, f.rel) + (docTabs.includes(f.rel) ? 3 : 0) })).filter((x) => x.sc > 0).sort((a, b) => b.sc - a.sc || b.f.mtime - a.f.mtime).slice(0, 8).map((x) => x.f) }, [atQ, files, docTabs])
   useEffect(() => { setSel(0) }, [slashQ, atQ])
-  const pickSlash = (c: SlashCmd) => { setDismissed(''); if (c.name === 'clear') { setText(''); void newSession(); return } if (c.name === 'context') { setText(''); setPop('ctx'); return } setText(`/${c.name} `); setCaret(c.name.length + 2); taRef.current?.focus() }
+  /** 고른 명령을 **캐럿 앞 토큰 자리에만** 끼워 넣는다 — 앞뒤 문장을 지우지 않는다 */
+  const pickSlash = (c: SlashCmd) => {
+    setDismissed('')
+    if (c.name === 'clear') { setText(''); void newSession(); return }
+    if (c.name === 'context') { setText(''); setPop('ctx'); return }
+    const at = slashM ? before.length - slashM[0].length + (slashM[0].startsWith('/') ? 0 : 1) : 0
+    const head = text.slice(0, at), tail = text.slice(caret)
+    const ins = `/${c.name} `
+    setText(head + ins + tail); const pos = at + ins.length
+    setCaret(pos); taRef.current?.focus()
+    requestAnimationFrame(() => taRef.current?.setSelectionRange(pos, pos))
+  }
   const pickAt = (f: FileNode) => { const name = f.rel.split('/').pop() ?? f.rel; const start = caret - (atQ?.length ?? 0) - 1; const next = `${text.slice(0, start)}@${name} ${text.slice(caret)}`; setText(next); setCaret(start + name.length + 2); addAtt({ rel: f.rel, abs: `${bot.abs}/${f.rel}`, dir: f.dir }); setDismissed(''); taRef.current?.focus() }
   const mention = (rel: string) => { const name = rel.split('/').pop() ?? rel; setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}@${name} `); addAtt({ rel, abs: `${bot.abs}/${rel}` }); taRef.current?.focus() }
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

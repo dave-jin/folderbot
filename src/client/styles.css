@@ -69,6 +69,13 @@ b,strong { color:var(--w); font-weight:600 }
 .sb-list { flex:1; overflow:auto; padding:4px 8px }
 .secl { font-size:11px; color:var(--t3); padding:14px 12px 4px } .sb-list > div:first-child .secl { padding-top:6px }
 .brow { display:flex; align-items:center; gap:9px; padding:5px 12px; border-radius:6px; font-size:13px; color:var(--t); width:100%; min-height:30px } .brow:hover { background:var(--hover) } .brow.on { background:var(--sel); color:var(--w) } .brow .n { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .brow time { font-size:11px; color:var(--t3); white-space:nowrap }
+/* 왼쪽 아래 — 한 줄에 다 넣으니 잘렸다(2026-09-13 Dave). 사용량을 윗줄로 올려 두 줄로 나눈다. */
+.sb-foot.two { display:flex; flex-direction:column; align-items:stretch; gap:7px; padding:9px 14px 12px; white-space:nowrap; min-width:0 }
+.sb-foot.two .r1 { display:flex; min-width:0 } .sb-foot.two .r1 .uchip { width:100%; justify-content:flex-start }
+.sb-foot.two .r1 .uchip .mini { flex:1; width:auto; min-width:28px }
+.sb-foot.two .r2 { display:flex; align-items:center; gap:8px; min-width:0; font-size:12px; color:var(--t2) }
+.sb-foot.two .r2 .hn { overflow:hidden; text-overflow:ellipsis; min-width:0 }
+.sb-foot.two .r2 .bd { margin-left:0 } .sb-foot.two .r2 .bd.upd { max-width:none }
 .sb-foot { display:flex; align-items:center; gap:8px; padding:10px 20px 14px; font-size:12.5px; color:var(--t2); white-space:nowrap; min-width:0; overflow:hidden } .sb-foot > span:first-of-type + span { overflow:hidden; text-overflow:ellipsis }
 .mr { font-size:10.5px; border-radius:4px; padding:0 6px; border:1px solid; white-space:nowrap; flex:none } .mr.main { color:var(--done); border-color:rgba(79,191,135,.35) } .mr.remote { color:#7fb0ff; border-color:rgba(127,176,255,.35) }
 /* 레일 폴더봇 — 설정에서 고른 크기(--fbi)를 줄 높이가 따라간다. 마우스를 올리면 커져서 표정이 보인다
@@ -186,6 +193,7 @@ b,strong { color:var(--w); font-weight:600 }
 .tsheet .ti { font-size:12.5px; color:var(--t3); padding:0 14px 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
 .tsheet button { display:flex; align-items:center; gap:14px; height:50px; padding:0 14px; font-size:16px; color:var(--w) } .tsheet button:active { background:var(--sel) }
 /* ── 사용량 카드 (V23) — 남은 양. 막대는 두껍게 가로를 전부 쓰고 줄어든다 ── */
+.kv.agent { gap:10px } .kv.agent svg { flex:none }
 .kv input.bud { width:88px; background:var(--box); border:1px solid var(--line2); border-radius:7px; color:var(--w); font-size:13px; padding:5px 9px; font-family:var(--mono); text-align:right }
 .ucard { background:var(--bg2); border:1px solid var(--line2); border-radius:16px; padding:14px 15px }
 .ucard .uh { display:flex; align-items:center; gap:11px; margin-bottom:4px }

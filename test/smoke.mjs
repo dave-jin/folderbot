@@ -290,6 +290,17 @@ try {
         await pg.fill('.pk .search input', ''); await wait(300); if (await pg.$('.pk')) { await pg.click('.pk .modal-h .ib'); await wait(300) }
         // 레일 폴더봇 크기 — 설정에서 고르고(작게·보통·크게), 마우스를 올리면 한 번 더 커진다
         // (2026-09-13 Dave: «너무 작게 보여서 귀여운 폴더 표정이 잘 안 보여» · «마우스 오버했을 때는 크게 보이면 더 좋아»)
+        // 왼쪽 아래 — 두 줄이고, 아무것도 잘리지 않는다 (2026-09-13 Dave: «메뉴가 짤린다»)
+        const foot = await pg.evaluate(() => {
+          const f = document.querySelector('.sb-foot'); const fr = f.getBoundingClientRect()
+          const rows = f.querySelectorAll(':scope > div').length
+          const clipped = [...f.querySelectorAll('*')].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && (r.right > fr.right + 1 || r.left < fr.left - 1) }).map((e) => e.className || e.tagName)
+          return { rows, clipped: clipped.slice(0, 4), h: fr.height, w: fr.width, sw: f.scrollWidth }
+        })
+        if (foot.rows < 2) fail('왼쪽 아래: 두 줄이 아니다 ' + JSON.stringify(foot))
+        if (foot.clipped.length) fail('왼쪽 아래: 잘리는 것이 있다 ' + JSON.stringify(foot))
+        if (foot.sw > foot.w + 1) fail('왼쪽 아래: 가로로 넘친다 ' + JSON.stringify(foot))
+        await pg.locator('.sb-foot').screenshot({ path: 'test/tmp/desktop-foot.png' })
         // 사용량 칩 — 상태바에 «남은 %», 누르면 카드
         if (!(await pg.$('.sb-foot .uchip'))) fail('사용량: 상태바 칩이 없다')
         const chip = await pg.textContent('.sb-foot .uchip'); if (!/남음/.test(chip ?? '')) fail('사용량: 칩이 «남음» 이 아니다 · ' + chip)
@@ -363,6 +374,17 @@ try {
         const cbar = await pg.textContent('.composer .cbar'); if (!/Fable 5.1|Sonnet 5/.test(cbar) || !/자동|계획/.test(cbar) || !/높음/.test(cbar)) fail('ui cbar labels: ' + cbar)
         // 슬래시 자동완성 → 스킬이 뜬다 · @ → 파일이 뜬다
         await pg.fill('.composer textarea', '/st'); await wait(300); const sp = await pg.textContent('.cpop'); if (!/standup/.test(sp ?? '') || !/status/.test(sp ?? '')) fail('ui slash popup: ' + sp)
+        // 🔴 문장 중간의 / 도 자동완성이 떠야 한다 (2026-09-13 Dave: «입력 중간에 / 를 입력해도»)
+        await pg.fill('.composer textarea', '안녕 /st'); await wait(400)
+        const midp = await pg.textContent('.cpop').catch(() => null)
+        if (!midp || !/standup/.test(midp)) fail('문장 중간 «/» 에 스킬 목록이 안 뜬다 · ' + midp)
+        await pg.keyboard.press('Enter'); await wait(300)
+        const midv = await pg.inputValue('.composer textarea')
+        if (!/^안녕 \/standup $/.test(midv)) fail('문장 중간 «/» 를 고르면 앞 문장이 사라진다 · ' + JSON.stringify(midv))
+        // 경로의 슬래시에는 안 뜬다
+        await pg.fill('.composer textarea', 'src/cli'); await wait(400)
+        if (await pg.$('.cpop')) fail('경로의 «/» 에 목록이 떴다')
+        await pg.fill('.composer textarea', ''); await wait(200)
         await pg.keyboard.press('Escape'); await pg.fill('.composer textarea', '@todo'); await wait(600); const ap = await pg.textContent('.cpop'); if (!/todo\.md/.test(ap ?? '')) fail('ui @ popup: ' + ap)
         await pg.keyboard.press('Enter'); await wait(200); const ta = await pg.inputValue('.composer textarea'); if (!/@todo\.md /.test(ta)) fail('ui @ insert: ' + ta); if (!(await pg.$('.chat-foot .files .chip'))) fail('ui @ attach chip')
         await pg.fill('.composer textarea', '')
