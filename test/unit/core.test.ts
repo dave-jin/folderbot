@@ -4,6 +4,7 @@ import { parseTodo, addLine, toggleLine, formatLine, editLine, deleteLine } from
 import { transition, shouldNotify } from '../../src/core/stateMachine'
 import { authVerdict } from '../../src/core/authVerdict'
 import { machSummary } from '../../src/core/chat'
+import { AGENT_EFFORTS, AGENT_MODELS, fitsProvider } from '../../src/core/agents'
 import { toolSummary, touchedPath } from '../../src/core/chat'
 import { chosung, hitRange, isChosungQuery, rank, scoreName } from '../../src/core/search'
 import { decide, dropIndex } from '../../src/client/gesture'
@@ -315,5 +316,26 @@ describe('machSummary — 접힌 기계 한 줄', () => {
     expect(machSummary(1, 0, 40)).toBe('도구 1회')
     expect(machSummary(2, 1, 99)).toBe('도구 2회 · 파일 1개')
     expect(machSummary(2, 1, 100)).toBe('도구 2회 · 파일 1개 · 0.1초')
+  })
+})
+
+describe('에이전트 목록 — Claude 와 Codex 는 섞이면 안 된다', () => {
+  it('이름 체계가 겹치지 않는다', () => {
+    const c = AGENT_MODELS.claude.map((m) => m.v), x = AGENT_MODELS.codex.map((m) => m.v)
+    expect(c.some((v) => x.includes(v))).toBe(false)
+    expect(c.every((v) => fitsProvider('claude', v))).toBe(true)
+    expect(x.every((v) => fitsProvider('codex', v))).toBe(true)
+  })
+  it('상대의 모델은 «맞지 않다» 고 답한다 — 안 넘기고 CLI 기본값에 맡기려고', () => {
+    expect(fitsProvider('codex', 'claude-opus-5')).toBe(false)
+    expect(fitsProvider('claude', 'gpt-5.1-codex')).toBe(false)
+    expect(fitsProvider('codex', undefined)).toBe(false)
+  })
+  it('노력 단계가 다르다 — Codex 에는 xhigh·max 가 없다', () => {
+    const x = AGENT_EFFORTS.codex.map((e) => e.v)
+    expect(x).toContain('minimal')
+    expect(x).not.toContain('xhigh')
+    expect(x).not.toContain('max')
+    expect(AGENT_EFFORTS.claude.map((e) => e.v)).toContain('max')
   })
 })

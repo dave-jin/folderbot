@@ -31,3 +31,22 @@ export function checkAuth(bin?: string): Promise<AuthState> {
     })
   })
 }
+
+/**
+ * Codex 인증 — **우리가 로그인시키지 않는다.** `codex login` 은 브라우저를 여는 대화형 절차라
+ * 헤드리스 호스트에서 우리가 대신 해 줄 수 없다. 그래서 여기서는 **상태만 읽고**, 화면은
+ * ① 「터미널에서 `codex login`」 을 안내하거나 ② API 키를 받아 워커 환경에 넣는다(Claude 의 장기 토큰과 같은 구조).
+ *
+ * ⚠ 판정은 **파일이 있나** 다 — `codex` 에 「상태만 알려 주는」 비대화형 명령이 판마다 다르고,
+ *    없으면 프로세스가 대화형으로 멈춰 버려서 호스트가 붙잡힌다. 파일은 조용하고 빠르다.
+ */
+export function codexAuth(apiKey?: string): { ok: boolean; how: 'login' | 'key' | null; where?: string } {
+  if (apiKey) return { ok: true, how: 'key' }
+  if (process.env.OPENAI_API_KEY) return { ok: true, how: 'key', where: 'OPENAI_API_KEY' }
+  const home = process.env.CODEX_HOME ?? join(homedir(), '.codex')
+  for (const f of ['auth.json', 'credentials.json']) {
+    const p = join(home, f)
+    if (existsSync(p)) return { ok: true, how: 'login', where: p }
+  }
+  return { ok: false, how: null }
+}

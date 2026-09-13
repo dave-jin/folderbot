@@ -26,7 +26,19 @@ import { cleanClaudeEnv } from './session'
  *    조용히 비지 않고, 무엇이 왔는지 보인다.
  */
 
-export interface CodexSpec { cwd: string; resume?: string | null; model?: string; sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access' }
+export interface CodexSpec {
+  cwd: string
+  resume?: string | null
+  model?: string
+  /** Codex 의 `model_reasoning_effort` — minimal · low · medium · high (Claude 의 low…max 와 다르다) */
+  effort?: string
+  sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access'
+  /** `codex login` 을 못 쓰는 문맥의 대안 — 워커 환경에만 넣는다(파일로 안 쓴다) */
+  apiKey?: string
+}
+
+/** Codex 가 아는 노력 값만 넘긴다 — Claude 의 `xhigh`·`max` 를 넘기면 그 자리에서 죽는다 */
+const CODEX_EFFORT = new Set(['minimal', 'low', 'medium', 'high'])
 
 /** Codex 이벤트 한 줄 — `{ id, msg: { type, ... } }` 또는 판에 따라 평평한 `{ type, ... }` */
 interface CodexEvt { id?: string; msg?: Record<string, unknown>; type?: string; [k: string]: unknown }
@@ -55,9 +67,14 @@ export class CodexWorker extends EventEmitter {
     const args = this.cliSessionId ? ['exec', 'resume', this.cliSessionId] : ['exec']
     args.push('--json', '--sandbox', this.spec.sandbox ?? 'read-only', '--skip-git-repo-check')
     if (this.spec.model) args.push('--model', this.spec.model)
+    // ⚠ 노력은 `-c` 로 준다 — Codex 에는 `--effort` 플래그가 없고 설정 키(`model_reasoning_effort`)다.
+    //    ⛔ 아는 값만 넘긴다. Claude 의 `xhigh`·`max` 를 그대로 넘기면 CLI 가 그 자리에서 죽는다.
+    if (this.spec.effort && CODEX_EFFORT.has(this.spec.effort)) args.push('-c', `model_reasoning_effort="${this.spec.effort}"`)
     args.push(prompt)
     this.text = ''
-    const p = spawn(bin, args, { cwd: this.spec.cwd, env: cleanClaudeEnv() })
+    // ⚠ 키는 **환경에만** 넣는다 — 사용자의 `~/.codex` 설정 파일을 우리가 고쳐 쓰지 않는다
+    const env = { ...cleanClaudeEnv(), ...(this.spec.apiKey ? { OPENAI_API_KEY: this.spec.apiKey } : {}) }
+    const p = spawn(bin, args, { cwd: this.spec.cwd, env })
     this.proc = p
     p.stderr.on('data', (d: Buffer) => { this.lastError = (this.lastError + d.toString()).slice(-4000) })
     createInterface({ input: p.stdout }).on('line', (raw) => this.onLine(raw))

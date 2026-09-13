@@ -8,6 +8,7 @@ import { homedir } from 'node:os'
 import { transition, shouldNotify } from '../core/stateMachine'
 import { assistantText, closeOpenItems, contextOf, itemId, toolSummary, touchedPath, type StreamLine } from '../core/chat'
 import { CodexWorker } from './codex'
+import { fitsProvider } from '../core/agents'
 import type { Bot, ChatItem, PermissionMode, PermissionRequest, SessionInfo, SessionState } from '../core/types'
 import { atomicWrite, dataDir, ensureDir } from './paths'
 
@@ -190,7 +191,14 @@ export class SessionManager extends EventEmitter {
   systemPromptFor: (bot: Bot) => string = () => ''
   bin?: string
   /** 새 세션이 물려받는 기본값 — 기존 세션은 만들 때의 값을 유지한다 */
-  defaults: { model?: string; effort?: string } = {}
+  /**
+   * 새 세션의 기본값 — 🔴 **벤더마다 따로 둔다.** 하나로 두면 Codex 세션이 `claude-opus-5` 로 떠서
+   *    그 자리에서 죽는다(이름 체계가 다르다 · core/agents.ts).
+   */
+  defaults: Record<'claude' | 'codex', { model?: string; effort?: string }> = { claude: {}, codex: {} }
+  /** Codex 는 우리가 승인 화면을 못 띄운다 — 이 값이 곧 권한 정책이다(codex.ts 머리말) */
+  codexSandbox: 'read-only' | 'workspace-write' | 'danger-full-access' = 'read-only'
+  openaiApiKey?: string
 
   constructor() {
     super()
@@ -220,7 +228,7 @@ export class SessionManager extends EventEmitter {
 
   create(bot: Bot, name: string, opts: { permissionMode?: PermissionMode; model?: string; effort?: string; routine?: string; vendor?: 'claude' | 'codex' } = {}): SessionRec {
     const id = `s_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-    const r: SessionRec = { id, botId: bot.id, name, cwd: bot.repo ?? bot.abs, cliSessionId: null, state: 'idle', createdAt: Date.now(), lastActivity: Date.now(), items: [], routine: opts.routine, permissionMode: opts.permissionMode, vendor: opts.vendor ?? bot.vendor, model: opts.model ?? this.defaults.model, effort: opts.effort ?? this.defaults.effort }
+    const r: SessionRec = { id, botId: bot.id, name, cwd: bot.repo ?? bot.abs, cliSessionId: null, state: 'idle', createdAt: Date.now(), lastActivity: Date.now(), items: [], routine: opts.routine, permissionMode: opts.permissionMode, vendor: opts.vendor ?? bot.vendor, model: opts.model ?? this.defaults[opts.vendor ?? bot.vendor].model, effort: opts.effort ?? this.defaults[opts.vendor ?? bot.vendor].effort }
     this.recs.set(id, r)
     this.persist(r)
     this.emit('sessions', bot.id)
@@ -279,7 +287,7 @@ export class SessionManager extends EventEmitter {
     const w: Worker = (r.vendor ?? bot.vendor) === 'codex'
       // ⚠ 모델 이름은 CLI 마다 다르다 — Claude 이름(claude-opus-5)을 Codex 에 넘기면 그 자리에서 죽는다.
       //    Codex 것처럼 보이는 이름만 넘기고 아니면 CLI 의 기본값에 맡긴다.
-      ? new CodexWorker({ cwd: r.cwd, resume: r.cliSessionId, model: /^(gpt|o\d|codex)/i.test(r.model ?? '') ? r.model : undefined })
+      ? new CodexWorker({ cwd: r.cwd, resume: r.cliSessionId, model: fitsProvider('codex', r.model) ? r.model : undefined, effort: r.effort, sandbox: this.codexSandbox, apiKey: this.openaiApiKey })
       : new ClaudeWorker({ cwd: r.cwd, resume: r.cliSessionId, permissionMode: r.permissionMode, addDirs: bot.repo ? [bot.abs] : undefined, mcpConfig: this.mcpUrl(r.id, bot.id), model: r.model, effort: r.effort, name: `${bot.name}-${r.name}`, appendSystemPrompt: this.systemPromptFor(bot) || undefined, bin: this.bin })
     this.workers.set(r.id, w)
     w.on('line', (line: StreamLine) => this.onLine(r, line))

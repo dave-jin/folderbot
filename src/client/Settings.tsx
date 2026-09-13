@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { HarnessItem, HarnessRow } from '../core/types'
-import { PROVIDER_LABEL, type Provider } from '../core/agents'
+import { AGENT_EFFORTS, AGENT_MODELS, CODEX_SANDBOX, DEFAULT_EFFORT, DEFAULT_MODEL, PROVIDER_LABEL, type Provider } from '../core/agents'
 import { api, setToken, subscribePush } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { Mark } from './Brand'
@@ -111,6 +111,9 @@ const INDEX: { sec: SecId; t: string; d: string }[] = [
   { sec: 'host', t: '기기', d: '페어링 코드 끊기' },
   { sec: 'agents', t: '깔린 CLI', d: 'Claude Code Codex 버전' },
   { sec: 'agents', t: '기본 모델 · 생각 레벨', d: '새 세션부터 적용' },
+  { sec: 'agents', t: 'Codex 기본 모델 · 노력', d: 'gpt codex reasoning effort' },
+  { sec: 'agents', t: 'Codex 권한', d: '샌드박스 read-only workspace-write' },
+  { sec: 'agents', t: 'Codex 로그인 · OpenAI API 키', d: 'codex login openai key' },
   { sec: 'agents', t: 'Claude 로그인', d: '키체인 인증 상태' },
   { sec: 'agents', t: '장기 토큰', d: 'setup-token 헤드리스 SSH 인증' },
   { sec: 'agents', t: '커넥터 (MCP)', d: '연결된 도구 서버' },
@@ -194,10 +197,15 @@ function AgentsPane() {
   const [list, setList] = useState<Provider[] | null>(null)
   const [gh, setGh] = useState<{ skills: HarnessItem[]; mcp: HarnessItem[] } | null>(null)
   const [all, setAll] = useState(false)
-  const [model, setModel] = useState(s.defaults.model || 'claude-fable-5-1'); const [effort, setEffort] = useState(s.defaults.effort || 'high')
+  const [model, setModel] = useState(s.defaults.model || DEFAULT_MODEL.claude); const [effort, setEffort] = useState(s.defaults.effort || DEFAULT_EFFORT.claude)
+  const [cxModel, setCxModel] = useState(s.defaults.codex?.model || DEFAULT_MODEL.codex); const [cxEffort, setCxEffort] = useState(s.defaults.codex?.effort || DEFAULT_EFFORT.codex)
+  const [cxKey, setCxKey] = useState('')
   const [tok, setTok] = useState(''); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState('')
   useEffect(() => { void api<Provider[]>('/agents').then(setList).catch(() => setList([])); void api<typeof gh>('/harness/global').then(setGh).catch(() => setGh(null)) }, [])
-  const saveD = async (m: string, e: string) => { await api('/defaults', { body: { model: m, effort: e } }); await refresh(); setMsg('저장했어요 — 다음 세션부터 적용돼요.') }
+  const saveD = async (m: string, e: string, agent: 'claude' | 'codex' = 'claude') => { await api('/defaults', { body: { model: m, effort: e, agent } }); await refresh(); setMsg('저장했어요 — 다음 세션부터 적용돼요.') }
+  const saveCx = async (o: { sandbox?: string; apiKey?: string }) => { setBusy(true); try { await api('/codex', { body: o }); await refresh(); setMsg('Codex 설정을 저장했어요.') } finally { setBusy(false) } }
+  const hasCodex = (list ?? []).some((p) => p.id === 'codex')
+  const cxAuth = s.defaults.codex?.auth
   const saveT = async (t: string) => { setBusy(true); try { await api('/auth/token', { body: { token: t } }); await refresh(); setMsg(t ? '토큰을 저장했어요.' : '토큰을 지웠어요.'); setTok('') } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) } }
   const cut = (xs: HarnessItem[]) => (all ? xs : xs.slice(0, 4))
   return <>
@@ -215,6 +223,27 @@ function AgentsPane() {
       <select className="ssel" value={model} onChange={(e) => { setModel(e.target.value); void saveD(e.target.value, effort) }}>{MODELS.map((m) => <option key={m.v} value={m.v}>{m.t}</option>)}</select>
       <select className="ssel sm" value={effort} onChange={(e) => { setEffort(e.target.value); void saveD(model, e.target.value) }}>{EFFORTS.map((e) => <option key={e.v} value={e.v}>{e.t}</option>)}</select>
     </Row>
+    {/* 🔴 **Codex 도 Claude 와 같은 칸을 갖는다** (2026-09-13 Dave: «codex도 claude와 같이 영구 토큰
+        에이전트 모델 기본 설정등이 있어야 해»). ⚠ 다만 **값은 Codex 것으로 바뀐다** — 모델 이름 체계도,
+        노력 단계(`model_reasoning_effort`: 최소…높음)도 다르다. 같은 목록을 쓰면 첫 턴에 죽는다. */}
+    {hasCodex ? <Row t="Codex 기본 모델 · 노력" d={<>Codex 세션이 이 값으로 뜹니다. 쓸 수 있는 모델은 CLI 판마다 달라서 <b>직접 입력</b>도 됩니다.</>} data-t="Codex 기본 모델">
+      <input className="sin mono" list="cx-models" value={cxModel} onChange={(e) => setCxModel(e.target.value)} onBlur={() => void saveD(cxModel, cxEffort, 'codex')} placeholder="gpt-5.1-codex" />
+      <datalist id="cx-models">{AGENT_MODELS.codex.map((m) => <option key={m.v} value={m.v}>{m.t}</option>)}</datalist>
+      <select className="ssel sm" value={cxEffort} onChange={(e) => { setCxEffort(e.target.value); void saveD(cxModel, e.target.value, 'codex') }}>{AGENT_EFFORTS.codex.map((e) => <option key={e.v} value={e.v}>{e.t}</option>)}</select>
+    </Row> : null}
+    {hasCodex ? <Row t="Codex 권한" d={<>🔴 Codex 는 <b>우리가 승인 화면을 못 띄웁니다</b> — stdio 권한 프로토콜이 없어요. 그래서 이 값이 곧 권한 정책입니다.</>} data-t="Codex 권한">
+      <select className="ssel" value={s.defaults.codex?.sandbox ?? 'read-only'} onChange={(e) => void saveCx({ sandbox: e.target.value })}>{CODEX_SANDBOX.map((x) => <option key={x.v} value={x.v}>{x.t} — {x.d}</option>)}</select>
+    </Row> : null}
+    {hasCodex ? <Row t="Codex 로그인" d={cxAuth?.ok ? (cxAuth.how === 'key' ? 'API 키로 인증돼 있어요.' : `${cxAuth.where ?? '~/.codex'} 의 로그인을 씁니다.`) : <>터미널에서 <span className="mono">codex login</span> 을 하거나, 아래에 API 키를 넣으세요.</>} data-t="Codex 로그인">
+      <span className="sv" style={{ color: cxAuth?.ok ? 'var(--done)' : 'var(--wait)' }}>{cxAuth?.ok ? (cxAuth.how === 'key' ? '키' : '로그인') : '안 됨'}</span>
+    </Row> : null}
+    {hasCodex ? <Row t="OpenAI API 키" d="키체인·브라우저 로그인을 못 쓰는 문맥(헤드리스·SSH)의 대안입니다. 워커 환경에만 넣고 ~/.codex 설정 파일은 건드리지 않아요." data-t="OpenAI API 키">
+      <input className="sin mono" type="password" placeholder="sk-…" value={cxKey} onChange={(e) => setCxKey(e.target.value)} />
+      <button className="btn" disabled={busy || !cxKey.trim()} onClick={() => { void saveCx({ apiKey: cxKey }); setCxKey('') }}>저장</button>
+    </Row> : null}
+    {hasCodex && cxAuth?.how === 'key' ? <Row t="Codex 키 지우기" d="터미널 로그인(codex login) 모드로 돌아갑니다." danger><button className="btn danger" disabled={busy} onClick={() => void saveCx({ apiKey: '' })}>지우기</button></Row> : null}
+
+    <Group t="Claude 인증" />
     <Row t="Claude 로그인" d={msg || '키체인 로그인 상태예요.'}>
       <span className="sv" style={{ color: s.auth.verdict === 'loggedin' ? 'var(--done)' : 'var(--wait)' }}>{s.auth.verdict}{s.auth.email ? ` · ${s.auth.email}` : ''}</span>
       <button className="btn ghost" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button>
@@ -236,7 +265,6 @@ function AgentsPane() {
     </div>)}
     {gh && !gh.skills.length ? <Row t="스킬이 없어요" d="~/.claude/skills 나 볼트·폴더의 .claude/skills 에 SKILL.md 를 두면 여기 나옵니다." /> : null}
 
-    <Group t="Claude 인증" />
     <Row t="장기 토큰" d={<>키체인 로그인을 못 읽는 상황(헤드리스·SSH)이면 씁니다. 터미널에 <span className="mono">claude setup-token</span> 을 치고 나온 토큰을 넣으세요 (1년). ⚠ 토큰 모드에선 claude.ai 커넥터가 안 붙어요.</>}>
       <input className="sin mono" placeholder="sk-ant-oat01-…" value={tok} onChange={(e) => setTok(e.target.value)} />
       <button className="btn" disabled={busy || !tok.trim()} onClick={() => saveT(tok)}>저장</button>

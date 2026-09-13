@@ -33,7 +33,7 @@ export class Host {
     this.notifier = new Notifier(cfg)
     this.notifier.onEvent = (n) => this.broadcast({ ev: 'notify', n })
     this.sessions.bin = cfg.claudeBin
-    this.sessions.defaults = { model: cfg.defaultModel, effort: cfg.defaultEffort }
+    this.applyDefaults(cfg)
     setOauthToken(cfg.claudeOauthToken)
     this.sessions.mcpUrl = (sid, botId) => JSON.stringify({ mcpServers: { folderbot: { type: 'http', url: `http://127.0.0.1:${cfg.port}/mcp/${botId}?sid=${encodeURIComponent(sid)}` } } })
     this.sessions.systemPromptFor = (bot) => this.systemPrompt(bot)
@@ -128,10 +128,27 @@ export class Host {
     if (o.deviceId && o.deviceName !== undefined) { const d = this.cfg.devices.find((x) => x.id === o.deviceId); if (d && o.deviceName.trim()) d.name = o.deviceName.trim().slice(0, 40) }
     saveConfig(this.cfg)
   }
-  /** 기본 모델·생각 레벨 — 저장하면 다음 세션부터 */
-  setDefaults(model: string, effort: string): void {
-    this.cfg.defaultModel = model || undefined; this.cfg.defaultEffort = effort || undefined
-    this.sessions.defaults = { model: this.cfg.defaultModel, effort: this.cfg.defaultEffort }
+  /** 설정 → 세션 매니저. ⚠ 벤더마다 따로 — 섞으면 Codex 세션이 Claude 모델로 떠서 죽는다 */
+  private applyDefaults(cfg = this.cfg): void {
+    this.sessions.defaults = {
+      claude: { model: cfg.defaultModel, effort: cfg.defaultEffort },
+      codex: { model: cfg.defaultCodexModel, effort: cfg.defaultCodexEffort }
+    }
+    this.sessions.codexSandbox = cfg.codexSandbox ?? 'read-only'
+    this.sessions.openaiApiKey = cfg.openaiApiKey
+  }
+  /** 기본 모델·생각 레벨 — 저장하면 다음 세션부터. `agent` 로 어느 CLI 것인지 가른다 */
+  setDefaults(model: string, effort: string, agent: 'claude' | 'codex' = 'claude'): void {
+    if (agent === 'codex') { this.cfg.defaultCodexModel = model || undefined; this.cfg.defaultCodexEffort = effort || undefined }
+    else { this.cfg.defaultModel = model || undefined; this.cfg.defaultEffort = effort || undefined }
+    this.applyDefaults()
+    saveConfig(this.cfg)
+  }
+  /** Codex 설정 — 샌드박스(= 권한 정책)와 API 키 */
+  setCodex(o: { sandbox?: string; apiKey?: string }): void {
+    if (o.sandbox === 'read-only' || o.sandbox === 'workspace-write' || o.sandbox === 'danger-full-access') this.cfg.codexSandbox = o.sandbox
+    if (o.apiKey !== undefined) this.cfg.openaiApiKey = o.apiKey.trim() || undefined
+    this.applyDefaults()
     saveConfig(this.cfg)
   }
   setToken(token: string): void {

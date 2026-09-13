@@ -1,5 +1,6 @@
 // 원격 왕복 스모크 — 픽스처 볼트 + 스텁 CLI 로 호스트를 띄우고 API·SSE·MCP·화면을 검사한다
 import { spawn } from 'node:child_process'
+import { createServer } from 'node:net'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -26,8 +27,17 @@ writeFileSync(join(fbHome, '.folderbot/usage.jsonl'),
   [{ t: Date.now() - 90 * 60 * 1000, tool: 'claude', model: 'claude-opus-5', input: 1200, output: 9000, cacheRead: 240000, cacheWrite: 3000 },
    { t: Date.now() - 10 * 60 * 1000, tool: 'claude', model: 'claude-sonnet-5', input: 900, output: 4000, cacheRead: 80000, cacheWrite: 1000 }].map((x) => JSON.stringify(x)).join('\n') + '\n')
 const env = { ...process.env, FOLDERBOT_HOME: fbHome, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg }
+/**
+ * 🔴 **포트가 이미 잡혀 있으면 그 자리에서 멈춘다** (2026-09-13 실사고).
+ *    앞선 실패로 남은 호스트가 같은 포트를 잡고 있으면, 우리는 «건강한 응답» 을 받고 **옛 코드를**
+ *    검사하게 된다. 고친 것이 안 고쳐진 것처럼 보이고, 원인을 코드에서 한참 찾게 된다(실제로 그랬다).
+ */
+const portFree = (port) => new Promise((res) => { const srv = createServer(); srv.once('error', () => res(false)); srv.listen(port, '127.0.0.1', () => srv.close(() => res(true))) })
+const needPort = async (port, what) => { if (!(await portFree(port))) fail(`${what}: 포트 ${port} 를 누가 쓰고 있어요 — 앞선 검사의 호스트가 남았는지 보세요(그 프로세스를 재면 옛 코드를 재는 셈입니다)`) }
+
 const run = (args) => new Promise((res, rej) => { const p = spawn('node', ['bin/folderbot.mjs', ...args], { env }); let out = ''; p.stdout.on('data', (d) => (out += d)); p.stderr.on('data', (d) => (out += d)); p.on('exit', (c) => (c === 0 ? res(out) : rej(new Error(out)))) })
 console.log(await run(['init', root]))
+await needPort(PORT, '메인 호스트')
 const host = spawn('node', ['bin/folderbot.mjs', 'start', '--port', String(PORT)], { env })
 let hostLog = ''; host.stdout.on('data', (d) => (hostLog += d)); host.stderr.on('data', (d) => (hostLog += d))
 const base = `http://127.0.0.1:${PORT}`
@@ -1033,7 +1043,10 @@ try {
   {
     const sh = join(process.cwd(), 'test/fixtures/stub-codex.mjs'); chmodSync(sh, 0o755)
     const p2 = PORT + 3
-    const two = spawn('node', ['bin/folderbot.mjs', 'start', '--port', String(p2)], { env: { ...env, FOLDERBOT_CODEX_BIN: sh }, stdio: 'ignore' })
+    const argvLog = join(root, '.folderbot', 'codex-argv.log')
+    mkdirSync(join(root, '.folderbot'), { recursive: true })
+    await needPort(p2, '두 번째 호스트')
+    const two = spawn('node', ['bin/folderbot.mjs', 'start', '--port', String(p2)], { env: { ...env, FOLDERBOT_CODEX_BIN: sh, FOLDERBOT_CODEX_ARGV: argvLog }, stdio: 'ignore' })
     try {
       for (let i = 0; i < 40; i++) { try { await fetch(`http://127.0.0.1:${p2}/api/health`); break } catch { await wait(250) } }
       const ps2 = await (await fetch(`http://127.0.0.1:${p2}/api/agents`)).json()
@@ -1068,6 +1081,35 @@ try {
       // 같은 폴더의 다른 세션은 Claude 다 — 한 폴더 안에 둘이 섞여 산다
       const mix = await api2(`/bots/${b1.id}/sessions`, { name: '클로드', vendor: 'claude' })
       if (mix.vendor !== 'claude') fail('세션 벤더: 같은 폴더의 다른 세션이 Claude 가 아니다 ' + JSON.stringify(mix))
+      // 🔴 **Codex 도 Claude 와 동급이다** (2026-09-13 Dave) — 기본 모델 · 노력 · 권한(샌드박스) · 키.
+      //    ⚠ 값이 **CLI 까지 실제로 가는지**는 가짜 CLI 가 남긴 argv 로만 잴 수 있다.
+      await api2('/defaults', { model: 'gpt-5.1-codex-mini', effort: 'high', agent: 'codex' })
+      await api2('/codex', { sandbox: 'workspace-write', apiKey: 'sk-test-key' })
+      const st2 = await api2('/state')
+      if (st2.defaults.model === 'gpt-5.1-codex-mini') fail('기본값: Codex 것이 Claude 칸을 덮었다 — 섞으면 Claude 세션이 죽는다')
+      if (st2.defaults.codex?.model !== 'gpt-5.1-codex-mini' || st2.defaults.codex?.effort !== 'high') fail('기본값: Codex 칸이 안 남았다 ' + JSON.stringify(st2.defaults))
+      if (st2.defaults.codex?.sandbox !== 'workspace-write') fail('Codex 권한: 샌드박스가 안 남았다 ' + JSON.stringify(st2.defaults.codex))
+      if (!st2.defaults.codex?.auth?.ok || st2.defaults.codex.auth.how !== 'key') fail('Codex 인증: 키를 넣었는데 «안 됨» 이다 ' + JSON.stringify(st2.defaults.codex?.auth))
+      const cx2 = await api2(`/bots/${b1.id}/sessions`, { name: '코덱스2', vendor: 'codex' })
+      if (cx2.model !== 'gpt-5.1-codex-mini' || cx2.effort !== 'high') fail('새 Codex 세션이 Codex 기본값으로 안 떴다 ' + JSON.stringify(cx2))
+      await api2(`/sessions/${cx2.id}/send`, { text: '노력 검사' })
+      let lines = []
+      for (let i = 0; i < 50; i++) { lines = existsSync(argvLog) ? readFileSync(argvLog, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []; if (lines.some((l) => l.argv.includes('노력 검사'))) break; await wait(200) }
+      const run = lines.find((l) => l.argv.includes('노력 검사'))
+      if (!run) fail('Codex: CLI 를 안 불렀다')
+      const a = run.argv.join(' ')
+      if (!/--model gpt-5\.1-codex-mini/.test(a)) fail('Codex: 모델이 CLI 로 안 갔다 ' + a)
+      if (!/-c model_reasoning_effort="high"/.test(a)) fail('Codex: 노력이 CLI 로 안 갔다(플래그가 아니라 -c 설정 키다) ' + a)
+      if (!/--sandbox workspace-write/.test(a)) fail('Codex: 샌드박스가 CLI 로 안 갔다 ' + a)
+      if (run.key !== 'sk-test-key') fail('Codex: API 키가 워커 환경에 안 들어갔다 ' + run.key)
+      // ⛔ Claude 의 노력 단계(xhigh·max)는 Codex 에 넘기지 않는다 — 넘기면 그 자리에서 죽는다
+      await api2(`/sessions/${cx2.id}/settings`, { effort: 'max' })
+      await api2(`/sessions/${cx2.id}/send`, { text: '모르는 노력' })
+      let l2 = []
+      for (let i = 0; i < 50; i++) { l2 = readFileSync(argvLog, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)); if (l2.some((l) => l.argv.includes('모르는 노력'))) break; await wait(200) }
+      const run2 = l2.find((l) => l.argv.includes('모르는 노력'))
+      if (run2 && /model_reasoning_effort/.test(run2.argv.join(' '))) fail('Codex: 모르는 노력 값을 그대로 넘겼다 ' + run2.argv.join(' '))
+      ok('Codex 동급 — 기본 모델 · 노력 · 샌드박스 · API 키가 CLI 까지 간다')
       ok('에이전트 고르기 — 폴더 하나 = 줄 하나 · 벤더는 세션마다 · Codex 로 한 턴')
     } finally { two.kill() }
   }

@@ -23,7 +23,8 @@ export interface StateShape {
   port: number
   botLimit: number
   devices: { id: string; name: string; lastSeen: number }[]
-  defaults: { model: string; effort: string }
+  /** ⚠ Codex 기본값은 **따로** 온다 — 이름 체계가 달라 섞으면 Codex 세션이 그 자리에서 죽는다 */
+  defaults: { model: string; effort: string; codex?: { model: string; effort: string; sandbox: string; auth: { ok: boolean; how: 'login' | 'key' | null; where?: string } } }
   /** 메인(호스트) 이름 · 이 화면이 어디서 보고 있는지 */
   hostName: string
   device: { id: string; name: string; main: boolean }
