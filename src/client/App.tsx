@@ -15,6 +15,7 @@ import { fmtTime, useStore } from './store'
 import { ICON_PX, useIconSize, useTheme } from './theme'
 import { UsageCard, UsageStrip, useUsage } from './Usage'
 import { PermGate, usePerms } from './Perms'
+import { Palette } from './Palette'
 import { MODES, effortLabel, effortsFor, fmtK, modeLabel, modelLabel, modelsFor } from './consts'
 import { DEFAULT_EFFORT, DEFAULT_MODEL } from '../core/agents'
 import { cronFromText, routineName } from '../core/routineText'
@@ -140,6 +141,7 @@ interface UpdState { lastCheck: number; current: string; staged: { version: stri
 export const KEYS: { k: string; t: string; d?: string }[] = [
   { k: '⌘,', t: '설정' },
   { k: '⌘/', t: '단축키 보기' },
+  { k: '⌘P', t: '명령 팔레트', d: '폴더 · 문서 · 세션 · 명령' },
   { k: '⌘K', t: '폴더 고르기 · 시작' },
   { k: '⌘N', t: '새 세션', d: '지금 폴더' },
   { k: '⌘⇧N', t: '새 폴더에서 시작' },
@@ -212,7 +214,7 @@ function Main() {
   const [docOpen, setDocOpen] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem('fb:docopen') ?? '{}') } catch { return {} } })
   useEffect(() => { localStorage.setItem('fb:docopen', JSON.stringify(docOpen)) }, [docOpen])
   const [wide, setWide] = useState(false)
-  const [modal, setModal] = useState<'picker' | 'notify' | 'settings' | 'keys' | null>(null)
+  const [modal, setModal] = useState<'picker' | 'notify' | 'settings' | 'keys' | 'palette' | null>(null)
   // «설정의 그 칸을 열어 줘» — 에이전트 고르기 화면의 «바꾸기» 가 이걸 쏜다 (V24)
   const [setSec, setSetSec] = useState<SecId | undefined>(undefined)
   useEffect(() => { const f = (e: Event) => { setSetSec((e as CustomEvent).detail as SecId); setModal('settings') }; window.addEventListener('fb:settings', f); return () => window.removeEventListener('fb:settings', f) }, [])
@@ -346,6 +348,8 @@ function Main() {
       if (!(e.metaKey || e.ctrlKey)) return
       const key = e.key.toLowerCase()
       const hit = (want: string, shift = false) => key === want && e.shiftKey === shift && !e.altKey
+      // ⌘P — 명령 팔레트 (⌘K 는 이미 «폴더 고르기» 다). ⚠ 브라우저의 «인쇄» 를 덮으므로 반드시 막는다
+      if (hit('p')) { e.preventDefault(); setModal((m) => (m === 'palette' ? null : 'palette')); return }
       if (hit('b')) { e.preventDefault(); setLay((l) => ({ ...l, sbOpen: !l.sbOpen })); return }
       if (hit('b', true)) { e.preventDefault(); setLay((l) => ({ ...l, rpOpen: !l.rpOpen })); return }
       if (hit('d', true) && bot) { e.preventDefault(); setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] })); return }
@@ -370,6 +374,7 @@ function Main() {
     const off = desk?.onCmd?.((c: string) => {
       if (c === 'settings') setModal('settings')
       else if (c === 'keys') setModal('keys')
+      else if (c === 'palette') setModal('palette')
       else if (c === 'picker') setModal('picker')
       else if (c === 'notify') setModal('notify')
       else if (c === 'new-session') void newSession()
@@ -450,6 +455,12 @@ function Main() {
     {modal === 'notify' ? <NotifyCenter onClose={() => setModal(null)} onJump={(n) => { setModal(null); api('/notifications/read', { body: { ids: [n.id] } }).then(refresh); go(n.botId, n.sessionId) }} /> : null}
     {modal === 'settings' ? <Settings onClose={() => { setModal(null); setSetSec(undefined) }} start={setSec} /> : null}
     {modal === 'keys' ? <KeysSheet onClose={() => setModal(null)} /> : null}
+    {/* 🔴 **명령 팔레트 (⌘P)** — 폴더 · 문서 · 세션 · 명령이 한 목록에 선다(Rondo 이식 D1).
+        ⛔ 되돌리기 어려운 일(지우기·은퇴)은 여기 두지 않는다 — 손이 빠른 자리라 한 글자 잘못 치고
+        ⏎ 를 누르면 그대로 실행된다. */}
+    {modal === 'palette' ? <Palette bots={s.bots} bot={bot} sessions={sessions} onClose={() => setModal(null)}
+      go={(b, sid) => go(b, sid)} openDoc={(rel, pin) => openDoc(rel, pin)} setModal={setModal} newSession={newSession}
+      toggle={(w) => { if (w === 'sb') setLay((l) => ({ ...l, sbOpen: !l.sbOpen })); else if (w === 'rp') setLay((l) => ({ ...l, rpOpen: !l.rpOpen })); else setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] })) }} /> : null}
     <AskHost />
     <AgentPickHost />
     {toast ? <div className="toast">{toast}</div> : null}

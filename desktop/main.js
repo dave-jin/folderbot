@@ -148,6 +148,7 @@ function appMenu() {
     { label: '파일', submenu: [
       { label: '새 세션', accelerator: 'CmdOrCtrl+N', click: cmd('new-session') },
       { label: '폴더 고르기 · 시작', accelerator: 'CmdOrCtrl+K', click: cmd('picker') },
+      { label: '명령 팔레트', accelerator: 'CmdOrCtrl+P', click: cmd('palette') },
       { type: 'separator' }, { role: isMac ? 'close' : 'quit' }
     ] },
     { label: '편집', submenu: [

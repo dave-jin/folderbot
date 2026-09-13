@@ -945,6 +945,29 @@ try {
           if (await pg.$('.modal.keys')) fail('단축키: 글자를 쳤는데 명령이 돌았다')
           await pg.fill('.composer textarea', ''); await wait(200)
           ok('맥 기본 단축키 — ⌘, 설정 · ⌘/ 표 · 글 칠 때는 안 돈다')
+          /**
+           * 🔴 **명령 팔레트 ⌘P** (Rondo 이식 D1) — 폴더 · 문서 · 세션 · 명령이 한 목록에 선다.
+           * ⛔ 되돌리기 어려운 일(지우기·은퇴)은 **여기 있으면 안 된다** — 손이 빠른 자리라
+           *    한 글자 잘못 치고 ⏎ 를 누르면 그대로 실행된다.
+           */
+          await pg.keyboard.press('Meta+p'); await wait(500)
+          const pal = await pg.evaluate(() => {
+            const m = document.querySelector('.modal.pal')
+            if (!m) return null
+            return { rows: [...m.querySelectorAll('.prow')].map((r) => r.textContent ?? ''), on: m.querySelectorAll('.prow.on').length }
+          })
+          if (!pal) fail('팔레트: ⌘P 로 안 뜬다')
+          if (pal.rows.length < 5) fail('팔레트: 목록이 너무 짧다 ' + JSON.stringify(pal.rows))
+          if (!pal.rows.some((r) => /설정/.test(r))) fail('팔레트: 명령이 없다 ' + JSON.stringify(pal.rows.slice(0, 6)))
+          if (pal.rows.some((r) => /지우기|은퇴|삭제/.test(r))) fail('🔴 팔레트에 되돌리기 어려운 일이 있다 ' + JSON.stringify(pal.rows))
+          if (pal.on !== 1) fail('팔레트: 고른 줄이 하나가 아니다 ' + pal.on)
+          // 글자를 치면 걸러지고, ↓ 로 내려가고, ⎋ 로 닫힌다
+          await pg.fill('.modal.pal .pq input', '설정'); await wait(300)
+          const filtered = await pg.evaluate(() => [...document.querySelectorAll('.modal.pal .prow')].map((r) => r.textContent ?? ''))
+          if (!filtered.length || !filtered.every((r) => /설정/.test(r))) fail('팔레트: 거르기가 안 듣는다 ' + JSON.stringify(filtered))
+          await pg.keyboard.press('Escape'); await wait(300)
+          if (await pg.$('.modal.pal')) fail('팔레트: ⎋ 로 안 닫힌다')
+          ok('명령 팔레트 ⌘P — 폴더 · 문서 · 세션 · 명령 (되돌리기 어려운 일은 없다)')
         }
         /**
          * ⛔ **고른 줄에 주황 네모가 씌워지면 안 된다** (2026-09-13 Dave: *«선택시 생기는 오렌지 박스는
