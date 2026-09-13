@@ -114,7 +114,7 @@ function AgentConn() {
       {!claudeOn ? <>
         <p className="why">{!has('claude')
           ? 'Claude Code 가 안 깔려 있어요. 터미널에서 설치한 뒤 [다시 확인] 을 누르세요.'
-          : '아래 [터미널에서 로그인] 을 누르면 이 맥에 터미널이 열려요. claude 가 뜨면 /login 을 치고 브라우저에서 마치세요 — 그러면 claude.ai 커넥터(Akiflow 같은 것)도 함께 붙습니다.'}</p>
+          : '아래 [터미널에서 로그인] 을 누르면 이 맥에 터미널이 열려요. claude 가 뜨면 /login 을 치고 브라우저에서 마치세요 — 로그인으로 붙으면 이 맥에 설치된 MCP 커넥터와 스킬, 그리고 claude.ai 계정에 연결해 둔 커넥터를 그대로 씁니다.'}</p>
         <ol className="how">{(!has('claude')
           ? ['터미널에서 Claude Code 를 설치하세요', '설치 뒤 [연결 확인]']
           : ['터미널에서 claude 를 치고 /login', '브라우저에서 로그인을 마치세요', '이 창으로 돌아와 [연결 확인]']).map((h, i) => <li key={i}>{h}</li>)}</ol>

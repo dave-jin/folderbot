@@ -254,7 +254,10 @@ function AgentsPane() {
     : <span>로그인은 <b>호스트 맥</b>({s.hostName})에서 해야 해요.</span>
   const cut = (xs: HarnessItem[]) => (all ? xs : xs.slice(0, 4))
   return <>
-    <p className="lead">모든 봇이 함께 쓰는 것들입니다. 폴더마다 다른 것은 <b>하네스</b> 칸에 있어요.</p>
+    {/* ⚠ **범용 문구로 쓴다** (2026-09-13 Dave) — 이 제품은 누구나 쓴다. 특정 커넥터 이름을 예로
+        박으면 «그 서비스를 쓰는 사람의 도구» 처럼 읽힌다. 우리가 말할 수 있는 것은 «이 맥에 깔린
+        것을 그대로 쓴다» 까지다(설치는 우리가 하지 않는다). */}
+    <p className="lead">모든 봇이 함께 쓰는 것들입니다. <b>이 맥에 설치된 MCP 커넥터와 스킬을 그대로 씁니다</b> — Folder Bot 이 따로 설치하거나 바꾸지 않아요. 폴더마다 다른 것은 <b>하네스</b> 칸에 있어요.</p>
     <Group t="깔린 CLI" />
     {(list ?? []).map((p) => <div className="hitem" key={p.id}>
       <span className="ic"><Mark id={p.id} size={16} /></span>
@@ -314,8 +317,8 @@ function AgentsPane() {
     {/* 🔴 **지금 무엇으로 붙어 있나** — 이 한 줄이 «왜 Akiflow 가 안 뜨지» 를 그 자리에서 답한다
         (2026-09-13 Dave 보고). 토큰을 쓰면 CLI 가 claude.ai 커넥터 로딩을 통째로 건너뛴다. */}
     <Row t="쓰는 인증" d={s.auth.mode === 'token'
-      ? <>장기 토큰으로 붙어 있어요. ⚠ <b>이 모드에서는 claude.ai 커넥터(Akiflow 같은 것)가 안 붙습니다</b> — 토큰 스코프에 <span className="mono">user:mcp_servers</span> 가 없어요. 호스트 맥 터미널에서 <span className="mono">claude</span> → <span className="mono">/login</span> 을 하면 키체인 로그인이 자동으로 우선합니다.</>
-      : <>키체인 로그인으로 붙어 있어요 — <b>claude.ai 커넥터가 함께 뜹니다</b>. (장기 토큰이 저장돼 있어도 키체인이 읽히면 그쪽을 씁니다.)</>} data-t="쓰는 인증">
+      ? <>장기 토큰으로 붙어 있어요. ⚠ <b>이 모드에서는 claude.ai 계정에 연결해 둔 커넥터가 안 붙습니다</b> — 토큰 스코프에 <span className="mono">user:mcp_servers</span> 가 없어요. 호스트 맥 터미널에서 <span className="mono">claude</span> → <span className="mono">/login</span> 을 하면 키체인 로그인이 자동으로 우선합니다. (이 맥에 설치된 MCP·스킬은 어느 쪽이든 그대로 씁니다.)</>
+      : <>키체인 로그인으로 붙어 있어요 — <b>이 맥에 설치된 MCP 커넥터·스킬과 claude.ai 계정 커넥터를 그대로 씁니다</b>. (장기 토큰이 저장돼 있어도 키체인이 읽히면 그쪽을 씁니다.)</>} data-t="쓰는 인증">
       <span className="sv" style={{ color: s.auth.mode === 'token' ? 'var(--wait)' : 'var(--done)' }}>{s.auth.mode === 'token' ? '장기 토큰' : '키체인 로그인'}</span>
     </Row>
     {/* 🔴 **다시 연결** — 도구 목록·인증은 워커가 뜰 때 고정된다. 터미널에서 로그인을 새로 해도

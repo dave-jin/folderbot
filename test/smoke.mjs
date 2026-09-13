@@ -1085,6 +1085,22 @@ try {
           ok('다시 연결 — 일꾼만 내리고 세션·대화는 남는다 · 진단은 열쇠 없이 상황만')
         }
         /**
+         * 🔴 **화면 문구는 범용이어야 한다** (2026-09-13 Dave: *«이 프로덕트는 누구나 쓰는
+         *    프로덕트이기 때문에 … 범용 문구가 써있어야 해»*).
+         * ⛔ 특정 서비스 이름(Akiflow 등)을 예로 박으면 «그 서비스를 쓰는 사람의 도구» 처럼 읽힌다.
+         *    우리가 말할 수 있는 것은 «이 맥에 깔린 것을 그대로 쓴다» 까지다.
+         */
+        {
+          await pg.keyboard.press('Meta+,'); await wait(600)
+          await pg.click('.modal.setw .nv:has-text("에이전트")').catch(() => {})
+          await wait(600)
+          const txt = await pg.textContent('.modal.setw')
+          if (/Akiflow|아키플로/.test(txt ?? '')) fail('설정 문구에 특정 서비스 이름이 박혀 있다')
+          if (!/이 맥에 설치된 MCP/.test(txt ?? '')) fail('설정: «이 맥에 설치된 MCP…» 범용 문구가 없다')
+          await pg.keyboard.press('Escape'); await wait(300)
+          ok('화면 문구는 범용 — 특정 서비스 이름을 안 박는다')
+        }
+        /**
          * 🔴 **답 아래 줄은 아이콘만** (2026-09-13 Dave) — 글자를 빼고 툴팁이 말한다.
          * ⛔ **복사는 원격에서 조용히 안 됐다** — `navigator.clipboard` 는 보안 컨텍스트에만 있고,
          *    폰·다른 맥이 여는 `http://100.x.x.x:7373` 에는 **그 객체가 없다**(`?.` 라 오류도 안 났다).
