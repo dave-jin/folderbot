@@ -36,6 +36,12 @@ rl.on('line', (raw) => {
     say({ type: 'result', subtype: 'success', duration_ms: 40, total_cost_usd: 0.001 })
     return
   }
+  // 「혼자 선 링크 → 박스」 검사용 — 문단 하나가 링크뿐인 답과, 문장 속 링크를 같이 낸다
+  if (/링크박스/.test(text)) {
+    say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '찾았습니다\n\nhttps://example.com/article\n\n자세한 건 https://example.org/docs 를 보세요.' }], stop_reason: 'end_turn' } })
+    say({ type: 'result', subtype: 'success', duration_ms: 40, total_cost_usd: 0.001 })
+    return
+  }
   if (/백그라운드/.test(text)) {
     // 실제 CLI 2.1.269 의 백그라운드 Agent 이벤트 순서를 그대로 흉내 낸다
     const tid = `stub-bg-${u}`, task = `task-${u}`

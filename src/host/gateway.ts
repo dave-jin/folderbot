@@ -38,6 +38,7 @@ function freeName(botAbs: string, dir: string, name: string): string {
   return dir ? `${dir}/${Date.now()}-${name}` : `${Date.now()}-${name}`
 }
 import { favicon } from './favicon'
+import { preview } from './preview'
 import { hookState, setBudget, setHook, usageReport } from './usage'
 import { allDirs, guard, kindOf, mime, readText, recent, stream, tree, writeText, exists, listDir, renameEntry } from './files'
 import { todoDelete, todoEdit, todoMove, todoToggle } from './todoStore'
@@ -161,6 +162,11 @@ export class Gateway {
       const u = url.searchParams.get('url') ?? ''
       const data = await favicon(u)
       return json(200, { data })
+    }
+    // 링크 미리보기 — 파비콘과 같은 창구 하나. 제목·설명·썸네일까지 호스트가 받아 넘긴다
+    if (p === '/api/preview' && m === 'GET') {
+      const u = url.searchParams.get('url') ?? ''
+      return json(200, { meta: await preview(u) })
     }
     if (p === '/api/state') {
       const tn = await tailnetInfo()

@@ -21,6 +21,7 @@ import { cronFromText, routineName } from '../core/routineText'
 import { BARE_URL_RE, faviconHost } from '../core/favicon'
 import { workLabel, workMood } from '../core/work'
 import { GLOBE, faviconNow, onFavicon } from './favicons'
+import { hoverRef } from './previews'
 
 type Tool = Extract<ChatItem, { kind: 'tool' }>
 type Sub = Extract<ChatItem, { kind: 'subagent' }>
@@ -713,7 +714,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
           글자만 담는 칸이다. 그래서 쓰는 중인 주소를 **입력칸 위 칩**으로 올린다: 같은 캐시, 같은 아이콘,
           그리고 «이 주소가 맞나» 를 보내기 전에 확인할 수 있다. */}
       {draftLinks.length ? <div className="files lchips">{draftLinks.map((u) => <LinkChip key={u} url={u} />)}</div> : null}
-      {attach.length ? <div className="files">{attach.map((a) => <span key={a.rel} className="chip" title={a.abs}><Icon n={a.dir ? 'folder' : 'doc'} size={11} color="var(--t3)" /><span>{a.rel}{a.dir ? '/' : ''}</span><button onClick={() => setAttach(attach.filter((x) => x.rel !== a.rel))} style={{ color: 'var(--t3)', display: 'inline-flex' }}><Icon n="x" size={10} /></button></span>)}<span style={{ fontSize: 11, color: 'var(--t3)', alignSelf: 'center' }}>{attach.length}개 · 봇이 읽어서 참고</span></div> : null}
+      {attach.length ? <div className="files">{attach.map((a) => <span key={a.rel} className="chip" title={a.abs} ref={a.dir ? undefined : hoverRef({ kind: 'file', botId: bot.id, rel: a.rel })}><Icon n={a.dir ? 'folder' : 'doc'} size={11} color="var(--t3)" /><span>{a.rel}{a.dir ? '/' : ''}</span><button onClick={() => setAttach(attach.filter((x) => x.rel !== a.rel))} style={{ color: 'var(--t3)', display: 'inline-flex' }}><Icon n="x" size={10} /></button></span>)}<span style={{ fontSize: 11, color: 'var(--t3)', alignSelf: 'center' }}>{attach.length}개 · 봇이 읽어서 참고</span></div> : null}
       <input ref={fileRef} type="file" multiple hidden onChange={(e) => void upload(Array.from(e.target.files ?? []))} />
       {phone ? <div className="cchips">{modeBtn}{modelBtn}{effortBtn}</div> : null}
       <div className={`composer glassb ${drop ? 'drop' : ''} ${text.includes('\n') || text.length > 40 ? 'multi' : ''}`}
@@ -747,7 +748,8 @@ function LinkChip({ url }: { url: string }) {
   useEffect(() => onFavicon(url, setIc), [url])
   let host = url
   try { host = new URL(url).host } catch { /* 그대로 */ }
-  return <span className="chip lchip" title={url}><img className="fvic" alt="" width={13} height={13} src={ic || GLOBE} /><span>{host}</span></span>
+  // 오버하면 제목·설명·썸네일 카드 — 보내기 전에 «이 주소가 맞나» 를 눈으로 확인한다
+  return <span className="chip lchip" title={url} ref={hoverRef({ kind: 'link', url })}><img className="fvic" alt="" width={13} height={13} src={ic || GLOBE} /><span>{host}</span></span>
 }
 
 /**

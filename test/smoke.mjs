@@ -646,6 +646,39 @@ try {
             await pg.fill('.composer textarea', ''); await wait(300)
             ok('링크 파비콘 — 채팅 · 문서 · 입력창이 같은 캐시를 본다')
           }
+          /**
+           * 🔴 **혼자 선 링크는 박스, 글 속 링크는 밑줄** (2026-09-13 Dave: *«링크와 첨부 모두 rondo 처럼
+           *    채팅 안에 박스로 만들어지고 그 박스에 마우스 오버했을때 미리보기»*).
+           * ⚠ 문장 가운데 링크까지 박스가 되면 글이 끊긴다 — 그건 밑줄로 남아야 한다.
+           * ⚠ 미리보기 카드는 **body 에** 뜬다(말풍선 안이면 대화의 overflow 에 잘린다).
+           */
+          {
+            await pg.fill('.composer textarea', '링크박스 테스트')
+            await pg.keyboard.press('Enter')
+            let box = null
+            for (let i = 0; i < 40; i++) {
+              box = await pg.evaluate(() => {
+                const bs = [...document.querySelectorAll('.chat-body .md a.linkbox')]
+                const inline = [...document.querySelectorAll('.chat-body .md p a[href^="http"]')]
+                return { n: bs.length, t: bs[0]?.querySelector('.t')?.textContent ?? '', h: bs[0]?.querySelector('.h')?.textContent ?? '', ic: !!bs[0]?.querySelector('img.fvic'), inline: inline.length }
+              })
+              if (box.n) break
+              await wait(300)
+            }
+            if (!box.n) fail('링크 박스: 혼자 선 링크가 박스가 안 됐다 ' + JSON.stringify(box))
+            if (!box.ic) fail('링크 박스: 파비콘 자리가 없다 ' + JSON.stringify(box))
+            if (!/example\.com/.test(box.h)) fail('링크 박스: 호스트가 안 보인다 ' + JSON.stringify(box))
+            if (!box.inline) fail('링크 박스: 글 속 링크까지 박스로 삼켰다 — 문장이 끊긴다 ' + JSON.stringify(box))
+            // 오버 → 미리보기 카드가 **body 에** 뜬다
+            await pg.hover('.chat-body .md a.linkbox')
+            let hp = null
+            for (let i = 0; i < 20; i++) { hp = await pg.evaluate(() => { const c = document.querySelector('.hovprev'); return c ? { body: c.parentElement === document.body, pos: getComputedStyle(c).position, t: c.querySelector('.t')?.textContent ?? '' } : null }); if (hp) break; await wait(150) }
+            if (!hp) fail('미리보기: 오버해도 카드가 안 뜬다')
+            if (!hp.body) fail('미리보기: 카드가 body 에 안 붙었다 — 대화 overflow 에 잘린다 ' + JSON.stringify(hp))
+            if (hp.pos !== 'fixed') fail('미리보기: position 이 fixed 가 아니다 ' + JSON.stringify(hp))
+            await pg.fill('.composer textarea', ''); await wait(300)
+            ok('링크 박스 — 혼자 선 링크만 박스 · 오버하면 body 에 미리보기')
+          }
         }
         // 🔴 채팅 외양은 **cursor 스타일**이다 (2026-09-13 Dave: «이전 스타일이 더 나»).
         //    사람 말은 상자 안에 왼쪽으로, 봇 말은 폭 제한 없는 평범한 본문.

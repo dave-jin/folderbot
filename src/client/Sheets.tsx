@@ -6,6 +6,7 @@ import { FolderBot, Icon, Mid } from './FolderBot'
 import { hitRange, rank } from '../core/search'
 import { candidatePaths } from '../core/paths'
 import { decorateLinks } from './favicons'
+import { boxifyLinks, hoverLinks, hoverable } from './previews'
 import { pickAgent } from './AgentPick'
 import { fmtTime, useStore } from './store'
 
@@ -20,7 +21,7 @@ marked.setOptions({ gfm: true, breaks: true })
  *    대신 **그린 뒤에 텍스트 노드만 걸어** 바꾼다. `code`·`pre`·`a` 안은 건너뛴다.
  * ⚠ 스트리밍 중에는 하지 않는다 — 글자가 계속 바뀌는 동안 DOM 을 갈아 대면 선택이 튄다.
  */
-function decorate(root: HTMLElement, hits: string[], open: (rel: string) => void): void {
+function decorate(root: HTMLElement, hits: string[], open: (rel: string) => void, botId?: string): void {
   if (!hits.length) return
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode: (n) => (n.parentElement?.closest('code,pre,a,.pchip') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT)
@@ -36,7 +37,10 @@ function decorate(root: HTMLElement, hits: string[], open: (rel: string) => void
       const rest = after.splitText(hit.length)
       const b = document.createElement('button')
       b.className = 'pchip'; b.type = 'button'; b.textContent = hit.split('/').pop() ?? hit; b.title = hit
+      b.dataset.rel = hit
       b.addEventListener('click', (e) => { e.preventDefault(); open(hit) })
+      // 첨부·문서 칩도 오버하면 미리보기 — 이미지는 그림을, 글은 앞 몇 줄을 (`previews.ts`)
+      if (botId) hoverable(b, { kind: 'file', botId, rel: hit })
       after.replaceWith(b)
       cur = rest
     }
@@ -57,7 +61,15 @@ export function Md({ text, streaming, botId, onPath }: { text: string; streaming
     const el = ref.current
     if (!el) return
     for (const a of el.querySelectorAll<HTMLAnchorElement>('a[href^="http"]')) { a.target = '_blank'; a.rel = 'noreferrer noopener' }
+    /**
+     * 🔴 **혼자 선 링크는 박스가 된다** (2026-09-13 Dave: *«링크와 첨부 모두 rondo 처럼 채팅 안에
+     *    박스로 … 마우스 오버했을때 미리보기»*). 글 속 링크는 밑줄 그대로 두고 **오버에만** 카드를 띄운다 —
+     *    문장 가운데를 박스로 끊으면 글이 안 읽힌다(`previews.ts` 머리말).
+     * ⚠ 순서가 있다: 박스를 먼저 만들고(제 파비콘을 갖는다) 그다음 남은 링크에 파비콘을 단다.
+     */
+    boxifyLinks(el)
     decorateLinks(el)     // 링크 앞 파비콘 — 자리표시자를 먼저 놓고 도착하면 갈아 끼운다
+    hoverLinks(el)        // 글 속 링크 — 오버하면 같은 미리보기 카드
   }, [html])
   useEffect(() => {
     const el = ref.current
@@ -70,7 +82,7 @@ export function Md({ text, streaming, botId, onPath }: { text: string; streaming
         if (!live || !ref.current) return
         // 한 자리에서 여러 후보가 걸리면 **긴 것**이 이긴다 — `3. Area/…` 가 `Area/…` 보다 맞다
         const hits = cands.filter((c) => ok[c]).sort((a, b) => b.length - a.length)
-        decorate(ref.current, hits, onPath)
+        decorate(ref.current, hits, onPath, botId)
       })
       .catch(() => { /* 못 물어봤으면 그냥 글자로 둔다 */ })
     return () => { live = false }

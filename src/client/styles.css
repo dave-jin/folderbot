@@ -754,3 +754,26 @@ b,strong { color:var(--w); font-weight:600 }
 .traypanel .tmi .l { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .traypanel .tmi .k { font-size:12px; color:var(--t3); font-family:var(--mono) }
 .traypanel .tmi.dim { color:var(--t3); font-size:12.5px; padding-top:3px; padding-bottom:3px }
+
+/* ── 링크 박스 · 오버 미리보기 (`client/previews.ts`) ────────────────────────
+   🔴 **혼자 선 링크는 박스, 글 속 링크는 밑줄** — 문장 가운데를 박스로 끊으면 글이 안 읽힌다.
+   🔴 미리보기 카드는 `position:fixed` 로 **body 에** 뜬다 — 말풍선 안에 두면 대화의 overflow 에 잘린다.
+   ⚠ 썸네일이 도착하면 왼쪽에 붙는다(`.has-th`) — 자리를 미리 비워 두지 않는다(빈 네모가 더 눈에 띈다). */
+.md .linkbox { display:flex; gap:10px; align-items:stretch; margin:8px 0; padding:9px 11px; border:1px solid var(--line2); border-radius:10px; background:var(--box); color:inherit; text-decoration:none; max-width:520px; overflow:hidden }
+.md .linkbox:hover { border-color:var(--t3); background:var(--sel) }
+.md .linkbox .th { width:64px; height:64px; object-fit:cover; border-radius:6px; flex:none; background:var(--line) }
+.md .linkbox .tx { display:flex; flex-direction:column; justify-content:center; gap:3px; min-width:0; flex:1 }
+.md .linkbox .t { font-size:13.5px; font-weight:600; color:var(--w); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.md .linkbox .d { font-size:12px; color:var(--t2); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden }
+.md .linkbox .d:empty { display:none }
+.md .linkbox .u { display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--t3); overflow:hidden }
+.md .linkbox .u .h { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+
+.hovprev { position:fixed; z-index:80; width:320px; max-height:60vh; overflow:hidden; display:flex; flex-direction:column; gap:0; background:var(--bg2); border:1px solid var(--line2); border-radius:10px; box-shadow:0 12px 40px var(--shadow); pointer-events:none }
+.hovprev .th { width:100%; max-height:160px; object-fit:cover; display:block; background:var(--line) }
+.hovprev .b { padding:9px 11px; display:flex; flex-direction:column; gap:4px; min-width:0 }
+.hovprev .t { font-size:13px; font-weight:600; color:var(--w); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.hovprev .d { font-size:12px; color:var(--t2); display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden }
+.hovprev .u { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--t3); overflow:hidden }
+.hovprev .u .h { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.hovprev .peek { margin:0; font-family:var(--mono); font-size:11px; line-height:1.55; color:var(--t2); white-space:pre-wrap; word-break:break-word; max-height:180px; overflow:hidden }
