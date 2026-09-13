@@ -3,6 +3,10 @@ productName: Folder Bot
 directories:
   output: dist
   buildResources: build
+# 🔴 **여기 적힌 파일만 앱 안에 들어간다.** 빠뜨리면 개발에서는 멀쩡하고 **패키징한 앱만**
+#    «Cannot find module './x'» 로 뜨자마자 죽는다 (2026-09-13 실사고 — `trayIcon.js`).
+#    ⚠ 새 파일을 만들면 여기에 **반드시** 적는다. 잊어도 유닛 검사(`test/unit/desktopFiles.test.ts`)가
+#    main.js 에서 타고 갈 수 있는 모든 로컬 require 를 훑어 잡는다.
 files:
   - main.js
   - preload.js
@@ -10,6 +14,8 @@ files:
   - update-pick.js
   - perms.js
   - perm-core.js
+  - trayIcon.js
+  - tray-preload.js
   - connect.html
   - package.json
   - build/trayTemplate.png

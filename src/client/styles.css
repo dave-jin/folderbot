@@ -796,3 +796,13 @@ b,strong { color:var(--w); font-weight:600 }
 .sortbar button.on { background:var(--sel); color:var(--w) }
 .brow.dsrc { opacity:.4 }
 .brow.dover { box-shadow:inset 0 2px 0 var(--run) }
+
+/* 표 손잡이 (2026-09-13 Dave: «테이블 편집») — 머리줄 칸에는 열 메뉴(▾), 본문 첫 칸에는 행 메뉴(⋮).
+   ⚠ 손잡이는 칸 **안**에 있다(밖에 절대배치하면 칸 폭이 바뀔 때마다 어긋난다).
+      대신 `contenteditable=false` 이고, 글자를 읽는 쪽이 이걸 빼고 읽는다(`cellText`).
+   ⚠ 평소엔 안 보인다 — 표 위에 마우스를 올리거나 칸에 들어와야 나온다(기계는 접는다). */
+.mded .lp-tbl th, .mded .lp-tbl td { position:relative; padding-right:18px }
+.mded .lp-grip { position:absolute; right:2px; top:3px; width:14px; height:14px; display:flex; align-items:center; justify-content:center; border-radius:4px; font-size:10px; line-height:1; color:var(--t3); opacity:0; cursor:pointer; user-select:none; transition:opacity .12s }
+.mded .lp-tblw:hover .lp-grip, .mded .lp-tblw:focus-within .lp-grip { opacity:.7 }
+.mded .lp-grip:hover { opacity:1; color:var(--w); background:var(--sel) }
+.lp-tmenu { position:fixed; z-index:85 }

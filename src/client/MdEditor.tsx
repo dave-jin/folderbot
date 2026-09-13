@@ -147,8 +147,13 @@ function fmSummary(body: string): string {
  */
 const SEP_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/
 
-interface Cell { from: number; to: number; text: string }
-interface TRow { cells: Cell[]; lineTo: number; endsPipe: boolean }
+/**
+ * 칸 하나 — `from/to` 는 **다듬은 글자**의 범위, `segFrom/segTo` 는 **파이프 사이 날것**의 범위다.
+ * ⚠ 열을 지우거나 끼울 때 필요한 것은 날것 쪽이다 — 파이프까지 한 번에 셈해야 «칸은 지웠는데
+ *    파이프만 남은» 표가 안 나온다.
+ */
+interface Cell { from: number; to: number; text: string; segFrom: number; segTo: number }
+interface TRow { cells: Cell[]; lineFrom: number; lineTo: number; endsPipe: boolean }
 interface Tbl { from: number; to: number; head: TRow; sep: TRow; body: TRow[]; align: ('' | 'c' | 'r')[]; lines: number[] }
 
 /** 파이프로 칸을 자른다 — `\|` 는 칸 구분이 아니다 */
@@ -168,7 +173,7 @@ function splitRow(text: string, base: number): { cells: Cell[]; endsPipe: boolea
     let f = a, t = b
     while (f < t && /\s/.test(text[f])) f++
     while (t > f && /\s/.test(text[t - 1])) t--
-    return { from: base + f, to: base + t, text: text.slice(f, t) }
+    return { from: base + f, to: base + t, text: text.slice(f, t), segFrom: base + a, segTo: base + b }
   })
   return { cells, endsPipe }
 }
@@ -176,7 +181,7 @@ function splitRow(text: string, base: number): { cells: Cell[]; endsPipe: boolea
 /** 머리줄 + 구분줄 + 이어지는 줄들 = 표 하나 */
 function findTables(state: EditorState): Tbl[] {
   const out: Tbl[] = []
-  const row = (l: { text: string; from: number; to: number }): TRow => ({ ...splitRow(l.text, l.from), lineTo: l.to })
+  const row = (l: { text: string; from: number; to: number }): TRow => ({ ...splitRow(l.text, l.from), lineFrom: l.from, lineTo: l.to })
   for (let n = 1; n < state.doc.lines; n++) {
     const h = state.doc.line(n), s = state.doc.line(n + 1)
     if (!h.text.includes('|') || !s.text.includes('-') || !SEP_RE.test(s.text)) continue
@@ -204,17 +209,40 @@ function findTables(state: EditorState): Tbl[] {
 /** 다시 그린 뒤에 커서를 되돌려 놓을 칸 — 고치면 위젯 DOM 이 통째로 갈리기 때문이다 */
 let pendFocus: { r: number; c: number } | null = null
 
+/** ⚠ 손잡이 **앞**(글자 끝)에 캐럿을 둔다 — `selectNodeContents` 로 끝에 두면 `▾` 뒤에 선다 */
 function placeEnd(el: HTMLElement): void {
-  const r = document.createRange(); r.selectNodeContents(el); r.collapse(false)
+  const txt = Array.from(el.childNodes).filter((n) => !(n.nodeType === 1 && (n as HTMLElement).classList.contains('lp-grip')))
+  const r = document.createRange()
+  const last = txt[txt.length - 1]
+  if (last) { r.setStart(last, last.textContent?.length ?? 0); r.collapse(true) } else { r.selectNodeContents(el); r.collapse(true) }
   const s = getSelection(); s?.removeAllRanges(); s?.addRange(r)
 }
 
 /** 칸 글자 → 원문 한 줄 (줄바꿈은 칸을 깨고, `|` 는 칸을 가른다) */
 function escCell(s: string): string { return s.replace(/\s*\n\s*/g, ' ').replace(/\|/g, '\\|').trim() }
 
+/**
+ * 칸의 **글자만** — 손잡이(`.lp-grip`)는 빼고 읽는다.
+ * 🔴 손잡이는 `contenteditable=false` 지만 **`textContent` 에는 그대로 들어온다** — 그냥 읽으면
+ *    칸마다 `▾`·`⋮` 가 문서에 박힌다(손잡이를 칸 안에 둔 대가다).
+ */
+function cellText(el: HTMLElement): string {
+  let out = ''
+  for (const n of Array.from(el.childNodes)) {
+    if (n.nodeType === 1 && (n as HTMLElement).classList.contains('lp-grip')) continue
+    out += n.textContent ?? ''
+  }
+  return out
+}
+/** 글자만 갈아 끼운다 — 손잡이는 그대로 둔다 */
+function setCellText(el: HTMLElement, text: string): void {
+  for (const n of Array.from(el.childNodes)) if (!(n.nodeType === 1 && (n as HTMLElement).classList.contains('lp-grip'))) n.remove()
+  el.insertBefore(document.createTextNode(text), el.firstChild)
+}
+
 function commitCell(view: EditorView, cell: Cell, el: HTMLElement): boolean {
   if (el.dataset.done) return false
-  const next = escCell(el.textContent ?? '')
+  const next = escCell(cellText(el))
   if (next === cell.text) return false
   el.dataset.done = '1'
   view.dispatch({ changes: { from: cell.from, to: cell.to, insert: next } })
@@ -235,18 +263,58 @@ class TableWidget extends WidgetType {
     const wrap = document.createElement('div'); wrap.className = 'lp-tblw'
     const table = document.createElement('table'); table.className = 'lp-tbl'
     const rows = [this.t.head, ...this.t.body]
+    const t = this.t
     rows.forEach((r, ri) => {
       const tr = document.createElement('tr')
       r.cells.forEach((cell, ci) => {
         const td = document.createElement(ri === 0 ? 'th' : 'td')
-        const a = this.t.align[ci]
+        const a = t.align[ci]
         if (a) td.style.textAlign = a === 'c' ? 'center' : 'right'
         td.textContent = cell.text.replace(/\\\|/g, '|')
         td.contentEditable = 'true'
         td.spellcheck = false
         td.dataset.rc = `${ri},${ci}`
         td.onblur = () => { commitCell(view, cell, td) }
-        td.onkeydown = (e) => cellKey(e, view, rows, this.t, ri, ci, cell, td)
+        td.onkeydown = (e) => cellKey(e, view, rows, t, ri, ci, cell, td)
+        /**
+         * 손잡이 — 머리줄 칸에는 **열** 메뉴, 본문 첫 칸 왼쪽에는 **행** 메뉴.
+         * ⚠ 손잡이는 `contentEditable` 칸 **안**에 있지만 `contenteditable=false` 라 글자에 안 섞인다.
+         *    (밖에 절대배치로 띄우면 칸 폭이 바뀔 때마다 어긋난다.)
+         */
+        const grip = document.createElement('span')
+        grip.className = 'lp-grip'; grip.contentEditable = 'false'; grip.textContent = ri === 0 ? '▾' : '⋮'
+        grip.title = ri === 0 ? '이 열' : '이 행'
+        if (ri > 0 && ci > 0) grip.style.display = 'none'
+        grip.onmousedown = (e) => {
+          e.preventDefault(); e.stopPropagation()
+          const at = { x: (e as MouseEvent).clientX, y: (e as MouseEvent).clientY + 6 }
+          if (ri === 0) tblMenu(at, [
+            { label: '왼쪽에 열 추가', on: () => insCol(view, t, ci) },
+            { label: '오른쪽에 열 추가', on: () => insCol(view, t, ci + 1) },
+            'hr',
+            ...(ci > 0 ? [{ label: '왼쪽으로 옮기기', on: () => swapCol(view, t, ci, ci - 1) }] : []),
+            ...(ci < r.cells.length - 1 ? [{ label: '오른쪽으로 옮기기', on: () => swapCol(view, t, ci, ci + 1) }] : []),
+            'hr',
+            { label: `${t.align[ci] === '' ? '● ' : ''}왼쪽 맞춤`, on: () => setAlign(view, t, ci, '') },
+            { label: `${t.align[ci] === 'c' ? '● ' : ''}가운데 맞춤`, on: () => setAlign(view, t, ci, 'c') },
+            { label: `${t.align[ci] === 'r' ? '● ' : ''}오른쪽 맞춤`, on: () => setAlign(view, t, ci, 'r') },
+            'hr',
+            { label: '열 지우기', warn: true, on: () => delCol(view, t, ci) }
+          ])
+          else {
+            const bi = ri - 1
+            tblMenu(at, [
+              { label: '위에 행 추가', on: () => insRow(view, t, bi) },
+              { label: '아래에 행 추가', on: () => insRow(view, t, bi + 1) },
+              'hr',
+              ...(bi > 0 ? [{ label: '위로 옮기기', on: () => swapRow(view, t, bi, bi - 1) }] : []),
+              ...(bi < t.body.length - 1 ? [{ label: '아래로 옮기기', on: () => swapRow(view, t, bi, bi + 1) }] : []),
+              'hr',
+              { label: '행 지우기', warn: true, on: () => delRow(view, t, bi) }
+            ])
+          }
+        }
+        td.appendChild(grip)
         tr.appendChild(td)
       })
       table.appendChild(tr)
@@ -254,9 +322,9 @@ class TableWidget extends WidgetType {
     wrap.appendChild(table)
     // 기계는 접는다 — 마우스를 올리거나 칸에 들어와야 나온다 (「A · 문서처럼」)
     const bar = document.createElement('div'); bar.className = 'lp-tbtn'
-    bar.appendChild(tbtn('＋행', '아래에 빈 행', () => addRow(view, this.t)))
-    bar.appendChild(tbtn('＋열', '오른쪽에 빈 열', () => addCol(view, this.t)))
-    bar.appendChild(tbtn('⋯', '원문(파이프)으로 고치기', () => { view.dispatch({ selection: { anchor: this.t.from } }); view.focus() }))
+    bar.appendChild(tbtn('＋행', '맨 아래에 빈 행', () => insRow(view, t, t.body.length)))
+    bar.appendChild(tbtn('＋열', '맨 오른쪽에 빈 열', () => insCol(view, t, t.head.cells.length)))
+    bar.appendChild(tbtn('⋯', '원문(파이프)으로 고치기', () => { view.dispatch({ selection: { anchor: t.from } }); view.focus() }))
     wrap.appendChild(bar)
     if (pendFocus) {
       const { r, c } = pendFocus; pendFocus = null
@@ -272,13 +340,30 @@ class TableWidget extends WidgetType {
 }
 
 function cellKey(e: KeyboardEvent, view: EditorView, rows: TRow[], t: Tbl, ri: number, ci: number, cell: Cell, el: HTMLElement): void {
-  if (e.key === 'Enter') { e.preventDefault(); el.blur(); return }
-  if (e.key === 'Escape') { e.preventDefault(); el.textContent = cell.text.replace(/\\\|/g, '|'); el.blur(); return }
+  if (e.key === 'Escape') { e.preventDefault(); setCellText(el, cell.text.replace(/\\\|/g, '|')); el.blur(); return }
+  /**
+   * ⏎ 는 **아래 칸으로** — 표를 세로로 채우는 게 가장 흔한 일이다(엑셀·Rondo 와 같은 버릇).
+   * ⚠ 맨 아랫줄에서 ⏎ 면 **빈 행을 하나 만들고** 그 첫 칸으로 간다 — 손이 멈추지 않게.
+   * ⛔ 칸 안에서 줄바꿈은 못 넣는다(마크다운 표에 줄바꿈이 없다). ⌥⏎ 도 마찬가지다.
+   */
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    if (ri >= rows.length - 1) { commitCell(view, cell, el); insRow(view, t, t.body.length); return }
+    pendFocus = { r: ri + 1, c: ci }
+    if (!commitCell(view, cell, el)) {
+      pendFocus = null
+      const nx = el.closest('table')?.querySelector<HTMLElement>(`[data-rc="${ri + 1},${ci}"]`)
+      if (nx) { nx.focus(); placeEnd(nx) }
+    }
+    return
+  }
   if (e.key !== 'Tab') return
   e.preventDefault()
   let nr = ri, nc = ci + (e.shiftKey ? -1 : 1)
   if (nc < 0) { nr = ri - 1; nc = nr >= 0 ? rows[nr].cells.length - 1 : 0 }
   else if (nc >= rows[ri].cells.length) { nr = ri + 1; nc = 0 }
+  // ⚠ 마지막 칸에서 ⇥ 면 새 행 — 표를 가로로 채우다 끝에 닿았을 때도 손이 안 멈춘다
+  if (nr >= rows.length && !e.shiftKey) { commitCell(view, cell, el); insRow(view, t, t.body.length); return }
   if (nr < 0 || nr >= rows.length) { el.blur(); return }
   pendFocus = { r: nr, c: nc }
   if (!commitCell(view, cell, el)) {                    // 안 바뀌었으면 다시 안 그려진다 — 직접 옮긴다
@@ -288,22 +373,111 @@ function cellKey(e: KeyboardEvent, view: EditorView, rows: TRow[], t: Tbl, ri: n
   }
 }
 
-/** 아래에 빈 행 — 순수 insert 한 번 */
-function addRow(view: EditorView, t: Tbl): void {
-  const last = t.body.length ? t.body[t.body.length - 1] : t.sep
-  const line = '|' + Array(t.head.cells.length).fill('  ').join('|') + '|'
-  pendFocus = { r: t.body.length + 1, c: 0 }
-  view.dispatch({ changes: { from: last.lineTo, insert: '\n' + line } })
+/* ── 표 편집 — 행·열을 끼우고 지우고 옮기고, 정렬을 준다 (2026-09-13 Dave: «테이블 편집») ──
+   🔴 **churn 0 은 여기서도 계약이다.** 표를 다시 직렬화하지 않는다 — 건드리는 문자 범위만 바꾼다.
+      한 칸의 정렬을 바꾸면 **구분줄의 그 칸만**, 열을 지우면 **줄마다 그 칸과 파이프 하나만** 바뀐다.
+   ⚠ 모든 행 목록은 `[머리줄, 구분줄, …본문]` 순서다 — 열 연산은 셋 다 같이 건드려야 칸 수가 안 어긋난다. */
+
+const allRows = (t: Tbl): TRow[] => [t.head, t.sep, ...t.body]
+
+/** 이 칸 + 구분 파이프 하나를 지우는 범위. 열이 하나뿐이면 null(표가 아니게 된다) */
+function colCut(r: TRow, c: number): { from: number; to: number } | null {
+  if (r.cells.length <= 1) return null
+  const cur = r.cells[Math.min(c, r.cells.length - 1)]
+  if (c > 0) return { from: r.cells[c - 1].segTo, to: cur.segTo }   // 앞쪽 파이프까지 함께
+  return { from: cur.segFrom, to: r.cells[1].segFrom }              // 맨 왼쪽이면 뒤쪽 파이프까지
 }
 
-/** 오른쪽에 빈 열 — 줄마다 끝에 끼워 넣는다(구분줄만 `---`) */
-function addCol(view: EditorView, t: Tbl): void {
-  const changes = [t.head, t.sep, ...t.body].map((r, i) => ({
-    from: r.lineTo,
-    insert: r.endsPipe ? (i === 1 ? ' --- |' : '  |') : (i === 1 ? ' | ---' : ' |  ')
-  }))
-  pendFocus = { r: 0, c: t.head.cells.length }
+function delCol(view: EditorView, t: Tbl, c: number): void {
+  if (t.head.cells.length <= 1) return
+  const changes = allRows(t).map((r) => colCut(r, c)).filter((x): x is { from: number; to: number } => !!x)
+  pendFocus = { r: 0, c: Math.max(0, c - 1) }
   view.dispatch({ changes })
+}
+
+/** `c` 자리에 빈 열을 끼운다(그 칸의 **왼쪽**). 순수 insert — 기존 글자는 안 옮긴다 */
+function insCol(view: EditorView, t: Tbl, c: number): void {
+  const changes = allRows(t).map((r, i) => {
+    const cell = r.cells[Math.min(c, r.cells.length - 1)]
+    const at = c >= r.cells.length ? r.lineTo : cell.segFrom
+    if (c >= r.cells.length) return { from: at, insert: r.endsPipe ? (i === 1 ? ' --- |' : '  |') : (i === 1 ? ' | ---' : ' |  ') }
+    return { from: at, insert: i === 1 ? ' --- |' : '  |' }
+  })
+  pendFocus = { r: 0, c }
+  view.dispatch({ changes })
+}
+
+/** 두 열을 맞바꾼다 — 줄마다 칸 두 개의 글자만 서로 넣는다 */
+function swapCol(view: EditorView, t: Tbl, a: number, b: number): void {
+  if (a === b) return
+  const changes: { from: number; to: number; insert: string }[] = []
+  for (const r of allRows(t)) {
+    const x = r.cells[a], y = r.cells[b]
+    if (!x || !y) continue
+    changes.push({ from: x.from, to: x.to, insert: y.text }, { from: y.from, to: y.to, insert: x.text })
+  }
+  pendFocus = { r: 0, c: b }
+  view.dispatch({ changes })
+}
+
+/** 정렬 — **구분줄의 그 칸 하나만** 바꾼다 */
+function setAlign(view: EditorView, t: Tbl, c: number, a: '' | 'c' | 'r'): void {
+  const cell = t.sep.cells[c]
+  if (!cell) return
+  const dash = cell.text.replace(/:/g, '') || '---'
+  view.dispatch({ changes: { from: cell.from, to: cell.to, insert: a === 'c' ? `:${dash}:` : a === 'r' ? `${dash}:` : dash } })
+}
+
+/** 행 지우기 — 줄 하나와 그 앞 줄바꿈. ⛔ 머리줄·구분줄은 못 지운다(표가 아니게 된다) */
+function delRow(view: EditorView, t: Tbl, bi: number): void {
+  const r = t.body[bi]
+  if (!r) return
+  view.dispatch({ changes: { from: r.lineFrom - 1, to: r.lineTo } })   // 앞 `\n` 까지
+}
+
+/** 빈 행을 `bi` 자리에 끼운다(그 행의 **위**). `bi === body.length` 면 맨 아래 */
+function insRow(view: EditorView, t: Tbl, bi: number): void {
+  const line = '|' + Array(t.head.cells.length).fill('  ').join('|') + '|'
+  const prev = bi === 0 ? t.sep : t.body[bi - 1]
+  const at = bi >= t.body.length ? (t.body.length ? t.body[t.body.length - 1].lineTo : t.sep.lineTo) : prev.lineTo
+  pendFocus = { r: bi + 1, c: 0 }
+  view.dispatch({ changes: { from: at, insert: '\n' + line } })
+}
+
+/** 두 본문 행을 맞바꾼다 — 줄 글자를 서로 넣는다(칸 수가 달라도 안전하다) */
+function swapRow(view: EditorView, t: Tbl, a: number, b: number): void {
+  const x = t.body[a], y = t.body[b]
+  if (!x || !y) return
+  const tx = view.state.doc.sliceString(x.lineFrom, x.lineTo)
+  const ty = view.state.doc.sliceString(y.lineFrom, y.lineTo)
+  pendFocus = { r: b + 1, c: 0 }
+  view.dispatch({ changes: [{ from: x.lineFrom, to: x.lineTo, insert: ty }, { from: y.lineFrom, to: y.lineTo, insert: tx }] })
+}
+
+/**
+ * 표 손잡이 메뉴 — ⚠ **`document.body` 에 띄운다.** 편집기 안에 두면 스크롤 상자에 잘리고,
+ *    CodeMirror 가 제 것으로 알고 이벤트를 가로챈다(`Float.tsx` 와 같은 이유).
+ */
+function tblMenu(at: { x: number; y: number }, items: ({ label: string; on: () => void; warn?: boolean } | 'hr')[]): void {
+  document.querySelector('.lp-tmenu')?.remove()
+  const el = document.createElement('div')
+  el.className = 'menu ctx lp-tmenu'
+  el.style.left = `${Math.round(at.x)}px`; el.style.top = `${Math.round(at.y)}px`
+  for (const it of items) {
+    if (it === 'hr') { el.appendChild(document.createElement('hr')); continue }
+    const b = document.createElement('button')
+    if (it.warn) b.className = 'warn'
+    b.textContent = it.label
+    b.onmousedown = (e) => { e.preventDefault(); close(); it.on() }
+    el.appendChild(b)
+  }
+  const close = () => { el.remove(); document.removeEventListener('mousedown', out, true); window.removeEventListener('scroll', close, true) }
+  const out = (e: MouseEvent) => { if (!el.contains(e.target as Node)) close() }
+  document.body.appendChild(el)
+  const r = el.getBoundingClientRect()
+  if (r.bottom > innerHeight - 8) el.style.top = `${Math.round(Math.max(8, at.y - r.height))}px`
+  if (r.right > innerWidth - 8) el.style.left = `${Math.round(Math.max(8, innerWidth - r.width - 8))}px`
+  setTimeout(() => { document.addEventListener('mousedown', out, true); window.addEventListener('scroll', close, true) }, 0)
 }
 
 /**

@@ -577,7 +577,10 @@ try {
             const t = document.querySelector('.mded .lp-tbl')
             if (!t) return { has: false }
             const rows = [...t.querySelectorAll('tr')]
-            const head = [...rows[0].children].map((c) => c.textContent)
+            // ⚠ 칸 안에는 편집 손잡이(.lp-grip)가 함께 산다 — 사람이 읽는 글자는 그걸 뺀 것이다
+            //    (제품도 같은 규칙으로 읽는다: MdEditor 의 `cellText`)
+            const txt = (c) => [...c.childNodes].filter((n) => !(n.nodeType === 1 && n.classList.contains('lp-grip'))).map((n) => n.textContent).join('')
+            const head = [...rows[0].children].map(txt)
             return { has: true, rows: rows.length, head, edit: rows[1].children[0].isContentEditable, align: getComputedStyle(rows[1].children[1]).textAlign, pipe: (document.querySelector('.mded .cm-content')?.textContent ?? '').includes('| 가 |') }
           })
           if (!shape.has) fail('표: 안 접혔다 — 파이프가 그대로 보인다')
@@ -585,25 +588,59 @@ try {
           if (!shape.edit) fail('표: 칸이 그 자리에서 안 고쳐진다(contenteditable 아님)')
           if (shape.align !== 'right') fail('표: `---:` 정렬이 안 따라왔다 ' + JSON.stringify(shape))
           if (shape.pipe) fail('표: 원문 파이프가 같이 보인다(접기가 덜 됐다)')
-          // 칸 하나 고치기 — 파일에서 **그 칸만** 달라져야 한다
-          await pg.click('.mded .lp-tbl tr:nth-child(2) td:nth-child(2)')
+          /**
+           * 칸 하나 고치기 — 파일에서 **그 칸만** 달라져야 한다.
+           * ⚠ **한 단계씩 확인하고 넘어간다.** 종전에는 «클릭 → End → 타이핑 → 다른 데 클릭» 을 쭉
+           *    이어 붙였는데, 위젯이 그 사이에 다시 그려지면 포커스가 날아가 **타이핑이 허공에 떨어졌다**
+           *    (이 검사가 가끔 빨개진 이유다 — 제품이 아니라 검사가 무른 것이었다).
+           */
+          const cellSel = '.mded .lp-tbl tr:nth-child(2) td:nth-child(2)'
+          const cellNow = (sel) => pg.evaluate((s2) => { const c = document.querySelector(s2); return c ? [...c.childNodes].filter((n) => !(n.nodeType === 1 && n.classList.contains('lp-grip'))).map((n) => n.textContent).join('') : null }, sel)
+          await pg.click(cellSel)
+          await pg.waitForFunction((s2) => document.activeElement === document.querySelector(s2), cellSel, { timeout: 5000 })
           await pg.keyboard.press('End'); await pg.keyboard.type('9')
+          for (let i = 0; i < 30 && (await cellNow(cellSel)) !== '19'; i++) await wait(100)
+          if ((await cellNow(cellSel)) !== '19') fail('표: 칸에 글자가 안 들어갔다 · ' + JSON.stringify(await cellNow(cellSel)))
           await pg.click('.mded .lp-h1')
           // ⚠ 자동 저장은 **멎고 800ms 뒤**다 — 고정 대기로 재면 느린 날에 빨개진다(실제로 한 번 갈렸다). 값이 될 때까지 기다린다.
-          const untilFile = async (want, what) => { let got = ''; for (let i = 0; i < 40; i++) { got = readFileSync(abs, 'utf8'); if (got === want) return; await wait(150) } fail(`${what}\n--- 기대\n` + JSON.stringify(want) + '\n--- 실제\n' + JSON.stringify(got)) }
+          const untilFile = async (want, what) => { let got = ''; for (let i = 0; i < 60; i++) { got = readFileSync(abs, 'utf8'); if (got === want) return; await wait(150) } fail(`${what}\n--- 기대\n` + JSON.stringify(want) + '\n--- 실제\n' + JSON.stringify(got)) }
           const want = src.replace('| 가 | 1 |', '| 가 | 19 |')
           await untilFile(want, '표: 칸만 바뀌어야 한다(표를 통째로 다시 썼다?)')
           // ＋행 — 순수 끼워 넣기
           await pg.hover('.mded .lp-tblw')
           await pg.click('.mded .lp-tb:has-text("＋행")')
           await untilFile(want.replace('| 나 | 2 |', '| 나 | 2 |\n|  |  |'), '표: ＋행이 끼워 넣기가 아니다')
+          /**
+           * 🔴 **표 편집 — 행·열·정렬** (2026-09-13 Dave: «테이블 편집»).
+           * ⚠ churn 0 은 여기서도 계약이다 — 정렬을 바꾸면 **구분줄의 그 칸만**, 열을 지우면
+           *    줄마다 **그 칸과 파이프 하나만** 바뀐다. 표를 다시 직렬화하면 그 자리에서 걸린다.
+           */
+          {
+            const withRow = want.replace('| 나 | 2 |', '| 나 | 2 |\n|  |  |')
+            // 정렬 — 첫 열을 가운데로. 구분줄 한 칸만 바뀐다
+            await pg.hover('.mded .lp-tbl th:nth-child(1)')
+            await pg.click('.mded .lp-tbl th:nth-child(1) .lp-grip'); await wait(250)
+            const menu = await pg.textContent('.lp-tmenu')
+            for (const w of ['왼쪽에 열 추가', '오른쪽으로 옮기기', '가운데 맞춤', '열 지우기']) if (!(menu ?? '').includes(w)) fail(`열 메뉴에 «${w}» 가 없다 · ` + menu)
+            await pg.click('.lp-tmenu button:has-text("가운데 맞춤")')
+            await untilFile(withRow.replace(/\|\s*---\s*\|/, '| :---: |'), '표: 정렬이 구분줄 한 칸만 바꾸지 않았다')
+            const center = await pg.evaluate(() => getComputedStyle(document.querySelectorAll('.mded .lp-tbl tr')[1].children[0]).textAlign)
+            if (center !== 'center') fail('표: 가운데 맞춤이 화면에 안 왔다 · ' + center)
+            // 행 지우기 — 방금 넣은 빈 행을 다시 뺀다(줄 하나 + 앞 줄바꿈만)
+            await pg.hover('.mded .lp-tbl tr:nth-child(4) td:nth-child(1)')
+            await pg.click('.mded .lp-tbl tr:nth-child(4) td:nth-child(1) .lp-grip'); await wait(250)
+            const rmenu = await pg.textContent('.lp-tmenu')
+            for (const w of ['위에 행 추가', '위로 옮기기', '행 지우기']) if (!(rmenu ?? '').includes(w)) fail(`행 메뉴에 «${w}» 가 없다 · ` + rmenu)
+            await pg.click('.lp-tmenu button:has-text("행 지우기")')
+            await untilFile(want.replace(/\|\s*---\s*\|/, '| :---: |'), '표: 행 지우기가 줄 하나만 빼지 않았다')
+          }
           // ⋯ — 커서를 표 안에 넣으면 원문(파이프)으로 풀린다. 「모드」가 아니라 커서 규칙 하나다
           await pg.hover('.mded .lp-tblw')
           await pg.click('.mded .lp-tb:has-text("⋯")'); await wait(500)
           const raw = await pg.evaluate(() => ({ tbl: !!document.querySelector('.mded .lp-tbl'), text: document.querySelector('.mded .cm-content')?.textContent ?? '' }))
           if (raw.tbl) fail('표: ⋯ 를 눌러도 원문으로 안 풀린다')
           if (!raw.text.includes('| 가 | 19 |')) fail('표: 원문에 파이프가 안 보인다 ' + JSON.stringify(raw.text.slice(0, 120)))
-          ok('표 — 진짜 표로 읽고, 칸만 고치고, ⋯ 로 원문')
+          ok('표 — 칸 · 행 · 열 · 정렬을 그 자리에서, 바뀌는 건 그 문자뿐 · ⋯ 로 원문')
           // 외부 앱으로 열기 — ⋯ 안이 아니라 바깥 아이콘 (2026-09-13 Dave)
           if (!(await pg.$('.dtb .r .ib[title$="열기"]'))) fail('문서 도구: «외부로 열기» 아이콘이 바깥에 없다')
           // 🔴 **편집 중에 다른 문서로 옮겨도 그 글이 새 문서를 덮지 않는다** (2026-09-13 실사고 — todo.md 가 표로 덮였다)
