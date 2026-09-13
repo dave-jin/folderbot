@@ -163,6 +163,14 @@ function GeneralPane() {
   </>
 }
 
+/**
+ * 🔴 **원격에는 «메인 것» 을 안 보여 준다** (2026-09-13 Dave: «원격에서는 메인에 필요없는 내용들은 보여질 필요가 없어»).
+ *
+ * 가르는 기준은 «**이 기기에서 할 수 있나**» 다 — 여기서 눌러도 아무 일이 안 일어나거나, 눌러도 결과가
+ * 이 기기에 없는 줄은 원격에서 줄 자체를 안 그린다. 반대로 «메인을 원격에서 고치는» 것이 존재 이유인 줄
+ * (장기 토큰 · 기기 끊기)은 남긴다 — 헤드리스 메인을 밖에서 손보라고 만든 기능이다.
+ * ⚠ 새 줄을 만들 때 «메인에서만 되는가» 를 먼저 정한다. 안 정하면 원격 화면에 죽은 버튼이 하나 는다.
+ */
 function HostPane() {
   const { s, refresh } = useStore()
   const [pair, setPair] = useState<{ code: string; expiresAt: number } | null>(null)
@@ -173,9 +181,10 @@ function HostPane() {
     {s.tailnet ? <Row t="Tailscale" d="밖에서 들어올 때 쓰는 길."><span className="sv">{s.tailnet.state}{s.tailnet.dnsName ? ` · ${s.tailnet.dnsName}` : ''}</span></Row> : null}
     <Group t="기기" />
     {s.devices.map((d) => <Row key={d.id} t={d.name} d={`마지막 접속 ${fmtTime(d.lastSeen)}`}><button className="btn ghost" onClick={() => api('/devices/revoke', { body: { id: d.id } }).then(refresh)}>끊기</button></Row>)}
-    <Row t="새 기기 연결" d={isLocal ? '폰이나 다른 맥에서 이 코드를 넣으면 붙어요 (2분).' : '새 기기 연결은 메인의 화면(127.0.0.1)이나 터미널(p + Enter)에서 열 수 있어요.'}>
-      {isLocal ? <>{pair ? <span className="pcode mono">{pair.code}</span> : null}<button className="btn" onClick={async () => setPair(await api('/pairing', { body: {} }))}>페어링 코드</button></> : null}
-    </Row>
+    {/* ⛔ 페어링은 루프백에서만 열린다(호스트가 그렇게 막는다) — 원격에서는 줄 자체를 안 그린다 */}
+    {isLocal ? <Row t="새 기기 연결" d="폰이나 다른 맥에서 이 코드를 넣으면 붙어요 (2분).">
+      {pair ? <span className="pcode mono">{pair.code}</span> : null}<button className="btn" onClick={async () => setPair(await api('/pairing', { body: {} }))}>페어링 코드</button>
+    </Row> : null}
   </>
 }
 
@@ -270,6 +279,7 @@ function HarnessPane() {
 
 /** 🔴 «요금제의 몇 %가 남았나» 는 CLI 가 안 내준다(실측). 남은 양은 **내 예산 − 쓴 양** 이고, 여기서 그 예산을 정한다 */
 function UsagePane() {
+  const main = useStore().s.device.main
   const [st, setSt] = useState<{ hook?: boolean; budget?: { window: number; day: number; week: number } } | null>(null)
   const [busy, setBusy] = useState(false)
   const load = () => void api<typeof st>('/usage').then(setSt).catch(() => {})
@@ -277,8 +287,11 @@ function UsagePane() {
   const setB = async (k: 'window' | 'day' | 'week', v: string) => { const n = Number(v); if (!Number.isFinite(n) || n < 0) return; await api('/usage/budget', { body: { [k]: n } }); load() }
   return <>
     <p className="lead">남은 양은 «내 예산 − 쓴 양» 입니다. 요금제 한도(%)는 CLI 밖으로 나오지 않아요.</p>
+    {/* 훅은 **메인의** `~/.claude/settings.json` 을 고친다 — 원격에서는 상태만 보여 주고 버튼을 안 준다 */}
     <Row t="턴마다 기록하기" d="Claude Code 훅이 턴 끝에 읽기만 해서 이번 턴 토큰을 남깁니다. 터미널 세션까지 전부 잡혀요. 실패해도 조용히 끝나 턴을 막지 않습니다.">
-      <button className="btn" disabled={busy} onClick={async () => { setBusy(true); try { await api('/usage/hook', { body: { on: !st?.hook } }); load() } finally { setBusy(false) } }}>{st?.hook ? '설치됨 · 제거' : '훅 설치'}</button>
+      {main
+        ? <button className="btn" disabled={busy} onClick={async () => { setBusy(true); try { await api('/usage/hook', { body: { on: !st?.hook } }); load() } finally { setBusy(false) } }}>{st?.hook ? '설치됨 · 제거' : '훅 설치'}</button>
+        : <span className="sv">{st?.hook ? '설치됨' : '설치 안 됨'} · 메인에서</span>}
     </Row>
     <Row t="예산 — 5시간 창" d="막대가 이 값을 기준으로 줄어듭니다."><input className="bud" defaultValue={st?.budget?.window ?? ''} onBlur={(e) => void setB('window', e.target.value)} /><span className="unit">달러</span></Row>
     <Row t="예산 — 하루"><input className="bud" defaultValue={st?.budget?.day ?? ''} onBlur={(e) => void setB('day', e.target.value)} /><span className="unit">달러</span></Row>
@@ -326,7 +339,10 @@ function NotifyPane() {
 }
 
 function SecurityPane({ onClose }: { onClose: () => void }) {
-  const hasPerms = !!(window as unknown as { folderbotDesktop?: { perms?: unknown } }).folderbotDesktop?.perms
+  // ⚠ 원격 맥 앱에도 `folderbotDesktop` 은 있다 — 하지만 이 권한은 **볼트를 읽는 메인 맥**의 것이라
+  //    원격에서 눌러 봐야 남의 집 문을 여는 셈이다. 그래서 «이 화면이 메인인가» 까지 함께 본다.
+  const main = useStore().s.device.main
+  const hasPerms = main && !!(window as unknown as { folderbotDesktop?: { perms?: unknown } }).folderbotDesktop?.perms
   return <>
     {hasPerms ? <Row t="macOS 권한" d="전체 디스크 접근 · 알림. 볼트를 읽으려면 필요해요."><button className="btn" onClick={() => { onClose(); window.dispatchEvent(new Event('fb:perm-gate')) }}>다시 확인</button></Row> : null}
     <Row t="이 기기 로그아웃" d="이 기기의 연결을 끊습니다. 다시 붙으려면 페어링 코드가 필요해요." danger>

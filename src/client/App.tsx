@@ -5,7 +5,7 @@ import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
 import { AskHost, FolderPicker, Md, NotifyCenter, Onboarding, Pairing, Settings, askName, useToast } from './Sheets'
 import { AgentPickHost, pickAgent } from './AgentPick'
 import type { SecId } from './Settings'
-import { BotFace } from './Brand'
+import { VendorMark } from './Brand'
 import { DocPane, useDocs } from './Doc'
 import { Elapsed, Panel, type SecH } from './Panel'
 import { norm, scoreName } from '../core/search'
@@ -60,7 +60,6 @@ function useKeyboard(): boolean {
        * 키보드가 닫혀 있었다면 vv.height 가 곧 화면 높이라 100dvh 와 같은 값이 된다 — 해가 없다.
        * 입력 중이 아닐 때만 값을 지워 `100dvh` 로 돌아간다(iOS 가 높이를 덜 돌려줘도 아래 띠가 안 생긴다).
        */
-      const covered = Math.max(0, window.innerHeight - vv.height)
       const open = editing
       const st = document.documentElement.style
       if (open) {
@@ -72,7 +71,15 @@ function useKeyboard(): boolean {
          */
         st.setProperty('--kbh', `${Math.max(0, Math.round(window.innerHeight - vv.offsetTop - vv.height))}px`)
       } else { st.removeProperty('--vvh'); st.removeProperty('--vvt'); st.removeProperty('--kbh') }
-      setKb(open && covered > 140) // 헤더 숨김 같은 «화장» 만 문턱을 쓴다 — 레이아웃은 위에서 이미 정해졌다
+      /**
+       * 🔴 **화장에도 문턱을 쓰지 않는다** (2026-09-13 Dave 4차 스크린샷 — 이 문턱의 네 번째 사고).
+       * 종전엔 «키보드가 140px 이상 먹었을 때만» 머리·모델 칩을 접었다. 그런데 레이아웃 뷰포트까지 함께
+       * 줄어드는 판(홈 화면 앱 · 타사 키보드)에서는 `innerHeight − vv.height` 가 **0** 이라 그 문턱이
+       * «안 열렸다» 로 떨어진다. 그래서 칩이 그대로 남고 `.chat-foot` 이 `--sab`(홈 인디케이터 34pt)까지
+       * 계속 비워 둬 **입력창과 키보드 사이가 통째로 떴다.** 그 34pt 는 이미 키보드가 덮은 자리다.
+       * 판정은 레이아웃 때와 같은 하나뿐이다 — **입력 중이냐.**
+       */
+      setKb(open)
       if (!open) window.scrollTo(0, 0)
     }
     // 키보드가 내려가는 동안 값이 흔들린다 — 포커스가 빠진 뒤 세 번 다시 잰다
@@ -260,7 +267,7 @@ function Main() {
         <div className="sb-list">
           {rows.map(([sec, list]) => <div key={sec}>
             <div className="secl">{sec === '관제' ? '관제' : sec}</div>
-            {list.map(({ b, sum }) => <button key={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''}`} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><BotFace color={b.color} size={ICON_PX[iconSz]} mood={sum.mood} vendor={b.vendor} /><span className="n"><Mid s={b.name} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span><time>{fmtTime(sum.t)}</time></button>)}
+            {list.map(({ b, sum }) => <button key={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''}`} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={ICON_PX[iconSz]} mood={sum.mood} mono /><span className="n"><Mid s={b.name} /><VendorMark vendor={b.vendor} size={11} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span><time>{fmtTime(sum.t)}</time></button>)}
           </div>)}
         </div>
         {hovRow ? <HoverCard b={hovRow.b} sum={hovRow.sum} top={hov!.top} left={fit.sb + 6} /> : null}
@@ -314,7 +321,7 @@ function HoverCard({ b, sum, top, left }: { b: Bot; sum: ReturnType<typeof botSu
   const y = Math.max(8, Math.min(top - 8, (typeof window !== 'undefined' ? window.innerHeight : 800) - 230))
   const say = lastMsg ? `${lastMsg.kind === 'user' ? '나' : '봇'}: ${lastMsg.text.replace(/\s+/g, ' ').slice(0, 140)}` : lastN ? `${lastN.title}: ${lastN.body}`.slice(0, 140) : ''
   return <div className="hcard" style={{ top: y, left }}>
-    <div className="hh"><BotFace color={b.color} size={28} mood={sum.mood} vendor={b.vendor} /><b><Mid s={b.name} /></b><span className={`dot ${stateDot(sum.state ?? undefined)}`} /></div>
+    <div className="hh"><FolderBot color={b.color} size={28} mood={sum.mood} mono /><b><Mid s={b.name} /></b><VendorMark vendor={b.vendor} size={12} /><span className={`dot ${stateDot(sum.state ?? undefined)}`} /></div>
     <div className="hp mono">{b.rel || '볼트 (오케스트레이터)'}</div>
     <div className="hs">{sum.text}</div>
     <div className="hk">
@@ -360,7 +367,7 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk }: { rows: Row[]
       </div>
       {rows.map(([sec, list]) => <div key={sec}>
         <div className="secl">{sec}</div>
-        {list.map(({ b, sum }) => <button key={b.id} className="mrow" onClick={() => go(b.id)}><span className="av"><BotFace color={b.color} size={46} mood={sum.mood} vendor={b.vendor} /></span><span className="t"><span className="l1"><b><Mid s={b.name} /></b><time>{fmtTime(sum.t)}</time></span><span className="l2">{sum.text}</span></span></button>)}
+        {list.map(({ b, sum }) => <button key={b.id} className="mrow" onClick={() => go(b.id)}><span className="av"><FolderBot color={b.color} size={46} mood={sum.mood} mono /></span><span className="t"><span className="l1"><b><Mid s={b.name} /></b><VendorMark vendor={b.vendor} size={13} /><time>{fmtTime(sum.t)}</time></span><span className="l2">{sum.text}</span></span></button>)}
       </div>)}
     </div>
     <button className="mpill glassb" onClick={onAsk}><span className="pl"><Icon n="plus" size={20} /></span><span className="tx">폴더에 시키기…</span><Icon n="sub" size={20} color="var(--t2)" /></button>
@@ -506,10 +513,10 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
     <div className={`hdr chat-hdr ${phone ? '' : 'glass'}`}>
       {phone ? <><button className="rb glassb" onClick={drillSub ? () => setDrill(null) : onBack} title="뒤로"><Icon n="back" size={20} /></button>
         {/* 감싸는 span 은 헤더의 flex 아이템 — 폭이 내용에 의존하는데 알약이 그 100% − 118px 을 최대폭으로 삼아 스스로를 눌러 이름이 «2026-…» 로 잘렸다(2026-09-13 Dave). 알약 최대폭은 감싸는 칸의 100%, 칸이 남는 공간을 받는다 */}
-        <span style={{ position: 'relative', minWidth: 0, flex: '0 1 auto', display: 'flex' }}><button className="bpill glassb" onClick={() => setSessMenu(!sessMenu)}><BotFace color={bot.color} size={26} mood={moodOf(state, !!cur?.hibernated)} vendor={bot.vendor} /><b><Mid s={drillSub ? drillSub.name : bot.name} /></b>{stateDot(state) !== 'none' ? <span className={`dot ${stateDot(state)}`} style={{ width: 7, height: 7 }} /> : null}</button>{sessMenuEl}</span>
+        <span style={{ position: 'relative', minWidth: 0, flex: '0 1 auto', display: 'flex' }}><button className="bpill glassb" onClick={() => setSessMenu(!sessMenu)}><FolderBot color={bot.color} size={26} mood={moodOf(state, !!cur?.hibernated)} mono /><b><Mid s={drillSub ? drillSub.name : bot.name} /></b><VendorMark vendor={bot.vendor} size={12} />{stateDot(state) !== 'none' ? <span className={`dot ${stateDot(state)}`} style={{ width: 7, height: 7 }} /> : null}</button>{sessMenuEl}</span>
         <span className="sp" /><button className="rb glassb" onClick={onPanel} title="이 폴더에서"><Icon n="folder" size={20} /></button></>
         : drillSub ? <><button className="ib" onClick={() => setDrill(null)} title="메인 대화로"><Icon n="back" size={14} /></button><span style={{ color: 'var(--t3)' }}>/</span><span className="ttl">{drillSub.name}</span>{drillSub.status === 'run' ? <span className="spin run" /> : <Icon n={drillSub.status === 'error' ? 'x' : 'check'} size={11} color={drillSub.status === 'error' ? 'var(--err)' : 'var(--done)'} />}<span style={{ color: 'var(--t3)', fontSize: 12, whiteSpace: 'nowrap' }}>도구 {drillSub.tools}</span><span className="sp" /></>
-          : <><BotFace color={bot.color} size={16} mood={moodOf(state, !!cur?.hibernated)} vendor={bot.vendor} /><span className="ttl"><Mid s={bot.name} /></span>
+          : <><FolderBot color={bot.color} size={16} mood={moodOf(state, !!cur?.hibernated)} mono /><span className="ttl"><Mid s={bot.name} /></span><VendorMark vendor={bot.vendor} size={12} />
             <span style={{ position: 'relative', flex: 'none' }}><button onClick={() => setSessMenu(!sessMenu)} style={{ color: 'var(--t3)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}>{cur?.name ?? '새 대화'} <Icon n="chevd" size={10} /></button>{sessMenuEl}</span>
             <span className={`dot ${stateDot(state)}`} /><span className="sp" />
             <div className="acts"><button className={`ib ${docOn ? 'on' : ''}`} onClick={onDocToggle} title="문서 열 (⌘⇧D)"><Icon n="doc" size={14} />{!docOn && docBadge ? <span className="bd">{docBadge}</span> : null}</button></div></>}

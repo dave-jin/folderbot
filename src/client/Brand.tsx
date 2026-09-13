@@ -37,17 +37,18 @@ export function useProviders(): Provider[] {
 }
 
 /**
- * 봇 얼굴 + 회사 표식 — 시작한 뒤에도 «누구와 일하고 있나» 가 늘 보인다 (V24).
- * 배지는 오른쪽 아래 모서리에 붙고, 바탕색 링으로 폴더봇에서 떼어 놓는다.
+ * 이름 옆 회사 표식 (V24 · **C 안**, 2026-09-13 Dave 선택) — 표식을 **폴더에서 떼어 이름 줄에** 둔다.
+ *
+ * 🔴 **왜 아이콘에 안 붙이나**: 폴더봇은 오른쪽 아래 모서리에 **상태 배지**(실행 중·확인 대기·끝남·오류)를
+ *    이미 그린다(`FolderBot.tsx`). 표식을 같은 모서리에 붙였더니 둘이 포개져 실행 중·확인 대기에서
+ *    표식이 배지에 먹혔다. 모서리는 **시간이 걸린 신호(상태)** 의 자리이고, 회사는 안 변하는 정체라
+ *    조용한 자리인 이름 줄로 물러난다. ⛔ 아이콘 모서리에 다시 붙이는 변경은 이 결정과 충돌한다.
+ * ⛔ **깔린 제공자가 하나면 안 그린다** — 모든 줄에 같은 표식이 붙으면 아무것도 안 알려 준다
+ *    (Dave: «Codex가 없으면 아예 안보여야 해» 와 같은 원칙).
+ * ⚠ 이름은 말줄임(`Mid`)이 걸린 칸이다. 표식을 그 **안**에 넣으면 같이 잘리므로 **형제로** 둔다.
  */
-export function BotFace({ color, size = 24, mood = 'idle', vendor, mono = true }: { color: string; size?: number; mood?: Mood; vendor?: ProviderId; mono?: boolean }) {
+export function VendorMark({ vendor, size = 12 }: { vendor?: ProviderId; size?: number }) {
   const many = useProviders().length > 1
-  if (!many || !vendor) return <FolderBot color={color} size={size} mood={mood} mono={mono} />
-  // 표식은 폴더보다 확실히 작되 11px 아래로는 못 알아본다 — 그 아래면 차라리 안 그린다
-  const b = Math.round(size * 0.46)
-  if (b < 10) return <FolderBot color={color} size={size} mood={mood} mono={mono} />
-  return <span className="bface" style={{ width: size, height: size }}>
-    <FolderBot color={color} size={size} mood={mood} mono={mono} />
-    <span className="mk"><Mark id={vendor} size={b} /></span>
-  </span>
+  if (!many || !vendor) return null
+  return <span className="vmk" style={{ width: size, height: size }}><Mark id={vendor} size={size} /></span>
 }

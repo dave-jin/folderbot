@@ -339,6 +339,22 @@ try {
           await pg.fill('.snav .sfind input', ''); await wait(200)
           await pg.click('.snav .nv:has-text("화면")'); await wait(300)
         }
+        // 🔴 표식은 **이름 줄**에 산다 (V24 C 안, 2026-09-13 Dave 선택) — 아이콘 모서리는 상태 배지의 자리다
+        {
+          const css = await pg.evaluate(() => [...document.styleSheets].flatMap((sh) => { try { return [...sh.cssRules].map((r) => r.cssText) } catch { return [] } }).join('\n'))
+          if (/\.bface/.test(css)) fail('표식이 아이콘 모서리로 돌아갔다(.bface 부활) — 상태 배지와 겹친다')
+          if (!/\.vmk/.test(css)) fail('이름 줄 표식(.vmk) 규칙이 없다')
+          if (await pg.$('.bface')) fail('표식이 아이콘 모서리에 붙어 있다')
+        }
+        // 원격에 «메인 것» 을 안 보여 준다 — 이 화면은 메인이라 훅 버튼이 있어야 한다(반대편 판정의 기준점)
+        {
+          await pg.click('.snav .nv:has-text("사용량")'); await wait(400)
+          const hook = await pg.$('.sp-b .setr[data-t="턴마다 기록하기"] .c button')
+          const isMain = await pg.evaluate(() => /메인/.test(document.querySelector('.sb-foot')?.textContent ?? ''))
+          if (isMain && !hook) fail('메인인데 훅 설치 버튼이 없다')
+          if (!isMain && hook) fail('원격인데 훅 설치 버튼이 있다 — 메인의 ~/.claude 를 고치는 줄이다')
+          await pg.click('.snav .nv:has-text("화면")'); await wait(200)
+        }
         const segs = await pg.$$eval('.sp-b .seg', (ss) => ss.map((x) => x.textContent))
         if (!segs.some((t) => /작게.*보통.*크게/.test(t))) fail('설정에 폴더봇 크기 없음: ' + JSON.stringify(segs))
         await pg.click('.sp-b .setr[data-t="폴더봇 크기"] .seg button:has-text("크게")'); await wait(400)
@@ -471,6 +487,19 @@ try {
         const both = await pg.evaluate(() => { const r = document.querySelector('#root').getBoundingClientRect(); const c = document.querySelector('.composer').getBoundingClientRect(); return { rootH: r.height, compBottom: c.bottom, vh: visualViewport.height, ih: innerHeight } })
         if (Math.abs(both.rootH - both.vh) > 2) fail('phone: 레이아웃까지 줄어든 판에서 루트가 안 맞음 ' + JSON.stringify(both))
         if (both.compBottom > both.vh + 1) fail('phone: 대화·입력창이 키보드 위로 안 올라옴 ' + JSON.stringify(both))
+        // 🔴 화장도 같은 판정을 쓴다 — 이 판(covered === 0)에서 문턱을 쓰면 칩이 남고 `--sab` 만큼 떠 있다
+        //    (2026-09-13 Dave 4차 스크린샷: «키보드랑 입력창 사이에 여백이 너무 넓어»)
+        const cos = await pg.evaluate(() => {
+          const app = document.querySelector('.app')
+          const c = document.querySelector('.composer').getBoundingClientRect()
+          const foot = document.querySelector('.chat-foot')
+          return { kb: app.classList.contains('kb'), chips: [...document.querySelectorAll('.cchips')].some((e) => e.getBoundingClientRect().height > 0), pad: parseFloat(getComputedStyle(foot).paddingBottom), gap: visualViewport.height - c.bottom, covered: Math.max(0, innerHeight - visualViewport.height) }
+        })
+        if (cos.covered !== 0) fail('phone: __kbBoth 가 레이아웃까지 줄이지 않았다 ' + JSON.stringify(cos))
+        if (!cos.kb) fail('phone: 레이아웃까지 줄어든 판에서 «키보드 화장» 이 안 켜진다(문턱 부활?) ' + JSON.stringify(cos))
+        if (cos.chips) fail('phone: 키보드 위에 모델 칩이 남아 있다 ' + JSON.stringify(cos))
+        if (cos.pad > 10) fail('phone: 입력창 아래 여백이 넓다(--sab 를 그대로 비워 뒀다) ' + JSON.stringify(cos))
+        if (cos.gap > 12) fail('phone: 입력창과 키보드 사이가 뜬다 ' + JSON.stringify(cos))
         await pg.evaluate(() => window.__kbReset()); await pg.evaluate(() => document.activeElement.blur()); await wait(400)
 
         // 입력칸을 누르면 대화가 맨 아래로 붙는다 — «무엇에 답하는지» 가 보여야 한다
