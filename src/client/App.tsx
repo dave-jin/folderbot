@@ -389,7 +389,7 @@ function Main() {
           <button className="nav" onClick={() => setModal('settings')}><Icon n="gear" size={14} /><span>설정</span></button>
         </div>
         {/* 정렬 갈래 — 이름 · 직접(끌어 놓기) · 상태. ⚠ 끌어 놓으면 «직접» 으로 알아서 넘어간다 */}
-        <div className="sortbar">{(Object.keys(RAIL_SORT_LABEL) as RailSort[]).map((k) => <button key={k} className={railSort === k ? 'on' : ''} onClick={() => setRailSort(k)} title={RAIL_SORT_HINT[k]}>{RAIL_SORT_LABEL[k]}</button>)}</div>
+        <div className="sortbar"><span className="lb">정렬</span>{(Object.keys(RAIL_SORT_LABEL) as RailSort[]).map((k) => <button key={k} className={railSort === k ? 'on' : ''} onClick={() => setRailSort(k)} title={RAIL_SORT_HINT[k]}>{RAIL_SORT_LABEL[k]}</button>)}</div>
         <div className="sb-list">
           {rows.map(([sec, list]) => <div key={sec}>
             <div className="secl">{sec === '관제' ? '관제' : sec}</div>
