@@ -274,8 +274,10 @@ function AgentsPane() {
     {/* 🔴 **Codex 도 Claude 와 같은 칸을 갖는다** (2026-09-13 Dave: «codex도 claude와 같이 영구 토큰
         에이전트 모델 기본 설정등이 있어야 해»). ⚠ 다만 **값은 Codex 것으로 바뀐다** — 모델 이름 체계도,
         노력 단계(`model_reasoning_effort`: 최소…높음)도 다르다. 같은 목록을 쓰면 첫 턴에 죽는다. */}
-    {hasCodex ? <Row t="Codex 기본 모델 · 노력" d={<>Codex 세션이 이 값으로 뜹니다. 쓸 수 있는 모델은 CLI 판마다 달라서 <b>직접 입력</b>도 됩니다.</>} data-t="Codex 기본 모델">
-      <input className="sin mono" list="cx-models" value={cxModel} onChange={(e) => setCxModel(e.target.value)} onBlur={() => void saveD(cxModel, cxEffort, 'codex')} placeholder="gpt-5.1-codex" />
+    {/* 🔴 **비워 두는 것이 기본이다** (2026-09-13 실사고) — ChatGPT 계정은 쓸 수 있는 모델이 구독마다
+        다르다. 이름을 박아 넘기면 그 계정에서 **모든 턴이 400 으로 죽는다**. */}
+    {hasCodex ? <Row t="Codex 기본 모델 · 노력" d={<>Codex 세션이 이 값으로 뜹니다. <b>비워 두면 CLI 가 계정에 맞는 모델을 고릅니다</b> — ChatGPT 계정으로 쓰신다면 그대로 두세요(쓸 수 있는 모델이 구독마다 달라서, 이름을 박으면 그 계정에서 안 돌 수 있어요). API 키로 쓰신다면 골라도 됩니다.</>} data-t="Codex 기본 모델">
+      <input className="sin mono" list="cx-models" value={cxModel} onChange={(e) => setCxModel(e.target.value)} onBlur={() => void saveD(cxModel, cxEffort, 'codex')} placeholder="비워 두면 CLI 기본" />
       <datalist id="cx-models">{AGENT_MODELS.codex.map((m) => <option key={m.v} value={m.v}>{m.t}</option>)}</datalist>
       <select className="ssel sm" value={cxEffort} onChange={(e) => { setCxEffort(e.target.value); void saveD(cxModel, e.target.value, 'codex') }}>{AGENT_EFFORTS.codex.map((e) => <option key={e.v} value={e.v}>{e.t}</option>)}</select>
     </Row> : null}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emptyTurnNote, mapCodex, supportedFlags, type CodexCtx } from '../../src/core/codexMap'
+import { emptyTurnNote, isModelRejected, mapCodex, supportedFlags, type CodexCtx } from '../../src/core/codexMap'
 
 const ctx = (): CodexCtx => ({ sid: null, text: '', unknown: new Set() })
 const texts = (lines: unknown[]): string[] => lines.flatMap((l) => {
@@ -93,5 +93,21 @@ describe('쓸 수 있는 깃발만 넘긴다', () => {
   // ⚠ 못 읽었으면 다 있다고 본다 — 못 읽었다고 빼면 멀쩡한 판에서 샌드박스가 통째로 빠진다
   it('도움말을 못 읽으면 다 있다고 본다', () => {
     expect(supportedFlags('', ['--json', '--sandbox']).size).toBe(2)
+  })
+})
+
+describe('계정이 모델을 거절했나', () => {
+  // 🔴 2026-09-13 실측 — ChatGPT 계정에서 우리가 박아 넘긴 모델이 400 으로 죽었다
+  it('진짜 오류 글을 알아본다', () => {
+    expect(isModelRejected(`{"type":"error","status":400,"error":{"message":"The 'gpt-5.1-codex' model is not supported when using Codex with a ChatGPT account."}}`)).toBe(true)
+    expect(isModelRejected('unknown model: gpt-9')).toBe(true)
+    expect(isModelRejected('Model not available for your plan')).toBe(true)
+  })
+  // ⚠ 이름을 외우지 않는다 — «말의 모양» 을 본다. 다른 오류를 모델 탓으로 돌리면 안 된다
+  it('다른 오류를 모델 탓으로 돌리지 않는다', () => {
+    expect(isModelRejected('rate limit exceeded')).toBe(false)
+    expect(isModelRejected('sandbox denied: write outside workspace')).toBe(false)
+    expect(isModelRejected('')).toBe(false)
+    expect(isModelRejected('not supported')).toBe(false)   // «모델» 이라는 말이 없다
   })
 })

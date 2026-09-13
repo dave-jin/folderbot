@@ -86,7 +86,8 @@ export function mapCodex(e: CodexEvt, ctx: CodexCtx): StreamLine[] {
   if (t === 'task_complete' || t === 'item.started') return out   // 마감은 프로세스가 끝날 때 한다
   if (t === 'error' || t === 'stream_error' || t === 'turn.failed') {
     const msg = pick(m.message, (e.error as Record<string, unknown> | undefined)?.message, (m.error as Record<string, unknown> | undefined)?.message) || '알 수 없는 오류'
-    ctx.unknown.add(`오류: ${msg.slice(0, 200)}`)
+    // ⚠ 원문을 그대로 남긴다 — «이 계정에서는 그 모델을 못 쓴다» 같은 판정이 이 글을 읽는다
+    ctx.unknown.add(`오류: ${msg.slice(0, 300)}`)
     return out
   }
   // 표에 없는 줄 — 버리지 않고 흘려보낸다(이름이 바뀌어도 화면이 조용히 비지 않게)
@@ -125,4 +126,20 @@ export function supportedFlags(help: string, want: string[]): Set<string> {
   if (!help.trim()) { for (const w of want) out.add(w); return out }
   for (const w of want) if (help.includes(w)) out.add(w)
   return out
+}
+
+/**
+ * 이 오류가 «이 계정에서는 그 모델을 못 쓴다» 인가.
+ *
+ * 🔴 **ChatGPT 계정은 쓸 수 있는 모델이 구독마다 다르다** — 우리가 이름을 박아 넘기면 그 계정에서
+ *    **모든 턴이 400 으로 죽는다** (2026-09-13 실측:
+ *    «The 'gpt-5.1-codex' model is not supported when using Codex with a ChatGPT account»).
+ *    이걸 알아보면 **모델 없이 한 번 더** 보내서 CLI 가 제 계정에 맞는 것을 고르게 할 수 있다.
+ * ⚠ 이름을 외우지 않는다 — 모델 이름은 계속 바뀐다. «model … not supported» 라는 **말의 모양**을 본다.
+ */
+export function isModelRejected(err: string): boolean {
+  if (!err) return false
+  const s = err.toLowerCase()
+  if (!/model/.test(s)) return false
+  return /not supported|unsupported|not available|does not exist|unknown model|invalid model/.test(s)
 }

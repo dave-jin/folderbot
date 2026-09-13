@@ -1712,7 +1712,17 @@ try {
       const note = epChat.items.find((x) => x.kind === 'assistant' && /답 없이/.test(x.text ?? ''))
       if (!note) fail('빈 턴: 이유를 안 적었다 — 화면이 조용히 빈다 ' + JSON.stringify(epChat.items.map((x) => [x.kind, (x.text ?? '').slice(0, 40)])))
       if (!/something went wrong/.test(note.text)) fail('빈 턴: CLI 가 한 말이 안 들어갔다 ' + note.text)
-      ok('Codex — 옛 판 · 새 판(item/turn) 둘 다 읽고, 답 없는 턴은 이유를 적는다')
+      /**
+       * 🔴 **계정이 모델을 거절하면 모델 없이 한 번 더 보낸다** (2026-09-13 Dave 신고).
+       *    ChatGPT 계정은 쓸 수 있는 모델이 구독마다 다른데 우리가 이름을 박아 넘겨 **모든 턴이
+       *    400 으로 죽었다**. CLI 는 제 계정에 맞는 것을 안다 — 맡긴다.
+       */
+      const mj = await api2(`/bots/${b1.id}/sessions`, { name: '모델거절', vendor: 'codex', model: 'gpt-5.1-codex' })
+      await api2(`/sessions/${mj.id}/send`, { text: '모델거절 테스트' })
+      let mjChat = null
+      for (let i = 0; i < 80; i++) { mjChat = await api2(`/sessions/${mj.id}/chat`); if (mjChat.items.some((x) => x.kind === 'assistant' && /기본 모델로 답했어요/.test(x.text ?? ''))) break; await wait(250) }
+      if (!mjChat.items.some((x) => x.kind === 'assistant' && /기본 모델로 답했어요/.test(x.text ?? ''))) fail('모델 거절: 모델 없이 다시 보내지 않았다 ' + JSON.stringify(mjChat.items.map((x) => [x.kind, (x.text ?? '').slice(0, 60)])))
+      ok('Codex — 옛 판 · 새 판(item/turn) 둘 다 읽고, 답 없는 턴은 이유를 적고, 거절당한 모델은 빼고 다시 보낸다')
       ok('에이전트 고르기 — 폴더 하나 = 줄 하나 · 벤더는 세션마다 · Codex 로 한 턴')
     } finally { two.kill() }
   }

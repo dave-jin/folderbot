@@ -23,7 +23,12 @@ export const AGENT_MODELS: Record<ProviderId, AgentModel[]> = {
     { v: 'claude-haiku-4-5-20251001', t: 'Haiku 4.5', d: '가장 빠름' }
   ],
   codex: [
-    { v: 'gpt-5.1-codex', t: 'GPT-5.1 Codex', d: '기본' },
+    // 🔴 **맨 위는 «CLI 기본»** (2026-09-13 Dave 신고) — ChatGPT 계정으로 붙으면 쓸 수 있는 모델이
+    //    구독에 따라 다르고, 우리가 이름을 박아 넘기면 그 계정에서 **400 으로 죽는다**
+    //    (실측: «The 'gpt-5.1-codex' model is not supported when using Codex with a ChatGPT account»).
+    //    빈 값이면 `--model` 을 아예 안 넘기고 Codex 가 제 계정에 맞는 것을 고른다.
+    { v: '', t: 'CLI 기본 (계정에 맞춰서)', d: '권장' },
+    { v: 'gpt-5.1-codex', t: 'GPT-5.1 Codex', d: 'API 키 계정' },
     { v: 'gpt-5.1-codex-mini', t: 'GPT-5.1 Codex mini', d: '빠름' },
     { v: 'gpt-5-codex', t: 'GPT-5 Codex', d: '' },
     { v: 'gpt-5', t: 'GPT-5', d: '' }
@@ -35,7 +40,11 @@ export const AGENT_EFFORTS: Record<ProviderId, { v: string; t: string }[]> = {
   codex: [{ v: 'minimal', t: '최소' }, { v: 'low', t: '낮음' }, { v: 'medium', t: '보통' }, { v: 'high', t: '높음' }]
 }
 
-export const DEFAULT_MODEL: Record<ProviderId, string> = { claude: 'claude-fable-5-1', codex: 'gpt-5.1-codex' }
+/**
+ * ⚠ **Codex 기본값은 빈 값이다** — «CLI 가 알아서». 이름을 박아 두면 ChatGPT 계정에서 그 모델이
+ *    안 되는 순간 모든 턴이 400 으로 죽는다(2026-09-13 실사고). 고르고 싶은 사람은 설정에서 고른다.
+ */
+export const DEFAULT_MODEL: Record<ProviderId, string> = { claude: 'claude-fable-5-1', codex: '' }
 export const DEFAULT_EFFORT: Record<ProviderId, string> = { claude: 'high', codex: 'medium' }
 
 /**

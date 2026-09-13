@@ -4,7 +4,7 @@ import { parseTodo, addLine, toggleLine, formatLine, editLine, deleteLine } from
 import { transition, shouldNotify } from '../../src/core/stateMachine'
 import { authVerdict } from '../../src/core/authVerdict'
 import { machSummary } from '../../src/core/chat'
-import { AGENT_EFFORTS, AGENT_MODELS, fitsProvider } from '../../src/core/agents'
+import { AGENT_EFFORTS, AGENT_MODELS, DEFAULT_MODEL, fitsProvider } from '../../src/core/agents'
 import { cronFromText, routineName } from '../../src/core/routineText'
 import { bestIcon, faviconHost, parentHost, parseIconLinks } from '../../src/core/favicon'
 import { workLabel, workMood } from '../../src/core/work'
@@ -328,7 +328,19 @@ describe('에이전트 목록 — Claude 와 Codex 는 섞이면 안 된다', ()
     const c = AGENT_MODELS.claude.map((m) => m.v), x = AGENT_MODELS.codex.map((m) => m.v)
     expect(c.some((v) => x.includes(v))).toBe(false)
     expect(c.every((v) => fitsProvider('claude', v))).toBe(true)
-    expect(x.every((v) => fitsProvider('codex', v))).toBe(true)
+    // ⚠ 빈 값은 «CLI 가 알아서» 다 — 이름이 아니므로 이 검사에서 뺀다(아래에서 따로 잰다)
+    expect(x.filter(Boolean).every((v) => fitsProvider('codex', v))).toBe(true)
+  })
+
+  /**
+   * 🔴 **Codex 기본값은 빈 값이다** (2026-09-13 실사고). ChatGPT 계정은 쓸 수 있는 모델이 구독마다
+   *    다른데, 우리가 이름을 박아 넘겨서 «The 'gpt-5.1-codex' model is not supported when using
+   *    Codex with a ChatGPT account» 로 **모든 턴이 400 으로 죽었다**.
+   */
+  it('Codex 는 «CLI 기본» 이 첫 줄이고 기본값도 빈 값이다', () => {
+    expect(AGENT_MODELS.codex[0].v).toBe('')
+    expect(DEFAULT_MODEL.codex).toBe('')
+    expect(fitsProvider('codex', '')).toBe(false)   // 빈 값이면 `--model` 을 안 넘긴다
   })
   it('상대의 모델은 «맞지 않다» 고 답한다 — 안 넘기고 CLI 기본값에 맡기려고', () => {
     expect(fitsProvider('codex', 'claude-opus-5')).toBe(false)

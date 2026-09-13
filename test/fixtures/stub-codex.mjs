@@ -44,6 +44,20 @@ if (/새판/.test(prompt)) {
   process.exit(0)
 }
 if (/빈턴/.test(prompt)) { process.stderr.write('error: something went wrong\n'); process.exit(3) }   // 답 없이 끝나는 턴
+/**
+ * 🔴 **계정이 모델을 거절하는 턴** — ChatGPT 계정은 쓸 수 있는 모델이 구독마다 다르다.
+ *    우리가 `--model` 을 박아 넘기면 그 계정에서 **모든 턴이 400 으로 죽는다**(2026-09-13 실사고).
+ *    여기서는 «--model 이 붙어 오면 거절, 안 붙어 오면 대답» 으로 그 길을 그대로 흉내 낸다 —
+ *    호스트가 모델을 빼고 다시 보내는지가 이 한 갈래로 잰다.
+ */
+if (/모델거절/.test(prompt)) {
+  if (argv.includes('--model')) {
+    say({ type: 'error', message: `{"type":"error","status":400,"error":{"message":"The '${argv[argv.indexOf('--model') + 1]}' model is not supported when using Codex with a ChatGPT account."}}` })
+    process.exit(1)
+  }
+  say({ type: 'agent_message', message: '기본 모델로 답했어요' })
+  process.exit(0)
+}
 for (const chunk of [`«${prompt}»`, ' 확인했어요.']) say({ type: 'agent_message_delta', delta: chunk })
 say({ type: 'token_count', info: { input_tokens: 120, output_tokens: 40, cached_input_tokens: 900 } })
 say({ type: 'wildly_new_event_name', detail: 'x' })   // 표에 없는 줄 — 버리지 않고 흘려보내야 한다

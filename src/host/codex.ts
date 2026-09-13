@@ -2,7 +2,7 @@ import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:c
 import { EventEmitter } from 'node:events'
 import { createInterface } from 'node:readline'
 import type { StreamLine } from '../core/chat'
-import { emptyTurnNote, mapCodex, supportedFlags, type CodexEvt } from '../core/codexMap'
+import { emptyTurnNote, isModelRejected, mapCodex, supportedFlags, type CodexEvt } from '../core/codexMap'
 import type { PermissionRequest } from '../core/types'
 import { providerBin } from './providers'
 import { cleanClaudeEnv } from './session'
@@ -62,6 +62,12 @@ export class CodexWorker extends EventEmitter {
   private spec: CodexSpec
   private text = ''
   private unknown = new Set<string>()
+  /**
+   * 이 세션에서 **모델 이름을 빼고** 보낼까 — 계정이 그 모델을 거절했을 때 켜진다.
+   * ⚠ 한 번 켜지면 세션 내내 유지한다. 매 턴 거절당하고 다시 보내면 **모든 턴이 두 배**로 든다.
+   */
+  private dropModel = false
+  private retrying = ''
 
   constructor(spec: CodexSpec) {
     super()
@@ -82,7 +88,7 @@ export class CodexWorker extends EventEmitter {
     if (flags.has('--json')) args.push('--json')
     if (flags.has('--sandbox')) args.push('--sandbox', this.spec.sandbox ?? 'read-only')
     if (flags.has('--skip-git-repo-check')) args.push('--skip-git-repo-check')
-    if (this.spec.model && flags.has('--model')) args.push('--model', this.spec.model)
+    if (this.spec.model && !this.dropModel && flags.has('--model')) args.push('--model', this.spec.model)
     // ⚠ 노력은 `-c` 로 준다 — Codex 에는 `--effort` 플래그가 없고 설정 키(`model_reasoning_effort`)다.
     //    ⛔ 아는 값만 넘긴다. Claude 의 `xhigh`·`max` 를 그대로 넘기면 CLI 가 그 자리에서 죽는다.
     if (this.spec.effort && CODEX_EFFORT.has(this.spec.effort)) args.push('-c', `model_reasoning_effort="${this.spec.effort}"`)
@@ -114,6 +120,21 @@ export class CodexWorker extends EventEmitter {
        * ⚠ 이건 오류 처리가 아니라 **관측**이다 — 코드가 0 이어도 답이 없으면 적는다(줄 이름이
        *    바뀐 경우가 정확히 그 모양이다).
        */
+      /**
+       * 🔴 **계정이 모델을 거절했으면 모델 없이 한 번 더 보낸다** (2026-09-13 Dave 신고).
+       *    ChatGPT 계정은 쓸 수 있는 모델이 구독마다 다른데, 우리가 이름을 박아 넘겨서 **모든 턴이
+       *    400 으로 죽었다**. CLI 는 제 계정에 맞는 것을 안다 — 그러니 맡긴다.
+       * ⚠ 한 번만 다시 보낸다(`retrying`) — 다른 이유로 또 죽으면 그때는 사람에게 말해야 한다.
+       */
+      const why = [...this.unknown].join(' ') + ' ' + this.lastError
+      if (!this.text.trim() && !this.dropModel && this.retrying !== prompt && isModelRejected(why)) {
+        this.dropModel = true
+        this.retrying = prompt
+        this.unknown.clear(); this.lastError = ''
+        this.out({ type: 'system', subtype: 'activity', summary: `모델 ${this.spec.model} 은 이 계정에서 못 써요 — CLI 기본 모델로 다시 보냅니다` })
+        this.send(prompt)
+        return
+      }
       if (!this.text.trim()) {
         const note = emptyTurnNote({ code, stderr: this.lastError, unknown: this.unknown })
         this.out({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: note }] } })
