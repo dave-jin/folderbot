@@ -366,11 +366,46 @@ try {
         await pg.hover('.brow'); await wait(350)
         const hovW = await pg.evaluate(() => document.querySelector('.brow .fb').getBoundingClientRect().width)
         if (hovW < big.w * 1.2) fail('마우스 오버에 안 커짐 ' + JSON.stringify({ big, hovW }))
+        // 🔴 **실행 중인** 봇도 커져야 한다 — 돌고 있는 애니메이션이 같은 속성을 쓰면 호버가 통째로 무시된다
+        //    (2026-09-13 Dave: «애니메이션이 동작하는 폴더봇은 마우스 오버를 할 때 확대가 안 되네»)
+        {
+          await pg.evaluate(() => { const f = document.querySelector('.brow .fb'); f.classList.add('fb-work') })
+          await pg.mouse.move(900, 700); await wait(250)
+          const rest = await pg.evaluate(() => document.querySelector('.brow .fb').getBoundingClientRect().width)
+          await pg.hover('.brow'); await wait(400)
+          const runHov = await pg.evaluate(() => {
+            const f = document.querySelector('.brow .fb')
+            return { w: f.getBoundingClientRect().width, anim: getComputedStyle(f).animationName }
+          })
+          if (runHov.anim === 'none') fail('실행 중 애니메이션이 안 붙었다 — 검사가 무의미하다 ' + JSON.stringify(runHov))
+          if (runHov.w < rest * 1.2) fail('실행 중인 폴더봇이 마우스 오버에 안 커진다(애니메이션과 같은 속성을 쓴다?) ' + JSON.stringify({ rest, runHov }))
+          await pg.evaluate(() => document.querySelector('.brow .fb').classList.remove('fb-work'))
+        }
         await pg.screenshot({ path: 'test/tmp/desktop-rail-big.png' })
         await pg.mouse.move(900, 700); await wait(300)
         await pg.evaluate(() => { localStorage.setItem('fb:icon', 'm'); window.dispatchEvent(new Event('fb:iconsize')) }); await wait(200)
 
         await pg.keyboard.press('Escape'); await wait(200); if (await pg.$('.pk')) { await pg.click('.pk .modal-h .ib'); await wait(300) }
+        // 지침 · 하네스 — 한 줄에 «아이콘 · 이름 · 범위» (2026-09-13 Dave: «지침과 하네스쪽 디자인도 깨져 있어»)
+        //    클래스만 붙이고 CSS 를 안 써서 아이콘이 한 줄, 이름·범위가 붙어 흘렀다
+        {
+          await pg.click('.panel .sech:has-text("지침 · 하네스")'); await wait(900)
+          const hz = await pg.evaluate(() => {
+            const rows = [...document.querySelectorAll('.panel .hz')]
+            if (!rows.length) return null
+            return rows.slice(0, 6).map((r) => {
+              const rb = r.getBoundingClientRect()
+              const ic = r.querySelector('svg')?.getBoundingClientRect()
+              const n = r.querySelector('.n')?.getBoundingClientRect()
+              const sc = r.querySelector('.sc')?.getBoundingClientRect()
+              return { h: rb.height, sameLine: !ic || !n || Math.abs((ic.top + ic.height / 2) - (n.top + n.height / 2)) < 6, gap: n && sc ? sc.left - n.right : 99, right: sc ? rb.right - sc.right : 99 }
+            })
+          })
+          if (!hz) fail('지침 · 하네스: 줄이 하나도 없다')
+          const bad = hz.filter((r) => r.h > 44 || !r.sameLine || r.gap < 2)
+          if (bad.length) fail('지침 · 하네스: 줄이 깨졌다(아이콘·이름·범위가 한 줄이 아니거나 붙어 있다) ' + JSON.stringify(bad))
+          await pg.click('.panel .sech:has-text("지침 · 하네스")'); await wait(300)
+        }
         // 세션 삭제 버튼 — 행에 있고, 누르면 한 번 묻고, 목록에서 사라진다. 원래 보던 세션은 건드리지 않는다
         const keep = (await pg.textContent('.panel .srow.on .n')).trim()
         await pg.click('.panel .sech:has-text("세션") .tools .ib'); await wait(1000) // 지울 세션 하나 더 만든다

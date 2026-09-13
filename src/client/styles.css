@@ -81,9 +81,9 @@ b,strong { color:var(--w); font-weight:600 }
 /* 레일 폴더봇 — 설정에서 고른 크기(--fbi)를 줄 높이가 따라간다. 마우스를 올리면 커져서 표정이 보인다
    (2026-09-13 Dave: «너무 작게 보여서 귀여운 폴더 표정이 잘 안 보여» · «마우스 오버했을 때는 크게 보이면 더 좋아»).
    ⚠ 커지는 건 transform 이라 줄이 밀리지 않는다 — 레이아웃은 그대로 두고 그림만 키운다. */
-.brow { min-height:calc(var(--fbi, 24px) + 12px) } .brow .fb { transition:transform .14s cubic-bezier(.34,1.3,.64,1) }
-.brow:hover .fb { transform:scale(1.45) }
-@media (prefers-reduced-motion: reduce) { .brow .fb { transition:none } .brow:hover .fb { transform:scale(1.2) } }
+.brow { min-height:calc(var(--fbi, 24px) + 12px) } .brow .fb { transition:scale .14s cubic-bezier(.34,1.3,.64,1) }
+.brow:hover .fb { scale:1.45 }
+@media (prefers-reduced-motion: reduce) { .brow .fb { transition:none } .brow:hover .fb { scale:1.2 } }
 .brow .n small { display:block; font-size:10.5px; color:var(--t3); line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .sb-foot .bd { margin-left:auto; font-size:11px; color:var(--t3) } .sb-foot .bd.upd { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border-radius:6px; cursor:pointer; max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:none } .sb-foot .bd.upd:hover { color:var(--t); background:var(--hover) } .sb-foot .bd + .bd { margin-left:8px }
 
 /* ── 채팅 — 스크롤 컨테이너 하나, 유리(헤더 · 고정 질문 · ↓ · 컴포저)는 그 형제 ── */
@@ -363,7 +363,13 @@ b,strong { color:var(--w); font-weight:600 }
 @keyframes glow { 0%,100% { opacity:.35 } 50% { opacity:.9 } }
 @keyframes spin { to { transform:rotate(360deg) } }
 @keyframes caret { 0%,49% { opacity:1 } 50%,100% { opacity:0 } }
-@keyframes bob { 0%,100% { transform:translateY(0) } 50% { transform:translateY(-2px) } }
+/* 🔴 `bob` 은 `transform` 이 아니라 **개별 속성 `translate`** 로 흔든다 (2026-09-13 Dave:
+   «애니메이션이 동작하는 폴더봇은 마우스 오버를 할 때 확대가 안 되네»).
+   돌고 있는 CSS 애니메이션은 **같은 속성의 일반 선언을 늘 이긴다** — `.fb-work` 가 `transform` 을
+   애니메이션하고 있어서 호버의 `transform:scale(1.45)` 이 통째로 무시됐다(실행 중인 봇만 안 커졌다).
+   `translate` 와 `scale` 은 독립 속성이라 서로를 안 덮는다 — 흔들면서 커진다.
+   ⛔ 이 둘 중 하나를 `transform` 으로 되돌리면 그 순간 다시 겹친다. */
+@keyframes bob { 0%,100% { translate:0 0 } 50% { translate:0 -2px } }
 @keyframes shimmer { 0% { background-position:200% 0 } 100% { background-position:-200% 0 } }
 @keyframes fadein { from { opacity:0; transform:translate(-50%, 4px) } to { opacity:1; transform:translate(-50%, 0) } }
 .fb-work { animation:bob 2.4s ease-in-out infinite }
@@ -555,5 +561,18 @@ b,strong { color:var(--w); font-weight:600 }
 /* 봇 얼굴에 붙는 회사 표식 (V24) — 깔린 제공자가 둘 이상일 때만 그린다 */
 /* ⛔ 표식 뒤에 원판을 깔지 않는다 (2026-09-13 Dave: «배경 투명으로 폴더 옆에 붙어야 해»).
    검은 동그라미가 목록마다 하나씩 생겨 폴더봇 옆에 얼룩처럼 보였다. 표식만 폴더 오른쪽 아래에 붙인다. */
+/* 패널 «지침 · 하네스» 줄 — 패널의 `.kv` 와 같은 리듬(한 줄 · 26px · 말줄임).
+   ⚠ 클래스만 붙이고 규칙을 안 쓰면 요소가 그대로 흘러 아이콘이 한 줄, 이름·범위가 붙어 버린다(실측). */
+/* «모두 보기» 로 펼치면 스킬이 88개까지 간다 — 패널을 밀어내지 않게 여기서 스크롤한다 */
+.hsec { padding:0 0 6px; max-height:46vh; overflow:auto }
+.hz { display:flex; align-items:center; gap:8px; width:100%; padding:4px 16px; min-height:26px; font-size:12.5px; color:var(--t2); text-align:left }
+.hz:hover { background:var(--hover); color:var(--t) }
+.hz > svg { flex:none }
+.hz .n { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--t) }
+.hz .sc { flex:none; font-size:11px; color:var(--t3); white-space:nowrap }
+.hz.more { color:var(--t3); font-size:11.5px; padding-left:38px }
+.hz.more:hover { color:var(--t2) }
+@media (max-width: 760px) { .hz { min-height:36px; font-size:14px; padding:6px 18px } .hz .sc { font-size:12px } }
+
 /* 이름 옆 회사 표식 (C 안) — 아이콘 모서리는 상태 배지의 자리다 */
 .vmk { display:inline-flex; align-items:center; justify-content:center; flex:none; opacity:.9 }
