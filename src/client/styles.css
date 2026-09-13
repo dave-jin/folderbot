@@ -181,7 +181,7 @@ b,strong { color:var(--w); font-weight:600 }
 .swhint.l { left:0; flex-direction:row } .swhint.r { right:0; flex-direction:row-reverse }
 .swhint .cir { width:34px; height:34px; border-radius:50%; flex:none; display:inline-flex; align-items:center; justify-content:center; border:1.5px solid rgba(255,255,255,.8); color:rgba(255,255,255,.92) }
 .swhint .cir.on { background:#fff; border-color:#fff } .swhint b { font-size:13px; font-weight:500; white-space:nowrap }
-.tsheet { position:fixed; left:0; right:0; bottom:0; z-index:90; background:var(--box); border-radius:18px 18px 0 0; padding:10px 10px calc(var(--sab) + 22px); box-shadow:0 -12px 34px rgba(0,0,0,.5); display:flex; flex-direction:column }
+.tsheet { position:fixed; left:0; right:0; bottom:var(--kbh, 0px); z-index:90; background:var(--box); border-radius:18px 18px 0 0; padding:10px 10px calc(var(--sab) + 22px); box-shadow:0 -12px 34px rgba(0,0,0,.5); display:flex; flex-direction:column }
 .tsheet .grip { width:36px; height:4px; border-radius:2px; background:var(--line2); margin:0 auto 10px }
 .tsheet .ti { font-size:12.5px; color:var(--t3); padding:0 14px 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
 .tsheet button { display:flex; align-items:center; gap:14px; height:50px; padding:0 14px; font-size:16px; color:var(--w) } .tsheet button:active { background:var(--sel) }
@@ -232,8 +232,10 @@ b,strong { color:var(--w); font-weight:600 }
 .ptodo .bd { flex:1; min-width:0 }
 .ptodo .tt { font-size:15.5px; line-height:1.35; color:var(--w); font-weight:500; overflow-wrap:anywhere }
 .ptodo.done .tt { color:var(--t3); text-decoration:line-through }
-.ptodo .sub { display:flex; flex-wrap:nowrap; gap:5px; margin-top:2px; color:var(--t3); font-size:13px; line-height:1.4; overflow:hidden }
-.ptodo .sub .ar { flex:none } .ptodo .sub .tx { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+/* ⚠ 이름이 겹치면 조용히 깨진다 — `.sub` 는 이미 채팅의 서브에이전트 줄이 쓰고 있고 그건 세로 배치다.
+   그래서 여기는 `.dsub`(설명 한 줄). 새 클래스는 styles.css 를 먼저 훑어 겹치는지 본다. */
+.ptodo .dsub { display:flex; flex-wrap:nowrap; gap:5px; margin-top:2px; color:var(--t3); font-size:13px; line-height:1.4; overflow:hidden }
+.ptodo .dsub .ar { flex:none } .ptodo .dsub .tx { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .ptodo.on { background:var(--bg2) }
 .ptodo .dsc { margin-top:5px; font-size:13px; color:var(--t2); line-height:1.6; white-space:pre-wrap }
 .ptodo .acts { display:flex; gap:7px; margin-top:9px; flex-wrap:wrap }
@@ -302,7 +304,7 @@ b,strong { color:var(--w); font-weight:600 }
 .pk.phone .ph-row .ic { width:32px; height:32px; border-radius:9px; background:var(--box); display:inline-flex; align-items:center; justify-content:center; flex:none }
 .pk.phone .ph-row .n { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; text-align:left }
 .pk.phone .ph-row .nm { font-size:16px; color:var(--w); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
-.pk.phone .ph-row .sub { font-size:12px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.pk.phone .ph-row .dsub { font-size:12px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
 .pk.phone .ph-row time { font-size:11.5px; color:var(--t3); flex:none }
 .pk.phone .ph-row.new .nm { color:var(--t2) }
 .pk.phone .newbox { margin:6px 14px; padding:12px; background:var(--bg2); border:1px solid var(--line2); border-radius:12px }

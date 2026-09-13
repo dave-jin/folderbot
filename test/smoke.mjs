@@ -477,8 +477,10 @@ try {
           if (shape.h > 66) fail('폰 할 일: 줄이 너무 높다 ' + JSON.stringify(shape))
           if (shape.right > 20) fail('폰 할 일: 오른쪽 여백이 남는다(제목이 폭을 다 안 쓴다) ' + JSON.stringify(shape))
           if (shape.chev || shape.chip) fail('폰 할 일: 꺾쇠·칩이 남아 있다 ' + JSON.stringify(shape))
+          const one = await pg.evaluate(() => { const d = document.querySelector('.panel .ptodo .dsub'); if (!d) return null; const a = d.querySelector('.ar').getBoundingClientRect(); const t = d.querySelector('.tx').getBoundingClientRect(); return { dy: Math.abs(a.top - t.top), h: d.getBoundingClientRect().height } })
+          if (one && (one.dy > 4 || one.h > 26)) fail('폰 할 일: ↳ 와 설명이 두 줄로 갈렸다(클래스 이름 겹침?) ' + JSON.stringify(one))
           // 탭하면 펼쳐지고 할 일거리가 나온다
-          const withDesc = await pg.evaluate(() => { const r = [...document.querySelectorAll('.panel .ptodo')].find((x) => x.querySelector('.sub')); if (!r) return null; r.click(); return r.querySelector('.tt').textContent })
+          const withDesc = await pg.evaluate(() => { const r = [...document.querySelectorAll('.panel .ptodo')].find((x) => x.querySelector('.dsub')); if (!r) return null; r.click(); return r.querySelector('.tt').textContent })
           await wait(400)
           if (withDesc && !(await pg.$('.panel .ptodo.on .acts button'))) fail('폰 할 일: 탭해도 안 펼쳐진다 · ' + withDesc)
           if (withDesc) { await pg.click('.panel .ptodo.on'); await wait(300) }
@@ -511,6 +513,23 @@ try {
           if (!made.includes('시트로 만든 할 일')) fail('폰 할 일: 시트로 추가가 안 된다 ' + JSON.stringify(made))
           const md = readFileSync(join(root, '3. Area/제품_Rondo/todo.md'), 'utf8')
           if (!/시트로 만든 할 일: 상세도 같이/.test(md)) fail('폰 할 일: todo.md 에 «제목: 상세» 로 안 적혔다')
+          // 🔴 편집 시트는 키보드 위에 앉는다 — 앞서 고친 --vvh 를 그대로 쓴다
+          await pg.click('.panel .sech:has-text("할 일") .tools .ib >> nth=0'); await wait(600)
+          await pg.focus('.tsheet.esheet .fld input'); await pg.evaluate(() => window.__kb(336)); await wait(600)
+          const sk = await pg.evaluate(() => { const sh = document.querySelector('.tsheet.esheet').getBoundingClientRect(); const ok2 = document.querySelector('.tsheet.esheet .fbtn .ok').getBoundingClientRect(); const inp = document.querySelector('.tsheet.esheet .fld input').getBoundingClientRect(); return { sheetBottom: sh.bottom, okBottom: ok2.bottom, inpTop: inp.top, vh: visualViewport.height, top: visualViewport.offsetTop } })
+          if (sk.okBottom > sk.top + sk.vh + 1) fail('폰 편집 시트: 저장 버튼이 키보드 밑에 묻힌다 ' + JSON.stringify(sk))
+          if (sk.inpTop < sk.top - 1) fail('폰 편집 시트: 제목 칸이 화면 위로 잘린다 ' + JSON.stringify(sk))
+          await pg.screenshot({ path: 'test/tmp/phone-todo-sheet-kb.png' })
+          await pg.evaluate(() => window.__kb(0)); await pg.evaluate(() => document.activeElement.blur()); await wait(300)
+          await pg.click('.tsheet.esheet .fbtn .cancel'); await wait(400)
+          // 라이트 테마에서도 행·시트가 읽힌다
+          await pg.evaluate(() => { localStorage.setItem('fb:theme', 'light'); document.documentElement.dataset.theme = 'light' }); await wait(400)
+          const lt = await pg.evaluate(() => { const r = document.querySelector('.panel .ptodo'); const c = getComputedStyle(r.querySelector('.tt')).color; const b = getComputedStyle(r).backgroundColor; const ring = getComputedStyle(r.querySelector('.ring')).borderTopColor; return { c, b, ring } })
+          const L = (c) => { const [r, g, b] = c.match(/\d+/g).map(Number); return 0.299 * r + 0.587 * g + 0.114 * b }
+          if (Math.abs(L(lt.c) - L(lt.b)) < 60) fail('폰 할 일 라이트: 제목이 배경에 묻힌다 ' + JSON.stringify(lt))
+          if (Math.abs(L(lt.ring) - L(lt.b)) < 25) fail('폰 할 일 라이트: 체크 테두리가 안 보인다 ' + JSON.stringify(lt))
+          await pg.screenshot({ path: 'test/tmp/phone-todo-light.png' })
+          await pg.evaluate(() => { localStorage.setItem('fb:theme', 'dark'); document.documentElement.dataset.theme = 'dark' }); await wait(300)
 
         }
         await pg.click('.panel .secb button.trow:not(.dir)'); await wait(600); if (!(await pg.$('.docwrap .dfoot'))) fail('phone: doc page'); await pg.screenshot({ path: 'test/tmp/phone-doc.png' })
@@ -522,6 +541,31 @@ try {
         if (pu.right > pu.iw + 1) fail('사용량: 폰 카드가 화면을 넘는다 ' + JSON.stringify(pu))
         if (pu.barW < pu.cardW - 40) fail('사용량: 폰에서 막대가 가로를 안 쓴다 ' + JSON.stringify(pu))
         await pg.screenshot({ path: 'test/tmp/phone-usage.png' })
+        // ── 빡센 폰 QA: 라이트 테마 · 좁은 폭 · 안전 영역 · 가로 넘침 ──
+        const lum2 = (c) => { const [r, g, b] = c.match(/\d+/g).map(Number); return 0.299 * r + 0.587 * g + 0.114 * b }
+        for (const th of ['light', 'dark']) {
+          await pg.evaluate((t) => { localStorage.setItem('fb:theme', t); document.documentElement.dataset.theme = t }, th); await wait(400)
+          const v = await pg.evaluate(() => {
+            const bad = []
+            for (const el of document.querySelectorAll('.mhome *')) { const r = el.getBoundingClientRect(); if (r.width > 0 && (r.right > innerWidth + 1 || r.left < -1)) bad.push((el.className || el.tagName) + ' ' + Math.round(r.left) + '..' + Math.round(r.right)) }
+            const card = document.querySelector('.mhome .ucard')
+            return { bad: bad.slice(0, 4), scrollW: document.documentElement.scrollWidth, iw: innerWidth, cardBg: card ? getComputedStyle(card).backgroundColor : '', pc: card ? getComputedStyle(card.querySelector('.urow .pc')).color : '', bodyBg: getComputedStyle(document.body).backgroundColor }
+          })
+          if (v.bad.length) fail(`폰 ${th}: 가로로 넘치는 것 ` + JSON.stringify(v.bad))
+          if (v.scrollW > v.iw + 1) fail(`폰 ${th}: 가로 스크롤이 생긴다 ` + JSON.stringify(v))
+          const dark = lum2(v.bodyBg) < 90
+          if ((th === 'light') === dark) fail(`폰 ${th}: 배경이 테마와 반대 ` + v.bodyBg)
+          // 카드 글자가 배경에 묻히지 않는가
+          if (Math.abs(lum2(v.pc) - lum2(v.cardBg)) < 40) fail(`폰 ${th}: 사용량 숫자가 배경에 묻힌다 ` + JSON.stringify(v))
+          await pg.screenshot({ path: `test/tmp/phone-home-${th}.png` })
+        }
+        // 아주 좁은 폰(320px)에서도 안 깨진다
+        await pg.setViewportSize({ width: 320, height: 640 }); await wait(600)
+        const narrow = await pg.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, card: !!document.querySelector('.mhome .ucard') }))
+        if (narrow.sw > narrow.iw + 1) fail('폰 320px: 가로 스크롤 ' + JSON.stringify(narrow))
+        await pg.screenshot({ path: 'test/tmp/phone-320.png' })
+        await pg.setViewportSize({ width: 390, height: 844 }); await wait(500)
+
         await pg.evaluate(() => { const b = [...document.querySelectorAll('.mhome .mtop .rb')].pop(); b.click() })
         await pg.waitForSelector('.pk.phone .ph-row', { timeout: 8000 }); await wait(400)
         const pf = await pg.evaluate(() => { const f = document.querySelector('.pk.phone .ph-f').getBoundingClientRect(); const g = document.querySelector('.pk.phone .ph-f .go').getBoundingClientRect(); const r = document.querySelector('.pk.phone .ph-row'); const rb = r.getBoundingClientRect(); const nm = r.querySelector('.n').getBoundingClientRect(); return { fw: f.width, iw: innerWidth, goH: g.height, goRight: g.right, rowH: rb.height, gapRight: rb.right - nm.right } })

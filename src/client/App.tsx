@@ -60,8 +60,15 @@ function useKeyboard(): boolean {
       const covered = Math.max(0, window.innerHeight - vv.height)
       const open = editing
       const st = document.documentElement.style
-      if (open) { st.setProperty('--vvh', `${Math.round(vv.height)}px`); st.setProperty('--vvt', `${Math.round(vv.offsetTop)}px`) }
-      else { st.removeProperty('--vvh'); st.removeProperty('--vvt') }
+      if (open) {
+        st.setProperty('--vvh', `${Math.round(vv.height)}px`); st.setProperty('--vvt', `${Math.round(vv.offsetTop)}px`)
+        /**
+         * 🔴 `position:fixed` 인 것들(시트·백드롭)은 **레이아웃 뷰포트** 바닥에 붙는다 — 루트를 줄여도
+         *    그것들은 키보드 밑에 깔린다(스모크가 «저장 버튼이 키보드 밑에 묻힌다» 로 잡았다).
+         *    키보드가 먹은 높이를 `--kbh` 로 내보내 `bottom:var(--kbh)` 로 띄운다.
+         */
+        st.setProperty('--kbh', `${Math.max(0, Math.round(window.innerHeight - vv.offsetTop - vv.height))}px`)
+      } else { st.removeProperty('--vvh'); st.removeProperty('--vvt'); st.removeProperty('--kbh') }
       setKb(open && covered > 140) // 헤더 숨김 같은 «화장» 만 문턱을 쓴다 — 레이아웃은 위에서 이미 정해졌다
       if (!open) window.scrollTo(0, 0)
     }

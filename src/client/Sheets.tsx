@@ -128,7 +128,7 @@ export function FolderPicker({ onClose, onStarted }: { onClose: () => void; onSt
         <div className="modal-b ph-b" ref={listRef}>
           {kids.map((n2) => <button key={n2.rel} data-rel={n2.rel} className="ph-row" onClick={() => { if (q) { setQ(''); setCur(n2.rel) } else setCur(n2.rel) }}>
             <span className="ic" style={{ color: tone(n2) }}><Icon n={mark(n2) as 'folder'} size={15} /></span>
-            <span className="n"><span className="nm">{q.trim() ? <Hit s={n2.name} q={q} /> : <Mid s={n2.name} tail={10} />}</span><span className="sub">{q.trim() && n2.rel.includes('/') ? `${n2.rel.slice(0, n2.rel.lastIndexOf('/'))} · ` : ''}{label(n2)}</span></span>
+            <span className="n"><span className="nm">{q.trim() ? <Hit s={n2.name} q={q} /> : <Mid s={n2.name} tail={10} />}</span><span className="dsub">{q.trim() && n2.rel.includes('/') ? `${n2.rel.slice(0, n2.rel.lastIndexOf('/'))} · ` : ''}{label(n2)}</span></span>
             <Icon n="chev" size={11} />
           </button>)}
           {!kids.length ? <div className="empty">{q.trim() ? '찾는 폴더가 없어요' : cur ? '하위 폴더가 없어요 — 여기서 시작할 수 있어요' : '읽는 중…'}</div> : null}

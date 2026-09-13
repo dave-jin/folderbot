@@ -240,7 +240,7 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
     <button className="ring" onClick={(e) => { e.stopPropagation(); void toggle(t) }} aria-label={t.done ? '되돌리기' : '완료'}>{t.done ? <Icon n="check" size={12} color="var(--onAccent)" /> : null}</button>
     <div className="bd">
       <div className="tt">{t.title}</div>
-      {t.desc && !isOpen ? <div className="sub"><span className="ar">↳</span><span className="tx">{t.desc.replace(/\s*\n+\s*/g, ' · ').trim()}</span></div> : null}
+      {t.desc && !isOpen ? <div className="dsub"><span className="ar">↳</span><span className="tx">{t.desc.replace(/\s*\n+\s*/g, ' · ').trim()}</span></div> : null}
       {isOpen ? <>
         {t.desc ? <div className="dsc">{t.desc}</div> : null}
         <div className="acts" onClick={(e) => e.stopPropagation()}>
