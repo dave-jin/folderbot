@@ -114,4 +114,9 @@ describe('closeOpenItems', () => {
     expect((items[3] as { status: string; result?: string }).status).toBe('error')
     expect(closeOpenItems(items, 'exit')).toEqual([]) // 두 번 부르면 바뀔 게 없다
   })
+  it('result — 백그라운드 서브에이전트는 턴이 끝나도 그대로 둔다', () => {
+    const items = [{ id: 't_9', t: 1, kind: 'subagent', name: 'bg', prompt: '', tools: 0, last: '', status: 'run', bg: true }] as unknown as import('../../src/core/types').ChatItem[]
+    expect(closeOpenItems(items, 'result')).toEqual([]); expect((items[0] as { status: string }).status).toBe('run')
+    closeOpenItems(items, 'restore'); expect((items[0] as { status: string }).status).toBe('error') // 호스트가 죽으면 그 에이전트도 없다
+  })
 })

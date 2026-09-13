@@ -30,6 +30,23 @@ rl.on('line', (raw) => {
   if (msg.type !== 'user') return
   const text = msg.message?.content?.map?.((b) => b.text ?? '').join('') ?? ''
   const u = randomUUID().slice(0, 6)
+  if (/백그라운드/.test(text)) {
+    // 실제 CLI 2.1.269 의 백그라운드 Agent 이벤트 순서를 그대로 흉내 낸다
+    const tid = `stub-bg-${u}`, task = `task-${u}`
+    say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: tid, name: 'Agent', input: { description: '백그라운드 조사', prompt: 'PONG 이라고만 답해', subagent_type: 'general-purpose', run_in_background: true } }] } })
+    say({ type: 'system', subtype: 'task_started', task_id: task, tool_use_id: tid, description: '백그라운드 조사', is_backgrounded: true, task_type: 'local_agent' })
+    say({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: tid, content: [{ type: 'text', text: `Async agent launched successfully.\nagentId: ${task}` }] }] } })
+    say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'LAUNCHED' }], stop_reason: 'end_turn' } })
+    say({ type: 'result', subtype: 'success', duration_ms: 50, total_cost_usd: 0.001 })
+    setTimeout(() => {
+      say({ type: 'assistant', parent_tool_use_id: tid, message: { role: 'assistant', content: [{ type: 'text', text: 'PONG' }] } })
+      say({ type: 'system', subtype: 'task_notification', task_id: task, tool_use_id: tid, status: 'completed', summary: 'PONG', usage: { total_tokens: 10, tool_uses: 0, duration_ms: 700 } })
+      say({ type: 'system', subtype: 'init', model: at('--model') ?? 'stub', tools: [], mcp_servers: [], slash_commands: [] })
+      say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'GOT: PONG' }], stop_reason: 'end_turn' } })
+      say({ type: 'result', subtype: 'success', duration_ms: 60, total_cost_usd: 0.001 })
+    }, 700)
+    return
+  }
   say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: `stub-t1-${u}`, name: 'Read', input: { file_path: join(process.cwd(), 'readme.md') } }] } })
   say({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `stub-t1-${u}`, content: '(readme)' }] } })
   say({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '무엇을 먼저 읽을지 정한다' } } })

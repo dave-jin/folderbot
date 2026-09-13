@@ -372,6 +372,8 @@ A 로 시작하고 전송 계층을 추상화해 B/C 를 나중에 끼운다. Da
 
 **v0.3.14 (2026-09-13) — 폰 실행 줄 · «실행 중» 고착**: ① 폰에서 «생각» 라벨이 세로로 서던 것 — CJK 는 글자마다 끊길 수 있어 flex 아이템의 min-content 가 한 글자였다 → 라벨 `nowrap; flex:none`. 실행 줄(생각·도구·서브에이전트·상태줄·도구 묶음)은 13px, 본문 16px 유지. 폰에선 말(실행 중·끝남·열기·중단·도구 n회) 대신 아이콘(`.w` 숨김 / `.ic` 표시). ② 호스트 재시작(자동 업데이트 포함)·워커 종료 뒤 스트리밍 답·결과 없는 도구·run 서브에이전트가 영원히 스피너로 남던 것 → `core/chat.closeOpenItems(items, reason)` 를 부팅 복원·worker exit·result 에서 호출(vitest). 중단 사유(«호스트가 다시 떠서 중단됨» 등)를 항목에 남긴다.
 
+**v0.3.15 (2026-09-13) — 백그라운드 서브에이전트 생애**: CLI 2.1.269 를 직접 돌려 잰 순서 — `Agent{run_in_background}` → `system/task_started{tool_use_id,is_backgrounded}` → 즉시 `tool_result «Async agent launched…»` → `result`(턴 끝) → 부모 id 단 줄들 → `system/task_notification{tool_use_id,status,summary}` → CLI 가 스스로 새 턴(`init`→답→`result`). 종전엔 즉시 tool_result 로 «끝남» 을 찍어 돌고 있는데 끝난 듯 보였다. 이제 `bg` 표시 → 턴이 끝나도 «실행 중», 알림이 오면 끝남+요약. 세션 정보 `bg`(도는 수) — 유휴 회수와 데스크톱 업데이트 적용은 bg=0 일 때만. 스텁이 같은 순서를 흉내 내고 스모크가 launch→running→notification→done→후속 턴을 검사한다. 호스트가 재시작되면(자동 업데이트 포함) 그 에이전트는 사라지므로 «호스트가 다시 떠서 중단됨» 으로 마감된다 — 이게 Dave 스크린샷의 원인(업데이트 재시작 뒤 «실행 중 · 도구 42회» 고착).
+
 **미구현·다음**: Codex(`codex app-server`) · 메뉴바 팝오버(카드에서 바로 승인) · Dropbox 동기화 점 · QR 페어링 · Johnny.Decimal 실제 스캔 규칙 · 규칙 인터뷰(custom) · 개발자 서명·공증.
 
 ## 11. 사실 확인 (2026-09-12)

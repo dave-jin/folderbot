@@ -81,6 +81,8 @@ export interface SessionInfo {
   routine?: string
   /** 지금 하는 일 한 줄 (도구명 · 요약 / 생각 중 / 답 쓰는 중) */
   activity?: string
+  /** 턴이 끝난 뒤에도 돌고 있는 백그라운드 서브에이전트 수 — 회수·업데이트 적용은 이게 0 일 때만 */
+  bg?: number
   /** 이번 턴 시작 시각 — 경과 시간은 이걸로 잰다 */
   turnStartedAt?: number
   model?: string
@@ -118,7 +120,7 @@ export type ChatItem =
   | { id: string; t: number; kind: 'tool'; name: string; summary: string; input?: Record<string, unknown>; result?: string; isError?: boolean; parentId?: string }
   | { id: string; t: number; kind: 'thinking'; text: string; streaming?: boolean }
   /** Task/Agent 도구 하나 = 서브에이전트 하나. 자식 도구 줄은 parentId 로 이 id 를 가리킨다 */
-  | { id: string; t: number; kind: 'subagent'; name: string; prompt: string; tools: number; last: string; status: 'run' | 'done' | 'error'; result?: string }
+  | { id: string; t: number; kind: 'subagent'; name: string; prompt: string; tools: number; last: string; status: 'run' | 'done' | 'error'; result?: string; /** run_in_background — 턴이 끝나도 계속 돈다. 끝은 system/task_notification 이 알린다 */ bg?: boolean; taskId?: string }
   /** TodoWrite — 세션당 하나(최신)만 남긴다 */
   | { id: string; t: number; kind: 'todos'; items: { content: string; status: 'pending' | 'in_progress' | 'completed'; activeForm?: string }[] }
   | { id: string; t: number; kind: 'system'; text: string }

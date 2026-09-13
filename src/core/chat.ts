@@ -21,6 +21,13 @@ export interface StreamLine {
   modelUsage?: Record<string, { contextWindow?: number }>
   /** system/init 줄 — CLI 가 아는 슬래시 명령 이름들 */
   slash_commands?: string[]
+  /** system/task_started · task_notification · task_updated (백그라운드 Agent) — 2026-09-13 CLI 2.1.269 실측 */
+  task_id?: string
+  tool_use_id?: string
+  is_backgrounded?: boolean
+  status?: string
+  summary?: string
+  patch?: { status?: string }
 }
 
 /** result 의 usage → 컨텍스트 사용량. 창 크기는 modelUsage 에서, 없으면 200k */
@@ -79,7 +86,7 @@ export function closeOpenItems(items: ChatItem[], reason: 'result' | 'exit' | 'r
   for (const it of items) {
     if ((it.kind === 'assistant' || it.kind === 'thinking') && it.streaming) { it.streaming = false; changed.push(it) }
     else if (it.kind === 'tool' && it.result === undefined && !it.isError) { if (reason === 'result') it.result = ''; else { it.result = note; it.isError = true } changed.push(it) }
-    else if (it.kind === 'subagent' && it.status === 'run') { if (reason === 'result') it.status = 'done'; else { it.status = 'error'; it.result = note } changed.push(it) }
+    else if (it.kind === 'subagent' && it.status === 'run') { if (reason === 'result') { if (it.bg) continue; it.status = 'done' } else { it.status = 'error'; it.result = note } changed.push(it) }
   }
   return changed
 }

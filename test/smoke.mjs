@@ -71,6 +71,14 @@ try {
   const cfg1 = await api(`/sessions/${s1.sessionId}/settings`, { model: 'claude-sonnet-5', permissionMode: 'plan' })
   if (cfg1.model !== 'claude-sonnet-5' || cfg1.permissionMode !== 'plan' || !cfg1.hibernated) fail('settings: ' + JSON.stringify(cfg1))
   const idBefore = cfg1.cliSessionId
+  // 백그라운드 서브에이전트: 턴이 끝나도(LAUNCHED) «실행 중» 이고 세션은 bg=1 → 알림이 오면 끝남 + 결과, 이어서 새 턴이 스스로 열린다
+  await api(`/sessions/${s1.sessionId}/send`, { text: '백그라운드 조사' }); await wait(350)
+  { const its = (await api(`/sessions/${s1.sessionId}/chat`)).items; const sa = its.filter((x) => x.kind === 'subagent').pop(); if (!sa || !sa.bg || sa.status !== 'run') fail('bg agent should stay running after launch: ' + JSON.stringify(sa))
+    const si = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === s1.sessionId); if (!si || si.bg !== 1) fail('session bg count ' + JSON.stringify(si)) }
+  await wait(1200)
+  { const its = (await api(`/sessions/${s1.sessionId}/chat`)).items; const sa = its.filter((x) => x.kind === 'subagent').pop(); if (!sa || sa.status !== 'done' || sa.result !== 'PONG') fail('bg agent should finish via task_notification: ' + JSON.stringify(sa))
+    const last = its.filter((x) => x.kind === 'assistant').pop(); if (!last || !/GOT: PONG/.test(last.text)) fail('bg follow-up turn missing: ' + JSON.stringify(last))
+    const si = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === s1.sessionId); if (!si || si.bg !== 0 || si.state === 'running') fail('session after bg ' + JSON.stringify(si)); ok('background agent: launch → running → notification → done → follow-up') }
   await api(`/sessions/${s1.sessionId}/send`, { text: '설정 바꾼 뒤' }); await wait(700)
   chat = await api(`/sessions/${s1.sessionId}/chat`)
   if (chat.info.cliSessionId !== idBefore || chat.info.model !== 'claude-sonnet-5' || !chat.info.alive) fail('settings resume: ' + JSON.stringify(chat.info)); ok('session settings → hibernate → resume with new model')

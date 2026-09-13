@@ -152,7 +152,7 @@ async function syncState() {
 const states = new Map()
 function onFrame(f) {
   if (f.ev === 'state') { states.set(f.sessionId, f.state); recount() }
-  if (f.ev === 'sessions') { for (const x of f.sessions) states.set(x.id, x.state); recount() }
+  if (f.ev === 'sessions') { for (const x of f.sessions) states.set(x.id, x.bg ? 'running' : x.state); recount() } // 백그라운드 에이전트가 돌면 바쁜 것 — 업데이트 적용이 세션을 죽이지 않게
   if (f.ev === 'notify') notify(f.n)
   if (f.ev === 'hello') void syncState()
 }

@@ -204,7 +204,7 @@ export class SessionManager extends EventEmitter {
   }
   info(r: SessionRec): SessionInfo {
     const w = this.workers.get(r.id)
-    return { id: r.id, botId: r.botId, name: r.name, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
+    return { id: r.id, botId: r.botId, name: r.name, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
   }
   get(id: string): SessionRec | undefined { return this.recs.get(id) }
   items(id: string): ChatItem[] { return this.recs.get(id)?.items ?? [] }
@@ -310,6 +310,25 @@ export class SessionManager extends EventEmitter {
     this.activityAt.set(r.id, Date.now())
     this.emit('activity', r)
   }
+  /**
+   * 백그라운드 Agent 의 생애 — CLI 2.1.269 실측 (2026-09-13):
+   *   tool_use Agent{run_in_background} → system/task_started{task_id, tool_use_id, is_backgrounded}
+   *   → tool_result «Async agent launched…»(즉시) → result(턴 끝) → …(부모 id 단 줄들)… → system/task_notification{tool_use_id, status, summary}
+   *   → CLI 가 스스로 새 턴을 열어 이어 간다(system/init → assistant → result).
+   * 종전엔 즉시 오는 tool_result 로 «끝남» 을 찍어 실제로는 돌고 있는데 끝난 것처럼 보였고, 반대로 호스트가 재시작되면 영원히 «실행 중» 이었다.
+   */
+  private onTask(r: SessionRec, line: StreamLine): void {
+    const byTool = line.tool_use_id ? r.items.find((it) => it.id === `t_${line.tool_use_id}`) : undefined
+    const it = (byTool ?? (line.task_id ? r.items.find((x) => x.kind === 'subagent' && x.taskId === line.task_id) : undefined)) as (ChatItem & { kind: 'subagent' }) | undefined
+    if (!it || it.kind !== 'subagent') return
+    if (line.subtype === 'task_started') { it.taskId = line.task_id; if (line.is_backgrounded) it.bg = true; this.push(r, it, true); return }
+    if (line.subtype === 'task_updated') { const st = line.patch?.status; if (st === 'failed' || st === 'killed' || st === 'cancelled') { it.status = 'error'; it.result = it.result || `백그라운드 작업 ${st}`; this.push(r, it, true) } return }
+    // task_notification — 진짜 끝
+    it.status = line.status === 'completed' ? 'done' : 'error'
+    if (line.summary) it.result = String(line.summary).slice(0, 2000)
+    this.push(r, it, true)
+    this.setActivity(r, `${it.name} 끝남`, true); this.emit('sessions', r.botId)
+  }
   private subOf(r: SessionRec, parentId: string | null | undefined): (ChatItem & { kind: 'subagent' }) | undefined {
     if (!parentId) return undefined
     // 같은 id 가 두 번 올 수 있으니(재시도·스텁) 뒤에서부터 찾는다
@@ -318,6 +337,7 @@ export class SessionManager extends EventEmitter {
   }
   private onLine(r: SessionRec, line: StreamLine): void {
     if (line.session_id && r.cliSessionId !== line.session_id) { r.cliSessionId = line.session_id; this.persist(r) }
+    if (line.type === 'system' && (line.subtype === 'task_started' || line.subtype === 'task_notification' || line.subtype === 'task_updated')) { this.onTask(r, line); return }
     if (line.type === 'system' && line.subtype === 'init') { if (Array.isArray(line.slash_commands)) { r.slash = line.slash_commands.map(String); this.emit('sessions', r.botId) } return }
     const parent = line.parent_tool_use_id ?? null
     if (line.type === 'stream_event') {
@@ -381,7 +401,7 @@ export class SessionManager extends EventEmitter {
         const c = b.content
         const resText = (typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => (x as { text?: string }).text ?? '').join('\n') : '').slice(0, 2000)
         if (it && it.kind === 'tool') { it.result = resText; it.isError = !!b.is_error; this.push(r, it, true) }
-        else if (it && it.kind === 'subagent') { it.status = b.is_error ? 'error' : 'done'; it.result = resText; this.push(r, it, true) }
+        else if (it && it.kind === 'subagent') { if (it.bg || /^Async agent launched/i.test(resText)) { it.bg = true; this.push(r, it, true) } else { it.status = b.is_error ? 'error' : 'done'; it.result = resText; this.push(r, it, true) } }
       }
       return
     }
@@ -431,6 +451,7 @@ export class SessionManager extends EventEmitter {
       const r = this.recs.get(id); if (!r) continue
       if (w.pending.size) continue
       if (r.state === 'running' || r.state === 'awaiting_input') continue
+      if (r.items.some((it) => it.kind === 'subagent' && it.bg && it.status === 'run')) continue // 백그라운드 에이전트가 돌면 워커를 죽이지 않는다 — 죽이면 결과가 사라진다
       if (now - r.lastActivity > this.idleTtlMs) { w.kill(); this.workers.delete(id); this.emit('sessions', r.botId) }
     }
   }
