@@ -8,6 +8,7 @@ import { Elapsed, Panel, type SecH } from './Panel'
 import { norm, scoreName } from '../core/search'
 import { fmtTime, useStore } from './store'
 import { ICON_PX, useIconSize, useTheme } from './theme'
+import { UsageCard, UsageChip, useUsage } from './Usage'
 import { PermGate, usePerms } from './Perms'
 import { EFFORTS, MODELS, MODES, effortLabel, fmtK, modeLabel, modelLabel } from './consts'
 
@@ -147,6 +148,7 @@ function Main() {
   const sessionId = hash.s && sessions.some((x) => x.id === hash.s) ? hash.s : sessions[0]?.id
   const narrow = useMedia('(max-width: 1100px)'); const phone = useMedia('(max-width: 760px)'); const kb = useKeyboard()
   const [iconSz] = useIconSize() // 레일 폴더봇 크기 — 설정에서 고른다(--fbi 도 함께 나간다)
+  const usage = useUsage(); const [uOpen, setUOpen] = useState(false) // 사용량 — 남은 양 (V23)
   const [view, setView] = useState<'list' | 'chat' | 'doc' | 'panel'>(hash.bot ? 'chat' : 'list')
   const [lay, setLay] = useState<Layout>(() => { try { return { ...DEF, ...JSON.parse(localStorage.getItem('fb:layout') ?? '') } } catch { return DEF } })
   useEffect(() => { localStorage.setItem('fb:layout', JSON.stringify(lay)) }, [lay])
@@ -250,7 +252,8 @@ function Main() {
           </div>)}
         </div>
         {hovRow ? <HoverCard b={hovRow.b} sum={hovRow.sum} top={hov!.top} left={fit.sb + 6} /> : null}
-        <div className="sb-foot"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} /><span>{s.hostName}</span><MrBadge />{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<UpdateChip version={s.version} st={upd} onCheck={updCheck} onApply={updApply} /></div>
+        {uOpen && usage ? <><div className="backdrop" style={{ background: 'transparent' }} onClick={() => setUOpen(false)} /><div className="upop" style={{ left: 10, bottom: 44 }}><UsageCard u={usage} /></div></> : null}
+        <div className="sb-foot"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} /><span>{s.hostName}</span>{usage && usage.tools.length ? <UsageChip u={usage} onClick={() => setUOpen(!uOpen)} /> : null}<MrBadge />{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<UpdateChip version={s.version} st={upd} onCheck={updCheck} onApply={updApply} /></div>
       </div> : <div className="strip left"><button className="ib" onClick={openSb} title="목록 펼치기 (⌘B)"><Icon n="panel" size={14} /></button><div className="gap" />
         <button className="ib" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span className="fly"><b>폴더 선택 · 시작</b><span>후보 {s.candidates.filter((c) => !c.active).length}</span></span></button>
         <button className="ib" onClick={() => setModal('notify')}><Icon n="bell" size={14} />{unread ? <span className="bd">{unread}</span> : null}<span className="fly"><b>알림</b><span>{unread ? `읽지 않음 ${unread}` : '없음'}</span></span></button>
@@ -321,6 +324,7 @@ function botSummary(bot: Bot, sessions: SessionInfo[], notif: NotifyEvent[]) {
 /* ── 폰 홈 — 큰 제목 · 카드 4 · 봇 목록 · 떠 있는 알약 (탭바 없음) ── */
 type Row = [string, { b: Bot; sum: ReturnType<typeof botSummary> }[]]
 function Home({ rows, bot, go, setModal, waiting, unread, onAsk }: { rows: Row[]; bot: Bot; go: (b: string) => void; setModal: (m: 'picker' | 'notify' | 'settings') => void; waiting: number; unread: number; onAsk: () => void }) {
+  const usage = useUsage() // 폰 홈 맨 위 — 남은 양 카드 (기록이 없는 도구는 줄 자체가 안 나온다)
   const { s } = useStore()
   const all = rows.flatMap(([, l]) => l)
   const running = all.filter((x) => x.sum.state === 'running')
@@ -330,6 +334,7 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk }: { rows: Row[]
     <div className="mscroll">
       <div className="mtitle">Folder Bot</div>
       <div className="msub"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} style={{ width: 7, height: 7 }} />{s.hostName}<MrBadge /><span>· 봇 {s.bots.length} · 후보 {cands}</span></div>
+      {usage && usage.tools.length ? <div style={{ padding: '2px 16px 12px' }}><UsageCard u={usage} compact /></div> : null}
       <div className="mcards">
         <button onClick={() => setModal('notify')}><Icon n="bell" size={22} color="var(--wait)" /><span className="n">확인 필요<span>{waiting}</span></span></button>
         <button onClick={() => (running[0] ? go(running[0].b.id) : go(bot.id))}><Icon n="run" size={22} color="var(--run)" /><span className="n">일하는 중<span>{running.length}</span></span></button>

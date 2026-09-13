@@ -185,6 +185,44 @@ b,strong { color:var(--w); font-weight:600 }
 .tsheet .grip { width:36px; height:4px; border-radius:2px; background:var(--line2); margin:0 auto 10px }
 .tsheet .ti { font-size:12.5px; color:var(--t3); padding:0 14px 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
 .tsheet button { display:flex; align-items:center; gap:14px; height:50px; padding:0 14px; font-size:16px; color:var(--w) } .tsheet button:active { background:var(--sel) }
+/* ── 사용량 카드 (V23) — 남은 양. 막대는 두껍게 가로를 전부 쓰고 줄어든다 ── */
+.kv input.bud { width:88px; background:var(--box); border:1px solid var(--line2); border-radius:7px; color:var(--w); font-size:13px; padding:5px 9px; font-family:var(--mono); text-align:right }
+.ucard { background:var(--bg2); border:1px solid var(--line2); border-radius:16px; padding:14px 15px }
+.ucard .uh { display:flex; align-items:center; gap:11px; margin-bottom:4px }
+.ucard .uh .t { flex:1; min-width:0 }
+.ucard .uh .l1 { display:flex; align-items:baseline; gap:7px } .ucard .uh .l1 b { font-size:22px; font-family:var(--mono); line-height:1 } .ucard .uh .l1 span { font-size:15px; font-weight:600; color:var(--w) }
+.ucard .uh .l2 { display:flex; align-items:center; gap:5px; margin-top:5px; font-size:12px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.ucard .uh .l2 b { color:var(--t2); font-weight:500 }
+.ucard .urow { padding:11px 0; border-top:1px solid var(--line) }
+.ucard .urow .n { display:flex; align-items:baseline; gap:8px; margin-bottom:7px }
+.ucard .urow .n .dot { width:8px; height:8px; border-radius:50%; flex:none; align-self:center }
+.ucard .urow .n b { font-size:14.5px; color:var(--w) }
+.ucard .urow .n .pc { margin-left:auto; font-size:18px; font-weight:700; font-family:var(--mono) }
+.ucard .urow .n .lb { font-size:12px; color:var(--t3) }
+.ubar { position:relative; width:100%; height:14px; border-radius:7px; background:var(--line); overflow:hidden }
+.ubar .fill { position:absolute; left:0; top:0; bottom:0; border-radius:7px; transition:width .3s ease }
+.ubar .tick { position:absolute; left:20%; top:2px; bottom:2px; width:1.5px; border-radius:1px; background:rgba(255,255,255,.32) }
+:root[data-theme="light"] .ubar .tick { background:rgba(0,0,0,.28) }
+.ucard .urow .m { display:flex; align-items:baseline; gap:6px; margin-top:7px; font-size:12px; color:var(--t3) }
+.ucard .urow .m b { color:var(--t2); font-family:var(--mono); font-weight:600 } .ucard .urow .m .sl { color:var(--line2) } .ucard .urow .m .bg { font-family:var(--mono) } .ucard .urow .m .sp { flex:1 } .ucard .urow .m .tk { font-family:var(--mono); color:var(--t2) }
+.ucard .urow .by { font-size:11.5px; color:var(--t3); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.ucard .uf { display:flex; gap:0; margin-top:10px; padding-top:10px; border-top:1px solid var(--line) }
+.ucard .uf span { flex:1; min-width:0; display:flex; flex-direction:column }
+.ucard .uf i { font-size:11px; color:var(--t3); font-style:normal; margin-bottom:2px }
+.ucard .uf b { font-size:14.5px; color:var(--w); font-family:var(--mono); font-weight:600 }
+.ucard .uf small { font-size:10.5px; color:var(--t3); margin-top:1px }
+.ucard .un { display:flex; align-items:center; gap:5px; margin-top:11px; font-size:10.5px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.ucard .un b { color:var(--t2); font-weight:500 }
+.ucard.sm { padding:12px 13px } .ucard.sm .uf b { font-size:13.5px }
+/* 상태바 칩 */
+.uchip { display:inline-flex; align-items:center; gap:7px; height:23px; padding:0 9px; border-radius:6px; background:var(--box); color:var(--t2); font-size:11.5px; flex:none }
+.uchip:hover { background:var(--sel) } .uchip .pc { font-family:var(--mono) }
+.uchip .mini { width:42px; height:6px; border-radius:3px; background:var(--line); overflow:hidden; display:inline-block } .uchip .mini > span { display:block; height:6px; border-radius:3px }
+.uchip .rs { color:var(--t3) }
+@media (max-width: 1100px) { .uchip .rs { display:none } }
+@media (max-width: 760px) { .uchip .mini, .uchip .rs { display:none } }
+/* 상태바에서 띄우는 카드 */
+.upop { position:fixed; z-index:80; width:340px; max-width:calc(100vw - 24px) }
 /* ── 폰 할 일 (V19 승인분) — 동그란 체크 · 제목이 폭을 전부 · ↳ 설명 한 줄 · 태그 없음 ──
    줄 높이 52px(제목만)~62px(설명까지). 선을 긋지 않고 여백으로 나눈다. 오른쪽에 아무것도 두지 않는다
    (그 자리가 «오른쪽 여백이 너무 많다» 의 원인이었다 — 2026-09-13 Dave). */

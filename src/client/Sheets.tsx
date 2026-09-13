@@ -278,6 +278,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         <div><div className="secl" style={{ padding: '8px 0 4px' }}>기기</div>{s.devices.map((d) => <div className="kv" key={d.id}><Icon n="phone" size={13} /><span className="n">{d.name}</span><time style={{ fontSize: 11 }}>{fmtTime(d.lastSeen)}</time><button className="btn ghost" onClick={() => api('/devices/revoke', { body: { id: d.id } }).then(refresh)}>끊기</button></div>)}
           {isLocal ? <div className="kv"><span className="n">새 기기 연결</span>{pair ? <span className="mono" style={{ fontSize: 22, letterSpacing: '.18em', color: 'var(--strong)' }}>{pair.code}</span> : null}<button className="btn" onClick={async () => setPair(await api('/pairing', { body: {} }))}>페어링 코드</button></div> : <div className="kv" style={{ color: 'var(--faint)' }}>새 기기 연결은 미니의 화면(127.0.0.1)이나 터미널(p + Enter)에서</div>}</div>
         {(window as unknown as { folderbotDesktop?: { perms?: unknown } }).folderbotDesktop?.perms ? <div><div className="secl" style={{ padding: '8px 0 4px' }}>macOS 권한</div><div className="kv"><span className="n">전체 디스크 접근 · 알림</span><button className="btn" onClick={() => { onClose(); window.dispatchEvent(new Event('fb:perm-gate')) }}>권한 다시 확인</button></div></div> : null}
+        <UsageBox />
         <div><div className="secl" style={{ padding: '8px 0 4px' }}>화면</div><div className="kv"><span className="n">테마</span><ThemePick /></div><div className="kv"><span className="n">폴더봇 크기</span><IconPick /></div><div className="kv" style={{ color: 'var(--faint)' }}>목록의 폴더봇 크기예요. 마우스를 올리면 한 번 더 커져서 표정이 보여요.</div></div>
         <SwipeBox />
         <div><div className="secl" style={{ padding: '8px 0 4px' }}>알림</div><div className="kv"><span className="n">이 기기 푸시</span><button className="btn" onClick={async () => setPushOn(await subscribePush(s.vapidPublic, navigator.userAgent.slice(0, 30)))}>{pushOn === true ? '켜짐' : pushOn === false ? '실패 · HTTPS + 홈 화면 설치 필요' : '켜기'}</button></div><div className="kv" style={{ color: 'var(--faint)' }}>조용한 시간 23:00–07:00 (확인해 주세요만 통과). 폰 푸시는 Tailscale serve 로 HTTPS 를 붙이고 홈 화면에 설치해야 동작해요.</div></div>
@@ -332,6 +333,30 @@ function ThemePick() {
   const [theme, setTheme] = useTheme()
   const opt: [Theme, string][] = [['auto', '시스템'], ['light', '라이트'], ['dark', '다크']]
   return <span className="seg">{opt.map(([v, l]) => <button key={v} className={theme === v ? 'on' : ''} onClick={() => setTheme(v)}>{l}</button>)}</span>
+}
+
+/**
+ * 설정 › 사용량 — 훅 설치·제거와 예산.
+ * 🔴 «요금제의 몇 %가 남았나» 는 CLI 가 안 내준다(실측). 남은 양은 **내 예산 − 쓴 양** 이고, 여기서 그 예산을 정한다.
+ */
+function UsageBox() {
+  const [st, setSt] = useState<{ hook?: boolean; budget?: { window: number; day: number; week: number }; tools?: { tool: string }[] } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const load = () => void api<typeof st>('/usage').then(setSt).catch(() => {})
+  useEffect(load, [])
+  const setB = async (k: 'window' | 'day' | 'week', v: string) => {
+    const n = Number(v); if (!Number.isFinite(n) || n < 0) return
+    await api('/usage/budget', { body: { [k]: n } }); load()
+  }
+  return <div><div className="secl" style={{ padding: '8px 0 4px' }}>사용량</div>
+    <div className="kv"><span className="n">턴마다 기록하기 (Claude Code 훅)</span>
+      <button className="btn" disabled={busy} onClick={async () => { setBusy(true); try { await api('/usage/hook', { body: { on: !st?.hook } }); load() } finally { setBusy(false) } }}>{st?.hook ? '설치됨 · 제거' : '훅 설치'}</button></div>
+    <div className="kv" style={{ color: 'var(--faint)', lineHeight: 1.5, alignItems: 'flex-start' }}><span>턴이 끝날 때 <b style={{ color: 'var(--dim)' }}>읽기만</b> 해서 이번 턴의 토큰을 남깁니다 — 터미널에서 연 세션까지 전부 잡혀요. 실패해도 조용히 끝나 턴을 막지 않습니다. 훅이 없어도 기록을 직접 훑어 숫자는 나오지만, 훅이 있으면 더 빠르고 정확해요.</span></div>
+    <div className="kv"><span className="n">예산 — 5시간 창</span><input className="bud" defaultValue={st?.budget?.window ?? ''} onBlur={(e) => void setB('window', e.target.value)} /><span style={{ color: 'var(--faint)' }}>달러</span></div>
+    <div className="kv"><span className="n">예산 — 하루</span><input className="bud" defaultValue={st?.budget?.day ?? ''} onBlur={(e) => void setB('day', e.target.value)} /><span style={{ color: 'var(--faint)' }}>달러</span></div>
+    <div className="kv"><span className="n">예산 — 한 주</span><input className="bud" defaultValue={st?.budget?.week ?? ''} onBlur={(e) => void setB('week', e.target.value)} /><span style={{ color: 'var(--faint)' }}>달러</span></div>
+    <div className="kv" style={{ color: 'var(--faint)' }}>요금제 한도(%)는 CLI 밖으로 안 나와요. 막대는 이 예산 기준이고, 비용은 토큰 × 단가 추정입니다.</div>
+  </div>
 }
 
 /** 폴더봇 크기 — 고른 즉시 레일에 반영된다(다른 창·탭도 fb:iconsize 로 함께 바뀐다) */

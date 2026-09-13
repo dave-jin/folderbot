@@ -7,6 +7,7 @@ import type { Host } from './host'
 import { bindAddresses, tailnetInfo } from './tailnet'
 import { saveConfig } from './paths'
 import { handleMcp } from './mcp'
+import { hookState, setBudget, setHook, usageReport } from './usage'
 import { allDirs, guard, kindOf, mime, readText, recent, stream, tree, writeText, exists, listDir, renameEntry } from './files'
 import { todoDelete, todoEdit, todoMove, todoToggle } from './todoStore'
 import { globParents, roleOf } from '../core/rules'
@@ -119,6 +120,9 @@ export class Gateway {
       req.on('close', () => this.clients.delete(c))
       return
     }
+    if (p === '/api/usage' && m === 'GET') return json(200, { ...usageReport(), hook: hookState().installed })
+    if (p === '/api/usage/hook' && m === 'POST') { const b = await body(); return json(200, setHook(!!b.on)) }
+    if (p === '/api/usage/budget' && m === 'POST') { const b = await body(); return json(200, setBudget({ window: b.window === undefined ? undefined : Number(b.window), day: b.day === undefined ? undefined : Number(b.day), week: b.week === undefined ? undefined : Number(b.week) } as never)) }
     if (p === '/api/state') {
       const tn = await tailnetInfo()
       return json(200, { version: h.version, root: reg.root, rules: reg.rules, rulesInstalled: reg.rulesInstalled(), bots: reg.bots(), candidates: reg.candidates(), auth: h.auth, inbox: reg.inboxItems().length, notifications: h.notifier.events.slice(0, 50), vapidPublic: h.notifier.vapidPublic(), tailnet: tn, addrs: this.addrs, port: h.cfg.port, botLimit: reg.botLimit, devices: h.cfg.devices.map((d) => ({ id: d.id, name: d.name, lastSeen: d.lastSeen })), sessionsByBot: Object.fromEntries(reg.bots().map((b) => [b.id, h.sessions.list(b.id)])), defaults: { model: h.cfg.defaultModel ?? '', effort: h.cfg.defaultEffort ?? '' }, hostName: h.hostName(), device: { id: who.id, name: who.main ? h.hostName() : who.device, main: who.main } })

@@ -6,6 +6,7 @@ import { authVerdict } from '../../src/core/authVerdict'
 import { toolSummary, touchedPath } from '../../src/core/chat'
 import { chosung, hitRange, isChosungQuery, rank, scoreName } from '../../src/core/search'
 import { decide, dropIndex } from '../../src/client/gesture'
+import { WINDOW_MS, parseEvent, priceKey, report, type UsageEvent } from '../../src/core/usage'
 
 describe('folder rules', () => {
   it('설치한 절을 다시 파싱하면 같은 규칙', () => {
@@ -239,5 +240,68 @@ describe('gesture', () => {
     expect(dropIndex(centers, 45)).toBe(1)
     expect(dropIndex(centers, 90)).toBe(2)
     expect(dropIndex(centers, 200)).toBe(3)
+  })
+})
+
+/* ── 사용량 — «남은 양» 으로 본다 (V23) ── */
+describe('usage', () => {
+  const ev = (o: Partial<UsageEvent> & { t: number }): UsageEvent => ({ tool: 'claude', model: 'claude-opus-5', input: 0, output: 0, cacheRead: 0, cacheWrite: 0, ...o })
+  const NOW = Date.parse('2026-09-13T12:00:00+09:00')
+
+  it('안 쓴 도구는 줄 자체가 없다 (Dave: Codex가 없으면 아예 안 보여야 해)', () => {
+    const r = report([ev({ t: NOW - 1000, output: 1000 })], NOW)
+    expect(r.tools.map((t) => t.tool)).toEqual(['claude'])
+    const r2 = report([ev({ t: NOW - 1000 }), ev({ t: NOW - 900, tool: 'codex', model: 'gpt-5-codex' })], NOW)
+    expect(r2.tools.map((t) => t.tool)).toEqual(['claude', 'codex'])
+  })
+
+  it('남은 양 = 예산 − 쓴 양 (쓴 양이 아니다)', () => {
+    const r = report([ev({ t: NOW - 1000, output: 1_000_000 })], NOW, { window: 100, day: 200, week: 400 })
+    expect(r.tools[0].cost).toBeCloseTo(75, 5)   // opus 출력 1M = $75
+    expect(r.tools[0].leftCost).toBeCloseTo(25, 5)
+    expect(r.tools[0].left).toBe(25)             // 25% «남음»
+  })
+
+  it('예산을 넘겨도 음수로 가지 않는다 — 0% 남음', () => {
+    const r = report([ev({ t: NOW - 1000, output: 2_000_000 })], NOW, { window: 100, day: 200, week: 400 })
+    expect(r.tools[0].left).toBe(0)
+    expect(r.tools[0].leftCost).toBe(0)
+  })
+
+  it('창 밖(5시간 넘은) 사용은 창 계산에서 빠진다', () => {
+    const old = ev({ t: NOW - 6 * 3600_000, output: 1_000_000 })
+    const r = report([old], NOW, { window: 100, day: 200, week: 400 })
+    expect(r.tools[0].tokens).toBe(0)
+    expect(r.tools[0].left).toBe(100)
+    expect(r.week.cost).toBeGreaterThan(0)       // 더 넓은 창(이번 주)에는 남아 있다 ("오늘" 은 실행 기기의 시간대를 타므로 쓰지 않는다)
+  })
+
+  it('다시 채워지는 시각 = 창 안 첫 사용 + 5시간', () => {
+    const first = NOW - 2 * 3600_000
+    const r = report([ev({ t: first, output: 10 }), ev({ t: NOW - 60_000, output: 10 })], NOW)
+    expect(r.resetAt).toBe(first + WINDOW_MS)
+    expect(report([], NOW).resetAt).toBe(null)
+  })
+
+  it('가장 빠듯한 도구가 대표 숫자다 — 메뉴 막대는 한 숫자만 쓴다', () => {
+    const r = report([ev({ t: NOW - 10, output: 1_000_000 }), ev({ t: NOW - 10, tool: 'codex', model: 'gpt-5-codex', output: 1000 })], NOW, { window: 100, day: 200, week: 400 })
+    expect(r.left).toBe(Math.min(...r.tools.map((t) => t.left)))
+  })
+
+  it('모델별로 나눠 센다', () => {
+    const r = report([ev({ t: NOW - 10, output: 100 }), ev({ t: NOW - 9, model: 'claude-sonnet-5', output: 400 })], NOW)
+    expect(r.tools[0].byModel.map((m) => m.model)).toEqual(['claude-sonnet-5', 'claude-opus-5'])
+  })
+
+  it('단가는 모델로 고른다 · 모르면 중간값', () => {
+    expect(priceKey('claude-opus-5', 'claude')).toBe('claude-opus')
+    expect(priceKey('gpt-5-codex', 'codex')).toBe('codex')
+    expect(priceKey('무엇인가', 'claude')).toBe('_')
+  })
+
+  it('망가진 줄은 조용히 버린다', () => {
+    expect(parseEvent('{"t":1,"tool":"claude"}')).not.toBe(null)
+    expect(parseEvent('{잘린')).toBe(null)
+    expect(parseEvent('{"t":1,"tool":"gemini"}')).toBe(null)
   })
 })

@@ -19,7 +19,13 @@ writeFileSync(join(root, '3. Area/제품_Rondo', '_MAP_전체구조.md'.normaliz
 mkdirSync(join(root, '5. Archive', '2025-04_트레바리-북클럽'.normalize('NFD'), '01_기획'), { recursive: true })
 mkdirSync(join(root, '.projectbot'), { recursive: true }); writeFileSync(join(root, '.projectbot/marker.txt'), 'legacy')
 const PORT = 7399
-const env = { ...process.env, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg }
+const fbHome = mkdtempSync(join(tmpdir(), 'fb-home-'))
+// 사용량 픽스처 — 창 안(5시간) 두 줄. ⚠ Dave 의 실제 ~/.claude 를 읽지 않게 홈을 갈아 끼운다
+mkdirSync(join(fbHome, '.folderbot'), { recursive: true })
+writeFileSync(join(fbHome, '.folderbot/usage.jsonl'),
+  [{ t: Date.now() - 90 * 60 * 1000, tool: 'claude', model: 'claude-opus-5', input: 1200, output: 9000, cacheRead: 240000, cacheWrite: 3000 },
+   { t: Date.now() - 10 * 60 * 1000, tool: 'claude', model: 'claude-sonnet-5', input: 900, output: 4000, cacheRead: 80000, cacheWrite: 1000 }].map((x) => JSON.stringify(x)).join('\n') + '\n')
+const env = { ...process.env, FOLDERBOT_HOME: fbHome, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg }
 const run = (args) => new Promise((res, rej) => { const p = spawn('node', ['bin/folderbot.mjs', ...args], { env }); let out = ''; p.stdout.on('data', (d) => (out += d)); p.stderr.on('data', (d) => (out += d)); p.on('exit', (c) => (c === 0 ? res(out) : rej(new Error(out)))) })
 console.log(await run(['init', root]))
 const host = spawn('node', ['bin/folderbot.mjs', 'start', '--port', String(PORT)], { env })
@@ -284,6 +290,17 @@ try {
         await pg.fill('.pk .search input', ''); await wait(300); if (await pg.$('.pk')) { await pg.click('.pk .modal-h .ib'); await wait(300) }
         // 레일 폴더봇 크기 — 설정에서 고르고(작게·보통·크게), 마우스를 올리면 한 번 더 커진다
         // (2026-09-13 Dave: «너무 작게 보여서 귀여운 폴더 표정이 잘 안 보여» · «마우스 오버했을 때는 크게 보이면 더 좋아»)
+        // 사용량 칩 — 상태바에 «남은 %», 누르면 카드
+        if (!(await pg.$('.sb-foot .uchip'))) fail('사용량: 상태바 칩이 없다')
+        const chip = await pg.textContent('.sb-foot .uchip'); if (!/남음/.test(chip ?? '')) fail('사용량: 칩이 «남음» 이 아니다 · ' + chip)
+        await pg.click('.sb-foot .uchip'); await wait(400)
+        if (!(await pg.$('.upop .ucard .ubar .fill'))) fail('사용량: 칩을 눌러도 카드가 없다')
+        const uc = await pg.evaluate(() => { const b = document.querySelector('.upop .ucard .ubar'); const f = b.querySelector('.fill'); const pc = document.querySelector('.upop .ucard .urow .pc').textContent; return { w: b.getBoundingClientRect().width, fw: f.getBoundingClientRect().width, pc: parseInt(pc), h: b.getBoundingClientRect().height, codex: document.querySelector('.upop .ucard').textContent.includes('Codex') } })
+        if (Math.abs((uc.fw / uc.w) * 100 - uc.pc) > 2) fail('사용량: 막대가 남은 %와 안 맞는다 ' + JSON.stringify(uc))
+        if (uc.h < 12) fail('사용량: 막대가 얇다 ' + JSON.stringify(uc))
+        if (uc.codex) fail('사용량: 안 쓴 Codex 가 카드에 나온다')
+        await pg.screenshot({ path: 'test/tmp/desktop-usage.png' })
+        await pg.keyboard.press('Escape'); await pg.evaluate(() => document.querySelectorAll('.backdrop').forEach((b) => b.click())); await wait(300)
         const iconOf = () => pg.evaluate(() => { const el = document.querySelector('.brow .fb'); return { w: el.getBoundingClientRect().width, attr: Number(el.getAttribute('width')) } })
         const before = await iconOf()
         await pg.click('.col.side.left .nav:has-text("설정")'); await pg.waitForSelector('.modal', { timeout: 4000 }); await wait(300)
@@ -500,6 +517,11 @@ try {
         // ── 폰 폴더 고르기 (V17 B안) — 한 단계씩 들어가고, 푸터가 안 넘치고, 이름이 폭을 전부 쓴다 ──
         // 홈으로 — 화면 상태는 React 가 쥐고 있으니 해시를 지우고 **다시 연다**(부팅 시 목록 화면)
         await pg.goto(base + '/'); await pg.waitForSelector('.mhome .mtop', { timeout: 15000 }); await wait(800)
+        if (!(await pg.$('.mhome .ucard'))) fail('사용량: 폰 홈에 카드가 없다')
+        const pu = await pg.evaluate(() => { const c = document.querySelector('.mhome .ucard'); const r = c.getBoundingClientRect(); const b = c.querySelector('.ubar').getBoundingClientRect(); return { right: r.right, iw: innerWidth, barW: b.width, cardW: r.width } })
+        if (pu.right > pu.iw + 1) fail('사용량: 폰 카드가 화면을 넘는다 ' + JSON.stringify(pu))
+        if (pu.barW < pu.cardW - 40) fail('사용량: 폰에서 막대가 가로를 안 쓴다 ' + JSON.stringify(pu))
+        await pg.screenshot({ path: 'test/tmp/phone-usage.png' })
         await pg.evaluate(() => { const b = [...document.querySelectorAll('.mhome .mtop .rb')].pop(); b.click() })
         await pg.waitForSelector('.pk.phone .ph-row', { timeout: 8000 }); await wait(400)
         const pf = await pg.evaluate(() => { const f = document.querySelector('.pk.phone .ph-f').getBoundingClientRect(); const g = document.querySelector('.pk.phone .ph-f .go').getBoundingClientRect(); const r = document.querySelector('.pk.phone .ph-row'); const rb = r.getBoundingClientRect(); const nm = r.querySelector('.n').getBoundingClientRect(); return { fw: f.width, iw: innerWidth, goH: g.height, goRight: g.right, rowH: rb.height, gapRight: rb.right - nm.right } })
@@ -528,6 +550,36 @@ try {
     }
     await br.close(); ok('ui renders (desktop · phone) → test/tmp/*.png')
   } catch (e) { try { await globalThis.__br?.close() } catch {} if (/executablePath|Executable doesn't exist|Cannot find (module|package) 'playwright/.test(String(e.message))) console.log('(화면 검사 건너뜀 — 브라우저 없음:', e.message.split('\n')[0], ')'); else fail('ui: ' + e.stack.split('\n').slice(0, 4).join(' | ')) }
+  // ── 사용량 — 남은 양 · 훅 설치 · 예산 (V23) ──
+  {
+    const u = await api('/usage')
+    if (!u.tools.length) fail('사용량: 픽스처를 못 읽었다')
+    if (u.tools.some((t) => t.tool === 'codex')) fail('사용량: 안 쓴 Codex 가 줄로 나왔다')   // Dave: 없으면 아예 안 보여야 해
+    const c = u.tools[0]
+    if (c.left !== Math.max(0, Math.min(100, Math.round((c.leftCost / c.budget) * 100)))) fail('사용량: 남은 %가 남은 금액과 안 맞는다 ' + JSON.stringify(c))
+    if (!(c.leftCost <= c.budget)) fail('사용량: 남은 금액이 예산을 넘는다 ' + JSON.stringify(c))
+    if (!u.resetAt || u.resetAt <= u.now) fail('사용량: 다시 채워지는 시각이 과거다 ' + JSON.stringify({ resetAt: u.resetAt, now: u.now }))
+    if (u.left !== Math.min(...u.tools.map((t) => t.left))) fail('사용량: 대표 숫자가 가장 빠듯한 도구가 아니다')
+    // 예산을 바꾸면 남은 %도 함께 바뀐다 (뺄셈은 호스트 한 곳에서만)
+    await api('/usage/budget', { window: 1000 })
+    const u2 = await api('/usage')
+    if (u2.tools[0].left <= c.left) fail('사용량: 예산을 키웠는데 남은 %가 안 늘었다 ' + JSON.stringify({ a: c.left, b: u2.tools[0].left }))
+    await api('/usage/budget', { window: 6.4 })
+    // 훅 설치·제거 — settings.json 을 합쳐 쓰고 백업을 남긴다
+    const before = existsSync(join(fbHome, '.claude/settings.json')) ? readFileSync(join(fbHome, '.claude/settings.json'), 'utf8') : ''
+    await api('/usage/hook', { on: true })
+    const st1 = await api('/usage'); if (!st1.hook) fail('사용량: 훅 설치가 안 잡힌다')
+    const j = JSON.parse(readFileSync(join(fbHome, '.claude/settings.json'), 'utf8'))
+    if (!JSON.stringify(j.hooks.Stop).includes('usage-hook')) fail('사용량: settings.json 에 Stop 훅이 없다')
+    if (!existsSync(join(fbHome, '.folderbot/usage-hook.mjs'))) fail('사용량: 훅 스크립트가 없다')
+    await api('/usage/hook', { on: false })
+    const st2 = await api('/usage'); if (st2.hook) fail('사용량: 훅 제거가 안 된다')
+    const j2 = JSON.parse(readFileSync(join(fbHome, '.claude/settings.json'), 'utf8'))
+    if (JSON.stringify(j2.hooks.Stop).includes('usage-hook')) fail('사용량: 제거했는데 훅이 남았다')
+    void before
+    ok('사용량 — 남은 양 · 예산 반영 · 훅 설치/제거')
+  }
+
   // ── 세션 삭제 — 워커가 내려가고, 목록에서 사라지고, **호스트를 다시 띄워도 안 돌아온다** (2026-09-13 Dave 요청)
   {
     const b = await api('/bots')
@@ -551,4 +603,4 @@ try {
   }
 
   console.log('\nSMOKE OK')
-} catch (e) { fail(e.stack) } finally { host.kill(); rmSync(root, { recursive: true, force: true }); rmSync(data, { recursive: true, force: true }); rmSync(claudeCfg, { recursive: true, force: true }) }
+} catch (e) { fail(e.stack) } finally { host.kill(); rmSync(root, { recursive: true, force: true }); rmSync(data, { recursive: true, force: true }); rmSync(claudeCfg, { recursive: true, force: true }); rmSync(fbHome, { recursive: true, force: true }) }

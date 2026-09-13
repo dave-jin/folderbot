@@ -53,7 +53,7 @@ async function startHostMode(root) {
   hostRun = await mod.startHost({ root, port: settings.port || 7373, webRoot: HOST_CLIENT, log: (m) => console.log('[host]', m) })
   settings.mode = 'host'; settings.root = root; settings.hostUrl = `http://127.0.0.1:${settings.port || 7373}`; settings.token = hostRun.gateway.localToken(); save()
   pairing = hostRun.gateway.openPairing()
-  startSse(); refreshTray()
+  startSse(); refreshTray(); void pollUsage(); setInterval(() => void pollUsage(), 60_000)
   return hostRun
 }
 function newPairing() { if (!hostRun) return null; pairing = hostRun.gateway.openPairing(); refreshTray(); return pairing }
@@ -94,6 +94,7 @@ function createTray() {
 function trayMenu() {
   return Menu.buildFromTemplate([
     { label: waiting ? `확인 대기 ${waiting}` : mood === 'work' ? '일하는 중' : mood === 'error' ? '문제 있어요' : '한가함', enabled: false },
+    ...usageItems(),
     { label: 'Folder Bot 열기', click: showWin },
     { label: '알림 센터', click: () => navigate('#notify=1') },
     { type: 'separator' },
@@ -114,9 +115,39 @@ function trayMenu() {
     { label: '종료', role: 'quit' }
   ])
 }
+/**
+ * 사용량 — **남은 양**. 호스트가 /api/usage 하나로 내주고 메뉴 막대는 그걸 그리기만 한다.
+ * ⛔ 여기서 뺄셈을 다시 하지 않는다(앱·폰과 숫자가 갈린다). ⛔ 기록이 없는 도구는 줄을 안 만든다.
+ */
+let usage = null
+async function pollUsage() {
+  try {
+    const base = settings.mode === 'host' ? (hostRun ? hostRun.urls[0] : null) : settings.hostUrl
+    if (!base) return
+    const r = await fetch(base.replace(/\/$/, '') + '/api/usage', { headers: settings.token ? { authorization: `Bearer ${settings.token}` } : {} })
+    if (!r.ok) return
+    const j = await r.json()
+    usage = j && Array.isArray(j.tools) && j.tools.length ? j : null
+  } catch { /* 조용히 — 사용량 때문에 메뉴가 멈추면 안 된다 */ }
+  refreshTray()
+}
+function leftTxt(ms, now) {
+  const s2 = Math.max(0, Math.round((ms - now) / 1000)), h = Math.floor(s2 / 3600), m = Math.floor((s2 % 3600) / 60)
+  return h ? `${h}시간 ${m}분` : `${m}분`
+}
+function usageItems() {
+  if (!usage) return []
+  const money = (n) => `$${n < 10 ? n.toFixed(2) : Math.round(n)}`
+  const out = [{ label: `사용량 — ${usage.left}% 남음${usage.resetAt ? ` · ${leftTxt(usage.resetAt, usage.now)} 뒤 채워져요` : ''}`, enabled: false }]
+  for (const t of usage.tools) out.push({ label: `   ${t.tool === 'claude' ? 'Claude' : 'Codex'}  ${t.left}% · ${money(t.leftCost)} 남음`, enabled: false })
+  out.push({ label: `   오늘 ${money(usage.day.left)} · 이번 주 ${money(usage.week.left)} 남음`, enabled: false })
+  out.push({ type: 'separator' })
+  return out
+}
+
 function refreshTray() {
   if (!tray) return
-  tray.setTitle(waiting ? String(waiting) : '', { fontType: 'monospacedDigit' })
+  tray.setTitle(waiting ? String(waiting) : usage ? `${usage.left}%` : '', { fontType: 'monospacedDigit' })
   tray.setToolTip(waiting ? `Folder Bot · 확인 대기 ${waiting}` : 'Folder Bot')
   if (app.dock) app.dock.setBadge(waiting ? String(waiting) : '')
 }
