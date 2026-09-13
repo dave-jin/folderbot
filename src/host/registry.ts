@@ -162,12 +162,17 @@ export class Registry extends EventEmitter {
     const rest = this.active.map((a) => this.toBot(a)).filter((b): b is Bot => !!b)
     return [orch, ...rest]
   }
-  /** 같은 폴더에 형제가 있으면 이름 뒤에 «· Codex» 를 붙여 레일에서 가른다 (V24) */
+  /**
+   * 같은 폴더에 형제가 있으면 **기본이 아닌 쪽에만** 이름 뒤에 «· Codex» 를 붙인다 (V24 목업 그대로).
+   * ⚠ 둘 다에 붙이면 레일이 좁아 «제품_R… · Claude» 처럼 **정작 폴더 이름이 잘린다**(실측).
+   *   어느 쪽인지는 폴더봇 옆 회사 표식이 이미 말해 주므로, 글자는 다른 쪽에만 쓴다.
+   */
   private botName(a: ActiveRec): string {
     const base = basename(a.rel)
-    const sibs = this.active.filter((x) => x.rel === a.rel)
-    if (sibs.length < 2) return base
-    return `${base} · ${(a.vendor ?? 'claude') === 'codex' ? 'Codex' : 'Claude'}`
+    const v = a.vendor ?? 'claude'
+    if (v === 'claude') return base
+    if (this.active.filter((x) => x.rel === a.rel).length < 2) return base
+    return `${base} · Codex`
   }
   /** ⚠ 벤더는 **시작할 때 고른 것**(a.vendor)이 이긴다 — `.bot.yml` 은 고르기 화면이 없던 시절의 폴백이다 */
   private toBot(a: ActiveRec): Bot | null {

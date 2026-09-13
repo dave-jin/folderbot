@@ -502,6 +502,20 @@ try {
           await pg.click('.setp-h .ib'); await wait(250)          // 뒤로 → 목록
           await pg.click('.setp-h .ib:last-child'); await wait(250) // 닫기
         }
+        // 알림 — 버튼 줄이 화면 맨 아래에 붙는다 (2026-09-13 Dave: «하단 메뉴가 맨 아래에 · 여백 조정»)
+        {
+          await pg.click('.mtop .rb:has(.bd), .mtop .rb >> nth=1'); await pg.waitForSelector('.nmodal', { timeout: 4000 }); await wait(400)
+          const nf = await pg.evaluate(() => {
+            const m = document.querySelector('.nmodal').getBoundingClientRect()
+            const f = document.querySelector('.nmodal .modal-f').getBoundingClientRect()
+            const b = document.querySelector('.nmodal .modal-b').getBoundingClientRect()
+            return { gap: m.bottom - f.bottom, bodyH: b.height, mh: m.height, fTop: f.top, ih: innerHeight }
+          })
+          if (nf.gap > 24) fail('폰 알림: 버튼 줄 아래가 비었다 ' + JSON.stringify(nf))
+          if (nf.bodyH < nf.mh * 0.5) fail('폰 알림: 목록이 화면 중간에서 끊긴다 ' + JSON.stringify(nf))
+          await pg.screenshot({ path: 'test/tmp/phone-notify.png' })
+          await pg.click('.nmodal .modal-h .ib'); await wait(250)
+        }
         await pg.click('.mrow'); await wait(300); await pg.click('.chat-hdr .rb:last-child'); await wait(300); if (!(await pg.$('.rpwrap .rb'))) fail('phone: panel page'); await pg.screenshot({ path: 'test/tmp/phone-panel.png' })
         // 쓸어서 처리 — 행 도구는 없고, 오른쪽으로 길게 쓸면 완료된다 (터치 흉내)
         {
@@ -704,7 +718,8 @@ try {
       if (again.id !== b2.id) fail('형제: 같은 벤더로 또 시작했는데 봇이 새로 생겼다')
       const both = (await api2('/bots')).filter((b) => b.rel === '3. Area/재무_CFO')
       if (both.length !== 2) fail('형제: 둘이 아니다 ' + JSON.stringify(both.map((b) => b.name)))
-      if (!both.some((b) => /· Codex$/.test(b.name)) || !both.some((b) => /· Claude$/.test(b.name))) fail('형제: 이름으로 안 갈린다 ' + JSON.stringify(both.map((b) => b.name)))
+      // 기본이 아닌 쪽에만 «· Codex» — 둘 다 붙이면 좁은 레일에서 폴더 이름이 잘린다
+      if (!both.some((b) => /· Codex$/.test(b.name)) || !both.some((b) => b.name === '재무_CFO')) fail('형제: 이름으로 안 갈린다 ' + JSON.stringify(both.map((b) => b.name)))
       // Codex 로 한 턴 — `codex exec --json` 을 우리 stream 모양으로 옮긴다 (host/codex.ts)
       const cs = await api2(`/bots/${b2.id}/send`, { text: '안녕', name: '코덱스' })
       let cchat = null

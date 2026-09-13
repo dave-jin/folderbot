@@ -43,9 +43,11 @@ export function useProviders(): Provider[] {
 export function BotFace({ color, size = 24, mood = 'idle', vendor, mono = true }: { color: string; size?: number; mood?: Mood; vendor?: ProviderId; mono?: boolean }) {
   const many = useProviders().length > 1
   if (!many || !vendor) return <FolderBot color={color} size={size} mood={mood} mono={mono} />
-  const b = Math.max(11, Math.round(size * 0.55))
+  // 표식은 폴더보다 확실히 작되 11px 아래로는 못 알아본다 — 그 아래면 차라리 안 그린다
+  const b = Math.round(size * 0.46)
+  if (b < 10) return <FolderBot color={color} size={size} mood={mood} mono={mono} />
   return <span className="bface" style={{ width: size, height: size }}>
     <FolderBot color={color} size={size} mood={mood} mono={mono} />
-    <span className="mk" style={{ width: b, height: b }}><Mark id={vendor} size={Math.round(b * 0.72)} /></span>
+    <span className="mk"><Mark id={vendor} size={b} /></span>
   </span>
 }
