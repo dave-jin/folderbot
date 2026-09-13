@@ -376,9 +376,20 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk }: { rows: Row[]
 
 /* ── 대화 ───────────────────────────────────────────────────────────────── */
 type ChatRow = { k: 'item'; it: ChatItem } | { k: 'group'; items: Tool[] }
+/**
+ * 대화를 줄로 편다 — 「A · 문서처럼」(2026-09-13 Dave 확정).
+ *
+ * 🔴 **기계는 접힌다.** 도구는 <b>한 번만 써도</b> 한 줄로 접는다. 종전에는 4회 이상일 때만 묶고
+ *    그보다 적으면 도구마다 한 줄씩 폈는데, 그러면 짧은 턴일수록 대화가 로그처럼 보였다 —
+ *    Dave 가 «Rondo 처럼 화려해지지 않게» 라고 한 것이 바로 이 결이다.
+ * ⛔ **문턱으로 접기를 정하지 않는다.** «몇 개부터 묶나» 는 늘 틀린 질문이다 — 기계는 언제나 접히고,
+ *    펼치는 것은 사람이 정한다.
+ * ⚠ 도는 동안 무엇을 하는지는 <b>상태 한 줄</b>(`.live`)이 맡는다. 그게 접기의 대가를 갚는 유일한 장치라
+ *    지우면 안 된다.
+ */
 function buildRows(items: ChatItem[], drill: string | null): ChatRow[] {
   const out: ChatRow[] = []; let run: Tool[] = []
-  const flush = () => { if (run.length >= 4) out.push({ k: 'group', items: run }); else for (const t of run) out.push({ k: 'item', it: t }); run = [] }
+  const flush = () => { if (run.length) out.push({ k: 'group', items: run }); run = [] }
   for (const it of items) {
     if (drill) { if ((it.kind === 'tool' && it.parentId === drill)) out.push({ k: 'item', it }); continue }
     if (it.kind === 'tool' && it.parentId) continue
@@ -626,11 +637,26 @@ function ToolLine({ it, onFile, base }: { it: Tool; onFile: (p: string) => void;
   return <div className="tl"><button className="l" onClick={() => setOpen(!open)}>{it.result === undefined && !it.isError ? <span className="spin" /> : it.isError ? <Icon n="x" size={11} color="var(--err)" /> : <Icon n="check" size={11} color="var(--t3)" />}<Icon n={kind as 'read'} size={12} color="var(--t3)" /><span className="nm">{label}</span><span className="sm">{rel(it.summary)}</span>{diff ? <span className="diff"><span style={{ color: 'var(--done)' }}>+{diff.b}</span> <span style={{ color: 'var(--err)' }}>−{diff.a}</span></span> : null}</button>
     {open ? <div className="det">{fp ? <button className="chip" style={{ marginBottom: 6 }} onClick={() => onFile(fp)}><span>{fp.split('/').pop()}</span></button> : null}{diff ? <>{(it.input?.old_string as string).split('\n').map((l, i) => <div key={`a${i}`} style={{ color: 'var(--err)' }}>- {l}</div>)}{(it.input?.new_string as string).split('\n').map((l, i) => <div key={`b${i}`} style={{ color: 'var(--done)' }}>+ {l}</div>)}</> : JSON.stringify(it.input, null, 1).slice(0, 1200)}{it.result ? `\n\n${it.result}` : ''}</div> : null}</div>
 }
+/**
+ * 접힌 기계 한 줄 — 「도구 7회 · 파일 3개」. 「A · 문서처럼」의 핵심 장치다.
+ *
+ * ⛔ **접힌 줄에 도구 이름을 늘어놓지 않는다.** 종전에는 `Read 3 · Bash 2 · Edit 1` 까지 한 줄에
+ *    적었는데, 그 줄이 길어지는 만큼 대화가 로그가 된다. 접힌 상태에서 필요한 것은
+ *    **«얼마나 했나»** 뿐이고, **«무엇을 했나»** 는 펼쳤을 때 답한다.
+ * ⚠ 실패만은 접힌 채로도 말한다 — 조용히 접어 버리면 사람이 실패를 영영 못 본다.
+ */
 function ToolGroup({ items, onFile, base }: { items: Tool[]; onFile: (p: string) => void; base?: string }) {
   const [open, setOpen] = useState(false)
-  const counts = new Map<string, number>(); for (const t of items) counts.set(t.name.replace(/^mcp__(claude_ai_)?/, '').split('__')[0], (counts.get(t.name.replace(/^mcp__(claude_ai_)?/, '').split('__')[0]) ?? 0) + 1)
   const fails = items.filter((t) => t.isError).length
-  return <div className="grp"><button className={`meta ${open ? 'open' : ''}`} onClick={() => setOpen(!open)}>{items.some((t) => t.result === undefined) ? <span className="spin" /> : <Icon n={fails ? 'x' : 'check'} size={11} color={fails ? 'var(--err)' : undefined} />}<span className="lb w">도구 {items.length}회</span><span className="lb ic"><Icon n="task" size={11} />{items.length}</span><span className="tx mono" style={{ fontSize: 12 }}>{[...counts.entries()].map(([n, c]) => `${n} ${c}`).join(' · ')}</span>{fails ? <span style={{ color: 'var(--err)' }}>실패 {fails}</span> : null}<Icon n={open ? 'chevd' : 'chev'} size={9} /></button>{open ? <div className="in">{items.map((t) => <ToolLine key={t.id} it={t} onFile={onFile} base={base} />)}</div> : null}</div>
+  const running = items.some((t) => t.result === undefined)
+  const files = new Set(items.map((t) => { const i = t.input ?? {}; const v = i.file_path ?? i.path ?? i.notebook_path; return typeof v === 'string' ? v : '' }).filter(Boolean))
+  const bits = [`도구 ${items.length}회`, files.size ? `파일 ${files.size}개` : ''].filter(Boolean).join(' · ')
+  return <div className="grp"><button className={`mach ${open ? 'open' : ''}`} onClick={() => setOpen(!open)}>
+    <Icon n={open ? 'chevd' : 'chev'} size={9} />
+    {running ? <span className="spin" /> : null}
+    <span className="n">{bits}</span>
+    {fails ? <span className="bad">실패 {fails}</span> : null}
+  </button>{open ? <div className="in">{items.map((t) => <ToolLine key={t.id} it={t} onFile={onFile} base={base} />)}</div> : null}</div>
 }
 function TodoWidget({ it, stopped }: { it: Extract<ChatItem, { kind: 'todos' }>; stopped: boolean }) {
   const [open, setOpen] = useState(true)

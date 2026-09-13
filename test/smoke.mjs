@@ -386,6 +386,31 @@ try {
         await pg.evaluate(() => { localStorage.setItem('fb:icon', 'm'); window.dispatchEvent(new Event('fb:iconsize')) }); await wait(200)
 
         await pg.keyboard.press('Escape'); await wait(200); if (await pg.$('.pk')) { await pg.click('.pk .modal-h .ib'); await wait(300) }
+        // 🔴 「A · 문서처럼」 — 기계는 접히고, 사람 말은 상자가 없고, 봇 말은 읽기 폭을 지킨다
+        //    (2026-09-13 Dave 확정: «단순함을 지키되 고급스럽게» → 더하기가 아니라 빼기로)
+        {
+          const look = await pg.evaluate(() => {
+            const u = document.querySelector('.umsg')
+            const md = document.querySelector('.chat-body .md')
+            const body = document.querySelector('.chat-body')
+            const cs = (e) => (e ? getComputedStyle(e) : null)
+            return {
+              umsgBg: u ? cs(u).backgroundColor : null,
+              umsgAlign: u ? cs(u).textAlign : null,
+              mdW: md ? md.getBoundingClientRect().width : null,
+              gap: body ? parseFloat(cs(body).rowGap) : null,
+              mach: document.querySelectorAll('.mach').length,
+              toolLines: document.querySelectorAll('.chat-body > .tool').length
+            }
+          })
+          const clear = (c) => !c || c === 'rgba(0, 0, 0, 0)' || c === 'transparent'
+          if (!clear(look.umsgBg)) fail('A 안: 사람 말에 상자가 남아 있다 — 상자는 «차례» 에만 ' + JSON.stringify(look))
+          if (look.umsgAlign !== 'right') fail('A 안: 사람 말이 오른쪽 정렬이 아니다 ' + JSON.stringify(look))
+          if (look.gap !== 26) fail('A 안: 턴 사이 세로 리듬이 26px 이 아니다 ' + JSON.stringify(look))
+          if (look.mdW && look.mdW > 620) fail('A 안: 봇 말의 읽기 폭이 안 걸렸다(58ch) ' + JSON.stringify(look))
+          if (look.toolLines) fail('A 안: 도구가 대화에 펴져 있다 — 언제나 접혀야 한다 ' + JSON.stringify(look))
+          if (!look.mach) fail('A 안: 접힌 기계 줄(.mach)이 없다 ' + JSON.stringify(look))
+        }
         // 🔴 쓰다 만 메시지는 새로고침해도 남는다 (2026-09-13 Dave: «앱을 껐다가 켜면 날라가»)
         {
           await pg.fill('.composer textarea', '쓰다 만 메시지')
