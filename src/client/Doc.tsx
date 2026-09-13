@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
+
+/** ⚠ 지연 로드 — CodeMirror 와 마크다운 파서는 문서를 열 때만 받는다 (번들 계약) */
+const MdEditor = lazy(() => import('./MdEditor'))
 import type { Bot } from '../core/types'
 import { api } from './api'
 import { Icon, Mid } from './FolderBot'
@@ -97,7 +100,16 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
     {!rel ? <div className="empty">오른쪽 파일에서 열거나, 대화의 파일 칩을 누르세요</div>
       : err ? <div className="empty">{err}</div>
       : !doc ? <div className="dbody"><div className="skel" style={{ width: '60%', marginBottom: 10 }} /><div className="skel" style={{ width: '85%', marginBottom: 10 }} /><div className="skel" style={{ width: '70%' }} /></div>
-      : edit ? <div className="dbody edit"><textarea value={draft} onChange={(e) => onDraft(e.target.value)} spellCheck={false} autoFocus /></div>
+      : edit ? (isMd
+        ? <div className="dbody edit md-edit">
+            {/* 🔴 마크다운은 **서식이 보이는 채로** 고친다 (「문서 기능 A」). 원문 textarea 는 마크다운이
+                아닌 텍스트에만 남는다 — 코드·설정 파일은 서식이라는 게 없어서 원문이 곧 정답이다.
+                ⚠ 편집기는 **지연 로드**한다: 문서를 한 번도 안 연 폰이 마크다운 파서를 받으면 안 된다. */}
+            <Suspense fallback={<div className="dbody"><div className="skel" style={{ width: '70%' }} /></div>}>
+              <MdEditor value={draft} onChange={onDraft} onCommit={(t) => { onDraft(t); void save(t) }} />
+            </Suspense>
+          </div>
+        : <div className="dbody edit"><textarea value={draft} onChange={(e) => onDraft(e.target.value)} spellCheck={false} autoFocus /></div>)
       : doc.kind === 'text' ? <div className="dbody" onDoubleClick={startEdit}>{isMd ? <Md text={doc.text ?? ''} /> : <pre className="raw">{doc.text}</pre>}{doc.truncated ? <div style={{ color: 'var(--t3)', fontSize: 12, marginTop: 12 }}>큰 파일이라 앞부분만 보여요</div> : null}</div>
       : doc.kind === 'image' ? <div className="dbody center"><img src={raw(rel)} style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 6 }} /></div>
       : doc.kind === 'pdf' ? <iframe className="dbody" style={{ padding: 0, border: 0, background: '#fff' }} src={raw(rel)} />

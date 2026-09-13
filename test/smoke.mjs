@@ -1,6 +1,6 @@
 // 원격 왕복 스모크 — 픽스처 볼트 + 스텁 CLI 로 호스트를 띄우고 API·SSE·MCP·화면을 검사한다
 import { spawn } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -386,6 +386,40 @@ try {
         await pg.evaluate(() => { localStorage.setItem('fb:icon', 'm'); window.dispatchEvent(new Event('fb:iconsize')) }); await wait(200)
 
         await pg.keyboard.press('Escape'); await wait(200); if (await pg.$('.pk')) { await pg.click('.pk .modal-h .ib'); await wait(300) }
+        // 🔴 **churn 0** — 라이브 프리뷰로 열고 한 글자 쳤다 지워도 **바이트가 그대로** 여야 한다
+        //    (「문서 기능 A」의 첫 계약. 파싱·직렬화를 안 하기 때문에 공짜지만, 공짜인지 실제로 잰다)
+        {
+          const rel = 'churn.md'
+          const abs = join(root, '3. Area/제품_Rondo', rel)
+          const src = ['---', 'type: reference', 'tags: [PARA, 지침]', '---', '', '# 제목', '', '**굵게** 와 *기울임* 과 `코드`.', '', '- [ ] 할 일', '- 항목', '', '> 인용', '', '[[위키링크]] 와 https://example.com', ''].join('\n')
+          // ⚠ API 로 만든다 — 파일을 직접 쓰면 호스트가 모르고 트리가 안 새로 그려진다
+          await api(`/bots/${bot.id}/file`, { rel, text: src })
+          const before = readFileSync(abs)
+          await wait(900)
+          const opened = await pg.evaluate((r) => { const hit = [...document.querySelectorAll('.trow')].find((x) => (x.textContent ?? '').includes(r)); if (hit) { hit.click(); return true } return false }, rel)
+          if (!opened) fail('churn 0: 트리에 새 파일이 안 나타난다')
+          await pg.waitForSelector('.dbody', { timeout: 6000 }); await wait(600)
+          await pg.dblclick('.dbody')                        // 더블클릭 = 편집 시작
+          await pg.waitForSelector('.mded .cm-content', { timeout: 8000 }); await wait(700)
+          // 라이브 프리뷰가 실제로 걸렸나 — 제목 줄에 줄 클래스가 붙고, 커서 밖의 «#» 는 숨는다
+          const lp = await pg.evaluate(() => ({
+            h1: !!document.querySelector('.mded .lp-h1'),
+            text: document.querySelector('.mded .cm-content')?.textContent ?? ''
+          }))
+          if (!lp.h1) fail('라이브 프리뷰: 제목 줄 클래스(.lp-h1)가 없다 ' + JSON.stringify(lp).slice(0, 200))
+          await pg.click('.mded .cm-content')
+          await pg.keyboard.press('End'); await pg.keyboard.type('x'); await wait(250)
+          await pg.keyboard.press('Backspace')
+          await wait(1700)                                   // 자동 저장(800ms) 이 끝나길
+          const after = readFileSync(abs)
+          if (!before.equals(after)) fail('churn 0: 열고 쳤다 지웠는데 바이트가 바뀌었다\n--- 전\n' + JSON.stringify(before.toString()) + '\n--- 후\n' + JSON.stringify(after.toString()))
+          ok('churn 0 — 라이브 프리뷰로 열고 저장해도 바이트가 그대로')
+          // ⚠ 열어 둔 채로 파일을 지우면 문서 열이 다시 읽으며 404 를 낸다 — 먼저 다른 파일로 옮긴다
+          await pg.evaluate(() => { const t = [...document.querySelectorAll('.trow')].find((x) => /todo\.md/.test(x.textContent ?? '')); t?.click() })
+          await wait(700)
+          try { rmSync(abs) } catch {}
+          await wait(400)
+        }
         // 🔴 답변 속 경로가 칩이 된다 — 있는 파일만 (2026-09-13 Dave: «채팅에서 문서 선택으로 바로 이동»)
         {
           const ok = await api(`/bots/${bot.id}/exists`, { rels: ['todo.md', '없는파일.md', '../밖.md'] })
@@ -820,6 +854,19 @@ try {
     for (const x of ps) { if (!x.bin) fail('제공자: 실행 파일 없이 줄이 생겼다 ' + JSON.stringify(x)) }
     if (ps.some((x) => x.id === 'codex') && !existsSync(ps.find((x) => x.id === 'codex').bin)) fail('제공자: 없는 codex 가 나왔다')
     ok(`에이전트 제공자 ${ps.length}개 — 깔린 것만`)
+  }
+
+  // ── 번들 계약 — 편집기는 **지연 로드**다 (문서를 한 번도 안 연 폰이 마크다운 파서를 받으면 안 된다) ──
+  {
+    const dir = join(process.cwd(), 'dist/client/assets')
+    const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.js')) : []
+    const ed = files.filter((f) => /MdEditor/.test(f))
+    const main = files.filter((f) => /^index-/.test(f))
+    if (!ed.length) fail('번들: 편집기가 별도 청크가 아니다 — 지연 로드가 깨졌다 ' + JSON.stringify(files))
+    if (!main.length) fail('번들: 본체 청크를 못 찾겠다 ' + JSON.stringify(files))
+    const mainSrc = readFileSync(join(dir, main[0]), 'utf8')
+    if (/@codemirror\/state|cm-content/.test(mainSrc)) fail('번들: CodeMirror 가 본체에 섞였다 — 문서를 안 열어도 받게 된다')
+    ok(`번들 — 편집기 지연 로드 (본체 ${Math.round(readFileSync(join(dir, main[0])).length / 1024)}KB · 편집기 ${Math.round(readFileSync(join(dir, ed[0])).length / 1024)}KB)`)
   }
 
   // ── 하네스 — 폴더마다 쓸 수 있는 지침·스킬·커넥터 (V25). ⛔ 설정에서는 보기만 한다 ──

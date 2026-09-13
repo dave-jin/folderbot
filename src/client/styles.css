@@ -593,3 +593,21 @@ b,strong { color:var(--w); font-weight:600 }
 /* 답변 속 경로 칩 — 눌러서 문서로 (A 안: 색이 아니라 아주 옅은 바탕 하나로만 가른다) */
 .pchip { display:inline-flex; align-items:center; height:22px; padding:0 8px; margin:0 1px; border-radius:6px; background:var(--box); color:var(--t); font-size:12.5px; font-family:inherit; vertical-align:-4px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .pchip:hover { background:var(--sel); color:var(--w) }
+
+/* 라이브 프리뷰 마크다운 편집기 — 읽을 때와 **같은 활자**여야 «모드가 없다» 는 말이 성립한다 */
+.dbody.md-edit { padding:0; overflow:hidden }
+.mded { height:100%; overflow:auto }
+.mded .cm-editor { height:100%; background:none; color:var(--t) }
+.mded .cm-editor.cm-focused { outline:none }
+.mded .cm-scroller { font-family:var(--ui); font-size:14.5px; line-height:1.9; padding:26px 32px }
+.mded .cm-content { max-width:58ch; caret-color:var(--w) }
+.mded .cm-line { padding:0 }
+.mded .cm-cursor { border-left-color:var(--w) }
+.mded .cm-selectionBackground, .mded .cm-editor ::selection { background:var(--sel) }
+.mded .cm-activeLine { background:none }
+/* 제목은 **줄 클래스**로 — 토큰에 걸면 «# » 를 치는 순간에는 아직 안 커진다 */
+.mded .lp-h1 { font-size:1.7em; font-weight:600; color:var(--w); line-height:1.35 }
+.mded .lp-h2 { font-size:1.34em; font-weight:600; color:var(--w); line-height:1.4 }
+.mded .lp-h3 { font-size:1.14em; font-weight:600; color:var(--w) }
+.mded .lp-h4, .mded .lp-h5, .mded .lp-h6 { font-weight:600; color:var(--w) }
+.mded .lp-quote { padding-left:12px; border-left:2px solid var(--line2); color:var(--t2) }

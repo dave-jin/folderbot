@@ -22,9 +22,12 @@
     "qa": "npm run typecheck && npm test && npm run build && node test/smoke.mjs"
   },
   "dependencies": {
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/language-data": "^6.5.2",
+    "codemirror": "^6.0.2",
     "croner": "10.0.1",
     "web-push": "3.6.7",
-    "yaml": "2.9.1"
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@types/node": "22.20.2",
