@@ -19,6 +19,13 @@ const prompt = argv[argv.length - 1]
 if (process.env.FOLDERBOT_CODEX_ARGV) {
   try { appendFileSync(process.env.FOLDERBOT_CODEX_ARGV, JSON.stringify({ argv, key: process.env.OPENAI_API_KEY ?? null }) + '\n') } catch {}
 }
+/**
+ * 🔴 **진짜 codex 처럼 stdin 이 닫힐 때까지 기다린다** — `codex exec` 는 stdin 이 터미널이 아니면
+ *    거기서도 프롬프트를 읽는다. 호스트가 파이프를 안 닫으면 CLI 는 영원히 기다리고, 화면은
+ *    «시작하는 중» 에서 멎는다(2026-09-13 Dave 신고). 그 자리를 여기서 잰다 —
+ *    호스트가 `stdin.end()` 를 빼먹으면 이 스텁도 답을 안 해서 스모크가 빨개진다.
+ */
+await new Promise((done) => { process.stdin.resume(); process.stdin.on('end', done); process.stdin.on('error', done) })
 const say = (msg) => process.stdout.write(JSON.stringify({ id: '0', msg }) + '\n')
 say({ type: 'session_configured', session_id: sid })
 say({ type: 'task_started' })

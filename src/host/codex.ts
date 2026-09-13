@@ -92,6 +92,16 @@ export class CodexWorker extends EventEmitter {
     const env = { ...cleanClaudeEnv(), ...(this.spec.apiKey ? { OPENAI_API_KEY: this.spec.apiKey } : {}) }
     const p = spawn(bin, args, { cwd: this.spec.cwd, env })
     this.proc = p
+    /**
+     * 🔴 **stdin 을 그 자리에서 닫는다** (2026-09-13 Dave: «codex 답변이 안와» · 화면은 «시작하는 중»
+     *    에서 멎어 있었다).
+     *
+     * `codex exec` 는 **stdin 이 터미널이 아니면 거기서도 프롬프트를 읽는다**(파이프로 넣는 길).
+     * 우리는 `spawn` 이 만든 파이프를 열어 둔 채로 뒀으므로, CLI 는 «아직 더 들어올 게 있나» 하고
+     * **영원히 기다렸다** — 출력도 없고 죽지도 않으니 화면에는 «시작하는 중» 만 남는다.
+     * ⛔ 이 줄을 지우지 마라. 프롬프트는 인자로 이미 넘겼고, 우리는 더 줄 것이 없다.
+     */
+    try { p.stdin.end() } catch { /* 이미 닫혔으면 그만이다 */ }
     p.stderr.on('data', (d: Buffer) => { this.lastError = (this.lastError + d.toString()).slice(-4000) })
     createInterface({ input: p.stdout }).on('line', (raw) => this.onLine(raw))
     p.on('error', (e) => { this.proc = null; this.lastError = e.message; this.emit('exit', 1, null, e.message) })
