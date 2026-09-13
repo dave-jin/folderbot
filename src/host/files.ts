@@ -66,13 +66,18 @@ export function allDirs(base: string, depth = 6, max = 4000): TreeNode[] {
 }
 
 /** 한 단계만 읽는다 — 트리는 펼칠 때마다 이걸 부른다(게으른 로드). 폴더 먼저 · 한글 이름순 · 숨김·.git 제외 · 번들(.app/.key)은 파일 취급 */
-export function listDir(base: string, rel: string): TreeNode[] {
+/**
+ * 한 폴더의 항목들. `all` 이면 **숨김 파일(`.` 로 시작)도** 보여 준다.
+ * ⛔ `SKIP`(node_modules · .git · .folderbot …)은 `all` 이어도 안 보여 준다 — 기계의 것이지
+ *    사람이 열어 볼 것이 아니고, 수만 개가 트리를 잠재운다.
+ */
+export function listDir(base: string, rel: string, all = false): TreeNode[] {
   const dir = rel ? join(base, rel) : base
   let names: string[] = []
   try { names = readdirSync(dir) } catch { return [] }
   const out: TreeNode[] = []
   for (const name of names) {
-    if (SKIP.has(name) || name.startsWith('.')) continue
+    if (SKIP.has(name) || (!all && name.startsWith('.'))) continue
     const abs = join(dir, name)
     let st; try { st = statSync(abs) } catch { continue }
     const bundle = /\.(app|key|numbers|pages|bundle|framework)$/i.test(name)
@@ -133,6 +138,26 @@ export function renameEntry(abs: string, newName: string): string {
 }
 export function stream(abs: string) { return createReadStream(abs) }
 export function exists(abs: string): boolean { return existsSync(abs) }
+
+/**
+ * 🔴 **한글 파일 이름은 두 벌로 산다** — 맥이 만든 이름은 자모가 풀려 있고(NFD), 우리가 만든
+ * 이름·화면을 거쳐 온 이름은 합쳐져 있다(NFC). 같은 이름인데 바이트가 달라 **디스크에서 못 찾는다**
+ * (실측: 오버 미리보기 한 번에 404, 문서 열기도 같은 자리).
+ *
+ * ⚠ 한쪽으로 «맞추는» 것은 답이 아니다 — 디스크가 어느 쪽인지 우리가 못 정한다(맥이 정한다).
+ *    그래서 **있는 쪽을 찾아 준다**: 준 그대로 → NFC → NFD 순서로 본다.
+ * ⛔ 이름만 본다(폴더 경로는 그대로) — 경로 전체를 훑으면 깊은 트리에서 값이 커진다.
+ */
+export function resolveNF(abs: string): string {
+  if (existsSync(abs)) return abs
+  const d = dirname(abs), b = basename(abs)
+  for (const alt of [b.normalize('NFC'), b.normalize('NFD')]) {
+    if (alt === b) continue
+    const p = join(d, alt)
+    if (existsSync(p)) return p
+  }
+  return abs
+}
 export function mime(abs: string): string {
   const e = extname(abs).toLowerCase()
   return ({ '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.pdf': 'application/pdf', '.md': 'text/markdown; charset=utf-8', '.json': 'application/json', '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript' } as Record<string, string>)[e] ?? 'application/octet-stream'

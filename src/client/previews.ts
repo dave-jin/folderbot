@@ -194,10 +194,12 @@ async function fillFile(box: HTMLElement, botId: string, rel: string): Promise<v
     return
   }
   try {
-    const r = await api<{ text?: string; kind?: string }>(`/bots/${botId}/file?rel=${encodeURIComponent(rel)}`)
+    // ⚠ `/file` 이 아니라 `/peek` 이다 — 없는 파일에 404 를 받으면 콘솔에 빨간 줄이 남는다(끌 수 없다).
+    //    오버 미리보기는 곁다리 읽기라 «없음» 도 정상 응답이어야 한다(gateway 의 `peek` 머리말).
+    const r = await api<{ text?: string; kind?: string }>(`/bots/${botId}/peek?rel=${encodeURIComponent(rel)}`)
     if (!box.isConnected) return
     const text = (r.text ?? '').replace(/^---\n[\s\S]*?\n---\n/, '').trim()
-    if (!text) { d.textContent = r.kind === 'binary' ? '미리 볼 수 없는 파일이에요' : '빈 파일이에요'; return }
+    if (!text) { d.textContent = r.kind === 'none' ? '없는 파일이에요' : r.kind === 'binary' ? '미리 볼 수 없는 파일이에요' : '빈 파일이에요'; return }
     const pre = document.createElement('pre')
     pre.className = 'peek'
     pre.textContent = text.split('\n').slice(0, 12).join('\n')

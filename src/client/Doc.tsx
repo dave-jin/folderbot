@@ -5,6 +5,7 @@ const MdEditor = lazy(() => import('./MdEditor'))
 /** ⚠ 캔버스도 지연 로드 — `.canvas` 를 한 번도 안 연 사람이 이 코드를 받을 이유가 없다 */
 const Canvas = lazy(() => import('./Canvas'))
 import type { Bot } from '../core/types'
+import { copySay } from './clip'
 import { api } from './api'
 import { Icon, Mid } from './FolderBot'
 import { Md } from './Sheets'
@@ -75,12 +76,22 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
     const dir = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : ''
     void api<{ name: string; rel: string; dir: boolean }[]>(`/bots/${bot.id}/ls?dir=${encodeURIComponent(dir)}`).then((l) => setSibs(l.filter((x) => !x.dir).map((x) => x.rel))).catch(() => setSibs([]))
   }, [bot.id, rel, filesTick])
-  // 봇이 파일을 쓰면 — 편집 중이 아니면 조용히 새로고침, 편집 중이면 충돌 배너
+  /**
+   * 봇이 파일을 쓰면 — 편집 중이 아니면 조용히 새로고침, 편집 중이면 충돌 배너.
+   *
+   * ⚠ **먼저 `peek` 으로 «바뀌었나 · 사라졌나» 만 묻는다.** 종전에는 파일 이벤트마다 `/file` 을
+   *    통째로 다시 받았는데, 그 사이 **이름이 바뀌거나 치워진 탭**이면 그때마다 404 가 나서
+   *    브라우저 콘솔에 빨간 줄이 쌓였다(끌 수 없다 · 스모크가 «페이지 오류 0» 으로 잡았다).
+   *    `peek` 은 없어도 200 이라, 사라진 파일은 **오류가 아니라 상태**로 받는다.
+   * ⚠ 내용은 정말 바뀌었을 때만 받는다 — 파일 이벤트는 남의 파일 때문에도 온다.
+   */
   useEffect(() => {
     if (!rel || !filesTick) return
-    void api<DocData>(`/bots/${bot.id}/file?rel=${encodeURIComponent(rel)}`).then((d) => {
-      if ((d.mtime ?? 0) <= mtimeRef.current) return
+    void api<{ kind: string; mtime?: number }>(`/bots/${bot.id}/peek?rel=${encodeURIComponent(rel)}`).then(async (p) => {
+      if (p.kind === 'none') { setErr('이 파일이 사라졌어요 (이름이 바뀌었거나 치워졌어요)'); return }
+      if ((p.mtime ?? 0) <= mtimeRef.current) return
       if (dirtyRef.current) { setConflict(true); return }
+      const d = await api<DocData>(`/bots/${bot.id}/file?rel=${encodeURIComponent(rel)}`)
       setDoc(d); setDraft(d.text ?? ''); mtimeRef.current = d.mtime ?? 0; setBotTouched(d.mtime ?? Date.now())
     }).catch(() => {})
   }, [filesTick])
@@ -124,7 +135,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
             원격이면 이름이 「메인 맥에서」 로 바뀐다. */}
         <button className="ib" title={main ? '기본 앱으로 열기' : '메인 맥에서 열기'} onClick={async () => { try { await api(`/bots/${bot.id}/open`, { body: { rel } }); say(main ? '기본 앱으로 열었어요' : '메인 맥에서 열었어요') } catch (e) { say((e as Error).message) } }}><Icon n="open" size={13} /></button>
         <span style={{ position: 'relative' }}><button className="ib" onClick={(e) => setMenu(menu ? null : anchorOf(e.currentTarget, { right: true }))}><Icon n="more" size={13} /></button>
-            {menu ? <Float at={menu} onClose={() => setMenu(null)}><div style={{ display: 'contents' }} onClick={() => setMenu(null)}><button onClick={() => onTalk(rel)}><Icon n="sub" size={13} /><span>봇에게 이 파일 말하기</span></button><button onClick={() => onAttach(rel)}><Icon n="plus" size={13} /><span>첨부로 보내기</span></button><button onClick={() => { navigator.clipboard?.writeText(`${bot.abs}/${rel}`); say('경로를 복사했어요') }}><Icon n="file" size={13} /><span>경로 복사</span></button><button onClick={async () => { try { await api(`/bots/${bot.id}/open`, { body: { rel } }); say(main ? '기본 앱으로 열었어요' : '메인 맥에서 열었어요') } catch (e) { say((e as Error).message) } }}><Icon n="open" size={13} /><span>{main ? '기본 앱으로 열기' : '메인 맥에서 열기'}</span>{main ? null : <span className="k">메인에서</span>}</button>
+            {menu ? <Float at={menu} onClose={() => setMenu(null)}><div style={{ display: 'contents' }} onClick={() => setMenu(null)}><button onClick={() => onTalk(rel)}><Icon n="sub" size={13} /><span>봇에게 이 파일 말하기</span></button><button onClick={() => onAttach(rel)}><Icon n="plus" size={13} /><span>첨부로 보내기</span></button><button onClick={() => { void copySay(`${bot.abs}/${rel}`, say, '경로를 복사했어요') }}><Icon n="file" size={13} /><span>경로 복사</span></button><button onClick={async () => { try { await api(`/bots/${bot.id}/open`, { body: { rel } }); say(main ? '기본 앱으로 열었어요' : '메인 맥에서 열었어요') } catch (e) { say((e as Error).message) } }}><Icon n="open" size={13} /><span>{main ? '기본 앱으로 열기' : '메인 맥에서 열기'}</span>{main ? null : <span className="k">메인에서</span>}</button>
               {main ? null : <a className="menu-a" href={raw(rel)} download style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="doc" size={13} /><span>이 기기로 내려받기</span></a>}
               <a className="menu-a" href={raw(rel)} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="open" size={13} /><span>새 창에서 열기</span></a><hr /><button onClick={() => docs.pin(rel)}><Icon n="doc" size={13} /><span>탭 고정</span><span className="k">더블클릭</span></button></div></Float> : null}</span>
       </span></div> : null}

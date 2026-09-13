@@ -22,6 +22,7 @@ import { BARE_URL_RE, faviconHost } from '../core/favicon'
 import { workLabel, workMood } from '../core/work'
 import { GLOBE, faviconNow, onFavicon } from './favicons'
 import { hoverRef } from './previews'
+import { copySay } from './clip'
 
 type Tool = Extract<ChatItem, { kind: 'tool' }>
 type Sub = Extract<ChatItem, { kind: 'subagent' }>
@@ -843,7 +844,9 @@ function Item({ it, bot, items, onFile, onDrill, state, say, isLastAssistant, is
   const [open, setOpen] = useState(false)
   switch (it.kind) {
     case 'user': return <div className={`umsg ${isLastUser ? 'last' : ''}`} ref={isLastUser ? userRef : undefined}>{it.text}</div>
-    case 'assistant': return <div className="amsg"><Md text={it.text || ' '} streaming={!!it.streaming} botId={bot.id} onPath={onFile} />{!it.streaming && isLastAssistant ? <div className="acts-row"><button onClick={() => { navigator.clipboard?.writeText(it.text); say('복사했어요') }} title="복사"><Icon n="doc" size={13} />복사</button>{onRetry && state !== 'running' ? <button onClick={onRetry} title="같은 질문 다시"><Icon n="undo" size={13} />다시</button> : null}<span>{fmtTime(it.t)}</span></div> : null}</div>
+    case 'assistant': return <div className="amsg"><Md text={it.text || ' '} streaming={!!it.streaming} botId={bot.id} onPath={onFile} />{/* 답 아래 줄 — 🔴 **아이콘만** (2026-09-13 Dave: «복사 및 기능들을 아이콘으로»). 글자를 빼면
+            답과 답 사이가 조용해지고, 무엇을 하는지는 툴팁이 말한다. ⚠ 시각은 남긴다(언제 온 답인지) */}
+        {!it.streaming && isLastAssistant ? <div className="acts-row"><button className="ib" onClick={() => void copySay(it.text, say)} title="답 복사"><Icon n="copy" size={14} /></button>{onRetry && state !== 'running' ? <button className="ib" onClick={onRetry} title="같은 질문 다시"><Icon n="undo" size={14} /></button> : null}<span>{fmtTime(it.t)}</span></div> : null}</div>
     case 'thinking': return <div><button className={`meta ${open ? 'open' : ''}`} onClick={() => setOpen(!open)}><span className="lb">생각</span>{!open ? <span className="tx">· {it.text.trim() ? it.text.replace(/\s+/g, ' ').slice(0, 100) : it.streaming ? '생각 중…' : '(내용 없음)'}</span> : null}<Icon n={open ? 'chevd' : 'chev'} size={9} /></button>{open ? <div className="think">{it.text.trim() ? it.text : it.streaming ? '생각 중…' : 'Claude Code 가 headless 출력에서는 생각 내용을 주지 않아요 (서명만 옵니다).'}</div> : null}</div>
     case 'tool': return <ToolLine it={it} onFile={onFile} base={bot.abs} />
     case 'subagent': { const kids = items.filter((x) => x.kind === 'tool' && x.parentId === it.id) as Tool[]; return <div className="sub"><div className="l"><button className="ib" style={{ width: 18, height: 18, marginLeft: -4 }} onClick={() => setOpen(!open)}><Icon n={open ? 'chevd' : 'sub'} size={12} /></button><span className="nm">{it.name}</span>{it.status === 'run' ? <span className="spin run" /> : <Icon n={it.status === 'error' ? 'x' : 'check'} size={11} color={it.status === 'error' ? 'var(--err)' : 'var(--done)'} />}<span className="m"><span className="w">{it.status === 'run' ? '실행 중' : it.status === 'error' ? '실패' : '끝남'} · 도구 {it.tools}회</span><span className="ic" title={`도구 ${it.tools}회`}><Icon n="task" size={11} />{it.tools}</span>{it.last ? <> · <span className="mono">{it.last}</span></> : null}</span><button className="op" onClick={() => onDrill(it.id)} title="열기"><span className="w">열기</span><Icon n="chev" size={10} /></button></div>{open ? <div className="in">{kids.slice(-4).map((k) => <ToolLine key={k.id} it={k} onFile={onFile} base={bot.abs} />)}{it.result && it.status !== 'run' ? <div className="meta" style={{ whiteSpace: 'pre-wrap' }}>{it.result.slice(0, 300)}</div> : null}{!kids.length ? <div className="meta">아직 도구를 안 썼어요</div> : null}</div> : null}</div> }

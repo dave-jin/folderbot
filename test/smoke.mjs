@@ -960,6 +960,83 @@ try {
           try { rmSync(join(root, '3. Area/제품_Rondo', d1.rel), { recursive: true }) } catch {}
           ok('파일 휴지통 · 옮기기 — 봇 폴더 안에서만, 지우지 않고 옮긴다')
         }
+        /**
+         * 🔴 **답 아래 줄은 아이콘만** (2026-09-13 Dave) — 글자를 빼고 툴팁이 말한다.
+         * ⛔ **복사는 원격에서 조용히 안 됐다** — `navigator.clipboard` 는 보안 컨텍스트에만 있고,
+         *    폰·다른 맥이 여는 `http://100.x.x.x:7373` 에는 **그 객체가 없다**(`?.` 라 오류도 안 났다).
+         *    그래서 그 객체를 지운 채로도 복사가 되는지(대체 길) 를 여기서 잰다.
+         */
+        {
+          const row = await pg.evaluate(() => {
+            const r = document.querySelector('.acts-row')
+            if (!r) return null
+            const bs = [...r.querySelectorAll('button')]
+            return { n: bs.length, texts: bs.map((b) => (b.textContent ?? '').trim()), titles: bs.map((b) => b.title), icons: bs.filter((b) => b.querySelector('svg')).length }
+          })
+          if (!row || !row.n) fail('답 아래 줄이 없다')
+          if (row.texts.some(Boolean)) fail('답 아래 줄에 글자가 남았다(아이콘만이어야 한다) · ' + JSON.stringify(row))
+          if (row.icons !== row.n) fail('답 아래 줄에 아이콘 없는 단추가 있다 ' + JSON.stringify(row))
+          if (!row.titles.every(Boolean)) fail('아이콘 단추에 툴팁이 없다 — 무엇을 하는지 알 길이 없다 ' + JSON.stringify(row))
+          // 비보안 컨텍스트 흉내 — clipboard 를 지우고도 복사가 되어야 한다
+          const fell = await pg.evaluate(async () => {
+            const real = navigator.clipboard
+            Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+            const ta = document.createElement('textarea'); document.body.appendChild(ta)
+            document.querySelector('.acts-row button')?.click()
+            await new Promise((r) => setTimeout(r, 300))
+            const said = document.querySelector('.toast, .say')?.textContent ?? ''
+            ta.remove()
+            Object.defineProperty(navigator, 'clipboard', { value: real, configurable: true })
+            return said
+          })
+          if (/못 했어요/.test(fell)) fail('복사: 비보안 컨텍스트(원격)에서 대체 길이 안 돈다 · ' + fell)
+          ok('답 아래 줄은 아이콘만 · 복사는 원격(비보안)에서도 된다')
+        }
+        /**
+         * 🔴 **트리 — 여럿 고르기 · 끌어다 옮기기 · 휴지통 · 숨김 파일 · ⌘Z** (Rondo 이식 A6·A7·A8·A10·A12).
+         * ⚠ 고르는 기준은 **보이는 줄**이다 — 접힌 폴더 속까지 고르면 사람이 안 본 것을 지운다.
+         * ⚠ 휴지통은 **지우지 않고 옮긴다** — ⌘Z(`/api/undo`)가 제자리로 되돌린다.
+         */
+        {
+          // ① 숨김 파일 — 기본은 안 보이고, 켜면 보인다. ⛔ `.folderbot` 같은 기계 폴더는 켜도 안 보인다
+          writeFileSync(join(root, '3. Area/제품_Rondo', '.숨은메모.md'), '숨김')
+          const plain = await api(`/bots/${bot.id}/ls?dir=`)
+          if (plain.some((n) => n.name === '.숨은메모.md')) fail('숨김 파일: 끄고도 보인다')
+          const all = await api(`/bots/${bot.id}/ls?dir=&all=1`)
+          if (!all.some((n) => n.name === '.숨은메모.md')) fail('숨김 파일: 켜도 안 보인다')
+          if (all.some((n) => n.name === '.folderbot')) fail('숨김 파일: 기계 폴더(.folderbot)까지 보인다')
+          rmSync(join(root, '3. Area/제품_Rondo', '.숨은메모.md'))
+          // ② 여럿 고르기 — ⌘ 클릭으로 둘을 고르고, 우클릭 메뉴가 «N개 고름» 을 말한다
+          // ⚠ 선택자를 `.trow` 로만 두면 **Inbox 절의 줄**까지 잡힌다(거기엔 클릭 동작이 없다) —
+          //    파일 절의 것은 `.panel .secb button.trow` 다. 실제로 «0개 골라짐» 으로 한 번 물렸다.
+          const FROW = '.panel .secb button.trow:not(.dir)'
+          await pg.click(FROW, { modifiers: ['Meta'] }); await wait(150)
+          await pg.click(`${FROW} >> nth=1`, { modifiers: ['Meta'] }); await wait(200)
+          const two = await pg.evaluate(() => document.querySelectorAll('.trow.sel').length)
+          if (two !== 2) fail('여럿 고르기: ⌘ 클릭으로 두 줄이 안 골라진다 · ' + two)
+          await pg.click('.trow.sel', { button: 'right' }); await wait(300)
+          const cmenu = await pg.textContent('.menu.ctx')
+          if (!/2개 고름/.test(cmenu ?? '')) fail('여럿 고르기: 메뉴가 개수를 안 말한다 · ' + cmenu)
+          if (!/휴지통으로/.test(cmenu ?? '')) fail('트리 메뉴에 «휴지통으로» 가 없다 · ' + cmenu)
+          await pg.keyboard.press('Escape'); await wait(200)
+          await pg.click(FROW); await wait(200)   // 맨 클릭 한 번이면 고른 것이 풀린다
+          // ③ 휴지통 → ⌘Z — API 로 잰다(확인 대화상자는 화면에서 못 누른다)
+          const gone = await api(`/bots/${bot.id}/new`, { dir: '', name: '되돌릴메모', kind: 'note' })
+          const tr = await api(`/bots/${bot.id}/trash`, { rels: [gone.rel] })
+          if (existsSync(join(root, '3. Area/제품_Rondo', gone.rel))) fail('휴지통: 원래 자리가 그대로다')
+          const ul = await api('/undo')
+          if (!ul.length || ul[0].to !== tr.to[0]) fail('되돌리기: 방금 치운 것이 목록 맨 위에 없다 ' + JSON.stringify(ul.slice(0, 2)))
+          await api('/undo', { t: ul[0].t })
+          if (!existsSync(join(root, '3. Area/제품_Rondo', gone.rel))) fail('🔴 되돌리기가 파일을 제자리로 못 돌렸다')
+          rmSync(join(root, '3. Area/제품_Rondo', gone.rel))
+          ok('트리 — 여럿 고르기 · 휴지통 · ⌘Z 되돌리기 · 숨김 파일')
+        }
+        // 🔴 **호스트 자신의 열쇠(this-mac)는 기기 목록에 안 보인다** (2026-09-13 Dave)
+        //    ⛔ 목록에 두면 «끊기» 가 달리는데, 누르면 지금 보고 있는 창이 제 권한을 끊는다.
+        {
+          const st = await api('/state')
+          if (st.devices.some((d) => d.name === 'this-mac')) fail('기기 목록에 this-mac 이 보인다 ' + JSON.stringify(st.devices))
+        }
         // 🔴 **Finder 급 파일 조작** (2026-09-13 Dave: «finder에서 보기 · 새 노트/새 폴더 · 복사»)
         {
           // 새 노트 — `.md` 는 자동으로 붙고, 같은 이름이 있으면 비킨다

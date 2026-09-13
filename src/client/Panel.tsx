@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Bot, HarnessDetail, HarnessItem, SessionInfo, TodoItem } from '../core/types'
+import { copySay } from './clip'
 import { api } from './api'
 import { isDoneSection } from '../core/todo'
 import { ACT_COLOR, ACT_ICON, ACT_LABEL, LONG, actOf, buzz, slotOf, useSwipeCfg, type SwipeAct } from './swipe'
@@ -416,7 +417,18 @@ function Tree({ bot, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFol
   const [flash, setFlash] = useState<Set<string>>(new Set())
   const [ctx, setCtx] = useState<{ x: number; y: number; n: Node } | null>(null)
   const [sortMenu, setSortMenu] = useState(false)
-  const loadDir = async (rel: string) => { try { const l = await api<Node[]>(`/bots/${bot.id}/ls?dir=${encodeURIComponent(rel)}`); setDirs((d) => ({ ...d, [rel]: l })) } catch { /* */ } }
+  /**
+   * 여러 개 고르기 (Rondo 이식 A6) — ⌘/⌃ 는 하나씩 더하고, ⇧ 는 **보이는 줄** 기준으로 사이를 채운다.
+   * 🔴 «보이는 줄» 이 기준인 이유: 접힌 폴더 속까지 고르면 사람이 **안 본 것을 지우게** 된다.
+   * ⚠ 고른 것은 화면에만 산다(새로 고치면 풀린다) — 되돌리기 어려운 일에 낡은 선택이 끼면 안 된다.
+   */
+  const [sel, setSel] = useState<Set<string>>(new Set())
+  const lastSel = useRef<string | null>(null)
+  const [hidden, setHidden] = useState(() => localStorage.getItem('fb:thidden') === '1')
+  const [dropOn, setDropOn] = useState<string | null>(null)
+  useEffect(() => { localStorage.setItem('fb:thidden', hidden ? '1' : '0') }, [hidden])
+  const loadDir = async (rel: string) => { try { const l = await api<Node[]>(`/bots/${bot.id}/ls?dir=${encodeURIComponent(rel)}${hidden ? '&all=1' : ''}`); setDirs((d) => ({ ...d, [rel]: l })) } catch { /* */ } }
+  useEffect(() => { setDirs({}); for (const d of exp) void loadDir(d) }, [hidden])
   useEffect(() => { setDirs({}); try { setExp(new Set(JSON.parse(localStorage.getItem(`fb:tree:${bot.id}`) ?? '[""]'))) } catch { setExp(new Set([''])) } }, [bot.id])
   useEffect(() => { localStorage.setItem(`fb:tree:${bot.id}`, JSON.stringify([...exp])); for (const d of exp) if (!dirs[d]) void loadDir(d) }, [exp, bot.id])
   useEffect(() => { localStorage.setItem('fb:tsort', sort) }, [sort])
@@ -485,6 +497,58 @@ function Tree({ bot, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFol
       say('이미지를 복사했어요')
     } catch { say('이 브라우저에서는 이미지 복사를 못 해요') }
   }
+  /** 지금 다루는 대상 — 우클릭한 줄이 **고른 것 안에 있으면** 고른 것 전부, 아니면 그 줄 하나 */
+  const targets = (n: Node): string[] => (sel.has(n.rel) && sel.size > 1 ? [...sel] : [n.rel])
+  /**
+   * 휴지통으로 — 🔴 **지우지 않고 옮긴다**(볼트 안 `.folderbot/trash/`). ⌘Z 로 되돌아온다.
+   * ⚠ 여럿을 고르고 눌렀으면 **몇 개인지** 를 물어본다 — «하나인 줄 알았는데 열 개» 가 제일 아프다.
+   */
+  const toTrash = async (n: Node) => {
+    const rels = targets(n)
+    const what = rels.length > 1 ? `${rels.length}개` : n.name
+    if (!confirm(`${what} 를 휴지통으로 옮길까요?\n\n볼트 안 .folderbot/trash 로 갑니다 — ⌘Z 로 되돌릴 수 있어요.`)) return
+    try {
+      const r = await api<{ to: string[]; failed: string[] }>(`/bots/${bot.id}/trash`, { body: { rels } })
+      setSel(new Set())
+      say(r.failed.length ? `${r.to.length}개 옮기고 ${r.failed.length}개는 못 옮겼어요` : `${what} 를 휴지통으로`)
+      refreshOpen()
+    } catch (e) { say((e as Error).message) }
+  }
+  /** 끌어다 놓아 옮기기 (A7) — 목적지는 **폴더 줄**이다. 같은 자리면 아무 일도 안 한다(호스트가 안다) */
+  const moveTo = async (rels: string[], dir: string) => {
+    if (!rels.length) return
+    try {
+      const r = await api<{ moved: { from: string; to: string }[]; failed: string[] }>(`/bots/${bot.id}/move`, { body: { rels, dir } })
+      setSel(new Set())
+      if (r.failed.length) say(`${r.moved.length}개 옮기고 ${r.failed.length}개는 못 옮겼어요`)
+      else if (r.moved.length) say(`${r.moved.length > 1 ? `${r.moved.length}개를 ` : ''}${dir || '맨 위'} 로 옮겼어요`)
+      refreshOpen()
+    } catch (e) { say((e as Error).message) }
+  }
+  /** 펼쳐 둔 폴더를 다시 읽는다 — 옮기고 치운 뒤에 화면이 낡아 있으면 안 된다 */
+  const refreshOpen = () => { for (const d of exp) void loadDir(d) }
+  /**
+   * ⌘Z — **파일 쪽 되돌리기**(옮기기·치우기). 호스트가 남긴 스냅샷 중 가장 최근 것을 무른다.
+   * ⛔ 글 쓰는 중(입력칸·편집기)에는 가로채지 않는다 — 맥 기본과 CodeMirror 의 것이 이긴다.
+   * ⚠ 문서 열에 커서가 있으면 그쪽 편집기의 ⌘Z 다. 판정 순서는 ⌘F 와 같다.
+   */
+  useEffect(() => {
+    const k = async (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'z' || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      if (t?.closest?.('.col.doc')) return
+      e.preventDefault()
+      try {
+        const list = await api<{ t: number; op: string; from: string; to: string }[]>('/undo')
+        if (!list.length) { say('되돌릴 게 없어요'); return }
+        await api('/undo', { body: { t: list[0].t } })
+        say(`되돌렸어요 — ${list[0].from.split('/').pop()}`)
+        refreshOpen()
+      } catch (e2) { say((e2 as Error).message) }
+    }
+    window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
+  }, [exp, bot.id])
   useEffect(() => { if (!ctx) return; const off = () => setCtx(null); window.addEventListener('click', off); window.addEventListener('keydown', off); return () => { window.removeEventListener('click', off); window.removeEventListener('keydown', off) } }, [ctx])
   const rows = useMemo(() => {
     const out: { n: Node; depth: number }[] = []
@@ -507,28 +571,71 @@ function Tree({ bot, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFol
   return <>
     <button className="sech" onClick={tog}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>파일</span>
       <span className={`tools ${sort !== 'name' || filter !== null ? 'on' : ''}`} onClick={(e) => e.stopPropagation()}>
-        <span style={{ position: 'relative' }}><span className={`ib ${sort !== 'name' ? 'on' : ''}`} title="정렬" onClick={() => setSortMenu(!sortMenu)}><Icon n="sort" size={12} /></span>{sortMenu ? <div className="menu" style={{ right: 0, top: 26 }} onClick={() => setSortMenu(false)}><div className="h">정렬</div><button className={sort === 'name' ? 'on' : ''} onClick={() => setSort('name')}><span style={{ flex: 1 }}>이름 (폴더 먼저)</span>{sort === 'name' ? <Icon n="check" size={11} /> : null}</button><button className={sort === 'mtime' ? 'on' : ''} onClick={() => setSort('mtime')}><span style={{ flex: 1 }}>수정순 — 최근 변경</span>{sort === 'mtime' ? <Icon n="check" size={11} /> : null}</button></div> : null}</span>
+        <span style={{ position: 'relative' }}><span className={`ib ${sort !== 'name' ? 'on' : ''}`} title="정렬" onClick={() => setSortMenu(!sortMenu)}><Icon n="sort" size={12} /></span>{sortMenu ? <div className="menu" style={{ right: 0, top: 26 }} onClick={() => setSortMenu(false)}><div className="h">정렬</div><button className={sort === 'name' ? 'on' : ''} onClick={() => setSort('name')}><span style={{ flex: 1 }}>이름 (폴더 먼저)</span>{sort === 'name' ? <Icon n="check" size={11} /> : null}</button><button className={sort === 'mtime' ? 'on' : ''} onClick={() => setSort('mtime')}><span style={{ flex: 1 }}>수정순 — 최근 변경</span>{sort === 'mtime' ? <Icon n="check" size={11} /> : null}</button><hr /><button className={hidden ? 'on' : ''} onClick={() => setHidden(!hidden)}><span style={{ flex: 1 }}>숨김 파일 보기</span>{hidden ? <Icon n="check" size={11} /> : null}</button></div> : null}</span>
         <span className={`ib ${filter !== null ? 'on' : ''}`} title="이름으로 거르기" onClick={() => setFilter(filter === null ? '' : null)}><Icon n="search" size={12} /></span>
         <span className="ib" title="모두 접기" onClick={() => setExp(new Set(['']))}><Icon n="collapse" size={12} style={{ transform: 'rotate(90deg)' }} /></span>
       </span></button>
     {open ? <>
       {filter !== null ? <div className="tfilter"><Icon n="search" size={12} /><input autoFocus placeholder="이름으로 거르기…" value={filter} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setFilter(null) }} /><span onClick={() => setFilter(null)} style={{ cursor: 'pointer' }}><Icon n="x" size={11} /></span></div> : null}
       <div className="secb" style={{ padding: '0 6px 8px' }}>
-        {rows.map(({ n, depth }) => <button key={n.rel} className={`trow ${n.dir ? 'dir' : ''} ${active === n.rel ? 'on' : ''} ${flash.has(n.rel) ? 'flash' : ''}`} style={{ ['--pad' as string]: `${10 + depth * 14}px` }} onClick={() => (n.dir ? toggleDir(n.rel) : onOpen(n.rel))} onDoubleClick={() => { if (!n.dir) onOpen(n.rel, true) }} onContextMenu={(e) => { e.preventDefault(); setCtx({ x: e.clientX, y: e.clientY, n }) }} title={n.rel} draggable onDragStart={(e) => { e.dataTransfer.setData('text/x-fb-rel', n.rel); e.dataTransfer.setData('text/x-fb-dir', n.dir ? '1' : '0'); e.dataTransfer.setData('text/plain', `${bot.abs}/${n.rel}`) }}>
+        {rows.map(({ n, depth }, ri) => <button key={n.rel} className={`trow ${n.dir ? 'dir' : ''} ${active === n.rel ? 'on' : ''} ${sel.has(n.rel) ? 'sel' : ''} ${dropOn === n.rel ? 'dover' : ''} ${flash.has(n.rel) ? 'flash' : ''}`} style={{ ['--pad' as string]: `${10 + depth * 14}px` }}
+          /**
+           * ⌘/⌃ 하나씩 더하기 · ⇧ 사이 채우기 · 맨 클릭은 **열기**(고른 것은 풀린다).
+           * ⚠ 「고르기」와 「열기」를 같은 클릭에 태우면 파일을 고를 때마다 문서가 열려 탭이 쌓인다.
+           */
+          onClick={(e) => {
+            if (e.metaKey || e.ctrlKey) { setSel((p2) => { const x = new Set(p2); if (x.has(n.rel)) x.delete(n.rel); else x.add(n.rel); return x }); lastSel.current = n.rel; return }
+            if (e.shiftKey && lastSel.current) {
+              const a = rows.findIndex((r) => r.n.rel === lastSel.current)
+              if (a >= 0) { const [lo, hi] = a < ri ? [a, ri] : [ri, a]; setSel(new Set(rows.slice(lo, hi + 1).map((r) => r.n.rel))); return }
+            }
+            setSel(new Set()); lastSel.current = n.rel
+            if (n.dir) toggleDir(n.rel); else onOpen(n.rel)
+          }}
+          onDoubleClick={() => { if (!n.dir) onOpen(n.rel, true) }}
+          onContextMenu={(e) => { e.preventDefault(); if (!sel.has(n.rel)) setSel(new Set()); setCtx({ x: e.clientX, y: e.clientY, n }) }} title={n.rel}
+          draggable
+          onDragStart={(e) => {
+            // 고른 것 안을 끌면 **고른 것 전부**가 따라온다 — 하나만 가면 «내가 고른 건 뭐였지» 가 된다
+            const rels = targets(n)
+            e.dataTransfer.setData('text/x-fb-rel', n.rel)
+            e.dataTransfer.setData('text/x-fb-rels', JSON.stringify(rels))
+            e.dataTransfer.setData('text/x-fb-dir', n.dir ? '1' : '0')
+            e.dataTransfer.setData('text/plain', rels.map((r) => `${bot.abs}/${r}`).join('\n'))
+          }}
+          onDragOver={(e) => { if (!n.dir || !e.dataTransfer.types.includes('text/x-fb-rels')) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropOn(n.rel) }}
+          onDragLeave={() => setDropOn((x) => (x === n.rel ? null : x))}
+          onDrop={(e) => {
+            setDropOn(null)
+            if (!n.dir) return
+            const raw = e.dataTransfer.getData('text/x-fb-rels')
+            if (!raw) return
+            e.preventDefault(); e.stopPropagation()
+            try { void moveTo(JSON.parse(raw) as string[], n.rel) } catch { /* */ }
+          }}>
           <span className="cv">{n.dir ? <Icon n={exp.has(n.rel) ? 'chevd' : 'chev'} size={9} /> : null}</span><Icon n={n.dir ? 'folder' : 'doc'} size={12} color={n.dir && exp.has(n.rel) ? 'var(--wait)' : 'var(--t3)'} /><span className="n"><Mid s={n.name} /></span>{n.botId ? <span className="dot run" title="봇 있음" style={{ width: 5, height: 5 }} /> : null}<time>{flash.has(n.rel) ? '방금' : fmtTime(n.mtime)}</time>
         </button>)}
         {!rows.length ? <div className="kv" style={{ color: 'var(--t3)' }}>{dirs[''] ? '비어 있어요' : <><div className="skel" style={{ width: '70%' }} /></>}</div> : null}
+        {/* ⚠ 맨 위(봇 폴더 자체)로 돌려놓을 자리 — 하위 폴더에서 꺼낼 길이 없으면 끌어 놓기가 한 방향뿐이다 */}
+        <div className={`tdrop ${dropOn === '' ? 'dover' : ''}`}
+          onDragOver={(e) => { if (!e.dataTransfer.types.includes('text/x-fb-rels')) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropOn('') }}
+          onDragLeave={() => setDropOn((x) => (x === '' ? null : x))}
+          onDrop={(e) => { setDropOn(null); const raw = e.dataTransfer.getData('text/x-fb-rels'); if (!raw) return; e.preventDefault(); try { void moveTo(JSON.parse(raw) as string[], '') } catch { /* */ } }}>여기로 끌면 맨 위로</div>
       </div>
     </> : null}
     {ctx ? <Float at={{ x: ctx.x, y: ctx.y }} onClose={() => setCtx(null)} className="menu ctx">
-      {!ctx.n.dir ? <><button onClick={() => onOpen(ctx.n.rel, true)}><span style={{ flex: 1 }}>열기 (고정 탭)</span><span className="k">⏎</span></button><button onClick={() => onAttach(ctx.n.rel)}><span style={{ flex: 1 }}>첨부로 보내기</span></button><button onClick={() => onMention(ctx.n.rel)}><span style={{ flex: 1 }}>@ 로 언급하기</span><span className="k">@</span></button></>
+      {/* ⚠ 여럿을 고른 채 우클릭했으면 **몇 개를 다루는지** 를 먼저 말한다 — 되돌리기 어려운 항목이 아래 있다 */}
+      {sel.has(ctx.n.rel) && sel.size > 1 ? <div className="h">{sel.size}개 고름</div> : null}
+      {sel.has(ctx.n.rel) && sel.size > 1 ? null : !ctx.n.dir ? <><button onClick={() => onOpen(ctx.n.rel, true)}><span style={{ flex: 1 }}>열기 (고정 탭)</span><span className="k">⏎</span></button><button onClick={() => onAttach(ctx.n.rel)}><span style={{ flex: 1 }}>첨부로 보내기</span></button><button onClick={() => onMention(ctx.n.rel)}><span style={{ flex: 1 }}>@ 로 언급하기</span><span className="k">@</span></button></>
         : <>{ctx.n.botId ? <button className="on" onClick={() => onStartAt(vaultRel(ctx.n.rel), ctx.n.botId)}><Icon n="sub" size={12} /><span style={{ flex: 1 }}>봇 열기</span><span className="k">⏎</span></button> : <button className="on" onClick={() => onStartAt(vaultRel(ctx.n.rel))}><Icon n="sub" size={12} /><span style={{ flex: 1 }}>{bot.orchestrator ? '여기서 에이전트 시작' : '이 하위 폴더로 새 봇 시작'}</span><span className="k">⏎</span></button>}<button onClick={() => onNewFolderAt(vaultRel(ctx.n.rel))}><Icon n="fplus" size={12} /><span style={{ flex: 1 }}>새 폴더 만들기 → 시작</span></button><hr /><button onClick={() => toggleDir(ctx.n.rel)}><span style={{ flex: 1 }}>{exp.has(ctx.n.rel) ? '접기' : '펼치기'}</span></button><button onClick={() => onAttach(ctx.n.rel, true)}><span style={{ flex: 1 }}>폴더째 첨부</span></button></>}
       {/* 이미지는 **그림 그대로** 클립보드에 — 붙여넣기로 슬랙·문서에 바로 들어간다 */}
       {!ctx.n.dir && IMG_RE.test(ctx.n.rel) ? <button onClick={() => void copyImage(ctx.n.rel)}><span style={{ flex: 1 }}>이미지 복사</span></button> : null}
-      <button onClick={() => { navigator.clipboard?.writeText(`${bot.abs}/${ctx.n.rel}`); say('경로를 복사했어요') }}><span style={{ flex: 1 }}>경로 복사</span><span className="k">⌘C</span></button>
-      <button onClick={() => { navigator.clipboard?.writeText(ctx.n.rel); say('상대 경로를 복사했어요') }}><span style={{ flex: 1 }}>경로 복사 (폴더 기준)</span></button>
-      <button onClick={() => rename(ctx.n)}><span style={{ flex: 1 }}>이름 바꾸기</span></button>
+      <button onClick={() => { void copySay(`${bot.abs}/${ctx.n.rel}`, say, '경로를 복사했어요') }}><span style={{ flex: 1 }}>경로 복사</span><span className="k">⌘C</span></button>
+      <button onClick={() => { void copySay(ctx.n.rel, say, '상대 경로를 복사했어요') }}><span style={{ flex: 1 }}>경로 복사 (폴더 기준)</span></button>
+      {sel.has(ctx.n.rel) && sel.size > 1 ? null : <button onClick={() => rename(ctx.n)}><span style={{ flex: 1 }}>이름 바꾸기</span></button>}
       <button onClick={() => void dup(ctx.n)}><span style={{ flex: 1 }}>복제</span></button>
+      {/* 🔴 **지우지 않고 옮긴다** — 볼트 안 `.folderbot/trash/` 로. ⌘Z 로 돌아온다 */}
+      <button className="warn" onClick={() => void toTrash(ctx.n)}><Icon n="x" size={12} /><span style={{ flex: 1 }}>휴지통으로{sel.has(ctx.n.rel) && sel.size > 1 ? ` (${sel.size}개)` : ''}</span><span className="k">⌫</span></button>
       {/* ⚠ 「열기」와 다른 일이다 — 파일을 여는 게 아니라 **어디 있는지** 보여 준다 */}
       {main ? <button onClick={() => void reveal(ctx.n)}><span style={{ flex: 1 }}>Finder 에서 보기</span></button> : null}
       <hr />

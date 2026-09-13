@@ -20,6 +20,16 @@ import { codexAuth } from './auth'
  *    roots 에는 볼트 루트·참조 폴더도 들어 있어서 `../..` 가 **통과한다**(스모크가 잡았다).
  *    읽기는 넓게 허용해도 되지만 **새로 만드는 것은 자기 폴더 안**이어야 한다.
  */
+/**
+ * 🔴 **호스트 자신의 토큰이 쓰는 이름.** 기기 목록에 **안 보인다** (2026-09-13 Dave:
+ * *«This mac 은 구지 왜 있는거지? 필요 없다면 없애줘»*).
+ *
+ * 이 줄은 «페어링한 기기» 가 아니라 **호스트 맥의 제 창이 쓰는 열쇠**다. 목록에 두면 «끊기» 가
+ * 달리는데, 그걸 누르면 **지금 보고 있는 창이 제 권한을 끊는다**(그러고도 되살릴 길이 없다).
+ * ⛔ 기록 자체는 지우지 않는다 — 지우면 로컬 토큰이 매번 새로 나 앱이 다시 로그인을 묻는다.
+ */
+const LOCAL_DEVICE = 'this-mac'
+
 function inBot(botAbs: string, rel: string): string {
   const abs = resolve(botAbs, rel)
   if (abs !== botAbs && !abs.startsWith(botAbs + sep)) throw new Error('이 폴더 밖에는 만들 수 없어요')
@@ -40,7 +50,7 @@ function freeName(botAbs: string, dir: string, name: string): string {
 import { favicon } from './favicon'
 import { preview } from './preview'
 import { hookState, setBudget, setHook, usageReport } from './usage'
-import { allDirs, guard, kindOf, mime, readText, recent, stream, tree, writeText, exists, listDir, renameEntry } from './files'
+import { allDirs, guard, kindOf, mime, readText, recent, resolveNF, stream, tree, writeText, exists, listDir, renameEntry } from './files'
 import { todoDelete, todoEdit, todoMove, todoToggle } from './todoStore'
 import { globParents, roleOf } from '../core/rules'
 import { slashCommands } from './slash'
@@ -80,8 +90,8 @@ export class Gateway {
   }
   /** 같은 맥의 창(호스트 앱)용 토큰 — 페어링 없이 바로 */
   localToken(): string {
-    let d = this.host.cfg.devices.find((x) => x.name === 'this-mac')
-    if (!d) { d = { id: randomBytes(6).toString('hex'), name: 'this-mac', token: randomBytes(32).toString('base64url'), createdAt: Date.now(), lastSeen: Date.now() }; this.host.cfg.devices.push(d); saveConfig(this.host.cfg) }
+    let d = this.host.cfg.devices.find((x) => x.name === LOCAL_DEVICE)
+    if (!d) { d = { id: randomBytes(6).toString('hex'), name: LOCAL_DEVICE, token: randomBytes(32).toString('base64url'), createdAt: Date.now(), lastSeen: Date.now() }; this.host.cfg.devices.push(d); saveConfig(this.host.cfg) }
     return d.token
   }
   openPairing(): { code: string; expiresAt: number } {
@@ -102,7 +112,7 @@ export class Gateway {
     if (!tok) return { ok: false, device: '', id: '', main: false }
     for (const d of this.host.cfg.devices) {
       const a = Buffer.from(d.token), b = Buffer.from(tok)
-      if (a.length === b.length && timingSafeEqual(a, b)) { d.lastSeen = Date.now(); return { ok: true, device: d.name, id: d.id, main: d.name === 'this-mac' } }
+      if (a.length === b.length && timingSafeEqual(a, b)) { d.lastSeen = Date.now(); return { ok: true, device: d.name, id: d.id, main: d.name === LOCAL_DEVICE } }
     }
     return { ok: false, device: '', id: '', main: false }
   }
@@ -170,7 +180,7 @@ export class Gateway {
     }
     if (p === '/api/state') {
       const tn = await tailnetInfo()
-      return json(200, { version: h.version, root: reg.root, rules: reg.rules, rulesInstalled: reg.rulesInstalled(), bots: reg.bots(), candidates: reg.candidates(), auth: h.auth, inbox: reg.inboxItems().length, notifications: h.notifier.events.slice(0, 50), vapidPublic: h.notifier.vapidPublic(), tailnet: tn, addrs: this.addrs, port: h.cfg.port, devices: h.cfg.devices.map((d) => ({ id: d.id, name: d.name, lastSeen: d.lastSeen })), sessionsByBot: Object.fromEntries(reg.bots().map((b) => [b.id, h.sessions.list(b.id)])), defaults: { model: h.cfg.defaultModel ?? '', effort: h.cfg.defaultEffort ?? '', codex: { model: h.cfg.defaultCodexModel ?? '', effort: h.cfg.defaultCodexEffort ?? '', sandbox: h.cfg.codexSandbox ?? 'read-only', auth: codexAuth(h.cfg.openaiApiKey) } }, hostName: h.hostName(), device: { id: who.id, name: who.main ? h.hostName() : who.device, main: who.main } })
+      return json(200, { version: h.version, root: reg.root, rules: reg.rules, rulesInstalled: reg.rulesInstalled(), bots: reg.bots(), candidates: reg.candidates(), auth: h.auth, inbox: reg.inboxItems().length, notifications: h.notifier.events.slice(0, 50), vapidPublic: h.notifier.vapidPublic(), tailnet: tn, addrs: this.addrs, port: h.cfg.port, devices: h.cfg.devices.filter((d) => d.name !== LOCAL_DEVICE).map((d) => ({ id: d.id, name: d.name, lastSeen: d.lastSeen })), sessionsByBot: Object.fromEntries(reg.bots().map((b) => [b.id, h.sessions.list(b.id)])), defaults: { model: h.cfg.defaultModel ?? '', effort: h.cfg.defaultEffort ?? '', codex: { model: h.cfg.defaultCodexModel ?? '', effort: h.cfg.defaultCodexEffort ?? '', sandbox: h.cfg.codexSandbox ?? 'read-only', auth: codexAuth(h.cfg.openaiApiKey) } }, hostName: h.hostName(), device: { id: who.id, name: who.main ? h.hostName() : who.device, main: who.main } })
     }
     if (p === '/api/bots' && m === 'GET') return json(200, reg.bots())
     if (p === '/api/candidates') return json(200, reg.candidates())
@@ -202,7 +212,8 @@ export class Gateway {
     if (p === '/api/codex' && m === 'POST') { const b = await body(); h.setCodex({ sandbox: b.sandbox ? String(b.sandbox) : undefined, apiKey: b.apiKey === undefined ? undefined : String(b.apiKey) }); return json(200, { ok: true, auth: codexAuth(h.cfg.openaiApiKey), sandbox: h.cfg.codexSandbox ?? 'read-only' }) }
     if (p === '/api/auth/token' && m === 'POST') { const b = await body(); h.setToken(String(b.token ?? '')); return json(200, { ok: true, mode: h.cfg.claudeOauthToken ? 'token' : 'login' }) }
     if (p === '/api/pairing' && m === 'POST') { if (!this.isLoopback(req) && device !== 'local') return json(403, { error: '미니에서만 열 수 있어요' }); return json(200, this.openPairing()) }
-    if (p === '/api/devices/revoke' && m === 'POST') { const b = await body(); h.cfg.devices = h.cfg.devices.filter((d) => d.id !== b.id); saveConfig(h.cfg); return json(200, { ok: true }) }
+    // ⛔ 호스트 자신의 열쇠는 못 끊는다 — 끊으면 지금 보고 있는 창이 제 권한을 잃는다
+    if (p === '/api/devices/revoke' && m === 'POST') { const b = await body(); h.cfg.devices = h.cfg.devices.filter((d) => d.id !== b.id || d.name === LOCAL_DEVICE); saveConfig(h.cfg); return json(200, { ok: true }) }
 
     // 레일 순서 — 끌어다 놓은 차례를 볼트에 남긴다(기기마다 달라지지 않게)
     if (p === '/api/bots/reorder' && m === 'POST') { const b = await body(); reg.reorder((Array.isArray(b.ids) ? b.ids : []).map((x: unknown) => String(x))); h.afterBotsChanged(); return json(200, { ok: true }) }
@@ -228,7 +239,7 @@ export class Gateway {
       if (sub === 'ls') {
         // 폴더 항목에 «하네스 있음» · «봇 있음(id)» · 1단계 역할을 붙인다 — 피커와 우클릭 «여기서 시작» 이 쓴다
         const rel = url.searchParams.get('dir') ?? ''; guard(roots(bot), join(bot.abs, rel))
-        return json(200, listDir(bot.abs, rel).map((n) => { if (!n.dir) return n; const vrel = bot.rel ? `${bot.rel}/${n.rel}` : n.rel; return { ...n, harness: reg.hasHarness(join(bot.abs, n.rel)), botId: reg.botByRel(vrel)?.id, role: vrel.includes('/') ? undefined : (globParents(reg.rules.roles.active).includes(vrel) ? 'active' : roleOf(reg.rules, vrel) ?? undefined) } }))
+        return json(200, listDir(bot.abs, rel, url.searchParams.get('all') === '1').map((n) => { if (!n.dir) return n; const vrel = bot.rel ? `${bot.rel}/${n.rel}` : n.rel; return { ...n, harness: reg.hasHarness(join(bot.abs, n.rel)), botId: reg.botByRel(vrel)?.id, role: vrel.includes('/') ? undefined : (globParents(reg.rules.roles.active).includes(vrel) ? 'active' : roleOf(reg.rules, vrel) ?? undefined) } }))
       }
       if (sub === 'dirs') {
         // 폴더만 평평하게 — 피커의 «폴더 찾기» 색인. 파일을 세지 않으므로 tree(…,4) 보다 훨씬 깊고 넓다
@@ -252,8 +263,32 @@ export class Gateway {
         return json(200, { rel, abs: join(bot.abs, rel), size: buf.length })
       }
       if (sub === 'recent') return json(200, recent(bot.abs, 14))
+      /**
+       * 미리보기(마우스 오버) 전용 읽기 — 🔴 **없어도 200 이다.**
+       *
+       * `/file` 은 «열기» 의 길이라 없는 파일에 404 가 맞다. 하지만 오버 미리보기는 **곁다리 읽기**다 —
+       * 404 가 나면 브라우저 콘솔에 빨간 줄이 남고(끌 수 없다), 스모크의 «페이지 오류 0» 계약이 깨지며,
+       * 무엇보다 사람에게는 아무 일도 아니다. 그래서 여기서는 «없음» 도 정상 응답으로 답한다.
+       * ⚠ 이름은 **NFC 로 맞춘다** — 맥에서 온 경로는 자모가 풀려(NFD) 오는 일이 있어 같은 이름이
+       *    디스크와 안 맞는다(실측: 오버 한 번에 404). 레지스트리도 같은 자리에서 NFC 로 맞춘다.
+       * ⛔ 앞부분만 준다(4KB) — 카드에 12줄만 그린다.
+       */
+      if (sub === 'peek' && m === 'GET') {
+        const rel = url.searchParams.get('rel') ?? ''
+        let abs: string
+        try { abs = resolveNF(guard(roots(bot), join(bot.abs, rel))) } catch { return json(200, { kind: 'none' }) }
+        if (!exists(abs)) return json(200, { kind: 'none' })
+        const kind = kindOf(abs)
+        const st = statSync(abs)
+        // ⚠ `mtime` 도 함께 준다 — 열려 있는 문서가 «바뀌었나 · 사라졌나» 를 **404 없이** 물어보는 길이다
+        const meta = { kind, mtime: st.mtimeMs, size: st.size }
+        if (kind !== 'text' && kind !== 'canvas') return json(200, meta)
+        const r = readText(abs)
+        return json(200, { ...meta, text: r.text.slice(0, 4096) })
+      }
       if (sub === 'file' && m === 'GET') {
-        const abs = guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? ''))
+        // ⚠ 한글 이름은 NFC/NFD 두 벌로 산다 — **있는 쪽**을 찾아 준다(`resolveNF` 머리말)
+        const abs = resolveNF(guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')))
         if (!exists(abs)) return json(404, { error: '없는 파일' })
         const kind = kindOf(abs)
         // ⚠ 캔버스도 **글로 내려보낸다** — 화면이 JSON 을 읽어 노드를 그린다(원문으로 그리지는 않는다)
@@ -271,7 +306,7 @@ export class Gateway {
         const rels = (Array.isArray(b.rels) ? b.rels : []).slice(0, 40).map(String)
         const out: Record<string, boolean> = {}
         for (const rel of rels) {
-          try { const abs = guard(roots(bot), join(bot.abs, rel)); out[rel] = exists(abs) && !statSync(abs).isDirectory() } catch { out[rel] = false }
+          try { const abs = resolveNF(guard(roots(bot), join(bot.abs, rel))); out[rel] = exists(abs) && !statSync(abs).isDirectory() } catch { out[rel] = false }
         }
         return json(200, out)
       }
@@ -382,7 +417,7 @@ export class Gateway {
         h.broadcast({ ev: 'files', botId: bot.id })
         return json(200, { moved, failed })
       }
-      if (sub === 'raw') { const abs = guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')); if (!exists(abs)) return json(404, { error: 'none' }); res.writeHead(200, { 'content-type': mime(abs), 'cache-control': 'no-store' }); stream(abs).pipe(res); return }
+      if (sub === 'raw') { const abs = resolveNF(guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? ''))); if (!exists(abs)) return json(404, { error: 'none' }); res.writeHead(200, { 'content-type': mime(abs), 'cache-control': 'no-store' }); stream(abs).pipe(res); return }
       if (sub === 'routines' && m === 'GET') return json(200, bot.routines)
       if (sub === 'routines' && m === 'PUT') { const b = await body(); const cfg = reg.botConfig(bot.abs); cfg.routines = b.routines as never; reg.saveBotConfig(bot.abs, cfg); h.afterBotsChanged(); return json(200, { ok: true }) }
       if (sub === 'config' && m === 'PUT') { const b = await body(); const cfg = reg.botConfig(bot.abs); Object.assign(cfg, b); reg.saveBotConfig(bot.abs, cfg); h.afterBotsChanged(); return json(200, { ok: true }) }
