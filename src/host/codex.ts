@@ -1,7 +1,8 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { createInterface } from 'node:readline'
 import type { StreamLine } from '../core/chat'
+import { emptyTurnNote, mapCodex, supportedFlags, type CodexEvt } from '../core/codexMap'
 import type { PermissionRequest } from '../core/types'
 import { providerBin } from './providers'
 import { cleanClaudeEnv } from './session'
@@ -40,8 +41,18 @@ export interface CodexSpec {
 /** Codex 가 아는 노력 값만 넘긴다 — Claude 의 `xhigh`·`max` 를 넘기면 그 자리에서 죽는다 */
 const CODEX_EFFORT = new Set(['minimal', 'low', 'medium', 'high'])
 
-/** Codex 이벤트 한 줄 — `{ id, msg: { type, ... } }` 또는 판에 따라 평평한 `{ type, ... }` */
-interface CodexEvt { id?: string; msg?: Record<string, unknown>; type?: string; [k: string]: unknown }
+/**
+ * 이 판이 아는 깃발 — **한 번만 묻는다**(`codex exec --help`). 못 읽으면 다 있다고 본다.
+ * ⛔ 세션마다 묻지 마라 — 턴마다 프로세스를 띄우는 구조라 그때마다 도움말을 읽으면 두 배로 뜬다.
+ */
+let flagCache: Set<string> | null = null
+export function codexFlags(bin: string): Set<string> {
+  if (flagCache) return flagCache
+  let help = ''
+  try { help = String(execFileSync(bin, ['exec', '--help'], { encoding: 'utf8', timeout: 6000, env: cleanClaudeEnv() })) } catch { help = '' }
+  flagCache = supportedFlags(help, ['--json', '--sandbox', '--skip-git-repo-check', '--model'])
+  return flagCache
+}
 
 export class CodexWorker extends EventEmitter {
   cliSessionId: string | null
@@ -64,9 +75,14 @@ export class CodexWorker extends EventEmitter {
     if (this.proc) return false
     const bin = providerBin('codex')
     if (!bin) { this.lastError = 'Codex CLI 를 찾지 못했어요'; this.emit('exit', 1, null, this.lastError); return false }
+    const flags = codexFlags(bin)
     const args = this.cliSessionId ? ['exec', 'resume', this.cliSessionId] : ['exec']
-    args.push('--json', '--sandbox', this.spec.sandbox ?? 'read-only', '--skip-git-repo-check')
-    if (this.spec.model) args.push('--model', this.spec.model)
+    // ⚠ **있는 깃발만 넘긴다** — 없는 것을 넘기면 CLI 가 그 자리에서 죽고, 그 죽음은 «답이 안 오는»
+    //    모양으로 보인다(`codexFlags` 머리말 · 2026-09-13 Dave 신고).
+    if (flags.has('--json')) args.push('--json')
+    if (flags.has('--sandbox')) args.push('--sandbox', this.spec.sandbox ?? 'read-only')
+    if (flags.has('--skip-git-repo-check')) args.push('--skip-git-repo-check')
+    if (this.spec.model && flags.has('--model')) args.push('--model', this.spec.model)
     // ⚠ 노력은 `-c` 로 준다 — Codex 에는 `--effort` 플래그가 없고 설정 키(`model_reasoning_effort`)다.
     //    ⛔ 아는 값만 넘긴다. Claude 의 `xhigh`·`max` 를 그대로 넘기면 CLI 가 그 자리에서 죽는다.
     if (this.spec.effort && CODEX_EFFORT.has(this.spec.effort)) args.push('-c', `model_reasoning_effort="${this.spec.effort}"`)
@@ -81,6 +97,18 @@ export class CodexWorker extends EventEmitter {
     p.on('error', (e) => { this.proc = null; this.lastError = e.message; this.emit('exit', 1, null, e.message) })
     p.on('exit', (code) => {
       this.proc = null
+      /**
+       * 🔴 **글자 하나 없이 끝났으면 이유를 답 자리에 적는다** (2026-09-13 Dave: «codex 로 실행한
+       *    세션에서 답이 안와»). 조용히 비는 것이 제일 나쁘다 — 사람은 «고장났나 · 기다려야 하나» 를
+       *    알 수 없고, 우리도 나중에 무엇이 왔는지 못 본다.
+       * ⚠ 이건 오류 처리가 아니라 **관측**이다 — 코드가 0 이어도 답이 없으면 적는다(줄 이름이
+       *    바뀐 경우가 정확히 그 모양이다).
+       */
+      if (!this.text.trim()) {
+        const note = emptyTurnNote({ code, stderr: this.lastError, unknown: this.unknown })
+        this.out({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: note }] } })
+        this.text = note
+      }
       // 턴이 끝났다 — 프로세스가 죽은 것은 «세션 종료» 가 아니다. result 줄로 마감하고 세션은 남긴다
       this.out({ type: 'result', subtype: code === 0 ? 'success' : 'error', is_error: code !== 0, result: this.text, session_id: this.cliSessionId ?? undefined })
     })
@@ -90,53 +118,12 @@ export class CodexWorker extends EventEmitter {
   private onLine(raw: string): void {
     let e: CodexEvt
     try { e = JSON.parse(raw) as CodexEvt } catch { return }
-    const m = (e.msg ?? e) as Record<string, unknown>
-    const t = String(m.type ?? '')
-    const sid = m.session_id ?? m.thread_id ?? m.conversation_id ?? (m as { session?: { id?: string } }).session?.id
-    if (typeof sid === 'string' && sid) this.cliSessionId = sid
-
-    // 말 — 조각과 완성본
-    if (t === 'agent_message_delta' || t === 'item.delta' || t === 'response.output_text.delta') {
-      const d = String(m.delta ?? m.text ?? '')
-      if (!d) return
-      this.text += d
-      this.out({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: d } } })
-      return
-    }
-    if (t === 'agent_message' || t === 'item.completed' || t === 'assistant_message') {
-      const full = String(m.message ?? m.text ?? '')
-      if (full && !this.text) { this.text = full; this.out({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: full }] } }) }
-      return
-    }
-    // 생각
-    if (t === 'agent_reasoning' || t === 'agent_reasoning_delta') {
-      const d = String(m.text ?? m.delta ?? '')
-      if (d) this.out({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: d } } })
-      return
-    }
-    // 도구 — 명령 실행 · 파일 고치기
-    if (t === 'exec_command_begin' || t === 'exec_command_end' || t === 'patch_apply_begin' || t === 'patch_apply_end' || t === 'mcp_tool_call_begin' || t === 'mcp_tool_call_end') {
-      const begin = t.endsWith('_begin')
-      const id = String(m.call_id ?? m.id ?? `c_${Date.now().toString(36)}`)
-      const name = t.startsWith('exec') ? 'Bash' : t.startsWith('patch') ? 'Edit' : String(m.tool ?? 'Tool')
-      const cmd = Array.isArray(m.command) ? (m.command as string[]).join(' ') : String(m.command ?? m.description ?? '')
-      if (begin) this.out({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id, name, input: name === 'Bash' ? { command: cmd } : (m.input ?? { description: cmd }) }] } })
-      else this.out({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: Number(m.exit_code ?? 0) !== 0, content: String(m.stdout ?? m.output ?? '') }] } })
-      return
-    }
-    // 토큰 — 사용량·컨텍스트
-    if (t === 'token_count' || t === 'usage') {
-      const u = (m.info ?? m.usage ?? m) as Record<string, number>
-      this.out({ type: 'result', subtype: 'usage', usage: { input_tokens: u.input_tokens ?? 0, output_tokens: u.output_tokens ?? 0, cache_read_input_tokens: u.cached_input_tokens ?? u.cache_read_input_tokens ?? 0 } })
-      return
-    }
-    if (t === 'task_started' || t === 'session_configured' || t === 'thread.started') { this.out({ type: 'system', subtype: 'init', session_id: this.cliSessionId ?? undefined }); return }
-    if (t === 'task_complete' || t === 'turn.completed') return   // exit 에서 result 로 마감한다
-    if (t === 'error' || t === 'stream_error') { this.lastError = String(m.message ?? raw).slice(0, 500); return }
-
-    // 표에 없는 줄 — 버리지 않고 흘려보낸다 (이름이 바뀌어도 화면이 조용히 비지 않게)
-    if (t && !this.unknown.has(t)) { this.unknown.add(t); if (!this.lastError) this.lastError = `Codex: 모르는 줄 «${t}»` }
-    if (t) this.out({ type: 'system', subtype: 'activity', summary: t })
+    // ⚠ 옮기기는 **순수 함수 한 곳**에 있다(`core/codexMap.ts`) — Codex 의 줄 모양은 판마다 바뀌므로
+    //    진짜 출력 모양을 유닛 검사로 박아 두려고 떼어 냈다.
+    const ctx = { sid: this.cliSessionId, text: this.text, unknown: this.unknown }
+    for (const line of mapCodex(e, ctx)) this.out(line)
+    this.cliSessionId = ctx.sid
+    this.text = ctx.text
   }
 
   private out(line: StreamLine): void { this.emit('line', line) }

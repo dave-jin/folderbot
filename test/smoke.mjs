@@ -1691,6 +1691,28 @@ try {
       const run2 = l2.find((l) => l.argv.includes('모르는 노력'))
       if (run2 && /model_reasoning_effort/.test(run2.argv.join(' '))) fail('Codex: 모르는 노력 값을 그대로 넘겼다 ' + run2.argv.join(' '))
       ok('Codex 동급 — 기본 모델 · 노력 · 샌드박스 · API 키가 CLI 까지 간다')
+      /**
+       * 🔴 **새 판(item/turn) 모양도 읽는다** — codex-cli 0.4x+ 는 조각 없이 `item.completed` 한 줄로
+       *    답을 주고, 글자는 `item.text` 에 있다. 종전에는 `msg.text` 만 봐서 **화면이 조용히 비었다**
+       *    (2026-09-13 Dave: «codex 로 실행한 세션에서 답이 안와»).
+       */
+      const nx = await api2(`/bots/${b1.id}/sessions`, { name: '새판', vendor: 'codex' })
+      await api2(`/sessions/${nx.id}/send`, { text: '새판 테스트' })
+      let nxChat = null
+      for (let i = 0; i < 60; i++) { nxChat = await api2(`/sessions/${nx.id}/chat`); if (nxChat.items.some((x) => x.kind === 'assistant' && /새 판으로 답했어요/.test(x.text ?? ''))) break; await wait(250) }
+      if (!nxChat.items.some((x) => x.kind === 'assistant' && /새 판으로 답했어요/.test(x.text ?? ''))) fail('Codex 새 판: item.completed 의 답이 화면에 안 왔다 ' + JSON.stringify(nxChat.items.map((x) => [x.kind, (x.text ?? '').slice(0, 40)])))
+      /**
+       * 🔴 **답 없이 끝난 턴은 이유를 답 자리에 적는다** — 조용히 비는 것이 제일 나쁘다.
+       *    사람은 «고장났나 · 기다려야 하나» 를 알 수 없고, 우리도 나중에 무엇이 왔는지 못 본다.
+       */
+      const ep = await api2(`/bots/${b1.id}/sessions`, { name: '빈턴', vendor: 'codex' })
+      await api2(`/sessions/${ep.id}/send`, { text: '빈턴 테스트' })
+      let epChat = null
+      for (let i = 0; i < 60; i++) { epChat = await api2(`/sessions/${ep.id}/chat`); if (epChat.items.some((x) => x.kind === 'assistant' && /답 없이/.test(x.text ?? ''))) break; await wait(250) }
+      const note = epChat.items.find((x) => x.kind === 'assistant' && /답 없이/.test(x.text ?? ''))
+      if (!note) fail('빈 턴: 이유를 안 적었다 — 화면이 조용히 빈다 ' + JSON.stringify(epChat.items.map((x) => [x.kind, (x.text ?? '').slice(0, 40)])))
+      if (!/something went wrong/.test(note.text)) fail('빈 턴: CLI 가 한 말이 안 들어갔다 ' + note.text)
+      ok('Codex — 옛 판 · 새 판(item/turn) 둘 다 읽고, 답 없는 턴은 이유를 적는다')
       ok('에이전트 고르기 — 폴더 하나 = 줄 하나 · 벤더는 세션마다 · Codex 로 한 턴')
     } finally { two.kill() }
   }
