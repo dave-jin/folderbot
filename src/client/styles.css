@@ -630,3 +630,13 @@ b,strong { color:var(--w); font-weight:600 }
 .htmlv .hframe { flex:1; width:100%; border:0; background:#fff }
 .mded .lp-fm { display:inline-block; font-family:var(--mono); font-size:10.5px; letter-spacing:.4px; color:var(--t3); padding:2px 0; cursor:text }
 .mded .lp-fm:hover { color:var(--t2) }
+/* 표 — 읽을 땐 진짜 표, 칸을 누르면 그 자리에서 고친다 (기계는 접는다: 단추는 올려야 나온다) */
+.mded .lp-tblw { position:relative; margin:10px 0 }
+.mded .lp-tbl { border-collapse:collapse; width:100%; table-layout:fixed; font-size:13px; line-height:1.6 }
+.mded .lp-tbl th, .mded .lp-tbl td { border:1px solid var(--line); padding:5px 9px; text-align:left; vertical-align:top; word-break:break-word; min-width:0 }
+.mded .lp-tbl th { color:var(--w); font-weight:600; background:var(--hover) }
+.mded .lp-tbl th:focus, .mded .lp-tbl td:focus { outline:none; box-shadow:inset 0 0 0 1.5px var(--t3) }
+.mded .lp-tbtn { position:absolute; right:0; top:-20px; display:flex; gap:4px; opacity:0; transition:opacity .12s }
+.mded .lp-tblw:hover .lp-tbtn, .mded .lp-tblw:focus-within .lp-tbtn { opacity:1 }
+.mded .lp-tb { font-size:11px; line-height:1.5; color:var(--t3); border:1px solid var(--line); border-radius:5px; padding:0 6px; background:var(--bg) }
+.mded .lp-tb:hover { color:var(--w); border-color:var(--line2) }

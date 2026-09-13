@@ -440,6 +440,59 @@ try {
           try { rmSync(abs) } catch {}
           await wait(400)
         }
+        // 🔴 표 — 읽을 땐 진짜 표, 칸을 고치면 **그 칸의 글자만** 바뀐다 (Rondo 는 통째로 다시 쓴다 = churn)
+        {
+          const rel = 'tbl.md'
+          const abs = join(root, '3. Area/제품_Rondo', rel)
+          const src = ['# 표', '', '| 이름 | 값 |', '| --- | ---: |', '| 가 | 1 |', '| 나 | 2 |', ''].join('\n')
+          await api(`/bots/${bot.id}/file`, { rel, text: src })
+          await wait(900)
+          const opened = await pg.evaluate((r) => { const hit = [...document.querySelectorAll('.trow')].find((x) => (x.textContent ?? '').includes(r)); if (hit) { hit.click(); return true } return false }, rel)
+          if (!opened) fail('표: 트리에 새 파일이 안 나타난다')
+          await pg.waitForSelector('.dbody', { timeout: 6000 }); await wait(600)
+          await pg.dblclick('.dbody')
+          await pg.waitForSelector('.mded .cm-content', { timeout: 8000 }); await wait(700)
+          const shape = await pg.evaluate(() => {
+            const t = document.querySelector('.mded .lp-tbl')
+            if (!t) return { has: false }
+            const rows = [...t.querySelectorAll('tr')]
+            const head = [...rows[0].children].map((c) => c.textContent)
+            return { has: true, rows: rows.length, head, edit: rows[1].children[0].isContentEditable, align: getComputedStyle(rows[1].children[1]).textAlign, pipe: (document.querySelector('.mded .cm-content')?.textContent ?? '').includes('| 가 |') }
+          })
+          if (!shape.has) fail('표: 안 접혔다 — 파이프가 그대로 보인다')
+          if (shape.rows !== 3 || shape.head.join() !== '이름,값') fail('표: 모양이 다르다 ' + JSON.stringify(shape))
+          if (!shape.edit) fail('표: 칸이 그 자리에서 안 고쳐진다(contenteditable 아님)')
+          if (shape.align !== 'right') fail('표: `---:` 정렬이 안 따라왔다 ' + JSON.stringify(shape))
+          if (shape.pipe) fail('표: 원문 파이프가 같이 보인다(접기가 덜 됐다)')
+          // 칸 하나 고치기 — 파일에서 **그 칸만** 달라져야 한다
+          await pg.click('.mded .lp-tbl tr:nth-child(2) td:nth-child(2)')
+          await pg.keyboard.press('End'); await pg.keyboard.type('9')
+          await pg.click('.mded .lp-h1'); await wait(1500)
+          const after = readFileSync(abs, 'utf8')
+          const want = src.replace('| 가 | 1 |', '| 가 | 19 |')
+          if (after !== want) fail('표: 칸만 바뀌어야 한다(표를 통째로 다시 썼다?)\n--- 기대\n' + JSON.stringify(want) + '\n--- 실제\n' + JSON.stringify(after))
+          // ＋행 — 순수 끼워 넣기
+          await pg.hover('.mded .lp-tblw')
+          await pg.click('.mded .lp-tb:has-text("＋행")'); await wait(1500)
+          const rowed = readFileSync(abs, 'utf8')
+          if (rowed !== want.replace('| 나 | 2 |', '| 나 | 2 |\n|  |  |')) fail('표: ＋행이 끼워 넣기가 아니다 ' + JSON.stringify(rowed))
+          // ⋯ — 커서를 표 안에 넣으면 원문(파이프)으로 풀린다. 「모드」가 아니라 커서 규칙 하나다
+          await pg.hover('.mded .lp-tblw')
+          await pg.click('.mded .lp-tb:has-text("⋯")'); await wait(500)
+          const raw = await pg.evaluate(() => ({ tbl: !!document.querySelector('.mded .lp-tbl'), text: document.querySelector('.mded .cm-content')?.textContent ?? '' }))
+          if (raw.tbl) fail('표: ⋯ 를 눌러도 원문으로 안 풀린다')
+          if (!raw.text.includes('| 가 | 19 |')) fail('표: 원문에 파이프가 안 보인다 ' + JSON.stringify(raw.text.slice(0, 120)))
+          ok('표 — 진짜 표로 읽고, 칸만 고치고, ⋯ 로 원문')
+          // 🔴 **편집 중에 다른 문서로 옮겨도 그 글이 새 문서를 덮지 않는다** (2026-09-13 실사고 — todo.md 가 표로 덮였다)
+          const todoAbs = join(root, '3. Area/제품_Rondo', 'todo.md')
+          const todo0 = readFileSync(todoAbs, 'utf8')
+          await pg.evaluate(() => { const t = [...document.querySelectorAll('.trow')].find((x) => /todo\.md/.test(x.textContent ?? '')); t?.click() })
+          await wait(1800)
+          if (readFileSync(todoAbs, 'utf8') !== todo0) fail('문서 이동: 편집하던 글이 새 문서에 덮여 썼다\n--- 지금\n' + JSON.stringify(readFileSync(todoAbs, 'utf8').slice(0, 200)))
+          ok('문서를 옮겨도 편집하던 글이 따라오지 않는다')
+          try { rmSync(abs) } catch {}
+          await wait(400)
+        }
         // 🔴 답변 속 경로가 칩이 된다 — 있는 파일만 (2026-09-13 Dave: «채팅에서 문서 선택으로 바로 이동»)
         {
           const ok = await api(`/bots/${bot.id}/exists`, { rels: ['todo.md', '없는파일.md', '../밖.md'] })
@@ -543,7 +596,7 @@ try {
         if (!(await pg.$('.modal.ask input.askin'))) fail('ui rename modal missing'); await pg.fill('.modal.ask input.askin', 'renamed-by-smoke.md'); await pg.keyboard.press('Enter'); await wait(700)
         if (!/renamed-by-smoke\.md/.test((await pg.textContent('.panel')) ?? '')) fail('ui rename did not apply'); if (await pg.$('.modal.ask')) fail('ui rename modal stuck')
         // 할 일 2.0 — 절 제목이 보이고, 목록은 제목만. 더블클릭하면 그 행에 설명이 펼쳐진다
-        if (!/요청 · 할 일/.test((await pg.textContent('.panel')) ?? '')) fail('ui todo sections missing')
+        if (!/요청 · 할 일/.test((await pg.textContent('.panel')) ?? '')) fail('ui todo sections missing · 트리=' + JSON.stringify(await pg.$$eval('.panel .secb button.trow', (r) => r.map((x) => x.textContent.trim()))) + ' · 패널=' + JSON.stringify(((await pg.textContent('.panel')) ?? '').slice(0, 300)))
         const withDesc = await pg.$('.todo .mk')
         if (!withDesc) fail('ui todo: row with desc should show a › mark')
         if (await pg.$('.todo .dsc')) fail('ui todo: desc must be hidden until opened')

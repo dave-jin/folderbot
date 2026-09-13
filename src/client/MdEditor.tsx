@@ -103,6 +103,177 @@ function fmSummary(body: string): string {
   return bits.slice(0, 5).join(' · ') || '속성'
 }
 
+// ── 표 — 읽을 땐 진짜 표, 칸을 누르면 그 자리에서 고친다 ─────────────────────────
+/**
+ * 🔴 **칸 하나를 고치면 그 칸의 글자만 바뀐다.**
+ *    Rondo 는 표를 파싱해 통째로 다시 직렬화한다(690줄). 그러면 파이프 간격·정렬 표기가 전부
+ *    정규화돼서 **한 칸만 고쳐도 표 전체가 바뀐 diff** 가 난다 = churn. 여기서는 고친 칸의
+ *    **문자 범위만** 갈아 끼운다 — 나머지 줄은 손도 안 댄다.
+ * ⛔ **행·열 추가도 «끼워 넣기» 뿐이다** — 기존 문자를 옮겨 쓰지 않는다(순수 insert).
+ * ⚠ 파이프를 직접 만지고 싶으면 표 위 `⋯`. 커서를 표 안으로 넣어 줄 뿐이고, 「커서가 있는 줄은
+ *    안 접는다」는 규칙 하나로 «원문 모드» 가 공짜로 나온다 — 모드 플래그를 따로 두지 않는다.
+ */
+const SEP_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/
+
+interface Cell { from: number; to: number; text: string }
+interface TRow { cells: Cell[]; lineTo: number; endsPipe: boolean }
+interface Tbl { from: number; to: number; head: TRow; sep: TRow; body: TRow[]; align: ('' | 'c' | 'r')[]; lines: number[] }
+
+/** 파이프로 칸을 자른다 — `\|` 는 칸 구분이 아니다 */
+function splitRow(text: string, base: number): { cells: Cell[]; endsPipe: boolean } {
+  const trimmed = text.trim()
+  const seg: { s: number; e: number }[] = []
+  let s = 0
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== '|' || (i > 0 && text[i - 1] === '\\')) continue
+    seg.push({ s, e: i }); s = i + 1
+  }
+  seg.push({ s, e: text.length })
+  if (trimmed.startsWith('|')) seg.shift()
+  const endsPipe = trimmed.endsWith('|')
+  if (endsPipe && seg.length > 1) seg.pop()
+  const cells = seg.map(({ s: a, e: b }) => {
+    let f = a, t = b
+    while (f < t && /\s/.test(text[f])) f++
+    while (t > f && /\s/.test(text[t - 1])) t--
+    return { from: base + f, to: base + t, text: text.slice(f, t) }
+  })
+  return { cells, endsPipe }
+}
+
+/** 머리줄 + 구분줄 + 이어지는 줄들 = 표 하나 */
+function findTables(state: EditorState): Tbl[] {
+  const out: Tbl[] = []
+  const row = (l: { text: string; from: number; to: number }): TRow => ({ ...splitRow(l.text, l.from), lineTo: l.to })
+  for (let n = 1; n < state.doc.lines; n++) {
+    const h = state.doc.line(n), s = state.doc.line(n + 1)
+    if (!h.text.includes('|') || !s.text.includes('-') || !SEP_RE.test(s.text)) continue
+    const head = row(h), sep = row(s)
+    // ⚠ 칸 수가 같아야 표다 — 안 그러면 `제목` + `---`(setext h2)를 표로 오인한다
+    if (head.cells.length < 2 || sep.cells.length !== head.cells.length) continue
+    const body: TRow[] = []
+    let m = n + 2
+    for (; m <= state.doc.lines; m++) {
+      const l = state.doc.line(m)
+      if (!l.text.trim() || !l.text.includes('|')) break
+      body.push(row(l))
+    }
+    const lines: number[] = []
+    for (let i = n; i < m; i++) lines.push(i)
+    out.push({
+      from: h.from, to: state.doc.line(m - 1).to, head, sep, body, lines,
+      align: sep.cells.map((c) => (c.text.startsWith(':') && c.text.endsWith(':') ? 'c' : c.text.endsWith(':') ? 'r' : ''))
+    })
+    n = m - 1
+  }
+  return out
+}
+
+/** 다시 그린 뒤에 커서를 되돌려 놓을 칸 — 고치면 위젯 DOM 이 통째로 갈리기 때문이다 */
+let pendFocus: { r: number; c: number } | null = null
+
+function placeEnd(el: HTMLElement): void {
+  const r = document.createRange(); r.selectNodeContents(el); r.collapse(false)
+  const s = getSelection(); s?.removeAllRanges(); s?.addRange(r)
+}
+
+/** 칸 글자 → 원문 한 줄 (줄바꿈은 칸을 깨고, `|` 는 칸을 가른다) */
+function escCell(s: string): string { return s.replace(/\s*\n\s*/g, ' ').replace(/\|/g, '\\|').trim() }
+
+function commitCell(view: EditorView, cell: Cell, el: HTMLElement): boolean {
+  if (el.dataset.done) return false
+  const next = escCell(el.textContent ?? '')
+  if (next === cell.text) return false
+  el.dataset.done = '1'
+  view.dispatch({ changes: { from: cell.from, to: cell.to, insert: next } })
+  return true
+}
+
+function tbtn(label: string, title: string, on: () => void): HTMLButtonElement {
+  const b = document.createElement('button')
+  b.className = 'lp-tb'; b.textContent = label; b.title = title; b.type = 'button'
+  b.onmousedown = (e) => { e.preventDefault(); on() }
+  return b
+}
+
+class TableWidget extends WidgetType {
+  constructor(readonly t: Tbl, readonly key: string) { super() }
+  eq(o: TableWidget) { return o.key === this.key }
+  toDOM(view: EditorView) {
+    const wrap = document.createElement('div'); wrap.className = 'lp-tblw'
+    const table = document.createElement('table'); table.className = 'lp-tbl'
+    const rows = [this.t.head, ...this.t.body]
+    rows.forEach((r, ri) => {
+      const tr = document.createElement('tr')
+      r.cells.forEach((cell, ci) => {
+        const td = document.createElement(ri === 0 ? 'th' : 'td')
+        const a = this.t.align[ci]
+        if (a) td.style.textAlign = a === 'c' ? 'center' : 'right'
+        td.textContent = cell.text.replace(/\\\|/g, '|')
+        td.contentEditable = 'true'
+        td.spellcheck = false
+        td.dataset.rc = `${ri},${ci}`
+        td.onblur = () => { commitCell(view, cell, td) }
+        td.onkeydown = (e) => cellKey(e, view, rows, this.t, ri, ci, cell, td)
+        tr.appendChild(td)
+      })
+      table.appendChild(tr)
+    })
+    wrap.appendChild(table)
+    // 기계는 접는다 — 마우스를 올리거나 칸에 들어와야 나온다 (「A · 문서처럼」)
+    const bar = document.createElement('div'); bar.className = 'lp-tbtn'
+    bar.appendChild(tbtn('＋행', '아래에 빈 행', () => addRow(view, this.t)))
+    bar.appendChild(tbtn('＋열', '오른쪽에 빈 열', () => addCol(view, this.t)))
+    bar.appendChild(tbtn('⋯', '원문(파이프)으로 고치기', () => { view.dispatch({ selection: { anchor: this.t.from } }); view.focus() }))
+    wrap.appendChild(bar)
+    if (pendFocus) {
+      const { r, c } = pendFocus; pendFocus = null
+      queueMicrotask(() => {
+        const el = table.querySelector<HTMLElement>(`[data-rc="${r},${c}"]`)
+        if (el) { el.focus(); placeEnd(el) }
+      })
+    }
+    return wrap
+  }
+  /** ⛔ CodeMirror 가 이 안의 이벤트를 가로채면 contenteditable 이 안 먹는다 */
+  ignoreEvent() { return true }
+}
+
+function cellKey(e: KeyboardEvent, view: EditorView, rows: TRow[], t: Tbl, ri: number, ci: number, cell: Cell, el: HTMLElement): void {
+  if (e.key === 'Enter') { e.preventDefault(); el.blur(); return }
+  if (e.key === 'Escape') { e.preventDefault(); el.textContent = cell.text.replace(/\\\|/g, '|'); el.blur(); return }
+  if (e.key !== 'Tab') return
+  e.preventDefault()
+  let nr = ri, nc = ci + (e.shiftKey ? -1 : 1)
+  if (nc < 0) { nr = ri - 1; nc = nr >= 0 ? rows[nr].cells.length - 1 : 0 }
+  else if (nc >= rows[ri].cells.length) { nr = ri + 1; nc = 0 }
+  if (nr < 0 || nr >= rows.length) { el.blur(); return }
+  pendFocus = { r: nr, c: nc }
+  if (!commitCell(view, cell, el)) {                    // 안 바뀌었으면 다시 안 그려진다 — 직접 옮긴다
+    pendFocus = null
+    const nx = el.closest('table')?.querySelector<HTMLElement>(`[data-rc="${nr},${nc}"]`)
+    if (nx) { nx.focus(); placeEnd(nx) }
+  }
+}
+
+/** 아래에 빈 행 — 순수 insert 한 번 */
+function addRow(view: EditorView, t: Tbl): void {
+  const last = t.body.length ? t.body[t.body.length - 1] : t.sep
+  const line = '|' + Array(t.head.cells.length).fill('  ').join('|') + '|'
+  pendFocus = { r: t.body.length + 1, c: 0 }
+  view.dispatch({ changes: { from: last.lineTo, insert: '\n' + line } })
+}
+
+/** 오른쪽에 빈 열 — 줄마다 끝에 끼워 넣는다(구분줄만 `---`) */
+function addCol(view: EditorView, t: Tbl): void {
+  const changes = [t.head, t.sep, ...t.body].map((r, i) => ({
+    from: r.lineTo,
+    insert: r.endsPipe ? (i === 1 ? ' --- |' : '  |') : (i === 1 ? ' | ---' : ' |  ')
+  }))
+  pendFocus = { r: 0, c: t.head.cells.length }
+  view.dispatch({ changes })
+}
+
 const TASK_RE = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]\s/
 const WIKI_RE = /\[\[([^\]|]+)(\|[^\]]*)?\]\]/g
 const IMG_LINE_RE = /^!\[([^\]]*)\]\(([^)\s]+)\)\s*$/
@@ -127,9 +298,18 @@ function build(state: EditorState): { deco: DecorationSet; atoms: { from: number
   const active = activeLines(state)
   const marks: Range<Decoration>[] = []
   const atoms: { from: number; to: number }[] = []
+  // ── 표는 제일 먼저 — 접은 표 안에는 다른 데코레이션이 겹치면 안 된다(겹친 replace 는 예외를 던진다) ──
+  const skip = new Set<number>()
+  for (const tb of findTables(state)) {
+    if (tb.lines.some((n) => active.has(n))) continue    // 커서가 안에 있으면 원문 그대로
+    for (const n of tb.lines) skip.add(n)
+    marks.push(Decoration.replace({ widget: new TableWidget(tb, `${tb.from}:${state.doc.sliceString(tb.from, tb.to)}`), block: true }).range(tb.from, tb.to))
+    atoms.push({ from: tb.from, to: tb.to })
+  }
   const tree = syntaxTree(state)
   tree.iterate({
     enter: (n) => {
+      if (skip.has(state.doc.lineAt(n.from).number)) return false
       // 제목 크기는 **줄 단위 클래스**로 준다 — 토큰에 걸면 «# » 를 치는 순간에는 아직 안 커진다
       const h = /^ATXHeading([1-6])$/.exec(n.name)
       if (h) {
@@ -170,6 +350,7 @@ function build(state: EditorState): { deco: DecorationSet; atoms: { from: number
   // ── 파서가 모르는 것들은 줄을 직접 훑는다 (위키링크·체크박스·단독 이미지) ──
   // ⚠ lezer 는 `[[ ]]` 를 모르고, 체크박스는 한 글자만 갈아야 해서 줄 스캔이 더 정확하다.
   for (let n = 1; n <= state.doc.lines; n++) {
+    if (skip.has(n)) continue
     const line = state.doc.line(n)
     const live = active.has(n)
     const text = line.text

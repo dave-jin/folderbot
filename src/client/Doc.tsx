@@ -50,7 +50,13 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
     try { const d = await api<DocData>(`/bots/${bot.id}/file?rel=${encodeURIComponent(r)}`); setDoc(d); mtimeRef.current = d.mtime ?? 0; setErr(''); if (!silent) { setEdit(false); editingRef.current = false; setConflict(false); setBotTouched(null) } }
     catch (e) { setErr((e as Error).message) }
   }
-  useEffect(() => { if (rel) void load(rel); else setDoc(null) }, [bot.id, rel])
+  /**
+   * 🔴 **문서를 옮기면 편집을 먼저 닫는다.** 안 그러면 «떠날 때 못 낸 저장» 이 **새 문서에 실린다** —
+   *    `onCommit` 은 매 렌더에 새로 묶이는데, `rel` 이 먼저 바뀌고 `edit` 은 `load` 가 끝난 뒤에야
+   *    꺼지기 때문이다. 실제로 스모크가 **todo.md 가 표 문서로 덮인 것**으로 잡았다(2026-09-13).
+   *    아래 `key={rel}` 과 짝이다 — 이쪽은 창을 닫고, 저쪽은 «옛 문서의 편집기» 를 옛 채로 보낸다.
+   */
+  useEffect(() => { if (rel) { setEdit(false); editingRef.current = false; void load(rel) } else setDoc(null) }, [bot.id, rel])
   // 같은 폴더의 형제 — 위치(2/4)와 ↑↓ 이동
   useEffect(() => {
     if (!rel) return
@@ -109,7 +115,9 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
                 아닌 텍스트에만 남는다 — 코드·설정 파일은 서식이라는 게 없어서 원문이 곧 정답이다.
                 ⚠ 편집기는 **지연 로드**한다: 문서를 한 번도 안 연 폰이 마크다운 파서를 받으면 안 된다. */}
             <Suspense fallback={<div className="dbody"><div className="skel" style={{ width: '70%' }} /></div>}>
-              <MdEditor value={draft} onChange={onDraft} onCommit={(t) => { onDraft(t); void save(t) }} onOpen={(target) => docs.open(target.endsWith('.md') ? target : `${target}.md`)} rawUrl={(p) => (/^(https?:|data:)/.test(p) ? p : raw(p.replace(/^\.\//, '')))} />
+              {/* ⛔ `key={rel}` 을 빼지 마라 — 문서마다 편집기를 따로 둬야 떠날 때의 저장이 **옛 문서로** 간다
+                  (되돌리기 기록이 문서를 넘나드는 것도 함께 막는다). */}
+              <MdEditor key={rel} value={draft} onChange={onDraft} onCommit={(t) => { onDraft(t); void save(t) }} onOpen={(target) => docs.open(target.endsWith('.md') ? target : `${target}.md`)} rawUrl={(p) => (/^(https?:|data:)/.test(p) ? p : raw(p.replace(/^\.\//, '')))} />
             </Suspense>
           </div>
         : <div className="dbody edit"><textarea value={draft} onChange={(e) => onDraft(e.target.value)} spellCheck={false} autoFocus /></div>)
