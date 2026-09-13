@@ -398,6 +398,33 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const [text, setText] = useState(''); const [caret, setCaret] = useState(0); const [sessMenu, setSessMenu] = useState(false); const [busy, setBusy] = useState(false)
   const [attach, setAttach] = useState<Att[]>([]); const [pop, setPop] = useState<'' | 'plus' | 'mode' | 'model' | 'effort' | 'ctx'>(''); const [pickOpen, setPickOpen] = useState(false); const [uploading, setUploading] = useState(false)
   const [queue, setQueue] = useState<string[]>([])
+  /**
+   * 쓰다 만 메시지는 앱을 껐다 켜도 남는다 (2026-09-13 Dave: «작성중인 채팅 텍스트 메시지가 앱을 껐다가 켜면 날라가»).
+   *
+   * 🔴 **세션마다 따로 둔다.** 하나로 두면 세션을 바꿔 놓고 돌아왔을 때 **남의 초안이 입력창에 들어와 있고**,
+   *    그걸 모른 채 엔터를 치면 엉뚱한 대화에 엉뚱한 말이 간다. 아직 세션이 없으면 `new` 로 담았다가
+   *    첫 메시지에서 지워진다.
+   * ⚠ **첨부도 함께 저장한다** — 본문의 `@파일` 만 살아나고 첨부가 비면 파일 없이 보내진다(조용히 틀린다).
+   * ⚠ `localStorage` 는 사생활 보호 창·저장 차단에서 **던진다.** 읽기·쓰기를 전부 try 로 감싸고,
+   *    실패해도 입력은 그대로 되게 둔다 — 초안 보관은 편의지 기능의 전제가 아니다.
+   */
+  const draftKey = `fb:draft:${bot.id}:${cur?.id ?? 'new'}`
+  const draftRef = useRef(draftKey)
+  useEffect(() => {
+    draftRef.current = draftKey                      // ⚠ setText 보다 **먼저** 바꾼다 — 저장 이펙트가 새 키로 쓰게
+    let d: { text?: string; attach?: Att[] } = {}
+    try { d = JSON.parse(localStorage.getItem(draftKey) ?? '{}') } catch { d = {} }
+    setText(typeof d.text === 'string' ? d.text : '')
+    setAttach(Array.isArray(d.attach) ? d.attach : [])
+  }, [draftKey])
+  useEffect(() => {
+    const k = draftRef.current
+    const t = window.setTimeout(() => {
+      try { if (text || attach.length) localStorage.setItem(k, JSON.stringify({ text, attach })); else localStorage.removeItem(k) } catch { /* 저장이 막힌 창 — 입력은 계속된다 */ }
+    }, 300)
+    return () => window.clearTimeout(t)
+  }, [text, attach])
+
   const [drill, setDrill] = useState<string | null>(null)
   const [drop, setDrop] = useState<'' | 'tree' | 'files'>('')
   const [slash, setSlash] = useState<SlashCmd[]>([]); const [files, setFiles] = useState<FileNode[] | null>(null); const [sel, setSel] = useState(0); const [dismissed, setDismissed] = useState('')
@@ -439,6 +466,9 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
     let t = raw.trim(); if ((!t && !attach.length) || busy || uploading) return
     if (attach.length) t = `${t || '첨부한 파일을 봐 줘.'}\n\n첨부 파일 (읽어서 참고해):\n${attach.map((a) => (a.dir ? `- ${a.abs}/ (폴더 — 안의 파일들)` : `- ${a.abs}`)).join('\n')}`
     setText(''); setAttach([]); if (taRef.current) taRef.current.style.height = 'auto'
+    // 보냈으면 초안은 그 자리에서 지운다. ⚠ 첫 메시지는 세션을 만들며 키가 `new` → 실제 id 로 바뀌므로
+    //    지연 저장이 새 키에 대고 지우는 수가 있다 — 둘 다 명시적으로 치운다.
+    try { localStorage.removeItem(draftRef.current); localStorage.removeItem(`fb:draft:${bot.id}:new`) } catch { /* */ }
     if (running || state === 'awaiting_input') { setQueue((q) => [...q, t]); return }
     setBusy(true); try { await post(t) } catch (e) { say((e as Error).message) } finally { setBusy(false) }
   }

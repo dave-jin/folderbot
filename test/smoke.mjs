@@ -386,6 +386,21 @@ try {
         await pg.evaluate(() => { localStorage.setItem('fb:icon', 'm'); window.dispatchEvent(new Event('fb:iconsize')) }); await wait(200)
 
         await pg.keyboard.press('Escape'); await wait(200); if (await pg.$('.pk')) { await pg.click('.pk .modal-h .ib'); await wait(300) }
+        // 🔴 쓰다 만 메시지는 새로고침해도 남는다 (2026-09-13 Dave: «앱을 껐다가 켜면 날라가»)
+        {
+          await pg.fill('.composer textarea', '쓰다 만 메시지')
+          await wait(600)                                  // 지연 저장(300ms)이 끝나길 기다린다
+          const keys = await pg.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('fb:draft:')))
+          if (!keys.length) fail('초안: localStorage 에 안 남았다')
+          if (!/:.+:/.test(keys[0])) fail('초안: 키가 봇·세션으로 안 갈렸다 ' + JSON.stringify(keys))
+          await pg.reload({ waitUntil: 'domcontentloaded' }); await pg.waitForSelector('.composer textarea', { timeout: 8000 }); await wait(1200)
+          const back = await pg.inputValue('.composer textarea')
+          if (back !== '쓰다 만 메시지') fail('초안: 새로고침 뒤 안 돌아왔다 · ' + JSON.stringify(back))
+          // 보내면 지워진다
+          await pg.fill('.composer textarea', ''); await wait(600)
+          const left = await pg.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('fb:draft:')).length)
+          if (left) fail('초안: 비웠는데 키가 남아 있다 ' + left)
+        }
         // 지침 · 하네스 — 한 줄에 «아이콘 · 이름 · 범위» (2026-09-13 Dave: «지침과 하네스쪽 디자인도 깨져 있어»)
         //    클래스만 붙이고 CSS 를 안 써서 아이콘이 한 줄, 이름·범위가 붙어 흘렀다
         {
