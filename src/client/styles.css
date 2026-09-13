@@ -93,8 +93,10 @@ b,strong { color:var(--w); font-weight:600 }
 .col.chat { position:relative; --footh:132px; min-width:360px } /* CHAT_MIN — 열 계산이 틀려도 CSS 가 마지막 방어선 */
 .chat-hdr { position:absolute; left:0; right:0; top:0; z-index:4; border-bottom:1px solid var(--hair) } .chat-hdr.glass { background:var(--bg); backdrop-filter:none; -webkit-backdrop-filter:none } .chat-hdr::after { content:''; position:absolute; left:0; right:0; top:100%; height:28px; background:linear-gradient(180deg, var(--bg), var(--fade0)); pointer-events:none }
 .chat-scroll { position:absolute; inset:0; overflow:auto; display:flex; flex-direction:column; overscroll-behavior:contain }
-/* 「A · 문서처럼」 — 턴 사이 26px 세로 리듬. ⛔ 더 갈라야 하면 선이 아니라 여백을 쓴다 */
-.chat-body { display:flex; flex-direction:column; gap:26px; padding:calc(var(--hh) + 26px) 24px calc(var(--footh) + 12px); width:100%; max-width:760px; align-self:center; flex:1 }
+/* 채팅 외양은 **cursor 스타일**로 되돌렸다 (2026-09-13 Dave: «이전 스타일이 더 나»).
+   ⛔ 「A · 문서처럼」의 26px 리듬 · 오른쪽 정렬 · 58ch · 머리줄 · 턴 경계선은 전부 되돌렸다.
+   ✅ 남긴 것은 **기계 접기(.mach)** 와 **문서 링크칩(.pchip)** 둘뿐이다 — Dave 가 콕 집어 원한 것. */
+.chat-body { display:flex; flex-direction:column; gap:16px; padding:calc(var(--hh) + 22px) 24px calc(var(--footh) + 12px); width:100%; max-width:760px; align-self:center; flex:1 }
 .pinq { position:absolute; top:calc(var(--hh) + 10px); left:50%; transform:translateX(-50%); width:calc(100% - 48px); max-width:712px; z-index:4; border:1px solid var(--hair); border-radius:8px; padding:8px 14px; color:var(--w); font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:0 8px 24px rgba(0,0,0,.35); cursor:pointer; animation:fadein .18s ease-out }
 /* ⛔ 등장 애니메이션(4px 떠오르기)을 쓰지 않는다 — 글이 흘러드는 동안 다시 돌면 «다가가면 도망가는» 단추가 된다 */
 .tobot { position:absolute; left:50%; transform:translateX(-50%); bottom:calc(var(--footh) + 14px); z-index:5; width:32px; height:32px; opacity:1; transition:opacity .14s ease }
@@ -102,16 +104,8 @@ b,strong { color:var(--w); font-weight:600 }
 .chat-foot { position:absolute; left:0; right:0; bottom:0; z-index:5; display:flex; flex-direction:column; align-items:center; padding:0 24px 8px; pointer-events:none } .chat-foot > * { pointer-events:auto }
 .chat-foot::before { content:''; position:absolute; left:0; right:0; top:-56px; bottom:0; background:linear-gradient(180deg, var(--fade0) 0%, var(--fadeA) 40%, var(--fadeB) 100%); pointer-events:none; z-index:-1 }
 .chat-foot .queue, .chat-foot .files { width:100%; max-width:712px; margin-bottom:8px }
-/* 사람 말 — 🔴 **상자를 걷었다.** 상자는 «지금 당신 차례» 를 뜻하는 자리라(승인·질문) 아껴 쓴다.
-   사람 말은 오른쪽 정렬과 폭 제한만으로 충분히 갈린다. */
-/* 턴 경계 — 1px 한 줄. 음수 여백으로 26px 리듬 한가운데 앉는다(리듬을 늘리지 않는다) */
-.chat-body .tsep { align-self:stretch; height:0; border-top:1px solid var(--line); margin:-13px 0 }
-.umsg { align-self:flex-end; max-width:74%; text-align:right; color:var(--t); white-space:pre-wrap; word-break:break-word; line-height:1.7; font-size:14px }
-/* 봇 말 — 읽기 폭 58ch. 넓은 화면에서 줄이 끝까지 늘어나면 한 줄을 눈으로 되짚게 된다 */
-.chat-body .md { max-width:58ch; font-size:14px; line-height:1.85 }
-.chat-body .md p { margin:0 0 12px }
-/* 봇 답의 첫 줄 — 활자 여섯 단계 중 하나(17/600). 짧은 한 줄일 때만 올라간다(App.tsx 의 조건) */
-.chat-body .amsg.lede .md > p:first-child { font-size:17px; font-weight:600; color:var(--w); line-height:1.5; margin:0 0 14px }
+/* 사람 말 — cursor 처럼 **입력칸 모양 상자**로 답 위에 놓인다 */
+.umsg { background:var(--box); border-radius:8px; padding:11px 14px; color:var(--w); white-space:pre-wrap; word-break:break-word }
 .md { word-break:break-word } .md p { margin:0 0 10px } .md p:last-child { margin:0 } .md h1,.md h2,.md h3 { color:var(--w); font-size:15px; margin:10px 0 4px } .md h1 { font-size:17px } .md ul,.md ol { padding-left:20px; margin:4px 0 } .md li { margin:2px 0 } .md hr { border:0; border-top:1px solid var(--line); margin:12px 0 } .md pre { background:var(--box); border-radius:8px; padding:10px 12px; overflow:auto; font-size:12px } .md code { font-family:var(--mono); font-size:12px; background:var(--box); padding:1px 5px; border-radius:4px } .md pre code { padding:0; background:none } .md table { border-collapse:collapse; font-size:12.5px } .md td,.md th { border-bottom:1px solid var(--line); padding:4px 8px; text-align:left } .md th { color:var(--t3); font-weight:500 } .md blockquote { margin:0; padding-left:12px; border-left:2px solid var(--line2); color:var(--t2) } .md img { max-width:100%; border-radius:6px }
 .md.streaming > :last-child::after { content:''; display:inline-block; width:2px; height:14px; background:var(--w); vertical-align:-2px; margin-left:2px; animation:caret 1s steps(1) infinite }
 .meta { display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--t3); width:100%; min-height:22px } .meta .lb, .meta > span:first-child { white-space:nowrap; flex:none } .ic { display:none; align-items:center; gap:3px; white-space:nowrap } .live .stop svg { display:none } .meta:hover { color:var(--t2) } .meta .tx { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 } .meta.open { color:var(--t2) }
@@ -440,7 +434,6 @@ b,strong { color:var(--w); font-weight:600 }
   /* 키보드가 올라오면 아래는 전부 키보드가 덮는다 — `--sab`(홈 인디케이터) 를 비워 둘 이유가 없다 */
   .app.kb .cchips, .app.kb .tobot { display:none } .app.kb .chat-foot { padding-bottom:6px } .app.kb .chat-hdr { display:none }
   .app.kb .composer { box-shadow:none }
-  .chat-body .tsep { margin:-7px 0 }
   .umsg { border-radius:18px 18px 6px 18px; align-self:flex-end; max-width:88%; padding:10px 16px }
   .md h1,.md h2,.md h3 { font-size:17px }
   .acts-row { font-size:13px; gap:18px }

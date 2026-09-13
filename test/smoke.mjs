@@ -398,9 +398,9 @@ try {
           await wait(900)
           const opened = await pg.evaluate((r) => { const hit = [...document.querySelectorAll('.trow')].find((x) => (x.textContent ?? '').includes(r)); if (hit) { hit.click(); return true } return false }, rel)
           if (!opened) fail('churn 0: 트리에 새 파일이 안 나타난다')
-          await pg.waitForSelector('.dbody', { timeout: 6000 }); await wait(600)
-          await pg.dblclick('.dbody')                        // 더블클릭 = 편집 시작
-          await pg.waitForSelector('.mded .cm-content', { timeout: 8000 }); await wait(700)
+          // 🔴 **보기/편집이 한 화면이다** — 문서를 열면 바로 라이브 프리뷰 편집기다(모드 전환이 없다)
+          await pg.waitForSelector('.mded .cm-content', { timeout: 9000 }); await wait(700)
+          if (await pg.$('.dbody .md')) fail('한 화면: 읽기용 marked 본문이 아직 따로 있다 — 둘을 오가면 싱크가 사람 몫이 된다')
           // 라이브 프리뷰가 실제로 걸렸나 — 제목 줄에 줄 클래스가 붙고, 커서 밖의 «#» 는 숨는다
           const lp = await pg.evaluate(() => ({
             h1: !!document.querySelector('.mded .lp-h1'),
@@ -449,11 +449,7 @@ try {
           await wait(900)
           const opened = await pg.evaluate((r) => { const hit = [...document.querySelectorAll('.trow')].find((x) => (x.textContent ?? '').includes(r)); if (hit) { hit.click(); return true } return false }, rel)
           if (!opened) fail('표: 트리에 새 파일이 안 나타난다')
-          await pg.waitForSelector('.dbody', { timeout: 6000 }); await wait(600)
-          // 모드 전환은 눈·연필 두 아이콘뿐 — 「편집 중」 을 크게 알리지 않는다 (「A · 문서처럼」)
-          if (!(await pg.$('.dtb .r .ib'))) fail('문서 도구: 연필(편집) 아이콘이 없다')
-          await pg.click('.dtb .r .ib')
-          await pg.waitForSelector('.mded .cm-content', { timeout: 8000 }); await wait(700)
+          await pg.waitForSelector('.mded .cm-content', { timeout: 9000 }); await wait(700)
           const shape = await pg.evaluate(() => {
             const t = document.querySelector('.mded .lp-tbl')
             if (!t) return { has: false }
@@ -485,11 +481,6 @@ try {
           if (raw.tbl) fail('표: ⋯ 를 눌러도 원문으로 안 풀린다')
           if (!raw.text.includes('| 가 | 19 |')) fail('표: 원문에 파이프가 안 보인다 ' + JSON.stringify(raw.text.slice(0, 120)))
           ok('표 — 진짜 표로 읽고, 칸만 고치고, ⋯ 로 원문')
-          // 눈 아이콘으로 읽기로 돌아온다 — 「완료」 단추가 아니라 같은 자리의 같은 단추다
-          await pg.click('.dtb .r .ib'); await wait(1200)
-          if (await pg.$('.mded')) fail('문서 도구: 눈을 눌러도 읽기로 안 돌아온다')
-          if (!(await pg.$('.dbody .md table'))) fail('읽기: 표가 안 그려졌다')
-          ok('눈·연필 두 아이콘으로만 읽기↔편집')
           // 🔴 **편집 중에 다른 문서로 옮겨도 그 글이 새 문서를 덮지 않는다** (2026-09-13 실사고 — todo.md 가 표로 덮였다)
           const todoAbs = join(root, '3. Area/제품_Rondo', 'todo.md')
           const todo0 = readFileSync(todoAbs, 'utf8')
@@ -516,65 +507,38 @@ try {
           if (chip.titles.some((t) => t.includes('없는폴더'))) fail('경로 칩: 없는 파일이 칩이 됐다 — 죽은 링크가 쌓인다 ' + JSON.stringify(chip))
           await pg.fill('.composer textarea', ''); await wait(400)
         }
-        // 🔴 「A · 문서처럼」 — 기계는 접히고, 사람 말은 상자가 없고, 봇 말은 읽기 폭을 지킨다
-        //    (2026-09-13 Dave 확정: «단순함을 지키되 고급스럽게» → 더하기가 아니라 빼기로)
+        // 🔴 채팅 외양은 **cursor 스타일**이다 (2026-09-13 Dave: «이전 스타일이 더 나»).
+        //    사람 말은 상자 안에 왼쪽으로, 봇 말은 폭 제한 없는 평범한 본문.
+        //    ✅ 남긴 것은 기계 접기(.mach)와 문서 링크칩(.pchip)뿐 — 그 둘은 Dave 가 콕 집어 원했다.
         {
           const look = await pg.evaluate(() => {
             const u = document.querySelector('.umsg')
-            const md = document.querySelector('.chat-body .md')
+            const md = document.querySelector('.chat-body .amsg .md')
             const body = document.querySelector('.chat-body')
             const cs = (e) => (e ? getComputedStyle(e) : null)
             return {
               umsgBg: u ? cs(u).backgroundColor : null,
               umsgAlign: u ? cs(u).textAlign : null,
-              mdW: md ? md.getBoundingClientRect().width : null,
+              mdMax: md ? cs(md).maxWidth : null,
+              lede: md ? parseFloat(getComputedStyle(md.querySelector('p') ?? md).fontSize) : 0,
               gap: body ? parseFloat(cs(body).rowGap) : null,
+              sep: document.querySelectorAll('.chat-body .tsep').length,
               mach: document.querySelectorAll('.mach').length,
               toolLines: document.querySelectorAll('.chat-body > .tool').length
             }
           })
           const clear = (c) => !c || c === 'rgba(0, 0, 0, 0)' || c === 'transparent'
-          if (!clear(look.umsgBg)) fail('A 안: 사람 말에 상자가 남아 있다 — 상자는 «차례» 에만 ' + JSON.stringify(look))
-          if (look.umsgAlign !== 'right') fail('A 안: 사람 말이 오른쪽 정렬이 아니다 ' + JSON.stringify(look))
-          if (look.gap !== 26) fail('A 안: 턴 사이 세로 리듬이 26px 이 아니다 ' + JSON.stringify(look))
-          if (look.mdW && look.mdW > 620) fail('A 안: 봇 말의 읽기 폭이 안 걸렸다(58ch) ' + JSON.stringify(look))
-          if (look.toolLines) fail('A 안: 도구가 대화에 펴져 있다 — 언제나 접혀야 한다 ' + JSON.stringify(look))
-          if (!look.mach) fail('A 안: 접힌 기계 줄(.mach)이 없다 ' + JSON.stringify(look))
-          // 턴 경계 — A 의 약점이라 1px 선 하나로만 끊는다. ⛔ 굵히거나 배경을 깔면 B(카드)가 된다
-          const sep = await pg.evaluate(() => {
-            const e = document.querySelector('.chat-body .tsep')
-            if (!e) return { has: false }
-            const cs = getComputedStyle(e)
-            const us = [...document.querySelectorAll('.chat-body .umsg')]
-            const prev = e.previousElementSibling, next = e.nextElementSibling
-            const gap = prev && next ? next.getBoundingClientRect().top - prev.getBoundingClientRect().bottom : 0
-            return { has: true, w: parseFloat(cs.borderTopWidth), bg: cs.backgroundColor, full: e.getBoundingClientRect().width > (us[0]?.getBoundingClientRect().width ?? 0), gap }
-          })
-          if (!sep.has) fail('A 안: 턴 경계 선(.tsep)이 없다 — 훑을 때 어디서 끊기는지 안 보인다')
-          if (sep.w > 1) fail('A 안: 턴 경계가 굵다(1px 이어야 한다) ' + JSON.stringify(sep))
-          if (!clear(sep.bg)) fail('A 안: 턴 경계에 배경이 깔렸다 — 그 순간 B(카드)가 된다 ' + JSON.stringify(sep))
-          if (sep.gap > 30) fail('A 안: 턴 경계가 세로 리듬(26px)을 늘렸다 ' + JSON.stringify(sep))
-          // 접힌 줄에 «걸린 시간» 까지 — 「얼마나 했나」의 마지막 조각
+          if (clear(look.umsgBg)) fail('cursor 스타일: 사람 말의 상자가 없다 ' + JSON.stringify(look))
+          if (look.umsgAlign === 'right') fail('cursor 스타일: 사람 말이 아직 오른쪽 정렬이다 ' + JSON.stringify(look))
+          if (look.gap !== 16) fail('cursor 스타일: 턴 사이가 16px 이 아니다 ' + JSON.stringify(look))
+          if (look.mdMax !== 'none') fail('cursor 스타일: 봇 말에 읽기 폭 제한이 남아 있다 ' + JSON.stringify(look))
+          if (look.sep) fail('cursor 스타일: 턴 경계선이 남아 있다 ' + JSON.stringify(look))
+          if (look.lede > 15) fail('cursor 스타일: 답의 첫 줄이 아직 크다(머리줄이 남았다) ' + JSON.stringify(look))
+          if (look.toolLines) fail('기계 접기: 도구가 대화에 펴져 있다 ' + JSON.stringify(look))
+          if (!look.mach) fail('기계 접기: 접힌 줄(.mach)이 없다 ' + JSON.stringify(look))
           const machTx = await pg.textContent('.mach')
-          if (!/도구 \d+회/.test(machTx ?? '')) fail('A 안: 접힌 줄이 «도구 N회» 가 아니다 ' + machTx)
-          // ⚠ 걸린 시간은 «0.1초 이상일 때만» 적는다 — 스텁은 즉답이라 여기선 안 나온다. 글귀 규칙은 유닛(machSummary)이 고정한다
-          if (/도구 .*·.*·.*·/.test(machTx ?? '')) fail('A 안: 접힌 줄이 길어졌다 — 도구 이름을 늘어놓지 마라 ' + machTx)
-          // 봇 답의 첫 줄 — 짧은 한 줄일 때만 17/600 으로 올라간다(길면 굵은 덩어리가 된다)
-          await pg.fill('.composer textarea', '머리줄 검사'); await pg.keyboard.press('Enter')
-          let lede = null
-          for (let i = 0; i < 40; i++) {
-            lede = await pg.evaluate(() => {
-              const e = document.querySelector('.chat-body .amsg.lede .md > p:first-child')
-              const plain = [...document.querySelectorAll('.chat-body .amsg:not(.lede) .md > p:first-child')].pop()
-              return { has: !!e, size: e ? parseFloat(getComputedStyle(e).fontSize) : 0, weight: e ? getComputedStyle(e).fontWeight : '', plainSize: plain ? parseFloat(getComputedStyle(plain).fontSize) : 0 }
-            })
-            if (lede.has) break
-            await wait(300)
-          }
-          if (!lede.has) fail('첫 줄: 짧은 머리줄이 안 올라갔다 ' + JSON.stringify(lede))
-          if (lede.size < 16.5 || lede.weight !== '600') fail('첫 줄: 활자 단계가 17/600 이 아니다 ' + JSON.stringify(lede))
-          if (lede.plainSize && lede.plainSize > 15) fail('첫 줄: 긴 답의 첫 문단까지 커졌다 — 굵은 덩어리가 된다 ' + JSON.stringify(lede))
-          await pg.fill('.composer textarea', ''); await wait(400)
+          if (!/도구 \d+회/.test(machTx ?? '')) fail('기계 접기: 접힌 줄이 «도구 N회» 가 아니다 ' + machTx)
+          ok('채팅은 cursor 스타일 · 기계 접기와 링크칩만 남는다')
         }
         // 🔴 쓰다 만 메시지는 새로고침해도 남는다 (2026-09-13 Dave: «앱을 껐다가 켜면 날라가»)
         {
