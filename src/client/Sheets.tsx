@@ -289,10 +289,15 @@ export function NotifyCenter({ onClose, onJump }: { onClose: () => void; onJump:
 }
 
 /* ── 루틴 시트 ─────────────────────────────────────────────────────────── */
-export function RoutineSheet({ bot, onClose }: { bot: Bot; onClose: () => void }) {
+/**
+ * 루틴 편집 — `draft` 를 주면 그 루틴을 **맨 끝에 붙이고 바로 고르게** 한다.
+ * 🔴 **채팅에서 온 것도 저장은 사람이 누른다** (2026-09-13 Dave: «채팅에서 바로 루틴 생성»).
+ *    글에서 읽어낸 주기는 어디까지나 추측이라, 폼을 채워 주는 데서 멈춘다 — 틀려도 손해가 없다.
+ */
+export function RoutineSheet({ bot, onClose, draft }: { bot: Bot; onClose: () => void; draft?: RoutineDef }) {
   const { refresh } = useStore()
-  const [list, setList] = useState<RoutineDef[]>(bot.routines)
-  const [i, setI] = useState(0); const [busy, setBusy] = useState(false)
+  const [list, setList] = useState<RoutineDef[]>(draft ? [...bot.routines, draft] : bot.routines)
+  const [i, setI] = useState(draft ? bot.routines.length : 0); const [busy, setBusy] = useState(false)
   const cur = list[i]
   const upd = (p: Partial<RoutineDef>) => setList(list.map((r, k) => (k === i ? { ...r, ...p } : r)))
   const save = async () => { setBusy(true); try { await api(`/bots/${bot.id}/routines`, { method: 'PUT', body: { routines: list } }); await refresh(); onClose() } finally { setBusy(false) } }

@@ -5,6 +5,7 @@ import { transition, shouldNotify } from '../../src/core/stateMachine'
 import { authVerdict } from '../../src/core/authVerdict'
 import { machSummary } from '../../src/core/chat'
 import { AGENT_EFFORTS, AGENT_MODELS, fitsProvider } from '../../src/core/agents'
+import { cronFromText, routineName } from '../../src/core/routineText'
 import { toolSummary, touchedPath } from '../../src/core/chat'
 import { chosung, hitRange, isChosungQuery, rank, scoreName } from '../../src/core/search'
 import { decide, dropIndex } from '../../src/client/gesture'
@@ -337,5 +338,33 @@ describe('에이전트 목록 — Claude 와 Codex 는 섞이면 안 된다', ()
     expect(x).not.toContain('xhigh')
     expect(x).not.toContain('max')
     expect(AGENT_EFFORTS.claude.map((e) => e.v)).toContain('max')
+  })
+})
+
+describe('cronFromText — 채팅 한 줄에서 루틴 주기 뽑기', () => {
+  it('매일 아침 9시가 기본이고, 「매일 아침 8시」 를 읽는다', () => {
+    const g = cronFromText('매일 아침 8시에 어제 한 일 정리해 줘')
+    expect(g.cron).toBe('0 8 * * *')
+    expect(g.label).toBe('매일 08:00')
+    expect(g.rest).toContain('어제 한 일 정리')
+    expect(g.matched).toBe(true)
+  })
+  it('요일·평일·주말을 가른다', () => {
+    expect(cronFromText('매주 월요일 9시 주간 계획').cron).toBe('0 9 * * 1')
+    expect(cronFromText('평일 오전 7시 30분 브리핑').cron).toBe('30 7 * * 1-5')
+    expect(cronFromText('주말 오후 6시 정리').cron).toBe('0 18 * * 0,6')
+    expect(cronFromText('매월 1일 결산').cron).toBe('0 9 1 * *')
+  })
+  it('오후를 24시로 옮기고, 못 읽으면 기본값을 쓰되 그렇다고 말한다', () => {
+    expect(cronFromText('오후 3시 보고').cron).toBe('0 15 * * *')
+    const g = cronFromText('그냥 아무 말')
+    expect(g.cron).toBe('0 9 * * *')
+    expect(g.matched).toBe(false)
+    expect(g.rest).toBe('그냥 아무 말')
+  })
+  it('이름은 시킬 일의 앞부분에서 만든다', () => {
+    expect(routineName('어제 한 일 정리')).toBe('어제 한 일 정리')
+    expect(routineName('')).toBe('새 루틴')
+    expect(routineName('아주 긴 문장을 쓰면 목록에서 한 줄로 안 보이니까 잘라야 한다').endsWith('…')).toBe(true)
   })
 })

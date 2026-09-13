@@ -629,6 +629,28 @@ try {
           ok('라이트 테마에서 단추 글자가 다 보인다')
         }
         await pg.screenshot({ path: 'test/tmp/desktop-picker.png' }); await pg.keyboard.press('Escape'); await wait(200); if (await pg.$('.pk')) await pg.click('.pk .modal-h .ib'); await wait(200)
+        // 🔴 **채팅에 쓴 한 줄이 그대로 루틴이 된다** (2026-09-13 Dave: «폴더 채팅에서 바로 루틴 생성»)
+        //    ⛔ 저장은 사람이 누른다 — 주기는 글에서 «읽어낸» 추측이라, 조용히 저장하면 엉뚱한 시각에 봇이 혼자 일한다.
+        {
+          await pg.fill('.composer textarea', '매주 월요일 아침 8시에 지난주 한 일 정리해 줘')
+          await pg.click('.cbar button[title="첨부"]'); await wait(200)
+          await pg.click('.cpop.plus .prow2:has-text("루틴으로 만들기")'); await wait(500)
+          const sheet = await pg.evaluate(() => {
+            const s = document.querySelector('.sheet'); if (!s) return null
+            const v = [...s.querySelectorAll('input, textarea')].map((x) => x.value)
+            return { name: v[0] ?? '', cron: v.find((x) => /^\d+ \d+ /.test(x)) ?? '', prompt: [...s.querySelectorAll('textarea')].map((x) => x.value).join(' ') }
+          })
+          if (!sheet) fail('루틴: 편집 화면이 안 떴다')
+          if (sheet.cron !== '0 8 * * 1') fail('루틴: 「매주 월요일 아침 8시」 를 못 읽었다 ' + JSON.stringify(sheet))
+          if (!/지난주 한 일 정리/.test(sheet.prompt)) fail('루틴: 시킬 일이 안 담겼다 ' + JSON.stringify(sheet))
+          if (!/지난주/.test(sheet.name)) fail('루틴: 이름이 비었다 ' + JSON.stringify(sheet))
+          // 저장하지 않고 닫으면 아무 일도 없어야 한다
+          await pg.click('.sheet-h .btn:has-text("취소")'); await wait(400)
+          const after = (await api('/bots')).find((b) => b.id === bot.id)
+          if ((after?.routines ?? []).some((r) => /지난주/.test(r.name))) fail('루틴: 안 눌렀는데 저장됐다')
+          await pg.fill('.composer textarea', ''); await wait(200)
+          ok('채팅 한 줄 → 루틴 (주기까지 읽어서 채워 준다 · 저장은 사람이)')
+        }
         // 🔴 **맥 기본 단축키** (2026-09-13 Dave: «키보드 단축키를 전 영역에 적용해줘. 맥 기본 단축키로»)
         //    ⛔ 맨 글자 단축키는 두지 않는다 — 글 쓰는 화면이 대부분이라 치는 순간 명령이 돈다.
         {
