@@ -465,15 +465,15 @@ try {
           // 칸 하나 고치기 — 파일에서 **그 칸만** 달라져야 한다
           await pg.click('.mded .lp-tbl tr:nth-child(2) td:nth-child(2)')
           await pg.keyboard.press('End'); await pg.keyboard.type('9')
-          await pg.click('.mded .lp-h1'); await wait(1500)
-          const after = readFileSync(abs, 'utf8')
+          await pg.click('.mded .lp-h1')
+          // ⚠ 자동 저장은 **멎고 800ms 뒤**다 — 고정 대기로 재면 느린 날에 빨개진다(실제로 한 번 갈렸다). 값이 될 때까지 기다린다.
+          const untilFile = async (want, what) => { let got = ''; for (let i = 0; i < 40; i++) { got = readFileSync(abs, 'utf8'); if (got === want) return; await wait(150) } fail(`${what}\n--- 기대\n` + JSON.stringify(want) + '\n--- 실제\n' + JSON.stringify(got)) }
           const want = src.replace('| 가 | 1 |', '| 가 | 19 |')
-          if (after !== want) fail('표: 칸만 바뀌어야 한다(표를 통째로 다시 썼다?)\n--- 기대\n' + JSON.stringify(want) + '\n--- 실제\n' + JSON.stringify(after))
+          await untilFile(want, '표: 칸만 바뀌어야 한다(표를 통째로 다시 썼다?)')
           // ＋행 — 순수 끼워 넣기
           await pg.hover('.mded .lp-tblw')
-          await pg.click('.mded .lp-tb:has-text("＋행")'); await wait(1500)
-          const rowed = readFileSync(abs, 'utf8')
-          if (rowed !== want.replace('| 나 | 2 |', '| 나 | 2 |\n|  |  |')) fail('표: ＋행이 끼워 넣기가 아니다 ' + JSON.stringify(rowed))
+          await pg.click('.mded .lp-tb:has-text("＋행")')
+          await untilFile(want.replace('| 나 | 2 |', '| 나 | 2 |\n|  |  |'), '표: ＋행이 끼워 넣기가 아니다')
           // ⋯ — 커서를 표 안에 넣으면 원문(파이프)으로 풀린다. 「모드」가 아니라 커서 규칙 하나다
           await pg.hover('.mded .lp-tblw')
           await pg.click('.mded .lp-tb:has-text("⋯")'); await wait(500)
@@ -619,6 +619,26 @@ try {
           ok('라이트 테마에서 단추 글자가 다 보인다')
         }
         await pg.screenshot({ path: 'test/tmp/desktop-picker.png' }); await pg.keyboard.press('Escape'); await wait(200); if (await pg.$('.pk')) await pg.click('.pk .modal-h .ib'); await wait(200)
+        // 🔴 **레일 우클릭 — 정지 · 은퇴 · 폴더 삭제** (2026-09-13 Dave: «폴더 자체를 삭제할 수 있어야 해»)
+        //    ⚠ 삭제는 «지우기» 가 아니라 «치우기» 다 — .folderbot/trash 로 옮기고 파인더에서 꺼내면 돌아온다.
+        {
+          // ⚠ 첫 줄은 **관제(오케스트레이터)** 다 — 그 줄에는 정지·은퇴·삭제가 없다(있으면 볼트를 지운다)
+          await pg.click('.sb-list .brow:has-text("제품_Rondo")', { button: 'right' }); await wait(300)
+          const mtx = await pg.textContent('.menu.ctx')
+          if (!/폴더 삭제/.test(mtx ?? '')) fail('레일 우클릭: 삭제 항목이 없다 · ' + mtx)
+          if (!/정지/.test(mtx ?? '') || !/은퇴/.test(mtx ?? '')) fail('레일 우클릭: 정지·은퇴가 사라졌다 · ' + mtx)
+          await pg.keyboard.press('Escape'); await wait(200)
+          // 실제 삭제는 API 로 잰다 — 화면에서 지우면 이어지는 검사들이 쓰는 봇이 사라진다
+          const tmpRel = '2. Projects/2026-09_지울폴더'
+          mkdirSync(join(root, tmpRel), { recursive: true })
+          const tb = await api('/bots/start', { rel: tmpRel })
+          const moved = await api(`/bots/${tb.id}/trash`, {})
+          if (!/^\.folderbot\/trash\//.test(moved.to)) fail('폴더 삭제: 휴지통으로 안 갔다 ' + JSON.stringify(moved))
+          if (existsSync(join(root, tmpRel))) fail('폴더 삭제: 원래 자리가 그대로다')
+          if (!existsSync(join(root, moved.to))) fail('폴더 삭제: 휴지통에도 없다 — 진짜로 지웠다')
+          if ((await api('/bots')).some((b) => b.id === tb.id)) fail('폴더 삭제: 레일에 아직 남아 있다')
+          ok('레일 우클릭 — 정지 · 은퇴 · 폴더 삭제(휴지통으로)')
+        }
         // 트리 우클릭 — 폴더면 «새 봇 시작» 항목이 있다
         await pg.click('.panel .secb button.trow.dir', { button: 'right' }); await wait(200); const cm = await pg.textContent('.menu.ctx'); if (!/새 봇 시작|에이전트 시작|봇 열기/.test(cm ?? '')) fail('ui tree ctx: ' + cm); await pg.keyboard.press('Escape'); await wait(150)
         // 이름 바꾸기 — prompt() 가 아니라 앱 안 모달 (Electron 은 prompt 를 지원하지 않는다)

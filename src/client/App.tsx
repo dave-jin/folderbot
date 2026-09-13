@@ -247,6 +247,9 @@ function Main() {
   const [hov, setHov] = useState<{ id: string; top: number } | null>(null); const hovT = useRef<number | undefined>(undefined)
   const hovIn = (id: string, el: HTMLElement) => { const r = el.getBoundingClientRect(); window.clearTimeout(hovT.current); hovT.current = window.setTimeout(() => setHov({ id, top: r.top }), 300) }
   const hovOut = () => { window.clearTimeout(hovT.current); setHov(null) }
+  /** 레일 우클릭 메뉴 — 폴더 줄에서 정지·은퇴·삭제 */
+  const [railCtx, setRailCtx] = useState<{ x: number; y: number; id: string; name: string } | null>(null)
+  useEffect(() => { if (!railCtx) return; const off = () => setRailCtx(null); window.addEventListener('click', off); window.addEventListener('keydown', off); return () => { window.removeEventListener('click', off); window.removeEventListener('keydown', off) } }, [railCtx])
   const hovRow = hov ? stripBots.find((x) => x.b.id === hov.id) : undefined
   // 트리 우클릭 «여기서 에이전트 시작» · «새 폴더 만들기 → 시작» — 볼트 상대 경로로
   const startAt = async (rel: string, botId?: string) => { if (botId) { go(botId); return } if (!bot.orchestrator && !confirm(`상위 봇 ${bot.name} 와 폴더가 겹쳐요. 그래도 여기서 시작할까요?`)) return; const provider = await pickAgent(rel); if (!provider) return; try { const b = await api<Bot>('/bots/start', { body: { rel, provider } }); await refresh(); go(b.id); say(`${b.name} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
@@ -268,10 +271,19 @@ function Main() {
         <div className="sb-list">
           {rows.map(([sec, list]) => <div key={sec}>
             <div className="secl">{sec === '관제' ? '관제' : sec}</div>
-            {list.map(({ b, sum }) => <button key={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''}`} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={ICON_PX[iconSz]} mood={sum.mood} mono /><span className="n"><Mid s={b.name} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span><time>{fmtTime(sum.t)}</time></button>)}
+            {list.map(({ b, sum }) => <button key={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''}`} onContextMenu={(e) => { e.preventDefault(); hovOut(); if (!b.orchestrator) setRailCtx({ x: e.clientX, y: e.clientY, id: b.id, name: b.name }) }} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={ICON_PX[iconSz]} mood={sum.mood} mono /><span className="n"><Mid s={b.name} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span><time>{fmtTime(sum.t)}</time></button>)}
           </div>)}
         </div>
         {hovRow ? <HoverCard b={hovRow.b} sum={hovRow.sum} top={hov!.top} left={fit.sb + 6} /> : null}
+        {/* 레일 우클릭 — 정지 · 은퇴 · 삭제 (2026-09-13 Dave). ⚠ 셋은 서로 다른 일이다:
+            정지는 목록에서만 내리고, 은퇴는 Archive 로 보내 볼트에 남기고, 삭제는 볼트에서 치운다. */}
+        {railCtx ? <div className="menu ctx" style={{ left: Math.min(railCtx.x, window.innerWidth - 210), top: Math.min(railCtx.y, window.innerHeight - 140) }} onClick={() => setRailCtx(null)}>
+          <div className="h">{railCtx.name}</div>
+          <button onClick={async () => { try { await api(`/bots/${railCtx.id}/stop`, { body: {} }); say('정지(휴면)'); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="pause" size={13} /><span style={{ flex: 1 }}>정지 (휴면)</span><span className="k">기록 유지</span></button>
+          <button onClick={async () => { if (!confirm(`${railCtx.name} 을 Archive 로 옮기고 은퇴시킬까요? 세션 기록은 보관돼요.`)) return; try { const r = await api<{ to: string }>(`/bots/${railCtx.id}/retire`, { body: {} }); say(`${r.to} 로 은퇴`); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="archive" size={13} /><span style={{ flex: 1 }}>은퇴 (Archive 로)</span></button>
+          <hr />
+          <button className="warn" onClick={async () => { if (!confirm(`${railCtx.name} 폴더를 지울까요?\n\n볼트 안 .folderbot/trash 로 옮겨요 — 파인더에서 꺼내면 그대로 돌아옵니다.`)) return; try { const r = await api<{ to: string }>(`/bots/${railCtx.id}/trash`, { body: {} }); say(`${r.to} 로 옮겼어요`); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="x" size={13} /><span style={{ flex: 1 }}>폴더 삭제</span><span className="k">휴지통</span></button>
+        </div> : null}
         {/* ⛔ 맥에서는 사용량을 앱 안에 안 그린다 — **메뉴바에서만** 본다 (2026-09-13 Dave: «맥에서는 그냥 메뉴바 안에서만 이게 보이면 좋겠어»).
             폰은 첫 화면 위 스트립 하나로 남는다. 두 표면 다 있으면 같은 숫자가 두 번 보이고 아래 줄이 또 비좁아진다. */}
         <div className="sb-foot two">

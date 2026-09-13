@@ -222,6 +222,27 @@ export class Registry extends EventEmitter {
     this.stop(id)
     return relative(this.root, dest)
   }
+  /**
+   * 폴더 삭제 (2026-09-13 Dave: *«좌측 폴더 레일에 마우스 우측키로 폴더 자체를 삭제»*).
+   *
+   * 🔴 **지우지 않고 옮긴다.** 되돌릴 수 없는 일을 한 번의 우클릭 뒤에 두지 않는다 — 폴더는
+   *    볼트 안 `.folderbot/trash/<시각>_<이름>` 으로 통째로 옮긴다. 파인더에서 꺼내면 그대로 돌아온다.
+   * ⚠ **은퇴(`retire`)와 다르다** — 은퇴는 «끝난 일» 을 Archive 로 보내 **볼트의 일부로 남기는** 것이고,
+   *    삭제는 볼트에서 **치우는** 것이다. 둘을 한 항목으로 합치면 둘 다 무슨 뜻인지 흐려진다.
+   * ⛔ 루트 자체·오케스트레이터는 못 지운다.
+   */
+  trash(id: string): string {
+    const b = this.bot(id)
+    if (!b || b.orchestrator) throw new Error('지울 수 없는 봇')
+    if (!b.abs.startsWith(this.root + sep)) throw new Error('루트 밖 폴더는 지울 수 없어요')
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 13)
+    const dest = join(this.root, '.folderbot', 'trash', `${stamp}_${basename(b.rel)}`)
+    mkdirSync(dirname(dest), { recursive: true })
+    this.snapshot({ op: 'move', from: b.rel, to: relative(this.root, dest) })
+    renameSync(b.abs, dest)
+    this.stop(id)
+    return relative(this.root, dest)
+  }
   /** 새 폴더 만들기 — 규칙 naming 적용 + 하네스 스캐폴드. 반환: rel */
   createFolder(section: string, name: string): string {
     const parents = globParents(this.rules.roles.active)

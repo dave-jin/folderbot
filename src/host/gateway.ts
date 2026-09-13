@@ -165,6 +165,8 @@ export class Gateway {
       const bot = botOf(seg[2]); const sub = seg[3]
       if (sub === 'stop' && m === 'POST') { if (bot.orchestrator) throw new Error('오케스트레이터는 정지할 수 없어요'); reg.stop(bot.id); h.afterBotsChanged(); return json(200, { ok: true }) }
       if (sub === 'retire' && m === 'POST') { const to = reg.retire(bot.id); h.afterBotsChanged(); return json(200, { to }) }
+      // ⚠ 삭제는 «지우기» 가 아니라 «치우기» 다 — 볼트 안 .folderbot/trash 로 옮긴다(registry.trash 머리말)
+      if (sub === 'trash' && m === 'POST') { const to = reg.trash(bot.id); h.afterBotsChanged(); return json(200, { to }) }
       if (sub === 'sessions' && m === 'GET') return json(200, h.sessions.list(bot.id))
       // ⚠ `vendor` 는 **세션마다** 고를 수 있다 — 한 폴더에 Claude 세션과 Codex 세션이 섞여 산다
       if (sub === 'sessions' && m === 'POST') { const b = await body(); const vd = b.vendor === 'codex' || b.vendor === 'claude' ? b.vendor : undefined; const s = h.sessions.create(bot, String(b.name ?? '새 세션'), { permissionMode: b.permissionMode as never, model: b.model ? String(b.model) : undefined, vendor: vd }); return json(200, h.sessions.info(s)) }
