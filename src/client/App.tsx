@@ -241,17 +241,64 @@ function Main() {
     const up = () => { setDrag(''); window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up) }
     window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up)
   }
+  /**
+   * 레일 정렬 갈래 — 이 기기에만 남는다(어떤 차례로 **보고 싶은지**는 사람마다·기기마다 다르다).
+   * ⚠ «직접» 차례 자체는 기기에 안 남는다 — 그건 볼트에 있다(`POST /bots/reorder`).
+   */
+  const [railSort, setRailSort] = useState<RailSort>(() => { try { return (localStorage.getItem(RAIL_SORT_KEY) as RailSort) || 'name' } catch { return 'name' } })
+  useEffect(() => { try { localStorage.setItem(RAIL_SORT_KEY, railSort) } catch { /* */ } }, [railSort])
+  const [dragBot, setDragBot] = useState<string | null>(null)
+  const [overBot, setOverBot] = useState<string | null>(null)
+  /**
+   * 끌어다 놓기 — **지금 보이는 차례**를 그대로 집어 그 안에서 한 칸을 옮긴다.
+   * 🔴 이름 차례로 보다가 끌면 **그 화면 그대로가 시작점**이 된다 — 호스트 목록 순서를 시작점으로
+   *    삼으면 놓는 순간 목록이 통째로 뒤바뀐다(«내가 옮긴 건 하나인데 왜 다 움직이지»).
+   * ⚠ 옮기고 나면 갈래는 자동으로 «직접» 이 된다 — 안 그러면 이름 차례가 다음 렌더에 도로 덮는다.
+   */
+  const dropBot = async (targetId: string) => {
+    const from = dragBot
+    setDragBot(null); setOverBot(null)
+    if (!from || from === targetId) return
+    const flat = rows.flatMap(([, l]) => l).filter((x) => !x.b.orchestrator).map((x) => x.b.id)
+    const i = flat.indexOf(from); const j = flat.indexOf(targetId)
+    if (i < 0 || j < 0) return
+    flat.splice(i, 1)
+    flat.splice(flat.indexOf(targetId) + (j > i ? 1 : 0), 0, from)
+    setRailSort('manual')
+    try { await api('/bots/reorder', { body: { ids: flat } }); await refresh() } catch (e) { say((e as Error).message) }
+  }
+  /**
+   * 레일 차례 — **섹션(PARA)은 그대로 두고 그 안에서만** 정한다 (2026-09-13 Dave:
+   * *«각 폴더가 위아래로 드래그 드롭으로 소팅이 안돼. 그리고 상태별로도 소팅되면 좋겠어.
+   * (상위 폴더 PARA는 유지)»*).
+   *
+   * 세 갈래뿐이다 — **이름**(기본) · **직접**(끌어 놓은 차례) · **상태**.
+   * 🔴 **«상태» 도 스스로 자리를 바꾸지 않는다.** 종전 규칙(«활동·상태로 자리를 바꾸지 않는다 —
+   *    자리가 흔들리면 눈이 못 따라간다»)은 살아 있다. 다른 점은 **사람이 그 갈래를 고를 때만**
+   *    상태가 차례를 정한다는 것이다. 고르지 않으면 이름 차례 그대로다.
+   * ⚠ **직접** 차례는 볼트에 남는다(`POST /bots/reorder`) — 맥에서 맞춘 차례가 폰에서 딴판이면
+   *    «내가 옮긴 게 어디 갔지» 가 된다. 그래서 이 갈래만 호스트 목록 순서를 그대로 쓴다.
+   * ⚠ 관제는 늘 맨 위이고 끌 수 없다.
+   */
   const rows = useMemo(() => {
-    const items = s.bots.map((b) => ({ b, sum: botSummary(b, s.sessionsByBot[b.id] ?? [], s.notifications) }))
-    // 순서는 늘 같다 (Dave 2026-09-13: «항상 알파벳 내림차순») — 활동·상태로 자리를 바꾸지 않는다. 자리가 흔들리면 눈이 못 따라간다
-    // 섹션: 관제 → PARA 번호 오름차순(2 → 3 → 4). 행: 이름 내림차순 — 날짜 접두 폴더가 최신부터 온다
+    const items = s.bots.map((b, i) => ({ b, i, sum: botSummary(b, s.sessionsByBot[b.id] ?? [], s.notifications) }))
+    // 섹션: 관제 → PARA 번호 오름차순(2 → 3 → 4)
     const cmp = (a: string, b: string) => a.localeCompare(b, 'ko', { numeric: true, sensitivity: 'base' })
     const m = new Map<string, typeof items>()
     for (const it of items) { const k = it.b.section; (m.get(k) ?? m.set(k, []).get(k)!).push(it) }
     const secs = [...m.entries()].sort(([a], [b]) => (a === '관제' ? -1 : b === '관제' ? 1 : cmp(a, b)))
-    for (const [, list] of secs) list.sort((a, c) => (a.b.orchestrator !== c.b.orchestrator ? (a.b.orchestrator ? -1 : 1) : cmp(c.b.name, a.b.name)))
+    const byName = (a: typeof items[0], c: typeof items[0]) => cmp(c.b.name, a.b.name) // 이름 내림차순 — 날짜 접두 폴더가 최신부터
+    const rank = (x: typeof items[0]) => MOOD_RANK[x.sum.mood] ?? 9
+    for (const [, list] of secs) {
+      list.sort((a, c) => {
+        if (a.b.orchestrator !== c.b.orchestrator) return a.b.orchestrator ? -1 : 1
+        if (railSort === 'manual') return a.i - c.i           // 호스트가 쥔 차례 그대로
+        if (railSort === 'state') { const d = rank(a) - rank(c); if (d) return d }
+        return byName(a, c)
+      })
+    }
     return secs
-  }, [s.bots, s.sessionsByBot, s.notifications])
+  }, [s.bots, s.sessionsByBot, s.notifications, railSort])
   if (!bot) return <div className="app"><div className="empty">봇이 없어요</div></div>
   const items = sessionId ? (s.chats[sessionId] ?? []) : []
   const pending = sessionId ? (s.pending[sessionId] ?? []) : []
@@ -341,10 +388,19 @@ function Main() {
           <button className="nav" onClick={() => setModal('notify')}><Icon n="bell" size={14} /><span>알림</span>{unread ? <span className="bd" style={{ color: waiting ? 'var(--wait)' : undefined }}>{unread}</span> : null}</button>
           <button className="nav" onClick={() => setModal('settings')}><Icon n="gear" size={14} /><span>설정</span></button>
         </div>
+        {/* 정렬 갈래 — 이름 · 직접(끌어 놓기) · 상태. ⚠ 끌어 놓으면 «직접» 으로 알아서 넘어간다 */}
+        <div className="sortbar">{(Object.keys(RAIL_SORT_LABEL) as RailSort[]).map((k) => <button key={k} className={railSort === k ? 'on' : ''} onClick={() => setRailSort(k)} title={RAIL_SORT_HINT[k]}>{RAIL_SORT_LABEL[k]}</button>)}</div>
         <div className="sb-list">
           {rows.map(([sec, list]) => <div key={sec}>
             <div className="secl">{sec === '관제' ? '관제' : sec}</div>
-            {list.map(({ b, sum }) => <button key={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''}`} onContextMenu={(e) => { e.preventDefault(); hovOut(); if (!b.orchestrator) setRailCtx({ x: e.clientX, y: e.clientY, id: b.id, name: b.name }) }} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={ICON_PX[iconSz]} mood={sum.mood} mono /><span className="n"><Mid s={b.name} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span><time>{fmtTime(sum.t)}</time></button>)}
+            {list.map(({ b, sum }) => <button key={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''} ${overBot === b.id ? 'dover' : ''} ${dragBot === b.id ? 'dsrc' : ''}`}
+              draggable={!b.orchestrator}
+              onDragStart={(e) => { setDragBot(b.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/x-fb-bot', b.id) }}
+              onDragEnd={() => { setDragBot(null); setOverBot(null) }}
+              onDragOver={(e) => { if (!dragBot || b.orchestrator || dragBot === b.id) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOverBot(b.id) }}
+              onDragLeave={() => setOverBot((x) => (x === b.id ? null : x))}
+              onDrop={(e) => { e.preventDefault(); void dropBot(b.id) }}
+              onContextMenu={(e) => { e.preventDefault(); hovOut(); if (!b.orchestrator) setRailCtx({ x: e.clientX, y: e.clientY, id: b.id, name: b.name }) }} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={ICON_PX[iconSz]} mood={sum.mood} mono /><span className="n"><Mid s={b.name} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span><time>{fmtTime(sum.t)}</time></button>)}
           </div>)}
         </div>
         {hovRow ? <HoverCard b={hovRow.b} sum={hovRow.sum} top={hov!.top} left={fit.sb + 6} /> : null}
@@ -425,6 +481,15 @@ function HoverCard({ b, sum, top, left }: { b: Bot; sum: ReturnType<typeof botSu
 
 /** 메인(호스트 맥의 창) · 원격(그 외 기기) 배지 */
 function MrBadge() { const { s } = useStore(); return s.device.main ? <span className="mr main">메인</span> : <span className="mr remote">원격 · {s.device.name}</span> }
+
+/* ── 레일 정렬 (2026-09-13 Dave) ─────────────────────────────────────────────
+   섹션(PARA)은 늘 그대로다 — 여기서 정하는 것은 **한 섹션 안의 차례**뿐이다. */
+type RailSort = 'name' | 'manual' | 'state'
+const RAIL_SORT_KEY = 'fb:railsort'
+const RAIL_SORT_LABEL: Record<RailSort, string> = { name: '이름', manual: '직접', state: '상태' }
+const RAIL_SORT_HINT: Record<RailSort, string> = { name: '날짜 접두 폴더가 최신부터', manual: '끌어다 놓은 차례 (볼트에 남아요)', state: '확인 대기 → 일하는 중 → 문제 → 쉬는 중' }
+/** ⚠ 값은 `moodOf` 의 갈래 그대로다 — 한쪽만 늘리면 새 상태가 조용히 맨 뒤로 간다 */
+const MOOD_RANK: Record<string, number> = { wait: 0, work: 1, error: 2, done: 3, idle: 4, sleep: 5 }
 
 function botSummary(bot: Bot, sessions: SessionInfo[], notif: NotifyEvent[]) {
   const wait = sessions.find((x) => x.state === 'awaiting_input'); const run = sessions.find((x) => x.state === 'running')

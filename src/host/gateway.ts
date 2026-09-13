@@ -204,6 +204,8 @@ export class Gateway {
     if (p === '/api/pairing' && m === 'POST') { if (!this.isLoopback(req) && device !== 'local') return json(403, { error: '미니에서만 열 수 있어요' }); return json(200, this.openPairing()) }
     if (p === '/api/devices/revoke' && m === 'POST') { const b = await body(); h.cfg.devices = h.cfg.devices.filter((d) => d.id !== b.id); saveConfig(h.cfg); return json(200, { ok: true }) }
 
+    // 레일 순서 — 끌어다 놓은 차례를 볼트에 남긴다(기기마다 달라지지 않게)
+    if (p === '/api/bots/reorder' && m === 'POST') { const b = await body(); reg.reorder((Array.isArray(b.ids) ? b.ids : []).map((x: unknown) => String(x))); h.afterBotsChanged(); return json(200, { ok: true }) }
     if (seg[1] === 'bots' && seg[2]) {
       const bot = botOf(seg[2]); const sub = seg[3]
       if (sub === 'stop' && m === 'POST') { if (bot.orchestrator) throw new Error('오케스트레이터는 정지할 수 없어요'); reg.stop(bot.id); h.afterBotsChanged(); return json(200, { ok: true }) }

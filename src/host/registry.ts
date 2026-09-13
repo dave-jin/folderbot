@@ -210,6 +210,23 @@ export class Registry extends EventEmitter {
     this.active = this.active.filter((a) => a.id !== id)
     this.saveActive()
   }
+  /**
+   * 레일 순서 바꾸기 (2026-09-13 Dave: *«각 폴더가 위아래로 드래그 드롭으로 소팅이 안돼»*).
+   *
+   * 🔴 **순서는 볼트에 남는다** — `active.json` 의 줄 순서가 곧 레일 순서다. 기기마다 따로 두면
+   *    맥에서 맞춰 놓은 차례가 폰에서 딴판이 되고, «내가 옮긴 게 어디 갔지» 가 된다.
+   * ⚠ **모르는 id 는 무시하고, 빠진 것은 뒤에 붙인다.** 화면이 낡은 목록을 보냈을 때 봇이 사라지면 안 된다.
+   * ⚠ 오케스트레이터는 이 목록에 없다 — 레일에서 늘 맨 위이고 끌 수 없다.
+   */
+  reorder(ids: string[]): void {
+    const want = ids.filter((id, i) => ids.indexOf(id) === i)
+    const by = new Map(this.active.map((a) => [a.id, a]))
+    const next = want.map((id) => by.get(id)).filter((a): a is ActiveRec => !!a)
+    const seen = new Set(next.map((a) => a.id))
+    for (const a of this.active) if (!seen.has(a.id)) next.push(a)
+    this.active = next
+    this.saveActive()
+  }
   /** 은퇴 — archive 역할 폴더로 옮기고 목록에서 뺀다 */
   retire(id: string): string {
     const b = this.bot(id)

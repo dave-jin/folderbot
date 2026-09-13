@@ -832,6 +832,39 @@ try {
           await pg.fill('.composer textarea', ''); await wait(200)
           ok('맥 기본 단축키 — ⌘, 설정 · ⌘/ 표 · 글 칠 때는 안 돈다')
         }
+        /**
+         * 🔴 **레일 차례 — 끌어 놓기 · 상태별** (2026-09-13 Dave: *«각 폴더가 위아래로 드래그 드롭으로
+         *    소팅이 안돼. 그리고 상태별로도 소팅되면 좋겠어. (상위 폴더 PARA는 유지)»*).
+         * ⚠ 섹션(PARA)은 갈래를 무엇으로 바꾸든 **그대로**여야 한다 — 여기서 정하는 건 섹션 안의 차례뿐이다.
+         * ⚠ 끌어 놓은 차례는 **볼트에 남는다**(기기마다 달라지면 «내가 옮긴 게 어디 갔지» 가 된다).
+         */
+        {
+          const secsOf = () => pg.evaluate(() => [...document.querySelectorAll('.sb-list .secl')].map((e) => e.textContent))
+          const namesOf = () => pg.evaluate(() => [...document.querySelectorAll('.sb-list .brow .n')].map((e) => e.textContent))
+          const before = await secsOf()
+          if (!(await pg.$('.sortbar'))) fail('레일: 정렬 갈래 막대가 없다')
+          await pg.click('.sortbar button:has-text("상태")'); await wait(300)
+          if (JSON.stringify(await secsOf()) !== JSON.stringify(before)) fail('상태 정렬이 PARA 섹션을 흩었다 · ' + JSON.stringify(await secsOf()))
+          await pg.click('.sortbar button:has-text("이름")'); await wait(300)
+          // 끌어 놓기는 API 로 잰다 — 화면 드래그는 붙였다 떼는 타이밍이 기기마다 달라 조용히 무른 검사가 된다
+          const ids = (await api('/bots')).filter((b) => !b.orchestrator).map((b) => b.id)
+          if (ids.length >= 2) {
+            const want = [ids[1], ids[0], ...ids.slice(2)]
+            await api('/bots/reorder', { ids: want })
+            const got = (await api('/bots')).filter((b) => !b.orchestrator).map((b) => b.id)
+            if (JSON.stringify(got) !== JSON.stringify(want)) fail('레일 차례: 호스트가 안 기억한다 ' + JSON.stringify({ want, got }))
+            // ⚠ 모르는 id 는 무시하고 빠진 것은 뒤에 붙는다 — 낡은 목록을 보내도 봇이 사라지면 안 된다
+            await api('/bots/reorder', { ids: ['없는봇', ids[0]] })
+            const kept = (await api('/bots')).filter((b) => !b.orchestrator).map((b) => b.id)
+            if (kept.length !== ids.length) fail('레일 차례: 낡은 목록을 보냈더니 봇이 사라졌다 ' + JSON.stringify(kept))
+            if (kept[0] !== ids[0]) fail('레일 차례: 보낸 id 가 맨 앞으로 안 왔다 ' + JSON.stringify(kept))
+          }
+          await pg.click('.sortbar button:has-text("직접")'); await wait(400)
+          if (!(await namesOf()).length) fail('직접 정렬: 목록이 비었다')
+          if (JSON.stringify(await secsOf()) !== JSON.stringify(before)) fail('직접 정렬이 PARA 섹션을 흩었다')
+          await pg.click('.sortbar button:has-text("이름")'); await wait(300)
+          ok('레일 차례 — 이름 · 직접(볼트에 남음) · 상태 · PARA 섹션은 그대로')
+        }
         // 🔴 **레일 우클릭 — 지우기(연결 해지) · 은퇴** (2026-09-13 Dave 정정)
         //    ⛔ «지우기» 는 **폴더를 건드리지 않는다** — 레일에서만 덜어낸다. 폴더가 사라지면 회귀다.
         {

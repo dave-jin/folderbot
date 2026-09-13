@@ -777,3 +777,12 @@ b,strong { color:var(--w); font-weight:600 }
 .hovprev .u { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--t3); overflow:hidden }
 .hovprev .u .h { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .hovprev .peek { margin:0; font-family:var(--mono); font-size:11px; line-height:1.55; color:var(--t2); white-space:pre-wrap; word-break:break-word; max-height:180px; overflow:hidden }
+
+/* 레일 정렬 막대 · 끌어다 놓기 (2026-09-13 Dave) — 놓일 자리를 **선 하나**로만 알린다.
+   ⚠ 행을 밀어내며 미리 보여 주면 목록이 통째로 출렁인다(끌고 있는 손이 목표를 놓친다). */
+.sortbar { display:flex; gap:2px; padding:8px 8px 2px }
+.sortbar button { flex:1; padding:3px 0; border-radius:5px; font-size:11.5px; color:var(--t3); background:none; border:0 }
+.sortbar button:hover { color:var(--t) }
+.sortbar button.on { background:var(--sel); color:var(--w) }
+.brow.dsrc { opacity:.4 }
+.brow.dover { box-shadow:inset 0 2px 0 var(--run) }
