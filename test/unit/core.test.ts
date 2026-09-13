@@ -5,6 +5,7 @@ import { transition, shouldNotify } from '../../src/core/stateMachine'
 import { authVerdict } from '../../src/core/authVerdict'
 import { toolSummary, touchedPath } from '../../src/core/chat'
 import { chosung, hitRange, isChosungQuery, rank, scoreName } from '../../src/core/search'
+import { decide, dropIndex } from '../../src/client/gesture'
 
 describe('folder rules', () => {
   it('설치한 절을 다시 파싱하면 같은 규칙', () => {
@@ -212,5 +213,31 @@ describe('search', () => {
   it('걸린 자리를 돌려준다 (굵게 칠하려고)', () => {
     expect(hitRange('트레바리', '2026_트레바리')).toEqual([5, 9])
     expect(hitRange('없음', '2026_트레바리')).toBe(null)
+  })
+})
+
+/* ── 폰 목록 제스처 — 쓸기·집기·스크롤 가르기 (V19) ── */
+describe('gesture', () => {
+  it('가로로 먼저 크게 움직이면 쓸기', () => {
+    expect(decide(14, 2, false)).toBe('swipe')
+    expect(decide(-20, 3, false)).toBe('swipe')
+  })
+  it('세로가 더 크면 목록 스크롤 — 쓸기도 집기도 아니다', () => {
+    expect(decide(4, 18, false)).toBe('scroll')
+    expect(decide(-6, -22, false)).toBe('scroll')
+  })
+  it('조금 움직인 건 아직 아무것도 아니다 (길게 누르기 시계가 돈다)', () => {
+    expect(decide(5, 5, false)).toBe('none')
+  })
+  it('시계가 울렸으면 가로로 흔들어도 집은 채로', () => {
+    expect(decide(40, 2, true)).toBe('drag')
+    expect(decide(0, 60, true)).toBe('drag')
+  })
+  it('놓을 자리 — 줄의 세로 중심과 비교', () => {
+    const centers = [20, 60, 100]
+    expect(dropIndex(centers, 5)).toBe(0)
+    expect(dropIndex(centers, 45)).toBe(1)
+    expect(dropIndex(centers, 90)).toBe(2)
+    expect(dropIndex(centers, 200)).toBe(3)
   })
 })

@@ -448,8 +448,80 @@ try {
           const items = await pg.textContent('.panel')
           if (!(done.includes(title) || /완료/.test(items ?? ''))) fail('phone: swipe right-long should complete · ' + JSON.stringify({ title, done }))
           await pg.screenshot({ path: 'test/tmp/phone-swipe.png' })
+          // ── 새 폰 할 일 (V19) — 행 생김새 · 오른쪽 여백 · 길게 눌러 옮기기 · 편집 시트 ──
+          await pg.waitForSelector('.panel .ptodo', { timeout: 5000 })
+          const shape = await pg.evaluate(() => {
+            const row = document.querySelector('.panel .ptodo'); const r = row.getBoundingClientRect()
+            const ring = row.querySelector('.ring').getBoundingClientRect()
+            const tt = row.querySelector('.tt').getBoundingClientRect()
+            return { h: r.height, right: r.right - tt.right, ring: Math.round(ring.width), chev: !!row.querySelector('.mk'), chip: !!row.querySelector('.byb') }
+          })
+          if (shape.ring < 20 || shape.ring > 24) fail('폰 할 일: 동그란 체크 22px 아님 ' + JSON.stringify(shape))
+          if (shape.h > 66) fail('폰 할 일: 줄이 너무 높다 ' + JSON.stringify(shape))
+          if (shape.right > 20) fail('폰 할 일: 오른쪽 여백이 남는다(제목이 폭을 다 안 쓴다) ' + JSON.stringify(shape))
+          if (shape.chev || shape.chip) fail('폰 할 일: 꺾쇠·칩이 남아 있다 ' + JSON.stringify(shape))
+          // 탭하면 펼쳐지고 할 일거리가 나온다
+          const withDesc = await pg.evaluate(() => { const r = [...document.querySelectorAll('.panel .ptodo')].find((x) => x.querySelector('.sub')); if (!r) return null; r.click(); return r.querySelector('.tt').textContent })
+          await wait(400)
+          if (withDesc && !(await pg.$('.panel .ptodo.on .acts button'))) fail('폰 할 일: 탭해도 안 펼쳐진다 · ' + withDesc)
+          if (withDesc) { await pg.click('.panel .ptodo.on'); await wait(300) }
+          // 길게 눌러 끌어 옮기기 — 순서가 실제로 바뀐다
+          const before = await pg.$$eval('.panel .ptodo .tt', (e) => e.map((x) => x.textContent.trim()))
+          if (before.length >= 2) {
+            const bx = await pg.$eval('.panel .swwrap .swrow', (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height } })
+            const sy = bx.y + bx.h / 2
+            await pg.dispatchEvent('.panel .swwrap .swrow', 'pointerdown', { pointerId: 9, pointerType: 'touch', clientX: bx.x + 30, clientY: sy, buttons: 1 })
+            await wait(480) // 0.35초 문턱을 넘긴다 → 집힌다
+            if (!(await pg.$('.panel .swwrap.lift'))) fail('폰 할 일: 길게 눌러도 안 집힌다')
+            for (const dy of [20, 50, 80, 110]) await pg.dispatchEvent('.panel .swwrap .swrow', 'pointermove', { pointerId: 9, pointerType: 'touch', clientX: bx.x + 30, clientY: sy + dy, buttons: 1 })
+            await wait(120)
+            await pg.dispatchEvent('.panel .swwrap .swrow', 'pointerup', { pointerId: 9, pointerType: 'touch', clientX: bx.x + 30, clientY: sy + 110 })
+            await wait(1000)
+            const after = await pg.$$eval('.panel .ptodo .tt', (e) => e.map((x) => x.textContent.trim()))
+            if (JSON.stringify(before) === JSON.stringify(after)) fail('폰 할 일: 끌어 옮겼는데 순서가 그대로 ' + JSON.stringify({ before, after }))
+            await pg.screenshot({ path: 'test/tmp/phone-todo-drag.png' })
+          }
+          // 편집 시트 — 제목·상세·절이 한 화면, 저장하면 반영된다
+          await pg.click('.panel .sech:has-text("할 일") .tools .ib >> nth=0'); await wait(600)
+          if (!(await pg.$('.tsheet.esheet .fld input'))) fail('폰 할 일: 편집 시트가 안 열린다')
+          const secs = await pg.$$eval('.tsheet.esheet .fsec .seg button', (b) => b.map((x) => x.textContent.trim()))
+          if (secs.length < 2) fail('폰 할 일: 시트에 절 고르기가 없다 ' + JSON.stringify(secs))
+          await pg.fill('.tsheet.esheet .fld input', '시트로 만든 할 일')
+          await pg.fill('.tsheet.esheet .fld textarea', '상세도 같이')
+          await pg.screenshot({ path: 'test/tmp/phone-todo-sheet.png' })
+          await pg.click('.tsheet.esheet .fbtn .ok'); await wait(1200)
+          const made = await pg.$$eval('.panel .ptodo .tt', (e) => e.map((x) => x.textContent.trim()))
+          if (!made.includes('시트로 만든 할 일')) fail('폰 할 일: 시트로 추가가 안 된다 ' + JSON.stringify(made))
+          const md = readFileSync(join(root, '3. Area/제품_Rondo/todo.md'), 'utf8')
+          if (!/시트로 만든 할 일: 상세도 같이/.test(md)) fail('폰 할 일: todo.md 에 «제목: 상세» 로 안 적혔다')
+
         }
         await pg.click('.panel .secb button.trow:not(.dir)'); await wait(600); if (!(await pg.$('.docwrap .dfoot'))) fail('phone: doc page'); await pg.screenshot({ path: 'test/tmp/phone-doc.png' })
+        // ── 폰 폴더 고르기 (V17 B안) — 한 단계씩 들어가고, 푸터가 안 넘치고, 이름이 폭을 전부 쓴다 ──
+        // 홈으로 — 화면 상태는 React 가 쥐고 있으니 해시를 지우고 **다시 연다**(부팅 시 목록 화면)
+        await pg.goto(base + '/'); await pg.waitForSelector('.mhome .mtop', { timeout: 15000 }); await wait(800)
+        await pg.evaluate(() => { const b = [...document.querySelectorAll('.mhome .mtop .rb')].pop(); b.click() })
+        await pg.waitForSelector('.pk.phone .ph-row', { timeout: 8000 }); await wait(400)
+        const pf = await pg.evaluate(() => { const f = document.querySelector('.pk.phone .ph-f').getBoundingClientRect(); const g = document.querySelector('.pk.phone .ph-f .go').getBoundingClientRect(); const r = document.querySelector('.pk.phone .ph-row'); const rb = r.getBoundingClientRect(); const nm = r.querySelector('.n').getBoundingClientRect(); return { fw: f.width, iw: innerWidth, goH: g.height, goRight: g.right, rowH: rb.height, gapRight: rb.right - nm.right } })
+        if (pf.goRight > pf.iw + 1) fail('폰 피커: 버튼이 화면을 넘는다 ' + JSON.stringify(pf))
+        if (pf.goH < 44) fail('폰 피커: 시작 버튼이 너무 작다 ' + JSON.stringify(pf))
+        if (pf.rowH < 54) fail('폰 피커: 줄이 손가락에 안 닿는다 ' + JSON.stringify(pf))
+        if (pf.gapRight > 42) fail('폰 피커: 이름 오른쪽이 너무 빈다 ' + JSON.stringify(pf))
+        await pg.screenshot({ path: 'test/tmp/phone-picker.png' })
+        // 한 단계 들어가면 빵부스러기가 자란다
+        const c0 = await pg.$$eval('.pk.phone .ph-c span', (e) => e.length)
+        await pg.click('.pk.phone .ph-row >> nth=0'); await wait(700)
+        const c1 = await pg.$$eval('.pk.phone .ph-c span', (e) => e.length)
+        if (c1 <= c0) fail('폰 피커: 들어갔는데 빵부스러기가 그대로 ' + JSON.stringify({ c0, c1 }))
+        if (!/여기서 시작|봇 열기/.test(await pg.textContent('.pk.phone .ph-f .go'))) fail('폰 피커: 시작 버튼 문구')
+        // 돋보기로 어느 깊이든 한 번에 — 초성도
+        await pg.click('.pk.phone .ph-h .rb >> nth=1'); await wait(300)
+        await pg.fill('.pk.phone .ph-s input', 'ㅌㄹㅂㄹ'); await wait(800)
+        const hits = await pg.$$eval('.pk.phone .ph-row[data-rel]', (e) => e.map((x) => x.getAttribute('data-rel').normalize('NFC')))
+        if (!hits.includes('5. Archive/2025-04_트레바리-북클럽')) fail('폰 피커: 초성 검색 ' + JSON.stringify(hits))
+        await pg.screenshot({ path: 'test/tmp/phone-picker-search.png' })
+        await pg.click('.pk.phone .ph-h .rb >> nth=-1'); await wait(400)
+
         if (errs.length) fail('page errors: ' + errs.join(' | '))
       }
       await pg.close()

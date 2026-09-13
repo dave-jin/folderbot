@@ -3,6 +3,7 @@ import type { Bot, SessionInfo, TodoItem } from '../core/types'
 import { api } from './api'
 import { isDoneSection } from '../core/todo'
 import { ACT_COLOR, ACT_ICON, ACT_LABEL, LONG, actOf, buzz, slotOf, useSwipeCfg, type SwipeAct } from './swipe'
+import { HOLD_MS, decide, dropIndex } from './gesture'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { RoutineSheet, askName } from './Sheets'
 import { scoreName } from '../core/search'
@@ -92,6 +93,11 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
   const [cfg] = useSwipeCfg()
   const [sw, setSw] = useState<{ line: number; dx: number; w: number } | null>(null); const swRef = useRef<{ line: number; x0: number; y0: number; w: number; on: boolean; last: SwipeAct | null } | null>(null)
   const [sheet, setSheet] = useState<TodoItem | null>(null)
+  /** 폰 편집 시트 — 제목·상세·절을 한 화면에서. `line < 0` 이면 «새 할 일» */
+  const [esheet, setESheet] = useState<{ line: number; title: string; desc: string; section: string } | null>(null)
+  /** 폰 «길게 눌러 끌어 옮기기» — 집힌 줄, 손가락 위치, 놓일 자리 */
+  const [dr, setDr] = useState<{ line: number; dy: number; at: number } | null>(null)
+  const drRef = useRef<{ line: number; y0: number; x0: number; held: boolean; timer: number; centers: number[]; lines: number[]; idx: number } | null>(null)
   const [undo, setUndo] = useState<{ title: string; desc: string } | null>(null); const undoT = useRef<number | undefined>(undefined)
 
   // 절 순서는 파일 순서 그대로. 절이 없는 파일이면 빈 이름 하나로 모인다
@@ -133,36 +139,118 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
   }
   const toggleRow = (t: TodoItem) => { if (!t.desc) return; setOpenRows((o) => { const n = new Set(o); if (n.has(t.line)) n.delete(t.line); else n.add(t.line); return n }) }
 
+  /** 절을 바꾼다 — «완료» 경계를 넘으면 체크가 함께 바뀌고, 그 밖은 자리 이동만으로 절이 바뀐다 */
+  const moveToSection = async (t: TodoItem, to: string) => {
+    if (to === t.section) return
+    if (isDoneSection(to) !== isDoneSection(t.section)) { await toggle(t); return }
+    const first = items.find((x) => x.section === to)
+    await api(`/bots/${bot.id}/todo/move`, { body: { line: t.line, before: first ? first.line : null } })
+    setOpenRows(new Set()); await reload()
+  }
+
+  /** 편집 시트 저장 — 제목·상세를 쓰고, 절이 바뀌었으면 이어서 옮긴다 */
+  const saveSheet = async () => {
+    const e = esheet; if (!e) return
+    const title = e.title.trim(); if (!title) { setESheet(null); return }
+    if (e.line < 0) { await api(`/bots/${bot.id}/todo`, { body: { title, desc: e.desc.trim(), section: e.section } }); setESheet(null); await reload(); return }
+    await api(`/bots/${bot.id}/todo/edit`, { body: { line: e.line, title, desc: e.desc.trim() } })
+    setESheet(null); await reload()
+    const t = items.find((x) => x.line === e.line)
+    if (t && e.section !== t.section) await moveToSection({ ...t, title, desc: e.desc }, e.section)
+  }
+
   /** 쓸어서 처리 — 폰에서만. 처음 움직임이 세로면 목록 스크롤에 양보하고 다시는 가로로 보지 않는다 */
   const run = async (t: TodoItem, act: SwipeAct) => {
-    if (act === 'edit') startEdit(t)
+    if (act === 'edit') { if (phone) setESheet({ line: t.line, title: t.title, desc: t.desc, section: t.section }); else startEdit(t) }
     else if (act === 'done') await toggle(t)
     else if (act === 'delete') await remove(t)
     else if (act === 'delegate') onDelegate(t)
     else if (act === 'expand') toggleRow(t)
     else if (act === 'menu') setSheet(t)
   }
-  const swipeOn = (t: TodoItem) => (!phone ? {} : {
+  /**
+   * 폰 목록 손가락 하나 — **쓸기 · 집기 · 스크롤을 한 핸들러에서 가른다**.
+   * 🔴 종전에 두 핸들러(`swipeOn`·`dragOn`)를 따로 두고 JSX 에서 두 번 펼쳤더니 **뒤에 펼친 쪽이 앞을 덮어써서**
+   *    쓸기가 통째로 죽었다(스모크가 잡았다). 같은 이벤트를 두 곳에서 받지 않는다.
+   * 국면 판정은 `client/gesture.ts` 의 순수 함수 하나(유닛테스트로 고정).
+   */
+  const touchOn = (t: TodoItem, list: TodoItem[]) => (!phone ? {} : {
     onPointerDown: (e: React.PointerEvent) => {
       if (e.pointerType === 'mouse' || edit === t.line) return
-      swRef.current = { line: t.line, x0: e.clientX, y0: e.clientY, w: (e.currentTarget as HTMLElement).getBoundingClientRect().width, on: false, last: null }
+      const el = e.currentTarget as HTMLElement
+      swRef.current = { line: t.line, x0: e.clientX, y0: e.clientY, w: el.getBoundingClientRect().width, on: false, last: null }
+      const wrap = el.closest('.secb') as HTMLElement | null
+      const rows = wrap ? (Array.from(wrap.querySelectorAll('[data-line]')) as HTMLElement[]) : []
+      const mine = rows.filter((r) => list.some((x) => x.line === Number(r.dataset.line)))
+      drRef.current = {
+        line: t.line, y0: e.clientY, x0: e.clientX, held: false, idx: -1,
+        centers: mine.map((r) => { const b = r.getBoundingClientRect(); return b.top + b.height / 2 }),
+        lines: mine.map((r) => Number(r.dataset.line)),
+        timer: window.setTimeout(() => {
+          const r = drRef.current; if (!r || r.line !== t.line) return
+          r.held = true; swRef.current = null; setSw(null); buzz(cfg.haptics, 16)
+          setDr({ line: t.line, dy: 0, at: r.lines.indexOf(t.line) })
+        }, HOLD_MS)
+      }
     },
     onPointerMove: (e: React.PointerEvent) => {
-      const r = swRef.current; if (!r || r.line !== t.line) return
-      const dx = e.clientX - r.x0, dy = e.clientY - r.y0
-      if (!r.on) { if (Math.abs(dy) > Math.abs(dx) || Math.abs(dx) < 8) { if (Math.abs(dy) > 10) swRef.current = null; return } r.on = true; try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* 캡처 없이도 동작한다 */ } }
+      const d = drRef.current; if (!d || d.line !== t.line) return
+      const dx = e.clientX - d.x0, dy = e.clientY - d.y0
+      const ph = decide(dx, dy, d.held)
+      if (ph === 'drag') {
+        try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* 합성 이벤트에서 던질 수 있다 */ }
+        const rest = d.centers.filter((_, i) => d.lines[i] !== t.line)
+        const at = dropIndex(rest, e.clientY)
+        if (at !== d.idx) { d.idx = at; buzz(cfg.haptics, 6) }
+        setDr({ line: t.line, dy, at }); return
+      }
+      if (ph === 'scroll') { window.clearTimeout(d.timer); drRef.current = null; swRef.current = null; setSw(null); return }
+      if (ph !== 'swipe') return
+      window.clearTimeout(d.timer)                       // 가로로 먼저 움직였다 — 집기는 취소
+      const r = swRef.current; if (!r) return
+      if (!r.on) { r.on = true; try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* 무시 */ } }
       const act = actOf(cfg, slotOf(dx, r.w))
       if (act !== r.last) { r.last = act; if (act) buzz(cfg.haptics) }
       setSw({ line: t.line, dx, w: r.w })
     },
     onPointerUp: () => {
+      const d = drRef.current; drRef.current = null
       const r = swRef.current; swRef.current = null
-      const cur = sw; setSw(null)
-      if (!r || !r.on || !cur) return
-      const act = actOf(cfg, slotOf(cur.dx, cur.w)); if (act) void run(t, act)
+      const curSw = sw; setSw(null)
+      const curDr = dr; setDr(null)
+      if (d) window.clearTimeout(d.timer)
+      if (d?.held && curDr) {                            // 놓는다 — 그 자리에 들어간다
+        const rest = d.lines.filter((l) => l !== t.line)
+        const before = curDr.at >= rest.length ? null : rest[curDr.at]
+        if (before !== t.line) void (async () => { await api(`/bots/${bot.id}/todo/move`, { body: { line: t.line, before } }); setOpenRows(new Set()); await reload() })()
+        return
+      }
+      if (!r || !r.on || !curSw) return
+      const act = actOf(cfg, slotOf(curSw.dx, curSw.w)); if (act) void run(t, act)
     },
-    onPointerCancel: () => { swRef.current = null; setSw(null) }
+    onPointerCancel: () => { const d = drRef.current; if (d) window.clearTimeout(d.timer); drRef.current = null; swRef.current = null; setSw(null); setDr(null) }
   })
+
+  /**
+   * 폰 행 (V19 승인분) — 동그란 체크 22px · 제목이 남은 폭을 **전부** 쓰고 두 줄까지 · ↳ 설명 한 줄.
+   * ⛔ 오른쪽에 꺾쇠를 두지 않는다(그 자리가 «오른쪽 여백» 의 원인이었다) · ⛔ 태그·칩을 두지 않는다(Dave).
+   * 탭하면 펼쳐져 상세 전체와 할 일거리가 나온다.
+   */
+  const phoneRow = (t: TodoItem, isOpen: boolean) => <div className={`ptodo ${t.done ? 'done' : ''} ${isOpen ? 'on' : ''}`} onClick={() => toggleRow(t)}>
+    <button className="ring" onClick={(e) => { e.stopPropagation(); void toggle(t) }} aria-label={t.done ? '되돌리기' : '완료'}>{t.done ? <Icon n="check" size={12} color="var(--onAccent)" /> : null}</button>
+    <div className="bd">
+      <div className="tt">{t.title}</div>
+      {t.desc && !isOpen ? <div className="sub"><span className="ar">↳</span><span className="tx">{t.desc.replace(/\s*\n+\s*/g, ' · ').trim()}</span></div> : null}
+      {isOpen ? <>
+        {t.desc ? <div className="dsc">{t.desc}</div> : null}
+        <div className="acts" onClick={(e) => e.stopPropagation()}>
+          <button onClick={() => setESheet({ line: t.line, title: t.title, desc: t.desc, section: t.section })}><Icon n="edit" size={12} />편집</button>
+          {!t.done ? <button onClick={() => onDelegate(t)}><Icon n="sub" size={12} />맡기기</button> : null}
+          <button onClick={() => onOpenFile('todo.md')}><Icon n="doc" size={12} />문서에서 보기</button>
+        </div>
+      </> : null}
+    </div>
+  </div>
 
   /** 행 알맹이 — 체크 + 제목(+펼친 설명) + 표식 + 도구. 폰에서는 스와이프 껍데기 안에 들어간다 */
   const rowInner = (t: TodoItem, isOpen: boolean) => <div
@@ -188,10 +276,16 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
     const cur = sw && sw.line === t.line ? sw : null
     const act = cur ? actOf(cfg, slotOf(cur.dx, cur.w)) : null
     const long = !!cur && Math.abs(cur.dx) / Math.max(1, cur.w) >= LONG
-    if (phone) return <div key={t.line} className={`swwrap ${act ? 'armed' : ''}`} style={act ? { background: `color-mix(in srgb, ${ACT_COLOR[act]} ${long ? 100 : 45}%, var(--bg))` } : undefined}>
-      {act ? <div className={`swhint ${cur!.dx > 0 ? 'l' : 'r'}`}><span className={`cir ${long ? 'on' : ''}`} style={long ? { color: ACT_COLOR[act] } : undefined}><Icon n={ACT_ICON[act] as 'edit'} size={15} /></span>{long ? <b>{ACT_LABEL[act]}</b> : null}</div> : null}
-      <div className="swrow" style={cur ? { transform: `translateX(${Math.max(-0.72 * cur.w, Math.min(0.72 * cur.w, cur.dx))}px)`, transition: 'none' } : undefined} {...swipeOn(t)}>{rowInner(t, isOpen)}</div>
-    </div>
+    if (phone) {
+      const lifted = dr && dr.line === t.line
+      const secList = secs.find(([, l]) => l.some((x) => x.line === t.line))?.[1] ?? []
+      return <div key={t.line} data-line={t.line} className={`swwrap ${act ? 'armed' : ''} ${lifted ? 'lift' : ''}`}
+        style={lifted ? { transform: `translateY(${dr!.dy}px)`, zIndex: 3 } : act ? { background: `color-mix(in srgb, ${ACT_COLOR[act]} ${long ? 100 : 45}%, var(--bg))` } : undefined}>
+        {act && !lifted ? <div className={`swhint ${cur!.dx > 0 ? 'l' : 'r'}`}><span className={`cir ${long ? 'on' : ''}`} style={long ? { color: ACT_COLOR[act] } : undefined}><Icon n={ACT_ICON[act] as 'edit'} size={15} /></span>{long ? <b>{ACT_LABEL[act]}</b> : null}</div> : null}
+        <div className="swrow" style={cur && !lifted ? { transform: `translateX(${Math.max(-0.72 * cur.w, Math.min(0.72 * cur.w, cur.dx))}px)`, transition: 'none' } : undefined}
+          {...touchOn(t, secList)}>{phoneRow(t, isOpen)}</div>
+      </div>
+    }
     return <div key={t.line}
       className={`todo ${t.done ? 'done' : ''} ${isOpen ? 'on' : ''} ${over === t.line ? 'over' : ''} ${drag === t.line ? 'dragging' : ''}`}
       draggable={!phone} onDragStart={() => setDrag(t.line)} onDragEnd={() => { setDrag(null); setOver(null) }}
@@ -215,7 +309,7 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
   return <>
     <button className="sech" onClick={tog}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>할 일</span><span className="c">{left}{doneN ? ` · 완료 ${doneN}` : ''}</span>
       <span className="tools">
-        <span className="ib" title="새 할 일" onClick={(e) => { e.stopPropagation(); setAdding(secs[0]?.[0] ?? '') }}><Icon n="plus" size={12} /></span>
+        <span className="ib" title="새 할 일" onClick={(e) => { e.stopPropagation(); const sec0 = secs.find(([n2]) => !isDoneSection(n2))?.[0] ?? secs[0]?.[0] ?? ''; if (phone) setESheet({ line: -1, title: '', desc: '', section: sec0 }); else setAdding(sec0) }}><Icon n="plus" size={12} /></span>
         <span className="ib mdb" title="todo.md 를 열어 원문 고치기" onClick={(e) => { e.stopPropagation(); onOpenFile('todo.md') }}><Icon n="doc" size={11} /><span>todo.md</span></span>
       </span>
     </button>
@@ -226,7 +320,7 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
         {secOpen(name) ? <>
           {list.map(row)}
           {adding === name ? <div className="todo add"><span className="bx ghost" /><input autoFocus className="ein" placeholder="제목: 설명 (Enter)" value={line} onChange={(e) => setLine(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void add(name); if (e.key === 'Escape') { setAdding(null); setLine('') } }} onBlur={() => { if (!line.trim()) setAdding(null) }} /></div>
-            : !isDoneSection(name) ? <button className="todo addbtn" onClick={() => setAdding(name)}><span className="bx ghost dash" /><span>새 할 일</span></button> : null}
+            : !isDoneSection(name) ? <button className={`todo addbtn ${phone ? 'ph' : ''}`} onClick={() => (phone ? setESheet({ line: -1, title: '', desc: '', section: name }) : setAdding(name))}><span className="bx ghost dash" /><span>새 할 일</span></button> : null}
         </> : null}
       </div>)}
       {undo ? <div className="kv" style={{ color: 'var(--t3)' }}><span className="n">삭제했어요</span><button style={{ color: 'var(--t2)' }} onClick={() => void undoRemove()}>되돌리기</button></div> : null}
@@ -235,6 +329,14 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
       <div className="grip" />
       <div className="ti">{sheet.title}</div>
       {([['edit', '편집'], ['delegate', '봇에게 맡기기'], ['done', sheet.done ? '되돌리기' : '완료로'], ['delete', '삭제']] as [SwipeAct, string][]).map(([a2, l]) => <button key={a2} onClick={() => { const t = sheet; setSheet(null); void run(t, a2) }}><Icon n={ACT_ICON[a2] as 'edit'} size={16} />{l}</button>)}
+    </div></> : null}
+    {esheet ? <><div className="backdrop" onClick={() => setESheet(null)} /><div className="tsheet esheet">
+      <div className="grip" />
+      <div className="eh2"><b>{esheet.line < 0 ? '새 할 일' : '할 일 고치기'}</b>{esheet.line >= 0 ? <button className="del" onClick={() => { const t = items.find((x) => x.line === esheet.line); setESheet(null); if (t && confirm(`«${t.title}» 을 지울까요?`)) void remove(t) }}>삭제</button> : null}</div>
+      <label className="fld"><span>제목</span><input autoFocus value={esheet.title} placeholder="무엇을 할까요" onChange={(e) => setESheet({ ...esheet, title: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') void saveSheet() }} /></label>
+      <label className="fld"><span>상세</span><textarea rows={3} value={esheet.desc} placeholder="없어도 됩니다" onChange={(e) => setESheet({ ...esheet, desc: e.target.value })} /></label>
+      <div className="fsec"><span>절</span><span className="seg">{secs.map(([n2]) => <button key={n2 || '_'} className={esheet.section === n2 ? 'on' : ''} onClick={() => setESheet({ ...esheet, section: n2 })}>{n2 || '할 일'}</button>)}</span></div>
+      <div className="fbtn"><button className="cancel" onClick={() => setESheet(null)}>취소</button><button className="ok" onClick={() => void saveSheet()}>{esheet.line < 0 ? '추가' : '저장'}</button></div>
     </div></> : null}
   </>
 }

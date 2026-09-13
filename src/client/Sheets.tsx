@@ -22,6 +22,13 @@ function Hit({ s, q }: { s: string; q: string }) {
   return <>{t.slice(0, r[0])}<b className="hit">{t.slice(r[0], r[1])}</b>{t.slice(r[1])}</>
 }
 
+/** 폰이냐 — 폴더 고르기는 폰에서 완전히 다른 화면을 쓴다(V17 B안) */
+function useIsPhone(): boolean {
+  const [m, setM] = useState(() => (typeof matchMedia !== 'undefined' ? matchMedia('(max-width: 760px)').matches : false))
+  useEffect(() => { const mq = matchMedia('(max-width: 760px)'); const f = () => setM(mq.matches); mq.addEventListener('change', f); return () => mq.removeEventListener('change', f) }, [])
+  return m
+}
+
 /* ── 폴더 선택 (시작) — PARA 를 Finder 처럼 접었다 펴는 트리. 어디든 시작할 수 있다 ── */
 interface PNode { name: string; rel: string; dir: boolean; mtime: number; harness?: boolean; botId?: string; role?: 'inbox' | 'active' | 'reference' | 'archive' }
 const ROLE_T: Record<string, [string, string]> = { active: ['활성', 'var(--done)'], reference: ['참조', 'var(--t2)'], archive: ['보관', 'var(--t3)'], inbox: ['정리 대기', 'var(--wait)'] }
@@ -34,6 +41,7 @@ export function FolderPicker({ onClose, onStarted }: { onClose: () => void; onSt
   const [sel, setSel] = useState<string | null>(null)
   const [q, setQ] = useState(''); const [flat, setFlat] = useState<PNode[] | null>(null)
   const [filter, setFilter] = useState<'all' | 'active' | 'free'>('all')
+  const phone = useIsPhone(); const [cur, setCur] = useState('') // 폰: 지금 들어와 있는 폴더(«» 는 루트)
   const [newIn, setNewIn] = useState<string | null>(null); const [newName, setNewName] = useState('')
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
@@ -91,6 +99,52 @@ export function FolderPicker({ onClose, onStarted }: { onClose: () => void; onSt
   }
   useEffect(() => { if (!sel) return; const el = listRef.current?.querySelector(`[data-rel="${CSS.escape(sel)}"]`); (el as HTMLElement | null)?.scrollIntoView({ block: 'nearest' }) }, [sel])
   const crumbs = sel ? sel.split('/') : []
+
+  /**
+   * 폰 — **한 단계씩 들어간다** (V17 B안). 폰은 폭이 전부라 트리의 들여쓰기·배지가 이름을 잡아먹는다.
+   * · 이름이 폭을 전부 쓰고, 상태는 아랫줄 아이콘 + 짧은 말 · 오른쪽엔 꺾쇠 하나뿐
+   * · 푸터는 두 줄(지금 경로 + 큰 버튼) · 취소는 헤더 ✕ 로 옮겨 푸터가 넘치지 않는다
+   * · 검색은 돋보기로 어느 깊이든 한 번에 (데스크톱과 같은 색인·판정을 쓴다)
+   */
+  if (phone) {
+    const here = cur ? byRel.get(cur) : undefined
+    const hereBot = cur ? botOfRel(cur) : undefined
+    const kids = q.trim() ? rank(q, flat ?? [], (n2) => ({ name: n2.name, path: n2.rel }), 200) : (dirs[cur] ?? [])
+    const label = (n2: PNode) => (n2.botId || botOfRel(n2.rel) ? '봇 있음 — 열기' : n2.harness ? '하네스 있음' : '시작하면 하네스를 깔아요')
+    const tone = (n2: PNode) => (n2.botId || botOfRel(n2.rel) ? 'var(--run)' : n2.harness ? 'var(--done)' : 'var(--t3)')
+    const mark = (n2: PNode) => (n2.botId || botOfRel(n2.rel) ? 'folder' : n2.harness ? 'check' : 'plus')
+    const up = () => { if (q) { setQ(''); return } if (!cur) { onClose(); return } setCur(cur.includes('/') ? cur.slice(0, cur.lastIndexOf('/')) : '') }
+    return <>
+      <div className="backdrop" onClick={onClose} />
+      <div className="modal pk phone" onKeyDown={onKey} tabIndex={-1}>
+        <div className="ph-h">
+          <button className="rb" onClick={up} title="위로"><Icon n="back" size={17} /></button>
+          <span className="t"><Mid s={cur ? (cur.split('/').pop() ?? cur) : 'PARA'} tail={10} /></span>
+          <button className={`rb ${q ? 'on' : ''}`} onClick={() => { setQ(q ? '' : ' '); setTimeout(() => (document.querySelector('.pk.phone .ph-s input') as HTMLInputElement | null)?.focus(), 30) }} title="찾기"><Icon n="search" size={16} /></button>
+          <button className="rb" onClick={onClose} title="닫기"><Icon n="x" size={16} /></button>
+        </div>
+        {q ? <div className="ph-s"><Icon n="search" size={14} /><input placeholder="폴더 이름 · 초성도 됩니다" value={q.trim() ? q : ''} onChange={(e) => setQ(e.target.value || ' ')} /></div>
+          : <div className="ph-c">{['PARA', ...(cur ? cur.split('/') : [])].map((c, i, arr) => <span key={i} className={i === arr.length - 1 ? 'on' : ''} onClick={() => setCur(arr.slice(1, i + 1).join('/'))}>{c}</span>)}</div>}
+        <div className="modal-b ph-b" ref={listRef}>
+          {kids.map((n2) => <button key={n2.rel} data-rel={n2.rel} className="ph-row" onClick={() => { if (q) { setQ(''); setCur(n2.rel) } else setCur(n2.rel) }}>
+            <span className="ic" style={{ color: tone(n2) }}><Icon n={mark(n2) as 'folder'} size={15} /></span>
+            <span className="n"><span className="nm">{q.trim() ? <Hit s={n2.name} q={q} /> : <Mid s={n2.name} tail={10} />}</span><span className="sub">{q.trim() && n2.rel.includes('/') ? `${n2.rel.slice(0, n2.rel.lastIndexOf('/'))} · ` : ''}{label(n2)}</span></span>
+            <Icon n="chev" size={11} />
+          </button>)}
+          {!kids.length ? <div className="empty">{q.trim() ? '찾는 폴더가 없어요' : cur ? '하위 폴더가 없어요 — 여기서 시작할 수 있어요' : '읽는 중…'}</div> : null}
+          {!q && cur ? (newIn === cur ? <div className="newbox"><input className="nm" autoFocus placeholder="새 폴더 이름" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void create(); if (e.key === 'Escape') setNewIn(null) }} /><div className="pv"><span className="mono">{cur}/{preview(cur, newName || '이름')}</span></div></div>
+            : <button className="ph-row new" onClick={() => { setNewIn(cur); setNewName('') }}><span className="ic"><Icon n="fplus" size={15} /></span><span className="n"><span className="nm">여기에 새 폴더</span></span></button>) : null}
+        </div>
+        <div className="ph-f">
+          {err ? <div className="er">{err}</div> : null}
+          <div className="pa"><Mid s={cur || 'PARA (루트)'} tail={14} /></div>
+          <button className="go" disabled={busy || !cur} onClick={() => (hereBot ? onStarted(hereBot) : cur ? void start(cur) : undefined)}>
+            {hereBot ? '이 폴더의 봇 열기' : here && topRole(cur) === 'archive' ? '보관 폴더지만 시작' : `여기서 시작`}</button>
+        </div>
+      </div>
+    </>
+  }
+
   return <>
     <div className="backdrop" onClick={onClose} />
     <div className="modal pk" style={{ height: 'min(720px, calc(100% - 24px))' }} onKeyDown={onKey} tabIndex={-1}>
