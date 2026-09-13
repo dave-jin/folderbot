@@ -35,25 +35,27 @@ function useKeyboard(): boolean {
   const [kb, setKb] = useState(false)
   useEffect(() => {
     const vv = window.visualViewport; if (!vv) return
-    let maxH = 0, lastW = 0
+    /**
+     * 키보드가 **열렸을 때만** 시각 뷰포트 높이를 쓴다(`--vvh`). 닫히면 값을 지워 CSS 의 `100dvh` 로 돌아간다.
+     * 🔴 종전에는 «본 적 있는 최대 높이»를 기억해 썼는데, 한 번이라도 크게 잡히면(주소창·회전·부분 스크롤)
+     *    루트가 화면보다 커져 **컴포저가 화면 밖으로 밀려났다**(2026-09-13 Dave 스크린샷). 최대값은 지어낸 숫자다 —
+     *    닫힌 상태의 정답은 브라우저가 아는 `100dvh` 이고, 열린 상태의 정답만 시각 뷰포트다.
+     */
     const f = () => {
-      if (vv.width !== lastW) { lastW = vv.width; maxH = 0 } // 회전·창 크기 변경 → 기준 다시
-      maxH = Math.max(maxH, vv.height, window.innerHeight, document.documentElement.clientHeight)
       const ae = document.activeElement as HTMLElement | null
       const editing = !!ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)
-      const open = editing && maxH - vv.height > 140
-      // 입력 중이 아니면 키보드가 떠 있을 수 없다 — 그때는 시각 뷰포트 값을 믿지 않고 최대 높이를 쓴다.
-      // iOS 26 은 키보드(입력 보조 막대 ~60pt)가 내려간 뒤 시각 뷰포트를 덜 돌려주기도 한다 → 아래에 ~100pt 빈 띠 (2026-09-13 Dave 스크린샷)
-      const h = open ? vv.height : maxH
+      const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+      const open = editing && covered > 140
       const st = document.documentElement.style
-      st.setProperty('--vvh', `${Math.round(h)}px`); st.setProperty('--vvt', `${open ? Math.round(vv.offsetTop) : 0}px`)
+      if (open) { st.setProperty('--vvh', `${Math.round(vv.height)}px`); st.setProperty('--vvt', `${Math.round(vv.offsetTop)}px`) }
+      else { st.removeProperty('--vvh'); st.removeProperty('--vvt') }
       setKb(open)
       if (!open) window.scrollTo(0, 0)
     }
-    // 키보드가 내려가는 애니메이션 동안 값이 흔들린다 — 포커스가 빠진 뒤 세 번 다시 잰다
+    // 키보드가 내려가는 동안 값이 흔들린다 — 포커스가 빠진 뒤 세 번 다시 잰다
     const later = () => { setTimeout(f, 50); setTimeout(f, 300); setTimeout(f, 700) }
     f(); vv.addEventListener('resize', f); vv.addEventListener('scroll', f); window.addEventListener('resize', f); document.addEventListener('focusin', f); document.addEventListener('focusout', later); document.addEventListener('visibilitychange', later)
-    return () => { vv.removeEventListener('resize', f); vv.removeEventListener('scroll', f); window.removeEventListener('resize', f); document.removeEventListener('focusin', f) }
+    return () => { vv.removeEventListener('resize', f); vv.removeEventListener('scroll', f); window.removeEventListener('resize', f); document.removeEventListener('focusin', f); document.removeEventListener('focusout', later); document.removeEventListener('visibilitychange', later) }
   }, [])
   return kb
 }

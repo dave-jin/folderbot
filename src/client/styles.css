@@ -254,8 +254,9 @@ b,strong { color:var(--w); font-weight:600 }
   .app[data-view="panel"] .cols > .rpwrap { display:flex !important }
   html,body,#root { background:var(--bg) }
   .app { background:var(--bg) } /* 그라디언트를 두면 헤더(단색)와 만나는 자리에 선이 생긴다 */
-  /* 루트 = 시각 뷰포트 (useKeyboard 가 --vvh/--vvt 를 쓴다) — 키보드가 뜨면 그만큼 줄고, 닫히면 돌아온다. 레이아웃 뷰포트를 믿지 않는다 */
-  #root { top:var(--vvt, 0px); bottom:auto; height:var(--vvh, 100%) }
+  /* 루트 = 키보드가 열렸으면 시각 뷰포트(--vvh), 아니면 100dvh. max-height 는 마지막 방어선 —
+     어떤 계산이 틀려도 컴포저가 화면 밖으로 나가지 않는다 (Dave: «입력창은 절대 화면 밖으로 나가면 안 돼») */
+  #root { top:var(--vvt, 0px); bottom:auto; height:var(--vvh, 100dvh); max-height:100dvh }
   .col, .col.side { background:transparent }
   /* 홈 */
   .mhome { flex-direction:column; position:relative; overflow:hidden }
