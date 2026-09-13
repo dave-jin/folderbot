@@ -1,6 +1,6 @@
 // 원격 왕복 스모크 — 픽스처 볼트 + 스텁 CLI 로 호스트를 띄우고 API·SSE·MCP·화면을 검사한다
 import { spawn } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -297,28 +297,50 @@ try {
           const clipped = [...f.querySelectorAll('*')].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && (r.right > fr.right + 1 || r.left < fr.left - 1) }).map((e) => e.className || e.tagName)
           return { rows, clipped: clipped.slice(0, 4), h: fr.height, w: fr.width, sw: f.scrollWidth }
         })
-        if (foot.rows < 2) fail('왼쪽 아래: 두 줄이 아니다 ' + JSON.stringify(foot))
         if (foot.clipped.length) fail('왼쪽 아래: 잘리는 것이 있다 ' + JSON.stringify(foot))
         if (foot.sw > foot.w + 1) fail('왼쪽 아래: 가로로 넘친다 ' + JSON.stringify(foot))
         await pg.locator('.sb-foot').screenshot({ path: 'test/tmp/desktop-foot.png' })
-        // 사용량 칩 — 상태바에 «남은 %», 누르면 카드
-        if (!(await pg.$('.sb-foot .uchip'))) fail('사용량: 상태바 칩이 없다')
-        const chip = await pg.textContent('.sb-foot .uchip'); if (!/남음/.test(chip ?? '')) fail('사용량: 칩이 «남음» 이 아니다 · ' + chip)
-        await pg.click('.sb-foot .uchip'); await wait(400)
-        if (!(await pg.$('.upop .ucard .ubar .fill'))) fail('사용량: 칩을 눌러도 카드가 없다')
-        const uc = await pg.evaluate(() => { const b = document.querySelector('.upop .ucard .ubar'); const f = b.querySelector('.fill'); const pc = document.querySelector('.upop .ucard .urow .pc').textContent; return { w: b.getBoundingClientRect().width, fw: f.getBoundingClientRect().width, pc: parseInt(pc), h: b.getBoundingClientRect().height, codex: document.querySelector('.upop .ucard').textContent.includes('Codex') } })
-        if (Math.abs((uc.fw / uc.w) * 100 - uc.pc) > 2) fail('사용량: 막대가 남은 %와 안 맞는다 ' + JSON.stringify(uc))
-        if (uc.h < 12) fail('사용량: 막대가 얇다 ' + JSON.stringify(uc))
-        if (uc.codex) fail('사용량: 안 쓴 Codex 가 카드에 나온다')
-        await pg.screenshot({ path: 'test/tmp/desktop-usage.png' })
+        // ⛔ 맥의 사용량은 **메뉴바에서만** 본다 (2026-09-13 Dave) — 앱 안 상태바에 다시 들어오면 회귀다
+        if (await pg.$('.sb-foot .uchip')) fail('사용량: 맥 상태바에 칩이 돌아왔다 — 메뉴바 전용이다')
+        if (await pg.$('.upop')) fail('사용량: 맥 앱 안에 카드가 떠 있다 — 메뉴바 전용이다')
         await pg.keyboard.press('Escape'); await pg.evaluate(() => document.querySelectorAll('.backdrop').forEach((b) => b.click())); await wait(300)
         const iconOf = () => pg.evaluate(() => { const el = document.querySelector('.brow .fb'); return { w: el.getBoundingClientRect().width, attr: Number(el.getAttribute('width')) } })
         const before = await iconOf()
-        await pg.click('.col.side.left .nav:has-text("설정")'); await pg.waitForSelector('.modal', { timeout: 4000 }); await wait(300)
-        const segs = await pg.$$eval('.modal .seg', (ss) => ss.map((x) => x.textContent))
+        await pg.click('.col.side.left .nav:has-text("설정")'); await pg.waitForSelector('.modal.setw', { timeout: 4000 }); await wait(300)
+        // 설정 V25 — 왼쪽 목차 · 한 화면에 한 가지 (2026-09-13 Dave 승인)
+        {
+          const navs = await pg.$$eval('.snav .nv', (ns) => ns.map((n) => n.textContent.trim()))
+          for (const want of ['일반', '호스트 · 연결', '에이전트', '하네스', '사용량', '화면', '할 일', '알림', '권한 · 보안'])
+            if (!navs.includes(want)) fail('설정 목차에 «' + want + '» 가 없다 ' + JSON.stringify(navs))
+          // 줄은 늘 세 칸 — 조작 자리가 왼쪽 글보다 오른쪽에 있고, 칸 밖으로 안 나간다
+          await pg.click('.snav .nv:has-text("사용량")'); await wait(300)
+          const three = await pg.evaluate(() => [...document.querySelectorAll('.sp-b .setr')].filter((r) => r.querySelector('.c')).map((r) => {
+            const p = r.getBoundingClientRect(), t = r.querySelector('.tx').getBoundingClientRect(), c = r.querySelector('.c').getBoundingClientRect()
+            return { t: r.dataset.t, ok: c.left >= t.right - 1 && c.right <= p.right + 1 }
+          }))
+          if (!three.length || three.some((x) => !x.ok)) fail('설정: 조작 자리가 흔들린다 ' + JSON.stringify(three.filter((x) => !x.ok)))
+          if (!(await pg.$('.sp-b .setr[data-t="턴마다 기록하기"]'))) fail('설정 › 사용량: 훅 줄이 없다')
+          // 에이전트 — 깔린 CLI · 커넥터 · 스킬이 범위 칩과 함께
+          await pg.click('.snav .nv:has-text("에이전트")'); await wait(500)
+          const ag = await pg.textContent('.sp-b'); if (!/Claude Code/.test(ag)) fail('설정 › 에이전트: 깔린 CLI 가 없다')
+          if (!(await pg.$('.sp-b .hitem .scp'))) fail('설정 › 에이전트: 범위 칩이 없다')
+          if (!/Folder Bot/.test(ag)) fail('설정 › 에이전트: 내장 커넥터가 없다')
+          // 하네스 — 폴더별 표(보기 전용). 고치는 버튼이 있으면 계약 위반이다
+          await pg.click('.snav .nv:has-text("하네스")'); await wait(500)
+          if (!(await pg.$('.sp-b .htab .hrow'))) fail('설정 › 하네스: 표가 비었다')
+          const hz = await pg.textContent('.sp-b .htab'); if (!/CLAUDE\.md/.test(hz)) fail('설정 › 하네스: CLAUDE.md 칸이 없다 · ' + hz.slice(0, 120))
+          if (await pg.$('.sp-b .htab button')) fail('설정 › 하네스: 보기 전용인데 고치는 버튼이 있다')
+          // 검색 — 제목과 설명을 함께 찾는다
+          await pg.fill('.snav .sfind input', '토큰'); await wait(300)
+          const found = await pg.$$eval('.snav .nv', (ns) => ns.map((n) => n.textContent))
+          if (!found.some((t) => /토큰/.test(t))) fail('설정 검색: «토큰» 이 안 걸린다 ' + JSON.stringify(found))
+          await pg.fill('.snav .sfind input', ''); await wait(200)
+          await pg.click('.snav .nv:has-text("화면")'); await wait(300)
+        }
+        const segs = await pg.$$eval('.sp-b .seg', (ss) => ss.map((x) => x.textContent))
         if (!segs.some((t) => /작게.*보통.*크게/.test(t))) fail('설정에 폴더봇 크기 없음: ' + JSON.stringify(segs))
-        await pg.click('.modal .kv:has-text("폴더봇 크기") .seg button:has-text("크게")'); await wait(400)
-        await pg.click('.modal .modal-h .ib'); await wait(300)
+        await pg.click('.sp-b .setr[data-t="폴더봇 크기"] .seg button:has-text("크게")'); await wait(400)
+        await pg.click('.sp-h .ib'); await wait(300)
         const big = await iconOf()
         if (big.attr <= before.attr) fail('폴더봇 «크게» 가 안 커짐 ' + JSON.stringify({ before, big }))
         const rowH = await pg.evaluate(() => document.querySelector('.brow').getBoundingClientRect().height)
@@ -464,7 +486,20 @@ try {
         await pg.click('.chat-hdr .rb'); await wait(300); if (!(await pg.$('.mhome .mcards')) || (await pg.$$eval('.mrow', (r) => r.length)) < 3) fail('phone: home cards/rows'); await pg.screenshot({ path: 'test/tmp/phone-home.png' })
         if (!(await pg.$('.mrow .l1 b .mid .mt'))) fail('phone: home row names should use middle ellipsis')
         const ov = await pg.evaluate(() => { const m = document.querySelector('.mscroll'); return { sw: m.scrollWidth, cw: m.clientWidth, dw: document.documentElement.scrollWidth, iw: innerWidth } }); if (ov.sw > ov.cw || ov.dw > ov.iw) fail('phone: horizontal overflow ' + JSON.stringify(ov))
-        await pg.click('.mtop .rb'); await wait(300); const mr = await pg.evaluate(() => { const r = document.querySelector('.modal').getBoundingClientRect(); return { top: r.top, bottom: r.bottom, h: innerHeight } }); if (!(mr.top >= 0 && mr.bottom <= mr.h)) fail('phone: settings modal out of viewport ' + JSON.stringify(mr)); await pg.screenshot({ path: 'test/tmp/phone-settings.png' }); await pg.click('.modal .modal-h .ib'); await wait(200)
+        await pg.click('.mtop .rb'); await pg.waitForSelector('.setp', { timeout: 4000 }); await wait(300)
+        {
+          const rows = await pg.$$eval('.setp .sec-row', (r) => r.map((x) => x.textContent))
+          if (rows.length < 9) fail('폰 설정: 목차가 목록이 아니다 ' + JSON.stringify(rows))
+          const mr = await pg.evaluate(() => { const r = document.querySelector('.setp').getBoundingClientRect(); return { top: r.top, bottom: r.bottom, h: innerHeight } })
+          if (!(mr.top >= 0 && mr.bottom <= mr.h + 1)) fail('phone: settings out of viewport ' + JSON.stringify(mr))
+          await pg.screenshot({ path: 'test/tmp/phone-settings.png' })
+          await pg.click('.setp .sec-row:has-text("화면")'); await wait(300)
+          if (!(await pg.$('.setp .setr[data-t="테마"]'))) fail('폰 설정: 한 칸으로 안 들어간다')
+          const ov2 = await pg.evaluate(() => ({ dw: document.documentElement.scrollWidth, iw: innerWidth }))
+          if (ov2.dw > ov2.iw) fail('폰 설정: 가로로 넘친다 ' + JSON.stringify(ov2))
+          await pg.click('.setp-h .ib'); await wait(250)          // 뒤로 → 목록
+          await pg.click('.setp-h .ib:last-child'); await wait(250) // 닫기
+        }
         await pg.click('.mrow'); await wait(300); await pg.click('.chat-hdr .rb:last-child'); await wait(300); if (!(await pg.$('.rpwrap .rb'))) fail('phone: panel page'); await pg.screenshot({ path: 'test/tmp/phone-panel.png' })
         // 쓸어서 처리 — 행 도구는 없고, 오른쪽으로 길게 쓸면 완료된다 (터치 흉내)
         {
@@ -630,6 +665,35 @@ try {
     for (const x of ps) { if (!x.bin) fail('제공자: 실행 파일 없이 줄이 생겼다 ' + JSON.stringify(x)) }
     if (ps.some((x) => x.id === 'codex') && !existsSync(ps.find((x) => x.id === 'codex').bin)) fail('제공자: 없는 codex 가 나왔다')
     ok(`에이전트 제공자 ${ps.length}개 — 깔린 것만`)
+  }
+
+  // ── 하네스 — 폴더마다 쓸 수 있는 지침·스킬·커넥터 (V25). ⛔ 설정에서는 보기만 한다 ──
+  {
+    const rows = await api('/harness')
+    if (!Array.isArray(rows) || !rows.length) fail('하네스: 표가 비었다')
+    const r = rows.find((x) => x.rel === bot.rel) ?? rows[0]
+    for (const k of ['rel', 'name', 'section', 'claudeMd', 'agentsMd', 'skills', 'mcp', 'by']) if (!(k in r)) fail('하네스: ' + k + ' 없음 ' + JSON.stringify(r))
+    if (!r.claudeMd) fail('하네스: 시작하면서 깔아 준 CLAUDE.md 를 못 본다 ' + JSON.stringify(r))
+    const d = await api(`/harness?rel=${encodeURIComponent(r.rel)}`)
+    if (!Array.isArray(d.mcpList) || !d.mcpList.some((m) => m.scope === 'builtin')) fail('하네스: 내장 커넥터가 없다 ' + JSON.stringify(d.mcpList))
+    if (d.mcp !== d.mcpList.length || d.skills !== d.skillList.length) fail('하네스: 세는 수와 목록 길이가 다르다 ' + JSON.stringify({ mcp: d.mcp, n: d.mcpList.length }))
+    const g = await api('/harness/global')
+    if (!g.mcp.some((m) => m.scope === 'builtin')) fail('하네스(전역): 내장 커넥터가 없다')
+    ok(`하네스 — 폴더 ${rows.length}개 · 커넥터 ${d.mcp} · 스킬 ${d.skills}`)
+  }
+
+  // ── 시작할 때 에이전트 고르기 (V24) — 둘 이상일 때만 묻는다 ──
+  {
+    const sh = join(data, 'fake-codex'); writeFileSync(sh, '#!/bin/sh\necho "codex-cli 9.9.9"\n'); chmodSync(sh, 0o755)
+    const p2 = PORT + 3
+    const two = spawn('node', ['bin/folderbot.mjs', 'start', '--port', String(p2)], { env: { ...env, FOLDERBOT_CODEX_BIN: sh }, stdio: 'ignore' })
+    try {
+      for (let i = 0; i < 40; i++) { try { await fetch(`http://127.0.0.1:${p2}/api/health`); break } catch { await wait(250) } }
+      const ps2 = await (await fetch(`http://127.0.0.1:${p2}/api/agents`)).json()
+      if (ps2.length !== 2 || !ps2.some((x) => x.id === 'codex')) fail('고르기: 둘이 깔렸는데 목록이 ' + JSON.stringify(ps2.map((x) => x.id)))
+      if (!/9\.9\.9/.test(ps2.find((x) => x.id === 'codex').version ?? '')) fail('고르기: codex 버전을 못 읽었다 ' + JSON.stringify(ps2))
+      ok('에이전트 고르기 — 둘이 깔리면 둘 다 나온다 (하나뿐이면 화면을 건너뛴다)')
+    } finally { two.kill() }
   }
 
   // ── 사용량 — 남은 양 · 훅 설치 · 예산 (V23) ──

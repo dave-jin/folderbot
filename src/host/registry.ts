@@ -162,17 +162,21 @@ export class Registry extends EventEmitter {
     const rest = this.active.map((a) => this.toBot(a)).filter((b): b is Bot => !!b)
     return [orch, ...rest]
   }
+  /** ⚠ 벤더는 **시작할 때 고른 것**(a.vendor)이 이긴다 — `.bot.yml` 은 고르기 화면이 없던 시절의 폴백이다 */
   private toBot(a: ActiveRec): Bot | null {
     const abs = join(this.root, a.rel)
     if (!existsSync(abs)) return null
     const cfg = this.botConfig(abs)
-    return { id: a.id, rel: a.rel, abs, name: basename(a.rel), section: a.rel.split('/')[0] === a.rel ? '' : a.rel.split('/')[0], color: cfg.color ?? a.color, orchestrator: false, startedAt: a.startedAt, vendor: cfg.vendor ?? a.vendor ?? 'claude', repo: cfg.repo ? resolve(abs, cfg.repo.replace(/^~/, process.env.HOME ?? '')) : undefined, routines: cfg.routines ?? [] }
+    return { id: a.id, rel: a.rel, abs, name: basename(a.rel), section: a.rel.split('/')[0] === a.rel ? '' : a.rel.split('/')[0], color: cfg.color ?? a.color, orchestrator: false, startedAt: a.startedAt, vendor: a.vendor ?? cfg.vendor ?? 'claude', repo: cfg.repo ? resolve(abs, cfg.repo.replace(/^~/, process.env.HOME ?? '')) : undefined, routines: cfg.routines ?? [] }
   }
   bot(id: string): Bot | undefined { return this.bots().find((b) => b.id === id) }
   botByRel(rel: string): Bot | undefined { return this.bots().find((b) => b.rel === rel) }
 
-  /** 폴더에서 시작 — 후보든 아니든 활성 목록에 올린다. 하네스가 없으면 깔아 준다 */
-  start(rel: string): Bot {
+  /**
+   * 폴더에서 시작 — 후보든 아니든 활성 목록에 올린다. 하네스가 없으면 깔아 준다.
+   * `vendor` 는 시작할 때 고른 에이전트다. 안 주면 `.bot.yml` → 'claude' 순으로 떨어진다.
+   */
+  start(rel: string, vendor?: 'claude' | 'codex'): Bot {
     rel = rel.replace(/^\/+|\/+$/g, '').normalize('NFC')
     const abs = join(this.root, rel)
     if (!existsSync(abs) || !statSync(abs).isDirectory()) throw new Error(`폴더가 없어요: ${rel}`)
@@ -182,7 +186,7 @@ export class Registry extends EventEmitter {
     if (this.active.length >= this.botLimit) throw new Error(`활성 봇이 상한(${this.botLimit})에 닿았어요. 휴면 봇을 은퇴시키거나 상한을 올리세요.`)
     if (!this.hasHarness(abs)) this.scaffold(abs, basename(rel))
     const color = BOT_COLORS[this.active.length % BOT_COLORS.length]
-    const rec: ActiveRec = { id: `b_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, rel, color, startedAt: Date.now() }
+    const rec: ActiveRec = { id: `b_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, rel, color, startedAt: Date.now(), vendor }
     this.active.push(rec)
     this.saveActive()
     return this.toBot(rec)!

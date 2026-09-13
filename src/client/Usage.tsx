@@ -82,13 +82,3 @@ export function UsageStrip({ u, onOpen }: { u: UsageReport; onOpen: () => void }
   </button>
 }
 
-/** 상태바·메뉴 칩 — 얼굴 + 남은 % + 줄어드는 막대 */
-export function UsageChip({ u, onClick }: { u: UsageReport; onClick?: () => void }) {
-  const c = colorLeft(u.left)
-  return <button className="uchip" onClick={onClick} title="사용량 — 남은 양">
-    <FolderBot color={c} size={13} mood={moodLeft(u.left)} mono />
-    <span className="pc">{u.left}% 남음</span>
-    <span className="mini"><span style={{ width: `${u.left}%`, background: c }} /></span>
-    {u.resetAt ? <span className="rs">{until(u.resetAt, u.now)}</span> : null}
-  </button>
-}

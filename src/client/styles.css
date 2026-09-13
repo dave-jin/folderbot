@@ -71,8 +71,6 @@ b,strong { color:var(--w); font-weight:600 }
 .brow { display:flex; align-items:center; gap:9px; padding:5px 12px; border-radius:6px; font-size:13px; color:var(--t); width:100%; min-height:30px } .brow:hover { background:var(--hover) } .brow.on { background:var(--sel); color:var(--w) } .brow .n { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .brow time { font-size:11px; color:var(--t3); white-space:nowrap }
 /* 왼쪽 아래 — 한 줄에 다 넣으니 잘렸다(2026-09-13 Dave). 사용량을 윗줄로 올려 두 줄로 나눈다. */
 .sb-foot.two { display:flex; flex-direction:column; align-items:stretch; gap:7px; padding:9px 14px 12px; white-space:nowrap; min-width:0 }
-.sb-foot.two .r1 { display:flex; min-width:0 } .sb-foot.two .r1 .uchip { width:100%; justify-content:flex-start }
-.sb-foot.two .r1 .uchip .mini { flex:1; width:auto; min-width:28px }
 .sb-foot.two .r2 { display:flex; align-items:center; gap:8px; min-width:0; font-size:12px; color:var(--t2) }
 .sb-foot.two .r2 .hn { overflow:hidden; text-overflow:ellipsis; min-width:0 }
 .sb-foot.two .r2 .bd { margin-left:0 } .sb-foot.two .r2 .bd.upd { max-width:none }
@@ -232,14 +230,7 @@ b,strong { color:var(--w); font-weight:600 }
 .ustrip .rs { white-space:nowrap; color:var(--t3) }
 .tsheet.usheet { padding:10px 14px calc(var(--sab) + 16px) }
 /* 상태바 칩 */
-.uchip { display:inline-flex; align-items:center; gap:7px; height:23px; padding:0 9px; border-radius:6px; background:var(--box); color:var(--t2); font-size:11.5px; flex:none }
-.uchip:hover { background:var(--sel) } .uchip .pc { font-family:var(--mono) }
-.uchip .mini { width:42px; height:6px; border-radius:3px; background:var(--line); overflow:hidden; display:inline-block } .uchip .mini > span { display:block; height:6px; border-radius:3px }
-.uchip .rs { color:var(--t3) }
-@media (max-width: 1100px) { .uchip .rs { display:none } }
-@media (max-width: 760px) { .uchip .mini, .uchip .rs { display:none } }
 /* 상태바에서 띄우는 카드 */
-.upop { position:fixed; z-index:80; width:340px; max-width:calc(100vw - 24px) }
 /* ── 폰 할 일 (V19 승인분) — 동그란 체크 · 제목이 폭을 전부 · ↳ 설명 한 줄 · 태그 없음 ──
    줄 높이 52px(제목만)~62px(설명까지). 선을 긋지 않고 여백으로 나눈다. 오른쪽에 아무것도 두지 않는다
    (그 자리가 «오른쪽 여백이 너무 많다» 의 원인이었다 — 2026-09-13 Dave). */
@@ -443,4 +434,108 @@ b,strong { color:var(--w); font-weight:600 }
   .modal-b { flex:1 } .modal-h { padding-top:18px }
   .modal.ask { top:calc(var(--sat) + 40px); bottom:auto; height:auto; left:12px; right:12px }
   .menu.ctx { left:16px !important; right:16px; top:auto !important; bottom:calc(var(--sab) + 16px); border-radius:16px; padding:8px } .menu.ctx button { min-height:48px; font-size:16px; padding:8px 14px; border-radius:10px }
+}
+
+/* ── 에이전트 고르기 (V24) — 누구와 일할지 + 어떤 환경으로 뜨는지 ────────────── */
+.modal.apick { width:min(560px,calc(100% - 24px)); padding:16px; gap:14px; z-index:92 }
+.modal.apick + .backdrop, .modal.apick ~ .backdrop { z-index:91 }
+.ap-h { display:flex; align-items:flex-start; gap:11px }
+.ap-h .t { flex:1; min-width:0; display:flex; flex-direction:column; gap:3px }
+.ap-h .t b { font-size:16px; font-weight:600; color:var(--w) }
+.ap-h .t small { font-size:12.5px; color:var(--t3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.ap-cards { display:flex; gap:10px }
+.ap-c { flex:1; min-width:0; padding:14px; border-radius:14px; background:var(--sb); border:1.5px solid var(--line); text-align:left; display:flex; flex-direction:column; gap:9px; position:relative; cursor:pointer; color:inherit }
+.ap-c:hover { background:var(--hover) }
+.ap-c.on { background:var(--bg2) } .ap-c.on.claude { border-color:var(--run) } .ap-c.on.codex { border-color:var(--done) }
+.ap-ck { position:absolute; right:12px; top:12px; width:20px; height:20px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; background:var(--run) }
+.ap-c.codex .ap-ck { background:var(--done) }
+.ap-c .hd { display:flex; align-items:center; gap:9px } .ap-c .hd b { font-size:15px; font-weight:600; color:var(--w) }
+.ap-c .ds { font-size:12px; color:var(--t3); line-height:1.55; min-height:34px }
+.ap-c .chips { display:flex; gap:6px; flex-wrap:wrap }
+.ap-c .ch { height:24px; padding:0 9px; border-radius:8px; background:var(--box); color:var(--t2); font-size:11.5px; display:inline-flex; align-items:center; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.ap-env { padding:12px 13px; background:var(--sb); border:1px solid var(--line); border-radius:12px }
+.ap-env .cap { font-size:11.5px; color:var(--t3); margin-bottom:8px }
+.ap-env .er { display:flex; align-items:center; gap:9px; padding:4px 0; font-size:12.5px }
+.ap-env .er .k { width:52px; color:var(--t3); flex:none }
+.ap-env .er .v { flex:1; min-width:0; color:var(--t2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11.5px }
+.ap-f { display:flex; align-items:center; gap:9px } .ap-f .sp { flex:1 }
+.ap-f .btn.on { background:var(--w); color:var(--bg); font-weight:600; display:inline-flex; align-items:center; gap:7px }
+@media (max-width:760px) {
+  .modal.apick { width:calc(100% - 16px); padding:14px; gap:12px }
+  .ap-cards { flex-direction:column }
+  .ap-c .ds { min-height:0 }
+  .ap-f .btn.on { flex:1; justify-content:center; height:44px }
+}
+
+/* ── 설정 (V25) — 왼쪽 목차 · 한 줄은 늘 «제목 · 설명 · 조작» ─────────────── */
+.modal.setw { width:min(900px,calc(100% - 24px)); height:min(620px,calc(100% - 48px)); max-height:none; flex-direction:row; padding:0; background:var(--bg) }
+.snav { width:214px; flex:none; background:var(--sb); border-right:1px solid var(--line); padding:10px 8px; display:flex; flex-direction:column; gap:2px; overflow:auto }
+.snav .nv { display:flex; align-items:center; gap:10px; height:34px; padding:0 11px; border-radius:9px; font-size:13.5px; color:var(--t2); text-align:left; cursor:pointer; background:none; border:0; width:100% }
+.snav .nv:hover { background:var(--hover) } .snav .nv.on { background:var(--sel); color:var(--w) }
+.snav .nv small { color:var(--t3); font-size:11px; margin-left:auto }
+.snav .ver { margin-top:auto; padding:10px 11px; font-size:11px; color:var(--t3) }
+.sfind { display:flex; align-items:center; gap:8px; height:34px; margin:2px 6px 8px; padding:0 11px; border-radius:10px; background:var(--box) }
+.sfind input { flex:1; min-width:0; background:none; border:0; outline:0; color:var(--w); font-size:13px; font-family:inherit }
+.spane { flex:1; min-width:0; display:flex; flex-direction:column }
+.sp-h { display:flex; align-items:center; gap:10px; padding:18px 22px 8px } .sp-h b { font-size:19px; font-weight:600; color:var(--w); flex:1 }
+.sp-b { flex:1; overflow:auto; padding:0 22px 20px }
+.sp-b .lead { font-size:12.5px; color:var(--t3); line-height:1.6; margin:0 0 12px }
+.sp-b .note { font-size:11.5px; color:var(--t3); line-height:1.7; margin:10px 0 0; padding:11px 12px; background:var(--sb); border:1px solid var(--line); border-radius:10px }
+.sp-b .note b { color:var(--t2) }
+.sgrp { display:flex; align-items:center; gap:8px; margin:16px 0 2px; font-size:11.5px; color:var(--t3); letter-spacing:.2px }
+.sgrp > span:first-child { flex:1 }
+.lk { background:none; border:0; color:var(--t3); font-size:11.5px; cursor:pointer; font-family:inherit } .lk:hover { color:var(--t2) }
+.setr { display:flex; align-items:flex-start; gap:16px; padding:14px 0; border-bottom:1px solid var(--line) }
+.setr .tx { flex:1; min-width:0; display:flex; flex-direction:column; gap:3px }
+.setr .tx .t { font-size:14px; color:var(--w); font-weight:500 }
+.setr .tx .d { font-size:12.5px; color:var(--t3); line-height:1.6 }
+.setr .c { flex:none; display:flex; align-items:center; gap:8px; padding-top:1px; max-width:52% }
+.setr.danger .tx .t { color:var(--err) }
+.sin { height:34px; min-width:0; width:190px; background:var(--bg2); border:1px solid var(--line2); border-radius:9px; padding:0 11px; color:var(--w); font-size:13px; outline:0; font-family:inherit }
+.sin:focus { border-color:var(--t3) }
+.ssel { height:34px; background:var(--bg2); border:1px solid var(--line2); border-radius:9px; padding:0 8px; color:var(--w); font-size:13px; outline:0; font-family:inherit; max-width:190px }
+.ssel.sm { max-width:110px }
+.sv { font-size:12.5px; color:var(--t2); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.unit { font-size:12px; color:var(--t3) }
+.pcode { font-size:20px; letter-spacing:.18em; color:var(--w) }
+.btn.danger { color:var(--err); border-color:color-mix(in srgb,var(--err) 40%,transparent) }
+/* 커넥터·스킬·CLI 한 줄 */
+.hitem { display:flex; align-items:center; gap:11px; padding:9px 0; border-bottom:1px solid var(--line) }
+.hitem .ic { width:29px; height:29px; border-radius:9px; background:var(--box); display:inline-flex; align-items:center; justify-content:center; flex:none }
+.hitem .tx { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px }
+.hitem .tx .t { font-size:13.5px; color:var(--w); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.hitem .tx .d { font-size:11.5px; color:var(--t3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.hitem .dt { width:7px; height:7px; border-radius:50%; background:var(--t3); flex:none } .hitem .dt.ok { background:var(--done) }
+.scp { height:20px; padding:0 8px; border-radius:6px; font-size:11px; display:inline-flex; align-items:center; flex:none }
+.scp.user { background:color-mix(in srgb,#7aa2f7 16%,transparent); color:#7aa2f7 }
+.scp.root { background:color-mix(in srgb,var(--done) 16%,transparent); color:var(--done) }
+.scp.folder { background:color-mix(in srgb,var(--run) 16%,transparent); color:var(--run) }
+.scp.builtin { background:var(--box); color:var(--t3) }
+/* 하네스 표 — 보기 전용 */
+.hfilter { display:flex; align-items:center; gap:9px; margin-bottom:10px } .hfilter .sfind { flex:1; margin:0 }
+.htab { border:1px solid var(--line); border-radius:12px; padding:4px }
+.hrow { display:flex; align-items:center; gap:12px; padding:10px 10px; border-radius:9px }
+.hrow:hover { background:var(--hover) }
+.hrow.empty { color:var(--t3); font-size:12.5px; justify-content:center; padding:18px }
+.hrow .tx { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px }
+.hrow .tx .t { font-size:13.5px; color:var(--w); overflow:hidden }
+.hrow .tx .d { font-size:11px; color:var(--t3) }
+.hrow .yn { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:var(--t3); width:92px; flex:none }
+.hrow .yn.y { color:var(--t2) }
+.hrow .n { font-size:11.5px; color:var(--t2); width:58px; flex:none }
+/* 폰 — 목차가 목록, 누르면 그 칸만 */
+.setp { position:fixed; inset:0; background:var(--bg); z-index:60; display:flex; flex-direction:column }
+.setp-h { display:flex; align-items:center; gap:10px; padding:calc(env(safe-area-inset-top) + 10px) 14px 8px }
+.setp-h b { font-size:17px; font-weight:600; color:var(--w); flex:1 } .setp-h b.big { font-size:21px }
+.setp-b { flex:1; overflow:auto; padding:0 14px calc(var(--sab) + 16px) }
+.setp-b .sfind { height:42px; border-radius:21px; margin:2px 0 12px }
+.sec-row { display:flex; align-items:center; gap:13px; width:100%; height:52px; background:none; border:0; color:var(--w); font-size:15.5px; text-align:left; cursor:pointer; font-family:inherit }
+.sec-row .ic { width:34px; height:34px; border-radius:10px; background:var(--box); display:inline-flex; align-items:center; justify-content:center; flex:none }
+.sec-row .nm { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px } .sec-row .nm small { font-size:11.5px; color:var(--t3) }
+.sec-row .vl { font-size:12.5px; color:var(--t3); max-width:40%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+@media (max-width:760px) {
+  .setr { flex-direction:column; gap:8px; align-items:stretch }
+  .setr .c { max-width:100%; flex-wrap:wrap }
+  .sin { width:100% }
+  .hrow { flex-wrap:wrap; gap:8px 10px } .hrow .tx { flex-basis:100% }
 }

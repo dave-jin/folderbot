@@ -1,15 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { marked } from 'marked'
-import type { Bot, Candidate, NotifyEvent, RoutineDef } from '../core/types'
+import type { Bot, NotifyEvent, RoutineDef } from '../core/types'
 import { api, setToken, subscribePush } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
-import { Mark } from './Brand'
-import { PROVIDER_LABEL, type Provider } from '../core/agents'
-import { ICON_LABEL, ICON_PX, useIconSize, useTheme, type IconSize, type Theme } from './theme'
-import { ACT_ICON, ACT_LABEL, SWIPE_DEFAULT, useSwipeCfg, type SwipeAct, type SwipeSlot } from './swipe'
 import { hitRange, rank } from '../core/search'
+import { pickAgent } from './AgentPick'
 import { fmtTime, useStore } from './store'
-import { EFFORTS, MODELS } from './consts'
 
 marked.setOptions({ gfm: true, breaks: true })
 export function Md({ text, streaming }: { text: string; streaming?: boolean }) {
@@ -81,12 +77,12 @@ export function FolderPicker({ onClose, onStarted }: { onClose: () => void; onSt
     const role = topRole(rel)
     if (role === 'archive' && !confirm('보관(Archive) 폴더예요. 그래도 여기서 봇을 시작할까요?')) return
     setBusy(true); setErr('')
-    try { const bot = await api<Bot>('/bots/start', { body: { rel } }); await refresh(); onStarted(bot) } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+    try { const provider = await pickAgent(rel); if (!provider) return; const bot = await api<Bot>('/bots/start', { body: { rel, provider } }); await refresh(); onStarted(bot) } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
   const create = async () => {
     if (!newIn || !newName.trim() || busy) return
     setBusy(true); setErr('')
-    try { const r = await api<{ rel: string; bot: Bot }>('/folders', { body: { section: newIn, name: newName.trim(), start: true } }); await refresh(); onStarted(r.bot) } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+    try { const provider = await pickAgent(`${newIn}/${newName.trim()}`); if (!provider) return; const r = await api<{ rel: string; bot: Bot }>('/folders', { body: { section: newIn, name: newName.trim(), start: true, provider } }); await refresh(); onStarted(r.bot) } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
   const preview = (section: string, name: string) => { const tpl = s.rules?.naming.project; if (!tpl || section !== activeParents[0] || !name) return name; const d = new Date(); return tpl.replace('{YYYY}', String(d.getFullYear())).replace('{MM}', String(d.getMonth() + 1).padStart(2, '0')).replace('{이름}', name).replace('{name}', name) }
   const onKey = (e: React.KeyboardEvent) => {
@@ -260,36 +256,7 @@ export function RoutineSheet({ bot, onClose }: { bot: Bot; onClose: () => void }
   </>
 }
 
-/* ── 설정 ──────────────────────────────────────────────────────────────── */
-export function Settings({ onClose }: { onClose: () => void }) {
-  const { s, refresh } = useStore()
-  const [pair, setPair] = useState<{ code: string; expiresAt: number } | null>(null)
-  const [pushOn, setPushOn] = useState<boolean | null>(null)
-  const isLocal = location.hostname === '127.0.0.1' || location.hostname === 'localhost'
-  return <>
-    <div className="backdrop" onClick={onClose} />
-    <div className="modal" style={{ width: 'min(560px,calc(100% - 24px))' }}>
-      <div className="modal-h"><div className="t"><b>설정</b><small>Folder Bot v{s.version}</small></div><button className="ib" onClick={onClose}><Icon n="x" size={14} /></button></div>
-      <div className="modal-b" style={{ padding: '0 18px 12px', gap: 14 }}>
-        <div><div className="secl" style={{ padding: '8px 0 4px' }}>호스트</div><div className="kv"><span className="n">루트</span><span className="mono" style={{ fontSize: 11.5 }}>{s.root}</span></div><div className="kv"><span className="n">주소</span><span className="mono" style={{ fontSize: 11.5 }}>{s.addrs.map((a) => `http://${a}:${s.port}`).join(' · ')}</span></div>{s.tailnet ? <div className="kv"><span className="n">Tailscale</span><span>{s.tailnet.state}{s.tailnet.dnsName ? ` · ${s.tailnet.dnsName}` : ''}</span></div> : null}<div className="kv"><span className="n">Claude 로그인</span><span style={{ color: s.auth.verdict === 'loggedin' ? 'var(--done)' : 'var(--awaiting)' }}>{s.auth.verdict}{s.auth.email ? ` · ${s.auth.email}` : ''}</span><button className="btn ghost" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button></div></div>
-        <div><div className="secl" style={{ padding: '8px 0 4px' }}>이름 — 메인 · 이 기기</div><NamesBox /></div>
-        <div><div className="secl" style={{ padding: '8px 0 4px' }}>모델 · 생각 레벨 (새 세션부터)</div><DefaultsBox /></div>
-        <div><div className="secl" style={{ padding: '8px 0 4px' }}>Claude 인증</div>
-          <div className="kv" style={{ color: 'var(--faint)', lineHeight: 1.5, alignItems: 'flex-start' }}><span>미니가 키체인 로그인을 못 읽는 상황(헤드리스·SSH)이면 <b style={{ color: 'var(--dim)' }}>장기 토큰</b>을 씁니다. 아무 맥에서 터미널에 <span className="mono">claude setup-token</span> 을 치고 브라우저 승인 뒤 나온 토큰을 붙여 넣으세요 (1년 유효). ⚠ 토큰 모드에선 claude.ai 커넥터(Gmail·Notion 등)는 안 붙어요.</span></div>
-          <TokenBox mode={s.auth.mode} /></div>
-        <div><div className="secl" style={{ padding: '8px 0 4px' }}>기기</div>{s.devices.map((d) => <div className="kv" key={d.id}><Icon n="phone" size={13} /><span className="n">{d.name}</span><time style={{ fontSize: 11 }}>{fmtTime(d.lastSeen)}</time><button className="btn ghost" onClick={() => api('/devices/revoke', { body: { id: d.id } }).then(refresh)}>끊기</button></div>)}
-          {isLocal ? <div className="kv"><span className="n">새 기기 연결</span>{pair ? <span className="mono" style={{ fontSize: 22, letterSpacing: '.18em', color: 'var(--strong)' }}>{pair.code}</span> : null}<button className="btn" onClick={async () => setPair(await api('/pairing', { body: {} }))}>페어링 코드</button></div> : <div className="kv" style={{ color: 'var(--faint)' }}>새 기기 연결은 미니의 화면(127.0.0.1)이나 터미널(p + Enter)에서</div>}</div>
-        {(window as unknown as { folderbotDesktop?: { perms?: unknown } }).folderbotDesktop?.perms ? <div><div className="secl" style={{ padding: '8px 0 4px' }}>macOS 권한</div><div className="kv"><span className="n">전체 디스크 접근 · 알림</span><button className="btn" onClick={() => { onClose(); window.dispatchEvent(new Event('fb:perm-gate')) }}>권한 다시 확인</button></div></div> : null}
-        <AgentsBox />
-        <UsageBox />
-        <div><div className="secl" style={{ padding: '8px 0 4px' }}>화면</div><div className="kv"><span className="n">테마</span><ThemePick /></div><div className="kv"><span className="n">폴더봇 크기</span><IconPick /></div><div className="kv" style={{ color: 'var(--faint)' }}>목록의 폴더봇 크기예요. 마우스를 올리면 한 번 더 커져서 표정이 보여요.</div></div>
-        <SwipeBox />
-        <div><div className="secl" style={{ padding: '8px 0 4px' }}>알림</div><div className="kv"><span className="n">이 기기 푸시</span><button className="btn" onClick={async () => setPushOn(await subscribePush(s.vapidPublic, navigator.userAgent.slice(0, 30)))}>{pushOn === true ? '켜짐' : pushOn === false ? '실패 · HTTPS + 홈 화면 설치 필요' : '켜기'}</button></div><div className="kv" style={{ color: 'var(--faint)' }}>조용한 시간 23:00–07:00 (확인해 주세요만 통과). 폰 푸시는 Tailscale serve 로 HTTPS 를 붙이고 홈 화면에 설치해야 동작해요.</div></div>
-        <div><div className="secl" style={{ padding: '8px 0 4px' }}>연결</div><button className="btn" onClick={() => { setToken(''); location.reload() }}>이 기기 로그아웃</button></div>
-      </div>
-    </div>
-  </>
-}
+export { Settings } from './Settings'
 
 /**
  * 이름 묻기 — `window.prompt()` 대체. Electron 은 prompt() 를 지원하지 않아(«prompt() is and will not be supported»)
@@ -316,111 +283,7 @@ export function AskHost() {
   </>
 }
 
-/** 폰 «쓸어서 처리» — 네 자리에 각각 동작을 고른다 (V16) */
-function SwipeBox() {
-  const [cfg, save] = useSwipeCfg()
-  const slots: [SwipeSlot, string, string][] = [['rightShort', '오른쪽으로 짧게', '→ 25~45%'], ['rightLong', '오른쪽으로 길게', '→ 45% 이상'], ['leftShort', '왼쪽으로 짧게', '← 25~45%'], ['leftLong', '왼쪽으로 길게', '← 45% 이상']]
-  const acts: SwipeAct[] = ['edit', 'done', 'menu', 'delete', 'delegate', 'expand', 'none']
-  return <div><div className="secl" style={{ padding: '8px 0 4px' }}>할 일 — 폰에서 쓸어서 처리</div>
-    {slots.map(([k, l, sub]) => <div className="kv swk" key={k}>
-      <span className="n">{l} <small>{sub}</small></span>
-      <span className="seg wrap">{acts.map((a) => <button key={a} className={cfg[k] === a ? 'on' : ''} onClick={() => save({ ...cfg, [k]: a })} title={ACT_LABEL[a]}><Icon n={ACT_ICON[a] as 'edit'} size={11} />{ACT_LABEL[a]}</button>)}</span>
-    </div>)}
-    <div className="kv"><span className="n">진동</span><span className="seg">{[[true, '켬'], [false, '끔']].map(([v, l]) => <button key={String(v)} className={cfg.haptics === v ? 'on' : ''} onClick={() => save({ ...cfg, haptics: v as boolean })}>{l as string}</button>)}</span></div>
-    <div className="kv"><span className="n" style={{ color: 'var(--t3)' }}>데스크톱은 마우스를 올리면 나오는 도구를 씁니다</span><button className="btn" onClick={() => save(SWIPE_DEFAULT)}>기본값</button></div>
-  </div>
-}
-
-/** 테마 고르기 — 시스템 · 라이트 · 다크 */
-function ThemePick() {
-  const [theme, setTheme] = useTheme()
-  const opt: [Theme, string][] = [['auto', '시스템'], ['light', '라이트'], ['dark', '다크']]
-  return <span className="seg">{opt.map(([v, l]) => <button key={v} className={theme === v ? 'on' : ''} onClick={() => setTheme(v)}>{l}</button>)}</span>
-}
-
-/**
- * 설정 › 에이전트 — 이 맥에 깔린 CLI. 회사 표식으로 가른다(2026-09-13 Dave).
- * ⛔ 안 깔린 것은 줄 자체를 안 만든다 — 호스트가 이미 그렇게 내준다(`GET /api/agents`).
- */
-function AgentsBox() {
-  const [list, setList] = useState<Provider[] | null>(null)
-  useEffect(() => { void api<Provider[]>('/agents').then(setList).catch(() => setList([])) }, [])
-  if (!list) return null
-  return <div><div className="secl" style={{ padding: '8px 0 4px' }}>에이전트</div>
-    {list.map((p) => <div className="kv agent" key={p.id}><Mark id={p.id} size={17} /><span className="n">{PROVIDER_LABEL[p.id] ?? p.id}</span><span className="mono" style={{ fontSize: 11.5, color: 'var(--faint)' }}>{p.version ?? p.bin}</span></div>)}
-    {!list.length ? <div className="kv" style={{ color: 'var(--faint)' }}>깔린 에이전트가 없어요 — Claude Code 를 먼저 설치하세요</div> : null}
-    <div className="kv" style={{ color: 'var(--faint)' }}>여기 보이는 것만 폴더를 시작할 때 고를 수 있어요.</div>
-  </div>
-}
-
-/**
- * 설정 › 사용량 — 훅 설치·제거와 예산.
- * 🔴 «요금제의 몇 %가 남았나» 는 CLI 가 안 내준다(실측). 남은 양은 **내 예산 − 쓴 양** 이고, 여기서 그 예산을 정한다.
- */
-function UsageBox() {
-  const [st, setSt] = useState<{ hook?: boolean; budget?: { window: number; day: number; week: number }; tools?: { tool: string }[] } | null>(null)
-  const [busy, setBusy] = useState(false)
-  const load = () => void api<typeof st>('/usage').then(setSt).catch(() => {})
-  useEffect(load, [])
-  const setB = async (k: 'window' | 'day' | 'week', v: string) => {
-    const n = Number(v); if (!Number.isFinite(n) || n < 0) return
-    await api('/usage/budget', { body: { [k]: n } }); load()
-  }
-  return <div><div className="secl" style={{ padding: '8px 0 4px' }}>사용량</div>
-    <div className="kv"><span className="n">턴마다 기록하기 (Claude Code 훅)</span>
-      <button className="btn" disabled={busy} onClick={async () => { setBusy(true); try { await api('/usage/hook', { body: { on: !st?.hook } }); load() } finally { setBusy(false) } }}>{st?.hook ? '설치됨 · 제거' : '훅 설치'}</button></div>
-    <div className="kv" style={{ color: 'var(--faint)', lineHeight: 1.5, alignItems: 'flex-start' }}><span>턴이 끝날 때 <b style={{ color: 'var(--dim)' }}>읽기만</b> 해서 이번 턴의 토큰을 남깁니다 — 터미널에서 연 세션까지 전부 잡혀요. 실패해도 조용히 끝나 턴을 막지 않습니다. 훅이 없어도 기록을 직접 훑어 숫자는 나오지만, 훅이 있으면 더 빠르고 정확해요.</span></div>
-    <div className="kv"><span className="n">예산 — 5시간 창</span><input className="bud" defaultValue={st?.budget?.window ?? ''} onBlur={(e) => void setB('window', e.target.value)} /><span style={{ color: 'var(--faint)' }}>달러</span></div>
-    <div className="kv"><span className="n">예산 — 하루</span><input className="bud" defaultValue={st?.budget?.day ?? ''} onBlur={(e) => void setB('day', e.target.value)} /><span style={{ color: 'var(--faint)' }}>달러</span></div>
-    <div className="kv"><span className="n">예산 — 한 주</span><input className="bud" defaultValue={st?.budget?.week ?? ''} onBlur={(e) => void setB('week', e.target.value)} /><span style={{ color: 'var(--faint)' }}>달러</span></div>
-    <div className="kv" style={{ color: 'var(--faint)' }}>요금제 한도(%)는 CLI 밖으로 안 나와요. 막대는 이 예산 기준이고, 비용은 토큰 × 단가 추정입니다.</div>
-  </div>
-}
-
-/** 폴더봇 크기 — 고른 즉시 레일에 반영된다(다른 창·탭도 fb:iconsize 로 함께 바뀐다) */
-function IconPick() {
-  const [sz, setSz] = useIconSize()
-  const opt: IconSize[] = ['s', 'm', 'l']
-  return <span className="seg">{opt.map((v) => <button key={v} className={sz === v ? 'on' : ''} onClick={() => setSz(v)} title={`${ICON_PX[v]}px`}>{ICON_LABEL[v]}</button>)}</span>
-}
-
 export function useToast(): [string, (m: string) => void] {
   const [msg, setMsg] = useState(''); const t = useRef<number | undefined>(undefined)
   return [msg, (m: string) => { setMsg(m); window.clearTimeout(t.current); t.current = window.setTimeout(() => setMsg(''), 2600) }]
-}
-
-/** 메인(호스트) 이름과 이 기기 이름 — 기본값은 컴퓨터 이름·페어링 때 고른 기기 종류 */
-function NamesBox() {
-  const { s, refresh } = useStore()
-  const [host, setHost] = useState(s.hostName); const [dev, setDev] = useState(s.device.name); const [msg, setMsg] = useState('')
-  useEffect(() => { setHost(s.hostName); setDev(s.device.name) }, [s.hostName, s.device.name])
-  const save = async (body: { hostName?: string; deviceName?: string }) => { try { await api('/names', { body }); await refresh(); setMsg('저장했어요') } catch (e) { setMsg((e as Error).message) } }
-  return <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '4px 8px' }}>
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-      <div className="field" style={{ flex: 1, minWidth: 180 }}><label>메인(호스트) 이름</label><input value={host} onChange={(e) => setHost(e.target.value)} onBlur={() => { if (host.trim() !== s.hostName) void save({ hostName: host }) }} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} /><small style={{ color: 'var(--t3)', fontSize: 11.5 }}>기본값: 호스트 맥의 컴퓨터 이름. 모든 기기에 같이 보여요.</small></div>
-      {!s.device.main ? <div className="field" style={{ flex: 1, minWidth: 180 }}><label>이 기기 이름</label><input value={dev} onChange={(e) => setDev(e.target.value)} onBlur={() => { if (dev.trim() && dev.trim() !== s.device.name) void save({ deviceName: dev }) }} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} /><small style={{ color: 'var(--t3)', fontSize: 11.5 }}>기본값: 페어링할 때 고른 기기 종류. 기기마다 따로.</small></div> : null}
-    </div>
-    <div style={{ fontSize: 12, color: 'var(--t3)', display: 'flex', alignItems: 'center', gap: 6 }}><span className="dot done" /><span>지금 이 화면은 {s.device.main ? <><b>메인</b> ({s.hostName}) 에서 보고 있어요</> : <><b>원격 · {s.device.name}</b> 에서 <b>{s.hostName}</b> 를 보고 있어요</>}{msg ? ` · ${msg}` : ''}</span></div>
-  </div>
-}
-function DefaultsBox() {
-  const { s, refresh } = useStore()
-  const [model, setModel] = useState(s.defaults.model || 'claude-fable-5-1'); const [effort, setEffort] = useState(s.defaults.effort || 'high'); const [msg, setMsg] = useState('')
-  const save = async (m: string, e: string) => { try { await api('/defaults', { body: { model: m, effort: e } }); await refresh(); setMsg('저장했어요 — 다음 세션부터 적용돼요. 지금 열린 세션은 만들 때의 값을 그대로 씁니다.') } catch (er) { setMsg((er as Error).message) } }
-  return <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '4px 8px' }}>
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-      <div className="field" style={{ flex: 1, minWidth: 180 }}><label>모델</label><select value={model} onChange={(e) => { setModel(e.target.value); void save(e.target.value, effort) }}>{MODELS.map((m) => <option key={m.v} value={m.v}>{m.t}{m.d ? ` — ${m.d}` : ''}</option>)}</select></div>
-      <div className="field" style={{ flex: 1, minWidth: 140 }}><label>생각 레벨</label><select value={effort} onChange={(e) => { setEffort(e.target.value); void save(model, e.target.value) }}>{EFFORTS.map((e) => <option key={e.v} value={e.v}>{e.t}{e.v === 'high' ? ' — 기본' : ''}</option>)}</select></div>
-    </div>
-    <div style={{ fontSize: 12, color: 'var(--t3)' }}>{msg || '모든 봇의 새 세션이 이 값으로 뜹니다. 세션마다 바꾸려면 입력창 아래 줄(모델 · 노력 · 모드)에서.'}</div>
-  </div>
-}
-function TokenBox({ mode }: { mode?: 'login' | 'token' }) {
-  const { refresh } = useStore()
-  const [t, setT] = useState(''); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState('')
-  const save = async (token: string) => { setBusy(true); try { await api('/auth/token', { body: { token } }); await refresh(); setMsg(token ? '토큰을 저장했어요. 새 세션부터 적용돼요.' : '토큰을 지웠어요.'); setT('') } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) } }
-  return <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '4px 8px' }}>
-    <div style={{ display: 'flex', gap: 8 }}><input className="mono" style={{ flex: 1, background: 'var(--code)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 8, padding: '8px 10px', outline: 0 }} placeholder="sk-ant-oat01-…" value={t} onChange={(e) => setT(e.target.value)} /><button className="btn primary" disabled={busy || !t.trim()} onClick={() => save(t)}>저장</button>{mode === 'token' ? <button className="btn" disabled={busy} onClick={() => save('')}>지우기</button> : null}</div>
-    <div style={{ fontSize: 12, color: mode === 'token' ? 'var(--done)' : 'var(--faint)' }}>{mode === 'token' ? '지금: 장기 토큰 모드' : '지금: 키체인 로그인 모드'}{msg ? ` · ${msg}` : ''}</div>
-  </div>
 }

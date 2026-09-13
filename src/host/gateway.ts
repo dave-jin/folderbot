@@ -13,6 +13,7 @@ import { allDirs, guard, kindOf, mime, readText, recent, stream, tree, writeText
 import { todoDelete, todoEdit, todoMove, todoToggle } from './todoStore'
 import { globParents, roleOf } from '../core/rules'
 import { slashCommands } from './slash'
+import { globalHarness, harnessDetail, harnessRow } from './harness'
 
 interface Client { res: ServerResponse; device: string }
 interface Who { ok: boolean; device: string; id: string; main: boolean }
@@ -131,8 +132,16 @@ export class Gateway {
     }
     if (p === '/api/bots' && m === 'GET') return json(200, reg.bots())
     if (p === '/api/candidates') return json(200, reg.candidates())
-    if (p === '/api/bots/start' && m === 'POST') { const b = await body(); const bot = reg.start(String(b.rel)); h.afterBotsChanged(); return json(200, bot) }
-    if (p === '/api/folders' && m === 'POST') { const b = await body(); const rel = reg.createFolder(String(b.section), String(b.name)); let bot = null; if (b.start) { bot = reg.start(rel); h.afterBotsChanged() } return json(200, { rel, bot }) }
+    if (p === '/api/bots/start' && m === 'POST') { const b = await body(); const bot = reg.start(String(b.rel), b.provider === 'codex' ? 'codex' : b.provider === 'claude' ? 'claude' : undefined); h.afterBotsChanged(); return json(200, bot) }
+    if (p === '/api/harness' && m === 'GET') {
+      const rel = url.searchParams.get('rel')
+      if (rel !== null) { const abs = join(reg.root, rel); if (!abs.startsWith(reg.root)) return json(400, { error: '루트 밖' }); return json(200, harnessDetail(rel, rel.split('/').pop() ?? rel, rel.includes('/') ? rel.split('/')[0] : '', abs, reg.root)) }
+      const rows = [...reg.bots().filter((b) => !b.orchestrator).map((b) => ({ rel: b.rel, name: b.name, section: b.section, abs: b.abs })),
+        ...reg.candidates().filter((c) => !c.active).map((c) => ({ rel: c.rel, name: c.name, section: c.section, abs: join(reg.root, c.rel) }))]
+      return json(200, rows.map((r) => harnessRow(r.rel, r.name, r.section, r.abs, reg.root)))
+    }
+    if (p === '/api/harness/global' && m === 'GET') return json(200, globalHarness(reg.root))
+    if (p === '/api/folders' && m === 'POST') { const b = await body(); const rel = reg.createFolder(String(b.section), String(b.name)); let bot = null; if (b.start) { bot = reg.start(rel, b.provider === 'codex' ? 'codex' : undefined); h.afterBotsChanged() } return json(200, { rel, bot }) }
     if (p === '/api/rules' && m === 'GET') return json(200, { rules: reg.rules, installed: reg.rulesInstalled(), file: reg.rulesFile(), parents: reg.rules.roles.active })
     if (p === '/api/rules/install' && m === 'POST') { const b = await body(); const r = reg.installRules((b.preset as 'para') ?? 'para'); h.afterBotsChanged(); return json(200, { rules: r, candidates: reg.candidates() }) }
     if (p === '/api/inbox') return json(200, reg.inboxItems())

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Bot, SessionInfo, TodoItem } from '../core/types'
+import type { Bot, HarnessDetail, HarnessItem, SessionInfo, TodoItem } from '../core/types'
 import { api } from './api'
 import { isDoneSection } from '../core/todo'
 import { ACT_COLOR, ACT_ICON, ACT_LABEL, LONG, actOf, buzz, slotOf, useSwipeCfg, type SwipeAct } from './swipe'
 import { HOLD_MS, decide, dropIndex } from './gesture'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { RoutineSheet, askName } from './Sheets'
+import { Mark } from './Brand'
 import { scoreName } from '../core/search'
 import { fmtElapsed, fmtTime, useStore } from './store'
 
@@ -57,6 +58,11 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
       <Tree bot={bot} open={!!open.files} tog={() => tog('files')} onOpen={onOpenFile} onAttach={onAttach} onMention={onMention} onStartAt={onStartAt} onNewFolderAt={onNewFolderAt} touched={touched} tick={filesTick} say={say} active={activeDoc} />
     </div>
     <div className="divy" style={{ cursor: 'default' }} />
+    {/* 지침 · 하네스 — 폴더에 딸린 것의 집 (V25). 설정의 «하네스» 칸은 훑는 표일 뿐이다 */}
+    {!bot.orchestrator ? <div className="sec fix">
+      <HarnessSec bot={bot} open={!!open.harness} tog={() => tog('harness')} onOpenFile={onOpenFile} />
+    </div> : null}
+    <div className="divy" style={{ cursor: 'default' }} />
     {/* 루틴 */}
     <div className="sec fix">
       <button className="sech" onClick={() => tog('routines')}><Icon n={open.routines ? 'chevd' : 'chev'} size={9} /><span>루틴</span><span className="c">{bot.routines.length}</span></button>
@@ -68,6 +74,32 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
     </div>
     {routines ? <RoutineSheet bot={bot} onClose={() => setRoutines(false)} /> : null}
   </div>
+}
+
+/**
+ * 지침 · 하네스 (V25 · 2026-09-13 Dave 승인) — «이 폴더에서 실제로 쓸 수 있는 것».
+ *
+ * 🔴 **폴더별 하네스의 집은 여기다.** 설정에도 같은 내용의 표가 있지만 그건 전체를 훑는 용도고,
+ *    «지금 어느 폴더 이야기인가» 가 붙어 있는 자리는 이 패널뿐이다 (Dave: «이건 어떻게 보여져야 할지 고민»).
+ * 🔴 **범위 칩이 출처다** — 사용자(모든 폴더) · 볼트 · 폴더 · 내장. 같은 이름이 겹치면 **폴더가 이긴다**.
+ */
+const SCOPE_T: Record<HarnessItem['scope'], string> = { folder: '폴더', root: '볼트', user: '사용자', builtin: '내장' }
+function HarnessSec({ bot, open, tog, onOpenFile }: { bot: Bot; open: boolean; tog: () => void; onOpenFile: (rel: string) => void }) {
+  const [hz, setHz] = useState<HarnessDetail | null>(null)
+  const [all, setAll] = useState(false)
+  useEffect(() => { if (!open) return; void api<HarnessDetail>(`/harness?rel=${encodeURIComponent(bot.rel)}`).then(setHz).catch(() => setHz(null)) }, [open, bot.rel])
+  const guides = hz ? [hz.claudeMd ? 'CLAUDE.md' : null, hz.agentsMd ? 'AGENTS.md' : null].filter(Boolean) as string[] : []
+  const items = hz ? [...hz.skillList, ...hz.mcpList] : []
+  const shown = all ? items : items.slice(0, 4)
+  return <>
+    <button className="sech" onClick={tog}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>지침 · 하네스</span><span className="c">{hz ? guides.length + items.length : ''}</span></button>
+    {open ? <div className="secb hsec">
+      {guides.map((g) => <button className="hz" key={g} onClick={() => onOpenFile(g)}><Mark id={g === 'AGENTS.md' ? 'codex' : 'claude'} size={13} /><span className="n">{g}</span><span className="sc">지침 · 폴더</span></button>)}
+      {!guides.length && hz ? <div className="kv" style={{ color: 'var(--t3)' }}>지침 파일이 없어요 — CLAUDE.md 를 만들면 봇이 읽어요</div> : null}
+      {shown.map((i) => <div className="hz" key={`${i.kind}:${i.name}`}><Icon n={i.kind === 'mcp' ? 'plug' : 'run'} size={13} color={i.scope === 'folder' ? 'var(--run)' : 'var(--t3)'} /><span className="n">{i.name}</span><span className="sc">{i.kind === 'mcp' ? '커넥터' : '스킬'} · {SCOPE_T[i.scope]}</span></div>)}
+      {items.length > 4 ? <button className="hz more" onClick={() => setAll(!all)}>{all ? '접기' : `+ 스킬 ${hz!.skillList.length} · 커넥터 ${hz!.mcpList.length} 모두 보기`}</button> : null}
+    </div> : null}
+  </>
 }
 
 export function Elapsed({ from }: { from?: number }) {

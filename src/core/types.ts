@@ -102,6 +102,23 @@ export interface SlashCmd {
   scope: 'folder' | 'root' | 'user' | 'cli'
 }
 
+/** 하네스 — 이 폴더에서 실제로 쓸 수 있는 지침·스킬·커넥터 */
+export type HarnessScope = 'folder' | 'root' | 'user' | 'builtin'
+export interface HarnessItem { name: string; desc: string; scope: HarnessScope; kind: 'skill' | 'mcp' }
+export interface HarnessRow {
+  rel: string
+  name: string
+  section: string
+  /** Claude Code 가 읽는 지침 */
+  claudeMd: boolean
+  /** Codex 가 읽는 지침 */
+  agentsMd: boolean
+  skills: number
+  mcp: number
+  by: Record<HarnessScope, number>
+}
+export interface HarnessDetail extends HarnessRow { skillList: HarnessItem[]; mcpList: HarnessItem[] }
+
 export interface PermissionRequest {
   requestId: string
   toolName: string

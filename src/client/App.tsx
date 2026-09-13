@@ -3,12 +3,13 @@ import type { Bot, ChatItem, NotifyEvent, PermissionMode, PermissionRequest, Ses
 import { api, setToken, token, uploadFile } from './api'
 import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
 import { AskHost, FolderPicker, Md, NotifyCenter, Onboarding, Pairing, Settings, askName, useToast } from './Sheets'
+import { AgentPickHost, pickAgent } from './AgentPick'
 import { DocPane, useDocs } from './Doc'
 import { Elapsed, Panel, type SecH } from './Panel'
 import { norm, scoreName } from '../core/search'
 import { fmtTime, useStore } from './store'
 import { ICON_PX, useIconSize, useTheme } from './theme'
-import { UsageCard, UsageChip, UsageStrip, useUsage } from './Usage'
+import { UsageCard, UsageStrip, useUsage } from './Usage'
 import { PermGate, usePerms } from './Perms'
 import { EFFORTS, MODELS, MODES, effortLabel, fmtK, modeLabel, modelLabel } from './consts'
 
@@ -155,7 +156,6 @@ function Main() {
   const sessionId = hash.s && sessions.some((x) => x.id === hash.s) ? hash.s : sessions[0]?.id
   const narrow = useMedia('(max-width: 1100px)'); const phone = useMedia('(max-width: 760px)'); const kb = useKeyboard()
   const [iconSz] = useIconSize() // 레일 폴더봇 크기 — 설정에서 고른다(--fbi 도 함께 나간다)
-  const usage = useUsage(); const [uOpen, setUOpen] = useState(false) // 사용량 — 남은 양 (V23)
   const [view, setView] = useState<'list' | 'chat' | 'doc' | 'panel'>(hash.bot ? 'chat' : 'list')
   const [lay, setLay] = useState<Layout>(() => { try { return { ...DEF, ...JSON.parse(localStorage.getItem('fb:layout') ?? '') } } catch { return DEF } })
   useEffect(() => { localStorage.setItem('fb:layout', JSON.stringify(lay)) }, [lay])
@@ -236,8 +236,8 @@ function Main() {
   const hovOut = () => { window.clearTimeout(hovT.current); setHov(null) }
   const hovRow = hov ? stripBots.find((x) => x.b.id === hov.id) : undefined
   // 트리 우클릭 «여기서 에이전트 시작» · «새 폴더 만들기 → 시작» — 볼트 상대 경로로
-  const startAt = async (rel: string, botId?: string) => { if (botId) { go(botId); return } if (!bot.orchestrator && !confirm(`상위 봇 ${bot.name} 와 폴더가 겹쳐요. 그래도 여기서 시작할까요?`)) return; try { const b = await api<Bot>('/bots/start', { body: { rel } }); await refresh(); go(b.id); say(`${b.name} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
-  const newFolderAt = async (parent: string) => { const name = await askName(`${parent || '볼트'} 안에 만들 폴더 이름`); if (!name?.trim()) return; try { const r = await api<{ rel: string; bot: Bot }>('/folders', { body: { section: parent, name: name.trim(), start: true } }); await refresh(); go(r.bot.id); say(`${r.rel} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
+  const startAt = async (rel: string, botId?: string) => { if (botId) { go(botId); return } if (!bot.orchestrator && !confirm(`상위 봇 ${bot.name} 와 폴더가 겹쳐요. 그래도 여기서 시작할까요?`)) return; const provider = await pickAgent(rel); if (!provider) return; try { const b = await api<Bot>('/bots/start', { body: { rel, provider } }); await refresh(); go(b.id); say(`${b.name} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
+  const newFolderAt = async (parent: string) => { const name = await askName(`${parent || '볼트'} 안에 만들 폴더 이름`); if (!name?.trim()) return; const provider = await pickAgent(`${parent ? parent + '/' : ''}${name.trim()}`); if (!provider) return; try { const r = await api<{ rel: string; bot: Bot }>('/folders', { body: { section: parent, name: name.trim(), start: true, provider } }); await refresh(); go(r.bot.id); say(`${r.rel} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
   const newSession = async () => { const info = await api<SessionInfo>(`/bots/${bot.id}/sessions`, { body: { name: `세션 ${sessions.length + 1}` } }); await refresh(); go(bot.id, info.id) }
   return <div className={`app ${isDesktop ? 'desktop' : ''} ${phone ? 'phone' : ''} ${kb ? 'kb' : ''} ${drag === 'x' ? 'dragx' : drag === 'y' ? 'dragy' : ''}`} data-view={view === 'doc' && !showDoc ? 'panel' : view}>
     {s.online === 'off' ? <div className="offline">{s.hostName || '호스트'} 와 다시 연결하는 중…</div> : null}
@@ -259,9 +259,9 @@ function Main() {
           </div>)}
         </div>
         {hovRow ? <HoverCard b={hovRow.b} sum={hovRow.sum} top={hov!.top} left={fit.sb + 6} /> : null}
-        {uOpen && usage ? <><div className="backdrop" style={{ background: 'transparent' }} onClick={() => setUOpen(false)} /><div className="upop" style={{ left: 10, bottom: 44 }}><UsageCard u={usage} /></div></> : null}
+        {/* ⛔ 맥에서는 사용량을 앱 안에 안 그린다 — **메뉴바에서만** 본다 (2026-09-13 Dave: «맥에서는 그냥 메뉴바 안에서만 이게 보이면 좋겠어»).
+            폰은 첫 화면 위 스트립 하나로 남는다. 두 표면 다 있으면 같은 숫자가 두 번 보이고 아래 줄이 또 비좁아진다. */}
         <div className="sb-foot two">
-          {usage && usage.tools.length ? <div className="r1"><UsageChip u={usage} onClick={() => setUOpen(!uOpen)} /></div> : null}
           <div className="r2"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} /><span className="hn">{s.hostName}</span><MrBadge />{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<UpdateChip version={s.version} st={upd} onCheck={updCheck} onApply={updApply} /></div>
         </div>
       </div> : <div className="strip left"><button className="ib" onClick={openSb} title="목록 펼치기 (⌘B)"><Icon n="panel" size={14} /></button><div className="gap" />
@@ -292,6 +292,7 @@ function Main() {
     {modal === 'notify' ? <NotifyCenter onClose={() => setModal(null)} onJump={(n) => { setModal(null); api('/notifications/read', { body: { ids: [n.id] } }).then(refresh); go(n.botId, n.sessionId) }} /> : null}
     {modal === 'settings' ? <Settings onClose={() => setModal(null)} /> : null}
     <AskHost />
+    <AgentPickHost />
     {toast ? <div className="toast">{toast}</div> : null}
   </div>
 }
