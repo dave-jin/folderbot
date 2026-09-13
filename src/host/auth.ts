@@ -32,18 +32,33 @@ export async function checkAuth(bin?: string): Promise<AuthState> {
   return { ...main, keychain: bare.verdict === 'loggedin' }
 }
 
+/**
+ * `claude auth status --json` 의 답을 읽는다.
+ *
+ * 🔴 **여러 줄로 온다.** 종전에는 «마지막 줄» 만 잘라서 `JSON.parse` 했는데, CLI 2.1.270 은
+ *    **들여쓴 여러 줄 JSON** 을 뱉는다 — 마지막 줄이 `}` 하나라 파싱이 터지고, 로그인이 멀쩡한데도
+ *    판정이 `unknown` 으로 떨어졌다(2026-09-13 Dave 진단 결과로 확인).
+ *    그 여파가 작지 않다: `unknown` 이면 «키체인을 못 읽음» 으로 보여 **장기 토큰이 계속 실리고**,
+ *    그래서 claude.ai 커넥터가 안 붙는다.
+ * ⚠ **첫 `{` 부터 마지막 `}` 까지**를 본다 — CLI 가 앞에 경고 한 줄을 찍는 판도 있어서,
+ *    통째로 파싱하면 그때 또 터진다. 그 두 경우를 한 번에 덮는 잘라내기다.
+ * ⛔ 정규식으로 `loggedIn` 만 긁지 않는다 — 그러면 `"loggedIn": false` 도 참으로 읽는 사고가 난다.
+ */
+export function parseStatus(out: string): { loggedIn?: boolean; email?: string; subscriptionType?: string; authMethod?: string } | null {
+  const a = out.indexOf('{'), b = out.lastIndexOf('}')
+  if (a < 0 || b <= a) return null
+  try { return JSON.parse(out.slice(a, b + 1)) as { loggedIn?: boolean; authMethod?: string } } catch { return null }
+}
+
 function probe(bin?: string, opts: { noToken?: boolean } = {}): Promise<AuthState> {
   return new Promise((resolve) => {
     execFile(claudeBin(bin), ['auth', 'status', '--json'], { env: cleanClaudeEnv(opts), timeout: 15000 }, (err, stdout) => {
       const now = Date.now()
       if (err && !stdout) return resolve({ verdict: 'unknown', checkedAt: now, reason: err.message.slice(0, 200) })
-      try {
-        const j = JSON.parse(String(stdout).trim().split('\n').pop() ?? '{}') as { loggedIn?: boolean; email?: string; subscriptionType?: string }
-        const loggedIn = j.loggedIn === true
-        return resolve({ verdict: authVerdict({ asked: true, loggedIn, credentialsExpiresAt: loggedIn ? null : credentialsExpiresAt(), now }), email: j.email, plan: j.subscriptionType, checkedAt: now })
-      } catch {
-        return resolve({ verdict: 'unknown', checkedAt: now, reason: String(stdout).slice(0, 200) })
-      }
+      const j = parseStatus(String(stdout))
+      if (!j) return resolve({ verdict: 'unknown', checkedAt: now, reason: String(stdout).slice(0, 200) })
+      const loggedIn = j.loggedIn === true
+      return resolve({ verdict: authVerdict({ asked: true, loggedIn, credentialsExpiresAt: loggedIn ? null : credentialsExpiresAt(), now }), email: j.email, plan: j.subscriptionType, checkedAt: now })
     })
   })
 }
@@ -108,7 +123,8 @@ export async function diagnose(cfg: { claudeBin?: string; openaiApiKey?: string;
   L.push('[Claude Code]')
   L.push(`  바이너리 ${c?.bin ?? '못 찾음'}${c?.version ? ` · ${c.version}` : ''}`)
   const auth = await checkAuth(cfg.claudeBin)
-  L.push(`  판정 ${auth.verdict}${auth.reason ? ` (${auth.reason.slice(0, 120)})` : ''}`)
+  // ⚠ 이유는 **한 줄로** 접는다 — 여러 줄 JSON 이 그대로 나오면 진단 글이 통째로 그것뿐이 된다
+  L.push(`  판정 ${auth.verdict}${auth.reason ? ` (${auth.reason.replace(/\s+/g, ' ').slice(0, 120)})` : ''}${auth.email ? ` · ${auth.email}` : ''}`)
   L.push(`  키체인 로그인 ${auth.keychain ? '읽힘' : '못 읽음'} · 장기 토큰 ${cfg.tokenSet ? '설정됨' : '없음'}`)
   const credDir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
   L.push(`  자격증명 파일 ${fileNote(join(credDir, '.credentials.json'))}`)
