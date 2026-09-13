@@ -91,6 +91,6 @@ npm run build && node bin/folderbot.mjs init <볼트 루트> && node bin/folderb
 
 ## 라이선스
 
-아직 정하지 않았습니다. 그 전까지는 «보고 배우는 용도» 로 봐 주세요 — 재배포·상업 이용은 별도 문의.
+[MIT](LICENSE) — 자유롭게 쓰고 고치고 나누세요. 저작권 표시만 남겨 주시면 됩니다.
 
 만든 사람: [Dave (진대연)](https://github.com/dave-jin) — Claude Code 로 매일 만들고 배포하는 사람. 이 리포 자체도 Claude Code 와 함께 만들어졌습니다.
