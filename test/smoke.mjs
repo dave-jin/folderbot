@@ -1074,7 +1074,15 @@ try {
           if (after.length !== before.length) fail('🔴 다시 연결이 세션을 지웠다 — 일꾼만 내려야 한다 ' + JSON.stringify({ b: before.length, a: after.length }))
           const chat = await api(`/sessions/${before[0].id}/chat`)
           if (!chat.items.length) fail('🔴 다시 연결이 대화를 지웠다')
-          ok('다시 연결 — 일꾼만 내리고 세션·대화는 남는다')
+          /**
+           * 🔴 **진단** (2026-09-13 Dave: «상황을 어떻게 알아보고 알려줄까?») — 사람이 전령이 되면 안 된다.
+           * ⛔ **열쇠가 들어가면 안 된다** — 이 글은 채팅에 붙여넣게 된다. 토큰·API 키 값은 빼고
+           *    «있음/없음» 과 크기·시각까지만.
+           */
+          const dg = await api('/auth/diagnose')
+          for (const want of ['[Claude Code]', '[Codex]', 'CODEX_HOME', '바이너리']) if (!dg.text.includes(want)) fail(`진단에 «${want}» 가 없다\n` + dg.text)
+          if (/sk-ant-|sk-[A-Za-z0-9]{20}|oat01/.test(dg.text)) fail('🔴 진단에 열쇠 값이 들어갔다')
+          ok('다시 연결 — 일꾼만 내리고 세션·대화는 남는다 · 진단은 열쇠 없이 상황만')
         }
         /**
          * 🔴 **답 아래 줄은 아이콘만** (2026-09-13 Dave) — 글자를 빼고 툴팁이 말한다.

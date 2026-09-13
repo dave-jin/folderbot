@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { authVerdict } from '../core/authVerdict'
 import type { AuthState } from '../core/types'
 import { claudeBin, cleanClaudeEnv } from './session'
+import { providers } from './providers'
 
 function credentialsExpiresAt(): number | null {
   const dir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
@@ -55,13 +56,88 @@ function probe(bin?: string, opts: { noToken?: boolean } = {}): Promise<AuthStat
  * ⚠ 판정은 **파일이 있나** 다 — `codex` 에 「상태만 알려 주는」 비대화형 명령이 판마다 다르고,
  *    없으면 프로세스가 대화형으로 멈춰 버려서 호스트가 붙잡힌다. 파일은 조용하고 빠르다.
  */
+export const codexHome = (): string => process.env.CODEX_HOME ?? join(homedir(), '.codex')
+
 export function codexAuth(apiKey?: string): { ok: boolean; how: 'login' | 'key' | null; where?: string } {
   if (apiKey) return { ok: true, how: 'key' }
   if (process.env.OPENAI_API_KEY) return { ok: true, how: 'key', where: 'OPENAI_API_KEY' }
-  const home = process.env.CODEX_HOME ?? join(homedir(), '.codex')
-  for (const f of ['auth.json', 'credentials.json']) {
+  const home = codexHome()
+  /**
+   * ⚠ **파일 이름을 외우지 않는다** (2026-09-13 Dave: «claude 는 잘 됐는데 codex 가 안되네»).
+   *    종전에는 `auth.json`·`credentials.json` 둘만 봤는데, codex 판마다 이름이 바뀐다 —
+   *    로그인을 마쳐도 **우리 눈에는 «안 됨»** 으로 보였다. 이제 그 폴더의 json 을 훑어
+   *    **토큰처럼 생긴 열쇠가 들어 있는 파일**을 찾는다.
+   * ⛔ 파일을 «읽어서 값을 쓰지» 않는다 — 있는지만 본다. 자격증명은 codex 것이지 우리 것이 아니다.
+   */
+  for (const f of ['auth.json', 'credentials.json', ...codexJsonFiles(home)]) {
     const p = join(home, f)
-    if (existsSync(p)) return { ok: true, how: 'login', where: p }
+    if (!existsSync(p)) continue
+    if (f === 'auth.json' || f === 'credentials.json' || looksLikeAuth(p)) return { ok: true, how: 'login', where: p }
   }
   return { ok: false, how: null }
+}
+
+/** CODEX_HOME 의 json 파일 이름들 — 없으면 빈 목록(폴더가 없을 수도 있다) */
+export function codexJsonFiles(home = codexHome()): string[] {
+  try { return readdirSync(home).filter((f) => f.endsWith('.json')) } catch { return [] }
+}
+
+/** 자격증명처럼 생겼나 — 키 이름만 본다(값은 안 읽는다) */
+function looksLikeAuth(p: string): boolean {
+  try {
+    const j = JSON.parse(readFileSync(p, 'utf8')) as Record<string, unknown>
+    return Object.keys(j).some((k) => /token|api_key|apikey|account|refresh/i.test(k))
+  } catch { return false }
+}
+
+/**
+ * **진단** (2026-09-13 Dave: *«상황을 어떻게 알아보고 알려줄까?»*).
+ *
+ * 🔴 **사람이 전령이 되면 안 된다.** 로그인이 안 될 때 우리가 물어야 할 것은 늘 같다 —
+ *    바이너리가 어디 있나 · 판이 뭔가 · 자격증명 파일이 있나 · CLI 는 뭐라고 하나.
+ *    그걸 한 번에 찍어 주면 스크린샷 대신 **글 한 덩이**를 붙여넣기만 하면 된다.
+ * ⛔ **값은 안 찍는다** — 토큰·이메일 주소·API 키는 여기 안 들어온다. 파일이 «있다/없다» 와
+ *    크기·시각까지다. 진단 글은 채팅에 붙여넣게 될 텐데, 그 자리에 열쇠가 있으면 안 된다.
+ */
+export async function diagnose(cfg: { claudeBin?: string; openaiApiKey?: string; tokenSet?: boolean }): Promise<string> {
+  const L: string[] = []
+  const ps = providers()
+  const c = ps.find((x) => x.id === 'claude'); const x = ps.find((x2) => x2.id === 'codex')
+  L.push(`플랫폼 ${process.platform} · node ${process.version}`)
+  L.push('')
+  L.push('[Claude Code]')
+  L.push(`  바이너리 ${c?.bin ?? '못 찾음'}${c?.version ? ` · ${c.version}` : ''}`)
+  const auth = await checkAuth(cfg.claudeBin)
+  L.push(`  판정 ${auth.verdict}${auth.reason ? ` (${auth.reason.slice(0, 120)})` : ''}`)
+  L.push(`  키체인 로그인 ${auth.keychain ? '읽힘' : '못 읽음'} · 장기 토큰 ${cfg.tokenSet ? '설정됨' : '없음'}`)
+  const credDir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
+  L.push(`  자격증명 파일 ${fileNote(join(credDir, '.credentials.json'))}`)
+  L.push('')
+  L.push('[Codex]')
+  L.push(`  바이너리 ${x?.bin ?? '못 찾음'}${x?.version ? ` · ${x.version}` : ''}`)
+  const home = codexHome()
+  L.push(`  CODEX_HOME ${home} ${existsSync(home) ? '(있음)' : '(없음)'}`)
+  const files = codexJsonFiles(home)
+  L.push(`  json 파일 ${files.length ? files.map((f) => `${f}${fileSize(join(home, f))}`).join(' · ') : '없음'}`)
+  const ca = codexAuth(cfg.openaiApiKey)
+  L.push(`  판정 ${ca.ok ? `연결됨 (${ca.how})` : '안 됨'}${ca.where ? ` · ${ca.where}` : ''}`)
+  L.push(`  OPENAI_API_KEY ${process.env.OPENAI_API_KEY ? '환경에 있음' : '없음'} · 앱에 저장된 키 ${cfg.openaiApiKey ? '있음' : '없음'}`)
+  if (x?.bin) L.push(`  \`codex login status\` → ${await run(x.bin, ['login', 'status'])}`)
+  return L.join('\n')
+}
+
+function fileNote(p: string): string {
+  try { const st = statSync(p); return `있음 (${st.size}B · ${new Date(st.mtimeMs).toISOString().slice(0, 16).replace('T', ' ')})` } catch { return '없음' }
+}
+function fileSize(p: string): string {
+  try { return `(${statSync(p).size}B)` } catch { return '' }
+}
+/** ⚠ 짧게 끊는다 — `codex` 는 판에 따라 대화형으로 멈춰서 호스트를 붙잡는다 */
+function run(bin: string, args: string[]): Promise<string> {
+  return new Promise((resolve) => {
+    execFile(bin, args, { env: cleanClaudeEnv({ noToken: true }), timeout: 6000 }, (err, stdout, stderr) => {
+      const out = `${String(stdout)}${String(stderr)}`.trim().split('\n').slice(0, 4).join(' / ').slice(0, 300)
+      resolve(out || (err ? `오류: ${err.message.slice(0, 120)}` : '(답 없음)'))
+    })
+  })
 }

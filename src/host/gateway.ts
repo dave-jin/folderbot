@@ -9,7 +9,7 @@ import { bindAddresses, tailnetInfo } from './tailnet'
 import { saveConfig } from './paths'
 import { handleMcp } from './mcp'
 import { providers } from './providers'
-import { codexAuth } from './auth'
+import { codexAuth, diagnose } from './auth'
 
 /**
  * 안 겹치는 이름 — `이름`, 없으면 `이름 2`, `이름 3` …
@@ -235,6 +235,8 @@ export class Gateway {
       execFile('/usr/bin/osascript', ['-e', `tell application "Terminal" to do script ${JSON.stringify(script)}`, '-e', 'tell application "Terminal" to activate'], () => {})
       return json(200, { ok: true, cmd })
     }
+    // 진단 — 사람이 전령이 되지 않게. ⛔ 토큰·이메일·키 값은 안 들어간다(`auth.diagnose` 머리말)
+    if (p === '/api/auth/diagnose' && m === 'GET') return json(200, { text: await diagnose({ claudeBin: h.cfg.claudeBin, openaiApiKey: h.cfg.openaiApiKey, tokenSet: !!h.cfg.claudeOauthToken }) })
     if (p === '/api/auth/reconnect' && m === 'POST') {
       const b = await body()
       const vendor = b.agent === 'codex' ? 'codex' : b.agent === 'claude' ? 'claude' : undefined

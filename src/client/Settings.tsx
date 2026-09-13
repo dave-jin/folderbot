@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { HarnessItem, HarnessRow } from '../core/types'
 import { AGENT_EFFORTS, AGENT_MODELS, CODEX_SANDBOX, DEFAULT_EFFORT, DEFAULT_MODEL, PROVIDER_LABEL, type Provider } from '../core/agents'
+import { copySay } from './clip'
 import { api, setToken, subscribePush } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { Mark } from './Brand'
@@ -216,7 +217,7 @@ function AgentsPane() {
   const [model, setModel] = useState(s.defaults.model || DEFAULT_MODEL.claude); const [effort, setEffort] = useState(s.defaults.effort || DEFAULT_EFFORT.claude)
   const [cxModel, setCxModel] = useState(s.defaults.codex?.model || DEFAULT_MODEL.codex); const [cxEffort, setCxEffort] = useState(s.defaults.codex?.effort || DEFAULT_EFFORT.codex)
   const [cxKey, setCxKey] = useState('')
-  const [tok, setTok] = useState(''); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState('')
+  const [tok, setTok] = useState(''); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(''); const [diag, setDiag] = useState('')
   useEffect(() => { void api<Provider[]>('/agents').then(setList).catch(() => setList([])); void api<typeof gh>('/harness/global').then(setGh).catch(() => setGh(null)) }, [])
   const saveD = async (m: string, e: string, agent: 'claude' | 'codex' = 'claude') => { await api('/defaults', { body: { model: m, effort: e, agent } }); await refresh(); setMsg('저장했어요 — 다음 세션부터 적용돼요.') }
   const saveCx = async (o: { sandbox?: string; apiKey?: string }) => { setBusy(true); try { await api('/codex', { body: o }); await refresh(); setMsg('Codex 설정을 저장했어요.') } finally { setBusy(false) } }
@@ -291,6 +292,13 @@ function AgentsPane() {
     {hasCodex ? <Row t="Codex 다시 연결" d={<>터미널에서 <span className="mono">codex login</span> 을 새로 했거나 키를 바꿨으면 눌러 주세요. Codex 세션의 일꾼만 내려 다음 메시지에 새로 뜹니다.</>} data-t="Codex 다시 연결">
       <button className="btn" disabled={busy} onClick={() => void reconnect('codex')}>다시 연결</button>
     </Row> : null}
+    {/* 🔴 **진단** (2026-09-13 Dave: «상황을 어떻게 알아보고 알려줄까?») — 사람이 전령이 되면 안 된다.
+        바이너리 · 판 · 자격증명 파일 · CLI 의 답을 한 덩이로 찍어 준다.
+        ⛔ 토큰·이메일·키 **값은 안 들어간다** — 이 글은 채팅에 붙여넣게 될 것이다. */}
+    <Row t="연결 진단" d={diag ? <pre className="diag">{diag}</pre> : '로그인이 안 될 때 눌러 보세요. 무엇이 어디에 있고 CLI 가 뭐라고 하는지 한 덩이로 보여 줍니다 — 그대로 복사해서 저에게 주시면 돼요.'} data-t="연결 진단">
+      <button className="btn" disabled={busy} onClick={async () => { setBusy(true); try { const r = await api<{ text: string }>('/auth/diagnose'); setDiag(r.text) } catch (e) { setDiag((e as Error).message) } finally { setBusy(false) } }}>진단</button>
+      {diag ? <button className="btn ghost" onClick={() => void copySay(diag, setMsg, '진단을 복사했어요')}>복사</button> : null}
+    </Row>
     {hasCodex && cxAuth?.how === 'key' ? <Row t="Codex 키 지우기" d="터미널 로그인(codex login) 모드로 돌아갑니다." danger><button className="btn danger" disabled={busy} onClick={() => void saveCx({ apiKey: '' })}>지우기</button></Row> : null}
 
     <Group t="Claude 인증" />

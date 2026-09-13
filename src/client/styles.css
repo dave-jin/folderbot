@@ -873,3 +873,6 @@ b,strong { color:var(--w); font-weight:600 }
 .modal.pal .prow .n { flex:none; max-width:52%; min-width:0 }
 .modal.pal .prow .sb { flex:1; min-width:0; font-size:11.5px; color:var(--t3) }
 .modal.pal .prow .k { font-size:11px; color:var(--t3); font-family:var(--mono) }
+
+/* 진단 글 — 그대로 붙여넣을 수 있게 고정폭·줄바꿈 유지. ⚠ 값이 아니라 «있음/없음» 만 들어 있다 */
+.setr .diag { margin:6px 0 0; padding:8px 10px; background:var(--bg); border:1px solid var(--line); border-radius:7px; font-family:var(--mono); font-size:11px; line-height:1.6; color:var(--t2); white-space:pre-wrap; word-break:break-all; max-height:260px; overflow:auto }
