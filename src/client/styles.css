@@ -539,3 +539,7 @@ b,strong { color:var(--w); font-weight:600 }
   .sin { width:100% }
   .hrow { flex-wrap:wrap; gap:8px 10px } .hrow .tx { flex-basis:100% }
 }
+
+/* 봇 얼굴에 붙는 회사 표식 (V24) — 깔린 제공자가 둘 이상일 때만 그린다 */
+.bface { position:relative; display:inline-flex; flex:none }
+.bface .mk { position:absolute; right:-3px; bottom:-3px; border-radius:50%; background:var(--bg); display:inline-flex; align-items:center; justify-content:center; box-shadow:0 0 0 1.5px var(--bg) }

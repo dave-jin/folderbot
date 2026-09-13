@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { transition, shouldNotify } from '../core/stateMachine'
 import { assistantText, closeOpenItems, contextOf, itemId, toolSummary, touchedPath, type StreamLine } from '../core/chat'
+import { CodexWorker } from './codex'
 import type { Bot, ChatItem, PermissionMode, PermissionRequest, SessionInfo, SessionState } from '../core/types'
 import { atomicWrite, dataDir, ensureDir } from './paths'
 
@@ -141,6 +142,9 @@ export class ClaudeWorker extends EventEmitter {
   get alive(): boolean { return this.proc.exitCode === null && this.proc.signalCode === null }
 }
 
+/** 워커 — Claude 든 Codex 든 세션 층이 쓰는 것은 이만큼뿐이다 */
+export type Worker = ClaudeWorker | CodexWorker
+
 /** 세션 하나의 정본 (호스트가 소유) */
 export interface SessionRec {
   id: string
@@ -176,7 +180,7 @@ export interface ManagerEvents {
 
 export class SessionManager extends EventEmitter {
   private recs = new Map<string, SessionRec>()
-  private workers = new Map<string, ClaudeWorker>()
+  private workers = new Map<string, Worker>()
   private streaming = new Map<string, ChatItem & { kind: 'assistant' }>()
   private dir = ensureDir(join(dataDir(), 'sessions'))
   idleTtlMs = 60 * 60 * 1000
@@ -261,11 +265,19 @@ export class SessionManager extends EventEmitter {
     this.emit('state', r, prev, shouldNotify(prev, next))
   }
 
-  /** 워커 확보 — 없으면 (같은 cli 세션 id 로) 띄운다 */
-  ensureWorker(r: SessionRec, bot: Bot): ClaudeWorker {
+  /**
+   * 워커 확보 — 없으면 (같은 cli 세션 id 로) 띄운다.
+   * 봇의 `vendor` 가 워커의 종류를 고른다 — 여기서 갈리고, 아래는 어느 CLI 인지 모른다
+   * (둘 다 `line`·`exit` 만 내보내고 `send`·`kill` 만 받는다).
+   */
+  ensureWorker(r: SessionRec, bot: Bot): Worker {
     const existing = this.workers.get(r.id)
     if (existing?.alive) return existing
-    const w = new ClaudeWorker({ cwd: r.cwd, resume: r.cliSessionId, permissionMode: r.permissionMode, addDirs: bot.repo ? [bot.abs] : undefined, mcpConfig: this.mcpUrl(r.id, bot.id), model: r.model, effort: r.effort, name: `${bot.name}-${r.name}`, appendSystemPrompt: this.systemPromptFor(bot) || undefined, bin: this.bin })
+    const w: Worker = bot.vendor === 'codex'
+      // ⚠ 모델 이름은 CLI 마다 다르다 — Claude 이름(claude-opus-5)을 Codex 에 넘기면 그 자리에서 죽는다.
+      //    Codex 것처럼 보이는 이름만 넘기고 아니면 CLI 의 기본값에 맡긴다.
+      ? new CodexWorker({ cwd: r.cwd, resume: r.cliSessionId, model: /^(gpt|o\d|codex)/i.test(r.model ?? '') ? r.model : undefined })
+      : new ClaudeWorker({ cwd: r.cwd, resume: r.cliSessionId, permissionMode: r.permissionMode, addDirs: bot.repo ? [bot.abs] : undefined, mcpConfig: this.mcpUrl(r.id, bot.id), model: r.model, effort: r.effort, name: `${bot.name}-${r.name}`, appendSystemPrompt: this.systemPromptFor(bot) || undefined, bin: this.bin })
     this.workers.set(r.id, w)
     w.on('line', (line: StreamLine) => this.onLine(r, line))
     w.on('permission', (p: PermissionRequest) => { this.setState(r, { kind: 'permission_requested' }); this.emit('permission', r, p) })

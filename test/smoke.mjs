@@ -684,7 +684,7 @@ try {
 
   // ── 시작할 때 에이전트 고르기 (V24) — 둘 이상일 때만 묻는다 ──
   {
-    const sh = join(data, 'fake-codex'); writeFileSync(sh, '#!/bin/sh\necho "codex-cli 9.9.9"\n'); chmodSync(sh, 0o755)
+    const sh = join(process.cwd(), 'test/fixtures/stub-codex.mjs'); chmodSync(sh, 0o755)
     const p2 = PORT + 3
     const two = spawn('node', ['bin/folderbot.mjs', 'start', '--port', String(p2)], { env: { ...env, FOLDERBOT_CODEX_BIN: sh }, stdio: 'ignore' })
     try {
@@ -692,7 +692,31 @@ try {
       const ps2 = await (await fetch(`http://127.0.0.1:${p2}/api/agents`)).json()
       if (ps2.length !== 2 || !ps2.some((x) => x.id === 'codex')) fail('고르기: 둘이 깔렸는데 목록이 ' + JSON.stringify(ps2.map((x) => x.id)))
       if (!/9\.9\.9/.test(ps2.find((x) => x.id === 'codex').version ?? '')) fail('고르기: codex 버전을 못 읽었다 ' + JSON.stringify(ps2))
-      ok('에이전트 고르기 — 둘이 깔리면 둘 다 나온다 (하나뿐이면 화면을 건너뛴다)')
+      // 같은 폴더에 형제로 — rel 이 같아도 vendor 가 다르면 다른 봇이고, 이름 뒤에 «· Codex» 가 붙는다
+      const api2 = async (path, body) => { const r = await fetch(`http://127.0.0.1:${p2}/api${path}`, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); const j = await r.json(); if (!r.ok) throw new Error(`${path}: ${j.error}`); return j }
+      const b1 = await api2('/bots/start', { rel: '3. Area/재무_CFO', provider: 'claude' })
+      const b2 = await api2('/bots/start', { rel: '3. Area/재무_CFO', provider: 'codex' })
+      if (b1.id === b2.id) fail('형제: 같은 봇이 돌아왔다 — vendor 로 안 가른다')
+      if (b2.vendor !== 'codex') fail('형제: 고른 벤더가 안 남았다 ' + JSON.stringify(b2))
+      const again = await api2('/bots/start', { rel: '3. Area/재무_CFO', provider: 'codex' })
+      if (again.id !== b2.id) fail('형제: 같은 벤더로 또 시작했는데 봇이 새로 생겼다')
+      const both = (await api2('/bots')).filter((b) => b.rel === '3. Area/재무_CFO')
+      if (both.length !== 2) fail('형제: 둘이 아니다 ' + JSON.stringify(both.map((b) => b.name)))
+      if (!both.some((b) => /· Codex$/.test(b.name)) || !both.some((b) => /· Claude$/.test(b.name))) fail('형제: 이름으로 안 갈린다 ' + JSON.stringify(both.map((b) => b.name)))
+      // Codex 로 한 턴 — `codex exec --json` 을 우리 stream 모양으로 옮긴다 (host/codex.ts)
+      const cs = await api2(`/bots/${b2.id}/send`, { text: '안녕', name: '코덱스' })
+      let cchat = null
+      for (let i = 0; i < 50; i++) { cchat = await api2(`/sessions/${cs.sessionId}/chat`); if ((cchat.items ?? []).some((x) => /확인했어요/.test(x.text ?? ''))) break; await wait(250) }
+      const items = cchat?.items ?? []
+      if (!items.some((x) => x.kind === 'tool')) fail('Codex: 도구 카드가 안 생겼다 ' + JSON.stringify(items.map((x) => x.kind)))
+      if (!items.some((x) => /«안녕» 확인했어요/.test(x.text ?? ''))) fail('Codex: 답이 안 왔다 ' + JSON.stringify(items.slice(-3)))
+      if (!/^cx-/.test(cchat.info?.cliSessionId ?? '')) fail('Codex: 세션 id 를 못 물고 왔다 ' + cchat.info?.cliSessionId)
+      // 두 번째 턴은 같은 세션을 이어 간다 (codex exec resume <id>)
+      await api2(`/sessions/${cs.sessionId}/send`, { text: '이어서' })
+      let c2 = null
+      for (let i = 0; i < 50; i++) { c2 = await api2(`/sessions/${cs.sessionId}/chat`); if ((c2.items ?? []).some((x) => /«이어서»/.test(x.text ?? ''))) break; await wait(250) }
+      if (c2.info.cliSessionId !== cchat.info.cliSessionId) fail('Codex: 두 번째 턴이 새 세션으로 갔다')
+      ok('에이전트 고르기 — 둘이 깔리면 둘 다 · 형제(· Codex) · Codex 로 한 턴')
     } finally { two.kill() }
   }
 

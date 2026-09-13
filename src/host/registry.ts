@@ -162,12 +162,19 @@ export class Registry extends EventEmitter {
     const rest = this.active.map((a) => this.toBot(a)).filter((b): b is Bot => !!b)
     return [orch, ...rest]
   }
+  /** 같은 폴더에 형제가 있으면 이름 뒤에 «· Codex» 를 붙여 레일에서 가른다 (V24) */
+  private botName(a: ActiveRec): string {
+    const base = basename(a.rel)
+    const sibs = this.active.filter((x) => x.rel === a.rel)
+    if (sibs.length < 2) return base
+    return `${base} · ${(a.vendor ?? 'claude') === 'codex' ? 'Codex' : 'Claude'}`
+  }
   /** ⚠ 벤더는 **시작할 때 고른 것**(a.vendor)이 이긴다 — `.bot.yml` 은 고르기 화면이 없던 시절의 폴백이다 */
   private toBot(a: ActiveRec): Bot | null {
     const abs = join(this.root, a.rel)
     if (!existsSync(abs)) return null
     const cfg = this.botConfig(abs)
-    return { id: a.id, rel: a.rel, abs, name: basename(a.rel), section: a.rel.split('/')[0] === a.rel ? '' : a.rel.split('/')[0], color: cfg.color ?? a.color, orchestrator: false, startedAt: a.startedAt, vendor: a.vendor ?? cfg.vendor ?? 'claude', repo: cfg.repo ? resolve(abs, cfg.repo.replace(/^~/, process.env.HOME ?? '')) : undefined, routines: cfg.routines ?? [] }
+    return { id: a.id, rel: a.rel, abs, name: this.botName(a), section: a.rel.split('/')[0] === a.rel ? '' : a.rel.split('/')[0], color: cfg.color ?? a.color, orchestrator: false, startedAt: a.startedAt, vendor: a.vendor ?? cfg.vendor ?? 'claude', repo: cfg.repo ? resolve(abs, cfg.repo.replace(/^~/, process.env.HOME ?? '')) : undefined, routines: cfg.routines ?? [] }
   }
   bot(id: string): Bot | undefined { return this.bots().find((b) => b.id === id) }
   botByRel(rel: string): Bot | undefined { return this.bots().find((b) => b.rel === rel) }
@@ -181,12 +188,16 @@ export class Registry extends EventEmitter {
     const abs = join(this.root, rel)
     if (!existsSync(abs) || !statSync(abs).isDirectory()) throw new Error(`폴더가 없어요: ${rel}`)
     if (!abs.startsWith(this.root + sep)) throw new Error('루트 밖 폴더는 시작할 수 없어요')
-    const existing = this.active.find((a) => a.rel === rel)
+    // 같은 폴더에 **형제**를 둘 수 있다 (V24) — 폴더 하나에 에이전트 하나가 원칙이지만
+    // Claude 와 Codex 는 읽는 지침(CLAUDE.md · AGENTS.md)이 달라 나란히 두는 게 자연스럽다.
+    // 그래서 «이미 있나» 판정은 rel 이 아니라 **rel + vendor** 다.
+    const v = vendor ?? 'claude'
+    const existing = this.active.find((a) => a.rel === rel && (a.vendor ?? 'claude') === v)
     if (existing) return this.toBot(existing)!
     if (this.active.length >= this.botLimit) throw new Error(`활성 봇이 상한(${this.botLimit})에 닿았어요. 휴면 봇을 은퇴시키거나 상한을 올리세요.`)
     if (!this.hasHarness(abs)) this.scaffold(abs, basename(rel))
     const color = BOT_COLORS[this.active.length % BOT_COLORS.length]
-    const rec: ActiveRec = { id: `b_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, rel, color, startedAt: Date.now(), vendor }
+    const rec: ActiveRec = { id: `b_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, rel, color, startedAt: Date.now(), vendor: v }
     this.active.push(rec)
     this.saveActive()
     return this.toBot(rec)!
