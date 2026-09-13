@@ -46,19 +46,22 @@ function useKeyboard(): boolean {
       const ae = document.activeElement as HTMLElement | null
       const editing = !!ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)
       /**
-       * 🔴 «키보드 높이» 에서 offsetTop 을 빼면 안 된다 (2026-09-13 Dave 2차 사고).
-       * iOS 는 포커스된 칸을 보이게 하려고 **시각 뷰포트를 아래로 민다** — 그때 offsetTop 이 커진다.
-       * 종전 식(innerHeight − vv.height − offsetTop)은 그만큼 줄어들어 140 아래로 떨어지고,
-       * «키보드가 닫혔다» 고 잘못 판정해 --vvh 를 지웠다. 루트가 100dvh 로 돌아가니 컴포저가
-       * 키보드 밑에 묻혔다(«다시 키보드 올라갔을 때 타이핑 위치 안 잡혀»).
-       * 키보드가 먹은 높이는 레이아웃 뷰포트와 시각 뷰포트의 차이 하나다. 밀린 만큼은 --vvt 가 갚는다.
+       * 🔴 **문턱으로 «열렸나» 를 판정하지 않는다** (2026-09-13, 3차 사고에서 배운 것).
+       * 종전에는 «키보드가 N px 이상 먹었을 때만» 루트를 시각 뷰포트에 맞췄다. 그 판정이 두 번 틀렸다 —
+       * ① offsetTop 을 빼던 식(2차) ② 레이아웃 뷰포트까지 함께 줄어드는 판(iOS 26 · Android)에서는
+       *    innerHeight − vv.height 가 0 이라 «닫혔다» 로 떨어졌고, 그러면 루트가 100dvh 로 돌아가는데
+       *    그 dvh 가 키보드를 반영하지 않아 **대화가 키보드 위로 안 올라왔다**(Dave 3차 스크린샷).
+       *
+       * 정답은 문턱이 아니라 **입력 중이냐** 하나다. 입력 중이면 보이는 영역이 곧 시각 뷰포트이고,
+       * 키보드가 닫혀 있었다면 vv.height 가 곧 화면 높이라 100dvh 와 같은 값이 된다 — 해가 없다.
+       * 입력 중이 아닐 때만 값을 지워 `100dvh` 로 돌아간다(iOS 가 높이를 덜 돌려줘도 아래 띠가 안 생긴다).
        */
       const covered = Math.max(0, window.innerHeight - vv.height)
-      const open = editing && covered > 140
+      const open = editing
       const st = document.documentElement.style
       if (open) { st.setProperty('--vvh', `${Math.round(vv.height)}px`); st.setProperty('--vvt', `${Math.round(vv.offsetTop)}px`) }
       else { st.removeProperty('--vvh'); st.removeProperty('--vvt') }
-      setKb(open)
+      setKb(open && covered > 140) // 헤더 숨김 같은 «화장» 만 문턱을 쓴다 — 레이아웃은 위에서 이미 정해졌다
       if (!open) window.scrollTo(0, 0)
     }
     // 키보드가 내려가는 동안 값이 흔들린다 — 포커스가 빠진 뒤 세 번 다시 잰다
