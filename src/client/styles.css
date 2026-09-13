@@ -611,3 +611,13 @@ b,strong { color:var(--w); font-weight:600 }
 .mded .lp-h3 { font-size:1.14em; font-weight:600; color:var(--w) }
 .mded .lp-h4, .mded .lp-h5, .mded .lp-h6 { font-weight:600; color:var(--w) }
 .mded .lp-quote { padding-left:12px; border-left:2px solid var(--line2); color:var(--t2) }
+
+/* 편집기 위젯 — 체크박스 · 위키링크 · 단독 이미지 */
+.mded .lp-check { display:inline-block; width:15px; height:15px; border:1.5px solid var(--line2); border-radius:4px; vertical-align:-2px; margin-right:6px; cursor:pointer; position:relative }
+.mded .lp-check:hover { border-color:var(--t3) }
+.mded .lp-check.on { background:var(--done); border-color:var(--done) }
+.mded .lp-check.on::after { content:''; position:absolute; left:4px; top:1px; width:4px; height:8px; border:solid #111; border-width:0 2px 2px 0; transform:rotate(42deg) }
+.mded .lp-wiki { color:var(--blue, #6ea6f7); border-bottom:1px solid rgba(110,166,247,.35); cursor:pointer }
+.mded .lp-wiki:hover { color:var(--w) }
+.mded .lp-img { display:block; margin:6px 0 }
+.mded .lp-img img { max-width:100%; border-radius:6px; display:block }

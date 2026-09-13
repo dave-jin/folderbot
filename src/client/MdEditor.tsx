@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react'
 import { EditorState, StateField, type Extension, type Range } from '@codemirror/state'
-import { EditorView, Decoration, keymap, type DecorationSet } from '@codemirror/view'
+import { EditorView, Decoration, WidgetType, keymap, type DecorationSet } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
 import { markdown } from '@codemirror/lang-markdown'
+import { GFM } from '@lezer/markdown'
 import { syntaxTree, syntaxHighlighting, defaultHighlightStyle, HighlightStyle } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
 
@@ -29,6 +30,54 @@ import { tags as t } from '@lezer/highlight'
 /** 마커로 취급해 숨길 노드 — lezer-markdown 의 이름 그대로 */
 const MARK_NODES = new Set(['HeaderMark', 'EmphasisMark', 'StrikethroughMark', 'CodeMark', 'QuoteMark', 'LinkMark', 'URL'])
 
+/**
+ * 체크박스 — 눌러서 `[ ]` ↔ `[x]` **한 글자만** 바꾼다.
+ * ⛔ 줄을 다시 쓰지 않는다. 한 글자만 갈아야 churn 0 이 유지되고 커서·되돌리기도 안 튄다.
+ */
+class CheckWidget extends WidgetType {
+  constructor(readonly on: boolean, readonly pos: number) { super() }
+  eq(o: CheckWidget) { return o.on === this.on && o.pos === this.pos }
+  toDOM(view: EditorView) {
+    const b = document.createElement('span')
+    b.className = `lp-check${this.on ? ' on' : ''}`
+    b.setAttribute('role', 'checkbox'); b.setAttribute('aria-checked', String(this.on))
+    b.onmousedown = (e) => {
+      e.preventDefault()
+      view.dispatch({ changes: { from: this.pos, to: this.pos + 1, insert: this.on ? ' ' : 'x' } })
+    }
+    return b
+  }
+  ignoreEvent() { return false }
+}
+
+/** 위키링크 라벨 — 대괄호는 숨기고 글자만 링크로 (Rondo 의 확정 표기) */
+class WikiWidget extends WidgetType {
+  constructor(readonly target: string, readonly open?: (t: string) => void) { super() }
+  eq(o: WikiWidget) { return o.target === this.target }
+  toDOM() {
+    const a = document.createElement('span')
+    a.className = 'lp-wiki'; a.textContent = this.target.split('/').pop() ?? this.target; a.title = this.target
+    if (this.open) a.onmousedown = (e) => { e.preventDefault(); this.open!(this.target) }
+    return a
+  }
+  ignoreEvent() { return false }
+}
+
+/** 단독 줄의 이미지 — 줄 전체를 그림으로 바꾼다 */
+class ImgWidget extends WidgetType {
+  constructor(readonly src: string, readonly alt: string) { super() }
+  eq(o: ImgWidget) { return o.src === this.src }
+  toDOM() {
+    const w = document.createElement('span'); w.className = 'lp-img'
+    const img = document.createElement('img'); img.src = this.src; img.alt = this.alt; img.loading = 'lazy'
+    w.appendChild(img); return w
+  }
+}
+
+const TASK_RE = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]\s/
+const WIKI_RE = /\[\[([^\]|]+)(\|[^\]]*)?\]\]/g
+const IMG_LINE_RE = /^!\[([^\]]*)\]\(([^)\s]+)\)\s*$/
+
 /** 선택이 닿은 줄 번호 — 이 줄에서는 마커를 안 숨긴다 */
 function activeLines(state: EditorState): Set<number> {
   const out = new Set<number>()
@@ -40,6 +89,10 @@ function activeLines(state: EditorState): Set<number> {
 }
 
 const HIDE = Decoration.replace({})
+
+interface BuildOpts { onOpen?: (t: string) => void; rawUrl?: (rel: string) => string }
+let opts: BuildOpts = {}
+export function setEditorOpts(o: BuildOpts): void { opts = o }
 
 function build(state: EditorState): { deco: DecorationSet; atoms: { from: number; to: number }[] } {
   const active = activeLines(state)
@@ -70,6 +123,36 @@ function build(state: EditorState): { deco: DecorationSet; atoms: { from: number
       atoms.push({ from: n.from, to })
     }
   })
+  // ── 파서가 모르는 것들은 줄을 직접 훑는다 (위키링크·체크박스·단독 이미지) ──
+  // ⚠ lezer 는 `[[ ]]` 를 모르고, 체크박스는 한 글자만 갈아야 해서 줄 스캔이 더 정확하다.
+  for (let n = 1; n <= state.doc.lines; n++) {
+    const line = state.doc.line(n)
+    const live = active.has(n)
+    const text = line.text
+
+    const img = IMG_LINE_RE.exec(text)
+    if (img && !live && opts.rawUrl) {
+      const src = opts.rawUrl(img[2])
+      if (src) { marks.push(Decoration.replace({ widget: new ImgWidget(src, img[1]), block: false }).range(line.from, line.to)); atoms.push({ from: line.from, to: line.to }); continue }
+    }
+
+    const task = TASK_RE.exec(text)
+    if (task) {
+      const at = line.from + task[1].length
+      marks.push(Decoration.replace({ widget: new CheckWidget(task[2] !== ' ', at + 1) }).range(at, at + 3))
+      atoms.push({ from: at, to: at + 3 })
+    }
+
+    if (!live) {
+      WIKI_RE.lastIndex = 0
+      for (let m = WIKI_RE.exec(text); m; m = WIKI_RE.exec(text)) {
+        const from = line.from + m.index, to = from + m[0].length
+        marks.push(Decoration.replace({ widget: new WikiWidget(m[1].trim(), opts.onOpen) }).range(from, to))
+        atoms.push({ from, to })
+      }
+    }
+  }
+
   marks.sort((a, b) => a.from - b.from || (a.value.spec.class ? -1 : 1))
   return { deco: Decoration.set(marks, true), atoms }
 }
@@ -119,6 +202,10 @@ export interface MdEditorProps {
   /** 글자가 바뀔 때마다 — 「저장 안 됨」 표시용 */
   onChange?: (text: string) => void
   readOnly?: boolean
+  /** 위키링크를 눌렀을 때 — 문서 탭에서 연다 */
+  onOpen?: (target: string) => void
+  /** 이미지 경로 → 실제로 받을 수 있는 주소 */
+  rawUrl?: (rel: string) => string
 }
 
 /**
@@ -128,7 +215,8 @@ export interface MdEditorProps {
  */
 function eolOf(s: string): '\r\n' | '\n' { return /\r\n/.test(s) && !/(^|[^\r])\n/.test(s) ? '\r\n' : '\n' }
 
-export default function MdEditor({ value, onCommit, onChange, readOnly }: MdEditorProps) {
+export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, rawUrl }: MdEditorProps) {
+  setEditorOpts({ onOpen, rawUrl })
   const box = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const commitRef = useRef(onCommit); commitRef.current = onCommit
@@ -148,7 +236,7 @@ export default function MdEditor({ value, onCommit, onChange, readOnly }: MdEdit
     let timer = 0
     const ext: Extension[] = [
       history(), keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
-      markdown(), syntaxHighlighting(HL), syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      markdown({ extensions: [GFM] }), syntaxHighlighting(HL), syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       highlightSelectionMatches(),
       lpField, atomic, caretGuard,
       EditorView.lineWrapping,

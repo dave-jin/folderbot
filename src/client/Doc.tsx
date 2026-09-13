@@ -106,7 +106,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
                 아닌 텍스트에만 남는다 — 코드·설정 파일은 서식이라는 게 없어서 원문이 곧 정답이다.
                 ⚠ 편집기는 **지연 로드**한다: 문서를 한 번도 안 연 폰이 마크다운 파서를 받으면 안 된다. */}
             <Suspense fallback={<div className="dbody"><div className="skel" style={{ width: '70%' }} /></div>}>
-              <MdEditor value={draft} onChange={onDraft} onCommit={(t) => { onDraft(t); void save(t) }} />
+              <MdEditor value={draft} onChange={onDraft} onCommit={(t) => { onDraft(t); void save(t) }} onOpen={(target) => docs.open(target.endsWith('.md') ? target : `${target}.md`)} rawUrl={(p) => (/^(https?:|data:)/.test(p) ? p : raw(p.replace(/^\.\//, '')))} />
             </Suspense>
           </div>
         : <div className="dbody edit"><textarea value={draft} onChange={(e) => onDraft(e.target.value)} spellCheck={false} autoFocus /></div>)

@@ -407,6 +407,22 @@ try {
             text: document.querySelector('.mded .cm-content')?.textContent ?? ''
           }))
           if (!lp.h1) fail('라이브 프리뷰: 제목 줄 클래스(.lp-h1)가 없다 ' + JSON.stringify(lp).slice(0, 200))
+          // 위젯 — 체크박스 · 위키링크. ⛔ 체크박스는 **한 글자만** 갈아야 churn 이 안 난다
+          const w = await pg.evaluate(() => ({ check: document.querySelectorAll('.mded .lp-check').length, wiki: document.querySelectorAll('.mded .lp-wiki').length }))
+          if (!w.check) fail('위젯: 체크박스가 안 그려졌다 ' + JSON.stringify(w))
+          if (!w.wiki) fail('위젯: 위키링크가 안 그려졌다 ' + JSON.stringify(w))
+          {
+            const raw0 = readFileSync(abs, 'utf8')
+            await pg.click('.mded .lp-check'); await wait(1400)
+            const raw1 = readFileSync(abs, 'utf8')
+            if (raw1 === raw0) fail('체크박스: 눌러도 파일이 안 바뀐다')
+            const d = [...raw0].filter((c, i) => c !== raw1[i]).length
+            if (raw0.length !== raw1.length || d !== 1) fail('체크박스: 한 글자만 바뀌어야 한다(줄을 다시 썼다?) ' + JSON.stringify({ len0: raw0.length, len1: raw1.length, d }))
+            if (!/- \[x\] 할 일/.test(raw1)) fail('체크박스: 체크 표시가 안 들어갔다 ' + JSON.stringify(raw1.slice(0, 120)))
+            await pg.click('.mded .lp-check'); await wait(1400)
+            if (readFileSync(abs, 'utf8') !== raw0) fail('체크박스: 되돌리면 원래대로여야 한다')
+            ok('편집기 위젯 — 체크박스(한 글자만) · 위키링크')
+          }
           await pg.click('.mded .cm-content')
           await pg.keyboard.press('End'); await pg.keyboard.type('x'); await wait(250)
           await pg.keyboard.press('Backspace')
