@@ -724,7 +724,7 @@ try {
           if (ex['../밖.md'] !== false) fail('exists: 루트 밖이 새어 나간다 ' + JSON.stringify(ex))
           // 화면 — 스텁이 되돌려 주는 문장 안의 경로 중 **있는 것만** 칩이 된다
           await pg.fill('.composer textarea', '첨부/회의록.txt 와 없는폴더/없음.md 를 봐')
-          await pg.keyboard.press('Enter')
+          await pg.keyboard.press('Meta+Enter')
           let chip = null
           for (let i = 0; i < 40; i++) { chip = await pg.evaluate(() => { const c = [...document.querySelectorAll('.chat-body .pchip')]; return { n: c.length, titles: c.map((x) => x.title), last: (document.querySelector('.chat-body .md:last-of-type')?.textContent ?? '') } }); if (chip.n) break; await wait(300) }
           if (!chip.n) fail('경로 칩: 있는 파일이 칩이 안 됐다 ' + JSON.stringify(chip))
@@ -738,7 +738,7 @@ try {
             const chip = await pg.evaluate(() => { const c = document.querySelector('.lchips .lchip'); return c ? { t: c.textContent, ic: !!c.querySelector('img.fvic') } : null })
             if (!chip || !chip.ic) fail('입력창: 쓰는 중인 주소에 아이콘 칩이 없다 ' + JSON.stringify(chip))
             if (!/example\.com/.test(chip.t ?? '')) fail('입력창: 칩이 도메인을 안 보여 준다 ' + JSON.stringify(chip))
-            await pg.keyboard.press('Enter')
+            await pg.keyboard.press('Meta+Enter')
             let fv = 0
             for (let i = 0; i < 40; i++) { fv = await pg.evaluate(() => document.querySelectorAll('.chat-body .md a img.fvic').length); if (fv) break; await wait(300) }
             if (!fv) fail('채팅: 답 속 링크에 파비콘 자리가 없다')
@@ -753,7 +753,7 @@ try {
            */
           {
             await pg.fill('.composer textarea', '링크박스 테스트')
-            await pg.keyboard.press('Enter')
+            await pg.keyboard.press('Meta+Enter')
             let box = null
             for (let i = 0; i < 40; i++) {
               box = await pg.evaluate(() => {
@@ -784,7 +784,7 @@ try {
            */
           {
             await pg.fill('.composer textarea', '코드블록 테스트')
-            await pg.keyboard.press('Enter')
+            await pg.keyboard.press('Meta+Enter')
             let cb = null
             for (let i = 0; i < 40; i++) {
               cb = await pg.evaluate(() => {
@@ -955,6 +955,52 @@ try {
           await pg.fill('.composer textarea', 'nk,/')
           if (await pg.$('.modal.keys')) fail('단축키: 글자를 쳤는데 명령이 돌았다')
           await pg.fill('.composer textarea', ''); await wait(200)
+          /**
+           * 🔴 **⏎ 로는 안 보낸다** (2026-09-14 Dave: *«엔터 칠때 입력이 되면 안돼. 샌드버튼을 눌러야
+           *    전송되게 해줘»*). 이 앱에 쓰는 글은 한 줄 채팅이 아니라 **지시문**이라, ⏎ 한 번에
+           *    반쯤 쓴 말이 나가 버리는 일이 잦았다(폰에서는 자판의 ⏎ 가 바로 그 자리에 있다).
+           * ⚠ 보내는 길은 **⌘⏎ 와 보내기 단추** 둘뿐이다.
+           */
+          {
+            await pg.fill('.composer textarea', '엔터로는 안 나간다')
+            await pg.keyboard.press('Enter'); await wait(500)
+            const still = await pg.inputValue('.composer textarea')
+            if (!still.includes('엔터로는 안 나간다')) fail('🔴 ⏎ 로 보내졌다 — 반쯤 쓴 말이 나간다 · ' + JSON.stringify(still))
+            if (!/\n/.test(still)) fail('⏎ 가 줄바꿈도 안 했다 · ' + JSON.stringify(still))
+            await pg.fill('.composer textarea', ''); await wait(200)
+            ok('⏎ 로는 안 나간다 — 보내기는 ⌘⏎ 와 단추뿐')
+          }
+          /**
+           * 🔴 **대기 메시지를 고칠 수 있다** (2026-09-14 Dave: «현재 대기 메시지 수정이 안돼»).
+           *    아직 안 보낸 말이다 — 못 고치면 지우고 처음부터 다시 쓰는 수밖에 없다.
+           * ⚠ 여기의 ⏎ 는 «고치기 끝» 이다(보내기가 아니다).
+           */
+          {
+            // 돌고 있는 동안 보내면 대기열로 간다 — 스텁이 도는 사이에 두 번 보낸다
+            await pg.fill('.composer textarea', '느린일 하나')
+            await pg.keyboard.press('Meta+Enter'); await wait(80)
+            await pg.fill('.composer textarea', '대기에 들어갈 말')
+            await pg.keyboard.press('Meta+Enter'); await wait(300)
+            await pg.waitForSelector('.queue .tx', { timeout: 6000 }).catch(() => {})
+            const q = await pg.$('.queue .tx')
+            if (!q) fail('대기 메시지: 돌고 있는데 보낸 말이 대기열에 안 들어갔다')
+            {
+              await q.click(); await wait(250)
+              await pg.fill('.queue .qin', '고친 말')
+              await pg.keyboard.press('Enter'); await wait(300)
+              const after = await pg.textContent('.queue .tx')
+              if (!/고친 말/.test(after ?? '')) fail('대기 메시지: 고친 글이 안 남았다 · ' + after)
+              ok('대기 메시지 — 눌러서 고친다')
+            }
+            // ⚠ 대기열을 비우고 나간다 — 안 그러면 느린 턴이 끝나며 그 말이 진짜로 나간다
+            await pg.click('.queue button:not(.tx)').catch(() => {})
+            await pg.fill('.composer textarea', ''); await wait(200)
+          }
+          /**
+           * ⛔ **생각 줄에는 중단 단추가 없다** (2026-09-14 Dave) — 입력줄의 것과 겹친다.
+           *    같은 일을 하는 단추가 한 화면에 둘이면 둘 다 «진짜 그건가» 를 한 번씩 생각하게 만든다.
+           */
+          if (await pg.$('.live .stop')) fail('🔴 생각 줄에 중단 단추가 되살아났다')
           ok('맥 기본 단축키 — ⌘, 설정 · ⌘/ 표 · 글 칠 때는 안 돈다')
           /**
            * 🔴 **명령 팔레트 ⌘P** (Rondo 이식 D1) — 폴더 · 문서 · 세션 · 명령이 한 목록에 선다.

@@ -158,8 +158,8 @@ export const KEYS: { k: string; t: string; d?: string }[] = [
   { k: '⌘⇧D', t: '문서 열 접기' },
   { k: '⌘⇧U', t: '알림' },
   { k: '⌘W', t: '문서 탭 닫기' },
-  { k: '↩', t: '보내기' },
-  { k: '⇧↩', t: '줄 바꾸기' },
+  { k: '⌘↩', t: '보내기', d: '⏎ 로는 안 나간다 — 반쯤 쓴 말이 나가지 않게' },
+  { k: '↩', t: '줄 바꾸기' },
   { k: '⎋', t: '닫기 · 편집 끝내기' },
   { k: '⌘Z', t: '실행 취소', d: '맥 기본 — 우리가 안 가로챈다' },
   { k: '⌘F', t: '문서에서 찾기', d: '편집기 기본' }
@@ -384,6 +384,8 @@ function Main() {
       else if (c === 'picker') setModal('picker')
       else if (c === 'notify') setModal('notify')
       else if (c === 'new-session') void newSession()
+      // ⚠ 보내기는 **입력칸이 쥐고 있다** — 메뉴는 그 자리에 신호만 보낸다(같은 길을 두 벌 만들지 않는다)
+      else if (c === 'send') window.dispatchEvent(new Event('fb:send'))
     })
     return off
   }, [bot?.id, sessions.length])
@@ -703,6 +705,8 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   }
   const pickAt = (f: FileNode) => { const name = f.rel.split('/').pop() ?? f.rel; const start = caret - (atQ?.length ?? 0) - 1; const next = `${text.slice(0, start)}@${name} ${text.slice(caret)}`; setText(next); setCaret(start + name.length + 2); addAtt({ rel: f.rel, abs: `${bot.abs}/${f.rel}`, dir: f.dir }); setDismissed(''); taRef.current?.focus() }
   const mention = (rel: string) => { const name = rel.split('/').pop() ?? rel; setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}@${name} `); addAtt({ rel, abs: `${bot.abs}/${rel}` }); taRef.current?.focus() }
+  // 맥 메뉴의 «보내기» — 단축키(⌘⏎)와 **같은 길**로 들어온다
+  useEffect(() => { const f = () => void send(); window.addEventListener('fb:send', f); return () => window.removeEventListener('fb:send', f) })
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing) return
     const list: (SlashCmd | FileNode)[] = slashList.length ? slashList : atList
@@ -712,7 +716,16 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
       if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) { e.preventDefault(); const it = list[sel]; if ('name' in it) pickSlash(it); else pickAt(it); return }
       if (e.key === 'Escape') { e.preventDefault(); setDismissed(text); return }
     }
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() }
+    /**
+     * 🔴 **⏎ 로는 안 보낸다** (2026-09-14 Dave: *«엔터 칠때 입력이 되면 안돼. 샌드버튼을 눌러야
+     *    전송되게 해줘»*). 보내는 길은 **보내기 단추**와 **⌘⏎** 둘뿐이다.
+     *
+     * 왜 바꿨나: 이 앱에 쓰는 글은 한 줄짜리 채팅이 아니라 **지시문**이다 — 여러 줄로 쓰다가
+     * ⏎ 한 번에 반쯤 쓴 말이 나가 버리는 일이 잦았다(폰에서는 자판의 ⏎ 가 바로 그 자리에 있다).
+     * ⚠ `/` · `@` 목록이 떠 있을 때의 ⏎ 는 **고르기**다(위 분기) — 그건 보내기가 아니라 채우기다.
+     * ⚠ ⌘⏎ 는 맥의 «이 양식을 제출» 관용구다. ⌃⏎ 도 함께 받는다(외장 자판·리눅스).
+     */
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send() }
   }
   const hasText = !!text.trim() || attach.length > 0
   const mode: 'send' | 'queue' | 'stop' | 'off' = hasText ? (running || state === 'awaiting_input' ? 'queue' : 'send') : running ? 'stop' : 'off'
@@ -756,7 +769,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const plusBtn = <button className={phone ? 'plusb' : `cbtn ${pop === 'plus' ? 'on' : ''}`} style={phone ? undefined : { padding: '3px 6px' }} title="첨부" onClick={() => setPop(pop === 'plus' ? '' : 'plus')} disabled={uploading}><Icon n="plus" size={phone ? 20 : 14} /></button>
   const sendBtn = mode === 'stop' ? <button className="sendb" onClick={() => cur && api(`/sessions/${cur.id}/interrupt`, { body: {} })} title="중단"><Icon n="stop" size={phone ? 14 : 11} /></button>
     : mode === 'off' && phone ? <span className="sendb mic"><Icon n="mic" size={20} /></span>
-      : <button className={`sendb ${mode === 'off' ? 'off' : ''}`} onClick={send} disabled={mode === 'off' || busy || uploading} title={mode === 'queue' ? '대기열에 넣기' : '보내기'}><Icon n="up" size={phone ? 16 : 12} />{mode === 'queue' ? <span className="bd">+{queue.length + 1}</span> : null}</button>
+      : <button className={`sendb ${mode === 'off' ? 'off' : ''}`} onClick={send} disabled={mode === 'off' || busy || uploading} title={mode === 'queue' ? '대기열에 넣기 (⌘⏎)' : '보내기 (⌘⏎)'}><Icon n="up" size={phone ? 16 : 12} />{mode === 'queue' ? <span className="bd">+{queue.length + 1}</span> : null}</button>
   const popEl = pop === 'mode' ? <div className="cpop"><div className="h">모드 · 이 세션</div>{MODES.map((m, i) => <button key={m.v} className={`prow2 ${cfg.mode === m.v ? 'on' : ''}`} onClick={() => void applyCfg({ permissionMode: m.v })}><div className="t"><b>{m.t}</b><small>{m.d}</small></div>{cfg.mode === m.v ? <Icon n="check" size={13} /> : <span className="k">{i + 1}</span>}</button>)}<div className="hint"><span>1~4</span><span className="sp" /><span>새 세션은 설정의 기본값으로</span></div></div>
     : pop === 'model' ? <div className="cpop r"><div className="h">모델 · 이 세션{vend === 'codex' ? ' · Codex' : ''}</div>{modelList.map((m, i) => <button key={m.v} className={`prow2 ${cfg.model === m.v ? 'on' : ''}`} onClick={() => void applyCfg({ model: m.v })}><div className="t"><b>{m.t}</b>{m.d ? <small>{m.d}</small> : null}</div>{cfg.model === m.v ? <Icon n="check" size={13} /> : <span className="k">{i + 1}</span>}</button>)}<div className="hint"><span>바꾸면 이 세션을 이어서 재시작해요 (대화 유지)</span></div></div>
     : pop === 'effort' ? <div className="cpop r"><div className="effort"><div className="top"><span style={{ color: 'var(--t3)', fontSize: 12.5 }}>노력</span><b>{effortLabel(cfg.effort, vend)}</b></div><div className="lbl"><span>더 빠르게</span><span>더 스마트하게</span></div><input type="range" min={0} max={effortList.length - 1} step={1} value={Math.max(0, effortList.findIndex((e) => e.v === cfg.effort))} onChange={(e) => { const v = effortList[Number(e.target.value)].v; if (v !== cfg.effort) void (async () => { if (cur) { try { await api(`/sessions/${cur.id}/settings`, { body: { effort: v } }) } catch (er) { say((er as Error).message) } } else setDraft((d) => ({ ...d, effort: v })) })() }} /><div className="steps">{effortList.map((e) => <span key={e.v}>{e.t}</span>)}</div></div><div className="hint"><span>다음 턴부터 적용 · 기본값은 설정에서</span></div></div>
@@ -794,7 +807,12 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
     </div>
     <button className={`tobot rb glassb${showJump ? '' : ' off'}`} onClick={() => { const el = scRef.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }) }} title="최근으로" tabIndex={showJump ? 0 : -1} aria-hidden={!showJump}><Icon n="chevd" size={16} />{streaming ? <span className="dot run" /> : null}</button>
     <div className="chat-foot" ref={footRef}>
-      {queue.map((q, i) => <div key={i} className="queue"><span>대기 {i + 1}</span><span className="tx">{q}</span><button onClick={() => setQueue(queue.filter((_, k) => k !== i))} style={{ color: 'var(--t3)', display: 'inline-flex' }}><Icon n="x" size={11} /></button></div>)}
+      {/* 🔴 **대기 메시지는 고칠 수 있어야 한다** (2026-09-14 Dave: «현재 대기 메시지 수정이 안돼»).
+          아직 안 보낸 말이다 — 못 고치면 지우고 처음부터 다시 쓰는 수밖에 없었다.
+          ⚠ 여기의 ⏎ 는 **고치기 끝**이다(보내기가 아니다) · ⎋ 는 되돌리기. ⛔ 빈 글로 두면 그 줄은 사라진다. */}
+      {queue.map((q, i) => <QueueRow key={i} n={i + 1} text={q}
+        onSave={(v) => setQueue(v.trim() ? queue.map((x, k) => (k === i ? v : x)) : queue.filter((_, k) => k !== i))}
+        onDrop={() => setQueue(queue.filter((_, k) => k !== i))} />)}
       {/* 🔴 **입력창의 링크도 아이콘을 갖는다** (2026-09-13 Dave). ⚠ `textarea` 안에는 그림을 못 넣는다 —
           글자만 담는 칸이다. 그래서 쓰는 중인 주소를 **입력칸 위 칩**으로 올린다: 같은 캐시, 같은 아이콘,
           그리고 «이 주소가 맞나» 를 보내기 전에 확인할 수 있다. */}
@@ -811,7 +829,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
         {drop ? <div className="drophint"><Icon n="plus" size={13} />{drop === 'files' ? '놓으면 첨부/ 에 복사하고 첨부' : '놓으면 첨부'}</div> : null}
         <div className="crow">
           {phone ? plusBtn : null}
-          <textarea ref={taRef} rows={1} onFocus={() => { if (phone) stickBottom() }} placeholder={drill ? '메인 대화로 보냅니다 — 이 안에는 직접 말을 걸 수 없어요' : running ? '⏎ 로 대기열에 넣습니다' : state === 'awaiting_input' ? '답을 기다리는 중 — 보내면 대기열에' : '메시지…  / 스킬 · @ 파일'} value={text} onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(180, e.target.scrollHeight)}px` }} onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? 0)} onClick={(e) => setCaret(e.currentTarget.selectionStart ?? 0)} onKeyDown={onKey} />
+          <textarea ref={taRef} rows={1} onFocus={() => { if (phone) stickBottom() }} placeholder={drill ? '메인 대화로 보냅니다 — 이 안에는 직접 말을 걸 수 없어요' : running ? '보내면 대기열에 들어갑니다 (⌘⏎)' : state === 'awaiting_input' ? '답을 기다리는 중 — 보내면 대기열에' : '메시지…  ⌘⏎ 로 보내기 · / 스킬 · @ 파일'} value={text} onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(180, e.target.scrollHeight)}px` }} onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? 0)} onClick={(e) => setCaret(e.currentTarget.selectionStart ?? 0)} onKeyDown={onKey} />
           {phone ? <>{ringBtn}{sendBtn}</> : null}
         </div>
         {!phone ? <div className="cbar">{modeBtn}{plusBtn}<span className="sp" />{modelBtn}{effortBtn}{ringBtn}{sendBtn}</div> : null}
@@ -844,6 +862,33 @@ function LinkChip({ url }: { url: string }) {
  *     그 줄이 도는 동안 물결친다(`core/work.ts` 머리말).
  *  ⛔ 맥박 점(·)은 뺐다 — 마스코트가 이미 같은 말을 한다.
  */
+/**
+ * 대기 줄 하나 — 눌러서 고친다 (2026-09-14 Dave: *«현재 대기 메시지 수정이 안돼»*).
+ *
+ * 🔴 **아직 안 보낸 말이다.** 못 고치면 지우고 처음부터 다시 쓰는 수밖에 없었다 — 긴 지시문일수록
+ *    아프다. 그래서 줄을 그대로 입력칸으로 바꾼다(자리·높이가 안 변해 목록이 안 출렁인다).
+ * ⚠ **여기의 ⏎ 는 «고치기 끝»** 이다 — 보내기가 아니다(보내기는 ⌘⏎ 와 단추뿐 · 입력칸 계약).
+ * ⚠ ⎋ 는 되돌리기. ⛔ 빈 글로 두고 나가면 그 줄은 **사라진다** — 「지우기」를 따로 찾지 않게.
+ */
+function QueueRow({ n, text, onSave, onDrop }: { n: number; text: string; onSave: (v: string) => void; onDrop: () => void }) {
+  const [edit, setEdit] = useState(false)
+  const [v, setV] = useState(text)
+  useEffect(() => { setV(text) }, [text])
+  return <div className="queue">
+    <span>대기 {n}</span>
+    {edit
+      ? <input className="qin" autoFocus value={v} onChange={(e) => setV(e.target.value)}
+          onBlur={() => { setEdit(false); if (v !== text) onSave(v) }}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return
+            if (e.key === 'Enter') { e.preventDefault(); setEdit(false); if (v !== text) onSave(v) }
+            if (e.key === 'Escape') { e.preventDefault(); setV(text); setEdit(false) }
+          }} />
+      : <button className="tx" title="눌러서 고치기" onClick={() => setEdit(true)}>{text}</button>}
+    <button onClick={onDrop} title="대기열에서 빼기" style={{ color: 'var(--t3)', display: 'inline-flex' }}><Icon n="x" size={11} /></button>
+  </div>
+}
+
 function Live({ cur, state, color }: { cur: SessionInfo; state: string; color: string }) {
   if (state === 'awaiting_input') return <div className="live"><span className="glow" /><span className="tx">확인 대기 — 위 요청에 응답해 주세요</span><span className="el"><Elapsed from={cur.turnStartedAt} /></span></div>
   const a = cur.activity ?? ''
@@ -853,7 +898,9 @@ function Live({ cur, state, color }: { cur: SessionInfo; state: string; color: s
     <span className="sl">·</span>
     <span className="tx">{workLabel(a)}</span>
     <span className="sp" />
-    <button className="stop" title="중단" onClick={() => api(`/sessions/${cur.id}/interrupt`, { body: {} })}><Icon n="stop" size={9} /><span>중단</span></button>
+    {/* ⛔ **여기에 중단 단추를 다시 두지 마라** (2026-09-14 Dave: «에이전트가 생각하는 폴더 옆에
+        중단 버튼은 없어도 될것 같아. 어차피 채팅 입력부에 중복으로 있어»). 같은 일을 하는 단추가
+        한 화면에 둘이면, 둘 다 «진짜 그건가» 를 한 번씩 생각하게 만든다. 중단은 입력줄의 것 하나다. */}
   </div>
 }
 

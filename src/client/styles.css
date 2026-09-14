@@ -137,7 +137,12 @@ b,strong { color:var(--w); font-weight:600 }
 .live .stop:hover { color:var(--w); border-color:var(--line2) }
 .glow { width:6px; height:6px; border-radius:50%; background:var(--wait); display:inline-block; flex:none; animation:glow 2.4s ease-in-out infinite }
 .live { display:flex; align-items:center; gap:10px; font-size:12.5px; color:var(--t2); min-height:24px } .live .tx { color:var(--t); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 } .live .th { color:var(--t3); font-style:italic; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:320px } .live .el { font-family:var(--mono); font-size:11.5px; color:var(--t3); flex:none } .live .stop { color:var(--t3); flex:none } .live .stop:hover { color:var(--t) }
-.queue { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--t3); padding:0 2px } .queue .tx { color:var(--t2); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+/* 대기 줄 — 눌러서 고친다. ⚠ 보기 상태와 고치기 상태의 **높이가 같아야** 목록이 안 출렁인다 */
+.queue { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--t3); padding:0 2px }
+.queue .tx { color:var(--t2); flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:left; line-height:1.7 }
+.queue button.tx:hover { color:var(--w) }
+.queue .qin { flex:1; min-width:0; background:var(--bg); border:1px solid var(--line2); border-radius:5px; padding:0 6px; color:var(--w); font:inherit; font-size:12px; line-height:1.7; outline:0 }
+.queue .qin:focus { border-color:var(--t3) }
 .files { display:flex; gap:6px; flex-wrap:wrap }
 .card { display:flex; flex-direction:column; gap:6px; max-width:600px } .card .lab { font-size:12px; color:var(--t3) } .card .q { font-size:14px; color:var(--w) } .card .cmd { font-family:var(--mono); font-size:11.5px; color:var(--t3); padding-left:10px; border-left:1px solid var(--line2); white-space:pre-wrap; word-break:break-all; max-height:120px; overflow:auto } .card .btns { display:flex; gap:8px; align-items:center; margin-top:4px; flex-wrap:wrap }
 .opt { display:flex; gap:10px; align-items:flex-start; padding:8px 2px; border-top:1px solid var(--line); width:100%; color:var(--t) } .opt:hover { background:var(--hover) } .opt .r { width:12px; height:12px; border-radius:50%; border:1.5px solid var(--line2); flex:none; margin-top:5px } .opt.on .r { border-color:var(--w); background:var(--w) } .opt .d { font-size:12px; color:var(--t3) } .opt input { background:none; border:0; outline:0; width:100%; color:var(--w) }

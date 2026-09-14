@@ -149,6 +149,9 @@ function appMenu() {
       { label: '새 세션', accelerator: 'CmdOrCtrl+N', click: cmd('new-session') },
       { label: '폴더 고르기 · 시작', accelerator: 'CmdOrCtrl+K', click: cmd('picker') },
       { label: '명령 팔레트', accelerator: 'CmdOrCtrl+P', click: cmd('palette') },
+      { type: 'separator' },
+      // ⚠ ⏎ 로는 안 보낸다(2026-09-14 Dave) — 보내는 길은 이 단축키와 보내기 단추뿐이다
+      { label: '보내기', accelerator: 'CmdOrCtrl+Return', click: cmd('send') },
       { type: 'separator' }, { role: isMac ? 'close' : 'quit' }
     ] },
     { label: '편집', submenu: [

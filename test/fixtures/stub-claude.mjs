@@ -36,6 +36,14 @@ rl.on('line', (raw) => {
     say({ type: 'result', subtype: 'success', duration_ms: 40, total_cost_usd: 0.001 })
     return
   }
+  // 「대기열」 검사용 — 한 턴이 **느리게** 돌아야 그 사이에 보낸 말이 대기열에 쌓인다
+  if (/느린일/.test(text)) {
+    setTimeout(() => {
+      say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '느린 일 끝' }], stop_reason: 'end_turn' } })
+      say({ type: 'result', subtype: 'success', duration_ms: 1500, total_cost_usd: 0.001 })
+    }, 2500)
+    return
+  }
   // 「코드 블록 머리줄」 검사용 — 언어가 붙은 펜스
   if (/코드블록/.test(text)) {
     say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '이렇게요\n\n```ts\nconst a = 1\n```\n' }], stop_reason: 'end_turn' } })
