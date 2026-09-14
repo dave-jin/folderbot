@@ -1,5 +1,5 @@
 import type { PermissionMode } from '../core/types'
-import { AGENT_EFFORTS, AGENT_MODELS, DEFAULT_EFFORT, DEFAULT_MODEL, type AgentModel, type ProviderId } from '../core/agents'
+import { AGENT_EFFORTS, AGENT_MODELS, DEFAULT_EFFORT, DEFAULT_MODEL, MORE_MODELS, type AgentModel, type ProviderId } from '../core/agents'
 import { mergeModels } from '../core/modelList'
 
 /**
@@ -20,7 +20,18 @@ let found: { claude: string[]; codex: string[] } = { claude: [], codex: [] }
 export function setFoundModels(f: { claude?: string[]; codex?: string[] }): void {
   found = { claude: f.claude ?? [], codex: f.codex ?? [] }
 }
-export const modelsFor = (v?: ProviderId): AgentModel[] => mergeModels(found[v ?? 'claude'], AGENT_MODELS[v ?? 'claude']) as AgentModel[]
+/**
+ * 첫 목록 — **골라 둔 것만**(종류별 최신 하나씩). 기계에서 주워 온 이름은 여기 안 섞는다.
+ * 🔴 2026-09-14 Dave 스크린샷: 긁어 온 이름을 첫 목록에 섞었더니 플러그인 이름(`claude-mythos` 등)이
+ *    줄줄이 서서 «무엇을 골라야 하나» 가 됐다. 고르기는 짧아야 한다.
+ */
+export const modelsFor = (v?: ProviderId): AgentModel[] => AGENT_MODELS[v ?? 'claude']
+/** 「더 많은 모델」 — 긴 문맥(1M) · 기계에서 주워 온 이름. 첫 목록과 겹치는 것은 뺀다 */
+export const moreModelsFor = (v?: ProviderId): AgentModel[] => {
+  const id = v ?? 'claude'
+  const first = new Set(AGENT_MODELS[id].map((m) => m.v))
+  return mergeModels(found[id], MORE_MODELS[id]).filter((m) => m.v && !first.has(m.v)) as AgentModel[]
+}
 export const effortsFor = (v?: ProviderId): { v: string; t: string }[] => AGENT_EFFORTS[v ?? 'claude']
 export const MODES: { v: PermissionMode; t: string; d: string }[] = [
   { v: 'default', t: '자동', d: '읽기는 바로, 쓰기·실행은 물어봄' },

@@ -10,6 +10,7 @@ import { assistantText, closeOpenItems, contextOf, itemId, toolSummary, touchedP
 import { CodexWorker } from './codex'
 import { fitsProvider } from '../core/agents'
 import { CODEX_LOCAL, parseLocalSlash } from '../core/slashLocal'
+import { isModelRejected } from '../core/codexMap'
 import type { Bot, ChatItem, PermissionMode, PermissionRequest, SessionInfo, SessionState } from '../core/types'
 import { atomicWrite, dataDir, ensureDir } from './paths'
 
@@ -183,6 +184,8 @@ export interface SessionRec {
   turnStartedAt?: number
   ctx?: { used: number; window: number }
   restartPending?: boolean
+  /** 모델 거절로 한 번 다시 보냈나 — 두 번은 안 한다 */
+  modelRetried?: boolean
   /** CLI init 이 알려준 슬래시 명령 이름들 */
   slash?: string[]
 }
@@ -315,6 +318,26 @@ export class SessionManager extends EventEmitter {
       if (code !== 0 && code !== 143 && code !== 137 && code !== null) {
         r.lastError = (err || `exit ${code}`).trim().slice(-600)
         const authErr = AUTH_ERROR.test(r.lastError)
+        /**
+         * 🔴 **고른 모델을 계정이 안 받아 주면, 모델 없이 한 번 더** (2026-09-14).
+         *    Codex 에서 먼저 겪은 일(«이 계정에서는 그 모델을 못 쓴다»)은 Claude 에서도 난다 —
+         *    요금제마다 쓸 수 있는 모델이 다르고, 긴 문맥(1M) 같은 것은 특히 그렇다.
+         *    모델 하나 때문에 **턴이 통째로 죽는 것**이 제일 나쁘다 — CLI 의 기본값에 맡기고 이어간다.
+         * ⚠ **한 번만** 다시 보낸다(`modelRetried`) — 다른 이유로 또 죽으면 그때는 사람에게 말해야 한다.
+         * ⚠ 세션의 모델 설정을 **지운다** — 다음 턴부터도 기본값으로 간다(매 턴 죽지 않게).
+         */
+        const lastUser = [...r.items].reverse().find((it) => it.kind === 'user') as { text: string } | undefined
+        if (!authErr && r.model && !r.modelRetried && isModelRejected(r.lastError) && lastUser?.text) {
+          r.modelRetried = true
+          const was = r.model
+          r.model = undefined
+          this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `${was} 는 이 계정에서 못 써요 — 기본 모델로 다시 보냅니다` })
+          this.persist(r)
+          const bot2 = bot
+          setTimeout(() => { try { this.send(r, bot2, lastUser.text) } catch { /* 두 번은 안 한다 */ } }, 50)
+          this.emit('sessions', r.botId)
+          return
+        }
         this.push(r, { id: itemId('e'), t: Date.now(), kind: 'system', text: authErr ? 'Claude 로그인이 필요해요 — 미니에서 claude → /login, 또는 설정 › Claude 토큰' : `세션을 못 띄웠어요 · ${r.lastError.split('\n').pop() ?? ''}` })
         if (authErr) this.emit('auth-error', r)
       }

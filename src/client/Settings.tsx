@@ -8,7 +8,7 @@ import { Mark } from './Brand'
 import { ICON_LABEL, ICON_PX, useIconSize, useTheme, type IconSize, type Theme } from './theme'
 import { ACT_ICON, ACT_LABEL, SWIPE_DEFAULT, useSwipeCfg, type SwipeAct, type SwipeSlot } from './swipe'
 import { fmtTime, useStore } from './store'
-import { EFFORTS, MODELS, modelsFor, setFoundModels } from './consts'
+import { EFFORTS, MODELS, modelsFor, moreModelsFor, setFoundModels } from './consts'
 import { norm } from '../core/search'
 
 /**
@@ -226,8 +226,9 @@ function AgentsPane() {
   const [found, setFound] = useState<{ claude: string[]; codex: string[] }>({ claude: [], codex: [] })
   useEffect(() => { void api<Provider[]>('/agents').then(setList).catch(() => setList([])); void api<typeof gh>('/harness/global').then(setGh).catch(() => setGh(null)); void api<{ claude: string[]; codex: string[] }>('/agents/models').then((f) => { setFoundModels(f); setFound(f) }).catch(() => {}) }, [])
   // ⚠ 합치기는 `consts` 한 곳에서 한다 — 설정과 입력창이 **같은 목록**을 봐야 한다
-  const clModels = useMemo(() => modelsFor('claude'), [found.claude])
-  const cxModels = useMemo(() => modelsFor('codex'), [found.codex])
+  // ⚠ 설정에서는 **첫 목록 + 더 많은 것**을 한 줄로 편다 — 여기는 자주 오는 자리가 아니라 다 보여도 된다
+  const clModels = useMemo(() => [...modelsFor('claude'), ...moreModelsFor('claude')], [found.claude])
+  const cxModels = useMemo(() => [...modelsFor('codex'), ...moreModelsFor('codex')], [found.codex])
   const saveD = async (m: string, e: string, agent: 'claude' | 'codex' = 'claude') => { await api('/defaults', { body: { model: m, effort: e, agent } }); await refresh(); setMsg('저장했어요 — 다음 세션부터 적용돼요.') }
   const saveCx = async (o: { sandbox?: string; apiKey?: string }) => { setBusy(true); try { await api('/codex', { body: o }); await refresh(); setMsg('Codex 설정을 저장했어요.') } finally { setBusy(false) } }
   const hasCodex = (list ?? []).some((p) => p.id === 'codex')

@@ -881,3 +881,7 @@ b,strong { color:var(--w); font-weight:600 }
 
 /* 진단 글 — 그대로 붙여넣을 수 있게 고정폭·줄바꿈 유지. ⚠ 값이 아니라 «있음/없음» 만 들어 있다 */
 .setr .diag { margin:6px 0 0; padding:8px 10px; background:var(--bg); border:1px solid var(--line); border-radius:7px; font-family:var(--mono); font-size:11px; line-height:1.6; color:var(--t2); white-space:pre-wrap; word-break:break-all; max-height:260px; overflow:auto }
+
+/* 「더 많은 모델」 — 접힌 줄. ⚠ 고를 수 있는 줄과 **같은 높이**여야 목록이 안 출렁인다 */
+.cpop .prow2.more { color:var(--t3) } .cpop .prow2.more:hover { color:var(--w) }
+.cpop .prow2.more .t b { font-weight:500 }

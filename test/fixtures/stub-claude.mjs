@@ -8,6 +8,15 @@ import { homedir } from 'node:os'
 const argv = process.argv.slice(2)
 const at = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined }
 if (argv[0] === 'auth') { process.stdout.write(JSON.stringify({ loggedIn: process.env.STUB_LOGGED_OUT ? false : true, authMethod: 'claude.ai', email: 'qa@example.com', subscriptionType: 'max' }) + '\n'); process.exit(0) }
+/**
+ * 🔴 **계정이 안 받아 주는 모델** — 요금제마다 쓸 수 있는 모델이 다르다(긴 문맥은 특히).
+ *    `--model` 로 그 이름이 오면 진짜 CLI 처럼 **그 자리에서 죽는다.** 호스트가 모델을 빼고
+ *    한 번 더 보내는지가 이 한 갈래로 잰다 (2026-09-14).
+ */
+if (/못쓰는모델/.test(at('--model') ?? '')) {
+  process.stderr.write(`Error: The model '${at('--model')}' is not supported on your plan.\n`)
+  process.exit(1)
+}
 const sessionId = at('--resume') ?? `stub-${randomUUID()}`
 const say = (o) => process.stdout.write(JSON.stringify({ session_id: sessionId, ...o }) + '\n')
 // 트랜스크립트 파일을 흉내 — --resume 판정이 이걸 본다

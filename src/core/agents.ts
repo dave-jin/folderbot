@@ -17,6 +17,12 @@ export interface AgentModel { v: string; t: string; d?: string }
 
 export const AGENT_MODELS: Record<ProviderId, AgentModel[]> = {
   claude: [
+    /**
+     * 🔴 **종류별 최신 하나씩만** (2026-09-14 Dave: *«다른 모델은 안쓰고 최신 버전만 종류별로만
+     *    선택하게 할꺼야»* · Claude Code 의 모델 메뉴와 같은 결).
+     * ⛔ 목록을 늘리지 마라 — 고를 것이 많아지면 «무엇이 다른지» 를 매번 생각하게 된다.
+     *    옛 판·특수 판은 `MORE_MODELS` 로 내려간다(「더 많은 모델」).
+     */
     { v: 'claude-fable-5-1', t: 'Fable 5.1', d: '가장 똑똑함 · 기본' },
     { v: 'claude-opus-5', t: 'Opus 5', d: '' },
     { v: 'claude-sonnet-5', t: 'Sonnet 5', d: '빠름' },
@@ -33,6 +39,22 @@ export const AGENT_MODELS: Record<ProviderId, AgentModel[]> = {
     { v: 'gpt-5-codex', t: 'GPT-5 Codex', d: '' },
     { v: 'gpt-5', t: 'GPT-5', d: '' }
   ]
+}
+
+/**
+ * 「더 많은 모델」 — 평소엔 안 보이고, 눌러야 나온다.
+ *
+ * 🔴 **긴 문맥(1M) 은 여기 있다** (2026-09-14 Dave: *«1M 모델도 있는걸로 아는데…»*).
+ *    Claude Code 는 모델 이름 뒤에 **문맥 창 꼬리표**를 붙여 고른다(`claude-sonnet-5[1m]`).
+ * ⚠ 쓸 수 있는지는 **요금제가 정한다** — 안 되는 계정이면 CLI 가 거절한다. 그때는 우리가
+ *    **모델 없이 한 번 더** 보내므로 턴이 죽지는 않는다(`core/codexMap.ts` 의 `isModelRejected`).
+ * ⛔ 여기에 옛 판을 쌓지 마라 — 「더 많은」 이 두 번째 큰 목록이 되면 고르기가 다시 어려워진다.
+ */
+export const MORE_MODELS: Record<ProviderId, AgentModel[]> = {
+  claude: [
+    { v: 'claude-sonnet-5[1m]', t: 'Sonnet 5 · 1M', d: '긴 문맥 — 요금제에 따라 다름' }
+  ],
+  codex: []
 }
 
 export const AGENT_EFFORTS: Record<ProviderId, { v: string; t: string }[]> = {

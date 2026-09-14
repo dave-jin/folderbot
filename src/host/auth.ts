@@ -184,17 +184,20 @@ export function agentModels(): { claude: string[]; codex: string[] } {
   const cx = ps.find((p) => p.id === 'codex')
   if (cx?.bin) {
     const found = new Set(modelsFromHelp(helpOf(cx.bin, ['exec', '--help']), MODEL_RE.codex))
-    for (const f of codexJsonFiles()) for (const v of extractModels(readJson(join(codexHome(), f)), MODEL_RE.codex)) found.add(v)
+    // ⚠ **모델 캐시 파일만** 본다 — `hooks.json`·`.codex-global-state.json` 까지 긁으면 남의 이름이 섞인다
+    for (const f of codexJsonFiles().filter((n) => /model/i.test(n))) for (const v of extractModels(readJson(join(codexHome(), f)), MODEL_RE.codex)) found.add(v)
     out.codex = [...found]
   }
+  /**
+   * ⛔ **Claude 는 설정 파일을 긁지 않는다** (2026-09-14 Dave 스크린샷).
+   *    `~/.claude.json` 은 모델 목록이 아니라 **플러그인·마켓플레이스 설정**이다. 거기서 «모델처럼
+   *    생긴 글자» 를 주웠더니 `claude-code-setup` · `claude-plugins-official` · `claude-mythos` 같은
+   *    **플러그인 이름이 모델 목록에 줄줄이 섰다**. 모양이 같다고 뜻이 같지 않다.
+   *    → Claude 는 **골라 둔 목록**(`AGENT_MODELS.claude`)이 정본이고, 여기서는 CLI 도움말이
+   *      값 목록을 내줄 때만 보탠다.
+   * ⚠ Codex 는 다르다 — `models_cache.json` 은 **진짜 모델 캐시**라 긁는 값이 있다.
+   */
   const cl = ps.find((p) => p.id === 'claude')
-  if (cl?.bin) {
-    const found = new Set(modelsFromHelp(helpOf(cl.bin, ['--help']), MODEL_RE.claude))
-    const dir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
-    for (const p of [join(homedir(), '.claude.json'), join(dir, 'config.json'), join(dir, 'settings.json')]) {
-      for (const v of extractModels(readJson(p), MODEL_RE.claude)) found.add(v)
-    }
-    out.claude = [...found]
-  }
+  if (cl?.bin) out.claude = modelsFromHelp(helpOf(cl.bin, ['--help']), MODEL_RE.claude)
   return out
 }

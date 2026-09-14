@@ -969,6 +969,21 @@ try {
             if (!/\n/.test(still)) fail('⏎ 가 줄바꿈도 안 했다 · ' + JSON.stringify(still))
             await pg.fill('.composer textarea', ''); await wait(200)
             ok('⏎ 로는 안 나간다 — 보내기는 ⌘⏎ 와 단추뿐')
+          /**
+           * 🔴 **계정이 안 받아 주는 모델이면 모델 없이 한 번 더** (2026-09-14).
+           *    Codex 에서 먼저 겪은 일이 Claude 에서도 난다 — 요금제마다 쓸 수 있는 모델이 다르고,
+           *    긴 문맥(1M) 같은 것은 특히 그렇다. 모델 하나 때문에 **턴이 통째로 죽는 것**이 제일 나쁘다.
+           */
+          {
+            const rj = await api(`/bots/${bot.id}/sessions`, { name: '모델거절-claude', model: '못쓰는모델-x' })
+            await api(`/sessions/${rj.id}/send`, { text: '거절 테스트' })
+            let c = null
+            for (let i = 0; i < 80; i++) { c = await api(`/sessions/${rj.id}/chat`); if (c.items.some((x) => x.kind === 'assistant')) break; await wait(250) }
+            if (!c.items.some((x) => x.kind === 'system' && /이 계정에서 못 써요/.test(x.text ?? ''))) fail('모델 거절(Claude): 무슨 일이 났는지 안 알려 준다 ' + JSON.stringify(c.items.map((x) => [x.kind, (x.text ?? '').slice(0, 40)])))
+            if (!c.items.some((x) => x.kind === 'assistant' && /스텁이 받았습니다/.test(x.text ?? ''))) fail('🔴 모델 거절(Claude): 모델 없이 다시 안 보냈다 ' + JSON.stringify(c.items.map((x) => [x.kind, (x.text ?? '').slice(0, 40)])))
+            await api(`/sessions/${rj.id}`, undefined, 'DELETE').catch(() => {})
+            ok('모델 거절 — Claude 도 모델 없이 한 번 더 보낸다')
+          }
           }
           /**
            * 🔴 **대기 메시지를 고칠 수 있다** (2026-09-14 Dave: «현재 대기 메시지 수정이 안돼»).
