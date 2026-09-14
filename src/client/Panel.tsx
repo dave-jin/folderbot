@@ -462,7 +462,9 @@ function Tree({ bot, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFol
    * 새로 만들기 · 복제 · Finder — 전부 **호스트**가 한다(가드도 거기 있다).
    * ⚠ 만드는 자리는 «누른 것이 폴더면 그 안, 파일이면 그 옆» 이다 — 사람이 기대하는 자리가 그쪽이다.
    */
-  const main = useStore().s.device.main     // Finder 는 호스트 맥에서만 열린다
+  // Finder 를 여는 주체는 **언제나 호스트**다 — 원격에서는 이름으로 그걸 먼저 말한다
+  const store = useStore().s
+  const main = store.device.main, hostName = store.hostName
   const dirOf = (n: Node) => (n.dir ? n.rel : n.rel.includes('/') ? n.rel.slice(0, n.rel.lastIndexOf('/')) : '')
   const makeNew = async (n: Node, kind: 'note' | 'folder') => {
     const name = await askName(kind === 'folder' ? '새 폴더 이름' : '새 노트 이름 (.md 는 자동)', kind === 'folder' ? '새 폴더' : '새 노트')
@@ -477,7 +479,8 @@ function Tree({ bot, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFol
     try { const r = await api<{ rel: string }>(`/bots/${bot.id}/copy`, { body: { rel: n.rel } }); say(`${r.rel} 로 복제했어요`) } catch (e) { say((e as Error).message) }
   }
   const reveal = async (n: Node) => {
-    try { await api(`/bots/${bot.id}/reveal`, { body: { rel: n.rel } }) } catch (e) { say((e as Error).message) }
+    // ⛔ 훅을 콜백 안에서 부르지 않는다 — 호스트 이름은 컴포넌트에서 미리 받아 둔다
+    try { await api(`/bots/${bot.id}/reveal`, { body: { rel: n.rel } }); if (!main) say(`${hostName} 의 Finder 에서 열었어요`) } catch (e) { say((e as Error).message) }
   }
   /**
    * 이미지 복사 — 🔴 **그림 그대로** 클립보드에. 경로를 복사해 봐야 붙여넣는 쪽은 글자를 받는다.
@@ -636,8 +639,15 @@ function Tree({ bot, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFol
       <button onClick={() => void dup(ctx.n)}><span style={{ flex: 1 }}>복제</span></button>
       {/* 🔴 **지우지 않고 옮긴다** — 볼트 안 `.folderbot/trash/` 로. ⌘Z 로 돌아온다 */}
       <button className="warn" onClick={() => void toTrash(ctx.n)}><Icon n="x" size={12} /><span style={{ flex: 1 }}>휴지통으로{sel.has(ctx.n.rel) && sel.size > 1 ? ` (${sel.size}개)` : ''}</span><span className="k">⌫</span></button>
-      {/* ⚠ 「열기」와 다른 일이다 — 파일을 여는 게 아니라 **어디 있는지** 보여 준다 */}
-      {main ? <button onClick={() => void reveal(ctx.n)}><span style={{ flex: 1 }}>Finder 에서 보기</span></button> : null}
+      {/**
+        * ⚠ 「열기」와 다른 일이다 — 파일을 여는 게 아니라 **어디 있는지** 보여 준다.
+        * 🔴 **원격에서도 보인다** (2026-09-14 Dave: «폴더에서 우클릭 메뉴에 finder에서 보기가 없네»).
+        *    종전에는 메인(호스트 맥)에서만 그렸다 — 원격 맥에서 보던 Dave 에게는 **없는 기능**으로 보였다.
+        *    여는 주체는 언제나 호스트이므로, 원격에서는 이름을 「메인 맥에서 Finder 로」 로 바꿔
+        *    **어디서 열리는지**를 먼저 말한다(문서 도구줄의 「메인 맥에서 열기」와 같은 규칙).
+        * ⛔ 숨기지 마라 — 안 보이면 «이 앱엔 없는 기능» 이 되고, 그건 있는 기능을 잃는 것이다.
+        */}
+      <button onClick={() => void reveal(ctx.n)}><span style={{ flex: 1 }}>{main ? 'Finder 에서 보기' : '메인 맥에서 Finder 로 보기'}</span>{main ? null : <span className="k">메인에서</span>}</button>
       <hr />
       <button onClick={() => void makeNew(ctx.n, 'note')}><Icon n="doc" size={12} /><span style={{ flex: 1 }}>새 노트</span></button>
       <button onClick={() => void makeNew(ctx.n, 'folder')}><Icon n="folder" size={12} /><span style={{ flex: 1 }}>새 폴더</span></button>

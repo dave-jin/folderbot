@@ -665,7 +665,20 @@ try {
           if ((await cellNow(cellSel)) !== '19') fail('표: 칸에 글자가 안 들어갔다 · ' + JSON.stringify(await cellNow(cellSel)))
           await pg.click('.mded .lp-h1')
           // ⚠ 자동 저장은 **멎고 800ms 뒤**다 — 고정 대기로 재면 느린 날에 빨개진다(실제로 한 번 갈렸다). 값이 될 때까지 기다린다.
-          const untilFile = async (want, what) => { let got = ''; for (let i = 0; i < 60; i++) { got = readFileSync(abs, 'utf8'); if (got === want) return; await wait(150) } fail(`${what}\n--- 기대\n` + JSON.stringify(want) + '\n--- 실제\n' + JSON.stringify(got)) }
+          /**
+           * ⚠ 실패하면 **화면 쪽 상태까지** 함께 찍는다 — 파일만 보면 «왜 안 왔나» 를 알 수 없다.
+           *    (이 검사가 드물게 빨개지는데, 그때 편집기 안의 글과 포커스가 어디였는지가 유일한 단서다.)
+           */
+          const untilFile = async (want, what) => {
+            let got = ''
+            for (let i = 0; i < 60; i++) { got = readFileSync(abs, 'utf8'); if (got === want) return; await wait(150) }
+            const dbg = await pg.evaluate(() => ({
+              doc: document.querySelector('.mded .cm-content')?.textContent?.slice(0, 200) ?? null,
+              focus: `${document.activeElement?.tagName}.${document.activeElement?.className}`,
+              cells: [...document.querySelectorAll('.mded .lp-tbl td')].map((c) => [...c.childNodes].filter((n) => !(n.nodeType === 1 && n.classList.contains('lp-grip'))).map((n) => n.textContent).join(''))
+            }))
+            fail(`${what}\n--- 기대\n` + JSON.stringify(want) + '\n--- 실제\n' + JSON.stringify(got) + '\n--- 화면\n' + JSON.stringify(dbg))
+          }
           const want = src.replace('| 가 | 1 |', '| 가 | 19 |')
           await untilFile(want, '표: 칸만 바뀌어야 한다(표를 통째로 다시 썼다?)')
           // ＋행 — 순수 끼워 넣기
@@ -1272,7 +1285,14 @@ try {
           // 화면 — 우클릭 메뉴에 새 항목들이 있다
           await pg.click('.panel .secb button.trow:not(.dir)', { button: 'right' }); await wait(300)
           const mtx = await pg.textContent('.menu.ctx')
-          for (const want of ['새 노트', '새 폴더', '복제', '경로 복사 (폴더 기준)']) if (!(mtx ?? '').includes(want)) fail(`파일 메뉴에 «${want}» 가 없다 · ` + mtx)
+          // ⚠ 「Finder 에서 보기」는 **원격에서도** 있어야 한다 — 여는 주체가 호스트일 뿐 없는 기능이 아니다
+          //    (2026-09-14 Dave: «폴더에서 우클릭 메뉴에 finder에서 보기가 없네»)
+          for (const want of ['새 노트', '새 폴더', '복제', '경로 복사 (폴더 기준)', 'Finder']) if (!(mtx ?? '').includes(want)) fail(`파일 메뉴에 «${want}» 가 없다 · ` + mtx)
+          await pg.keyboard.press('Escape'); await wait(200)
+          // 폴더 줄에서도 같다 — 종전에는 파일에만 있고 폴더에는 없는 것처럼 보였다
+          await pg.click('.panel .secb button.trow.dir', { button: 'right' }); await wait(300)
+          const dtx = await pg.textContent('.menu.ctx')
+          if (!(dtx ?? '').includes('Finder')) fail('폴더 우클릭 메뉴에 «Finder 에서 보기» 가 없다 · ' + dtx)
           await pg.keyboard.press('Escape'); await wait(200)
           for (const f of ['메모.md', '메모 2.md', '메모 사본.md']) { try { rmSync(join(root, '3. Area/제품_Rondo', f)) } catch {} }
           try { rmSync(join(root, '3. Area/제품_Rondo', '새 폴더'), { recursive: true }) } catch {}
