@@ -174,6 +174,66 @@ function GeneralPane() {
 }
 
 /**
+ * 볼트 루트 — 🔴 **앱에서 바꾼다** (2026-09-14 Dave: «지금 현재 기본 볼트 수정이 안되네»).
+ *
+ * 종전에는 읽기만 하는 줄이었고, 바꾸는 길은 **호스트 맥 트레이 메뉴** 하나뿐이었다 — 폰·맥북에서는
+ * 길이 아예 없었다. 그래서 여기 세 갈래를 둔다: 경로를 치거나 · 목록을 훑어 고르거나 ·
+ * (호스트 맥이면) Finder 로 고르거나. 셋 다 끝은 `POST /api/root` 하나다.
+ *
+ * ⚠ 루트가 바뀌면 호스트가 **다시 선다** — 그 몇 초 동안 이 화면은 붙을 데가 없다. 그래서 성공하면
+ *   말을 남기고 잠시 뒤 스스로 새로고침한다. 터미널 호스트(`restarting:false`)는 저장만 되므로
+ *   «다시 시작하면 적용돼요» 라고 **솔직히** 말한다 — 「바꿨다는데 그대로」 가 제일 나쁘다.
+ */
+interface Browse { path: string; name: string; parent: string | null; home: string; dirs: { name: string; path: string }[] }
+function RootRow() {
+  const { s, refresh } = useStore()
+  const [open, setOpen] = useState(false)
+  const [at, setAt] = useState<Browse | null>(null)
+  const [path, setPath] = useState(s.root)
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState(false)
+  const desk = s.device.main ? (window as unknown as { folderbotDesktop?: { hostMode?: () => void } }).folderbotDesktop : undefined
+  useEffect(() => { setPath(s.root) }, [s.root])
+  const load = async (p: string) => {
+    try { const b = await api<Browse>(`/root/browse?path=${encodeURIComponent(p)}`); setAt(b); setPath(b.path); setMsg('') }
+    catch (e) { setMsg((e as Error).message) }
+  }
+  const apply = async (p: string) => {
+    setBusy(true); setMsg('바꾸는 중…')
+    try {
+      const r = await api<{ root: string; restarting: boolean; same?: boolean }>('/root', { body: { path: p } })
+      if (r.same) { setMsg('이미 그 폴더예요'); setBusy(false); return }
+      setOpen(false)
+      if (r.restarting) { setMsg(`${r.root} 로 바꿨어요 — 호스트를 다시 세우는 중이에요`); setTimeout(() => location.reload(), 3000) }
+      else { setMsg(`${r.root} 로 저장했어요 — 호스트를 다시 시작하면 적용돼요`); setBusy(false); await refresh() }
+    } catch (e) { setMsg((e as Error).message); setBusy(false) }
+  }
+  return <>
+    <Row t="볼트 루트" d={<>봇들이 사는 폴더예요. 바꾸면 호스트가 그 폴더로 다시 섭니다.{msg ? <><br /><b>{msg}</b></> : null}</>}>
+      <span className="mono sv">{s.root}</span>
+      <button className="btn ghost" disabled={busy} onClick={() => { const n = !open; setOpen(n); if (n && !at) void load(s.root) }}>{open ? '닫기' : '바꾸기'}</button>
+    </Row>
+    {open ? <div className="rootp">
+      <div className="rp-h">
+        <input className="sin mono" value={path} placeholder="/Users/이름/PARA" onChange={(e) => setPath(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') void load((e.target as HTMLInputElement).value) }} />
+        <button className="btn ghost" onClick={() => void load(path)}>열기</button>
+        {desk?.hostMode ? <button className="btn ghost" onClick={() => desk.hostMode?.()}>Finder…</button> : null}
+      </div>
+      <div className="rp-l">
+        {at?.parent ? <button className="rp-i up" onClick={() => void load(at.parent as string)}>↑ 상위 폴더</button> : null}
+        {at && at.dirs.length ? at.dirs.map((d) => <button key={d.path} className="rp-i" onClick={() => void load(d.path)}>{d.name}</button>)
+          : <div className="rp-e">{at ? '하위 폴더가 없어요' : '읽는 중…'}</div>}
+      </div>
+      <div className="rp-f">
+        <span className="msg mono">{at?.path ?? path}</span>
+        <button className="btn" disabled={busy || !at} onClick={() => void apply(at?.path ?? path)}>이 폴더를 볼트로</button>
+      </div>
+    </div> : null}
+  </>
+}
+
+/**
  * 🔴 **원격에는 «메인 것» 을 안 보여 준다** (2026-09-13 Dave: «원격에서는 메인에 필요없는 내용들은 보여질 필요가 없어»).
  *
  * 가르는 기준은 «**이 기기에서 할 수 있나**» 다 — 여기서 눌러도 아무 일이 안 일어나거나, 눌러도 결과가
@@ -186,7 +246,7 @@ function HostPane() {
   const [pair, setPair] = useState<{ code: string; expiresAt: number } | null>(null)
   const isLocal = location.hostname === '127.0.0.1' || location.hostname === 'localhost'
   return <>
-    <Row t="볼트 루트" d="봇들이 사는 폴더예요."><span className="mono sv">{s.root}</span></Row>
+    <RootRow />
     <Row t="주소" d="같은 망에서 이 주소로 들어옵니다."><span className="mono sv">{s.addrs.map((a) => `${a}:${s.port}`).join(' · ')}</span></Row>
     {s.tailnet ? <Row t="Tailscale" d="밖에서 들어올 때 쓰는 길."><span className="sv">{s.tailnet.state}{s.tailnet.dnsName ? ` · ${s.tailnet.dnsName}` : ''}</span></Row> : null}
     <Group t="기기" />

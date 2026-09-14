@@ -1900,6 +1900,34 @@ try {
     ok('사용량 — 남은 양 · 예산 반영 · 훅 설치/제거')
   }
 
+  /**
+   * ── 볼트 루트 바꾸기 (2026-09-14 Dave: «지금 현재 기본 볼트 수정이 안되네») ──
+   * 🔴 **화면에서 바꾼 것이 설정 파일까지 가야 한다.** 종전에는 호스트 맥 트레이에만 길이 있었고
+   *    설정 화면은 읽기 전용이었다 — 폰·맥북에서는 바꿀 방법이 아예 없었다.
+   * ⚠ 터미널 호스트에는 되세울 셸(`onRoot`)이 없다 → `restarting:false` 로 **솔직히** 답해야 한다.
+   */
+  {
+    const other = mkdtempSync(join(tmpdir(), 'fb-vault2-'))
+    mkdirSync(join(other, '1. Inbox'), { recursive: true })
+    const br = await api(`/root/browse?path=${encodeURIComponent(other)}`)
+    if (!br.dirs.some((d) => d.name === '1. Inbox')) fail('루트 고르기: 하위 폴더를 못 읽는다 ' + JSON.stringify(br))
+    if (!br.parent) fail('루트 고르기: 상위로 갈 길이 없다')
+    for (const bad of ['PARA', join(other, '없는폴더')]) {
+      const r = await fetch(base + '/api/root', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: bad }) })
+      if (r.ok) fail(`루트 바꾸기: 말이 안 되는 경로를 받아 줬다 (${bad})`)
+    }
+    const same = await api('/root', { path: root })
+    if (!same.same) fail('루트 바꾸기: 같은 폴더인데 바꿨다고 한다')
+    const moved = await api('/root', { path: `${other}/` })   // 끝 슬래시도 같은 곳이어야 한다
+    if (moved.root !== other || moved.restarting !== false) fail('루트 바꾸기: 저장 결과가 이상하다 ' + JSON.stringify(moved))
+    const cfgFile = join(data, 'config.json')
+    if (JSON.parse(readFileSync(cfgFile, 'utf8')).root !== other) fail('루트 바꾸기: 설정 파일에 안 남았다')
+    await api('/root', { path: root })   // ⚠ 되돌린다 — 아래 검사가 이 볼트로 호스트를 다시 띄운다
+    if (JSON.parse(readFileSync(cfgFile, 'utf8')).root !== root) fail('루트 바꾸기: 되돌리기가 안 됐다')
+    rmSync(other, { recursive: true, force: true })
+    ok('볼트 루트 — 폴더를 훑어 고르고 · 아무 경로나 안 받고 · 설정에 남는다')
+  }
+
   // ── 세션 삭제 — 워커가 내려가고, 목록에서 사라지고, **호스트를 다시 띄워도 안 돌아온다** (2026-09-13 Dave 요청)
   {
     const b = await api('/bots')

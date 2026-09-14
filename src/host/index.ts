@@ -12,7 +12,7 @@ const pkgPath = [join(here, '..', 'package.json'), join(here, '..', '..', 'packa
 const VERSION = pkgPath ? (JSON.parse(readFileSync(pkgPath, 'utf8')) as { version: string }).version : '0.0.0'
 const webRoot = [join(here, '..', 'client'), join(here, '..', '..', 'dist', 'client')].find((p) => existsSync(join(p, 'index.html'))) ?? join(here, '..', 'client')
 
-export interface StartOpts { root?: string; port?: number; webRoot?: string; log?: (s: string) => void }
+export interface StartOpts { root?: string; port?: number; webRoot?: string; log?: (s: string) => void; onRoot?: (root: string) => void | Promise<void> }
 export interface Started { host: Host; gateway: Gateway; cfg: ReturnType<typeof loadConfig>; urls: string[]; stop: () => void }
 /** 프로그램에서 호스트 띄우기 (Electron 호스트 모드가 쓴다) */
 export async function startHost(opts: StartOpts = {}): Promise<Started> {
@@ -24,6 +24,7 @@ export async function startHost(opts: StartOpts = {}): Promise<Started> {
   if (!reg.rulesInstalled()) reg.installRules('para')
   const host = new Host(cfg, VERSION)
   if (opts.log) host.log = opts.log
+  if (opts.onRoot) host.onRoot = opts.onRoot
   const gw = new Gateway(host, opts.webRoot ?? webRoot)
   gw.start()
   const urls = gw.addrs.map((a) => `http://${a}:${cfg.port}`)

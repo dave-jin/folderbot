@@ -1,8 +1,9 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { execFile } from 'node:child_process'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { join, extname, normalize, relative, resolve, sep } from 'node:path'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join, extname, normalize, relative, resolve, sep } from 'node:path'
+import { homedir } from 'node:os'
 import type { Frame } from '../core/types'
 import type { Host } from './host'
 import { bindAddresses, tailnetInfo } from './tailnet'
@@ -10,6 +11,8 @@ import { saveConfig } from './paths'
 import { handleMcp } from './mcp'
 import { providers } from './providers'
 import { agentModels, codexAuth, diagnose } from './auth'
+import { canon } from './registry'
+import { normalizeRootInput } from '../core/rootPath'
 
 /**
  * 안 겹치는 이름 — `이름`, 없으면 `이름 2`, `이름 3` …
@@ -183,6 +186,45 @@ export class Gateway {
     if (p === '/api/state') {
       const tn = await tailnetInfo()
       return json(200, { version: h.version, root: reg.root, rules: reg.rules, rulesInstalled: reg.rulesInstalled(), bots: reg.bots(), candidates: reg.candidates(), auth: h.auth, inbox: reg.inboxItems().length, notifications: h.notifier.events.slice(0, 50), vapidPublic: h.notifier.vapidPublic(), tailnet: tn, addrs: this.addrs, port: h.cfg.port, devices: h.cfg.devices.filter((d) => d.name !== LOCAL_DEVICE).map((d) => ({ id: d.id, name: d.name, lastSeen: d.lastSeen })), sessionsByBot: Object.fromEntries(reg.bots().map((b) => [b.id, h.sessions.list(b.id)])), defaults: { model: h.cfg.defaultModel ?? '', effort: h.cfg.defaultEffort ?? '', codex: { model: h.cfg.defaultCodexModel ?? '', effort: h.cfg.defaultCodexEffort ?? '', sandbox: h.cfg.codexSandbox ?? 'read-only', auth: codexAuth(h.cfg.openaiApiKey) } }, hostName: h.hostName(), device: { id: who.id, name: who.main ? h.hostName() : who.device, main: who.main } })
+    }
+    /**
+     * 🔴 **볼트 루트는 앱에서 바꾼다** (2026-09-14 Dave: «지금 현재 기본 볼트 수정이 안되네»).
+     *    종전에는 **호스트 맥의 트레이 메뉴**에만 있었다 — 폰·맥북에서는 바꿀 길이 아예 없었고,
+     *    설정 화면은 경로를 **읽기만** 했다.
+     * ⚠ 여기서 하는 일은 «확인하고 저장» 까지다. 되세우기는 `h.onRoot` 를 가진 셸이 한다(§host.ts).
+     *    셸이 없으면 `restarting:false` 로 솔직히 말한다 — 「바꿨다는데 그대로」 가 제일 나쁘다.
+     */
+    if (p === '/api/root' && m === 'POST') {
+      const b = await body()
+      const abs = normalizeRootInput(String(b.path ?? ''), homedir())
+      if (!abs) return json(400, { error: '절대 경로를 넣어 주세요 (예: /Users/이름/PARA)' })
+      let dir = false
+      try { dir = statSync(abs).isDirectory() } catch { dir = false }
+      if (!dir) return json(400, { error: `그런 폴더가 없어요: ${abs}` })
+      // ⚠ «이미 그 폴더» 는 **돌고 있는 루트와 저장된 루트가 둘 다 같을 때**다. 되세울 셸이 없으면
+      //   (터미널 호스트) 저장값만 앞서 가 둘이 갈리는데, 그때 돌고 있는 쪽만 보고 «같다» 며 넘기면
+      //   **설정을 되돌릴 길이 사라진다**(스모크가 잡았다).
+      const stored = canon(resolve(h.cfg.root ?? reg.root))
+      if (canon(abs) === canon(reg.root) && canon(abs) === stored) return json(200, { ok: true, root: reg.root, restarting: false, same: true })
+      const saved = h.setRoot(abs)
+      const restarting = !!h.onRoot
+      json(200, { ok: true, root: saved, restarting })
+      // ⚠ 되세우기는 **답을 보낸 뒤**에 — 이 서버를 끄는 일이라 먼저 하면 답이 못 나간다
+      if (h.onRoot) setTimeout(() => { void h.onRoot?.(saved) }, 250)
+      return
+    }
+    /** 폴더 고르기 — 원격(폰·맥북)에는 Finder 가 없다. 이름만 훑어 보여 준다(내용은 안 연다) */
+    if (p === '/api/root/browse' && m === 'GET') {
+      const home = homedir()
+      const at = normalizeRootInput(url.searchParams.get('path') ?? '', home) ?? home
+      let dirs: { name: string; path: string }[] = []
+      try {
+        dirs = readdirSync(at, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+          .slice(0, 400).map((e) => ({ name: e.name, path: join(at, e.name) }))
+          .sort((x, y) => x.name.localeCompare(y.name, 'ko'))
+      } catch { return json(400, { error: `못 읽는 폴더예요: ${at}` }) }
+      const up = dirname(at)
+      return json(200, { path: at, name: basename(at) || at, parent: up === at ? null : up, home, dirs })
     }
     if (p === '/api/bots' && m === 'GET') return json(200, reg.bots())
     if (p === '/api/candidates') return json(200, reg.candidates())

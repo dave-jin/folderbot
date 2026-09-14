@@ -52,7 +52,7 @@ async function startHostMode(root) {
   if (!hostAvailable()) throw new Error('이 빌드에는 호스트가 안 들어 있어요')
   process.env.FOLDERBOT_DATA = join(app.getPath('userData'), 'host')
   const mod = await import(pathToFileURL(HOST_BUNDLE).href)
-  hostRun = await mod.startHost({ root, port: settings.port || 7373, webRoot: HOST_CLIENT, log: (m) => console.log('[host]', m) })
+  hostRun = await mod.startHost({ root, port: settings.port || 7373, webRoot: HOST_CLIENT, log: (m) => console.log('[host]', m), onRoot: (r) => switchRoot(r) })
   settings.mode = 'host'; settings.root = root; settings.hostUrl = `http://127.0.0.1:${settings.port || 7373}`; settings.token = hostRun.gateway.localToken(); save()
   pairing = hostRun.gateway.openPairing()
   startSse(); refreshTray(); startUsagePoll()
@@ -61,8 +61,17 @@ async function startHostMode(root) {
 function newPairing() { if (!hostRun) return null; pairing = hostRun.gateway.openPairing(); refreshTray(); return pairing }
 async function chooseRootAndStart() {
   const r = await dialog.showOpenDialog({ title: '에이전트와 함께 일할 루트 폴더 (예: PARA)', properties: ['openDirectory', 'createDirectory'], buttonLabel: '이 폴더를 루트로' })
+  // ⛔ **취소하면 아무것도 안 한다** — 종전에는 부르는 쪽이 먼저 `hostRun.stop()` 을 해 놓아서,
+  //    창을 닫기만 해도 **돌던 호스트가 죽은 채로 남았다**. 끄는 일은 고른 뒤에(`switchRoot`).
   if (r.canceled || !r.filePaths[0]) return
-  try { await startHostMode(r.filePaths[0]); if (!settings.loginItem) { settings.loginItem = true; save(); app.setLoginItemSettings({ openAtLogin: true, openAsHidden: true }) } showWin(); loadHome() }
+  await switchRoot(r.filePaths[0])
+}
+/** 루트 갈아끼우기 — 앱 안 설정(API `onRoot`)과 트레이 메뉴가 **같은 문 하나**를 쓴다 */
+async function switchRoot(root) {
+  if (!root) return
+  try { hostRun?.stop() } catch { /* 이미 내려갔으면 그만 */ }
+  hostRun = null
+  try { await startHostMode(root); if (!settings.loginItem) { settings.loginItem = true; save(); app.setLoginItemSettings({ openAtLogin: true, openAsHidden: true }) } showWin(); loadHome() }
   catch (e) { dialog.showErrorBox('호스트를 못 띄웠어요', String(e && e.message || e)) }
 }
 /**
@@ -240,7 +249,7 @@ ipcMain.on('fb:tray-act', (_e, id) => {
   if (id === 'pairing') { copyPair(pairing && Date.now() < pairing.expiresAt ? pairing : newPairing()); hide(); return }
   if (id === 'pairing-new') { copyPair(newPairing()); hide(); return }
   if (id === 'copy-addr') { const urls = hostRun ? hostRun.urls.filter((u) => !u.includes('127.0.0.1')) : []; clipboard.writeText(urls[0] || settings.hostUrl); new Notification({ title: 'Folder Bot', body: urls[0] ? `${urls[0]} 복사됨 (같은 Tailscale)` : 'Tailscale 주소가 아직 없어요 — Tailscale 을 켜세요' }).show(); hide(); return }
-  if (id === 'change-root') { hide(); hostRun?.stop(); hostRun = null; void chooseRootAndStart(); return }
+  if (id === 'change-root') { hide(); void chooseRootAndStart(); return }
   if (id === 'change-host') { hide(); settings.mode = ''; settings.hostUrl = ''; settings.token = ''; save(); stopSse(); showWin(); loadHome(); return }
   if (id === 'update-check') { void updater.check(true); pushTrayState(); return }
   if (id === 'update-apply') { hide(); updater.apply(); return }
@@ -260,7 +269,7 @@ function trayMenu() {
       { label: pairing && Date.now() < pairing.expiresAt ? `페어링 코드 ${pairing.code} (클릭해 복사)` : '페어링 코드 만들기', click: () => { const p = pairing && Date.now() < pairing.expiresAt ? pairing : newPairing(); if (p) { clipboard.writeText(p.code); new Notification({ title: 'Folder Bot 페어링 코드', body: `${p.code} · 2분 안에 폰·맥북에서 입력` }).show() } } },
       { label: '새 페어링 코드', click: () => { const p = newPairing(); if (p) { clipboard.writeText(p.code); new Notification({ title: 'Folder Bot 페어링 코드', body: `${p.code} · 복사됨` }).show() } } },
       { label: '폰에서 열 주소 복사', click: () => { const urls = hostRun ? hostRun.urls.filter((u) => !u.includes('127.0.0.1')) : []; clipboard.writeText(urls[0] || settings.hostUrl); new Notification({ title: 'Folder Bot', body: urls[0] ? `${urls[0]} 복사됨 (같은 Tailscale)` : 'Tailscale 주소가 아직 없어요 — Tailscale 을 켜세요' }).show() } },
-      { label: '루트 폴더 바꾸기…', click: () => { hostRun?.stop(); hostRun = null; void chooseRootAndStart() } }
+      { label: '루트 폴더 바꾸기…', click: () => { void chooseRootAndStart() } }
     ] : [
       { label: settings.hostUrl ? `호스트 · ${settings.hostUrl.replace(/^https?:\/\//, '')}` : '호스트 없음', enabled: false },
       { label: '호스트 바꾸기…', click: () => { settings.mode = ''; settings.hostUrl = ''; settings.token = ''; save(); stopSse(); showWin(); loadHome() } }

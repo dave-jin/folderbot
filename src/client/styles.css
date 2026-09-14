@@ -548,6 +548,16 @@ b,strong { color:var(--w); font-weight:600 }
 .sv { font-size:12.5px; color:var(--t2); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .unit { font-size:12px; color:var(--t3) }
 .pcode { font-size:20px; letter-spacing:.18em; color:var(--w) }
+/* 볼트 루트 고르기 — 줄 아래로 펼쳐지는 폴더 목록 (원격에는 Finder 가 없다) */
+.rootp { display:flex; flex-direction:column; gap:8px; padding:0 0 14px; border-bottom:1px solid var(--line) }
+.rootp .rp-h { display:flex; gap:8px } .rootp .rp-h .sin { flex:1; width:auto }
+.rootp .rp-l { max-height:208px; overflow:auto; border:1px solid var(--line); border-radius:10px; background:var(--bg2) }
+.rootp .rp-i { display:block; width:100%; text-align:left; background:none; border:0; border-bottom:1px solid var(--line); color:var(--t2); font-family:inherit; font-size:12.5px; padding:8px 11px; cursor:pointer }
+.rootp .rp-i:last-child { border-bottom:0 } .rootp .rp-i:hover { background:var(--box); color:var(--w) }
+.rootp .rp-i.up { color:var(--t3) }
+.rootp .rp-e { padding:12px; font-size:12px; color:var(--t3) }
+.rootp .rp-f { display:flex; align-items:center; gap:8px }
+.rootp .rp-f .msg { flex:1; min-width:0; font-size:12px; color:var(--t3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .btn.danger { color:var(--err); border-color:color-mix(in srgb,var(--err) 40%,transparent) }
 /* 커넥터·스킬·CLI 한 줄 */
 .hitem { display:flex; align-items:center; gap:11px; padding:9px 0; border-bottom:1px solid var(--line) }

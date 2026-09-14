@@ -1,14 +1,14 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { hostname } from 'node:os'
-import { join, relative } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { TODO_RULES_PROMPT } from '../core/todo'
 import type { AuthState, Bot, Frame, PermissionMode, PermissionRequest, RoutineDef, SessionState } from '../core/types'
 import { STATE_LABEL } from '../core/types'
 import { checkAuth } from './auth'
 import { Notifier } from './notify'
 import { type HostConfig, absRoot, saveConfig } from './paths'
-import { ORCH_ID, Registry } from './registry'
+import { ORCH_ID, Registry, canon } from './registry'
 import { Routines, approveToMode } from './routines'
 import { SessionManager, setOauthToken, setKeychainLogin, AUTH_ERROR, type SessionRec } from './session'
 import { readTodo, todoAdd, todoContext } from './todoStore'
@@ -25,6 +25,13 @@ export class Host {
   private queued: { botId: string; sessionId: string; text: string }[] = []
   broadcast: (f: Frame) => void = () => {}
   log: (s: string) => void = (s) => console.log(`[folderbot] ${s}`)
+  /**
+   * 🔴 **루트를 바꾸는 일은 «저장» 과 «다시 세우기» 둘로 갈린다.** 호스트는 저장만 하고, 다시 세우는
+   *    쪽은 셸(Electron)이 맡는다 — 레지스트리·세션·루틴이 전부 루트에 매여 있어 **통째로 새로 세우는
+   *    것**이 제자리에서 갈아끼우는 것보다 안전하다. 셸이 안 꽂아 주면(터미널 호스트) 저장만 되고
+   *    다음 시작에 적용된다 — 그 사실을 화면이 말해 준다.
+   */
+  onRoot: ((root: string) => void | Promise<void>) | null = null
 
   constructor(public cfg: HostConfig, version: string) {
     this.version = version
@@ -122,6 +129,14 @@ export class Host {
     if (!this.computerName) { try { this.computerName = process.platform === 'darwin' ? execFileSync('/usr/sbin/scutil', ['--get', 'ComputerName'], { timeout: 2000 }).toString().trim() : '' } catch { /* */ } if (!this.computerName) this.computerName = hostname().replace(/\.local$/, '') || 'Host' }
     return this.computerName
   }
+  /** 볼트 루트 저장 — 되세우기는 `onRoot` 를 가진 쪽 몫이다 */
+  setRoot(root: string): string {
+    const abs = canon(resolve(root))
+    this.cfg.root = abs; saveConfig(this.cfg)
+    this.log(`볼트 루트: ${abs}`)
+    return abs
+  }
+
   setNames(o: { hostName?: string; deviceId?: string; deviceName?: string }): void {
     if (o.hostName !== undefined) this.cfg.hostName = o.hostName.trim() || undefined
     if (o.deviceId && o.deviceName !== undefined) { const d = this.cfg.devices.find((x) => x.id === o.deviceId); if (d && o.deviceName.trim()) d.name = o.deviceName.trim().slice(0, 40) }
