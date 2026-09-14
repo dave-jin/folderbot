@@ -788,6 +788,16 @@ try {
             if (!hp) fail('미리보기: 오버해도 카드가 안 뜬다')
             if (!hp.body) fail('미리보기: 카드가 body 에 안 붙었다 — 대화 overflow 에 잘린다 ' + JSON.stringify(hp))
             if (hp.pos !== 'fixed') fail('미리보기: position 이 fixed 가 아니다 ' + JSON.stringify(hp))
+            // 🔴 **언제나 위쪽** (2026-09-14 Dave) — 미리보기를 다는 것들은 대부분 화면 아래쪽에 살아서,
+            //    아래로 펴면 카드가 화면 밖으로 밀려 잘린다. ⛔ 자리가 모자라도 아래로 뒤집지 않는다.
+            const pos = await pg.evaluate(() => {
+              const c = document.querySelector('.hovprev'); const a = document.querySelector('.chat-body .md a.linkbox')
+              if (!c || !a) return null
+              const cr = c.getBoundingClientRect(), ar = a.getBoundingClientRect()
+              return { cardBottom: Math.round(cr.bottom), anchorTop: Math.round(ar.top) }
+            })
+            if (!pos) fail('미리보기: 카드나 기준 요소를 못 찾겠다')
+            if (pos.cardBottom > pos.anchorTop + 1) fail('미리보기가 아래로 펴졌다 — 항상 위쪽이어야 한다 ' + JSON.stringify(pos))
             await pg.fill('.composer textarea', ''); await wait(300)
             ok('링크 박스 — 혼자 선 링크만 박스 · 오버하면 body 에 미리보기')
           }

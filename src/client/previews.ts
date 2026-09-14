@@ -133,18 +133,23 @@ function show(el: HTMLElement, t: Target): void {
 }
 
 const W = 320
+/**
+ * 🔴 **미리보기는 언제나 **위쪽**에 뜬다** (2026-09-14 Dave: *«미리보기는 항상 위쪽으로 보여줘»*).
+ *
+ * 종전에는 «아래에 자리가 있으면 아래» 였다. 그런데 미리보기를 다는 것들(첨부 칩·입력칸 위 링크 칩·
+ * 답 속의 칩)은 대부분 **화면 아래쪽**에 산다 — 아래로 펴면 카드가 화면 밖으로 밀려 잘렸다.
+ * ⚠ 위에 자리가 모자라면 **위쪽 가장자리에 붙인다** — 아래로 뒤집지 않는다. 뒤집으면 «어디에 뜰지»
+ *    가 그때그때 달라져서, 카드를 보려고 눈이 두 군데를 훑게 된다.
+ * ⚠ 높이는 내용이 정하므로 한 프레임 뒤에 다시 잰다 — 처음에는 0 이라 자리를 못 잡는다.
+ */
 function place(el: HTMLElement): void {
   if (!card) return
   const r = el.getBoundingClientRect()
   const x = Math.min(Math.max(8, r.left), window.innerWidth - W - 8)
   card.style.left = `${Math.round(x)}px`
-  // 아래에 자리가 없으면 위로 — 카드 높이는 내용이 정하므로 다 그린 뒤 한 번 더 본다
-  card.style.top = `${Math.round(r.bottom + 8)}px`
-  requestAnimationFrame(() => {
-    if (!card) return
-    const h = card.offsetHeight
-    if (r.bottom + 8 + h > window.innerHeight - 8) card.style.top = `${Math.round(Math.max(8, r.top - 8 - h))}px`
-  })
+  const above = (h: number) => `${Math.round(Math.max(8, r.top - 8 - h))}px`
+  card.style.top = above(card.offsetHeight)
+  requestAnimationFrame(() => { if (card) card.style.top = above(card.offsetHeight) })
 }
 
 function fillLink(box: HTMLElement, url: string): void {
