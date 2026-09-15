@@ -395,6 +395,8 @@ function Main() {
     return { sb, rp, doc }
   }, [lay.sb, lay.rp, lay.doc, sbOpen, rpOpen, showDoc, wide, phone, winW])
   const openRp = (sec?: string) => { setLay((l) => ({ ...l, rpOpen: true, rpPin: true })); if (sec) setFocusSec({ sec, n: Date.now() }) }
+  /** 할 일 칸 → 그 폴더의 「할 일」 로. 폰은 패널 화면으로 넘어가고, 맥은 오른쪽 패널을 편다 */
+  const goTodo = (botId: string) => { go(botId); setFocusSec({ sec: 'todo', n: Date.now() }); if (phone) setView('panel'); else setLay((l) => ({ ...l, rpOpen: true, rpPin: true })) }
   const closeRp = () => setLay((l) => ({ ...l, rpOpen: false, rpPin: false }))
   const openSb = () => setLay((l) => ({ ...l, sbOpen: true, sbPin: true })); const closeSb = () => setLay((l) => ({ ...l, sbOpen: false, sbPin: false }))
   const stripBots = rows.flatMap(([, it]) => it)
@@ -464,7 +466,7 @@ function Main() {
     {s.auth.verdict === 'unreadable' || s.auth.verdict === 'loggedout' ? <div className="banner"><span className="dot wait" /><span><b>{s.hostName} 에서 Claude 로그인이 필요해요.</b> 호스트 맥에서 <span className="mono">claude</span> → <span className="mono">/login</span>, 또는 설정 › Claude 토큰. 보낸 지시는 대기열에 두었다가 복구되면 이어서 해요.</span><span style={{ marginLeft: 'auto' }} /><button className="btn" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button></div> : null}
     <div className="cols">
       {/* ── 왼쪽 (폰은 홈 화면) ── */}
-      {phone ? <Home rows={rows} bot={bot} go={go} setModal={setModal} waiting={waiting} unread={unread} onAsk={() => { go('orch'); setFocusReq(Date.now()) }} />
+      {phone ? <Home rows={rows} bot={bot} go={go} setModal={setModal} waiting={waiting} unread={unread} onAsk={() => { go('orch'); setFocusReq(Date.now()) }} onTodo={goTodo} say={say} />
         : sbOpen ? <div className="col side left" style={{ width: fit.sb }}>
         <div className="hdr"><FolderBot color="#e08850" size={16} mood={waiting ? 'wait' : 'idle'} mono /><span className="ttl">Folder Bot</span><span className="sp" /><div className="acts"><button className="ib" onClick={closeSb} title="목록 접기 (⌘B)"><Icon n="panel" size={14} /></button></div></div>
         <div style={{ padding: '10px 8px 0' }}>
@@ -472,6 +474,9 @@ function Main() {
           <button className="nav" onClick={() => setModal('notify')}><Icon n="bell" size={14} /><span>알림</span>{unread ? <span className="bd" style={{ color: waiting ? 'var(--wait)' : undefined }}>{unread}</span> : null}</button>
           <button className="nav" onClick={() => setModal('settings')}><Icon n="gear" size={14} /><span>설정</span></button>
         </div>
+        {/* 🔴 **폰과 같은 네 칸을 레일 맨 위에** (2026-09-15 Dave: «이 메뉴가 데스크탑 화면에서도 좌측
+            상단에 있으면 좋겠어»). 같은 컴포넌트를 `compact` 로 쓴다 — 두 화면이 갈리지 않게. */}
+        <div className="sbtiles"><ActionTiles go={go} setModal={setModal} onTodo={goTodo} say={say} compact /></div>
         {/* 정렬 갈래 — 이름 · 직접(끌어 놓기) · 상태. ⚠ 끌어 놓으면 «직접» 으로 알아서 넘어간다 */}
         <div className="sortbar"><span className="lb">정렬</span>{(Object.keys(RAIL_SORT_LABEL) as RailSort[]).map((k) => <button key={k} className={railSort === k ? 'on' : ''} onClick={() => setRailSort(k)} title={RAIL_SORT_HINT[k]}>{RAIL_SORT_LABEL[k]}</button>)}</div>
         <div className="sb-list">
@@ -590,9 +595,77 @@ function botSummary(bot: Bot, sessions: SessionInfo[], notif: NotifyEvent[]) {
   return { state, text, t: Math.max(top?.lastActivity ?? bot.startedAt, last?.t ?? 0), mood: moodOf(state, !!top?.hibernated && !run && !wait) }
 }
 
+/**
+ * 🔴 **네 칸은 «세는 곳» 이 아니라 «하는 곳» 이다** (2026-09-15 Dave: *«실제로 쓸일이 별로 없거든.
+ *    나는 상태 및 주요 사항들을 바로 보고 액션하고 싶어»* · 고정 4칸 · 전부 액션으로 확정).
+ *
+ * 왜 종전 넷(확인 필요·일하는 중·인박스·폴더 후보)이 안 쓰였나 — **셋이 이미 다른 데 있는 숫자**였다.
+ * 확인 필요는 위 종 배지와 같고, 일하는 중은 아래 목록이 이미 말하고, 인박스·폴더 후보는 **처음
+ * 차릴 때** 한 번 보는 것이다. 숫자만 있고 **거기서 할 수 있는 일이 없으면** 그 칸은 벽지가 된다.
+ *
+ * 그래서 넷 다 «지금 상태 + 그 자리에서 할 일» 로 바꾼다:
+ *   ① 확인 대기 — 무엇을 묻는지 보이고 **[허용]** 이 칸 안에 있다 (하나일 때)
+ *   ② 일하는 중 — 어느 폴더가 무엇을 하는지 · **[중단]**
+ *   ③ 오늘 할 일 — 볼트 전체에서 안 끝난 것 · 맨 앞 하나를 **[✓]** 로 접는다
+ *   ④ 마지막 결과 — 방금 끝난 턴으로 바로 간다
+ * ⚠ 칸 안의 작은 단추는 `<span role="button">` 이다 — 단추 안에 단추를 넣으면 HTML 이 깨진다.
+ * ⚠ 폰·맥이 **같은 컴포넌트**를 쓴다(맥은 레일 맨 위 `compact`). 둘이 갈리면 설명이 두 벌이 된다.
+ */
+interface TodoAgg { open: number; rows: { botId: string; name: string; open: number; next: { line: number; title: string } | null }[] }
+function ActionTiles({ go, setModal, onTodo, say, compact }: { go: (b: string, sid?: string) => void; setModal: (m: 'picker' | 'notify' | 'settings') => void; onTodo: (botId: string) => void; say: (m: string) => void; compact?: boolean }) {
+  const { s } = useStore()
+  const [todo, setTodo] = useState<TodoAgg | null>(null)
+  const [busy, setBusy] = useState('')
+  const load = () => { void api<TodoAgg>('/todos').then(setTodo).catch(() => { /* 없으면 숫자 없이 */ }) }
+  useEffect(() => { load(); const t = window.setInterval(load, 60_000); return () => window.clearInterval(t) }, [])
+  // 봇이 할 일을 고치면 알림이 오거나 파일이 바뀐다 — 그때 한 번 더 받아 온다
+  useEffect(() => { load() }, [s.notifications[0]?.id, s.bots.length])
+  const all = useMemo(() => Object.values(s.sessionsByBot).flat(), [s.sessionsByBot])
+  const waiting = all.filter((x) => x.state === 'awaiting_input')
+  const running = all.filter((x) => x.state === 'running')
+  const last = s.notifications.find((n) => n.kind === 'done' || n.kind === 'routine' || n.kind === 'error')
+  const nameOf = (id?: string) => s.bots.find((b) => b.id === id)?.name ?? ''
+  const w0 = waiting[0], r0 = running[0], t0 = todo?.rows[0]
+  const allow = async () => {
+    const req = w0?.pending[0]; if (!w0 || !req) return
+    setBusy('w'); try { await api(`/sessions/${w0.id}/permission`, { body: { requestId: req.requestId, allow: true } }); say('허용했어요') } catch (e) { say((e as Error).message) } finally { setBusy('') }
+  }
+  const stop = async () => { if (!r0) return; setBusy('r'); try { await api(`/sessions/${r0.id}/interrupt`, { body: {} }); say('중단했어요') } catch (e) { say((e as Error).message) } finally { setBusy('') } }
+  const check = async () => {
+    if (!t0?.next) return
+    setBusy('t'); try { await api(`/bots/${t0.botId}/todo/toggle`, { body: { line: t0.next.line, done: true } }); load(); say(`«${t0.next.title}» 완료`) } catch (e) { say((e as Error).message) } finally { setBusy('') }
+  }
+  const act = (on: () => void, label: string, key: string) => <span role="button" className="act" aria-label={label} onClick={(e) => { e.stopPropagation(); if (!busy) on() }}>{busy === key ? '…' : label}</span>
+  return <div className={`mcards ${compact ? 'mini' : ''}`}>
+    <button className={waiting.length ? 'hot' : ''} onClick={() => (w0 ? go(w0.botId, w0.id) : setModal('notify'))}>
+      <Icon n="bell" size={compact ? 16 : 22} color={waiting.length ? 'var(--wait)' : 'var(--t3)'} />
+      <span className="n">확인 대기<span>{waiting.length}</span></span>
+      <span className="sub">{w0 ? `${nameOf(w0.botId)} · ${w0.pending[0]?.displayName ?? w0.name}` : '없음'}</span>
+      {w0?.pending[0] ? act(allow, '허용', 'w') : null}
+    </button>
+    <button onClick={() => (r0 ? go(r0.botId, r0.id) : setModal('notify'))}>
+      <Icon n="run" size={compact ? 16 : 22} color={running.length ? 'var(--run)' : 'var(--t3)'} />
+      <span className="n">일하는 중<span>{running.length}</span></span>
+      <span className="sub">{r0 ? `${nameOf(r0.botId)} · ${r0.activity || r0.name}` : '없음'}</span>
+      {r0 ? act(stop, '중단', 'r') : null}
+    </button>
+    <button onClick={() => (t0 ? onTodo(t0.botId) : go('orch'))}>
+      <Icon n="check" size={compact ? 16 : 22} color={todo?.open ? '#7fb0ff' : 'var(--t3)'} />
+      <span className="n">할 일<span>{todo?.open ?? 0}</span></span>
+      <span className="sub">{t0?.next ? `${t0.name} · ${t0.next.title}` : '다 끝냈어요'}</span>
+      {t0?.next ? act(check, '✓', 't') : null}
+    </button>
+    <button onClick={() => (last ? go(last.botId, last.sessionId) : setModal('notify'))}>
+      <Icon n="check" size={compact ? 16 : 22} color={last?.kind === 'error' ? 'var(--err)' : 'var(--done)'} />
+      <span className="n">마지막 결과<span>{last ? fmtTime(last.t) : ''}</span></span>
+      <span className="sub">{last ? `${nameOf(last.botId)} · ${last.body}` : '아직 없어요'}</span>
+    </button>
+  </div>
+}
+
 /* ── 폰 홈 — 큰 제목 · 카드 4 · 봇 목록 · 떠 있는 알약 (탭바 없음) ── */
 type Row = [string, { b: Bot; sum: ReturnType<typeof botSummary> }[]]
-function Home({ rows, bot, go, setModal, waiting, unread, onAsk }: { rows: Row[]; bot: Bot; go: (b: string) => void; setModal: (m: 'picker' | 'notify' | 'settings') => void; waiting: number; unread: number; onAsk: () => void }) {
+function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say }: { rows: Row[]; bot: Bot; go: (b: string, sid?: string) => void; setModal: (m: 'picker' | 'notify' | 'settings') => void; waiting: number; unread: number; onAsk: () => void; onTodo: (botId: string) => void; say: (m: string) => void }) {
   const usage = useUsage() // 폰 홈 맨 위 — 한 줄 띠. 누르면 카드가 시트로 올라온다
   const [uSheet, setUSheet] = useState(false)
   const { s } = useStore()
@@ -605,12 +678,7 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk }: { rows: Row[]
       <div className="mtitle">Folder Bot</div>
       <div className="msub"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} style={{ width: 7, height: 7 }} />{s.hostName}<MrBadge /><span>· 봇 {s.bots.length} · 후보 {cands}</span></div>
       {usage && usage.tools.length ? <div style={{ padding: '0 16px 12px' }}><UsageStrip u={usage} onOpen={() => setUSheet(true)} /></div> : null}
-      <div className="mcards">
-        <button onClick={() => setModal('notify')}><Icon n="bell" size={22} color="var(--wait)" /><span className="n">확인 필요<span>{waiting}</span></span></button>
-        <button onClick={() => (running[0] ? go(running[0].b.id) : go(bot.id))}><Icon n="run" size={22} color="var(--run)" /><span className="n">일하는 중<span>{running.length}</span></span></button>
-        <button onClick={() => go('orch')}><Icon n="archive" size={22} color="#7fb0ff" /><span className="n">인박스<span>{s.inbox}</span></span></button>
-        <button onClick={() => setModal('picker')}><Icon n="fplus" size={22} color="var(--t2)" /><span className="n">폴더 후보<span>{cands}</span></span></button>
-      </div>
+      <ActionTiles go={go} setModal={setModal} onTodo={onTodo} say={say} />
       {rows.map(([sec, list]) => <div key={sec}>
         <div className="secl">{sec}</div>
         {list.map(({ b, sum }) => <button key={b.id} className="mrow" onClick={() => go(b.id)}><span className="av"><FolderBot color={b.color} size={46} mood={sum.mood} mono /></span><span className="t"><span className="l1"><b><Mid s={b.name} /></b><time>{fmtTime(sum.t)}</time></span><span className="l2">{sum.text}</span></span></button>)}

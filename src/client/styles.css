@@ -554,6 +554,22 @@ b,strong { color:var(--w); font-weight:600 }
 .sv { font-size:12.5px; color:var(--t2); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .unit { font-size:12px; color:var(--t3) }
 .pcode { font-size:20px; letter-spacing:.18em; color:var(--w) }
+/* 액션 4칸 — 폰 홈과 맥 레일 맨 위가 같은 컴포넌트를 쓴다(맥은 .mini) */
+.sbtiles { padding:6px 8px 2px }
+/* ⚠ 아래쪽에 «폰 아닌 화면에서는 .mcards 를 숨긴다» 는 줄이 있다 — 레일 것은 **더 센 선택자**로 살린다
+   (순서로 이기려 들면 규칙 하나 옮길 때마다 조용히 사라진다) */
+.sbtiles .mcards { display:grid; grid-template-columns:1fr 1fr; gap:6px }
+.mcards button { position:relative; text-align:left; overflow:hidden }
+.mcards button .sub { font-size:11.5px; color:var(--t3); line-height:1.4; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.mcards button .act { position:absolute; right:10px; bottom:10px; height:22px; padding:0 9px; border-radius:7px; background:var(--box); color:var(--t2); font-size:11.5px; display:inline-flex; align-items:center; cursor:pointer }
+.mcards button .act:hover { background:var(--hover); color:var(--w) }
+.mcards button.hot { border-color:color-mix(in srgb,var(--wait) 45%,transparent) }
+.sbtiles .mcards button { height:64px; border-radius:11px; background:var(--bg2); border:1px solid var(--line); padding:8px 9px; display:flex; flex-direction:column; justify-content:space-between; align-items:flex-start; gap:2px }
+.sbtiles .mcards button:hover { background:var(--hover) }
+.sbtiles .mcards button .n { font-size:12px; color:var(--w); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100% }
+.sbtiles .mcards button .n span { color:var(--t3); margin-left:4px }
+.sbtiles .mcards button .sub { font-size:10.5px }
+.sbtiles .mcards button .act { right:6px; bottom:6px; height:18px; padding:0 6px; font-size:10.5px }
 /* 확인창 — 되돌리기 어려운 한 걸음 앞 (모델 바꾸기 등) */
 .modal.conf .cbody { margin:0; font-size:14px; line-height:1.65; color:var(--t2) }
 .modal.conf .cskip { display:flex; align-items:center; gap:9px; margin:16px 0 2px; font-size:13.5px; color:var(--t2); cursor:pointer }

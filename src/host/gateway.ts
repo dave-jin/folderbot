@@ -54,7 +54,7 @@ import { favicon } from './favicon'
 import { preview } from './preview'
 import { hookState, setBudget, setHook, usageReport } from './usage'
 import { allDirs, guard, kindOf, mime, readText, recent, resolveNF, stream, tree, writeText, exists, listDir, renameEntry } from './files'
-import { todoDelete, todoEdit, todoMove, todoToggle } from './todoStore'
+import { readTodo, todoDelete, todoEdit, todoMove, todoToggle } from './todoStore'
 import { globParents, roleOf } from '../core/rules'
 import { slashCommands } from './slash'
 import { globalHarness, harnessDetail, harnessRow } from './harness'
@@ -225,6 +225,19 @@ export class Gateway {
       } catch { return json(400, { error: `못 읽는 폴더예요: ${at}` }) }
       const up = dirname(at)
       return json(200, { path: at, name: basename(at) || at, parent: up === at ? null : up, home, dirs })
+    }
+    /**
+     * 🔴 **볼트 전체의 안 끝난 할 일** — 홈의 「오늘 할 일」 칸이 본다 (2026-09-15 Dave: 4칸을 전부
+     *    «바로 보고 바로 액션» 으로). 화면은 폴더를 하나씩 열어 보고 있을 수 없다.
+     * ⚠ 봇마다 `todo.md` 하나를 읽는 것뿐이라 싸다. 정렬은 **가장 먼저 할 것**(파일 순서) 그대로 둔다 —
+     *    「중요도」 를 여기서 지어내면 화면마다 다른 순서가 된다.
+     */
+    if (p === '/api/todos' && m === 'GET') {
+      const rows = reg.bots().filter((b) => !b.orchestrator).map((b) => {
+        const open = readTodo(b.abs).filter((t) => !t.done)
+        return { botId: b.id, name: b.name, open: open.length, next: open[0] ? { line: open[0].line, title: open[0].title } : null }
+      }).filter((r) => r.open > 0)
+      return json(200, { open: rows.reduce((n, r) => n + r.open, 0), rows })
     }
     if (p === '/api/bots' && m === 'GET') return json(200, reg.bots())
     if (p === '/api/candidates') return json(200, reg.candidates())

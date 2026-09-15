@@ -810,6 +810,30 @@ try {
             ok('백틱에 싸인 경로도 답 안에서 바로 누를 수 있다')
           }
           /**
+           * 🔴 **네 칸은 «하는 곳» 이다** (2026-09-15 Dave: 폰 홈의 4칸을 전부 액션으로 · 맥 레일 맨 위에도).
+           * ⚠ 숫자만 있고 거기서 할 수 있는 일이 없으면 그 칸은 벽지가 된다 — 그래서 **칸 안의 단추가
+           *   실제로 일하는지**(확인 대기의 [허용]) 까지 잰다.
+           */
+          {
+            const labels = await pg.$$eval('.sbtiles .mcards button .n', (r) => r.map((x) => x.textContent ?? ''))
+            for (const want of ['확인 대기', '일하는 중', '할 일', '마지막 결과']) if (!labels.some((l) => l.includes(want))) fail(`레일 4칸: «${want}» 칸이 없다 · ` + JSON.stringify(labels))
+            // 승인 대기를 하나 만들어 두고 — 칸 안의 [허용] 으로 푼다
+            const hold = await api(`/bots/${bot.id}/sessions`, { name: '칸에서 허용' })
+            await api(`/sessions/${hold.id}/send`, { text: '승인이 필요한 일 해 줘' })
+            let shown = false
+            for (let i = 0; i < 60; i++) { shown = await pg.evaluate(() => !!document.querySelector('.sbtiles .mcards button.hot .act')); if (shown) break; await wait(250) }
+            if (!shown) fail('레일 4칸: 확인 대기가 생겼는데 칸에 [허용] 이 안 뜬다')
+            const sub = await pg.textContent('.sbtiles .mcards button.hot .sub')
+            if (!/제품_Rondo/.test(sub ?? '')) fail('레일 4칸: 어느 폴더가 묻는지 안 보인다 · ' + JSON.stringify(sub))
+            await pg.click('.sbtiles .mcards button.hot .act')
+            let st = 'awaiting_input'
+            for (let i = 0; i < 60; i++) { st = ((await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === hold.id) ?? {}).state; if (st !== 'awaiting_input') break; await wait(250) }
+            if (st === 'awaiting_input') fail('레일 4칸: [허용] 을 눌렀는데 그대로 기다린다')
+            await api(`/sessions/${hold.id}`, undefined, 'DELETE')
+            await wait(400)
+            ok('레일 4칸 — 상태를 보여 주고 그 자리에서 허용까지')
+          }
+          /**
            * 🔴 **모델 목록 — 첫 목록은 짧게, 「더 많은 모델」에 옛 판** (2026-09-15 Dave 스크린샷).
            * ⚠ 여는 순간 `/api/agents/models` 를 다시 물어본다 — 켜 둔 채 CLI 를 업데이트해도 따라오게.
            */
@@ -1688,6 +1712,23 @@ try {
       }
       if (name === 'phone') {
         if (await pg.$('.mtabs')) fail('phone: tab bar should be gone')
+        // 🔴 폰 홈의 네 칸도 같은 컴포넌트다 (맥 레일과 갈리면 설명이 두 벌이 된다)
+        {
+          const wasBot = await pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('bot'))
+          const wasName = ((await api('/bots')).find((b) => b.id === wasBot) ?? {}).name ?? ''
+          const back = await pg.$('.chat-hdr .rb')
+          if (back) { await back.click(); await wait(600) }
+          const labels = await pg.$$eval('.mhome .mcards button .n', (r) => r.map((x) => x.textContent ?? ''))
+          for (const want of ['확인 대기', '일하는 중', '할 일', '마지막 결과']) if (!labels.some((l) => l.includes(want))) fail(`폰 홈 4칸: «${want}» 가 없다 · ` + JSON.stringify(labels))
+          // ⚠ 뒤 검사들은 **대화 화면**을 전제로 한다 — 홈으로 나왔으면 다시 들어가 둔다
+          if (back) {
+            await pg.evaluate((n) => { const r = [...document.querySelectorAll('.mhome .mrow')].find((x) => x.textContent?.includes(n)); r?.click() }, wasName)
+            await pg.waitForSelector('.composer textarea', { timeout: 8000 }); await wait(400)
+            const now = await pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('bot'))
+            if (now !== wasBot) fail('폰 홈 4칸: 검사 뒤 원래 폴더로 안 돌아왔다 · ' + JSON.stringify([wasBot, now]))
+          }
+          ok('폰 홈 4칸도 같은 것 — 확인 대기 · 일하는 중 · 할 일 · 마지막 결과')
+        }
         /**
          * 🔴 **폰의 ⏎ 는 줄 바꿈이다** (2026-09-15 Dave: *«모바일에서는 엔터가 줄내림으로 작동하고
          *    버튼을 눌러야 전송»*). 엄지로 치는 자판에서는 ⏎ 가 보내기 단추 바로 옆자리라,
