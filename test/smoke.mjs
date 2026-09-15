@@ -321,6 +321,35 @@ try {
           if (await pg2.$('.perm-gate button.on[disabled]')) { await pg2.screenshot({ path: 'test/tmp/desktop-perms-fail.png' }); fail('ui perm gate continue still disabled · ' + (await pg2.evaluate(() => JSON.stringify(window.__perm))) + ' · ' + (await pg2.textContent('.perm-gate')).slice(0, 400)) }
           await pg2.screenshot({ path: 'test/tmp/desktop-perms.png' }); await pg2.click('.perm-gate button.on'); await wait(300); if (await pg2.$('.perm-gate')) fail('ui perm gate did not close')
           await pg2.close()
+          /**
+           * 🔴 **업데이트는 받아만 두고, 적용은 묻는다** (2026-09-15 Dave: «자동업데이트 하지말고 다운로드가
+           *    끝난뒤에 업데이트 여부를 물어보기만 해줘. 좌측하단에 버전메뉴에서 팝업으로»).
+           *    가짜 셸 다리로 «다 받았다» 를 흘려 보내고 ① 칩 위에 팝업이 뜨는지 ② 「나중에」 가 적용을 안 부르는지
+           *    ③ 칩을 다시 누르면 다시 묻는지 ④ 「적용」 만이 apply 를 부르는지 잰다.
+           */
+          {
+            const pg4 = await br.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
+            await pg4.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
+            await pg4.addInitScript(() => {
+              window.__applied = 0; window.__updCb = null
+              const st = () => ({ current: '0.2.100', staged: { version: '0.2.101', ready: true, progress: 1, notes: '테스트 빌드' }, downloading: false, checking: false, lastCheck: Date.now(), lastError: '', deferred: false, busy: 2, host: true })
+              window.folderbotDesktop = { version: '0.2.100', perms: { list: async () => [], open: async () => ({ ok: true }), ack: async () => [], reset: async () => [], test: async () => ({ ok: true }), relaunch: () => {}, onChange: () => () => {} },
+                update: { state: async () => st(), check: async () => st(), apply: () => { window.__applied += 1 }, onChange: (cb) => { window.__updCb = cb; return () => {} } } }
+            })
+            await pg4.goto(base + `/#bot=${bot.id}`)
+            await pg4.waitForSelector('.updask', { timeout: 10000 })
+            const t = (await pg4.textContent('.updask')) ?? ''
+            if (!/0\.2\.101/.test(t) || !/세션 2개/.test(t)) fail('업데이트 팝업: 버전·세션 수가 안 보인다 · ' + JSON.stringify(t))
+            await pg4.click('.updask .btn.ghost'); await wait(300)
+            if (await pg4.$('.updask')) fail('업데이트 팝업: 「나중에」 를 눌렀는데 안 닫힌다')
+            if ((await pg4.evaluate(() => window.__applied)) !== 0) fail('🔴 업데이트 팝업: 「나중에」 인데 적용됐다')
+            await pg4.click('.sb-foot .bd.upd'); await wait(300)
+            if (!(await pg4.$('.updask'))) fail('업데이트 팝업: 칩을 눌렀는데 다시 안 묻는다')
+            await pg4.click('.updask .btn.on'); await wait(300)
+            if ((await pg4.evaluate(() => window.__applied)) !== 1) fail('업데이트 팝업: 「적용」 을 눌렀는데 apply 가 안 불렸다')
+            await pg4.close()
+            ok('업데이트 — 받아 두고 칩 위 팝업으로 묻는다 · 나중에는 나중에 · 적용은 사람이')
+          }
         }
         // 버전 칩을 누르면 확인 — 브라우저 화면에선 안내 토스트
         await pg.click('.sb-foot .bd.upd'); await wait(200); const vt = await pg.textContent('.toast'); if (!/업데이트/.test(vt ?? '')) fail('ui version chip toast: ' + vt)

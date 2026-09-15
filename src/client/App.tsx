@@ -181,13 +181,21 @@ const desk = (window as unknown as { folderbotDesktop?: DesktopBridge }).folderb
 const isDesktop = typeof desk !== 'undefined'
 
 /** 자기 업데이트 — 셸(Electron)이 받아 두고, 여기서는 상태를 보여 주고 «재시작» 만 누른다 */
-function useUpdate(say: (m: string) => void): [UpdState | null, () => void, () => void] {
+/**
+ * 🔴 **업데이트는 받아만 두고, 적용은 묻는다** (2026-09-15 Dave: *«자동업데이트 하지말고 다운로드가 끝난뒤에
+ *    업데이트 여부를 물어보기만 해줘. 좌측하단에 버전메뉴에서 팝업으로»*).
+ *    셸(updater.js)은 이제 어느 모드에서도 스스로 적용하지 않는다. 다 받으면 이 훅이 **버전 칩 위 팝업**을 한 번
+ *    연다(`ask`) — 누르는 건 사람이다. 「나중에」 하면 칩만 초록으로 남고, 칩을 누르면 같은 팝업이 다시 뜬다.
+ */
+function useUpdate(say: (m: string) => void): [UpdState | null, () => void, () => void, string, (v: string) => void] {
   const [st, setSt] = useState<UpdState | null>(null)
+  const [ask, setAsk] = useState('')          // 팝업을 열어 둘 버전 — '' 이면 닫힘
   const readyRef = useRef('')
   useEffect(() => {
     const u = desk?.update; if (!u) return
-    void u.state().then(setSt).catch(() => {})
-    return u.onChange((n) => { setSt(n); if (n.staged?.ready && readyRef.current !== n.staged.version) { readyRef.current = n.staged.version; say(n.deferred ? `v${n.staged.version} 준비됨 — 세션 ${n.busy}개가 끝나면 자동으로 적용해요` : `v${n.staged.version} 준비됨 — 아래 버전 칩에서 재시작`) } })
+    const seen = (n: UpdState) => { setSt(n); if (n.staged?.ready && readyRef.current !== n.staged.version) { readyRef.current = n.staged.version; setAsk(n.staged.version) } }
+    void u.state().then(seen).catch(() => {})
+    return u.onChange(seen)
   }, [])
   const check = () => {
     const u = desk?.update
@@ -198,13 +206,26 @@ function useUpdate(say: (m: string) => void): [UpdState | null, () => void, () =
       say(n.lastError ? `확인 실패 — ${n.lastError}` : n.staged?.ready ? `v${n.staged.version} 준비됨 — 버전 칩을 눌러 재시작` : n.downloading || n.staged ? `v${n.staged?.version} 받는 중 — 다 받으면 알려 드려요` : `최신 버전이에요 (v${n.current})`)
     }).catch((e: unknown) => say(`확인 실패 — ${e instanceof Error ? e.message : String(e)}`))
   }
-  const apply = () => { const u = desk?.update; if (!u || !st?.staged?.ready) return; if (st.busy > 0 && !confirm(`세션 ${st.busy}개가 중단됩니다. 지금 재시작해서 v${st.staged.version} 을 적용할까요?`)) return; u.apply() }
-  return [st, check, apply]
+  const apply = () => { const u = desk?.update; if (!u || !st?.staged?.ready) return; setAsk(''); u.apply() }
+  return [st, check, apply, ask, setAsk]
+}
+/** 버전 칩 위 팝업 — «받아 뒀어요, 적용할까요?» 한 장. 돌고 있는 세션 수는 여기서 말한다(적용하면 끊긴다) */
+function UpdateAsk({ st, onApply, onLater }: { st: UpdState; onApply: () => void; onLater: () => void }) {
+  // ⚠ 레일은 overflow 로 잘린다 — 팝업은 칩 자리를 재서 **화면 좌표(fixed)** 로 띄운다 (오늘 아침 미리보기 카드와 같은 교훈)
+  const [pos, setPos] = useState<{ left: number; bottom: number }>({ left: 12, bottom: 48 })
+  useEffect(() => { const el = document.querySelector('.sb-foot .bd.upd'); if (el) { const r = el.getBoundingClientRect(); setPos({ left: Math.max(8, r.left), bottom: Math.max(8, window.innerHeight - r.top + 8) }) } }, [])
+  if (!st.staged?.ready) return null
+  return <div className="updask" role="dialog" style={{ position: 'fixed', left: pos.left, bottom: pos.bottom }}>
+    <div className="t"><b>v{st.staged.version} 을 받아 두었어요</b><small>지금 v{st.current}</small></div>
+    {st.staged.notes ? <div className="notes">{st.staged.notes.split('\n').slice(0, 4).join('\n')}</div> : null}
+    <div className="warn">{st.busy > 0 ? `적용하면 돌고 있는 세션 ${st.busy}개가 끊겨요 — 끝난 뒤에 하는 게 좋아요` : '지금 돌고 있는 세션은 없어요'}</div>
+    <div className="btns"><button className="btn ghost" onClick={onLater}>나중에</button><button className="btn on" onClick={onApply}>지금 재시작해서 적용</button></div>
+  </div>
 }
 function UpdateChip({ version, st, onCheck, onApply }: { version: string; st: UpdState | null; onCheck: () => void; onApply: () => void }) {
   if (!isDesktop || !st) return <button className="bd mono upd" onClick={onCheck} title={isDesktop ? '업데이트 확인' : '호스트 버전'}>v{version}</button>
-  if (st.staged?.ready) return st.deferred ? <span className="bd upd" style={{ color: 'var(--wait)' }} title={`v${st.staged.version} 준비됨 — 세션 ${st.busy}개가 끝나면 자동으로 적용`}>v{st.staged.version} · {st.busy}개 끝나면</span>
-    : <button className="bd upd" style={{ color: 'var(--done)' }} onClick={onApply} title={`v${st.staged.version} 준비됨 — 눌러서 재시작·적용\n${st.staged.notes}`}><span className="dot done" style={{ width: 5, height: 5 }} />v{st.staged.version} · 적용</button>
+  // ⚠ 준비된 칩을 누르면 **묻는 팝업**이 뜬다 — 바로 갈아끼우지 않는다 (2026-09-15 Dave)
+  if (st.staged?.ready) return <button className="bd upd" style={{ color: 'var(--done)' }} onClick={onApply} title={`v${st.staged.version} 준비됨 — 눌러서 적용할지 정하기`}><span className="dot done" style={{ width: 5, height: 5 }} />v{st.staged.version} · 적용</button>
   if (st.downloading) return <span className="bd" title="조용히 받는 중 — 다 받으면 알려 드려요">v{st.staged?.version} 받는 중 {Math.round((st.staged?.progress ?? 0) * 100)}%</span>
   return <button className="bd mono upd" onClick={onCheck} title={st.lastError ? `마지막 확인 실패 — ${st.lastError}` : st.lastCheck ? `업데이트 확인 · 마지막 ${fmtTime(st.lastCheck)}` : '업데이트 확인'} style={st.lastError ? { color: 'var(--wait)' } : undefined}><Icon n="undo" size={10} style={st.checking ? { animation: 'spin 1s linear infinite' } : undefined} />v{st.current}{st.checking ? ' · 확인 중…' : ''}</button>
 }
@@ -236,7 +257,7 @@ function Main() {
   const [mentionReq, setMentionReq] = useState<string[]>([])
   const [focusReq, setFocusReq] = useState(0)
   const [focusSec, setFocusSec] = useState<{ sec: string; n: number } | null>(null)
-  const [upd, updCheck, updApply] = useUpdate(say)
+  const [upd, updCheck, updApply, updAsk, setUpdAsk] = useUpdate(say)
   const docs = useDocs(bot?.id ?? '')
   useEffect(() => { if (sessionId && !s.chats[sessionId]) void loadChat(sessionId) }, [sessionId])
   useEffect(() => { if (bot) void loadTodo(bot.id) }, [bot?.id, s.filesTick[bot?.id ?? '']])
@@ -508,7 +529,7 @@ function Main() {
         {/* ⛔ 맥에서는 사용량을 앱 안에 안 그린다 — **메뉴바에서만** 본다 (2026-09-13 Dave: «맥에서는 그냥 메뉴바 안에서만 이게 보이면 좋겠어»).
             폰은 첫 화면 위 스트립 하나로 남는다. 두 표면 다 있으면 같은 숫자가 두 번 보이고 아래 줄이 또 비좁아진다. */}
         <div className="sb-foot two">
-          <div className="r2"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} /><span className="hn">{s.hostName}</span><MrBadge />{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<UpdateChip version={s.version} st={upd} onCheck={updCheck} onApply={updApply} /></div>
+          <div className="r2"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} /><span className="hn">{s.hostName}</span><MrBadge />{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<UpdateChip version={s.version} st={upd} onCheck={updCheck} onApply={() => { if (upd?.staged?.ready) setUpdAsk(upd.staged.version) }} />{updAsk && upd ? <UpdateAsk st={upd} onApply={updApply} onLater={() => setUpdAsk('')} /> : null}</div>
         </div>
       </div> : <div className="strip left"><button className="ib" onClick={openSb} title="목록 펼치기 (⌘B)"><Icon n="panel" size={14} /></button><div className="gap" />
         <button className="ib" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span className="fly"><b>폴더 선택 · 시작</b><span>후보 {s.candidates.filter((c) => !c.active).length}</span></span></button>

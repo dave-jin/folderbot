@@ -1,6 +1,7 @@
 // Folder Bot 자기 업데이트 — 이 리포(dave-jin/folderbot, 공개 · 옛 이름 rondo 는 리다이렉트)의 desktop-v<n> 릴리스를 받아 제자리 교체한다. 토큰 불필요.
-// · 받는 것은 묻지 않고, 적용만 묻는다 (부팅 15초 뒤 + 6시간마다 확인 → 조용히 다운로드 → 다 받으면 확인창 하나)
-// · 호스트 모드(미니)에선 진행 중 세션이 있으면 기다렸다가 전부 유휴가 되는 순간 자동 적용한다 — 세션을 죽이지 않는다
+// · 받는 것은 묻지 않고, 적용은 **묻기만 한다** (2026-09-15 Dave: «자동업데이트 하지말고 다운로드가 끝난뒤에
+//   업데이트 여부를 물어보기만 해줘. 좌측하단에 버전메뉴에서 팝업으로»). ⛔ 어느 모드에서도 스스로 적용하지 않는다 —
+//   종전의 «호스트는 세션이 전부 유휴가 되면 자동 적용» 은 폐기. 다 받으면 화면(버전 칩)이 팝업으로 묻고, 누르는 건 사람이다.
 // · ad-hoc 서명이라 Squirrel/electron-updater 는 못 쓴다. 교체는 앱이 완전히 종료된 뒤 분리된 셸 스크립트가 한다.
 //   Gatekeeper 의 방아쇠는 서명이 아니라 검역 딱지(quarantine)이므로 `ditto --noqtn` 으로 떼고 복사한다.
 // · 버전은 태그(desktop-v7)가 아니라 zip 이름(Folder.Bot-0.2.7-arm64-mac.zip)에 있다 — 판정은 update-pick.js(순수, vitest).
@@ -89,22 +90,17 @@ async function download(l) {
   try { await downloading } finally { downloading = null }
 }
 
-/** 다 받은 뒤: 클라이언트 모드면 확인창, 호스트 모드면 세션이 끝날 때까지 기다렸다 자동 적용 */
+/**
+ * 다 받은 뒤 — 🔴 **묻기만 한다, 어느 모드에서도.** 화면의 버전 칩이 팝업을 띄우고(`onChange`), 누르는 건 사람이다.
+ * ⛔ 종전에는 호스트 모드에서 «세션이 전부 유휴가 되는 순간 자동 적용» 했다 — 2026-09-15 Dave 지시로 폐기.
+ *    자동 적용은 사람이 보고 있지 않을 때 앱을 갈아끼우는 것이고, 그 순간 돌던 것이 무엇이었는지 사람은 모른다.
+ * ⚠ 창이 닫혀 있으면 팝업을 볼 수 없으니 시스템 알림 하나만 남긴다 — 열면 칩이 다시 묻는다.
+ */
 function offer() {
   if (!staged?.zip) return
-  if (hooks.isHost()) {
-    if (hooks.isBusy()) { deferred = true; hooks.onChange(); hooks.log('세션 진행 중 — 전부 유휴가 되면 자동 적용'); scheduleDeferred(); return }
-    hooks.log('호스트 모드 · 세션 없음 → 바로 적용'); apply(); return
-  }
-  const show = async () => {
-    const r = await dialog.showMessageBox({ type: 'info', buttons: ['지금 재시작해서 적용', '나중에'], defaultId: 0, cancelId: 1, title: 'Folder Bot 업데이트', message: `v${staged.version} 을 받아 두었어요 (지금 v${app.getVersion()})`, detail: (staged.notes || '').split('\n').slice(0, 6).join('\n') })
-    if (r.response === 0) apply()
-  }
-  void show()
-}
-function scheduleDeferred() {
-  clearInterval(deferTimer)
-  deferTimer = setInterval(() => { if (!staged?.zip) return clearInterval(deferTimer); if (!hooks.isBusy()) { clearInterval(deferTimer); hooks.log('세션 전부 유휴 → 적용'); apply() } }, 60 * 1000)
+  deferred = false; clearInterval(deferTimer)
+  hooks.onChange(); hooks.log(`v${staged.version} 준비됨 — 버전 칩에서 물어본다`)
+  try { new Notification({ title: 'Folder Bot 업데이트', body: `v${staged.version} 을 받아 두었어요 — 왼쪽 아래 버전 칩에서 적용할지 정하세요` }).show() } catch {}
 }
 
 /** 앱 번들 경로 — /Applications/Folder Bot.app */

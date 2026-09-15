@@ -85,6 +85,13 @@ b,strong { color:var(--w); font-weight:600 }
 .sb-foot.two .r2 { display:flex; align-items:center; gap:8px; min-width:0; font-size:12px; color:var(--t2) }
 .sb-foot.two .r2 .hn { overflow:hidden; text-overflow:ellipsis; min-width:0 }
 .sb-foot.two .r2 .bd { margin-left:0 } .sb-foot.two .r2 .bd.upd { max-width:none }
+/* 업데이트 물어보는 팝업 — 왼쪽 아래 버전 칩 위로 뜬다 */
+.sb-foot.two .r2 { position:relative }
+.updask { position:fixed; width:min(320px, 80vw); background:var(--bg2); border:1px solid var(--line2); border-radius:12px; padding:12px 14px; box-shadow:0 12px 30px rgba(0,0,0,.35); z-index:40; white-space:normal; display:flex; flex-direction:column; gap:8px }
+.updask .t { display:flex; flex-direction:column; gap:2px } .updask .t b { font-size:13.5px; color:var(--w) } .updask .t small { font-size:11.5px; color:var(--t3) }
+.updask .notes { font-size:11.5px; color:var(--t3); line-height:1.5; white-space:pre-wrap; max-height:64px; overflow:hidden }
+.updask .warn { font-size:11.5px; color:var(--t2) }
+.updask .btns { display:flex; gap:8px; justify-content:flex-end } .updask .btns .btn { height:28px; font-size:12px }
 .sb-foot { display:flex; align-items:center; gap:8px; padding:10px 20px 14px; font-size:12.5px; color:var(--t2); white-space:nowrap; min-width:0; overflow:hidden } .sb-foot > span:first-of-type + span { overflow:hidden; text-overflow:ellipsis }
 .mr { font-size:10.5px; border-radius:4px; padding:0 6px; border:1px solid; white-space:nowrap; flex:none } .mr.main { color:var(--done); border-color:rgba(79,191,135,.35) } .mr.remote { color:#7fb0ff; border-color:rgba(127,176,255,.35) }
 /* 레일 폴더봇 — 설정에서 고른 크기(--fbi)를 줄 높이가 따라간다. 마우스를 올리면 커져서 표정이 보인다
