@@ -1407,6 +1407,27 @@ try {
           if (await pg.$('.live .stop')) fail('🔴 생각 줄에 중단 단추가 되살아났다')
           ok('맥 기본 단축키 — ⌘, 설정 · ⌘/ 표 · 글 칠 때는 안 돈다')
           /**
+           * 🔴 **⌘[ ⌘] 는 방문 히스토리** (루프 2/10). 종전에는 레일의 이전·다음 폴더였다 — 알림·칩으로 뛴 뒤
+           *    «아까 거기» 로 돌아올 길이 없었다. 세 곳을 차례로 밟고 두 번 뒤로, 한 번 앞으로 가서 잰다.
+           */
+          {
+            const bots = (await api('/bots')).filter((b) => !b.orchestrator).slice(0, 3)
+            if (bots.length < 3) fail('히스토리: 밟을 폴더가 셋이 안 된다')
+            const at = () => pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('bot'))
+            for (const b of bots) { await pg.evaluate((id) => { location.hash = `bot=${id}` }, b.id); await wait(350) }
+            await pg.focus('.chat-body'); await pg.keyboard.press(`${mod}+BracketLeft`); await wait(350)
+            if ((await at()) !== bots[1].id) fail('히스토리: ⌘[ 한 번에 직전 폴더로 안 갔다 · ' + JSON.stringify([await at(), bots.map((b) => b.id)]))
+            await pg.keyboard.press(`${mod}+BracketLeft`); await wait(350)
+            if ((await at()) !== bots[0].id) fail('히스토리: ⌘[ 두 번에 두 걸음 전으로 안 갔다')
+            await pg.keyboard.press(`${mod}+BracketRight`); await wait(350)
+            if ((await at()) !== bots[1].id) fail('히스토리: ⌘] 로 앞으로 안 갔다')
+            // ⌥⌘] 는 레일 순서의 다음 폴더 — 히스토리와 다른 물건
+            await pg.keyboard.press(`Alt+${mod}+BracketRight`); await wait(350)
+            if ((await at()) === bots[1].id) fail('히스토리: ⌥⌘] 가 폴더를 안 옮겼다')
+            await pg.evaluate((id) => { location.hash = `bot=${id}` }, bot.id); await wait(500)
+            ok('⌘[ ⌘] 는 방문 히스토리 · ⌥⌘[ ] 는 레일 순서')
+          }
+          /**
            * 🔴 **명령 팔레트 ⌘P** (Rondo 이식 D1) — 폴더 · 문서 · 세션 · 명령이 한 목록에 선다.
            * ⛔ 되돌리기 어려운 일(지우기·은퇴)은 **여기 있으면 안 된다** — 손이 빠른 자리라
            *    한 글자 잘못 치고 ⏎ 를 누르면 그대로 실행된다.

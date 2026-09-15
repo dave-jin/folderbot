@@ -156,7 +156,8 @@ export const KEYS: { k: string; t: string; d?: string }[] = [
   { k: '⌘N', t: '새 세션', d: '지금 폴더' },
   { k: '⌘⇧N', t: '새 폴더에서 시작' },
   { k: '⌘1…9', t: 'n번째 폴더로' },
-  { k: '⌘[ ⌘]', t: '이전 · 다음 폴더' },
+  { k: '⌘[ ⌘]', t: '뒤로 · 앞으로', d: '방문한 폴더·세션 순서대로 — 알림·칩으로 뛴 뒤 돌아오기' },
+  { k: '⌥⌘[ ⌥⌘]', t: '이전 · 다음 폴더', d: '레일 순서대로' },
   { k: '⌘B', t: '폴더 목록 접기' },
   { k: '⌘⇧B', t: '오른쪽 패널 접기' },
   { k: '⌘⇧D', t: '문서 열 접기' },
@@ -318,6 +319,29 @@ function Main() {
     try { const l = JSON.parse(localStorage.getItem(LAST_KEY) ?? '') as { bot?: string; s?: string }; if (l?.bot) back = l.s ? { bot: l.bot, s: l.s } : { bot: l.bot } } catch { /* 처음 켠 기기 */ }
     setHash(back)
   }, [hash.notify])
+  /**
+   * 🔴 **뒤로/앞으로 = 방문 히스토리** (루프 2/10 · 2026-09-15). 종전의 `⌘[ ⌘]` 는 «레일의 이전·다음 폴더»
+   *    였다 — 알림·칩으로 여기저기 뛴 뒤 «아까 거기» 로 돌아올 길이 없었다. 브라우저의 뒤로 가기와 같은 뜻으로
+   *    고치고, 폴더 순환은 `⌥⌘[ ⌥⌘]` 로 물린다.
+   * ⚠ 한 항목은 «폴더+세션» 이다 — 같은 폴더의 다른 세션도 한 걸음이다.
+   * ⚠ 뒤로 갔다가 새로 다른 곳으로 가면 앞쪽 가지는 버린다(브라우저와 같다). 같은 곳을 연달아 밟으면 안 쌓는다.
+   */
+  const hist = useRef<{ list: string[]; i: number; nav: boolean }>({ list: [], i: -1, nav: false })
+  useEffect(() => {
+    if (!hash.bot) return
+    const key = `${hash.bot}|${hash.s ?? ''}`
+    const h = hist.current
+    if (h.nav) { h.nav = false; return }                       // 히스토리로 옮긴 걸음은 다시 안 쌓는다
+    if (h.list[h.i] === key) return
+    h.list = h.list.slice(0, h.i + 1); h.list.push(key); if (h.list.length > 100) h.list.shift(); h.i = h.list.length - 1
+  }, [hash.bot, hash.s])
+  const histGo = (dir: -1 | 1) => {
+    const h = hist.current; const j = h.i + dir
+    if (j < 0 || j >= h.list.length) return
+    h.i = j; h.nav = true
+    const [b, sid] = h.list[j].split('|')
+    setHash(sid ? { bot: b, s: sid } : { bot: b }); setView('chat')
+  }
   const restored = useRef(false)
   useEffect(() => {
     if (restored.current || !s.bots.length) return
@@ -477,8 +501,10 @@ function Main() {
       const flat = rows.flatMap(([, l]) => l.map((x) => x.b.id))
       if (/^[1-9]$/.test(key)) { const t = flat[Number(key) - 1]; if (t) { e.preventDefault(); go(t) } return }
       if (key === '[' || key === ']') {
-        const i = flat.indexOf(bot?.id ?? ''); if (i < 0 || flat.length < 2) return
-        e.preventDefault(); go(flat[(i + (key === ']' ? 1 : -1) + flat.length) % flat.length])
+        e.preventDefault()
+        // ⌥ 를 누르면 «레일의 이전·다음 폴더» · 아니면 «방문 히스토리 뒤로·앞으로» (루프 2/10)
+        if (e.altKey) { const i = flat.indexOf(bot?.id ?? ''); if (i < 0 || flat.length < 2) return; go(flat[(i + (key === ']' ? 1 : -1) + flat.length) % flat.length]); return }
+        histGo(key === ']' ? 1 : -1)
       }
     }
     window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
