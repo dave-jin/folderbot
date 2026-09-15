@@ -821,6 +821,7 @@ try {
             const more = await pg.$$eval('.cpop.r .prow2 b', (r) => r.map((x) => x.textContent))
             for (const want of ['Opus 4.8', 'Opus 4.7', 'Sonnet 4.6', 'Sonnet 5 · 1M']) if (!more.includes(want)) fail(`더 많은 모델: «${want}» 가 없다 ` + JSON.stringify(more))
             await pg.keyboard.press('Escape'); await wait(300)
+            await pg.focus('.composer textarea')   // ⚠ 같은 이유 — 팝업을 닫으면 포커스가 입력칸을 떠난다
             ok('모델 고르기 — 첫 목록 넷 · 「더 많은 모델」에 옛 판과 1M')
           }
           /**
@@ -871,6 +872,45 @@ try {
             await wait(600); await pg.fill('.composer textarea', ''); await wait(200)
             ok('대기 메시지는 제 세션으로만 나간다 (폴더를 바꿔도 · 안 보고 있어도)')
           }
+          /**
+           * 🔴 **알림을 누르면 «그 폴더의 그 세션»으로** (2026-09-15 Dave: *«알림버튼을 클릭하면 단지
+           *    폴더로 이동하는게 아니라 그 폴더의 해당 세션으로 이동해야 해»*).
+           * ⚠ 폴더에 세션이 여럿이면 첫 세션으로 떨어지기 쉽다 — 알림이 가리키는 세션이 **목록에서
+           *   몇 번째든** 그쪽이 열려야 한다. 그래서 일부러 **두 번째** 세션에 알림을 만든다.
+           */
+          {
+            const backHash = await pg.evaluate(() => location.hash)   // ⚠ 검사가 끝나면 있던 자리로 돌려놓는다
+            const two = await api(`/bots/${bot.id}/sessions`, { name: '알림 대상' })
+            await api(`/sessions/${two.id}/send`, { text: '알림을 만들어 줘' })
+            let note = null
+            for (let i = 0; i < 60; i++) { note = (await api('/notifications')).find((n) => n.sessionId === two.id); if (note) break; await wait(250) }
+            if (!note) fail('알림 점프: 세션을 가리키는 알림이 안 생겼다')
+            // 🔴 **일부러 다른 세션을 보고 있게 만든다** — 안 그러면 «원래 거기 있었다» 로도 통과한다
+            const elsewhere = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.id !== two.id)
+            if (!elsewhere) fail('알림 점프: 비교할 다른 세션이 없다')
+            await pg.evaluate((h) => { location.hash = h }, `bot=${bot.id}&s=${elsewhere.id}`); await wait(700)
+            /**
+             * ⚠ 셸(트레이·메뉴)이 쓰는 `#notify=1` 로도 열려야 한다 — 종전에는 화면이 그 열쇠를 안 읽어
+             *   **아무 일도 안 일어나고 보던 폴더까지 잃었다**(해시가 통째로 갈린다).
+             */
+            await pg.evaluate(() => { location.hash = 'notify=1' })
+            await pg.waitForSelector('.modal .nrow', { timeout: 6000 })
+            if (!(await pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('bot')))) fail('알림 센터: #notify=1 로 열었더니 보던 폴더를 잃었다')
+            // 맨 위가 가장 새 알림 — 방금 만든 그것이다
+            const rowT = await pg.evaluate(() => document.querySelector('.modal .nrow')?.textContent ?? '')
+            if (!/알림을 만들어 줘|끝남/.test(rowT)) fail('알림 점프: 맨 위 줄이 방금 만든 알림이 아니다 · ' + JSON.stringify(rowT))
+            await pg.evaluate(() => document.querySelector('.modal .nrow')?.click())
+            await wait(900)
+            if (await pg.$('.modal .nrow')) fail('알림 점프: 줄을 눌렀는데 목록이 안 닫혔다')
+            const where = await pg.evaluate(() => Object.fromEntries(new URLSearchParams(location.hash.slice(1))))
+            if (where.s !== two.id) fail('알림 점프: 폴더만 열리고 세션은 안 열렸다 · ' + JSON.stringify(where))
+            const head = await pg.textContent('.chat-hdr')
+            if (!/알림 대상/.test(head ?? '')) fail('알림 점프: 화면이 그 세션을 안 보여 준다 · ' + JSON.stringify(head))
+            await api(`/sessions/${two.id}`, undefined, 'DELETE')
+            await pg.evaluate((h) => { location.hash = h }, backHash); await wait(600)
+            await pg.focus('.composer textarea')   // ⚠ 뒤 검사들이 «입력칸에 포커스» 를 전제로 ⌘⏎ 를 친다
+            ok('알림을 누르면 그 폴더의 그 세션이 열린다')
+          }
           // 🔴 **링크 앞에 파비콘** (2026-09-13 Dave) — 자리표시자를 먼저 놓으므로 인터넷이 없어도 자리는 있다.
           //    ⛔ 비워 두고 도착할 때 넣으면 글줄이 그때마다 옆으로 밀린다.
           {
@@ -909,7 +949,15 @@ try {
             if (!/example\.com/.test(box.h)) fail('링크 박스: 호스트가 안 보인다 ' + JSON.stringify(box))
             if (!box.inline) fail('링크 박스: 글 속 링크까지 박스로 삼켰다 — 문장이 끊긴다 ' + JSON.stringify(box))
             // 오버 → 미리보기 카드가 **body 에** 뜬다
-            await pg.hover('.chat-body .md a.linkbox')
+            try { await pg.hover('.chat-body .md a.linkbox', { timeout: 8000 }) } catch (err) {
+              const d = await pg.evaluate(() => {
+                const a = document.querySelector('.chat-body .md a.linkbox')
+                const r = a.getBoundingClientRect()
+                const mid = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+                return { n: document.querySelectorAll('.chat-body .md a.linkbox').length, rect: [r.x, r.y, r.width, r.height].map(Math.round), over: mid ? `${mid.tagName}.${mid.className}` : null, modal: !!document.querySelector('.modal'), backdrop: !!document.querySelector('.backdrop'), card: !!document.querySelector('.hovprev') }
+              })
+              fail('링크 박스: 오버를 못 한다 · ' + JSON.stringify(d))
+            }
             let hp = null
             for (let i = 0; i < 20; i++) { hp = await pg.evaluate(() => { const c = document.querySelector('.hovprev'); return c ? { body: c.parentElement === document.body, pos: getComputedStyle(c).position, t: c.querySelector('.t')?.textContent ?? '' } : null }); if (hp) break; await wait(150) }
             if (!hp) fail('미리보기: 오버해도 카드가 안 뜬다')

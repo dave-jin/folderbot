@@ -283,6 +283,19 @@ function Main() {
    * ⚠ 그때 없어진 폴더(덜어내기·은퇴)면 **아무 일도 안 한다** — 비어 있는 대화로 들어가느니 기본 화면이 낫다.
    * ⚠ 폰은 첫 화면(Home)에 그대로 머문다 — `view` 는 해시가 아니라 `go()` 가 옮기고, 여기서는 해시만 놓는다.
    */
+  /**
+   * 🔴 **셸이 보내는 `#notify=1` 로도 알림 센터가 열린다** (2026-09-15 — 실측으로 드러난 구멍).
+   *    트레이의 「알림 센터」와 옛 메뉴는 `location.hash = 'notify=1'` 을 쓰는데 **화면이 그 열쇠를
+   *    아예 안 읽고 있었다** — 아무 일도 안 일어나고, 게다가 해시가 통째로 갈려 **보던 폴더까지 잃었다.**
+   * ⚠ 그래서 열면서 **마지막 폴더로 되돌려 놓는다**(이 기기가 적어 둔 그 자리 · `LAST_KEY`).
+   */
+  useEffect(() => {
+    if (!hash.notify) return
+    setModal('notify')
+    let back: Record<string, string> = {}
+    try { const l = JSON.parse(localStorage.getItem(LAST_KEY) ?? '') as { bot?: string; s?: string }; if (l?.bot) back = l.s ? { bot: l.bot, s: l.s } : { bot: l.bot } } catch { /* 처음 켠 기기 */ }
+    setHash(back)
+  }, [hash.notify])
   const restored = useRef(false)
   useEffect(() => {
     if (restored.current || !s.bots.length) return

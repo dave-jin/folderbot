@@ -268,7 +268,8 @@ ipcMain.on('fb:tray-act', (_e, id) => {
   const hide = () => { try { panel?.hide() } catch {} }
   const copyPair = (p) => { if (!p) return; clipboard.writeText(p.code); new Notification({ title: 'Folder Bot 페어링 코드', body: `${p.code} · 2분 안에 폰·맥북에서 입력` }).show() }
   if (id === 'open') { hide(); showWin(); return }
-  if (id === 'notify') { hide(); navigate('#notify=1'); return }
+  // ⚠ 알림 센터는 **명령**으로 연다 — 해시를 갈아 열면 보던 폴더를 잃는다(화면이 되돌리긴 하지만, 두 번 흔들린다)
+  if (id === 'notify') { hide(); showWin(); try { win.webContents.send('fb:cmd', 'notify') } catch { navigate('#notify=1') } return }
   if (id === 'pairing') { copyPair(pairing && Date.now() < pairing.expiresAt ? pairing : newPairing()); hide(); return }
   if (id === 'pairing-new') { copyPair(newPairing()); hide(); return }
   if (id === 'copy-addr') { const urls = hostRun ? hostRun.urls.filter((u) => !u.includes('127.0.0.1')) : []; clipboard.writeText(urls[0] || settings.hostUrl); new Notification({ title: 'Folder Bot', body: urls[0] ? `${urls[0]} 복사됨 (같은 Tailscale)` : 'Tailscale 주소가 아직 없어요 — Tailscale 을 켜세요' }).show(); hide(); return }
@@ -285,7 +286,7 @@ function trayMenu() {
     { label: waiting ? `확인 대기 ${waiting}` : mood === 'work' ? '일하는 중' : mood === 'error' ? '문제 있어요' : '한가함', enabled: false },
     ...usageItems(),
     { label: 'Folder Bot 열기', click: showWin },
-    { label: '알림 센터', click: () => navigate('#notify=1') },
+    { label: '알림 센터', click: () => { showWin(); try { win.webContents.send('fb:cmd', 'notify') } catch { navigate('#notify=1') } } },
     { type: 'separator' },
     ...(settings.mode === 'host' ? [
       { label: `이 맥이 호스트 · ${settings.root}`, enabled: false },

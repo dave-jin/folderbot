@@ -92,6 +92,15 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
       if (p.kind === 'none') { setErr('이 파일이 사라졌어요 (이름이 바뀌었거나 치워졌어요)'); return }
       if ((p.mtime ?? 0) <= mtimeRef.current) return
       if (dirtyRef.current) { setConflict(true); return }
+      /**
+       * 🔴 **손가락이 편집기 안에 있으면 덮지 않는다** (2026-09-15 — 표 스모크가 드물게 빨개지던 진짜 이유).
+       *    `dirtyRef` 는 «문서가 바뀌었다» 로만 켜진다. 그런데 **표 칸은 `contentEditable`** 이라,
+       *    치는 동안에는 CodeMirror 문서가 아직 안 바뀌어 있다(칸을 떠날 때 한 번에 들어간다).
+       *    그 사이에 파일 이벤트가 오면 «안 고치는 중» 으로 보고 문서를 갈아 끼워 **치던 글자가 사라졌다.**
+       * ⚠ 조용히 건너뛴다(배너도 안 띄운다) — 아직 아무것도 안 쓴 사람에게 충돌을 물을 이유가 없다.
+       *    칸을 떠나 글이 문서에 들어가는 순간부터는 위의 `dirtyRef` 길로 들어온다.
+       */
+      if (document.activeElement?.closest?.('.mded')) return
       const d = await api<DocData>(`/bots/${bot.id}/file?rel=${encodeURIComponent(rel)}`)
       setDoc(d); setDraft(d.text ?? ''); mtimeRef.current = d.mtime ?? 0; setBotTouched(d.mtime ?? Date.now())
     }).catch(() => {})
