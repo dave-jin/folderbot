@@ -158,8 +158,9 @@ export const KEYS: { k: string; t: string; d?: string }[] = [
   { k: '⌘⇧D', t: '문서 열 접기' },
   { k: '⌘⇧U', t: '알림' },
   { k: '⌘W', t: '문서 탭 닫기' },
-  { k: '⌘↩', t: '보내기', d: '⏎ 로는 안 나간다 — 반쯤 쓴 말이 나가지 않게' },
-  { k: '↩', t: '줄 바꾸기' },
+  { k: '↩', t: '보내기', d: '자판이 있는 기기에서 — 폰에서는 줄 바꾸기(보내기는 단추)' },
+  { k: '⇧↩', t: '줄 바꾸기' },
+  { k: '⌘↩', t: '보내기', d: '어디서나 — 폰에 외장 자판을 붙였을 때도' },
   { k: '⎋', t: '닫기 · 편집 끝내기' },
   { k: '⌘Z', t: '실행 취소', d: '맥 기본 — 우리가 안 가로챈다' },
   { k: '⌘F', t: '문서에서 찾기', d: '편집기 기본' }
@@ -671,6 +672,10 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
     setBusy(true); try { await post(t) } catch (e) { say((e as Error).message) } finally { setBusy(false) }
   }
   const send = () => sendText(text)
+  /** ⏎ 가 보내기인 기기인가 — 폰 화면도 아니고 손가락 포인터도 아닐 때만 (위 `onKey` 머리말) */
+  const touch = useMedia('(pointer: coarse)')
+  const enterSends = !phone && !touch
+  const sendKey = enterSends ? '⏎' : '⌘⏎'
   const upload = async (list: File[]) => { if (!list.length) return; setUploading(true); try { for (const f of list) { const r = await uploadFile(bot.id, f); setAttach((a) => [...a, { rel: r.rel, abs: r.abs, uploaded: true }]) } say(`${list.length}개 올렸어요 → 첨부/`) } catch (e) { say((e as Error).message) } finally { setUploading(false); if (fileRef.current) fileRef.current.value = '' } }
   const addAtt = (a: Att) => setAttach((l) => (l.some((x) => x.rel === a.rel) ? l : [...l, a]))
   const relOf = (p: string) => (p.startsWith(bot.abs + '/') ? p.slice(bot.abs.length + 1) : null)
@@ -717,15 +722,23 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
       if (e.key === 'Escape') { e.preventDefault(); setDismissed(text); return }
     }
     /**
-     * 🔴 **⏎ 로는 안 보낸다** (2026-09-14 Dave: *«엔터 칠때 입력이 되면 안돼. 샌드버튼을 눌러야
-     *    전송되게 해줘»*). 보내는 길은 **보내기 단추**와 **⌘⏎** 둘뿐이다.
+     * 🔴 **⏎ 는 자판이 있으면 «보내기», 폰에서는 «줄 바꾸기»** (2026-09-15 Dave — Claude Desktop 과 같은 방향:
+     *    *«맥에서는 Enter 가 전송, shift+Enter 가 줄내림. 모바일에서는 Enter 가 줄내림이고 버튼을 눌러야 전송»*).
      *
-     * 왜 바꿨나: 이 앱에 쓰는 글은 한 줄짜리 채팅이 아니라 **지시문**이다 — 여러 줄로 쓰다가
-     * ⏎ 한 번에 반쯤 쓴 말이 나가 버리는 일이 잦았다(폰에서는 자판의 ⏎ 가 바로 그 자리에 있다).
-     * ⚠ `/` · `@` 목록이 떠 있을 때의 ⏎ 는 **고르기**다(위 분기) — 그건 보내기가 아니라 채우기다.
-     * ⚠ ⌘⏎ 는 맥의 «이 양식을 제출» 관용구다. ⌃⏎ 도 함께 받는다(외장 자판·리눅스).
+     * ⚠ 2026-09-14 에는 **양쪽 다 ⌘⏎ 만**이었다(반쯤 쓴 말이 나가는 게 싫어서). 뒤집은 이유는 «두 기기를
+     *   같이 쓰니 방향을 통일하고 싶다» 이고, 통일의 기준은 **자판이 딸려 있나**다 — 자판 앞에서는 ⏎ 가
+     *   보내기고 ⇧⏎ 가 줄 바꿈, 엄지로 치는 화면에서는 ⏎ 가 줄 바꿈이고 보내기는 단추뿐이다.
+     *
+     * 🔴 **가르는 기준은 창 너비가 아니라 «손가락이냐»** — 폰 화면(`phone`)이거나 거친 포인터(`touch`)면
+     *    ⏎ 는 줄 바꿈이다. 너비만 보면 아이패드 가로(넓다)에서 소프트 자판의 ⏎ 가 말을 쏴 버린다.
+     * ⚠ 한글 조합 중의 ⏎ 는 **조합 끝내기**다 — 맨 위 `isComposing` 가드가 그걸 막는다(빼면 «안녕」 치다 나간다).
+     * ⚠ `/` · `@` 목록이 떠 있을 때의 ⏎ 는 **고르기**다(위 분기) — 보내기가 아니라 채우기다.
+     * ⚠ ⌘⏎ 는 **어느 기기에서나** 보내기로 남긴다 — 맥 메뉴가 쓰는 길이고, 폰에 외장 자판을 붙인 사람의 길이다.
      */
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send() }
+    if (e.key !== 'Enter') return
+    if (e.metaKey || e.ctrlKey) { e.preventDefault(); void send(); return }
+    if (!enterSends || e.shiftKey || e.altKey) return
+    e.preventDefault(); void send()
   }
   const hasText = !!text.trim() || attach.length > 0
   const mode: 'send' | 'queue' | 'stop' | 'off' = hasText ? (running || state === 'awaiting_input' ? 'queue' : 'send') : running ? 'stop' : 'off'
@@ -773,7 +786,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const plusBtn = <button className={phone ? 'plusb' : `cbtn ${pop === 'plus' ? 'on' : ''}`} style={phone ? undefined : { padding: '3px 6px' }} title="첨부" onClick={() => setPop(pop === 'plus' ? '' : 'plus')} disabled={uploading}><Icon n="plus" size={phone ? 20 : 14} /></button>
   const sendBtn = mode === 'stop' ? <button className="sendb" onClick={() => cur && api(`/sessions/${cur.id}/interrupt`, { body: {} })} title="중단"><Icon n="stop" size={phone ? 14 : 11} /></button>
     : mode === 'off' && phone ? <span className="sendb mic"><Icon n="mic" size={20} /></span>
-      : <button className={`sendb ${mode === 'off' ? 'off' : ''}`} onClick={send} disabled={mode === 'off' || busy || uploading} title={mode === 'queue' ? '대기열에 넣기 (⌘⏎)' : '보내기 (⌘⏎)'}><Icon n="up" size={phone ? 16 : 12} />{mode === 'queue' ? <span className="bd">+{queue.length + 1}</span> : null}</button>
+      : <button className={`sendb ${mode === 'off' ? 'off' : ''}`} onClick={send} disabled={mode === 'off' || busy || uploading} title={mode === 'queue' ? `대기열에 넣기 (${sendKey})` : `보내기 (${sendKey})`}><Icon n="up" size={phone ? 16 : 12} />{mode === 'queue' ? <span className="bd">+{queue.length + 1}</span> : null}</button>
   const popEl = pop === 'mode' ? <div className="cpop"><div className="h">모드 · 이 세션</div>{MODES.map((m, i) => <button key={m.v} className={`prow2 ${cfg.mode === m.v ? 'on' : ''}`} onClick={() => void applyCfg({ permissionMode: m.v })}><div className="t"><b>{m.t}</b><small>{m.d}</small></div>{cfg.mode === m.v ? <Icon n="check" size={13} /> : <span className="k">{i + 1}</span>}</button>)}<div className="hint"><span>1~4</span><span className="sp" /><span>새 세션은 설정의 기본값으로</span></div></div>
     /**
      * 🔴 **종류별 최신 하나씩만 보인다** (2026-09-14 Dave: «다른 모델은 안쓰고 최신 버전만 종류별로만
@@ -843,7 +856,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
         {drop ? <div className="drophint"><Icon n="plus" size={13} />{drop === 'files' ? '놓으면 첨부/ 에 복사하고 첨부' : '놓으면 첨부'}</div> : null}
         <div className="crow">
           {phone ? plusBtn : null}
-          <textarea ref={taRef} rows={1} onFocus={() => { if (phone) stickBottom() }} placeholder={drill ? '메인 대화로 보냅니다 — 이 안에는 직접 말을 걸 수 없어요' : running ? '보내면 대기열에 들어갑니다 (⌘⏎)' : state === 'awaiting_input' ? '답을 기다리는 중 — 보내면 대기열에' : '메시지…  ⌘⏎ 로 보내기 · / 스킬 · @ 파일'} value={text} onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(180, e.target.scrollHeight)}px` }} onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? 0)} onClick={(e) => setCaret(e.currentTarget.selectionStart ?? 0)} onKeyDown={onKey} />
+          <textarea ref={taRef} rows={1} onFocus={() => { if (phone) stickBottom() }} placeholder={drill ? '메인 대화로 보냅니다 — 이 안에는 직접 말을 걸 수 없어요' : running ? `보내면 대기열에 들어갑니다 (${sendKey})` : state === 'awaiting_input' ? '답을 기다리는 중 — 보내면 대기열에' : enterSends ? '메시지…  ⏎ 보내기 · ⇧⏎ 줄 바꿈 · / 스킬 · @ 파일' : '메시지…  / 스킬 · @ 파일'} value={text} onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(180, e.target.scrollHeight)}px` }} onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? 0)} onClick={(e) => setCaret(e.currentTarget.selectionStart ?? 0)} onKeyDown={onKey} />
           {phone ? <>{ringBtn}{sendBtn}</> : null}
         </div>
         {!phone ? <div className="cbar">{modeBtn}{plusBtn}<span className="sp" />{modelBtn}{effortBtn}{ringBtn}{sendBtn}</div> : null}
@@ -881,7 +894,7 @@ function LinkChip({ url }: { url: string }) {
  *
  * 🔴 **아직 안 보낸 말이다.** 못 고치면 지우고 처음부터 다시 쓰는 수밖에 없었다 — 긴 지시문일수록
  *    아프다. 그래서 줄을 그대로 입력칸으로 바꾼다(자리·높이가 안 변해 목록이 안 출렁인다).
- * ⚠ **여기의 ⏎ 는 «고치기 끝»** 이다 — 보내기가 아니다(보내기는 ⌘⏎ 와 단추뿐 · 입력칸 계약).
+ * ⚠ **여기의 ⏎ 는 «고치기 끝»** 이다 — 보내기가 아니다(보내기 계약은 입력칸에 있다).
  * ⚠ ⎋ 는 되돌리기. ⛔ 빈 글로 두고 나가면 그 줄은 **사라진다** — 「지우기」를 따로 찾지 않게.
  */
 function QueueRow({ n, text, onSave, onDrop }: { n: number; text: string; onSave: (v: string) => void; onDrop: () => void }) {

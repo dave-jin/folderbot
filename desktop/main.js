@@ -159,7 +159,8 @@ function appMenu() {
       { label: '폴더 고르기 · 시작', accelerator: 'CmdOrCtrl+K', click: cmd('picker') },
       { label: '명령 팔레트', accelerator: 'CmdOrCtrl+P', click: cmd('palette') },
       { type: 'separator' },
-      // ⚠ ⏎ 로는 안 보낸다(2026-09-14 Dave) — 보내는 길은 이 단축키와 보내기 단추뿐이다
+      // ⚠ 맥에서는 ⏎ 가 보내기다(2026-09-15 Dave) — 이 ⌘⏎ 는 «어느 기기에서나» 도는 두 번째 길이다.
+      //    ⛔ ⏎ 자체를 메뉴 단축키로 달지 않는다 — 메뉴가 먼저 삼켜서 **문서 편집기의 줄 바꿈까지** 막는다
       { label: '보내기', accelerator: 'CmdOrCtrl+Return', click: cmd('send') },
       { type: 'separator' }, { role: isMac ? 'close' : 'quit' }
     ] },

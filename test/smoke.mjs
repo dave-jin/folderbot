@@ -979,19 +979,25 @@ try {
           if (await pg.$('.modal.keys')) fail('단축키: 글자를 쳤는데 명령이 돌았다')
           await pg.fill('.composer textarea', ''); await wait(200)
           /**
-           * 🔴 **⏎ 로는 안 보낸다** (2026-09-14 Dave: *«엔터 칠때 입력이 되면 안돼. 샌드버튼을 눌러야
-           *    전송되게 해줘»*). 이 앱에 쓰는 글은 한 줄 채팅이 아니라 **지시문**이라, ⏎ 한 번에
-           *    반쯤 쓴 말이 나가 버리는 일이 잦았다(폰에서는 자판의 ⏎ 가 바로 그 자리에 있다).
-           * ⚠ 보내는 길은 **⌘⏎ 와 보내기 단추** 둘뿐이다.
+           * 🔴 **자판 앞에서는 ⏎ 가 보내기, ⇧⏎ 가 줄 바꿈** (2026-09-15 Dave — Claude Desktop 과 같은 방향).
+           * ⚠ 하루 전(2026-09-14)에는 **반대**였다(양쪽 다 ⌘⏎). 두 기기를 같이 쓰니 방향을 통일하자는
+           *   결정이고, 통일의 기준은 «자판이 딸려 있나» 다 — 폰 쪽 계약은 phone 페이지에서 따로 잰다.
            */
           {
-            await pg.fill('.composer textarea', '엔터로는 안 나간다')
-            await pg.keyboard.press('Enter'); await wait(500)
-            const still = await pg.inputValue('.composer textarea')
-            if (!still.includes('엔터로는 안 나간다')) fail('🔴 ⏎ 로 보내졌다 — 반쯤 쓴 말이 나간다 · ' + JSON.stringify(still))
-            if (!/\n/.test(still)) fail('⏎ 가 줄바꿈도 안 했다 · ' + JSON.stringify(still))
+            await pg.fill('.composer textarea', '⇧⏎ 는 줄 바꿈')
+            await pg.keyboard.press('Shift+Enter'); await wait(400)
+            const nl = await pg.inputValue('.composer textarea')
+            if (!nl.includes('⇧⏎ 는 줄 바꿈')) fail('🔴 ⇧⏎ 로 보내졌다 — 줄을 바꾸려다 말이 나간다 · ' + JSON.stringify(nl))
+            if (!/\n/.test(nl)) fail('⇧⏎ 가 줄바꿈을 안 했다 · ' + JSON.stringify(nl))
             await pg.fill('.composer textarea', ''); await wait(200)
-            ok('⏎ 로는 안 나간다 — 보내기는 ⌘⏎ 와 단추뿐')
+            await pg.fill('.composer textarea', '엔터로 보낸다')
+            await pg.keyboard.press('Enter'); await wait(900)
+            const gone = await pg.inputValue('.composer textarea')
+            if (gone.trim()) fail('🔴 자판 앞인데 ⏎ 로 안 나갔다 · ' + JSON.stringify(gone))
+            let said = false
+            for (let i = 0; i < 20; i++) { if (await pg.$('.umsg:has-text("엔터로 보낸다")')) { said = true; break } await wait(200) }
+            if (!said) fail('⏎ 로 보냈는데 대화에 안 남았다')
+            ok('자판 앞에서는 ⏎ 로 보내고 ⇧⏎ 로 줄을 바꾼다')
           /**
            * 🔴 **계정이 안 받아 주는 모델이면 모델 없이 한 번 더** (2026-09-14).
            *    Codex 에서 먼저 겪은 일이 Claude 에서도 난다 — 요금제마다 쓸 수 있는 모델이 다르고,
@@ -1398,6 +1404,25 @@ try {
       }
       if (name === 'phone') {
         if (await pg.$('.mtabs')) fail('phone: tab bar should be gone')
+        /**
+         * 🔴 **폰의 ⏎ 는 줄 바꿈이다** (2026-09-15 Dave: *«모바일에서는 엔터가 줄내림으로 작동하고
+         *    버튼을 눌러야 전송»*). 엄지로 치는 자판에서는 ⏎ 가 보내기 단추 바로 옆자리라,
+         *    ⏎ 로 보내면 **반쯤 쓴 지시문**이 그대로 나간다.
+         * ⚠ 자판 앞(desktop 페이지)에서는 반대다 — 그 계약은 위에서 따로 잰다. 한 코드가 두 답을 낸다.
+         */
+        {
+          await pg.fill('.composer textarea', '폰에서는 줄 바꿈')
+          await pg.keyboard.press('Enter'); await wait(600)
+          const still = await pg.inputValue('.composer textarea')
+          if (!still.includes('폰에서는 줄 바꿈')) fail('🔴 폰에서 ⏎ 로 보내졌다 — 반쯤 쓴 말이 나간다 · ' + JSON.stringify(still))
+          if (!/\n/.test(still)) fail('폰: ⏎ 가 줄바꿈도 안 했다 · ' + JSON.stringify(still))
+          // 보내기는 단추로 — 그 길까지 살아 있어야 «⏎ 를 막았다» 가 완성된다
+          await pg.fill('.composer textarea', '단추로 보낸다'); await wait(200)
+          await pg.click('.composer .sendb'); await wait(900)
+          const gone = await pg.inputValue('.composer textarea')
+          if (gone.trim()) fail('폰: 보내기 단추로 안 나갔다 · ' + JSON.stringify(gone))
+          ok('폰에서는 ⏎ 가 줄 바꿈 · 보내기는 단추')
+        }
         if (!(await pg.$('.chat-hdr .rb')) || !(await pg.$('.cchips')) || !(await pg.$('.composer .plusb'))) fail('phone: round buttons / chips / pill composer')
         // 위 헤더는 불투명(페이드 없음) — 글이 밑으로 비치지 않는다
         const hb = await pg.$eval('.chat-hdr', (e) => getComputedStyle(e).backgroundImage + '|' + getComputedStyle(e).backgroundColor); if (/gradient/.test(hb) || /rgba\(\d+, \d+, \d+, 0\)/.test(hb)) fail('phone: header should be opaque ' + hb)
