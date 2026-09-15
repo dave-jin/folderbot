@@ -1,4 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { marked } from 'marked'
 
 /** ⚠ 지연 로드 — CodeMirror 와 마크다운 파서는 문서를 열 때만 받는다 (번들 계약) */
 const MdEditor = lazy(() => import('./MdEditor'))
@@ -56,6 +58,28 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
   const [conflict, setConflict] = useState(false); const [botTouched, setBotTouched] = useState<number | null>(null)
   const [menu, setMenu] = useState<Anchor | null>(null)
   const [sibs, setSibs] = useState<string[]>([])
+  /**
+   * PDF 내보내기 (루프 9/10) — 🔴 **편집기를 인쇄하지 않는다.** CodeMirror 는 보이는 줄만 그리므로 긴 문서가
+   *    잘려 나온다. 대신 지금 글(`draft`)을 marked 로 한 번 더 그려 body 에 **인쇄용 사본**(`.printdoc`)을 세우고,
+   *    `@media print` 가 앱을 숨기고 그 사본만 남긴다. 맥 앱은 `printToPDF` 로 파일을 쓰고(자리는 사람이 고른다),
+   *    브라우저·폰은 인쇄 대화상자에서 «PDF 로 저장» 을 고른다. 끝나면 사본을 걷는다.
+   */
+  const [printHtml, setPrintHtml] = useState<string | null>(null)
+  useEffect(() => {
+    if (!printHtml) return
+    let live = true
+    const run = async () => {
+      await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 60)))
+      if (!live) return
+      const d = (window as unknown as { folderbotDesktop?: { savePdf?: (name: string) => Promise<string | null> } }).folderbotDesktop
+      try {
+        if (d?.savePdf) { const p = await d.savePdf((rel ?? 'document').split('/').pop() ?? 'document'); if (p) say(`PDF 로 저장했어요 — ${p}`) }
+        else window.print()
+      } catch (e) { say((e as Error).message) } finally { if (live) setPrintHtml(null) }
+    }
+    void run()
+    return () => { live = false }
+  }, [printHtml])
   const mtimeRef = useRef<number>(0); const saveT = useRef<number | undefined>(undefined)
   /** 「고치는 중」이 아니라 **「아직 안 낸 글이 있다」** — 봇이 같은 파일을 건드렸을 때 덮어쓸지 물을 근거다 */
   const dirtyRef = useRef(false)
@@ -178,11 +202,13 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
             {menu ? <Float at={menu} onClose={() => setMenu(null)}><div style={{ display: 'contents' }} onClick={() => setMenu(null)}><button onClick={() => onTalk(rel)}><Icon n="sub" size={13} /><span>봇에게 이 파일 말하기</span></button><button onClick={() => onAttach(rel)}><Icon n="plus" size={13} /><span>첨부로 보내기</span></button><button onClick={() => { void copySay(`${bot.abs}/${rel}`, say, '경로를 복사했어요') }}><Icon n="file" size={13} /><span>경로 복사</span></button><button onClick={async () => { try { await api(`/bots/${bot.id}/open`, { body: { rel } }); say(main ? '기본 앱으로 열었어요' : '메인 맥에서 열었어요') } catch (e) { say((e as Error).message) } }}><Icon n="open" size={13} /><span>{main ? '기본 앱으로 열기' : '메인 맥에서 열기'}</span>{main ? null : <span className="k">메인에서</span>}</button>
               {main ? null : <a className="menu-a" href={raw(rel)} download style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="doc" size={13} /><span>이 기기로 내려받기</span></a>}
               <a className="menu-a" href={raw(rel)} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="open" size={13} /><span>새 창에서 열기</span></a><hr /><button onClick={() => docs.pin(rel)}><Icon n="doc" size={13} /><span>탭 고정</span><span className="k">더블클릭</span></button>
+              {doc?.kind === 'text' ? <button onClick={() => setPrintHtml(marked.parse(draft || doc.text || '') as string)}><Icon n="file" size={13} /><span>PDF 로 저장</span></button> : null}
               {/* 🔴 **읽기 편한 크기는 사람의 성질이다** (B9) — 문서마다 따로 두지 않고 이 기기에 남긴다.
                   ⚠ 폭은 «넓게»(문서 열을 키우는 것)와 다른 일이다 — 이건 **글줄 길이**다. */}
               <hr /><div className="mrow"><span>글자 크기</span><button className="mb" onClick={(e) => { e.stopPropagation(); setFs((v) => Math.max(11, +(v - 0.5).toFixed(1))) }}>−</button><b className="mono">{fs}</b><button className="mb" onClick={(e) => { e.stopPropagation(); setFs((v) => Math.min(22, +(v + 0.5).toFixed(1))) }}>＋</button></div>
               <button onClick={() => setWideText(!wideText)}><Icon n="expand" size={13} /><span>글줄 넓게</span>{wideText ? <Icon n="check" size={11} /> : null}</button></div></Float> : null}</span>
       </span></div> : null}
+    {printHtml ? createPortal(<div className="printdoc md" dangerouslySetInnerHTML={{ __html: printHtml }} />, document.body) : null}
     {conflict ? <div className="dbanner"><span className="dot wait" /><span>봇이 이 파일을 바꿨어요 — 아직 안 낸 내 글과 다릅니다</span><button onClick={() => { setConflict(false); void save(draft) }}>내 것 유지</button><button onClick={() => { setConflict(false); dirtyRef.current = false; if (rel) void load(rel) }}>봇 것 받기</button></div>
       : botTouched ? <div className="dbanner"><span className="dot run" /><span>봇이 {fmtTime(botTouched)} 수정</span><button onClick={() => setBotTouched(null)}>닫기</button></div> : null}
     {!rel ? <div className="empty">오른쪽 파일에서 열거나, 대화의 파일 칩을 누르세요</div>

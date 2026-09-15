@@ -944,3 +944,16 @@ b,strong { color:var(--w); font-weight:600 }
 /* 「더 많은 모델」 — 접힌 줄. ⚠ 고를 수 있는 줄과 **같은 높이**여야 목록이 안 출렁인다 */
 .cpop .prow2.more { color:var(--t3) } .cpop .prow2.more:hover { color:var(--w) }
 .cpop .prow2.more .t b { font-weight:500 }
+
+/* ── PDF 내보내기 (루프 9/10) — 인쇄용 사본만 남기고 앱은 숨긴다. 화면에서는 사본이 안 보인다 ── */
+.printdoc { display:none }
+@media print {
+  @page { margin:18mm }
+  body > *:not(.printdoc) { display:none !important }
+  body { background:#fff !important; color:#111 !important }
+  .printdoc { display:block; color:#111; font-size:11.5pt; line-height:1.65; font-family:-apple-system, 'Apple SD Gothic Neo', 'Pretendard', system-ui, sans-serif }
+  .printdoc h1, .printdoc h2, .printdoc h3 { color:#000; font-size:1.15em; margin:14pt 0 6pt } .printdoc h1 { font-size:1.5em } .printdoc h2 { font-size:1.3em }
+  .printdoc p { margin:0 0 8pt } .printdoc pre, .printdoc code { background:#f3f3f3; color:#111; font-size:9.5pt } .printdoc pre { padding:8pt; border-radius:4pt; white-space:pre-wrap; word-break:break-all }
+  .printdoc table { border-collapse:collapse } .printdoc td, .printdoc th { border:1px solid #ccc; padding:3pt 6pt } .printdoc a { color:#111 } .printdoc img { max-width:100% }
+  .printdoc blockquote { border-left:2pt solid #bbb; margin:0; padding-left:8pt; color:#444 }
+}

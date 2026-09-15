@@ -130,6 +130,19 @@ ipcMain.handle('fb:perm-ack', (_e, id, ok) => { perms.setAck(id, !!ok); return p
 ipcMain.handle('fb:perm-reset', () => { perms.resetAcks(); return perms.list({ host: settings.mode === 'host' }) })
 ipcMain.handle('fb:perm-test', () => perms.sendTest())
 ipcMain.on('fb:perm-relaunch', () => perms.relaunch())
+/**
+ * 문서 → PDF (루프 9/10). 🔴 그리는 것은 화면의 `@media print` 다 — 인쇄용 사본(`.printdoc`)만 남기고 앱은 숨긴다.
+ * ⚠ 저장 자리는 사람이 고른다(기본은 내려받기 폴더) — 취소하면 null.
+ */
+ipcMain.handle('fb:pdf', async (_e, name) => {
+  if (!win) return null
+  const safe = String(name || 'document').replace(/[\/:*?"<>|]/g, '-').replace(/\.md$/i, '')
+  const r = await dialog.showSaveDialog(win, { title: 'PDF 로 저장', defaultPath: require('node:path').join(app.getPath('downloads'), `${safe}.pdf`), filters: [{ name: 'PDF', extensions: ['pdf'] }] })
+  if (r.canceled || !r.filePath) return null
+  const buf = await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4' })
+  writeFileSync(r.filePath, buf)
+  return r.filePath
+})
 ipcMain.handle('fb:update-state', () => updater.state())
 ipcMain.handle('fb:update-check', async () => { await updater.check(true); return updater.state() })
 ipcMain.on('fb:update-apply', () => { updater.apply() })

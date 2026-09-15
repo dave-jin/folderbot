@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('folderbotDesktop', {
   hostMode: () => ipcRenderer.send('fb:host-mode'),
   hostAvailable: () => ipcRenderer.invoke('fb:host-available'),
   tokenChanged: (token) => ipcRenderer.send('fb:token', token),
+  // 문서 → PDF (루프 9/10) — 화면이 인쇄용 사본을 body 에 세운 뒤 부른다. 저장 자리는 사람이 고른다
+  savePdf: (name) => ipcRenderer.invoke('fb:pdf', name),
   // 권한 관문 — 첫 실행·업데이트 뒤 화면이 쓴다
   perms: {
     list: () => ipcRenderer.invoke('fb:perm-list'),

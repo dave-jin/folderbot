@@ -1920,6 +1920,26 @@ try {
         await pg.click('.files .chip'); await pg.waitForSelector('.doc .dbody', { timeout: 5000 }); await wait(400)
         const tabs = await pg.$$eval('.doc .tab', (r) => r.length); if (tabs < 1) fail('doc tab')
         await pg.screenshot({ path: 'test/tmp/desktop-doc.png' })
+        /**
+         * 🔴 **PDF 내보내기** (루프 9/10) — ⋯ 메뉴의 「PDF 로 저장」 이 인쇄용 사본(`.printdoc`)을 세운 채 인쇄를 부르고,
+         *    끝나면 걷는다. 편집기(보이는 줄만 그린다)가 아니라 **글 전체**를 marked 로 다시 그린 사본이어야 한다.
+         * ⚠ 헤드리스에는 인쇄 대화상자가 없다 — `window.print` 를 갈아 끼워 «그 순간 body 에 뭐가 있었나» 만 잰다.
+         */
+        {
+          await pg.evaluate(() => { window.__printed = null; window.print = () => { const d = document.querySelector('.printdoc'); window.__printed = { has: !!d, txt: d?.textContent ?? '', shown: d ? getComputedStyle(d).display : '', app: document.querySelector('#root, .app') ? 1 : 0 } } })
+          await pg.click('.dtb .ib[title="더 보기"]'); await wait(300)
+          const pdfBtn = pg.locator('.menu button', { hasText: 'PDF 로 저장' })
+          if (!(await pdfBtn.count())) fail('PDF: ⋯ 메뉴에 「PDF 로 저장」 이 없다 ' + JSON.stringify(await pg.evaluate(() => [...document.querySelectorAll('.menu button')].map((b) => b.textContent))))
+          await pdfBtn.click(); await wait(700)
+          const pr = await pg.evaluate(() => window.__printed)
+          if (!pr || !pr.has) fail('PDF: 인쇄 순간에 인쇄용 사본이 없다 ' + JSON.stringify(pr))
+          if (!/스텁 산출물|추가/.test(pr.txt)) fail('PDF: 사본에 문서 글이 없다 ' + JSON.stringify(pr.txt.slice(0, 120)))
+          if (pr.shown !== 'none') fail('PDF: 화면에서는 사본이 안 보여야 한다(인쇄에서만) ' + pr.shown)
+          if (await pg.$('.printdoc')) fail('PDF: 인쇄가 끝났는데 사본이 남아 있다')
+          const printCss = await pg.evaluate(() => [...document.styleSheets].some((ss) => { try { return [...ss.cssRules].some((r) => r.media && /print/.test(r.media.mediaText) && /printdoc/.test(r.cssText)) } catch { return false } }))
+          if (!printCss) fail('PDF: @media print 규칙이 없다 — 앱이 같이 인쇄된다')
+          ok('PDF 내보내기 — ⋯ 「PDF 로 저장」 → 글 전체의 인쇄용 사본 · 앱은 숨김 · 끝나면 걷음')
+        }
         await pg.keyboard.press('Meta+Shift+D'); await wait(500); if (await pg.$('.doc')) fail('doc column should hide on ⌘⇧D · tabs=' + (await pg.$$eval('.doc .tab', (r) => r.length)) + ' · focus=' + (await pg.evaluate(() => document.activeElement?.tagName + '.' + document.activeElement?.className)))
         /**
          * 🔴 **껐다 켜면 마지막 폴더에서 시작한다** (2026-09-15 Dave: «마지막으로 작업했던 프로젝트도
