@@ -10,6 +10,7 @@ import { assistantText, closeOpenItems, contextOf, itemId, toolSummary, touchedP
 import { CodexWorker } from './codex'
 import { fitsProvider } from '../core/agents'
 import { CODEX_LOCAL, parseLocalSlash } from '../core/slashLocal'
+import { isAutoSessionName, titleFromText } from '../core/sessionTitle'
 import { isModelRejected } from '../core/codexMap'
 import type { Bot, ChatItem, PermissionMode, PermissionRequest, SessionInfo, SessionState } from '../core/types'
 import { atomicWrite, dataDir, ensureDir } from './paths'
@@ -188,6 +189,8 @@ export interface SessionRec {
   modelRetried?: boolean
   /** CLI init 이 알려준 슬래시 명령 이름들 */
   slash?: string[]
+  /** 사람이 직접 지은 이름인가 — 그렇다면 자동 제목이 덮지 않는다 */
+  named?: boolean
 }
 
 export interface ManagerEvents {
@@ -258,7 +261,26 @@ export class SessionManager extends EventEmitter {
     try { const f = join(this.dir, `${id}.json`); if (existsSync(f)) atomicWrite(f, JSON.stringify({ ...r, deleted: true })) } catch { /* */ }
     if (r) this.emit('sessions', r.botId)
   }
-  rename(id: string, name: string): void { const r = this.recs.get(id); if (!r) return; r.name = name; this.persist(r); this.emit('sessions', r.botId) }
+  /** ⚠ 사람이 지은 이름은 **표시를 남긴다** — 그래야 첫 말 자동 제목이 이걸 안 덮는다 */
+  rename(id: string, name: string): void { const r = this.recs.get(id); if (!r) return; r.name = name; r.named = true; this.persist(r); this.emit('sessions', r.botId) }
+  /**
+   * 🔴 **첫 말이 제목이 된다** (2026-09-15 Dave: «첫 채팅이 진행되면 그에 맞는 채팅 제목을 자동으로»).
+   *    목록에 「세션 1 · 세션 2 · 세션 3」 만 서 있으면 **어느 것이 무엇이었는지** 를 알 길이 없다.
+   * ⚠ 바꾸는 때는 **첫 사용자 메시지 한 번뿐**이다 — 대화가 흐를 때마다 이름이 바뀌면 목록이 출렁이고,
+   *   사람이 찾아 둔 세션이 눈앞에서 다른 이름이 된다.
+   * ⚠ 덮는 대상은 **앱이 붙인 이름**(`세션 3` 류)뿐 — 사람이 지었거나(`named`) 루틴이 지은 이름은 그대로 둔다.
+   * ⚠ 호스트에서 한다 — 화면·MCP·루틴 어디로 들어온 첫 말이든 같은 규칙을 받는다(클라이언트마다 다시 짜지 않는다).
+   */
+  private autoTitle(r: SessionRec, text: string): void {
+    if (r.named || r.routine) return
+    if (!isAutoSessionName(r.name)) return
+    if (r.items.some((i) => i.kind === 'user')) return
+    const t = titleFromText(text)
+    if (!t || t === r.name) return
+    r.name = t
+    this.emit('sessions', r.botId)
+  }
+
   /** 세션의 모델·노력·모드 — 셋 다 스폰 인자라 워커를 내리고 같은 id 로 이어서 띄운다. 턴이 도는 중이면 끝난 뒤에 */
   configure(r: SessionRec, o: { model?: string; effort?: string; permissionMode?: PermissionMode }): void {
     let changed = false
@@ -484,6 +506,7 @@ export class SessionManager extends EventEmitter {
   }
 
   send(r: SessionRec, bot: Bot, text: string): void {
+    this.autoTitle(r, text)
     /**
      * 🔴 **Codex 의 슬래시 명령은 우리가 처리한다** (2026-09-13 Dave: «codex 에서는 /clear 와 같은
      *    메시지도 동작을 안해»). `codex exec` 는 한 턴짜리 명령이라 «세션 명령» 이 없다 —

@@ -43,6 +43,21 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
       await refresh(); go(bot.id, info.id)
     } catch (e) { say((e as Error).message) }
   }
+  /**
+   * 🔴 **제목은 그 자리에서 고친다** (2026-09-15 Dave: «채팅 제목이 수정되게도 해줘»).
+   *    종전의 길은 위 메뉴의 `prompt()` 하나였는데 — **Electron 에는 `prompt()` 가 없다**(조용히 아무 일도
+   *    안 난다). 앱에서 «수정이 안 되는» 것처럼 보였던 이유다.
+   * ⚠ 줄은 `<button>` 이라 그 안에 입력칸을 넣을 수 없다 — 고치는 동안에는 **줄을 통째로** 입력칸으로 바꾼다.
+   */
+  const [ren, setRen] = useState<{ id: string; v: string } | null>(null)
+  const saveRen = async () => {
+    const r = ren; if (!r) return
+    setRen(null)
+    const name = r.v.trim()
+    const was = sessions.find((x) => x.id === r.id)
+    if (!name || !was || name === was.name) return
+    try { await api(`/sessions/${r.id}/rename`, { body: { name } }) } catch (e) { say((e as Error).message) }
+  }
   const todos = (s.todos[bot.id] ?? [])
   /**
    * 세션 삭제 — 워커를 내리고 기록을 지운다. 되돌릴 수 없으니 한 번 묻는다.
@@ -65,7 +80,11 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
     {/* 세션 */}
     <div className={`sec ${open.sessions ? 'fix' : 'fix'}`} style={open.sessions ? { height: secH.sessions } : undefined}>
       <button className="sech" onClick={() => tog('sessions')}><Icon n={open.sessions ? 'chevd' : 'chev'} size={9} /><span>세션</span><span className="c">{sessions.length}</span><span className="tools on"><span className="ib" title="새 세션" onClick={(e) => { e.stopPropagation(); if (provs.length > 1) { setPick(anchorOf(e.currentTarget as HTMLElement)); setOpen((o) => ({ ...o, sessions: true })) } else void newSession() }}><Icon n="plus" size={12} /></span></span></button>
-      {open.sessions ? <div className="secb" style={{ padding: '0 0 6px' }}>{sessions.map((x) => <button key={x.id} className={`srow ${x.id === sessionId ? 'on' : ''}`} onClick={() => go(bot.id, x.id)}><span className={`dot ${x.state === 'running' ? 'run' : x.state === 'awaiting_input' ? 'wait' : x.state === 'error' ? 'err' : 'none'}`} /><span className="n">{x.name}</span><VendorMark vendor={x.vendor} size={11} /><span className="m">{x.state === 'running' ? <Elapsed from={x.turnStartedAt} /> : x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span><span className="ib del" title="세션 삭제" onClick={(e) => { e.stopPropagation(); void delSession(x) }}><Icon n="x" size={11} /></span></button>)}
+      {open.sessions ? <div className="secb" style={{ padding: '0 0 6px' }}>{sessions.map((x) => ren?.id === x.id
+          ? <div key={x.id} className="srow edit"><span className="dot none" /><input autoFocus className="rin" value={ren.v} onChange={(e) => setRen({ id: x.id, v: e.target.value })}
+              onFocus={(e) => e.currentTarget.select()} onBlur={() => void saveRen()}
+              onKeyDown={(e) => { if (e.nativeEvent.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); void saveRen() } else if (e.key === 'Escape') { e.preventDefault(); setRen(null) } }} /></div>
+          : <button key={x.id} className={`srow ${x.id === sessionId ? 'on' : ''}`} onClick={() => go(bot.id, x.id)} onDoubleClick={(e) => { e.stopPropagation(); setRen({ id: x.id, v: x.name }) }}><span className={`dot ${x.state === 'running' ? 'run' : x.state === 'awaiting_input' ? 'wait' : x.state === 'error' ? 'err' : 'none'}`} /><span className="n">{x.name}</span><VendorMark vendor={x.vendor} size={11} /><span className="m">{x.state === 'running' ? <Elapsed from={x.turnStartedAt} /> : x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span><span className="ib ren" title="이름 바꾸기 (두 번 누르기)" onClick={(e) => { e.stopPropagation(); setRen({ id: x.id, v: x.name }) }}><Icon n="edit" size={11} /></span><span className="ib del" title="세션 삭제" onClick={(e) => { e.stopPropagation(); void delSession(x) }}><Icon n="x" size={11} /></span></button>)}
         {/* 🔴 **세션이 없을 때도 여기서 시작한다** (2026-09-13 Dave). 종전 「메시지를 보내면 생겨요」 는
             **막다른 안내**였다 — 누가 이 폴더를 맡을지(Claude / ChatGPT) 고를 자리가 어디에도 없었다.
             ⚠ 깔린 에이전트가 하나면 묻지 않는다 — 고를 게 없는데 묻는 건 문턱만 하나 더 만드는 것이다. */}

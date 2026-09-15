@@ -69,6 +69,23 @@ try {
   if (!chat.items.some((i) => i.kind === 'assistant' && /스텁이 받았습니다/.test(i.text))) fail('assistant reply missing: ' + JSON.stringify(chat.items))
   if (!chat.items.some((i) => i.kind === 'tool' && i.name === 'Read')) fail('tool line missing')
   if (chat.info.state !== 'done') fail(`state ${chat.info.state}`); ok('send → tool → assistant → done')
+  /**
+   * 🔴 **첫 말이 제목이 된다** (2026-09-15 Dave: «첫 채팅이 진행되면 그에 맞는 채팅 제목을 자동으로»).
+   * ⚠ 덮는 것은 앱이 붙인 이름(`메인` · `세션 3`)뿐이고, **사람이 지은 이름은 그대로 둔다** — 아래 두 번째 검사.
+   */
+  {
+    const list = await api(`/bots/${bot.id}/sessions`)
+    const me = list.find((x) => x.id === s1.sessionId)
+    if (!me || me.name !== 'PRD 를 읽어 줘') fail('세션 제목: 첫 말이 제목이 안 됐다 · ' + JSON.stringify(me && me.name))
+    const mine = await api(`/bots/${bot.id}/sessions`, { name: '세션 9' })
+    await api(`/sessions/${mine.id}/rename`, { name: '내가 지은 이름' })
+    await api(`/sessions/${mine.id}/send`, { text: '이 말로 제목을 덮으면 안 된다' })
+    await wait(600)
+    const after = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === mine.id)
+    if (after.name !== '내가 지은 이름') fail('세션 제목: 사람이 지은 이름을 덮었다 · ' + JSON.stringify(after.name))
+    await api(`/sessions/${mine.id}`, undefined, 'DELETE')
+    ok('세션 제목 — 첫 말로 자동 · 사람이 지은 이름은 안 덮는다')
+  }
   // 서브에이전트 · 생각 · TodoWrite
   const sub = chat.items.find((i) => i.kind === 'subagent'); if (!sub || sub.tools !== 1 || sub.status !== 'done' || !/2건/.test(sub.result ?? '')) fail('subagent item: ' + JSON.stringify(sub))
   if (!chat.items.some((i) => i.kind === 'tool' && i.parentId === sub.id && i.name === 'Grep')) fail('child tool parentId')
@@ -998,6 +1015,22 @@ try {
             for (let i = 0; i < 20; i++) { if (await pg.$('.umsg:has-text("엔터로 보낸다")')) { said = true; break } await wait(200) }
             if (!said) fail('⏎ 로 보냈는데 대화에 안 남았다')
             ok('자판 앞에서는 ⏎ 로 보내고 ⇧⏎ 로 줄을 바꾼다')
+          }
+          /**
+           * 🔴 **제목을 그 자리에서 고친다** (2026-09-15 Dave: «채팅 제목이 수정되게도 해줘»).
+           * ⚠ 종전의 길은 `prompt()` 하나였는데 **Electron 에는 그게 없다** — 앱에서 «수정이 안 되는»
+           *   것처럼 보였다. 그래서 줄을 통째로 입력칸으로 바꾸는 길을 따로 둔다(두 번 누르기 · 연필).
+           */
+          {
+            await pg.hover('.srow'); await pg.dblclick('.srow')
+            await pg.waitForSelector('.srow.edit .rin', { timeout: 4000 })
+            await pg.fill('.srow.edit .rin', '내가 고친 제목')
+            await pg.keyboard.press('Enter'); await wait(700)
+            const names = await pg.$$eval('.srow .n', (r) => r.map((x) => x.textContent))
+            if (!names.includes('내가 고친 제목')) fail('제목 고치기: 화면에 안 남았다 · ' + JSON.stringify(names))
+            const hostNames = (await api(`/bots/${bot.id}/sessions`)).map((x) => x.name)
+            if (!hostNames.includes('내가 고친 제목')) fail('제목 고치기: 호스트에 안 남았다 · ' + JSON.stringify(hostNames))
+            ok('세션 제목을 줄에서 바로 고친다 (호스트까지)')
           /**
            * 🔴 **계정이 안 받아 주는 모델이면 모델 없이 한 번 더** (2026-09-14).
            *    Codex 에서 먼저 겪은 일이 Claude 에서도 난다 — 요금제마다 쓸 수 있는 모델이 다르고,
