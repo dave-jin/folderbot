@@ -116,6 +116,8 @@ app.on('web-contents-created', (_e, wc) => {
     // 🔴 **바깥 링크는 바깥에서 연다.** `setWindowOpenHandler` 는 `target=_blank` 만 받는다 —
     //    답변 속 평범한 `<a href>` 는 **창을 통째로** 그 사이트로 끌고 가서 앱이 그 자리에서 사라진다
     //    (뒤로 갈 길도 없다). 우리 화면(호스트 주소·file://)만 남기고 나머지 http(s) 는 기본 브라우저로.
+    // 🔴 파일을 놓을 자리 밖에 놓으면 크롬이 창을 그 파일(file://)로 옮긴다 — 앱이 사라진다. 우리 것(connect.html)만 남긴다
+    if (/^file:/i.test(url) && !/connect\.html/.test(url)) { e.preventDefault(); return }
     if (!/^https?:/i.test(url)) return
     let mine = false
     try { mine = new URL(url).origin === new URL(wc.getURL() || 'http://x.invalid').origin } catch {}

@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webUtils } = require('electron')
 contextBridge.exposeInMainWorld('folderbotDesktop', {
   version: process.env.FOLDERBOT_DESKTOP_VERSION || '',
   // 맥 메뉴바가 보낸 명령 — 같은 일을 하는 문이 둘이어도 동작은 화면 한 곳에 있다
@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('folderbotDesktop', {
   hostMode: () => ipcRenderer.send('fb:host-mode'),
   hostAvailable: () => ipcRenderer.invoke('fb:host-available'),
   tokenChanged: (token) => ipcRenderer.send('fb:token', token),
+  // 놓인 파일의 진짜 경로 — 볼트 안 파일은 복사 없이 그대로 첨부한다(File.path 는 Electron 32 에서 사라졌다)
+  pathOf: (f) => { try { return webUtils.getPathForFile(f) || '' } catch { return '' } },
   // 문서 → PDF (루프 9/10) — 화면이 인쇄용 사본을 body 에 세운 뒤 부른다. 저장 자리는 사람이 고른다
   savePdf: (name) => ipcRenderer.invoke('fb:pdf', name),
   // 권한 관문 — 첫 실행·업데이트 뒤 화면이 쓴다

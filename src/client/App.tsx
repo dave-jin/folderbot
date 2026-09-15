@@ -12,6 +12,7 @@ import { Elapsed, Panel, type SecH } from './Panel'
 import { machSummary } from '../core/chat'
 import { buildRows, type ChatRow } from '../core/chatRows'
 import { splitAttach } from '../core/attach'
+import { chipParts } from '../core/chipName'
 import { norm, scoreName } from '../core/search'
 import { fmtTime, useStore } from './store'
 import { ICON_PX, useIconSize, useTheme } from './theme'
@@ -29,7 +30,7 @@ import { copySay } from './clip'
 
 type Tool = Extract<ChatItem, { kind: 'tool' }>
 type Sub = Extract<ChatItem, { kind: 'subagent' }>
-type Att = { rel: string; abs: string; dir?: boolean; uploaded?: boolean }
+type Att = { rel: string; abs: string; dir?: boolean; uploaded?: boolean; name?: string; uploading?: boolean }
 /** 이 기기가 마지막에 보던 폴더·세션 — 앱을 다시 켤 때 그 자리로 돌아간다 */
 const LAST_KEY = 'fb:last'
 const stateDot = (st?: string) => (st === 'running' ? 'run' : st === 'awaiting_input' ? 'wait' : st === 'error' ? 'err' : 'none')
@@ -178,7 +179,7 @@ function KeysSheet({ onClose }: { onClose: () => void }) {
   </div></div>
 }
 
-interface DesktopBridge { version?: string; onCmd?: (cb: (c: string) => void) => () => void; update?: { state: () => Promise<UpdState>; check: () => Promise<UpdState>; apply: () => void; onChange: (cb: (st: UpdState) => void) => () => void } }
+interface DesktopBridge { version?: string; onCmd?: (cb: (c: string) => void) => () => void; pathOf?: (f: File) => string; update?: { state: () => Promise<UpdState>; check: () => Promise<UpdState>; apply: () => void; onChange: (cb: (st: UpdState) => void) => () => void } }
 const desk = (window as unknown as { folderbotDesktop?: DesktopBridge }).folderbotDesktop
 const isDesktop = typeof desk !== 'undefined'
 
@@ -260,6 +261,17 @@ function Main() {
   const [focusReq, setFocusReq] = useState(0)
   const [focusSec, setFocusSec] = useState<{ sec: string; n: number } | null>(null)
   const [upd, updCheck, updApply, updAsk, setUpdAsk] = useUpdate(say)
+  /**
+   * 🔴 **파일을 엉뚱한 데 놓아도 앱이 그 파일로 떠나지 않는다** (2026-09-15 Dave: «finder 에서 파일 드래그 & 드롭도
+   *    되어야 하는데 지금 기능이 안되는것 같더라고»). 크롬은 놓을 자리가 아닌 곳에 파일을 놓으면 창을 통째로
+   *    그 파일(file://)로 옮긴다 — Folder Bot 이 그 자리에서 사라지는 것이 «안 된다» 의 정체였다.
+   *    창 전체에서 기본 동작을 막고, 놓을 자리(채팅 열)는 Chat 이 따로 받는다.
+   */
+  useEffect(() => {
+    const stop = (e: DragEvent) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault() }
+    window.addEventListener('dragover', stop); window.addEventListener('drop', stop)
+    return () => { window.removeEventListener('dragover', stop); window.removeEventListener('drop', stop) }
+  }, [])
   const docs = useDocs(bot?.id ?? '')
   useEffect(() => { if (sessionId && !s.chats[sessionId]) void loadChat(sessionId) }, [sessionId])
   useEffect(() => { if (bot) void loadTodo(bot.id) }, [bot?.id, s.filesTick[bot?.id ?? '']])
@@ -793,7 +805,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   }, [text, attach])
 
   const [drill, setDrill] = useState<string | null>(null)
-  const [drop, setDrop] = useState<'' | 'tree' | 'files'>('')
+  const [drop, setDrop] = useState<'' | 'tree' | 'files'>(''); const [dropN, setDropN] = useState(0); const dragN = useRef(0)
   const [slash, setSlash] = useState<SlashCmd[]>([]); const [files, setFiles] = useState<FileNode[] | null>(null); const [sel, setSel] = useState(0); const [dismissed, setDismissed] = useState('')
   const [pinned, setPinned] = useState(false); const [atBottom, setAtBottom] = useState(true); const atBottomRef = useRef(true); atBottomRef.current = atBottom
   /**
@@ -875,7 +887,29 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const touch = useMedia('(pointer: coarse)')
   const enterSends = !phone && !touch
   const sendKey = enterSends ? '⏎' : '⌘⏎'
-  const upload = async (list: File[]) => { if (!list.length) return; setUploading(true); try { for (const f of list) { const r = await uploadFile(bot.id, f); setAttach((a) => [...a, { rel: r.rel, abs: r.abs, uploaded: true }]) } say(`${list.length}개 올렸어요 → 첨부/`) } catch (e) { say((e as Error).message) } finally { setUploading(false); if (fileRef.current) fileRef.current.value = '' } }
+  /**
+   * 🔴 **볼트 안 파일은 복사하지 않는다** — 맥 앱은 놓인 파일의 진짜 경로를 안다(`pathOf`, preload 의 webUtils).
+   *    호스트에 «이 경로가 볼트 안이냐» 를 물어(`exists` 가 절대 경로도 받는다) 안이면 그대로 첨부, 밖이면
+   *    `첨부/` 에 복사한다. 브라우저·폰은 경로를 모르므로 언제나 복사다.
+   * ⚠ 복사 중인 파일도 **칩으로 먼저 선다**(회전 표시) — 25MB 를 올리는 몇 초 동안 «놓았는데 아무 일도 없다» 로
+   *    보이면 안 된다. 실패하면 그 칩만 빠지고 이유를 말한다.
+   */
+  const upload = async (list: File[]) => {
+    if (!list.length) return; setUploading(true); let copied = 0
+    try {
+      for (const f of list) {
+        const p = desk?.pathOf?.(f)
+        if (p) {
+          try { const ex = await api<Record<string, { rel: string; dir: boolean } | false>>(`/bots/${bot.id}/exists`, { body: { rels: [p] } }); const hit = ex[p]; if (hit) { addAtt({ rel: hit.rel, abs: p, dir: hit.dir }); continue } } catch { /* 호스트가 모르는 경로 — 복사로 */ }
+        }
+        const key = `pending:${f.name}:${Date.now()}:${Math.random()}`
+        setAttach((a) => [...a, { rel: key, abs: '', name: f.name, uploading: true }])
+        try { const r = await uploadFile(bot.id, f); setAttach((a) => a.map((x) => (x.rel === key ? { rel: r.rel, abs: r.abs, uploaded: true } : x))); copied++ }
+        catch (e) { setAttach((a) => a.filter((x) => x.rel !== key)); throw e }
+      }
+      if (copied) say(`${copied}개 복사했어요 → 첨부/`)
+    } catch (e) { say((e as Error).message) } finally { setUploading(false); if (fileRef.current) fileRef.current.value = '' }
+  }
   const addAtt = (a: Att) => setAttach((l) => (l.some((x) => x.rel === a.rel) ? l : [...l, a]))
   const relOf = (p: string) => (p.startsWith(bot.abs + '/') ? p.slice(bot.abs.length + 1) : null)
   const rows = useMemo(() => buildRows(items, drill), [items, drill])
@@ -1009,7 +1043,32 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
     : slashQ !== null && slashList.length ? <div className="cpop">{(['skill', 'cli'] as const).map((grp) => { const l = slashList.filter((c) => (grp === 'skill' ? c.kind !== 'cli' : c.kind === 'cli')); return l.length ? <div key={grp}><div className="h">{grp === 'skill' ? '스킬 · 이 폴더' : '명령'}</div>{l.map((c) => { const i = slashList.indexOf(c); return <button key={c.name} className={`prow2 ${i === sel ? 'on' : ''}`} onMouseEnter={() => setSel(i)} onClick={() => pickSlash(c)}><div className="t"><b>/{c.name}</b>{c.desc ? <small>{c.desc}</small> : null}</div>{i === sel ? <span className="k">⏎</span> : c.scope !== 'cli' && c.scope !== 'folder' ? <span className="k">{c.scope}</span> : null}</button> })}</div> : null })}<div className="hint"><span>↑↓ 이동</span><span>Tab · ⏎ 선택</span><span>⎋ 닫기</span><span className="sp" /><span>{slashList.length}개</span></div></div>
     : atQ !== null && atList.length ? <div className="cpop"><div className="h">{docTabs.length ? '열린 문서 먼저 · ' : ''}이 폴더{atQ ? ` · «${atQ}»` : ''}</div>{atList.map((f, i) => { const name = f.rel.split('/').pop() ?? f.rel; const dir = f.rel.includes('/') ? f.rel.slice(0, f.rel.lastIndexOf('/')) + '/' : ''; return <button key={f.rel} className={`prow2 ${i === sel ? 'on' : ''}`} onMouseEnter={() => setSel(i)} onClick={() => pickAt(f)}><Icon n={f.dir ? 'folder' : 'doc'} size={14} color="var(--t3)" /><div className="t"><b>{name}</b><small>{f.dir ? `폴더째${dir ? ` · ${dir}` : ''}` : dir || (docTabs.includes(f.rel) ? '열림' : '')}</small></div>{i === sel ? <span className="k">⏎</span> : null}</button> })}<div className="hint"><span>↑↓ 이동</span><span>⏎ 넣기</span><span className="sp" /><span>이름 · 경로로 찾음</span></div></div>
     : null
-  return <div className="col chat" style={{ flex: 1 }} ref={colRef}>
+  /**
+   * 🔴 **놓을 자리는 입력창이 아니라 채팅 열 전체다** (2026-09-15 목업 확정). 종전에는 입력창 상자 안에만 놓을 수
+   *    있었고, 대화 위에 놓으면 아무 일도 없었다(창 밖으로 떠나거나). 들어오는 순간 점선과 안내 카드가 뜬다.
+   * ⚠ dragenter/leave 는 자식으로 옮길 때마다 짝으로 온다 — 세어서(`dragN`) 0 이 될 때만 걷는다. 안 세면 깜빡인다.
+   */
+  const dragKind = (dt: DataTransfer): '' | 'tree' | 'files' => (dt.types.includes('text/x-fb-rel') ? 'tree' : dt.types.includes('Files') ? 'files' : '')
+  const dropHere = (e: React.DragEvent) => {
+    dragN.current = 0; setDrop('')
+    const k = dragKind(e.dataTransfer); if (!k) return
+    e.preventDefault()
+    if (k === 'tree') {
+      let rels: string[] = []
+      try { rels = JSON.parse(e.dataTransfer.getData('text/x-fb-rels') || '[]') as string[] } catch { rels = [] }
+      if (!rels.length) rels = [e.dataTransfer.getData('text/x-fb-rel')]
+      const dir1 = e.dataTransfer.getData('text/x-fb-dir') === '1'
+      for (const rel of rels.filter(Boolean)) addAtt({ rel, abs: `${bot.abs}/${rel}`, dir: rels.length === 1 ? dir1 : undefined })
+      return
+    }
+    if (e.dataTransfer.files.length) void upload(Array.from(e.dataTransfer.files))
+  }
+  return <div className="col chat" style={{ flex: 1 }} ref={colRef}
+    onDragEnter={(e) => { const k = dragKind(e.dataTransfer); if (!k) return; e.preventDefault(); dragN.current++; setDrop(k); setDropN(e.dataTransfer.items?.length ?? 0) }}
+    onDragOver={(e) => { const k = dragKind(e.dataTransfer); if (!k) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
+    onDragLeave={() => { if (!dragN.current) return; dragN.current -= 1; if (!dragN.current) setDrop('') }}
+    onDrop={dropHere}>
+    {drop ? <div className="dropzone"><div className="card"><FolderBot color={bot.color} size={40} mood="idle" /><b>{bot.name}에게 첨부</b><small>{drop === 'tree' ? '놓으면 이 대화에 첨부해요' : <>볼트 안 파일은 그대로 첨부 · 밖의 파일은 <span className="mono">첨부/</span> 에 복사한 뒤 첨부</>}</small>{drop === 'files' && dropN ? <span className="n">파일 {dropN}개</span> : null}</div></div> : null}
     <div className={`hdr chat-hdr ${phone ? '' : 'glass'}`}>
       {phone ? <><button className="rb glassb" onClick={drillSub ? () => setDrill(null) : onBack} title="뒤로"><Icon n="back" size={20} /></button>
         {/* 감싸는 span 은 헤더의 flex 아이템 — 폭이 내용에 의존하는데 알약이 그 100% − 118px 을 최대폭으로 삼아 스스로를 눌러 이름이 «2026-…» 로 잘렸다(2026-09-13 Dave). 알약 최대폭은 감싸는 칸의 100%, 칸이 남는 공간을 받는다 */}
@@ -1048,16 +1107,12 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
           글자만 담는 칸이다. 그래서 쓰는 중인 주소를 **입력칸 위 칩**으로 올린다: 같은 캐시, 같은 아이콘,
           그리고 «이 주소가 맞나» 를 보내기 전에 확인할 수 있다. */}
       {draftLinks.length ? <div className="files lchips">{draftLinks.map((u) => <LinkChip key={u} url={u} />)}</div> : null}
-      {attach.length ? <div className="files">{attach.map((a) => <span key={a.rel} className="chip" title={a.abs} ref={a.dir ? undefined : hoverRef({ kind: 'file', botId: bot.id, rel: a.rel })}><Icon n={a.dir ? 'folder' : 'doc'} size={11} color="var(--t3)" /><span>{a.rel}{a.dir ? '/' : ''}</span><button onClick={() => setAttach(attach.filter((x) => x.rel !== a.rel))} style={{ color: 'var(--t3)', display: 'inline-flex' }}><Icon n="x" size={10} /></button></span>)}<span style={{ fontSize: 11, color: 'var(--t3)', alignSelf: 'center' }}>{attach.length}개 · 봇이 읽어서 참고</span></div> : null}
+      {attach.length ? <div className="files">{attach.map((a) => <FileChip key={a.rel} abs={a.abs || `${bot.abs}/첨부/${a.name ?? ''}`} dir={a.dir} botAbs={bot.abs} botId={bot.id} rel={a.uploading ? undefined : a.rel} busy={a.uploading} onClick={() => { if (!a.uploading && !a.dir) onFile(a.rel) }} tail={<span className="x" role="button" title="빼기" onClick={(e) => { e.stopPropagation(); setAttach(attach.filter((x) => x.rel !== a.rel)) }}><Icon n="x" size={10} /></span>} />)}<span style={{ fontSize: 11, color: 'var(--t3)', alignSelf: 'center' }}>{attach.length}개 · 봇이 읽어서 참고</span></div> : null}
       <input ref={fileRef} type="file" multiple hidden onChange={(e) => void upload(Array.from(e.target.files ?? []))} />
       {phone ? <div className="cchips">{modeBtn}{modelBtn}{effortBtn}</div> : null}
-      <div className={`composer glassb ${drop ? 'drop' : ''} ${text.includes('\n') || text.length > 40 ? 'multi' : ''}`}
-        onDragOver={(e) => { const t = e.dataTransfer.types; if (t.includes('text/x-fb-rel')) { e.preventDefault(); setDrop('tree') } else if (t.includes('Files')) { e.preventDefault(); setDrop('files') } }}
-        onDragLeave={() => setDrop('')}
-        onDrop={(e) => { setDrop(''); const rel = e.dataTransfer.getData('text/x-fb-rel'); if (rel) { e.preventDefault(); addAtt({ rel, abs: `${bot.abs}/${rel}`, dir: e.dataTransfer.getData('text/x-fb-dir') === '1' }); return } if (e.dataTransfer.files.length) { e.preventDefault(); void upload(Array.from(e.dataTransfer.files)) } }}
+      <div className={`composer glassb ${text.includes('\n') || text.length > 40 ? 'multi' : ''}`}
         onPaste={(e) => { const imgs = Array.from(e.clipboardData.items).filter((i) => i.type.startsWith('image/')).map((i) => i.getAsFile()).filter((f): f is File => !!f); if (imgs.length) { e.preventDefault(); const d = new Date(); void upload(imgs.map((f, i) => new File([f], `스크린샷_${d.getHours()}${String(d.getMinutes()).padStart(2, '0')}${i ? `-${i + 1}` : ''}.${(f.type.split('/')[1] ?? 'png').replace('jpeg', 'jpg')}`, { type: f.type }))) } }}>
         {popEl}
-        {drop ? <div className="drophint"><Icon n="plus" size={13} />{drop === 'files' ? '놓으면 첨부/ 에 복사하고 첨부' : '놓으면 첨부'}</div> : null}
         <div className="crow">
           {phone ? plusBtn : null}
           <textarea ref={taRef} rows={1} onFocus={() => { if (phone) stickBottom() }} placeholder={drill ? '메인 대화로 보냅니다 — 이 안에는 직접 말을 걸 수 없어요' : running ? `보내면 대기열에 들어갑니다 (${sendKey})` : state === 'awaiting_input' ? '답을 기다리는 중 — 보내면 대기열에' : enterSends ? '메시지…  ⏎ 보내기 · ⇧⏎ 줄 바꿈 · / 스킬 · @ 파일' : '메시지…  / 스킬 · @ 파일'} value={text} onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(180, e.target.scrollHeight)}px` }} onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? 0)} onClick={(e) => setCaret(e.currentTarget.selectionStart ?? 0)} onKeyDown={onKey} />
@@ -1135,6 +1190,18 @@ function Live({ cur, state, color }: { cur: SessionInfo; state: string; color: s
   </div>
 }
 
+/**
+ * 파일 칩 (B안, 2026-09-15 Dave 선택) — **이름이 본체, 폴더는 뒤의 작은 표식**, 전체 경로는 올렸을 때 툴팁.
+ * 손댄 파일(답 아래) · 첨부(입력창 위) · 내 말풍선 아래가 **같은 칩**이다 — 세 자리가 다르게 생기면 «같은 파일인가» 를
+ * 사람이 대조해야 한다. 조각 나누기는 core/chipName 이 한다(유닛테스트).
+ */
+function FileChip({ abs, dir, botAbs, botId, rel, onClick, tail, busy }: { abs: string; dir?: boolean; botAbs: string; botId?: string; rel?: string; onClick?: () => void; tail?: ReactNode; busy?: boolean }) {
+  const p = chipParts(abs, botAbs, !!dir)
+  const r = rel ?? (abs.startsWith(botAbs + '/') ? abs.slice(botAbs.length + 1) : undefined)
+  return <button type="button" className={`chip fchip ${dir ? 'dir' : ''} ${busy ? 'busy' : ''}`} data-tip={busy ? undefined : abs} onClick={onClick} ref={!dir && !busy && r && botId ? hoverRef({ kind: 'file', botId, rel: r }) : undefined}>
+    {busy ? <span className="spin" /> : <Icon n={dir ? 'folder' : 'doc'} size={11} color="var(--t3)" />}<span className="nm">{p.name}</span>{p.folder ? <span className="fb">{p.folder}</span> : null}{tail}
+  </button>
+}
 /** 어느 세션의 줄인가 — 「전후 diff」 가 «전» 을 찾을 때 쓴다. 줄마다 prop 으로 내리면 ToolLine·Item 셋을 다 바꿔야 한다 */
 const SidCtx = createContext<{ sid: string; botId: string }>({ sid: '', botId: '' })
 function DiffBtn({ abs, onOpen }: { abs: string; onOpen: () => void }) {
@@ -1160,7 +1227,7 @@ function Item({ it, bot, items, onFile, onReveal, onDrill, state, say, isLastAss
         while ((m = re.exec(body))) { const f = files.find((x) => x.name === m![1]); if (!f) continue; parts.push(body.slice(last, m.index)); parts.push(chipOf(f, `m${m.index}`)); last = m.index + m[0].length }
         parts.push(body.slice(last))
       }
-      return <div className={`umsg ${isLastUser ? 'last' : ''}`} ref={isLastUser ? userRef : undefined}>{files.length ? parts : it.text}{files.length ? <div className="files uatt">{files.map((f, i) => chipOf(f, `a${i}`))}</div> : null}</div>
+      return <div className={`umsg ${isLastUser ? 'last' : ''}`} ref={isLastUser ? userRef : undefined}>{files.length ? parts : it.text}{files.length ? <div className="files uatt">{files.map((f, i) => <FileChip key={`a${i}`} abs={f.abs} dir={f.dir} botAbs={bot.abs} botId={bot.id} onClick={() => openRef(f)} />)}</div> : null}</div>
     }
     case 'assistant': return <div className="amsg"><Md text={it.text || ' '} streaming={!!it.streaming} botId={bot.id} onPath={onFile} onDir={onReveal} />{/* 답 아래 줄 — 🔴 **아이콘만** (2026-09-13 Dave: «복사 및 기능들을 아이콘으로»). 글자를 빼면
             답과 답 사이가 조용해지고, 무엇을 하는지는 툴팁이 말한다. ⚠ 시각은 남긴다(언제 온 답인지) */}
@@ -1170,7 +1237,7 @@ function Item({ it, bot, items, onFile, onReveal, onDrill, state, say, isLastAss
     case 'subagent': { const kids = items.filter((x) => x.kind === 'tool' && x.parentId === it.id) as Tool[]; return <div className="sub"><div className="l"><button className="ib" style={{ width: 18, height: 18, marginLeft: -4 }} onClick={() => setOpen(!open)}><Icon n={open ? 'chevd' : 'sub'} size={12} /></button><span className="nm">{it.name}</span>{it.status === 'run' ? <span className="spin run" /> : <Icon n={it.status === 'error' ? 'x' : 'check'} size={11} color={it.status === 'error' ? 'var(--err)' : 'var(--done)'} />}<span className="m"><span className="w">{it.status === 'run' ? '실행 중' : it.status === 'error' ? '실패' : '끝남'} · 도구 {it.tools}회</span><span className="ic" title={`도구 ${it.tools}회`}><Icon n="task" size={11} />{it.tools}</span>{it.last ? <> · <span className="mono">{it.last}</span></> : null}</span><button className="op" onClick={() => onDrill(it.id)} title="열기"><span className="w">열기</span><Icon n="chev" size={10} /></button></div>{open ? <div className="in">{kids.slice(-4).map((k) => <ToolLine key={k.id} it={k} onFile={onFile} base={bot.abs} />)}{it.result && it.status !== 'run' ? <div className="meta" style={{ whiteSpace: 'pre-wrap' }}>{it.result.slice(0, 300)}</div> : null}{!kids.length ? <div className="meta">아직 도구를 안 썼어요</div> : null}</div> : null}</div> }
     case 'todos': return <TodoWidget it={it} stopped={state !== 'running'} />
     // 루프 6/10 — 칩 옆의 ⇄ 가 «이 턴이 손대기 전 ↔ 지금» 을 연다
-    case 'files': return <div className="files">{it.paths.map((p) => <span key={p} className="fpair"><button className="chip" onClick={() => onFile(p)} title={p}><Icon n="doc" size={11} color="var(--t3)" /><span>{p.startsWith(bot.abs + '/') ? p.slice(bot.abs.length + 1) : p.split('/').pop()}</span></button><DiffBtn abs={p} onOpen={() => onFile(p)} /></span>)}</div>
+    case 'files': { const list = open ? it.paths : it.paths.slice(0, 4); return <div className="files">{list.map((p) => <span key={p} className="fpair"><FileChip abs={p} botAbs={bot.abs} botId={bot.id} onClick={() => onFile(p)} /><DiffBtn abs={p} onOpen={() => onFile(p)} /></span>)}{it.paths.length > list.length ? <button type="button" className="chip more" onClick={() => setOpen(true)} title="나머지 펼치기">+{it.paths.length - list.length}</button> : null}</div> }
     case 'result': return it.ok ? null : <div className="meta" style={{ color: 'var(--err)' }}><Icon n="warn" size={11} /><span className="tx">{it.error || '오류로 끝남'}</span></div>
     default: return <div className="meta"><span className="tx">{(it as { text: string }).text}</span></div>
   }

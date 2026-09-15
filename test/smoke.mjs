@@ -1958,6 +1958,45 @@ try {
         }
         await pg.keyboard.press('Meta+Shift+D'); await wait(500); if (await pg.$('.doc')) fail('doc column should hide on ⌘⇧D · tabs=' + (await pg.$$eval('.doc .tab', (r) => r.length)) + ' · focus=' + (await pg.evaluate(() => document.activeElement?.tagName + '.' + document.activeElement?.className)))
         /**
+         * 🔴 **파일 칩 B안 · 채팅 열 전체가 놓을 자리 · 파인더 파일 놓기** (2026-09-15 Dave: «B안이 더 좋은거 같아 …
+         *    finder 에서 파일 드래그 & 드롭도 되어야 하는데 지금 기능이 안되는것 같더라고»).
+         *    ① 손댄 파일 칩은 «이름 + 폴더 표식» — 봇 폴더 바로 아래 파일은 표식이 없다.
+         *    ② 파일을 끌고 들어오면 채팅 열에 점선 카드가 뜨고, 대화 위에 놓아도 첨부다(입력창만이 아니다).
+         *    ③ 파인더에서 온 파일은 첨부/ 에 복사되고 칩에 「첨부」 표식이 붙는다 · 트리 파일은 그대로.
+         * ⚠ 헤드리스에는 파인더가 없다 — DataTransfer 에 File 을 담은 DragEvent 를 직접 보낸다(크롬이 받는다).
+         */
+        {
+          const chip = await pg.evaluate(() => { const c = document.querySelector('.chat-body .files .fchip'); return c ? { nm: c.querySelector('.nm')?.textContent, fb: c.querySelector('.fb')?.textContent ?? null, tip: c.getAttribute('data-tip'), w: c.getBoundingClientRect().width } : null })
+          if (!chip) fail('칩 B안: 손댄 파일 칩이 새 꼴(.fchip)이 아니다')
+          if (chip.nm !== 'stub-output.md' || chip.fb !== null) fail('칩 B안: 봇 폴더 바로 아래 파일은 이름만이어야 한다 ' + JSON.stringify(chip))
+          if (!chip.tip || !/stub-output\.md$/.test(chip.tip)) fail('칩 B안: 툴팁(전체 경로)이 없다 ' + JSON.stringify(chip))
+          if (chip.w > 340) fail('칩 B안: 칩이 340px 를 넘는다 ' + chip.w)
+          // 끌고 들어온다 → 점선 카드
+          await pg.evaluate(() => { const dt = new DataTransfer(); dt.items.add(new File(['놓은 글'], 'dropped-by-smoke.txt', { type: 'text/plain' })); const el = document.querySelector('.chat-body'); el.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt })); el.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt })) })
+          await wait(200)
+          const zone = await pg.evaluate(() => { const z = document.querySelector('.dropzone'); return z ? { txt: z.textContent ?? '', pe: getComputedStyle(z).pointerEvents } : null })
+          if (!zone) fail('놓기: 끌고 들어왔는데 점선 카드가 안 뜬다')
+          if (!/첨부\//.test(zone.txt) || !/파일 1개/.test(zone.txt)) fail('놓기: 카드 문구가 다르다 ' + JSON.stringify(zone.txt))
+          if (zone.pe !== 'none') fail('놓기: 카드가 마우스를 가로채면 놓기·떠남이 열에 안 닿는다 ' + zone.pe)
+          // 대화 위에 놓는다 → 첨부/ 에 복사 · 입력창 위 칩(표식 「첨부」)
+          await pg.evaluate(() => { const dt = new DataTransfer(); dt.items.add(new File(['놓은 글'], 'dropped-by-smoke.txt', { type: 'text/plain' })); document.querySelector('.chat-body').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt })) })
+          for (let i = 0; i < 40; i++) { if (await pg.$('.chat-foot .files .fchip:not(.busy)')) break; await wait(150) }
+          if (await pg.$('.dropzone')) fail('놓기: 놓았는데 점선 카드가 남아 있다')
+          const att = await pg.evaluate(() => [...document.querySelectorAll('.chat-foot .files .fchip')].map((c) => ({ nm: c.querySelector('.nm')?.textContent, fb: c.querySelector('.fb')?.textContent ?? null, busy: c.classList.contains('busy') })))
+          if (!att.some((a) => a.nm === 'dropped-by-smoke.txt' && a.fb === '첨부' && !a.busy)) fail('놓기: 복사된 파일 칩이 「첨부」 표식으로 안 선다 ' + JSON.stringify(att))
+          if (!existsSync(join(root, '3. Area/제품_Rondo/첨부/dropped-by-smoke.txt'))) fail('놓기: 첨부/ 에 파일이 안 생겼다')
+          // 트리에서 끌어온 파일도 같은 자리 · 표식 없음
+          await pg.evaluate(() => { const dt = new DataTransfer(); dt.setData('text/x-fb-rel', 'todo.md'); dt.setData('text/x-fb-rels', JSON.stringify(['todo.md'])); dt.setData('text/x-fb-dir', '0'); const el = document.querySelector('.chat-body'); el.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt })); el.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt })) })
+          await wait(300)
+          const att2 = await pg.evaluate(() => [...document.querySelectorAll('.chat-foot .files .fchip')].map((c) => ({ nm: c.querySelector('.nm')?.textContent, fb: c.querySelector('.fb')?.textContent ?? null })))
+          if (!att2.some((a) => a.nm === 'todo.md' && a.fb === null)) fail('놓기: 트리 파일이 이름만으로 안 선다 ' + JSON.stringify(att2))
+          await pg.screenshot({ path: 'test/tmp/desktop-attach-chips.png' })
+          // × 로 뺀다 — 뒤 검사가 첨부를 들고 가면 안 된다
+          for (let i = 0; i < 6 && (await pg.$('.chat-foot .files .fchip .x')); i++) { await pg.click('.chat-foot .files .fchip .x'); await wait(150) }
+          if (await pg.$('.chat-foot .files .fchip')) fail('놓기: × 로 첨부가 안 빠진다')
+          ok('파일 칩 B안 — 이름 + 폴더 표식 · 채팅 열 어디에 놓아도 첨부 · 파인더 파일은 첨부/ 로')
+        }
+        /**
          * 🔴 **껐다 켜면 마지막 폴더에서 시작한다** (2026-09-15 Dave: «마지막으로 작업했던 프로젝트도
          *    기억하고 그 창에서 시작되면 좋겠어»). 셸은 창을 띄울 때 주소를 **해시 없이** 열기 때문에
          *    (`loadHome()`), 이 검사도 해시 없는 주소로 다시 여는 것으로 «앱을 껐다 켠 것» 을 흉내 낸다.

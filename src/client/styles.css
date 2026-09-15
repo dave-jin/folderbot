@@ -169,7 +169,18 @@ b,strong { color:var(--w); font-weight:600 }
 .todow { display:flex; flex-direction:column; gap:6px } .todow .h { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--t3); min-height:22px; width:100% } .todow .h .bar { width:100px; height:1.5px; background:var(--line2); position:relative; flex:none } .todow .h .bar i { position:absolute; left:0; top:0; bottom:0; background:var(--t2) } .todow .h .bar.st i { background:var(--wait) } .todow .rows { display:flex; flex-direction:column; gap:4px; padding-left:18px; font-size:12.5px } .todow .rows .r { display:flex; align-items:center; gap:8px } .todow .rows .r.done { color:var(--t3); text-decoration:line-through } .todow .rows .r.wait { color:var(--t2) } .todow .rows .r.run { color:var(--t) } .todow .empty { width:10px; height:10px; border-radius:50%; border:1.5px solid var(--line2); display:inline-block; flex:none; padding:0 } .todow .ft { display:flex; align-items:center; gap:10px; font-size:12px; padding-left:18px; color:var(--t3) }
 /* 컴포저 — 위 글 · 아래 한 줄(모드 · + | 모델 · 노력 · 링 · 보내기) */
 .composer { width:100%; max-width:712px; display:flex; flex-direction:column; gap:6px; border:1px solid var(--hair); border-radius:12px; padding:10px 12px 8px; position:relative; box-shadow:0 10px 30px rgba(0,0,0,.35) } .composer:focus-within { border-color:rgba(255,255,255,.14) }
-.composer.drop { border:1.5px dashed var(--run); background:rgba(224,136,80,.06) } .composer .drophint { display:flex; align-items:center; gap:8px; color:var(--run); font-size:13px; min-height:26px }
+/* ── 놓을 자리는 채팅 열 전체 (2026-09-15) — 점선 + 안내 카드. pointer-events 를 끊어 놓기·떠남이 열에 그대로 닿게 */
+.dropzone { position:absolute; left:12px; right:12px; top:calc(var(--hh) + 12px); bottom:12px; border:1.5px dashed var(--run); border-radius:14px; background:rgba(224,136,80,.06); display:flex; align-items:center; justify-content:center; z-index:9; pointer-events:none }
+.dropzone .card { display:flex; flex-direction:column; align-items:center; gap:8px; padding:22px 28px; border-radius:14px; background:var(--bg); border:1px solid var(--line2); box-shadow:0 16px 40px rgba(0,0,0,.45); text-align:center; max-width:80% }
+.dropzone .card b { font-size:15px; color:var(--w) } .dropzone .card small { font-size:12.5px; color:var(--t2); line-height:1.6 } .dropzone .card .n { font-size:11.5px; color:var(--run) }
+/* ── 파일 칩 B안 — 이름 + 폴더 표식 + 툴팁 */
+.fchip { height:24px; max-width:340px; padding:0 8px; gap:6px; position:relative } .fchip .nm { min-width:0 }
+.fchip .fb { flex:none; font-family:var(--ui); font-size:10px; line-height:16px; color:var(--t3); background:var(--box); border-radius:3px; padding:0 5px; white-space:nowrap }
+.fchip .x { display:inline-flex; color:var(--t3); margin-left:2px; flex:none } .fchip .x:hover { color:var(--w) }
+.fchip.busy { border-color:#3a2a1f; color:var(--t) } .fchip.busy .spin { border-top-color:var(--run) }
+.fchip[data-tip]:hover::after { content:attr(data-tip); position:absolute; left:0; bottom:calc(100% + 6px); background:var(--box); border:1px solid var(--line2); border-radius:6px; padding:5px 9px; font-size:11px; color:var(--t2); white-space:nowrap; box-shadow:0 8px 24px rgba(0,0,0,.45); z-index:12; pointer-events:none }
+.chip.more { border-style:dashed; color:var(--t3); height:24px } .chip.more:hover { color:var(--w) }
+.umsg .files.uatt .fchip { vertical-align:middle }
 .composer .crow { display:flex; align-items:flex-end; gap:8px }
 .composer textarea { flex:1; background:none; border:0; outline:0; resize:none; min-height:26px; max-height:180px; padding:2px 0; color:var(--w); font-size:13.5px; line-height:1.5 } .composer textarea::placeholder { color:var(--t3) }
 .cbar { display:flex; align-items:center; gap:2px; font-size:12.5px; color:var(--t2) } .cbar .sp { flex:1 }
