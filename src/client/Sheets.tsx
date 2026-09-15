@@ -6,6 +6,8 @@ import { FolderBot, Icon, Mid } from './FolderBot'
 import { hitRange, rank } from '../core/search'
 import { candidatePaths } from '../core/paths'
 import { diffLines, diffStat, foldSame } from '../core/diff'
+import { extractMath, fillMath } from '../core/math'
+import { loadKatex, renderMath, renderMermaid } from './mathmaid'
 import { decorateLinks } from './favicons'
 import { boxifyLinks, decorateCode, hoverLinks, hoverable } from './previews'
 import { copyText } from './clip'
@@ -72,7 +74,17 @@ function decorate(root: HTMLElement, hits: PathHit[], open: (rel: string) => voi
 }
 
 export function Md({ text, streaming, botId, onPath, onDir }: { text: string; streaming?: boolean; botId?: string; onPath?: (rel: string) => void; onDir?: (rel: string) => void }) {
-  const html = useMemo(() => marked.parse(text) as string, [text])
+  /**
+   * 수식 (루프 10/10) — `$…$` 를 marked 보다 먼저 걷어 내고(core/math), KaTeX 가 오면 끼워 넣는다.
+   * ⚠ KaTeX 가 아직 안 왔으면 원문 `$…$` 이 그대로 보인다 — 빈칸보다 낫다. 오면 다시 그린다.
+   */
+  const [katex, setKatex] = useState<Parameters<typeof renderMath>[0] | null>(null)
+  const html = useMemo(() => {
+    const m = extractMath(text)
+    const h = marked.parse(m.text) as string
+    return fillMath(h, m.chunks, katex ? renderMath(katex) : null)
+  }, [text, katex])
+  useEffect(() => { if (!katex && extractMath(text).chunks.length) void loadKatex().then(setKatex).catch(() => {}) }, [text, katex])
   const ref = useRef<HTMLDivElement>(null)
   /**
    * 🔴 **바깥 링크는 바깥에서 연다** (2026-09-13 Dave). 앱 안에서 열면 **Folder Bot 이 그 자리에서
@@ -95,7 +107,8 @@ export function Md({ text, streaming, botId, onPath, onDir }: { text: string; st
     decorateLinks(el)     // 링크 앞 파비콘 — 자리표시자를 먼저 놓고 도착하면 갈아 끼운다
     hoverLinks(el)        // 글 속 링크 — 오버하면 같은 미리보기 카드
     decorateCode(el, copyText)   // 코드 블록 — 언어 이름 · 복사 단추 (B3)
-  }, [html])
+    if (!streaming) void renderMermaid(el).catch(() => {})   // ```mermaid → 그림 (루프 10/10) · 답이 끝난 뒤에만
+  }, [html, streaming])
   useEffect(() => {
     const el = ref.current
     if (!el || !botId || !onPath || streaming) return

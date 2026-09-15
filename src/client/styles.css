@@ -893,6 +893,10 @@ b,strong { color:var(--w); font-weight:600 }
 /* 코드 블록 머리 — 언어 이름 · 복사 (Rondo 이식 B3)
    ⚠ 머리줄은 `pre` **밖**에 있다(`.cbwrap` 이 둘을 감싼다) — 안에 두면 코드 글자에 섞여 복사에 딸려 온다. */
 .md .cbwrap { position:relative; margin:8px 0 }
+/* mermaid · KaTeX (루프 10/10) */
+.md .mmd { margin:8px 0; padding:8px 10px; background:var(--box); border-radius:8px; overflow:auto } .md .mmd svg { max-width:100%; height:auto; display:block; margin:0 auto }
+.md .mmderr { font-size:11.5px; color:var(--wait); margin:-4px 0 8px }
+.md .katex-display { margin:8px 0; overflow:auto hidden } .md .katex { font-size:1.06em } .md .mathsrc { color:var(--t2) }
 .md .cbwrap pre { margin:0 }
 .cbbar { position:absolute; right:6px; top:5px; display:flex; align-items:center; gap:8px; opacity:0; transition:opacity .12s; pointer-events:none }
 .md .cbwrap:hover .cbbar { opacity:1; pointer-events:auto }

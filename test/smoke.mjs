@@ -1162,6 +1162,22 @@ try {
            * ⚠ 머리줄은 `pre` **밖**에 있어야 한다 — 안에 두면 코드 글자에 섞여 **복사에 딸려 온다**.
            */
           {
+            /**
+             * 🔴 **mermaid · KaTeX** (루프 10/10) — ```mermaid 는 그림(svg)으로, `$…$` 는 수식으로. 둘 다 **늦게 받는다**
+             *    (본체 청크에 섞이면 안 된다 — 아래 번들 검사가 잡는다). 코드 안·돈(`$5`)은 그대로.
+             */
+            {
+              await pg.fill('.composer textarea', '그림수식 테스트'); await pg.click('.composer .sendb')
+              await pg.waitForSelector('.md .mmd svg', { timeout: 20000 })
+              await pg.waitForSelector('.md .katex', { timeout: 10000 }); await wait(300)
+              const mk = await pg.evaluate(() => { const md = [...document.querySelectorAll('.chat-body .md')].pop(); return { svg: md.querySelectorAll('.mmd svg').length, inline: md.querySelectorAll('.katex').length, block: md.querySelectorAll('.katex-display').length, err: md.querySelectorAll('.mmderr').length, txt: md.textContent ?? '', pre: md.querySelectorAll('pre').length } })
+              if (mk.svg !== 1) fail('mermaid: 그림이 하나가 아니다 ' + JSON.stringify(mk))
+              if (mk.err) fail('mermaid: 오류 줄이 있다 ' + JSON.stringify(mk))
+              if (mk.inline < 2 || mk.block !== 1) fail('KaTeX: 인라인·블록 수식이 안 그려졌다 ' + JSON.stringify(mk))
+              if (!/\$5 와 \$10/.test(mk.txt)) fail('KaTeX: 돈을 수식으로 먹었다 ' + JSON.stringify(mk.txt.slice(-80)))
+              if (mk.pre) fail('mermaid: 그린 뒤에도 코드 블록이 남아 있다 ' + JSON.stringify(mk))
+              ok('mermaid · KaTeX — 그림 펜스는 svg · $…$ 는 수식 · 돈은 그대로 (둘 다 지연 로드)')
+            }
             await pg.fill('.composer textarea', '코드블록 테스트')
             await pg.keyboard.press('Meta+Enter')
             let cb = null
@@ -2302,6 +2318,9 @@ try {
     if (!existsSync(join(process.cwd(), 'dist/client/tray.html'))) fail('번들: tray.html 이 안 나왔다')
     const mainSrc = readFileSync(join(dir, main[0]), 'utf8')
     if (/@codemirror\/state|cm-content/.test(mainSrc)) fail('번들: CodeMirror 가 본체에 섞였다 — 문서를 안 열어도 받게 된다')
+    // 루프 10/10 — mermaid(수 MB)·KaTeX 도 본체에 섞이면 안 된다
+    if (/mermaidAPI|flowchart-v2|katex-display|\\mathrm/.test(mainSrc)) fail('번들: mermaid 나 KaTeX 가 본체에 섞였다 — 그림·수식 없는 답에도 받게 된다')
+    if (!files.some((f) => /mermaid/i.test(f))) fail('번들: mermaid 청크가 따로 없다 ' + JSON.stringify(files.slice(0, 12)))
     ok(`번들 — 편집기 지연 로드 (본체 ${Math.round(readFileSync(join(dir, main[0])).length / 1024)}KB · 편집기 ${Math.round(readFileSync(join(dir, ed[0])).length / 1024)}KB)`)
   }
 

@@ -70,6 +70,12 @@ rl.on('line', (raw) => {
     }, 2500)
     return
   }
+  // 「mermaid · KaTeX」 검사용 — 그림 펜스와 수식
+  if (/그림수식/.test(text)) {
+    say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '이렇게요\n\n```mermaid\ngraph TD\n  A[시작] --> B[끝]\n```\n\n식은 $E=mc^2$ 이고 블록은\n\n$$\n\\int_0^1 x^2\\,dx = \\frac{1}{3}\n$$\n\n돈은 $5 와 $10 그대로.' }], stop_reason: 'end_turn' } })
+    say({ type: 'result', subtype: 'success', duration_ms: 40, total_cost_usd: 0.001 })
+    return
+  }
   // 「코드 블록 머리줄」 검사용 — 언어가 붙은 펜스
   if (/코드블록/.test(text)) {
     say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '이렇게요\n\n```ts\nconst a = 1\n```\n' }], stop_reason: 'end_turn' } })
