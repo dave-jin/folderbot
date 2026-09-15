@@ -1118,7 +1118,8 @@ try {
             if (!/example\.com/.test(box.h)) fail('링크 박스: 호스트가 안 보인다 ' + JSON.stringify(box))
             if (!box.inline) fail('링크 박스: 글 속 링크까지 박스로 삼켰다 — 문장이 끊긴다 ' + JSON.stringify(box))
             // 오버 → 미리보기 카드가 **body 에** 뜬다
-            try { await pg.hover('.chat-body .md a.linkbox', { timeout: 8000 }) } catch (err) {
+            // ⚠ **마지막** 링크 박스를 잰다 — 첫 것은 대화가 길어지면 스크롤 끝에 걸려 위에 자리가 없다(카드가 위 가장자리에 붙는다)
+            try { await pg.hover('.chat-body .md a.linkbox >> nth=-1', { timeout: 8000 }) } catch (err) {
               const d = await pg.evaluate(() => {
                 const a = document.querySelector('.chat-body .md a.linkbox')
                 const r = a.getBoundingClientRect()
@@ -1135,7 +1136,7 @@ try {
             // 🔴 **언제나 위쪽** (2026-09-14 Dave) — 미리보기를 다는 것들은 대부분 화면 아래쪽에 살아서,
             //    아래로 펴면 카드가 화면 밖으로 밀려 잘린다. ⛔ 자리가 모자라도 아래로 뒤집지 않는다.
             const pos = await pg.evaluate(() => {
-              const c = document.querySelector('.hovprev'); const a = document.querySelector('.chat-body .md a.linkbox')
+              const c = document.querySelector('.hovprev'); const a = [...document.querySelectorAll('.chat-body .md a.linkbox')].pop()
               if (!c || !a) return null
               const cr = c.getBoundingClientRect(), ar = a.getBoundingClientRect()
               return { cardBottom: Math.round(cr.bottom), anchorTop: Math.round(ar.top) }
@@ -1522,6 +1523,32 @@ try {
           if ((await api('/bots')).some((b) => b.id === tb.id)) fail('지우기: 레일에 아직 남아 있다')
           if (!existsSync(join(root, tmpRel))) fail('🔴 지우기가 폴더를 지웠다 — 연결만 끊어야 한다')
           ok('레일 우클릭 — 지우기는 연결만 끊는다(폴더는 그대로) · 은퇴는 남아 있다')
+          /**
+           * 🔴 **즐겨찾기 고정 — 레일 맨 위 「고정」 칸, 최대 3개** (루프 3/10). 봇이 늘수록 매일 가는 폴더가 묻힌다.
+           *    고정은 볼트에 남는다 — 맥에서 고정한 것이 폰에서도 맨 위여야 한다.
+           */
+          {
+            await pg.click('.sb-list .brow:has-text("제품_Rondo")', { button: 'right' }); await wait(300)
+            const m1 = await pg.textContent('.menu.ctx')
+            if (!/맨 위에 고정/.test(m1 ?? '')) fail('고정: 우클릭 메뉴에 «맨 위에 고정» 이 없다 · ' + m1)
+            await pg.keyboard.press('Escape'); await wait(200)
+            await api('/bots/pin', { id: bot.id, on: true })
+            await wait(600)
+            const secs = await pg.$$eval('.sb-list > div .secl', (r) => r.map((x) => x.textContent ?? ''))
+            if (secs[0] !== '관제' || secs[1] !== '고정') fail('고정: 「고정」 칸이 관제 바로 아래에 없다 · ' + JSON.stringify(secs))
+            const inPin = await pg.evaluate(() => { const sec = [...document.querySelectorAll('.sb-list > div')].find((d) => d.querySelector('.secl')?.textContent === '고정'); return sec ? [...sec.querySelectorAll('.brow .n')].map((x) => x.textContent ?? '') : [] })
+            if (!inPin.some((n) => /제품_Rondo/.test(n))) fail('고정: 고정한 봇이 「고정」 칸에 없다 · ' + JSON.stringify(inPin))
+            if (!(await api('/bots')).find((b) => b.id === bot.id)?.pinned) fail('고정: 호스트에 안 남았다')
+            // 상한 — 셋을 넘기면 거절
+            const others = (await api('/bots')).filter((b) => !b.orchestrator && b.id !== bot.id).slice(0, 3)
+            for (const b of others.slice(0, 2)) await api('/bots/pin', { id: b.id, on: true })
+            const over = await fetch(base + '/api/bots/pin', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: others[2].id, on: true }) })
+            if (over.ok) fail('고정: 넷째를 받아 줬다 — 상한이 없다')
+            for (const b of [bot, ...others]) await api('/bots/pin', { id: b.id, on: false })
+            await wait(500)
+            if ((await pg.$$eval('.sb-list > div .secl', (r) => r.map((x) => x.textContent ?? ''))).includes('고정')) fail('고정: 다 풀었는데 「고정」 칸이 남았다')
+            ok('즐겨찾기 고정 — 「고정」 칸 · 볼트에 남음 · 3개 상한')
+          }
         }
         // 🔴 **파일 휴지통 · 옮기기** — 트리에서 치우고 끌어 놓는 길(A6·A7·A8)
         {
@@ -2351,6 +2378,16 @@ try {
     if (JSON.stringify(j2.hooks.Stop).includes('usage-hook')) fail('사용량: 제거했는데 훅이 남았다')
     void before
     ok('사용량 — 남은 양 · 예산 반영 · 훅 설치/제거')
+  // ── 절전 시간 설정 (루프 4/10) — 0 은 «안 재움», 상태에 실려 화면이 읽는다 ──
+  {
+    if ((await api('/state')).defaults.idleMinutes !== 60) fail('절전: 기본이 60분이 아니다')
+    await api('/idle', { minutes: 15 })
+    if ((await api('/state')).defaults.idleMinutes !== 15) fail('절전: 15분이 안 붙었다')
+    await api('/idle', { minutes: 0 })
+    if ((await api('/state')).defaults.idleMinutes !== 0) fail('절전: «재우지 않음»(0) 이 안 붙었다')
+    await api('/idle', { minutes: 60 })
+    ok('절전 시간 — 설정이 호스트에 남고 상태로 돌아온다 (0 = 안 재움)')
+  }
   }
 
   /**

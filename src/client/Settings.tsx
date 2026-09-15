@@ -346,6 +346,12 @@ function AgentsPane() {
         노력 단계(`model_reasoning_effort`: 최소…높음)도 다르다. 같은 목록을 쓰면 첫 턴에 죽는다. */}
     {/* 🔴 **비워 두는 것이 기본이다** (2026-09-13 실사고) — ChatGPT 계정은 쓸 수 있는 모델이 구독마다
         다르다. 이름을 박아 넘기면 그 계정에서 **모든 턴이 400 으로 죽는다**. */}
+    {/* 🔴 절전 시간은 사람이 정한다 (루프 4/10) — 밤새 돌리는 사람과 낮에만 쓰는 사람이 다르다. 0 = 안 재움 */}
+    <Row t="유휴 세션 절전" d="이만큼 조용하면 워커를 내려요. 대화·세션은 남고, 다음 메시지에 같은 자리에서 이어집니다.">
+      <select className="ssel" value={String(s.defaults.idleMinutes ?? 60)} onChange={async (e) => { try { await api('/idle', { body: { minutes: Number(e.target.value) } }); await refresh(); setMsg('저장했어요') } catch (err) { setMsg((err as Error).message) } }}>
+        {[[15, '15분'], [30, '30분'], [60, '1시간'], [120, '2시간'], [240, '4시간'], [0, '재우지 않음']].map(([v, t]) => <option key={String(v)} value={String(v)}>{t}</option>)}
+      </select>
+    </Row>
     {hasCodex ? <Row t="Codex 기본 모델 · 노력" d={<>Codex 세션이 이 값으로 뜹니다. <b>비워 두면 CLI 가 계정에 맞는 모델을 고릅니다</b> — ChatGPT 계정으로 쓰신다면 그대로 두세요(쓸 수 있는 모델이 구독마다 달라서, 이름을 박으면 그 계정에서 안 돌 수 있어요). API 키로 쓰신다면 골라도 됩니다.</>} data-t="Codex 기본 모델">
       <input className="sin mono" list="cx-models" value={cxModel} onChange={(e) => setCxModel(e.target.value)} onBlur={() => void saveD(cxModel, cxEffort, 'codex')} placeholder="비워 두면 CLI 기본" />
       <datalist id="cx-models">{cxModels.map((m) => <option key={m.v} value={m.v}>{m.t}</option>)}</datalist>

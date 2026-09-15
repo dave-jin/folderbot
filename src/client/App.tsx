@@ -410,8 +410,10 @@ function Main() {
     // 섹션: 관제 → PARA 번호 오름차순(2 → 3 → 4)
     const cmp = (a: string, b: string) => a.localeCompare(b, 'ko', { numeric: true, sensitivity: 'base' })
     const m = new Map<string, typeof items>()
-    for (const it of items) { const k = it.b.section; (m.get(k) ?? m.set(k, []).get(k)!).push(it) }
-    const secs = [...m.entries()].sort(([a], [b]) => (a === '관제' ? -1 : b === '관제' ? 1 : cmp(a, b)))
+    // 🔴 고정한 봇은 제 섹션이 아니라 맨 위 「고정」 칸에 선다 (루프 3/10) — 정렬 갈래와 무관하다
+    for (const it of items) { const k = it.b.pinned ? '고정' : it.b.section; (m.get(k) ?? m.set(k, []).get(k)!).push(it) }
+    const top = (a: string) => (a === '관제' ? 0 : a === '고정' ? 1 : 2)
+    const secs = [...m.entries()].sort(([a], [b]) => top(a) - top(b) || cmp(a, b))
     const byName = (a: typeof items[0], c: typeof items[0]) => cmp(c.b.name, a.b.name) // 이름 내림차순 — 날짜 접두 폴더가 최신부터
     const rank = (x: typeof items[0]) => MOOD_RANK[x.sum.mood] ?? 9
     for (const [, list] of secs) {
@@ -564,6 +566,7 @@ function Main() {
             ⚠ 은퇴는 남아 있다 — 그건 «끝난 일» 을 Archive 로 옮겨 **볼트의 일부로 남기는** 다른 일이다. */}
         {railCtx ? <Float at={{ x: railCtx.x, y: railCtx.y }} onClose={() => setRailCtx(null)} className="menu ctx"><div style={{ display: 'contents' }} onClick={() => setRailCtx(null)}>
           <div className="h">{railCtx.name}</div>
+          <button onClick={async () => { const b = s.bots.find((x) => x.id === railCtx.id); try { await api('/bots/pin', { body: { id: railCtx.id, on: !b?.pinned } }); say(b?.pinned ? '고정을 풀었어요' : '맨 위에 고정했어요'); await refresh() } catch (e) { say((e as Error).message) } }}><Icon n="pin" size={13} /><span style={{ flex: 1 }}>{s.bots.find((x) => x.id === railCtx.id)?.pinned ? '고정 풀기' : '맨 위에 고정'}</span><span className="k">3개까지</span></button>
           <button onClick={async () => { try { await api(`/bots/${railCtx.id}/stop`, { body: {} }); say(`${railCtx.name} 을 레일에서 덜어냈어요 — 폴더는 그대로예요`); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="x" size={13} /><span style={{ flex: 1 }}>지우기 (연결 해지)</span><span className="k">폴더 유지</span></button>
           <button onClick={async () => { if (!confirm(`${railCtx.name} 을 Archive 로 옮기고 은퇴시킬까요? 세션 기록은 보관돼요.`)) return; try { const r = await api<{ to: string }>(`/bots/${railCtx.id}/retire`, { body: {} }); say(`${r.to} 로 은퇴`); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="archive" size={13} /><span style={{ flex: 1 }}>은퇴 (Archive 로)</span></button>
         </div></Float> : null}

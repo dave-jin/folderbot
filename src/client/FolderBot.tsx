@@ -56,6 +56,7 @@ export const I = {
   send: <path d="M2 8l12-5-3 11-3-4-6-2z" />,
   file: <><path d="M4 2h5l3 3v9H4z" /><path d="M9 2v3h3" /></>,
   folder: <path d="M2 4h4l1.5 1.5H14V13H2z" />,
+  pin: <><path d="M6 2h4l-.5 4 2.5 2.5v1H4v-1L6.5 6z" /><path d="M8 9.5V14" /></>,
   fplus: <><path d="M2 4h4l1.5 1.5H14V13H2z" /><path d="M8 7v4M6 9h4" /></>,
   read: <path d="M2 4h5a2 2 0 0 1 2 2v8a1.5 1.5 0 0 0-1.5-1.5H2zM14 4H9a2 2 0 0 0-2 2v8a1.5 1.5 0 0 1 1.5-1.5H14z" />,
   edit: <path d="M3 13l1-4 7-7 3 3-7 7z" />,

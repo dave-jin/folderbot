@@ -14,6 +14,8 @@ export interface HostConfig {
   claudeBin?: string
   /** claude setup-token 으로 만든 1년짜리 토큰 — 키체인을 못 읽는 문맥(헤드리스)의 대안 */
   claudeOauthToken?: string
+  /** 유휴 워커를 재우기까지의 분 — 0 이면 안 재운다 (루프 4/10 · 기본 60) */
+  idleMinutes?: number
   /** 새 세션의 기본 모델·생각 레벨 — 바꾸면 다음 세션부터 */
   defaultModel?: string
   defaultEffort?: string

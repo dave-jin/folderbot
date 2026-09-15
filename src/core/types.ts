@@ -64,6 +64,8 @@ export interface Bot {
   vendor: Vendor
   repo?: string
   routines: RoutineDef[]
+  /** 레일 맨 위 「고정」 칸에 두는 봇 — 최대 3개 (루프 3/10) */
+  pinned?: boolean
 }
 
 export interface SessionInfo {

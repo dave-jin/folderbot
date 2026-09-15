@@ -15,7 +15,7 @@ export function migrateStateDir(root: string): void {
   try { const oldDir = join(root, LEGACY_STATE_DIR), newDir = join(root, STATE_DIR); if (existsSync(oldDir) && !existsSync(newDir)) renameSync(oldDir, newDir) } catch { /* 다음 부팅에 다시 */ }
 }
 
-interface ActiveRec { id: string; rel: string; color: string; startedAt: number; vendor?: 'claude' | 'codex' }
+interface ActiveRec { id: string; rel: string; color: string; startedAt: number; vendor?: 'claude' | 'codex'; pinned?: boolean }
 
 /** NFC 정규화 + realpath — 한글 경로(NFD) 사고 방지 */
 export function canon(p: string): string {
@@ -174,7 +174,7 @@ export class Registry extends EventEmitter {
     const abs = join(this.root, a.rel)
     if (!existsSync(abs)) return null
     const cfg = this.botConfig(abs)
-    return { id: a.id, rel: a.rel, abs, name: this.botName(a), section: a.rel.split('/')[0] === a.rel ? '' : a.rel.split('/')[0], color: cfg.color ?? a.color, orchestrator: false, startedAt: a.startedAt, vendor: a.vendor ?? cfg.vendor ?? 'claude', repo: cfg.repo ? resolve(abs, cfg.repo.replace(/^~/, process.env.HOME ?? '')) : undefined, routines: cfg.routines ?? [] }
+    return { id: a.id, rel: a.rel, abs, name: this.botName(a), section: a.rel.split('/')[0] === a.rel ? '' : a.rel.split('/')[0], color: cfg.color ?? a.color, orchestrator: false, startedAt: a.startedAt, vendor: a.vendor ?? cfg.vendor ?? 'claude', repo: cfg.repo ? resolve(abs, cfg.repo.replace(/^~/, process.env.HOME ?? '')) : undefined, routines: cfg.routines ?? [] , pinned: a.pinned}
   }
   bot(id: string): Bot | undefined { return this.bots().find((b) => b.id === id) }
   botByRel(rel: string): Bot | undefined { return this.bots().find((b) => b.rel === rel) }
@@ -225,6 +225,19 @@ export class Registry extends EventEmitter {
     const seen = new Set(next.map((a) => a.id))
     for (const a of this.active) if (!seen.has(a.id)) next.push(a)
     this.active = next
+    this.saveActive()
+  }
+  /**
+   * 🔴 **즐겨찾기 고정 — 최대 3개** (루프 3/10). 봇이 늘수록 매일 가는 폴더가 목록 속에 묻힌다.
+   *    셋으로 자르는 이유: 넷부터는 «고정» 이 아니라 «또 하나의 목록» 이 된다.
+   * ⚠ 고정은 볼트에 남는다(active.json) — 맥에서 고정한 것이 폰에서도 맨 위여야 한다.
+   */
+  static readonly MAX_PINNED = 3
+  pin(id: string, on: boolean): void {
+    const a = this.active.find((x) => x.id === id)
+    if (!a) throw new Error('그런 봇이 없어요')
+    if (on && !a.pinned && this.active.filter((x) => x.pinned).length >= Registry.MAX_PINNED) throw new Error(`고정은 ${Registry.MAX_PINNED}개까지예요 — 하나를 풀고 고정하세요`)
+    a.pinned = on || undefined
     this.saveActive()
   }
   /** 은퇴 — archive 역할 폴더로 옮기고 목록에서 뺀다 */

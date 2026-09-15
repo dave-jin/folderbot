@@ -150,7 +150,11 @@ export class Host {
     }
     this.sessions.codexSandbox = cfg.codexSandbox ?? 'read-only'
     this.sessions.openaiApiKey = cfg.openaiApiKey
+    // 절전 — 0 이면 «안 재운다» (밤새 돌리는 사람) · 아니면 그 분 뒤. 기본은 60분 (루프 4/10)
+    const idle = cfg.idleMinutes === undefined ? 60 : cfg.idleMinutes
+    this.sessions.idleTtlMs = idle > 0 ? idle * 60 * 1000 : Number.POSITIVE_INFINITY
   }
+  setIdle(minutes: number): void { this.cfg.idleMinutes = Math.max(0, Math.round(minutes)); this.applyDefaults(); saveConfig(this.cfg) }
   /** 기본 모델·생각 레벨 — 저장하면 다음 세션부터. `agent` 로 어느 CLI 것인지 가른다 */
   setDefaults(model: string, effort: string, agent: 'claude' | 'codex' = 'claude'): void {
     if (agent === 'codex') { this.cfg.defaultCodexModel = model || undefined; this.cfg.defaultCodexEffort = effort || undefined }
