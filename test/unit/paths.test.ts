@@ -25,8 +25,18 @@ describe('candidatePaths', () => {
   it('마크다운 링크의 목적지는 안 집는다', () => {
     expect(candidatePaths('[할 일](2. Projects/x/todo.md) 를 봐')).toEqual([])
   })
-  it('확장자 없는 폴더는 안 집는다 — 문서 탭이 못 연다', () => {
-    expect(candidatePaths('3. Area/제품_Rondo 아래에 뒀어요')).toEqual([])
+  /** 🔴 2026-09-15 뒤집힘 — 폴더도 칩이다(누르면 트리에서 열린다). 있는지는 호스트가 가른다 */
+  it('확장자 없는 폴더도 집는다 (공백 있는 PARA 이름까지)', () => {
+    expect(candidatePaths('3. Area/제품_Rondo 아래에 뒀어요')[0]).toBe('3. Area/제품_Rondo')
+  })
+  it('절대 경로도 집는다 — 왼쪽으로는 안 넓힌다', () => {
+    const c = candidatePaths('정본은 /Users/dave/PARA/3. Area/x.md 에 있어요')
+    expect(c[0]).toBe('/Users/dave/PARA/3. Area/x.md')   // 공백 뒤 낱말을 이어 붙인 것이 먼저(긴 것부터)
+    expect(c).toContain('/Users/dave/PARA/3')
+    expect(c.some((x) => x.startsWith('정본은'))).toBe(false)
+  })
+  it('문장 끝 부호와 끝 슬래시는 뗀다', () => {
+    expect(candidatePaths('a/b.md. 그리고 c/d/ 를 봐')).toEqual(expect.arrayContaining(['a/b.md', 'c/d']))
   })
   it('중복은 한 번만, 나온 순서대로', () => {
     const c = candidatePaths('a/x.md 와 b/y.md 와 a/x.md')

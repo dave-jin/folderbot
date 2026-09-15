@@ -22,15 +22,21 @@ marked.setOptions({ gfm: true, breaks: true })
  *    대신 **그린 뒤에 텍스트 노드만 걸어** 바꾼다. `code`·`pre`·`a` 안은 건너뛴다.
  * ⚠ 스트리밍 중에는 하지 않는다 — 글자가 계속 바뀌는 동안 DOM 을 갈아 대면 선택이 튄다.
  */
-function decorate(root: HTMLElement, hits: string[], open: (rel: string) => void, botId?: string): void {
+/** 답 속에서 «있는 것» 으로 확인된 경로 하나 — `text` 는 답에 적힌 그대로, `rel` 은 봇 폴더 기준(`../` 가능) */
+export interface PathHit { text: string; rel: string; dir: boolean }
+const FOLDER_SVG = '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M2 4h4l1.5 1.5H14V13H2z"/></svg>'
+function decorate(root: HTMLElement, hits: PathHit[], open: (rel: string) => void, openDir: ((rel: string) => void) | undefined, botId?: string): void {
   if (!hits.length) return
-  const chip = (hit: string): HTMLButtonElement => {
+  const chip = (h: PathHit): HTMLButtonElement => {
     const b = document.createElement('button')
-    b.className = 'pchip'; b.type = 'button'; b.textContent = hit.split('/').pop() ?? hit; b.title = hit
-    b.dataset.rel = hit
-    b.addEventListener('click', (e) => { e.preventDefault(); open(hit) })
-    // 첨부·문서 칩도 오버하면 미리보기 — 이미지는 그림을, 글은 앞 몇 줄을 (`previews.ts`)
-    if (botId) hoverable(b, { kind: 'file', botId, rel: hit })
+    b.className = h.dir ? 'pchip dir' : 'pchip'; b.type = 'button'; b.title = h.text
+    b.dataset.rel = h.rel
+    const name = h.text.replace(/\/+$/, '').split('/').pop() || h.text
+    // 🔴 폴더 칩은 문서 탭이 아니라 **트리를 연다** — 폴더는 읽을 글이 없다 (2026-09-15)
+    if (h.dir) { b.innerHTML = `${FOLDER_SVG}<span></span>`; (b.lastChild as HTMLElement).textContent = name } else b.textContent = name
+    b.addEventListener('click', (e) => { e.preventDefault(); if (h.dir) openDir?.(h.rel); else open(h.rel) })
+    // 첨부·문서 칩도 오버하면 미리보기 — 이미지는 그림을, 글은 앞 몇 줄을 (`previews.ts`) · 폴더는 볼 것이 없다
+    if (botId && !h.dir) hoverable(b, { kind: 'file', botId, rel: h.rel })
     return b
   }
   /**
@@ -42,8 +48,8 @@ function decorate(root: HTMLElement, hits: string[], open: (rel: string) => void
    */
   for (const c of [...root.querySelectorAll('code')]) {
     if (c.closest('pre')) continue
-    const t = (c.textContent ?? '').trim()
-    const hit = hits.find((h) => h === t)
+    const t = (c.textContent ?? '').trim().replace(/\/+$/, '')
+    const hit = hits.find((h) => h.text === t)
     if (hit) c.replaceWith(chip(hit))
   }
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -54,17 +60,17 @@ function decorate(root: HTMLElement, hits: string[], open: (rel: string) => void
   for (const node of texts) {
     let cur = node
     for (const hit of hits) {
-      const i = cur.data.indexOf(hit)
+      const i = cur.data.indexOf(hit.text)
       if (i < 0) continue
       const after = cur.splitText(i)
-      const rest = after.splitText(hit.length)
+      const rest = after.splitText(hit.text.length)
       after.replaceWith(chip(hit))
       cur = rest
     }
   }
 }
 
-export function Md({ text, streaming, botId, onPath }: { text: string; streaming?: boolean; botId?: string; onPath?: (rel: string) => void }) {
+export function Md({ text, streaming, botId, onPath, onDir }: { text: string; streaming?: boolean; botId?: string; onPath?: (rel: string) => void; onDir?: (rel: string) => void }) {
   const html = useMemo(() => marked.parse(text) as string, [text])
   const ref = useRef<HTMLDivElement>(null)
   /**
@@ -95,12 +101,12 @@ export function Md({ text, streaming, botId, onPath }: { text: string; streaming
     const cands = candidatePaths(text)
     if (!cands.length) return
     let live = true
-    void api<Record<string, boolean>>(`/bots/${botId}/exists`, { body: { rels: cands } })
+    void api<Record<string, { rel: string; dir: boolean } | false>>(`/bots/${botId}/exists`, { body: { rels: cands } })
       .then((ok) => {
         if (!live || !ref.current) return
         // 한 자리에서 여러 후보가 걸리면 **긴 것**이 이긴다 — `3. Area/…` 가 `Area/…` 보다 맞다
-        const hits = cands.filter((c) => ok[c]).sort((a, b) => b.length - a.length)
-        decorate(ref.current, hits, onPath, botId)
+        const hits: PathHit[] = cands.filter((c) => ok[c]).sort((a, b) => b.length - a.length).map((c) => { const r = ok[c] as { rel: string; dir: boolean }; return { text: c, rel: r.rel, dir: r.dir } })
+        decorate(ref.current, hits, onPath, onDir, botId)
       })
       .catch(() => { /* 못 물어봤으면 그냥 글자로 둔다 */ })
     return () => { live = false }

@@ -53,7 +53,7 @@ function freeName(botAbs: string, dir: string, name: string): string {
 import { favicon } from './favicon'
 import { preview } from './preview'
 import { hookState, setBudget, setHook, usageReport } from './usage'
-import { allDirs, guard, kindOf, mime, readText, recent, resolveNF, stream, tree, writeText, exists, listDir, renameEntry } from './files'
+import { allDirs, guard, kindOf, mime, readText, recent, resolveNF, resolveNFDeep, stream, tree, writeText, exists, listDir, renameEntry } from './files'
 import { readTodo, todoDelete, todoEdit, todoMove, todoToggle } from './todoStore'
 import { globParents, roleOf } from '../core/rules'
 import { slashCommands } from './slash'
@@ -372,7 +372,7 @@ export class Gateway {
       if (sub === 'peek' && m === 'GET') {
         const rel = url.searchParams.get('rel') ?? ''
         let abs: string
-        try { abs = resolveNF(guard(roots(bot), join(bot.abs, rel))) } catch { return json(200, { kind: 'none' }) }
+        try { abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, rel)).slice(1)) } catch { return json(200, { kind: 'none' }) }
         if (!exists(abs)) return json(200, { kind: 'none' })
         const kind = kindOf(abs)
         const st = statSync(abs)
@@ -384,7 +384,7 @@ export class Gateway {
       }
       if (sub === 'file' && m === 'GET') {
         // ⚠ 한글 이름은 NFC/NFD 두 벌로 산다 — **있는 쪽**을 찾아 준다(`resolveNF` 머리말)
-        const abs = resolveNF(guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')))
+        const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')).slice(1))
         if (!exists(abs)) return json(404, { error: '없는 파일' })
         const kind = kindOf(abs)
         // ⚠ 캔버스도 **글로 내려보낸다** — 화면이 JSON 을 읽어 노드를 그린다(원문으로 그리지는 않는다)
@@ -397,12 +397,29 @@ export class Gateway {
        * 🔴 확인 없이 칩을 만들면 죽은 링크가 대화에 쌓이고, 한 번 눌러 본 사람은 다시 안 누른다.
        * ⚠ 후보는 봇 폴더 기준 상대 경로다. 루트 밖은 `guard` 가 막고 조용히 false 로 답한다.
        */
+      /**
+       * 🔴 **세 갈래로 찾는다 — 봇 폴더 · 볼트 루트 · 절대** (2026-09-15 Dave: *«채팅 본문에서 폴더 및 파일 칩 …
+       *    구현이 안되어 있어»*). 종전에는 봇 폴더 기준 하나뿐이라, 폴더 봇 대화에 흔히 나오는 «볼트 기준
+       *    경로»(`3. Area/…`)와 «절대 경로»(`/Users/…`)가 전부 «없음» 이었다 — 칩이 안 뜨던 진짜 이유.
+       * ⚠ **폴더도 있음이다** — 파일과 구분해서 돌려준다(폴더 칩은 문서 탭이 아니라 트리를 연다).
+       * ⚠ 돌려주는 `rel` 은 **봇 폴더 기준**이다(`../` 가 섞일 수 있다) — 문서·트리 API 가 그걸 그대로 받는다.
+       *    `guard` 가 루트 밖을 막으므로 `..` 로 볼트를 벗어날 수는 없다.
+       */
       if (sub === 'exists' && m === 'POST') {
         const b = await body()
         const rels = (Array.isArray(b.rels) ? b.rels : []).slice(0, 40).map(String)
-        const out: Record<string, boolean> = {}
-        for (const rel of rels) {
-          try { const abs = resolveNF(guard(roots(bot), join(bot.abs, rel))); out[rel] = exists(abs) && !statSync(abs).isDirectory() } catch { out[rel] = false }
+        const out: Record<string, { rel: string; dir: boolean } | false> = {}
+        for (const c of rels) {
+          const tries = c.startsWith('/') ? [c] : [join(bot.abs, c), join(reg.root, c)]
+          out[c] = false
+          for (const t of tries) {
+            try {
+              const abs = resolveNFDeep('/', guard(roots(bot), t).slice(1))
+              if (!exists(abs)) continue
+              out[c] = { rel: relative(bot.abs, abs), dir: statSync(abs).isDirectory() }
+              break
+            } catch { /* 루트 밖 — 다음 갈래 */ }
+          }
         }
         return json(200, out)
       }
@@ -513,7 +530,7 @@ export class Gateway {
         h.broadcast({ ev: 'files', botId: bot.id })
         return json(200, { moved, failed })
       }
-      if (sub === 'raw') { const abs = resolveNF(guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? ''))); if (!exists(abs)) return json(404, { error: 'none' }); res.writeHead(200, { 'content-type': mime(abs), 'cache-control': 'no-store' }); stream(abs).pipe(res); return }
+      if (sub === 'raw') { const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')).slice(1)); if (!exists(abs)) return json(404, { error: 'none' }); res.writeHead(200, { 'content-type': mime(abs), 'cache-control': 'no-store' }); stream(abs).pipe(res); return }
       if (sub === 'routines' && m === 'GET') return json(200, bot.routines)
       if (sub === 'routines' && m === 'PUT') { const b = await body(); const cfg = reg.botConfig(bot.abs); cfg.routines = b.routines as never; reg.saveBotConfig(bot.abs, cfg); h.afterBotsChanged(); return json(200, { ok: true }) }
       if (sub === 'config' && m === 'PUT') { const b = await body(); const cfg = reg.botConfig(bot.abs); Object.assign(cfg, b); reg.saveBotConfig(bot.abs, cfg); h.afterBotsChanged(); return json(200, { ok: true }) }

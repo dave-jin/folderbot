@@ -151,6 +151,8 @@ b,strong { color:var(--w); font-weight:600 }
 .queue .qin { flex:1; min-width:0; background:var(--bg); border:1px solid var(--line2); border-radius:5px; padding:0 6px; color:var(--w); font:inherit; font-size:12px; line-height:1.7; outline:0 }
 .queue .qin:focus { border-color:var(--t3) }
 .files { display:flex; gap:6px; flex-wrap:wrap }
+/* 내 말풍선 아래 첨부 칩 — 지시문과 한 몸이지만 글자가 아니다 */
+.umsg .files.uatt { margin-top:8px } .umsg .pchip { vertical-align:-3px }
 .card { display:flex; flex-direction:column; gap:6px; max-width:600px } .card .lab { font-size:12px; color:var(--t3) } .card .q { font-size:14px; color:var(--w) } .card .cmd { font-family:var(--mono); font-size:11.5px; color:var(--t3); padding-left:10px; border-left:1px solid var(--line2); white-space:pre-wrap; word-break:break-all; max-height:120px; overflow:auto } .card .btns { display:flex; gap:8px; align-items:center; margin-top:4px; flex-wrap:wrap }
 .opt { display:flex; gap:10px; align-items:flex-start; padding:8px 2px; border-top:1px solid var(--line); width:100%; color:var(--t) } .opt:hover { background:var(--hover) } .opt .r { width:12px; height:12px; border-radius:50%; border:1.5px solid var(--line2); flex:none; margin-top:5px } .opt.on .r { border-color:var(--w); background:var(--w) } .opt .d { font-size:12px; color:var(--t3) } .opt input { background:none; border:0; outline:0; width:100%; color:var(--w) }
 .todow { display:flex; flex-direction:column; gap:6px } .todow .h { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--t3); min-height:22px; width:100% } .todow .h .bar { width:100px; height:1.5px; background:var(--line2); position:relative; flex:none } .todow .h .bar i { position:absolute; left:0; top:0; bottom:0; background:var(--t2) } .todow .h .bar.st i { background:var(--wait) } .todow .rows { display:flex; flex-direction:column; gap:4px; padding-left:18px; font-size:12.5px } .todow .rows .r { display:flex; align-items:center; gap:8px } .todow .rows .r.done { color:var(--t3); text-decoration:line-through } .todow .rows .r.wait { color:var(--t2) } .todow .rows .r.run { color:var(--t) } .todow .empty { width:10px; height:10px; border-radius:50%; border:1.5px solid var(--line2); display:inline-block; flex:none; padding:0 } .todow .ft { display:flex; align-items:center; gap:10px; font-size:12px; padding-left:18px; color:var(--t3) }
@@ -730,6 +732,7 @@ b,strong { color:var(--w); font-weight:600 }
 /* 답변 속 경로 칩 — 눌러서 문서로 (A 안: 색이 아니라 아주 옅은 바탕 하나로만 가른다) */
 .pchip { display:inline-flex; align-items:center; height:22px; padding:0 8px; margin:0 1px; border-radius:6px; background:var(--box); color:var(--t); font-size:12.5px; font-family:inherit; vertical-align:-4px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .pchip:hover { background:var(--sel); color:var(--w) }
+.pchip.dir { gap:5px } .pchip.dir svg { flex:none; opacity:.8 }
 
 /* 라이브 프리뷰 마크다운 편집기 — 읽을 때와 **같은 활자**여야 «모드가 없다» 는 말이 성립한다 */
 /* 목차(B4) · 글자 크기·폭(B9) — 값은 `--docfs`·`--docw` 로 내려온다(Doc 이 정한다).

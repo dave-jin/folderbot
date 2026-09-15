@@ -13,8 +13,14 @@
  * ⛔ **펜스 코드(```)는 여전히 안 건드린다** — 거긴 예시 코드지 이 볼트의 파일이 아니다.
  */
 
-/** 공백 없는 뼈대 — `Area/제품/todo.md` 처럼 확장자로 끝나는 마디 사슬 */
-const CORE_RE = /(?:[^\s/`"'()\[\]]+\/)+[^\s/`"'()\[\]]+\.[A-Za-z0-9]{1,8}/g
+/**
+ * 공백 없는 뼈대 — 마디 사슬. 🔴 **파일뿐 아니라 폴더도, 상대뿐 아니라 절대도** (2026-09-15 Dave:
+ * *«채팅 본문에서 폴더 및 파일 칩 … 구현이 안되어 있어»*). 종전 규칙은 «확장자로 끝나는 상대 경로» 만
+ * 잡아서, 에이전트가 흔히 쓰는 `/Users/…/PARA/3. Area/x.md`(절대) 와 `2. Projects/2026-09_강의`(폴더) 가
+ * 후보조차 안 됐다. 폴더 후보는 시끄럽지만(«입력/출력» 도 걸린다) **있는지는 호스트가 가른다** — 없는 건
+ * 칩이 안 된다. 여기서 미리 거르려 들면 진짜 폴더까지 같이 잃는다.
+ */
+const CORE_RE = /\/?(?:[^\s/`"'()\[\]]+\/)+[^\s/`"'()\[\]]*/g
 
 /** 링크·펜스 코드로 이미 쓰인 자리는 후보에서 뺀다 (길이는 그대로 두고 공백으로 덮는다) */
 const SKIP = [
@@ -33,7 +39,7 @@ const SKIP = [
  *    어느 쪽이 진짜인지는 여기서 정하지 않는다 — **호스트가 «있는 것» 을 골라 준다.**
  * @param max 한 답에서 만들 칩의 상한. 너무 많으면 그것대로 시끄럽다.
  */
-export function candidatePaths(text: string, max = 12): string[] {
+export function candidatePaths(text: string, max = 20): string[] {
   if (!text || !text.includes('/')) return []
   let masked = text
   for (const re of SKIP) masked = masked.replace(re, (m) => ' '.repeat(m.length))
@@ -41,7 +47,25 @@ export function candidatePaths(text: string, max = 12): string[] {
   const seen = new Set<string>()
   const push = (p: string) => { if (p && p.length <= 240 && !seen.has(p)) { seen.add(p); out.push(p) } }
   for (const m of masked.matchAll(CORE_RE)) {
-    const core = m[0]; const at = m.index ?? 0
+    let core = m[0]; const at = m.index ?? 0
+    core = core.replace(/[.,;:!?…]+$/, '')                      // 문장 끝 부호는 경로가 아니다
+    if (core.endsWith('/')) core = core.slice(0, -1)             // «폴더/» 는 «폴더»
+    if (!core || core === '/' || !/[^\s/]/.test(core)) continue
+    // ⚠ 절대 경로는 왼쪽이 아니라 **오른쪽**으로 넓힌다 — 앞의 낱말은 문장이고, 뒤의 낱말이 «3. Area» 의 나머지다.
+    //   `/Users/…/PARA/3. Area/x.md` 는 공백에서 끊기므로 다음 낱말을 최대 세 번 이어 붙인 변형을 **긴 것부터** 낸다.
+    if (core.startsWith('/')) {
+      const exts: string[] = []
+      let end = at + m[0].length
+      for (let n = 0; n < 3; n++) {
+        const tail = /^ ([^\s/`"'()\[\]]+(?:\/[^\s`"'()\[\]]*)*)/.exec(masked.slice(end))
+        // ⚠ 이어 붙일 낱말은 «경로처럼 생겨야» 한다(슬래시나 확장자) — 아니면 뒤따르는 문장까지 삼킨다
+        if (!tail || !(/\//.test(tail[1]) || /\.[A-Za-z0-9]{1,8}$/.test(tail[1]))) break
+        end += tail[0].length
+        exts.push(text.slice(at, end).replace(/[.,;:!?…]+$/, '').replace(/\/$/, ''))
+      }
+      for (const e of exts.reverse()) push(e)
+      push(core); if (out.length >= max) break; continue
+    }
     // 왼쪽으로 두 낱말까지 — `Area/…` → `3. Area/…`
     const left = masked.slice(0, at)
     const words = left.split(/(?<=\s)/).slice(-2).map((w) => w.trimStart())

@@ -804,7 +804,7 @@ try {
         {
           // ⚠ 이름을 `ok` 로 두지 마라 — 전역 `ok()` 를 가려서 같은 블록의 성공 보고가 그 자리에서 터진다
           const ex = await api(`/bots/${bot.id}/exists`, { rels: ['todo.md', '없는파일.md', '../밖.md'] })
-          if (ex['todo.md'] !== true) fail('exists: 있는 파일을 없다고 한다 ' + JSON.stringify(ex))
+          if (!ex['todo.md'] || ex['todo.md'].dir || ex['todo.md'].rel !== 'todo.md') fail('exists: 있는 파일을 없다고 한다 ' + JSON.stringify(ex))
           if (ex['없는파일.md'] !== false) fail('exists: 없는 파일을 있다고 한다 ' + JSON.stringify(ex))
           if (ex['../밖.md'] !== false) fail('exists: 루트 밖이 새어 나간다 ' + JSON.stringify(ex))
           // 화면 — 스텁이 되돌려 주는 문장 안의 경로 중 **있는 것만** 칩이 된다
@@ -837,6 +837,59 @@ try {
             if (bt.code.some((c) => (c ?? '').includes('첨부/회의록.txt'))) fail('백틱 경로 칩: 코드 조각이 그대로 남아 두 겹이다 ' + JSON.stringify(bt))
             await pg.fill('.composer textarea', ''); await wait(300)
             ok('백틱에 싸인 경로도 답 안에서 바로 누를 수 있다')
+          }
+          /**
+           * 🔴 **볼트 기준 · 절대 · 폴더 경로도 칩이 된다** (2026-09-15 Dave: *«채팅 본문에서 폴더 및 파일 칩 …
+           *    구현이 안되어 있어»*). 종전 검사는 봇 폴더 안의 파일 하나만 써서 초록이었다 — 실제 답변의 세 모양
+           *    (다른 폴더의 파일 · 절대 경로 · 폴더)은 전부 «없음» 이었다. 이제 그 세 모양을 그대로 잰다.
+           * ⚠ 폴더 칩은 문서가 아니라 **트리**를 연다 — 누르면 오른쪽 파일 칸에서 그 폴더가 펼쳐져야 한다.
+           */
+          {
+            const cfoAbs = join(root, '3. Area/재무_CFO/CLAUDE.md')
+            // ⚠ 스텁은 받은 말의 앞 60자만 되읊는다 — 세 모양을 **따로** 보낸다
+            const chipsOf = async (text) => {
+              const before = await pg.evaluate(() => document.querySelectorAll('.chat-body .md').length)   // ⚠ «새 답» 을 기다린다 — 직전 답의 칩을 집지 않게
+              await pg.fill('.composer textarea', text); await pg.click('.composer .sendb')
+              let got = null
+              for (let i = 0; i < 40; i++) {
+                got = await pg.evaluate((n) => { const all = document.querySelectorAll('.chat-body .md'); if (all.length <= n) return null; const md = all[all.length - 1]; return [...md.querySelectorAll('.pchip')].map((x) => ({ t: x.title, rel: x.dataset.rel, dir: x.classList.contains('dir') })) }, before)
+                if (got && got.length) break
+                await wait(300)
+              }
+              return got ?? []
+            }
+            const g1 = await chipsOf('볼트 3. Area/재무_CFO/CLAUDE.md 봐')
+            const vault = g1.find((c) => c.t === '3. Area/재무_CFO/CLAUDE.md'); if (!vault || vault.dir || !/재무_CFO\/CLAUDE\.md$/.test(vault.rel)) fail('경로 칩: 볼트 기준 경로가 안 풀렸다 · ' + JSON.stringify(g1))
+            const g2 = await chipsOf(`절대 ${cfoAbs} 봐`)
+            const abs = g2.find((c) => c.t === cfoAbs); if (!abs || abs.dir) fail('경로 칩: 절대 경로가 안 풀렸다 · ' + JSON.stringify(g2))
+            const g3 = await chipsOf('폴더 2. Projects/2026-10_해커톤-제안 봐')
+            const dir = g3.find((c) => c.t === '2. Projects/2026-10_해커톤-제안'); if (!dir || !dir.dir) fail('경로 칩: 폴더가 칩이 안 됐다 · ' + JSON.stringify(g3))
+            // 폴더 칩 → 볼트 트리(오케스트레이터)에서 그 폴더가 펼쳐진다
+            await pg.evaluate(() => { const md = [...document.querySelectorAll('.chat-body .md')].pop(); const b = [...md.querySelectorAll('.pchip.dir')][0]; b?.click() })
+            await wait(1200)
+            const shown = await pg.evaluate(() => ({ bot: new URLSearchParams(location.hash.slice(1)).get('bot'), rows: [...document.querySelectorAll('.panel .trow .n')].map((x) => x.textContent ?? '') }))
+            if (shown.bot !== 'orch') fail('폴더 칩: 볼트 트리로 안 갔다 · ' + JSON.stringify(shown))
+            if (!shown.rows.some((r) => /2026-10_해커톤-제안/.test(r))) fail('폴더 칩: 트리에 그 폴더가 안 보인다 · ' + JSON.stringify(shown.rows.slice(0, 20)))
+            await pg.evaluate((id) => { location.hash = `bot=${id}` }, bot.id); await wait(700)
+            ok('경로 칩 — 볼트 기준 · 절대 · 폴더까지, 폴더 칩은 트리를 연다')
+          }
+          /**
+           * 🔴 **내가 붙인 첨부는 글자가 아니라 칩이다** — 봇에게는 «첨부 파일 (읽어서 참고해): - /abs/…» 가
+           *    글자로 가지만 사람에게 그 꼬리가 그대로 보이면 지시문 아래 경로 목록이 늘어선다.
+           */
+          {
+            await pg.fill('.composer textarea', '@todo.md 이 파일 봐 줘')
+            await pg.evaluate(() => { const b = [...document.querySelectorAll('.panel .trow')].find((x) => /todo\.md/.test(x.textContent ?? '')); b?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 300, clientY: 300 })) })
+            await wait(300)
+            await pg.evaluate(() => { const b = [...document.querySelectorAll('button')].find((x) => /첨부로 보내기/.test(x.textContent ?? '')); b?.click() })
+            await wait(300)
+            if (!(await pg.$('.chat-foot .files .chip'))) fail('첨부 칩: 첨부가 안 붙었다')
+            await pg.click('.composer .sendb'); await wait(900)
+            const um = await pg.evaluate(() => { const u = [...document.querySelectorAll('.chat-body .umsg')].pop(); return u ? { text: u.textContent ?? '', chips: [...u.querySelectorAll('.pchip')].map((x) => x.textContent ?? ''), raw: u.textContent?.includes('첨부 파일 (읽어서 참고해)') } : null })
+            if (!um || um.raw) fail('첨부 칩: 첨부 꼬리가 글자로 보인다 · ' + JSON.stringify(um))
+            if (!um.chips.some((c) => /todo\.md/.test(c))) fail('첨부 칩: 내 말풍선에 칩이 없다 · ' + JSON.stringify(um))
+            await wait(400)
+            ok('내 메시지의 첨부·@멘션은 칩으로 보인다')
           }
           /**
            * 🔴 **네 칸은 «하는 곳» 이다** (2026-09-15 Dave: 폰 홈의 4칸을 전부 액션으로 · 맥 레일 맨 위에도).

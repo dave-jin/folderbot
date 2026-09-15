@@ -453,6 +453,18 @@ function Tree({ bot, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFol
   useEffect(() => { setDirs({}); try { setExp(new Set(JSON.parse(localStorage.getItem(`fb:tree:${bot.id}`) ?? '[""]'))) } catch { setExp(new Set([''])) } }, [bot.id])
   useEffect(() => { localStorage.setItem(`fb:tree:${bot.id}`, JSON.stringify([...exp])); for (const d of exp) if (!dirs[d]) void loadDir(d) }, [exp, bot.id])
   useEffect(() => { localStorage.setItem('fb:tsort', sort) }, [sort])
+  /**
+   * 채팅의 **폴더 칩**이 «이 폴더 보여 줘» 하고 쏜다(`fb:reveal` · App.tsx `reveal`). 조상을 다 펼치고,
+   * 그 폴더 자체도 펼치고, 1.4초 비춘다 — 봇이 파일을 건드렸을 때와 같은 몸짓이다.
+   */
+  useEffect(() => {
+    const f = (e: Event) => {
+      const rel = String((e as CustomEvent).detail ?? '')
+      setExp((x) => { const n = new Set(x); const parts = rel.split('/').filter(Boolean); for (let i = 1; i <= parts.length; i++) n.add(parts.slice(0, i).join('/')); return n })
+      if (rel) { setFlash(new Set([rel])); window.setTimeout(() => setFlash(new Set()), 1400) }
+    }
+    window.addEventListener('fb:reveal', f); return () => window.removeEventListener('fb:reveal', f)
+  }, [])
   // 봇이 파일을 쓰면: 펼친 폴더는 다시 읽고, 건드린 파일의 조상을 펼쳐 1.4초 비춘다
   useEffect(() => { if (!tick) return; for (const d of exp) void loadDir(d) }, [tick])
   useEffect(() => {

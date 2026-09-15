@@ -148,6 +148,23 @@ export function exists(abs: string): boolean { return existsSync(abs) }
  *    그래서 **있는 쪽을 찾아 준다**: 준 그대로 → NFC → NFD 순서로 본다.
  * ⛔ 이름만 본다(폴더 경로는 그대로) — 경로 전체를 훑으면 깊은 트리에서 값이 커진다.
  */
+/**
+ * 🔴 **마디마다** NFC/NFD 를 맞춘다. `resolveNF` 는 마지막 이름만 보는데, 맥 볼트에서는 **폴더 이름**이
+ *    NFD 로 저장돼 있어 `3. Area/기반_워크스테이션/x.md` 처럼 중간 마디가 한글이면 거기서 끊겼다
+ *    (2026-09-15 — 칩이 «있는 파일» 을 없다고 하던 이유 중 하나).
+ */
+export function resolveNFDeep(base: string, rel: string): string {
+  let cur = base
+  for (const seg of rel.split('/').filter(Boolean)) {
+    if (seg === '..') { cur = dirname(cur); continue }
+    if (seg === '.') continue
+    const direct = join(cur, seg)
+    if (existsSync(direct)) { cur = direct; continue }
+    const alt = [seg.normalize('NFC'), seg.normalize('NFD')].find((a) => a !== seg && existsSync(join(cur, a)))
+    cur = join(cur, alt ?? seg)
+  }
+  return cur
+}
 export function resolveNF(abs: string): string {
   if (existsSync(abs)) return abs
   const d = dirname(abs), b = basename(abs)

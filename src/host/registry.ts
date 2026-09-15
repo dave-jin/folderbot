@@ -327,7 +327,10 @@ export class Registry extends EventEmitter {
   private snapshot(entry: Record<string, unknown>): void {
     const dir = join(this.root, STATE_DIR, 'undo')
     mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, `${Date.now()}.json`), JSON.stringify({ t: Date.now(), ...entry }))
+    // ⚠ 시각은 **한 번만** 잰다 — 파일 이름과 안의 `t` 가 다른 밀리초에 찍히면 `undo(t)` 가 «스냅샷이 없어요» 로
+    //   실패한다(2026-09-15 QA 에서 드물게 났다). 같은 값이어야 되돌리기가 그 파일을 찾는다.
+    const t = Date.now()
+    writeFileSync(join(dir, `${t}.json`), JSON.stringify({ t, ...entry }))
   }
   undoList(): { t: number; op: string; from: string; to: string }[] {
     const dir = join(this.root, STATE_DIR, 'undo')
