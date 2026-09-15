@@ -151,6 +151,17 @@ b,strong { color:var(--w); font-weight:600 }
 .queue .qin { flex:1; min-width:0; background:var(--bg); border:1px solid var(--line2); border-radius:5px; padding:0 6px; color:var(--w); font:inherit; font-size:12px; line-height:1.7; outline:0 }
 .queue .qin:focus { border-color:var(--t3) }
 .files { display:flex; gap:6px; flex-wrap:wrap }
+/* 루프 6/10 — 손댄 파일 칩 옆의 ⇄(전후 비교). 칩과 한 몸으로 붙되 누르는 곳은 따로 */
+.fpair { display:inline-flex; align-items:stretch; max-width:100% } .fpair .chip { border-radius:5px 0 0 5px; border-right:0 }
+.dchip { display:inline-flex; align-items:center; padding:0 6px; border:1px solid var(--line2); border-radius:0 5px 5px 0; color:var(--t3); cursor:pointer } .dchip:hover { color:var(--w); border-color:var(--t3) }
+.modal.dif .dstat { font-family:var(--mono); font-size:12px; white-space:nowrap; align-self:center }
+.modal.dif .dnote { margin:8px 18px; font-size:13.5px; color:var(--t2); line-height:1.6 }
+.modal.dif .dnow, .modal.dif .dlines { margin:0; font-family:var(--mono); font-size:12.5px; line-height:1.55; white-space:pre-wrap; word-break:break-all; color:var(--t) }
+.modal.dif .dnow { padding:6px 18px }
+.modal.dif .ln { display:flex; padding:0 18px 0 12px } .modal.dif .ln .g { width:14px; flex:none; color:var(--t3); user-select:none }
+.modal.dif .ln.add { background:color-mix(in srgb, var(--done) 14%, transparent) } .modal.dif .ln.add .g { color:var(--done) }
+.modal.dif .ln.del { background:color-mix(in srgb, var(--err) 14%, transparent) } .modal.dif .ln.del .g { color:var(--err) }
+.modal.dif .fold { display:block; width:100%; text-align:left; padding:3px 18px 3px 26px; font-size:12px; color:var(--t3); background:var(--box); cursor:pointer } .modal.dif .fold:hover { color:var(--w) }
 /* 내 말풍선 아래 첨부 칩 — 지시문과 한 몸이지만 글자가 아니다 */
 .umsg .files.uatt { margin-top:8px } .umsg .pchip { vertical-align:-3px }
 .card { display:flex; flex-direction:column; gap:6px; max-width:600px } .card .lab { font-size:12px; color:var(--t3) } .card .q { font-size:14px; color:var(--w) } .card .cmd { font-family:var(--mono); font-size:11.5px; color:var(--t3); padding-left:10px; border-left:1px solid var(--line2); white-space:pre-wrap; word-break:break-all; max-height:120px; overflow:auto } .card .btns { display:flex; gap:8px; align-items:center; margin-top:4px; flex-wrap:wrap }

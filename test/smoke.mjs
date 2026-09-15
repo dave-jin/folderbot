@@ -1830,6 +1830,38 @@ try {
           if (!pos.before) fail('손댄 파일 칩: 답보다 위에 있다(기계 구역에 얹혔다) ' + JSON.stringify(pos))
           ok('손댄 파일 칩이 답 아래에 붙는다')
         }
+        /**
+         * 🔴 **파일 전후 diff** (루프 6/10) — 칩 옆 ⇄ 가 «이 턴이 손대기 전 ↔ 지금» 을 한 장으로 연다.
+         *    스텁의 Write 는 `stub-output.md` 를 새로 쓰므로(또는 다시 쓰므로) + 줄에 «스텁 산출물» 이 있어야 한다.
+         * ⚠ 호스트가 «전» 을 붙잡는 때는 tool_use 가 도착한 순간이다 — 그 뒤에 파일이 생겨야 «새 파일» 로 읽힌다.
+         */
+        {
+          // 이 세션에 **다른 글**을 쓰게 한다 — 같은 글을 다시 쓰면 «바뀐 줄이 없어요» 가 정답이다(그것도 맞는 답이지만 여기서 재는 건 아니다)
+          // ⚠ 해시에 `s` 가 없으면 첫 세션을 보고 있는 것이다(App 의 sessionId 규칙)
+          const hashNow = await pg.evaluate(() => Object.fromEntries(new URLSearchParams(location.hash.slice(1))))
+          const sidNow = hashNow.s || (await api(`/bots/${hashNow.bot}/sessions`))[0]?.id
+          if (!sidNow) fail('전후 diff: 보고 있는 세션을 모른다 ' + JSON.stringify(hashNow))
+          const pairs0 = await pg.$$eval('.files .fpair', (r) => r.length)
+          await api(`/sessions/${sidNow}/send`, { text: `승인이 필요한 일 해 줘 · 전후 비교 ${Date.now()}` })
+          let pend = null
+          for (let i = 0; i < 60; i++) { const c = await api(`/sessions/${sidNow}/chat`); if (c.info.pending?.length) { pend = c.info.pending[0]; break } await wait(200) }
+          if (!pend) fail('전후 diff: 승인 대기가 안 왔다')
+          await api(`/sessions/${sidNow}/permission`, { requestId: pend.requestId, allow: true })
+          for (let i = 0; i < 60; i++) { if ((await pg.$$eval('.files .fpair', (r) => r.length)) > pairs0) break; await wait(200) }
+          if ((await pg.$$eval('.files .fpair', (r) => r.length)) <= pairs0) fail('전후 diff: 새 파일 칩이 안 붙었다')
+          await wait(400)
+          await pg.click('.files .fpair >> nth=-1 >> .dchip'); await pg.waitForSelector('.modal.dif', { timeout: 5000 }); await wait(600)
+          const dif = await pg.evaluate(() => ({ add: document.querySelectorAll('.modal.dif .ln.add').length, del: document.querySelectorAll('.modal.dif .ln.del').length, txt: document.querySelector('.modal.dif .modal-b')?.textContent ?? '', stat: document.querySelector('.modal.dif .dstat')?.textContent ?? '' }))
+          if (!dif.add) fail('전후 diff: 더한 줄이 없다 ' + JSON.stringify(dif).slice(0, 300))
+          if (!/전후 비교/.test(dif.txt)) fail('전후 diff: 봇이 쓴 글이 안 보인다 ' + JSON.stringify(dif.txt.slice(0, 200)))
+          if (!dif.del) fail('전후 diff: 지운 줄이 없다 — «전» 을 못 붙잡았다(있던 파일을 다시 썼는데) ' + JSON.stringify(dif).slice(0, 200))
+          if (!/\+\d+/.test(dif.stat)) fail('전후 diff: 머리에 +n 이 없다 ' + JSON.stringify(dif.stat))
+          await pg.screenshot({ path: 'test/tmp/desktop-diff.png' })
+          await pg.keyboard.press('Escape'); await wait(300)
+          if (await pg.$('.modal.dif')) fail('전후 diff: ⎋ 로 안 닫힌다')
+          await pg.focus('.composer textarea')
+          ok('파일 전후 diff — 칩 옆 ⇄ 로 «턴 전 ↔ 지금» · ⎋ 로 닫힘')
+        }
         await pg.click('.files .chip'); await pg.waitForSelector('.doc .dbody', { timeout: 5000 }); await wait(400)
         const tabs = await pg.$$eval('.doc .tab', (r) => r.length); if (tabs < 1) fail('doc tab')
         await pg.screenshot({ path: 'test/tmp/desktop-doc.png' })

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { marked } from 'marked'
 import type { Bot, NotifyEvent, RoutineDef } from '../core/types'
 import { api, setToken, subscribePush } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { hitRange, rank } from '../core/search'
 import { candidatePaths } from '../core/paths'
+import { diffLines, diffStat, foldSame } from '../core/diff'
 import { decorateLinks } from './favicons'
 import { boxifyLinks, decorateCode, hoverLinks, hoverable } from './previews'
 import { copyText } from './clip'
@@ -421,6 +422,52 @@ export function ConfirmHost() {
         {c.remember ? <label className="cskip"><input type="checkbox" checked={skip} onChange={(e) => setSkip(e.target.checked)} /><span>다시 묻지 않기</span></label> : null}
       </div>
       <div className="modal-f"><span className="sp" /><button className="btn" onClick={() => done(false)}>취소</button><button className="btn on" autoFocus onClick={() => done(true)}>{c.ok}</button></div>
+    </div>
+  </>
+}
+
+/**
+ * 「파일 전후 diff」(루프 6/10) — 봇이 손댄 파일의 «턴 전 ↔ 지금» 을 한 장으로.
+ * 🔴 **비교는 여기서 한다**(core/diff) — 호스트는 «전» 글만 준다. 화면이 계산하므로 폰에서도 같은 값이다.
+ * ⚠ «전을 모른다»(호스트를 다시 켰다) 는 빈 파일과 다르다 — 말로 하고, 지금 글만 보여 준다.
+ * ⚠ askConfirm 과 같은 호스트 모양(`showDiff` + `DiffHost`) — 채팅 줄 어디서든 세션 id·경로만 알면 연다.
+ */
+interface DiffReq { botId: string; sid: string; abs: string; onOpen?: (abs: string) => void }
+let diffSet: ((r: DiffReq | null) => void) | null = null
+export function showDiff(r: DiffReq): void { diffSet?.(r) }
+export function DiffHost() {
+  const [r, setR] = useState<DiffReq | null>(null)
+  useEffect(() => { diffSet = setR; return () => { diffSet = null } }, [])
+  if (!r) return null
+  return <DiffSheet key={`${r.sid}:${r.abs}`} req={r} onClose={() => setR(null)} />
+}
+function DiffSheet({ req, onClose }: { req: DiffReq; onClose: () => void }) {
+  const [d, setD] = useState<{ rel: string; before?: string | null; after?: string | null; known: boolean } | null>(null)
+  const [err, setErr] = useState('')
+  const [opened, setOpened] = useState<Set<number>>(new Set())
+  useEffect(() => {
+    api<{ rel: string; before?: string | null; after?: string | null; known: boolean }>(`/bots/${req.botId}/diff?abs=${encodeURIComponent(req.abs)}&s=${encodeURIComponent(req.sid)}`).then(setD).catch((e: Error) => setErr(e.message))
+  }, [req.botId, req.sid, req.abs])
+  useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose() } }; window.addEventListener('keydown', k, true); return () => window.removeEventListener('keydown', k, true) }, [onClose])
+  const name = req.abs.split('/').pop() ?? req.abs
+  const rows = useMemo(() => (d && d.known && typeof d.after === 'string' ? foldSame(diffLines(d.before ?? '', d.after)) : null), [d])
+  const stat = useMemo(() => (d && d.known && typeof d.after === 'string' ? diffStat(diffLines(d.before ?? '', d.after)) : null), [d])
+  let body: ReactNode
+  if (err) body = <p className="dnote">{err}</p>
+  else if (!d) body = <p className="dnote">읽는 중…</p>
+  else if (d.after === undefined) body = <p className="dnote">글 파일이 아니라 줄로 비교할 수 없어요.</p>
+  else if (!d.known) body = <><p className="dnote">이 세션이 손대기 전의 내용을 갖고 있지 않아요 — 호스트를 다시 켰거나 너무 오래된 턴이에요. 지금 내용만 보여 드려요.</p><pre className="dnow">{d.after ?? '(파일이 없어요)'}</pre></>
+  else if (d.after === null) body = <p className="dnote">지금은 파일이 없어요{d.before ? ` — 전에는 ${d.before.split('\n').length}줄이 있었어요.` : '.'}</p>
+  else if (stat && !stat.add && !stat.del) body = <p className="dnote">바뀐 줄이 없어요 — 같은 내용을 다시 썼어요.</p>
+  else body = <div className="dlines">{rows!.map((r, i) => r.t === '~'
+    ? (opened.has(i) ? r.lines.map((s, j) => <div key={`${i}.${j}`} className="ln"><span className="g"> </span>{s || ' '}</div>) : <button key={i} className="fold" onClick={() => setOpened((o) => new Set(o).add(i))}>··· 같은 {r.n}줄 펼치기</button>)
+    : <div key={i} className={`ln ${r.t === '+' ? 'add' : r.t === '-' ? 'del' : ''}`}><span className="g">{r.t === '=' ? ' ' : r.t}</span>{r.s || ' '}</div>)}</div>
+  return <>
+    <div className="backdrop" onClick={onClose} />
+    <div className="modal dif" style={{ width: 'min(860px,calc(100% - 24px))', height: 'min(720px,calc(100% - 24px))' }}>
+      <div className="modal-h"><div className="t"><b>{name}</b><small>{d?.rel ?? ''}{d && !d.known ? '' : d?.before === null ? ' · 새 파일' : ''}</small></div>{stat ? <span className="dstat"><span style={{ color: 'var(--done)' }}>+{stat.add}</span> <span style={{ color: 'var(--err)' }}>−{stat.del}</span></span> : null}<button className="ib" onClick={onClose}><Icon n="x" size={14} /></button></div>
+      <div className="modal-b" style={{ flex: 1, padding: '0 0 8px' }}>{body}</div>
+      <div className="modal-f"><span style={{ color: 'var(--t3)', fontSize: 12 }}>이 턴이 손대기 전 ↔ 지금 디스크</span><span className="sp" />{req.onOpen ? <button className="btn" onClick={() => { req.onOpen?.(req.abs); onClose() }}>문서 열기</button> : null}<button className="btn on" onClick={onClose}>닫기 (⎋)</button></div>
     </div>
   </>
 }

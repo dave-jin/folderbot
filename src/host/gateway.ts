@@ -407,6 +407,19 @@ export class Gateway {
        * ⚠ 돌려주는 `rel` 은 **봇 폴더 기준**이다(`../` 가 섞일 수 있다) — 문서·트리 API 가 그걸 그대로 받는다.
        *    `guard` 가 루트 밖을 막으므로 `..` 로 볼트를 벗어날 수는 없다.
        */
+      /**
+       * 「파일 전후 diff」(루프 6/10) — 세션이 붙잡아 둔 «전» 과 지금 디스크의 «후» 를 함께 준다. 비교는 화면이 한다(core/diff).
+       * ⚠ `before === undefined` 는 «모른다»(호스트를 다시 켰거나 상한 밖) — 화면은 그걸 빈 파일로 그리지 말고 말로 한다.
+       */
+      if (sub === 'diff' && m === 'GET') {
+        const p = url.searchParams.get('abs') ?? ''
+        const sid = url.searchParams.get('s') ?? ''
+        let abs: string
+        try { abs = resolveNFDeep('/', guard(roots(bot), p.startsWith('/') ? p : join(bot.abs, p)).slice(1)) } catch { return json(404, { error: '루트 밖' }) }
+        const after = exists(abs) && kindOf(abs) === 'text' ? readText(abs).text : exists(abs) ? undefined : null
+        const before = h.sessions.before(sid, abs)
+        return json(200, { rel: relative(bot.abs, abs), before, after, known: before !== undefined })
+      }
       if (sub === 'exists' && m === 'POST') {
         const b = await body()
         const rels = (Array.isArray(b.rels) ? b.rels : []).slice(0, 40).map(String)

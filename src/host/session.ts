@@ -206,6 +206,20 @@ export class SessionManager extends EventEmitter {
   private recs = new Map<string, SessionRec>()
   private workers = new Map<string, Worker>()
   private streaming = new Map<string, ChatItem & { kind: 'assistant' }>()
+  /**
+   * 「파일 전후 diff」(루프 6/10) — 도구가 파일을 **건드리기 전** 의 글을 세션마다 붙잡아 둔다.
+   * 🔴 **«전» 은 봇이 마지막으로 본 내용이다** — `tool_use` 가 도착한 순간에 디스크를 읽으면 늦을 수 있다.
+   *    CLI 는 줄을 흘리고 **곧바로** 도구를 돌리므로(스텁은 같은 틱에 쓴다 · 실측: 전 = 후) 경주가 된다.
+   *    대신 Claude Code 의 규칙을 탄다 — **있는 파일은 Read 한 뒤에만 Write·Edit 할 수 있다.** 그래서
+   *    Read 가 도착할 때 디스크를 읽어 `seen` 에 두고(그때는 아무도 안 고친다), 고치는 도구가 오면 그걸 «전» 으로 삼는다.
+   *    `seen` 에 없는 파일에 Write 가 오면 **새 파일**(null)이다 — 디스크를 읽지 않는다(읽으면 경주에 진다).
+   *    고친 뒤(tool_result)에는 디스크를 다시 읽어 `seen` 을 갱신한다 — 다음 턴의 «전» 이다.
+   * ⚠ 한 턴 안에서는 첫 손댐만 «전» 이다 — Edit 를 다섯 번 해도 사람이 보고 싶은 것은 «턴 전 ↔ 지금» 이다.
+   * ⚠ 메모리에만 산다(세션당 60개 · 2MB 넘는 파일은 안 잡는다) — 호스트를 다시 켜면 «전을 모른다» 고 답한다.
+   */
+  private befores = new Map<string, Map<string, { text: string | null; turn: number }>>()
+  private seen = new Map<string, Map<string, string | null>>()
+  private turnAt = new Map<string, number>()
   private dir = ensureDir(join(dataDir(), 'sessions'))
   idleTtlMs = 60 * 60 * 1000
   mcpUrl: (sid: string, botId: string) => string | undefined = () => undefined
@@ -245,6 +259,22 @@ export class SessionManager extends EventEmitter {
     return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
   }
   get(id: string): SessionRec | undefined { return this.recs.get(id) }
+  /** 「전」 — `undefined` = 모른다(호스트 재시작·상한 밖) · `null` = 그때는 파일이 없었다 */
+  before(sid: string, abs: string): string | null | undefined { return this.befores.get(sid)?.get(abs)?.text }
+  private seenOf(r: SessionRec): Map<string, string | null> { let m = this.seen.get(r.id); if (!m) { m = new Map(); this.seen.set(r.id, m) } return m }
+  private diskText(abs: string): string | null {
+    try { if (!existsSync(abs)) return null; const st = statSync(abs); return st.size > 2_000_000 ? null : readFileSync(abs, 'utf8') } catch { return null }
+  }
+  private captureBefore(r: SessionRec, abs: string, tool: string): void {
+    const turn = this.turnAt.get(r.id) ?? 0
+    let m = this.befores.get(r.id); if (!m) { m = new Map(); this.befores.set(r.id, m) }
+    const had = m.get(abs); if (had && had.turn === turn) return
+    if (!had && m.size >= 60) return
+    const seen = this.seenOf(r)
+    // Write 를 Read 없이 한다 = 새 파일(규칙) · Edit 을 Read 없이 한다 = 호스트가 다시 켜진 뒤(디스크가 최선)
+    const text = seen.has(abs) ? seen.get(abs) ?? null : tool === 'Write' ? null : this.diskText(abs)
+    m.set(abs, { text, turn })
+  }
   items(id: string): ChatItem[] { return this.recs.get(id)?.items ?? [] }
 
   create(bot: Bot, name: string, opts: { permissionMode?: PermissionMode; model?: string; effort?: string; routine?: string; vendor?: 'claude' | 'codex' } = {}): SessionRec {
@@ -492,7 +522,8 @@ export class SessionManager extends EventEmitter {
         this.push(r, { id, t: Date.now(), kind: 'tool', name, summary: toolSummary(name, input), input, parentId: sub ? sub.id : undefined })
         if (sub) { sub.tools += 1; sub.last = `${name} ${toolSummary(name, input)}`.slice(0, 80); this.push(r, sub, true) }
         this.setActivity(r, `${sub ? `${sub.name} › ` : ''}${name} · ${toolSummary(name, input)}`.slice(0, 120), true)
-        const tp = touchedPath(name, input); if (tp) touched.push(tp)
+        const tp = touchedPath(name, input); if (tp) { touched.push(tp); this.captureBefore(r, tp, name) }
+        else if (name === 'Read' && typeof input.file_path === 'string') this.seenOf(r).set(input.file_path, this.diskText(input.file_path))
       }
       if (touched.length) { this.push(r, { id: itemId('f'), t: Date.now(), kind: 'files', paths: touched }); this.emit('files', r.botId) }
       this.setState(r, { kind: 'stream_activity' })
@@ -505,7 +536,11 @@ export class SessionManager extends EventEmitter {
         let it: ChatItem | undefined; for (let i = r.items.length - 1; i >= 0; i--) if (r.items[i].id === id) { it = r.items[i]; break }
         const c = b.content
         const resText = (typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => (x as { text?: string }).text ?? '').join('\n') : '').slice(0, 2000)
-        if (it && it.kind === 'tool') { it.result = resText; it.isError = !!b.is_error; this.push(r, it, true) }
+        if (it && it.kind === 'tool') {
+          it.result = resText; it.isError = !!b.is_error; this.push(r, it, true)
+          // 고친 뒤의 디스크가 다음 턴의 «전» 이다
+          const tp = touchedPath(it.name, it.input ?? {}); if (tp && !b.is_error) this.seenOf(r).set(tp, this.diskText(tp))
+        }
         else if (it && it.kind === 'subagent') { if (it.bg || /^Async agent launched/i.test(resText)) { it.bg = true; this.push(r, it, true) } else { it.status = b.is_error ? 'error' : 'done'; it.result = resText; this.push(r, it, true) } }
       }
       return
@@ -526,6 +561,7 @@ export class SessionManager extends EventEmitter {
 
   send(r: SessionRec, bot: Bot, text: string): void {
     this.autoTitle(r, text)
+    this.turnAt.set(r.id, Date.now())
     /**
      * 🔴 **Codex 의 슬래시 명령은 우리가 처리한다** (2026-09-13 Dave: «codex 에서는 /clear 와 같은
      *    메시지도 동작을 안해»). `codex exec` 는 한 턴짜리 명령이라 «세션 명령» 이 없다 —
