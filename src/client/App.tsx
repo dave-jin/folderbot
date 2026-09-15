@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Bot, ChatItem, NotifyEvent, PermissionMode, PermissionRequest, RoutineDef, SessionInfo, SlashCmd } from '../core/types'
 import { api, setToken, token, uploadFile } from './api'
 import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
-import { AskHost, FolderPicker, Md, NotifyCenter, Onboarding, Pairing, RoutineSheet, Settings, askName, useToast } from './Sheets'
+import { AskHost, ConfirmHost, FolderPicker, Md, NotifyCenter, Onboarding, Pairing, RoutineSheet, Settings, askConfirm, askName, useToast } from './Sheets'
 import { AgentPickHost, pickAgent } from './AgentPick'
 import type { SecId } from './Settings'
 import { VendorMark } from './Brand'
@@ -540,6 +540,7 @@ function Main() {
       go={(b, sid) => go(b, sid)} openDoc={(rel, pin) => openDoc(rel, pin)} setModal={setModal} newSession={newSession}
       toggle={(w) => { if (w === 'sb') setLay((l) => ({ ...l, sbOpen: !l.sbOpen })); else if (w === 'rp') setLay((l) => ({ ...l, rpOpen: !l.rpOpen })); else setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] })) }} /> : null}
     <AskHost />
+    <ConfirmHost />
     <AgentPickHost />
     {toast ? <div className="toast">{toast}</div> : null}
   </div>
@@ -701,7 +702,27 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   useEffect(() => { const el = scRef.current; if (!el) return; measure(); el.addEventListener('scroll', measure, { passive: true }); return () => el.removeEventListener('scroll', measure) }, [collapsed, cur?.id, phone])
   useEffect(() => { const el = scRef.current; if (atBottom && el) el.scrollTop = el.scrollHeight; measure() }, [items.length, last && (last.kind === 'assistant' || last.kind === 'thinking') ? last.text.length : 0, pending.length, cur?.activity, lastUser?.id])
   useEffect(() => { if (!pop) return; const off = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest('.cpop, .cbtn, .ring, .plusb')) setPop('') }; const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setPop(''); if (pop === 'mode' && /^[1-4]$/.test(e.key) && !(e.target as HTMLElement).matches('textarea,input')) { e.preventDefault(); void applyCfg({ permissionMode: MODES[Number(e.key) - 1].v }) } }; window.addEventListener('mousedown', off); window.addEventListener('keydown', key); return () => { window.removeEventListener('mousedown', off); window.removeEventListener('keydown', key) } }, [pop])
-  const applyCfg = async (p: { model?: string; effort?: string; permissionMode?: PermissionMode }) => { setPop(''); if (cur) { try { await api(`/sessions/${cur.id}/settings`, { body: p }); if (cur.alive && (running || state === 'awaiting_input')) say('이 턴이 끝나면 적용돼요') } catch (e) { say((e as Error).message) } } else setDraft((d) => ({ ...d, ...p })) }
+  /**
+   * 🔴 **돌던 대화의 모델을 바꾸는 건 공짜가 아니다** (2026-09-15 Dave 지정 — Claude Code 와 같은 확인창).
+   *    지금까지의 대화는 **지금 모델 기준으로 캐시**돼 있다. 모델을 갈면 다음 메시지에서 전체 세션을
+   *    다시 읽으므로 한도를 더 쓴다. 그래서 «바꿀까요» 를 한 번 묻는다.
+   * ⚠ **아직 한 마디도 안 한 세션은 안 묻는다** — 캐시된 것이 없으니 물어볼 이유가 없다.
+   * ⚠ 노력·권한 모드는 안 묻는다(캐시를 안 버린다). 「다시 묻지 않기」는 이 기기에 적힌다.
+   */
+  const applyCfg = async (p: { model?: string; effort?: string; permissionMode?: PermissionMode }) => {
+    setPop('')
+    if (!cur) { setDraft((d) => ({ ...d, ...p })); return }
+    if (p.model !== undefined && p.model !== (cur.model ?? '') && cur.cliSessionId) {
+      const okGo = await askConfirm({
+        title: '모델을 변경하시겠습니까?',
+        body: `현재 세션은 ${modelLabel(cur.model, vend)} 기준으로 캐시되어 있습니다. ${modelLabel(p.model, vend)}로 전환하면 다음 메시지를 보낼 때 ${vend === 'codex' ? 'Codex' : 'Claude'}가 전체 세션을 다시 읽으며, 이는 한도를 더 많이 사용합니다.`,
+        ok: '모델 변경',
+        remember: 'fb:askmodel'
+      })
+      if (!okGo) return
+    }
+    try { await api(`/sessions/${cur.id}/settings`, { body: p }); if (cur.alive && (running || state === 'awaiting_input')) say('이 턴이 끝나면 적용돼요') } catch (e) { say((e as Error).message) }
+  }
   const post = async (t: string) => { if (cur) await api(`/sessions/${cur.id}/send`, { body: { text: t } }); else { const r = await api<{ sessionId: string }>(`/bots/${bot.id}/send`, { body: { text: t, name: '메인', ...draft } }); await refreshAll(); onSession(r.sessionId) } }
   // ⚠ 대기열을 내보내는 일은 **부모**가 한다 — 보고 있지 않은 세션의 것도 나가야 하기 때문(위 머리말)
   const sendText = async (raw: string) => {
@@ -1059,15 +1080,24 @@ function FilePickModal({ bot, onClose, onPick }: { bot: Bot; onClose: () => void
 
 function PermCard({ p, sid }: { p: PermissionRequest; sid: string }) {
   const [busy, setBusy] = useState(false); const [sent, setSent] = useState(false)
-  const [pick, setPick] = useState<Record<string, string>>({}); const [other, setOther] = useState('')
+  /**
+   * 🔴 **「기타」 칸은 질문마다 따로다** (2026-09-15 Dave: *«AskUserQuestion 에서 추가 Text를 입력하면
+   *    위에 전체에 나오네»* — 한 칸에 친 글이 **모든 질문의 기타 줄에 똑같이** 떴다).
+   *    글 상자가 하나뿐이었다. 게다가 보낼 때도 그 글을 **첫 질문의 답**으로 넣어서, 세 번째 질문에
+   *    쓴 말이 첫 질문의 답으로 갔다(조용히 틀리는 쪽이라 더 나쁘다).
+   */
+  const [pick, setPick] = useState<Record<string, string>>({}); const [other, setOther] = useState<Record<string, string>>({})
   const act = async (body: Record<string, unknown>, path: 'permission' | 'ask') => { setBusy(true); try { await api(`/sessions/${sid}/${path}`, { body: { requestId: p.requestId, ...body } }); setSent(true) } finally { setBusy(false) } }
   if (sent) return <div className="meta"><Icon n="check" size={11} color="var(--done)" /><span>보냈어요</span></div>
   if (p.ask) {
     const qs = (p.input.questions as { question?: string; header?: string; options?: { label?: string; description?: string }[]; multiSelect?: boolean }[] | undefined) ?? []
-    const ready = qs.every((q, i) => pick[q.question ?? String(i)]) || !!other.trim()
+    const keyOf = (q: { question?: string }, i: number) => q.question ?? String(i)
+    const answerOf = (q: { question?: string }, i: number) => (other[keyOf(q, i)] ?? '').trim() || pick[keyOf(q, i)] || ''
+    const answers = () => Object.fromEntries(qs.map((q, i) => [keyOf(q, i), answerOf(q, i)]).filter(([, v]) => v))
+    const ready = qs.every((q, i) => !!answerOf(q, i))
     return <div className="card"><div className="lab">에이전트의 질문{qs[0]?.header ? ` · ${qs[0].header}` : ''}</div>
-      {qs.map((q, i) => { const key = q.question ?? String(i); return <div key={i} style={{ display: 'flex', flexDirection: 'column' }}><div className="q">{q.question}</div>{(q.options ?? []).map((o) => <button key={o.label} className={`opt ${pick[key] === o.label ? 'on' : ''}`} onClick={() => setPick({ ...pick, [key]: o.label ?? '' })}><span className="r" /><div><div>{o.label}</div>{o.description ? <div className="d">{o.description}</div> : null}</div></button>)}<div className={`opt ${other ? 'on' : ''}`}><span className="r" style={{ marginTop: 7 }} /><input placeholder="기타 — 직접 입력…" value={other} onChange={(e) => setOther(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && other.trim()) void act({ answers: { [key]: other.trim() } }, 'ask') }} /></div></div> })}
-      <div className="btns"><button className="btn ghost" disabled={busy} onClick={() => act({ allow: false }, 'permission')}>취소 ⎋</button><span style={{ flex: 1 }} /><button className="btn primary" disabled={busy || !ready} onClick={() => act({ answers: other.trim() ? { [qs[0]?.question ?? 'answer']: other.trim() } : pick }, 'ask')}>보내기</button></div></div>
+      {qs.map((q, i) => { const key = q.question ?? String(i); return <div key={i} style={{ display: 'flex', flexDirection: 'column' }}><div className="q">{q.question}</div>{(q.options ?? []).map((o) => <button key={o.label} className={`opt ${pick[key] === o.label ? 'on' : ''}`} onClick={() => setPick({ ...pick, [key]: o.label ?? '' })}><span className="r" /><div><div>{o.label}</div>{o.description ? <div className="d">{o.description}</div> : null}</div></button>)}<div className={`opt ${(other[key] ?? '').trim() ? 'on' : ''}`}><span className="r" style={{ marginTop: 7 }} /><input placeholder="기타 — 직접 입력…" value={other[key] ?? ''} onChange={(e) => setOther({ ...other, [key]: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter' && ready) void act({ answers: answers() }, 'ask') }} /></div></div> })}
+      <div className="btns"><button className="btn ghost" disabled={busy} onClick={() => act({ allow: false }, 'permission')}>취소 ⎋</button><span style={{ flex: 1 }} /><button className="btn primary" disabled={busy || !ready} onClick={() => act({ answers: answers() }, 'ask')}>보내기</button></div></div>
   }
   const i = p.input; const cmd = typeof i.command === 'string' ? i.command : typeof i.file_path === 'string' ? i.file_path : typeof i.url === 'string' ? i.url : JSON.stringify(i).slice(0, 400)
   const human = p.description || (typeof i.command === 'string' ? `명령을 실행합니다` : typeof i.file_path === 'string' ? `파일을 ${/Write|Edit/.test(p.toolName) ? '고칩니다' : '읽습니다'} — ${String(i.file_path).split('/').pop()}` : `${p.displayName} 를 씁니다`)

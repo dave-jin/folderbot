@@ -28,9 +28,21 @@ const say = (o) => process.stdout.write(JSON.stringify({ session_id: sessionId, 
 try { const dir = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-')); mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, `${sessionId}.jsonl`), JSON.stringify({ cwd: process.cwd() }) + '\n') } catch {}
 say({ type: 'system', subtype: 'init', model, tools: [], mcp_servers: [], slash_commands: ['compact', 'context', 'review'] })
 const rl = createInterface({ input: process.stdin })
-let pendingReq = null
+let pendingReq = null, pendingAsk = null
 rl.on('line', (raw) => {
   let msg; try { msg = JSON.parse(raw) } catch { return }
+  /**
+   * 🔴 **질문 카드(AskUserQuestion)** — 답이 **어느 질문에 붙어서** 돌아오는지까지 재려고 그대로 되읊는다.
+   *    (2026-09-15 Dave: «AskUserQuestion 에서 추가 Text를 입력하면 위에 전체에 나오네» — 화면의
+   *    「기타」 칸이 하나뿐이라 모든 질문에 같은 글이 떴고, 보낼 때도 **첫 질문의 답**으로 갔다.)
+   */
+  if (msg.type === 'control_response' && pendingAsk) {
+    pendingAsk = null
+    const answers = msg.response?.response?.updatedInput?.answers ?? {}
+    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: `답변 받음: ${JSON.stringify(answers)}` }], stop_reason: 'end_turn' } })
+    say({ type: 'result', subtype: 'success', duration_ms: 90, total_cost_usd: 0.001 })
+    return
+  }
   if (msg.type === 'control_response' && pendingReq) {
     const allow = msg.response?.response?.behavior === 'allow'
     const { text } = pendingReq; pendingReq = null
@@ -99,6 +111,14 @@ rl.on('line', (raw) => {
   say({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `stub-task-${u}`, content: '하위 조사 결과: 2건' }] } })
   say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: `stub-todo-${u}`, name: 'TodoWrite', input: { todos: [{ content: '읽기', status: 'completed', activeForm: '읽는 중' }, { content: '답 쓰기', status: 'in_progress', activeForm: '답 쓰는 중' }] } }] } })
   say({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `stub-todo-${u}`, content: 'ok' }] } })
+  if (/질문/.test(text)) {
+    pendingAsk = true
+    process.stdout.write(JSON.stringify({ type: 'control_request', request_id: `req-${randomUUID()}`, request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', display_name: 'AskUserQuestion', description: '', input: { questions: [
+      { question: '첫 질문은 무엇으로 할까요?', header: '하나', options: [{ label: '가 안', description: '첫째' }, { label: '나 안' }] },
+      { question: '둘째 질문은 무엇으로 할까요?', header: '둘', options: [{ label: '다 안' }, { label: '라 안' }] }
+    ] }, permission_suggestions: [] } }) + '\n')
+    return
+  }
   if (/승인|permission/.test(text) || process.env.STUB_ASK_PERMISSION) {
     pendingReq = { text }
     const request_id = `req-${randomUUID()}`

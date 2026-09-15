@@ -385,6 +385,40 @@ export function AskHost() {
   </>
 }
 
+/**
+ * 🔴 **되돌리기 어려운 한 걸음 앞의 확인창** — 지금은 «모델 바꾸기» 가 쓴다 (2026-09-15 Dave 지정 문안).
+ *
+ * ⚠ `confirm()` 을 안 쓰는 이유는 **Electron 에 없어서가 아니라**(그건 있다) 「다시 묻지 않기」를
+ *   달 수 없어서다. 같은 질문을 매번 받는 확인창은 곧 아무도 안 읽는 확인창이 된다.
+ * ⚠ 「다시 묻지 않기」는 **이 기기**에 적힌다(localStorage) — 물어볼지 말지는 취향이라 기기마다 다르다.
+ */
+let confSet: ((c: Conf | null) => void) | null = null
+let confResolve: ((v: boolean) => void) | null = null
+interface Conf { title: string; body: string; ok: string; remember?: string }
+export function askConfirm(c: Conf): Promise<boolean> {
+  if (c.remember) { try { if (localStorage.getItem(c.remember) === '0') return Promise.resolve(true) } catch { /* */ } }
+  return new Promise((res) => { confResolve?.(false); confResolve = res; if (confSet) confSet(c); else { confResolve = null; res(window.confirm(`${c.title}\n\n${c.body}`)) } })
+}
+export function ConfirmHost() {
+  const [c, setC] = useState<Conf | null>(null); const [skip, setSkip] = useState(false)
+  useEffect(() => { confSet = (n) => { setC(n); setSkip(false) }; return () => { confSet = null } }, [])
+  if (!c) return null
+  const done = (v: boolean) => {
+    if (v && skip && c.remember) { try { localStorage.setItem(c.remember, '0') } catch { /* */ } }
+    setC(null); const r = confResolve; confResolve = null; r?.(v)
+  }
+  return <>
+    <div className="backdrop" onClick={() => done(false)} />
+    <div className="modal conf" style={{ width: 'min(520px,calc(100% - 24px))' }}>
+      <div className="modal-h"><div className="t"><b>{c.title}</b></div></div>
+      <div className="modal-b" style={{ padding: '2px 22px 6px' }}><p className="cbody">{c.body}</p>
+        {c.remember ? <label className="cskip"><input type="checkbox" checked={skip} onChange={(e) => setSkip(e.target.checked)} /><span>다시 묻지 않기</span></label> : null}
+      </div>
+      <div className="modal-f"><span className="sp" /><button className="btn" onClick={() => done(false)}>취소</button><button className="btn on" autoFocus onClick={() => done(true)}>{c.ok}</button></div>
+    </div>
+  </>
+}
+
 export function useToast(): [string, (m: string) => void] {
   const [msg, setMsg] = useState(''); const t = useRef<number | undefined>(undefined)
   return [msg, (m: string) => { setMsg(m); window.clearTimeout(t.current); t.current = window.setTimeout(() => setMsg(''), 2600) }]

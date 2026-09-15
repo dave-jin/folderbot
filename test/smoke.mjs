@@ -821,8 +821,42 @@ try {
             const more = await pg.$$eval('.cpop.r .prow2 b', (r) => r.map((x) => x.textContent))
             for (const want of ['Opus 4.8', 'Opus 4.7', 'Sonnet 4.6', 'Sonnet 5 · 1M']) if (!more.includes(want)) fail(`더 많은 모델: «${want}» 가 없다 ` + JSON.stringify(more))
             await pg.keyboard.press('Escape'); await wait(300)
-            await pg.focus('.composer textarea')   // ⚠ 같은 이유 — 팝업을 닫으면 포커스가 입력칸을 떠난다
-            ok('모델 고르기 — 첫 목록 넷 · 「더 많은 모델」에 옛 판과 1M')
+            /**
+             * 🔴 **돌던 대화의 모델을 바꿀 땐 한 번 묻는다** (2026-09-15 Dave 지정 문안 — Claude Code 와 같은 확인창).
+             *    지금까지의 대화는 지금 모델 기준으로 캐시돼 있어서, 갈면 다음 메시지에 전체를 다시 읽는다(한도를 더 쓴다).
+             * ⚠ 취소하면 **아무것도 안 바뀌어야** 한다 — 확인창의 존재 이유가 그것이다.
+             */
+            // ⚠ 해시에 `s` 가 없으면 화면은 **목록의 첫 세션**을 보여 준다 — 재는 쪽도 같은 것을 봐야 한다
+            const hashSid = await pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('s'))
+            const live = async () => { const l = await api(`/bots/${bot.id}/sessions`); return (hashSid && l.find((x) => x.id === hashSid)) || l[0] }
+            const sid = (await live()).id
+            const modelNow = async () => (await live()).model ?? ''
+            const was = await modelNow()
+            const pickModel = async (label) => {
+              await pg.click('.composer .cbtn[title="모델"]'); await wait(350)
+              await pg.evaluate((t) => { const b = [...document.querySelectorAll('.cpop.r .prow2')].find((x) => x.querySelector('b')?.textContent === t); b?.click() }, label)
+            }
+            const target = was === 'claude-sonnet-5' ? 'Haiku 4.5' : 'Sonnet 5'
+            await pickModel(target)
+            try { await pg.waitForSelector('.modal.conf', { timeout: 5000 }) } catch {
+              const d = await pg.evaluate(() => ({ hash: location.hash, pop: !!document.querySelector('.cpop'), rows: [...document.querySelectorAll('.cpop.r .prow2 b')].map((x) => x.textContent) }))
+              fail('모델 확인창: 안 떴다 · ' + JSON.stringify(d) + ' · 세션=' + JSON.stringify((await api(`/bots/${bot.id}/sessions`)).map((x) => [x.id.slice(-4), x.model, !!x.cliSessionId])) + ' · 목표=' + target + ' · 지금=' + was)
+            }
+            const ctext = (await pg.textContent('.modal.conf')) ?? ''
+            if (!/모델을 변경하시겠습니까/.test(ctext) || !/캐시/.test(ctext) || !/다시 묻지 않기/.test(ctext)) fail('모델 확인창: 문안이 다르다 · ' + JSON.stringify(ctext.slice(0, 160)))
+            await pg.evaluate(() => { const b = [...document.querySelectorAll('.modal.conf .modal-f .btn')].find((x) => x.textContent === '취소'); b?.click() })
+            await wait(700)
+            if ((await modelNow()) !== was) fail('모델 확인창: 취소했는데 바뀌었다 · ' + JSON.stringify([was, await modelNow()]))
+            await pickModel(target)
+            await pg.waitForSelector('.modal.conf', { timeout: 5000 })
+            await pg.click('.modal.conf .modal-f .btn.on')
+            let after = was
+            for (let i = 0; i < 40; i++) { after = await modelNow(); if (after !== was) break; await wait(250) }
+            if (after === was) fail('모델 확인창: 눌렀는데 안 바뀌었다 · ' + JSON.stringify(after))
+            await api(`/sessions/${sid}/settings`, { model: was })   // 원래대로 (API 로는 안 묻는다)
+            await wait(400)
+            await pg.focus('.composer textarea')   // ⚠ 팝업·확인창을 닫으면 포커스가 입력칸을 떠난다
+            ok('모델 고르기 — 목록 · 「더 많은 모델」 · 바꾸기 전 확인창(취소하면 그대로)')
           }
           /**
            * 🔴 **대기 메시지는 «그 세션의 것»이다** (2026-09-15 Dave: *«que 메시지를 보내놓은 상태에서
@@ -910,6 +944,35 @@ try {
             await pg.evaluate((h) => { location.hash = h }, backHash); await wait(600)
             await pg.focus('.composer textarea')   // ⚠ 뒤 검사들이 «입력칸에 포커스» 를 전제로 ⌘⏎ 를 친다
             ok('알림을 누르면 그 폴더의 그 세션이 열린다')
+          }
+          /**
+           * 🔴 **질문 카드의 「기타」는 질문마다 따로다** (2026-09-15 Dave: *«AskUserQuestion 에서 추가
+           *    Text를 입력하면 위에 전체에 나오네»*). 글 상자가 하나뿐이라 **모든 질문에 같은 글**이 떴고,
+           *    보낼 때도 그 글이 **첫 질문의 답**으로 갔다 — 조용히 틀리는 쪽이라 더 나빴다.
+           * ⚠ 그래서 둘째 질문에만 쓰고 ① 첫 질문 칸이 비어 있는지 ② 답이 **둘째 질문에 붙어** 가는지 잰다.
+           */
+          {
+            await pg.fill('.composer textarea', '질문 좀 해 줘'); await pg.click('.composer .sendb')
+            await pg.waitForSelector('.card .opt input', { timeout: 8000 })
+            const ins = await pg.$$('.card .opt input')
+            if (ins.length < 2) fail('질문 카드: 「기타」 칸이 질문 수만큼 없다 · ' + ins.length)
+            await ins[1].fill('직접 쓴 둘째 답')
+            await wait(300)
+            const first = await ins[0].inputValue()
+            if (first) fail('🔴 질문 카드: 한 칸에 썼는데 다른 질문에도 같은 글이 떴다 · ' + JSON.stringify(first))
+            // 첫 질문은 고르고, 둘째는 직접 쓴 글로 — 둘이 안 섞여야 한다
+            await pg.evaluate(() => { const b = [...document.querySelectorAll('.card .opt')].find((x) => x.textContent?.includes('가 안')); b?.click() })
+            await wait(200)
+            await pg.click('.card .btns .btn.primary')
+            let echo = ''
+            for (let i = 0; i < 60; i++) { echo = (await pg.textContent('.chat-body')) ?? ''; if (/답변 받음/.test(echo)) break; await wait(250) }
+            const m = /답변 받음: (\{.*?\})/.exec(echo)
+            if (!m) fail('질문 카드: 답이 CLI 까지 안 갔다')
+            const got = JSON.parse(m[1])
+            if (got['둘째 질문은 무엇으로 할까요?'] !== '직접 쓴 둘째 답') fail('🔴 질문 카드: 직접 쓴 글이 엉뚱한 질문의 답으로 갔다 · ' + m[1])
+            if (got['첫 질문은 무엇으로 할까요?'] !== '가 안') fail('질문 카드: 고른 답이 안 갔다 · ' + m[1])
+            await wait(300)
+            ok('질문 카드 — 「기타」는 질문마다 따로, 답도 제 질문에 붙어 간다')
           }
           // 🔴 **링크 앞에 파비콘** (2026-09-13 Dave) — 자리표시자를 먼저 놓으므로 인터넷이 없어도 자리는 있다.
           //    ⛔ 비워 두고 도착할 때 넣으면 글줄이 그때마다 옆으로 밀린다.
