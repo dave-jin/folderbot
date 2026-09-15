@@ -6,9 +6,9 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { transition, shouldNotify } from '../core/stateMachine'
-import { assistantText, closeOpenItems, contextOf, itemId, toolSummary, touchedPath, type StreamLine } from '../core/chat'
+import { assistantText, closeOpenItems, contextOf, itemId, modelOf, toolSummary, touchedPath, type StreamLine } from '../core/chat'
 import { CodexWorker } from './codex'
-import { fitsProvider } from '../core/agents'
+import { fitsProvider, sameModel } from '../core/agents'
 import { CODEX_LOCAL, parseLocalSlash } from '../core/slashLocal'
 import { isAutoSessionName, titleFromText } from '../core/sessionTitle'
 import { isModelRejected } from '../core/codexMap'
@@ -421,9 +421,25 @@ export class SessionManager extends EventEmitter {
     for (let i = r.items.length - 1; i >= 0; i--) { const it = r.items[i]; if (it.id === `t_${parentId}`) return it.kind === 'subagent' ? it : undefined }
     return undefined
   }
+  /**
+   * 🔴 **지금 도는 모델은 CLI 가 말해 준다** (2026-09-15 Dave: *«모델이 바뀌었지만 하단에 반영이 안되네»*
+   *    — 대화에서 `/model claude-opus-4-8` 을 치면 CLI 는 바꿔 주는데 우리 칩은 고른 적 없는
+   *    옛 이름을 계속 들고 있었다). 답에 찍혀 오는 이름이 정본이다.
+   * ⚠ 날짜 꼬리표만 다른 것은 **같은 모델**이다(`sameModel`) — 아니면 사람이 고른 이름이 매 턴 덮인다.
+   * ⚠ 서브에이전트 줄은 제 모델이라 세지 않는다.
+   */
+  private noteModel(r: SessionRec, line: StreamLine): void {
+    if (line.parent_tool_use_id) return
+    const m = modelOf(line)
+    if (!m || sameModel(m, r.model)) return
+    r.model = m
+    this.persist(r); this.emit('sessions', r.botId)
+  }
+
   private onLine(r: SessionRec, line: StreamLine): void {
     if (line.session_id && r.cliSessionId !== line.session_id) { r.cliSessionId = line.session_id; this.persist(r) }
     if (line.type === 'system' && (line.subtype === 'task_started' || line.subtype === 'task_notification' || line.subtype === 'task_updated')) { this.onTask(r, line); return }
+    this.noteModel(r, line)
     if (line.type === 'system' && line.subtype === 'init') { if (Array.isArray(line.slash_commands)) { r.slash = line.slash_commands.map(String); this.emit('sessions', r.botId) } return }
     const parent = line.parent_tool_use_id ?? null
     if (line.type === 'stream_event') {
@@ -448,6 +464,9 @@ export class SessionManager extends EventEmitter {
     if (line.type === 'assistant') {
       const sub = this.subOf(r, parent)
       const text = assistantText(line)
+      // ⚠ 컨텍스트는 **이 줄의 usage** 로 잰다 — result 의 합계가 아니라(`core/chat.ts` 의 `contextOf`).
+      //   서브에이전트 줄은 제 작은 문맥이라 세지 않는다.
+      if (!parent) { const c = contextOf(line, r.ctx, r.model); if (c) { r.ctx = c; this.emit('sessions', r.botId) } }
       if (!parent) {
         this.endThinking(r, (line.message?.content ?? []).filter((b) => b.type === 'thinking' && typeof b.thinking === 'string').map((b) => String(b.thinking)).filter((t) => t.trim()))
         const cur = this.streaming.get(r.id)
@@ -497,7 +516,7 @@ export class SessionManager extends EventEmitter {
       this.endThinking(r)
       for (const it of closeOpenItems(r.items, 'result')) this.push(r, it, true)
       this.push(r, { id: itemId('r'), t: Date.now(), kind: 'result', ok: !line.is_error, durationMs: line.duration_ms ?? 0, costUsd: line.total_cost_usd, error: line.is_error ? String(line.error ?? line.result ?? '') : undefined })
-      const ctx = contextOf(line); if (ctx) r.ctx = ctx
+      const ctx = contextOf(line, r.ctx, r.model); if (ctx) r.ctx = ctx
       this.setActivity(r, '', true)
       this.setState(r, { kind: 'result_received', isError: !!line.is_error })
       if (r.restartPending) { r.restartPending = false; const w = this.workers.get(r.id); if (w && !w.pending.size) { w.kill(); this.workers.delete(r.id) } }

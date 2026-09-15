@@ -24,8 +24,30 @@ marked.setOptions({ gfm: true, breaks: true })
  */
 function decorate(root: HTMLElement, hits: string[], open: (rel: string) => void, botId?: string): void {
   if (!hits.length) return
+  const chip = (hit: string): HTMLButtonElement => {
+    const b = document.createElement('button')
+    b.className = 'pchip'; b.type = 'button'; b.textContent = hit.split('/').pop() ?? hit; b.title = hit
+    b.dataset.rel = hit
+    b.addEventListener('click', (e) => { e.preventDefault(); open(hit) })
+    // 첨부·문서 칩도 오버하면 미리보기 — 이미지는 그림을, 글은 앞 몇 줄을 (`previews.ts`)
+    if (botId) hoverable(b, { kind: 'file', botId, rel: hit })
+    return b
+  }
+  /**
+   * 🔴 **백틱에 싸인 경로도 칩이 된다** (2026-09-15 Dave: *«답변 내용안에는 바로 클릭가능한 칩이 없어»*).
+   *    에이전트는 파일 이름을 거의 언제나 `` `…` `` 로 감싼다 — 인라인 코드를 통째로 건너뛰던 종전 규칙은
+   *    사실상 «칩을 만들지 않는다» 와 같았다.
+   * ⚠ 통째로 경로인 코드 조각은 **요소째** 칩으로 바꾼다(코드 배경 안에 칩이 앉으면 두 겹으로 보인다).
+   * ⛔ 펜스 코드(`pre`)는 그대로 둔다 — 예시 코드지 이 볼트의 파일이 아니고, 복사 단추도 거기 붙어 있다.
+   */
+  for (const c of [...root.querySelectorAll('code')]) {
+    if (c.closest('pre')) continue
+    const t = (c.textContent ?? '').trim()
+    const hit = hits.find((h) => h === t)
+    if (hit) c.replaceWith(chip(hit))
+  }
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode: (n) => (n.parentElement?.closest('code,pre,a,.pchip') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT)
+    acceptNode: (n) => (n.parentElement?.closest('pre,a,.pchip') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT)
   })
   const texts: Text[] = []
   for (let n = walker.nextNode(); n; n = walker.nextNode()) texts.push(n as Text)
@@ -36,13 +58,7 @@ function decorate(root: HTMLElement, hits: string[], open: (rel: string) => void
       if (i < 0) continue
       const after = cur.splitText(i)
       const rest = after.splitText(hit.length)
-      const b = document.createElement('button')
-      b.className = 'pchip'; b.type = 'button'; b.textContent = hit.split('/').pop() ?? hit; b.title = hit
-      b.dataset.rel = hit
-      b.addEventListener('click', (e) => { e.preventDefault(); open(hit) })
-      // 첨부·문서 칩도 오버하면 미리보기 — 이미지는 그림을, 글은 앞 몇 줄을 (`previews.ts`)
-      if (botId) hoverable(b, { kind: 'file', botId, rel: hit })
-      after.replaceWith(b)
+      after.replaceWith(chip(hit))
       cur = rest
     }
   }

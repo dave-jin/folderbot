@@ -7,6 +7,7 @@ import { ACT_COLOR, ACT_ICON, ACT_LABEL, LONG, actOf, buzz, slotOf, useSwipeCfg,
 import { HOLD_MS, decide, dropIndex } from './gesture'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { RoutineSheet, askName } from './Sheets'
+import { refreshModels } from './consts'
 import { Mark, VendorMark, useProviders } from './Brand'
 import { Float, anchorOf, type Anchor } from './Float'
 import { PROVIDER_LABEL, type ProviderId } from '../core/agents'
@@ -40,6 +41,7 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
     setPick(null)
     try {
       const info = await api<SessionInfo>(`/bots/${bot.id}/sessions`, { body: { name: `세션 ${sessions.length + 1}`, vendor: vendor ?? provs[0]?.id } })
+      void refreshModels()   // ⚠ 새 세션마다 모델 상태를 다시 본다 (2026-09-15 Dave)
       await refresh(); go(bot.id, info.id)
     } catch (e) { say((e as Error).message) }
   }

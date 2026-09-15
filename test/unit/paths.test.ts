@@ -10,8 +10,17 @@ describe('candidatePaths', () => {
   it('URL 은 안 집는다 — 이미 링크다', () => {
     expect(candidatePaths('https://example.com/a/b.md 를 봐')).toEqual([])
   })
-  it('인라인 코드 · 펜스 안은 안 집는다', () => {
-    expect(candidatePaths('`src/core/a.ts` 와 ```\nsrc/core/b.ts\n``` 는 코드다')).toEqual([])
+  /**
+   * 🔴 2026-09-15 뒤집힘 — 에이전트는 파일 이름을 거의 언제나 백틱으로 감싼다. 인라인 코드를 통째로
+   *    거르면 「칩이 되는 경로」가 실제 답변에서는 거의 안 생겼다(Dave: «답변 내용안에는 칩이 없어»).
+   */
+  it('인라인 코드 안의 경로는 집고, 펜스 안은 안 집는다', () => {
+    const c = candidatePaths('`src/core/a.ts` 와 ```\nsrc/core/b.ts\n``` 는 다르다')
+    expect(c).toContain('src/core/a.ts')
+    expect(c.some((x) => x.includes('b.ts'))).toBe(false)
+  })
+  it('백틱 바로 뒤에서 시작해도 공백 있는 폴더까지 넓힌다', () => {
+    expect(candidatePaths('정본 `3. Area/제품_Rondo/todo.md` 를 고쳐')[0]).toBe('3. Area/제품_Rondo/todo.md')
   })
   it('마크다운 링크의 목적지는 안 집는다', () => {
     expect(candidatePaths('[할 일](2. Projects/x/todo.md) 를 봐')).toEqual([])

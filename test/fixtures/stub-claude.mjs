@@ -18,10 +18,15 @@ if (/못쓰는모델/.test(at('--model') ?? '')) {
   process.exit(1)
 }
 const sessionId = at('--resume') ?? `stub-${randomUUID()}`
+/**
+ * 🔴 **대화 안에서 모델을 바꾼다** — 진짜 CLI 는 `/model <이름>` 을 받아 그 세션의 모델을 갈고,
+ *    그 뒤의 답에는 **바뀐 이름**이 찍혀 온다 (2026-09-15 Dave: «모델이 바뀌었지만 하단에 반영이 안되네»).
+ */
+let model = at('--model') ?? 'stub'
 const say = (o) => process.stdout.write(JSON.stringify({ session_id: sessionId, ...o }) + '\n')
 // 트랜스크립트 파일을 흉내 — --resume 판정이 이걸 본다
 try { const dir = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-')); mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, `${sessionId}.jsonl`), JSON.stringify({ cwd: process.cwd() }) + '\n') } catch {}
-say({ type: 'system', subtype: 'init', model: at('--model') ?? 'stub', tools: [], mcp_servers: [], slash_commands: ['compact', 'context', 'review'] })
+say({ type: 'system', subtype: 'init', model, tools: [], mcp_servers: [], slash_commands: ['compact', 'context', 'review'] })
 const rl = createInterface({ input: process.stdin })
 let pendingReq = null
 rl.on('line', (raw) => {
@@ -100,7 +105,16 @@ rl.on('line', (raw) => {
     process.stdout.write(JSON.stringify({ type: 'control_request', request_id, request: { subtype: 'can_use_tool', tool_name: 'Bash', display_name: 'Bash', description: '명령을 실행합니다', input: { command: 'npm run qa' }, permission_suggestions: [{ type: 'addRules', rules: [{ toolName: 'Bash' }] }] } }) + '\n')
     return
   }
-  say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: `스텁이 받았습니다: ${text.slice(0, 60)}` }], stop_reason: 'end_turn' } })
-  say({ type: 'result', subtype: 'success', duration_ms: 123, total_cost_usd: 0.001, usage: { input_tokens: 4000, cache_read_input_tokens: 60000, cache_creation_input_tokens: 0, output_tokens: 300 }, modelUsage: { stub: { contextWindow: 200000 } } })
+  /**
+   * 🔴 **컨텍스트를 두 갈래로 흘린다 — 진짜 CLI 처럼** (2026-09-15).
+   *    assistant 줄의 usage 는 «이번 호출의 프롬프트 크기»(64k)이고, result 줄의 usage 는
+   *    «이번 턴에 쓴 토큰의 합»(348만 — 도구를 여러 번 돌면 창보다 커진다)이다.
+   *    modelUsage 에는 서브에이전트가 한 번 쓴 1M 모델도 섞어 둔다.
+   *    ⚠ 둘을 헷갈리면 화면에 «3483k / 1000k · 100%» 가 찍힌다(Dave 가 본 그 화면).
+   */
+  const mset = /^\/model\s+(\S+)/.exec(text.trim())
+  if (mset) model = mset[1]
+  say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: mset ? `Set model to ${model} for this session only` : `스텁이 받았습니다: ${text.slice(0, 60)}` }], stop_reason: 'end_turn', usage: { input_tokens: 4000, cache_read_input_tokens: 60000, cache_creation_input_tokens: 0, output_tokens: 300 } } })
+  say({ type: 'result', subtype: 'success', duration_ms: 123, total_cost_usd: 0.001, usage: { input_tokens: 3483000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 9000 }, modelUsage: { stub: { contextWindow: 200000, inputTokens: 3400000, outputTokens: 9000 }, 'stub-sub[1m]': { contextWindow: 1000000, inputTokens: 500, outputTokens: 40 } } })
 })
 rl.on('close', () => process.exit(0))

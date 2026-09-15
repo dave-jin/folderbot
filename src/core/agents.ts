@@ -52,10 +52,25 @@ export const AGENT_MODELS: Record<ProviderId, AgentModel[]> = {
  */
 export const MORE_MODELS: Record<ProviderId, AgentModel[]> = {
   claude: [
+    // 🔴 **Claude Code 의 「더 많은 모델」과 같은 줄 세우기** (2026-09-15 Dave 스크린샷) — 옛 판을
+    //    여기서 고를 수 있어야 한다. 첫 목록은 그대로 짧게 둔다.
+    { v: 'claude-fable-5', t: 'Fable 5', d: '' },
+    { v: 'claude-opus-4-8', t: 'Opus 4.8', d: '' },
+    { v: 'claude-opus-4-7', t: 'Opus 4.7', d: '' },
+    { v: 'claude-opus-4-6', t: 'Opus 4.6', d: '' },
+    { v: 'claude-sonnet-4-6', t: 'Sonnet 4.6', d: '' },
     { v: 'claude-sonnet-5[1m]', t: 'Sonnet 5 · 1M', d: '긴 문맥 — 요금제에 따라 다름' }
   ],
   codex: []
 }
+
+/**
+ * 같은 모델인가 — 🔴 **날짜 꼬리표와 `claude-` 머리는 같은 모델의 다른 표기다**.
+ *    CLI 는 `claude-fable-5-1` 로 띄워도 답에는 `claude-fable-5-1-20260501` 처럼 판을 박아 보낸다.
+ *    그걸 «바뀌었다» 로 보면 사람이 고른 이름이 매 턴 덮인다.
+ */
+const normModel = (m: string): string => m.toLowerCase().replace(/-\d{8}$/, '').replace(/^claude-/, '')
+export function sameModel(a?: string, b?: string): boolean { return !!a && !!b && normModel(a) === normModel(b) }
 
 export const AGENT_EFFORTS: Record<ProviderId, { v: string; t: string }[]> = {
   claude: [{ v: 'low', t: '낮음' }, { v: 'medium', t: '보통' }, { v: 'high', t: '높음' }, { v: 'xhigh', t: '매우' }, { v: 'max', t: '최대' }],

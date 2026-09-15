@@ -1,6 +1,7 @@
 import type { PermissionMode } from '../core/types'
 import { AGENT_EFFORTS, AGENT_MODELS, DEFAULT_EFFORT, DEFAULT_MODEL, MORE_MODELS, type AgentModel, type ProviderId } from '../core/agents'
 import { mergeModels } from '../core/modelList'
+import { api } from './api'
 
 /**
  * 모델·노력 — 🔴 **정본은 `core/agents.ts` 다.** 여기는 «Claude 것» 이라는 이름의 별칭일 뿐이다.
@@ -17,9 +18,21 @@ export const EFFORTS = AGENT_EFFORTS.claude
  * ⚠ 못 받아 왔으면 빌트인 그대로다 — 빈 칸보다 낫다.
  */
 let found: { claude: string[]; codex: string[] } = { claude: [], codex: [] }
+const watchers = new Set<() => void>()
 export function setFoundModels(f: { claude?: string[]; codex?: string[] }): void {
   found = { claude: f.claude ?? [], codex: f.codex ?? [] }
+  for (const w of [...watchers]) w()
 }
+/**
+ * 🔴 **다시 물어본다 — 켠 그대로 두지 않는다** (2026-09-15 Dave: *«새 세션이 생길때 마다 모델 상태를
+ *    확인하고 갱신해줘야해»*). 앱을 켜 둔 채 CLI 를 업데이트하면 쓸 수 있는 모델이 바뀌는데,
+ *    부팅 때 한 번 받아 둔 목록은 그걸 영영 모른다.
+ * ⚠ 목록은 **모듈 한 곳**에 있고 화면은 `onModels` 로 듣는다 — 설정과 입력창이 갈리지 않게.
+ */
+export async function refreshModels(): Promise<void> {
+  try { setFoundModels(await api<{ claude: string[]; codex: string[] }>('/agents/models')) } catch { /* 못 받으면 빌트인 그대로 */ }
+}
+export function onModels(cb: () => void): () => void { watchers.add(cb); return () => { watchers.delete(cb) } }
 /**
  * 첫 목록 — **골라 둔 것만**(종류별 최신 하나씩). 기계에서 주워 온 이름은 여기 안 섞는다.
  * 🔴 2026-09-14 Dave 스크린샷: 긁어 온 이름을 첫 목록에 섞었더니 플러그인 이름(`claude-mythos` 등)이

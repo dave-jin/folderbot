@@ -70,6 +70,26 @@ try {
   if (!chat.items.some((i) => i.kind === 'tool' && i.name === 'Read')) fail('tool line missing')
   if (chat.info.state !== 'done') fail(`state ${chat.info.state}`); ok('send → tool → assistant → done')
   /**
+   * 🔴 **대화에서 바꾼 모델이 화면에 반영된다** (2026-09-15 Dave: «모델이 바뀌었지만 하단에 반영이 안되네»
+   *    — `/model claude-opus-4-8` 을 쳤는데 아래 칩은 계속 옛 이름이었다).
+   * ⚠ 정본은 **답에 찍혀 오는 이름**이다 — 우리가 넘긴 이름이 아니라.
+   * ⚠ 날짜 꼬리표만 다른 것은 같은 모델로 본다(안 그러면 사람이 고른 이름이 매 턴 덮인다).
+   */
+  {
+    const ms = await api(`/bots/${bot.id}/sessions`, { name: '모델 바꾸기' })
+    await api(`/sessions/${ms.id}/send`, { text: '/model claude-opus-4-8' })
+    let got = null
+    for (let i = 0; i < 40; i++) { got = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === ms.id); if (got?.model === 'claude-opus-4-8') break; await wait(200) }
+    if (got?.model !== 'claude-opus-4-8') fail('모델 바꾸기: 대화에서 바꾼 모델이 세션에 안 붙었다 · ' + JSON.stringify(got && got.model))
+    // 같은 모델의 날짜 판이 오면 덮지 않는다
+    await api(`/sessions/${ms.id}/send`, { text: '/model claude-opus-4-8-20260101' })
+    await wait(700)
+    const after = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === ms.id)
+    if (after.model !== 'claude-opus-4-8') fail('모델 바꾸기: 날짜 꼬리표만 다른 판이 이름을 덮었다 · ' + JSON.stringify(after.model))
+    await api(`/sessions/${ms.id}`, undefined, 'DELETE')
+    ok('대화에서 바꾼 모델(/model)이 세션에 그대로 붙는다')
+  }
+  /**
    * 🔴 **첫 말이 제목이 된다** (2026-09-15 Dave: «첫 채팅이 진행되면 그에 맞는 채팅 제목을 자동으로»).
    * ⚠ 덮는 것은 앱이 붙인 이름(`메인` · `세션 3`)뿐이고, **사람이 지은 이름은 그대로 둔다** — 아래 두 번째 검사.
    */
@@ -95,7 +115,13 @@ try {
   if (chat.items.some((i) => i.kind === 'tool' && i.name === 'TodoWrite')) fail('TodoWrite should not be a tool line')
   if (!frames.some((f) => f.ev === 'activity')) fail('no activity frame'); ok('subagent(parentId) · thinking · todos · activity')
   // 컨텍스트 사용량 (result.usage) · 슬래시 목록 (파일 + CLI init)
-  if (!chat.info.ctx || chat.info.ctx.used !== 64000 || chat.info.ctx.window !== 200000) fail('ctx: ' + JSON.stringify(chat.info.ctx))
+  /**
+   * 🔴 **컨텍스트는 «지금 프롬프트의 크기»** (2026-09-15 Dave: «하단의 Context 부분이 오류가 있는거 같아»
+   *    — 화면에 «3483k / 1000k · 100%» 가 찍혔다). 스텁은 진짜 CLI 처럼 두 숫자를 다 흘린다:
+   *    assistant 줄의 64k(이번 호출) · result 줄의 348만(턴 합계) · 1M 짜리 서브에이전트 모델.
+   * ⚠ 합계를 쓰거나 modelUsage 의 최댓값을 쓰면 여기서 바로 빨개진다.
+   */
+  if (!chat.info.ctx || chat.info.ctx.used !== 64000 || chat.info.ctx.window !== 200000) fail('ctx: 합계·남의 창을 집었다 ' + JSON.stringify(chat.info.ctx))
   mkdirSync(join(root, '3. Area/제품_Rondo/.claude/skills/standup'), { recursive: true }); writeFileSync(join(root, '3. Area/제품_Rondo/.claude/skills/standup/SKILL.md'), '---\nname: standup\ndescription: 어제 한 일·오늘 할 일 정리\n---\n# standup\n')
   mkdirSync(join(root, '.claude/commands'), { recursive: true }); writeFileSync(join(root, '.claude/commands/status.md'), '봇 현황 한 줄\n')
   const slc = await api(`/bots/${bot.id}/slash?sid=${s1.sessionId}`)
@@ -761,6 +787,42 @@ try {
           if (!chip.titles.some((t) => t.endsWith('첨부/회의록.txt'))) fail('경로 칩: 엉뚱한 것이 칩이 됐다 ' + JSON.stringify(chip))
           if (chip.titles.some((t) => t.includes('없는폴더'))) fail('경로 칩: 없는 파일이 칩이 됐다 — 죽은 링크가 쌓인다 ' + JSON.stringify(chip))
           await pg.fill('.composer textarea', ''); await wait(400)
+          /**
+           * 🔴 **백틱에 싸인 경로도 칩이 된다** (2026-09-15 Dave: *«답변 내용안에는 바로 클릭가능한 칩이
+           *    없어»*). 에이전트는 파일 이름을 거의 언제나 `` `…` `` 로 감싼다 — 인라인 코드를 통째로
+           *    건너뛰던 종전 규칙은 사실상 «칩을 만들지 않는다» 였다(실제 답변에서 칩이 거의 안 보인 이유).
+           */
+          {
+            await pg.fill('.composer textarea', '정본은 `첨부/회의록.txt` 입니다')
+            await pg.keyboard.press('Enter')
+            let bt = null
+            for (let i = 0; i < 40; i++) {
+              bt = await pg.evaluate(() => {
+                const md = [...document.querySelectorAll('.chat-body .md')].pop()
+                return md ? { chips: [...md.querySelectorAll('.pchip')].map((x) => x.title), code: [...md.querySelectorAll('code')].map((x) => x.textContent) } : null
+              })
+              if (bt && bt.chips.length) break
+              await wait(300)
+            }
+            if (!bt || !bt.chips.some((t) => t.endsWith('첨부/회의록.txt'))) fail('백틱 경로 칩: 코드로 싸인 경로가 칩이 안 됐다 ' + JSON.stringify(bt))
+            if (bt.code.some((c) => (c ?? '').includes('첨부/회의록.txt'))) fail('백틱 경로 칩: 코드 조각이 그대로 남아 두 겹이다 ' + JSON.stringify(bt))
+            await pg.fill('.composer textarea', ''); await wait(300)
+            ok('백틱에 싸인 경로도 답 안에서 바로 누를 수 있다')
+          }
+          /**
+           * 🔴 **모델 목록 — 첫 목록은 짧게, 「더 많은 모델」에 옛 판** (2026-09-15 Dave 스크린샷).
+           * ⚠ 여는 순간 `/api/agents/models` 를 다시 물어본다 — 켜 둔 채 CLI 를 업데이트해도 따라오게.
+           */
+          {
+            await pg.click('.composer .cbtn[title="모델"]'); await wait(400)
+            const first = await pg.$$eval('.cpop.r .prow2 b', (r) => r.map((x) => x.textContent))
+            for (const want of ['Fable 5.1', 'Opus 5', 'Sonnet 5', 'Haiku 4.5', '더 많은 모델']) if (!first.includes(want)) fail(`모델 목록: «${want}» 가 없다 ` + JSON.stringify(first))
+            await pg.click('.cpop.r .prow2.more'); await wait(300)
+            const more = await pg.$$eval('.cpop.r .prow2 b', (r) => r.map((x) => x.textContent))
+            for (const want of ['Opus 4.8', 'Opus 4.7', 'Sonnet 4.6', 'Sonnet 5 · 1M']) if (!more.includes(want)) fail(`더 많은 모델: «${want}» 가 없다 ` + JSON.stringify(more))
+            await pg.keyboard.press('Escape'); await wait(300)
+            ok('모델 고르기 — 첫 목록 넷 · 「더 많은 모델」에 옛 판과 1M')
+          }
           // 🔴 **링크 앞에 파비콘** (2026-09-13 Dave) — 자리표시자를 먼저 놓으므로 인터넷이 없어도 자리는 있다.
           //    ⛔ 비워 두고 도착할 때 넣으면 글줄이 그때마다 옆으로 밀린다.
           {
@@ -1429,6 +1491,21 @@ try {
         await pg.click('.tobot'); await wait(900)
         if (!(await pg.evaluate(() => document.querySelector('.tobot')?.classList.contains('off')))) fail('ui ↓ should hide at bottom')
         // 파일 칩 → 문서 열이 열린다 · 트리 클릭 → 미리보기 탭
+        /**
+         * 🔴 **손댄 파일 칩은 답 아래에 있다** (2026-09-15 Dave: *«채팅 상단이 아니라 채팅 본문에 칩이
+         *    있어야 해»*). 호스트는 도구가 파일을 건드리는 그 순간 칩 줄을 넣어(답보다 먼저) 기계 구역에
+         *    얹혀 있었다 — 답을 다 읽고 나면 눈이 위로 되돌아가야 했다. 줄 순서는 `core/chatRows` 가 정한다.
+         */
+        {
+          const pos = await pg.evaluate(() => {
+            const rows = [...document.querySelectorAll('.chat-body .amsg, .chat-body .files')]
+            const i = rows.findIndex((r) => r.classList.contains('files'))
+            return { i, before: rows.slice(0, Math.max(0, i)).filter((r) => r.classList.contains('amsg')).length }
+          })
+          if (pos.i < 0) fail('손댄 파일 칩: 대화에 칩 줄이 아예 없다')
+          if (!pos.before) fail('손댄 파일 칩: 답보다 위에 있다(기계 구역에 얹혔다) ' + JSON.stringify(pos))
+          ok('손댄 파일 칩이 답 아래에 붙는다')
+        }
         await pg.click('.files .chip'); await pg.waitForSelector('.doc .dbody', { timeout: 5000 }); await wait(400)
         const tabs = await pg.$$eval('.doc .tab', (r) => r.length); if (tabs < 1) fail('doc tab')
         await pg.screenshot({ path: 'test/tmp/desktop-doc.png' })
