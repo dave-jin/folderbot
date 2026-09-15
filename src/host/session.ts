@@ -259,6 +259,8 @@ export class SessionManager extends EventEmitter {
     return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
   }
   get(id: string): SessionRec | undefined { return this.recs.get(id) }
+  /** 볼트 전체의 세션 기록 — 「지난 대화 찾기」 가 훑는다(읽기만) */
+  all(): SessionRec[] { return [...this.recs.values()] }
   /** 「전」 — `undefined` = 모른다(호스트 재시작·상한 밖) · `null` = 그때는 파일이 없었다 */
   before(sid: string, abs: string): string | null | undefined { return this.befores.get(sid)?.get(abs)?.text }
   private seenOf(r: SessionRec): Map<string, string | null> { let m = this.seen.get(r.id); if (!m) { m = new Map(); this.seen.set(r.id, m) } return m }

@@ -13,6 +13,7 @@ import { providers } from './providers'
 import { agentModels, codexAuth, diagnose } from './auth'
 import { canon } from './registry'
 import { normalizeRootInput } from '../core/rootPath'
+import { searchConversations } from '../core/convSearch'
 
 /**
  * 안 겹치는 이름 — `이름`, 없으면 `이름 2`, `이름 3` …
@@ -232,6 +233,16 @@ export class Gateway {
      * ⚠ 봇마다 `todo.md` 하나를 읽는 것뿐이라 싸다. 정렬은 **가장 먼저 할 것**(파일 순서) 그대로 둔다 —
      *    「중요도」 를 여기서 지어내면 화면마다 다른 순서가 된다.
      */
+    /**
+     * 「지난 대화 찾기」(루프 7/10) — 볼트 전체 세션의 **이름·말** 을 훑는다. 판정은 core/convSearch.
+     * ⚠ 봇 경계를 넘는 유일한 읽기라 여기(전역)에 둔다 — 팔레트에서 «그 얘기 어느 폴더에서 했지» 를 푼다.
+     */
+    if (p === '/api/search' && m === 'GET') {
+      const q = url.searchParams.get('q') ?? ''
+      const names = new Map(reg.bots().map((b) => [b.id, b.name]))
+      const hits = searchConversations(q, h.sessions.all().map((r) => ({ id: r.id, botId: r.botId, name: r.name, lastActivity: r.lastActivity, items: r.items as { kind: string; text?: string }[] })), 20)
+      return json(200, hits.map((x) => ({ ...x, bot: names.get(x.botId) ?? '' })))
+    }
     if (p === '/api/todos' && m === 'GET') {
       const rows = reg.bots().filter((b) => !b.orchestrator).map((b) => {
         const open = readTodo(b.abs).filter((t) => !t.done)

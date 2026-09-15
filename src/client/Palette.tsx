@@ -64,17 +64,36 @@ export function Palette(p: PaletteProps) {
     return out
   }, [p.bots, p.bot.id, p.sessions, files, s.hostName])
 
+  /**
+   * ⑤ 지난 대화 (루프 7/10) — 두 글자부터, 200ms 쉬었다가 호스트에 묻는다(볼트 전체 · 이름과 말).
+   * ⚠ 이 폴더의 세션이 이름으로 이미 걸렸으면 겹치지 않게 뺀다(같은 곳으로 가는 줄이 둘이면 헷갈린다).
+   * ⚠ 답이 늦게 와서 **지금 질의와 다르면 버린다** — 빠른 타자에 옛 답이 덮어쓰는 고전적 경주.
+   */
+  const [hits, setHits] = useState<{ q: string; rows: PalAct[] }>({ q: '', rows: [] })
+  useEffect(() => {
+    const qq = q.trim()
+    if (qq.length < 2) { setHits({ q: '', rows: [] }); return }
+    const t = window.setTimeout(() => {
+      void api<{ sessionId: string; botId: string; name: string; snippet: string; where: 'name' | 'text'; bot: string }[]>(`/search?q=${encodeURIComponent(qq)}`)
+        .then((l) => setHits({ q: qq, rows: l.map((h) => ({ id: `h-${h.sessionId}`, icon: 'sub', label: h.name, sub: h.where === 'text' ? h.snippet : `${h.bot} · 대화`, hint: h.where === 'text' ? h.bot : undefined, run: () => p.go(h.botId, h.sessionId) })) }))
+        .catch(() => setHits({ q: qq, rows: [] }))
+    }, 200)
+    return () => window.clearTimeout(t)
+  }, [q])
   const rows = useMemo(() => {
     if (!q.trim()) return acts.slice(0, 40)
-    return rank(q, acts, (a) => ({ name: a.label, path: a.sub ?? '' }), 40)
-  }, [q, acts])
+    const local = rank(q, acts, (a) => ({ name: a.label, path: a.sub ?? '' }), 40)
+    if (hits.q !== q.trim()) return local
+    const seen = new Set(local.map((a) => a.id.replace(/^s-/, 'h-')))
+    return [...local, ...hits.rows.filter((h) => !seen.has(h.id))]
+  }, [q, acts, hits])
   useEffect(() => { setI(0) }, [q])
   useEffect(() => { listRef.current?.querySelector('.on')?.scrollIntoView({ block: 'nearest' }) }, [i, rows])
 
   const pick = (a?: PalAct) => { if (!a) return; p.onClose(); a.run() }
   return <><div className="backdrop" onClick={p.onClose} /><div className="modal pal">
     <div className="pq"><Icon n="search" size={14} color="var(--t3)" />
-      <input autoFocus placeholder="어디로 갈까요 — 폴더 · 문서 · 세션 · 명령" value={q} onChange={(e) => setQ(e.target.value)}
+      <input autoFocus placeholder="어디로 갈까요 — 폴더 · 문서 · 세션 · 명령 · 지난 대화" value={q} onChange={(e) => setQ(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Escape') { e.preventDefault(); p.onClose(); return }
           if (e.key === 'ArrowDown') { e.preventDefault(); setI((n) => Math.min(rows.length - 1, n + 1)); return }
@@ -83,10 +102,10 @@ export function Palette(p: PaletteProps) {
         }} />
       <span className="k">⎋</span></div>
     <div className="plist" ref={listRef}>
-      {rows.map((a, n) => <button key={a.id} className={`prow ${n === i ? 'on' : ''}`} onMouseEnter={() => setI(n)} onClick={() => pick(a)}>
+      {rows.map((a, n) => <button key={a.id} className={`prow ${n === i ? 'on' : ''} ${a.id.startsWith('h-') ? 'hit' : ''}`} onMouseEnter={() => setI(n)} onClick={() => pick(a)}>
         {a.icon === 'folder' && a.id.startsWith('b-') ? <FolderBot color={p.bots.find((b) => `b-${b.id}` === a.id)?.color ?? '#888'} size={14} mono /> : <Icon n={a.icon} size={13} color="var(--t3)" />}
         <span className="n"><Mid s={a.label} /></span>
-        {a.sub ? <span className="sb"><Mid s={a.sub} /></span> : null}
+        {a.sub ? <span className={`sb ${a.id.startsWith('h-') && !a.hint ? '' : a.id.startsWith('h-') ? 'snip' : ''}`}><Mid s={a.sub} /></span> : null}
         {a.hint ? <span className="k">{a.hint}</span> : null}
       </button>)}
       {!rows.length ? <div className="kv" style={{ color: 'var(--t3)' }}>찾는 게 없어요</div> : null}

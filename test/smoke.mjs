@@ -1464,6 +1464,29 @@ try {
           ok('명령 팔레트 ⌘P — 폴더 · 문서 · 세션 · 명령 (되돌리기 어려운 일은 없다)')
         }
         /**
+         * 🔴 **지난 대화 찾기** (루프 7/10) — 같은 칸에 두 글자를 치면 볼트 전체 세션의 **말** 까지 걸린다.
+         *    «큐에 남아야 하는 말» 은 위의 큐 검사가 어느 세션에 보낸 두 번째 말이라 이름이 아니라 **본문**으로만 걸린다.
+         * ⚠ 호스트에 묻는 것이라 200ms 쉬었다가 간다 — 그래서 여기서도 기다린다.
+         */
+        {
+          const home = await pg.evaluate(() => location.hash)
+          await pg.keyboard.press('Meta+p'); await wait(400)
+          await pg.fill('.modal.pal .pq input', '큐에 남아야'); await wait(900)
+          const hit = await pg.evaluate(() => { const r = document.querySelector('.modal.pal .prow.hit'); return r ? { n: r.querySelector('.n')?.textContent, sb: r.querySelector('.sb')?.textContent, all: document.querySelectorAll('.modal.pal .prow').length } : null })
+          if (!hit) fail('지난 대화: 본문으로 걸리는 줄이 없다 ' + JSON.stringify(await pg.evaluate(() => [...document.querySelectorAll('.modal.pal .prow')].map((r) => r.textContent))))
+          if (!/큐에 남아야/.test(hit.sb ?? '')) fail('지난 대화: 토막에 걸린 말이 없다 ' + JSON.stringify(hit))
+          const want = []
+          for (const b of await api('/bots')) for (const x of await api(`/bots/${b.id}/sessions`)) { const c = await api(`/sessions/${x.id}/chat`); if (c.items.some((i) => i.kind === 'user' && /큐에 남아야/.test(i.text ?? ''))) want.push({ bot: b.id, s: x.id }) }
+          if (!want.length) fail('지난 대화: 검사 전제가 틀렸다 — 그 말을 가진 세션이 없다')
+          await pg.click('.modal.pal .prow.hit'); await wait(900)
+          const at = await pg.evaluate(() => Object.fromEntries(new URLSearchParams(location.hash.slice(1))))
+          if (!want.some((w) => w.bot === at.bot && (w.s === at.s || !at.s))) fail('지난 대화: 고른 줄이 그 세션으로 안 갔다 ' + JSON.stringify({ at, want }))
+          if (await pg.$('.modal.pal')) fail('지난 대화: 고르면 팔레트가 닫혀야 한다')
+          await pg.evaluate((h) => { location.hash = h }, home); await wait(900)
+          await pg.focus('.composer textarea')
+          ok('지난 대화 찾기 — ⌘P 에 두 글자면 볼트 전체의 말까지 · 고르면 그 세션으로')
+        }
+        /**
          * ⛔ **고른 줄에 주황 네모가 씌워지면 안 된다** (2026-09-13 Dave: *«선택시 생기는 오렌지 박스는
          *    없애줘. 불필요해»*). 맥의 강조색이 주황이면 크롬 기본 초점 테두리가 그 색으로 나온다.
          * ⚠ 같은 라운드에 «회사 표식은 세션 이름 오른쪽에» 도 넣었지만 **여기서는 못 잰다** —
