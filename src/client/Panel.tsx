@@ -108,6 +108,9 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
     {!bot.orchestrator ? <div className="sec fix">
       <HarnessSec bot={bot} open={!!open.harness} tog={() => tog('harness')} onOpenFile={onOpenFile} />
     </div> : null}
+    {!bot.orchestrator ? <><div className="divy" style={{ cursor: 'default' }} /><div className="sec fix">
+      <CmdSec bot={bot} open={!!open.cmds} tog={() => tog('cmds')} onOpenFile={onOpenFile} say={say} filesTick={filesTick} />
+    </div></> : null}
     <div className="divy" style={{ cursor: 'default' }} />
     {/* 루틴 */}
     <div className="sec fix">
@@ -144,6 +147,31 @@ function HarnessSec({ bot, open, tog, onOpenFile }: { bot: Bot; open: boolean; t
       {!guides.length && hz ? <div className="kv" style={{ color: 'var(--t3)' }}>지침 파일이 없어요 — CLAUDE.md 를 만들면 봇이 읽어요</div> : null}
       {shown.map((i) => <div className="hz" key={`${i.kind}:${i.name}`}><Icon n={i.kind === 'mcp' ? 'plug' : 'run'} size={13} color={i.scope === 'folder' ? 'var(--run)' : 'var(--t3)'} /><span className="n">{i.name}</span><span className="sc">{i.kind === 'mcp' ? '커넥터' : '스킬'} · {SCOPE_T[i.scope]}</span></div>)}
       {items.length > 4 ? <button className="hz more" onClick={() => setAll(!all)}>{all ? '접기' : `+ 스킬 ${hz!.skillList.length} · 커넥터 ${hz!.mcpList.length} 모두 보기`}</button> : null}
+    </div> : null}
+  </>
+}
+
+/**
+ * 슬래시 명령 (루프 8/10) — 🔴 **명령은 파일이다**(`.claude/commands/<이름>.md`). 여기서는 목록·만들기·열기만 하고,
+ * 고치는 것은 문서 열이, 지우는 것은 파일 트리(휴지통)가 한다 — 같은 일을 두 곳에서 하지 않는다.
+ * ⚠ 사용자 것(`~/.claude`)은 문서 열 밖이라 보여 주기만 한다.
+ */
+interface CmdRow { name: string; desc: string; scope: 'folder' | 'root' | 'user'; rel: string | null }
+function CmdSec({ bot, open, tog, onOpenFile, say, filesTick }: { bot: Bot; open: boolean; tog: () => void; onOpenFile: (rel: string) => void; say: (m: string) => void; filesTick?: number }) {
+  const [rows, setRows] = useState<CmdRow[] | null>(null)
+  useEffect(() => { if (!open) return; void api<CmdRow[]>(`/bots/${bot.id}/commands`).then(setRows).catch(() => setRows([])) }, [open, bot.id, filesTick])
+  const SC = { folder: '이 폴더', root: '볼트', user: '사용자' }
+  const create = async () => {
+    const name = await askName('새 슬래시 명령 이름 (영문·숫자·-)', 'my-command')
+    if (!name) return
+    try { const r = await api<{ rel: string }>(`/bots/${bot.id}/commands`, { body: { name: name.trim().replace(/\.md$/, ''), scope: 'folder' } }); onOpenFile(r.rel) } catch (e) { say((e as Error).message) }
+  }
+  return <>
+    <button className="sech" onClick={tog}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>슬래시 명령</span><span className="c">{rows ? rows.length : ''}</span><span className="sp" /><span className="ib mdb" title="새 명령" onClick={(e) => { e.stopPropagation(); void create() }}><Icon n="plus" size={11} /><span>새 명령</span></span></button>
+    {open ? <div className="secb hsec cmds">
+      {rows?.map((c) => <button className={`hz ${c.rel ? '' : 'ro'}`} key={`${c.scope}:${c.name}`} title={c.rel ? '열어서 고치기' : '사용자 폴더의 명령 — 여기서는 못 고쳐요'} onClick={() => { if (c.rel) onOpenFile(c.rel) }}><Icon n="run" size={13} color={c.scope === 'folder' ? 'var(--run)' : 'var(--t3)'} /><span className="n"><b>/{c.name}</b>{c.desc ? <small> — {c.desc}</small> : null}</span><span className="sc">{SC[c.scope]}</span></button>)}
+      {rows && !rows.length ? <div className="kv" style={{ color: 'var(--t3)' }}>아직 없어요 — + 로 만들면 `/이름` 으로 부를 수 있어요</div> : null}
+      <button className="hz more" onClick={() => void create()}>+ 새 명령</button>
     </div> : null}
   </>
 }

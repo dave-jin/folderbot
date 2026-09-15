@@ -823,7 +823,8 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   useEffect(() => { if (focusReq) taRef.current?.focus() }, [focusReq])
   useEffect(() => { if (attachReq.length) { setAttach((a) => [...a, ...attachReq.filter((r) => !a.some((x) => x.rel === r.rel))]); onAttached() } }, [attachReq])
   useEffect(() => { if (mentionReq.length) { for (const rel of mentionReq) mention(rel); onMentioned() } }, [mentionReq])
-  useEffect(() => { void api<SlashCmd[]>(`/bots/${bot.id}/slash${cur?.id ? `?sid=${cur.id}` : ''}`).then(setSlash).catch(() => {}) }, [bot.id, cur?.id])
+  // ⚠ `filesTick` 도 본다 — 새 슬래시 명령을 만들면(루프 8/10) 그 자리에서 `/` 메뉴에 나와야 한다
+  useEffect(() => { void api<SlashCmd[]>(`/bots/${bot.id}/slash${cur?.id ? `?sid=${cur.id}` : ''}`).then(setSlash).catch(() => {}) }, [bot.id, cur?.id, filesTick])
   useEffect(() => { setFiles(null) }, [bot.id, filesTick])
   const last = items[items.length - 1]
   const lastUser = useMemo(() => { for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === 'user') return items[i] as Extract<ChatItem, { kind: 'user' }>; return null }, [items])

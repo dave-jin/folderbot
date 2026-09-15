@@ -1799,6 +1799,38 @@ try {
         const cbar = await pg.textContent('.composer .cbar'); if (!/Fable 5.1|Sonnet 5/.test(cbar) || !/자동|계획/.test(cbar) || !/높음/.test(cbar)) fail('ui cbar labels: ' + cbar)
         // 슬래시 자동완성 → 스킬이 뜬다 · @ → 파일이 뜬다
         await pg.fill('.composer textarea', '/st'); await wait(300); const sp = await pg.textContent('.cpop'); if (!/standup/.test(sp ?? '') || !/status/.test(sp ?? '')) fail('ui slash popup: ' + sp)
+        /**
+         * 🔴 **슬래시 명령 관리** (루프 8/10) — 패널 「슬래시 명령」 에 파일 그대로 목록이 서고, + 로 만들면
+         *    `.claude/commands/<이름>.md` 가 생겨 문서 열에 열리고, 같은 자리에서 `/` 메뉴에 나온다.
+         * ⚠ 루트의 `status` 는 «볼트» 로, 이 폴더에 만든 것은 «이 폴더» 로 표시된다.
+         */
+        {
+          await pg.fill('.composer textarea', ''); await wait(200)
+          const hdr = pg.locator('.sech', { hasText: '슬래시 명령' })
+          if (!(await hdr.count())) fail('슬래시 명령: 패널에 절이 없다')
+          if (!(await pg.$('.hsec.cmds'))) { await hdr.click(); await wait(500) }
+          const list = await pg.evaluate(() => [...document.querySelectorAll('.hsec.cmds .hz')].map((r) => r.textContent ?? ''))
+          if (!list.some((r) => /\/status/.test(r) && /볼트/.test(r))) fail('슬래시 명령: 루트의 /status 가 «볼트» 로 안 보인다 ' + JSON.stringify(list))
+          await hdr.locator('.mdb').click(); await pg.waitForSelector('.modal.ask input', { timeout: 3000 })
+          await pg.fill('.modal.ask input', 'hello-bot'); await pg.keyboard.press('Enter'); await wait(900)
+          const cmdAbs = join(root, '3. Area/제품_Rondo/.claude/commands/hello-bot.md')
+          if (!existsSync(cmdAbs)) fail('슬래시 명령: 파일이 안 생겼다 ' + cmdAbs)
+          if (!/\$ARGUMENTS/.test(readFileSync(cmdAbs, 'utf8'))) fail('슬래시 명령: 본보기에 $ARGUMENTS 가 없다')
+          await pg.waitForSelector('.doc .dbody', { timeout: 5000 })
+          const tabTxt = await pg.evaluate(() => [...document.querySelectorAll('.doc .tab')].map((t) => t.textContent ?? '').join(' | '))
+          if (!/hello-bot/.test(tabTxt)) fail('슬래시 명령: 만든 파일이 문서 열에 안 열렸다 ' + tabTxt)
+          const list2 = await pg.evaluate(() => [...document.querySelectorAll('.hsec.cmds .hz')].map((r) => r.textContent ?? ''))
+          if (!list2.some((r) => /\/hello-bot/.test(r) && /이 폴더/.test(r))) fail('슬래시 명령: 만든 것이 목록에 «이 폴더» 로 안 선다 ' + JSON.stringify(list2))
+          // 같은 이름·틀린 이름은 거절 (⚠ API 로 잰다 — 화면에서 400 을 받으면 크롬이 콘솔에 오류를 찍어 «page errors» 에 걸린다)
+          try { await api(`/bots/${bot.id}/commands`, { name: 'hello-bot', scope: 'folder' }); fail('슬래시 명령: 같은 이름을 거절하지 않는다') } catch (e) { if (!/이미 있어요/.test(e.message)) fail('슬래시 명령: 거절 이유가 다르다 ' + e.message) }
+          try { await api(`/bots/${bot.id}/commands`, { name: '한글 이름', scope: 'folder' }); fail('슬래시 명령: 부를 수 없는 이름을 받았다') } catch (e) { if (!/영문/.test(e.message)) fail('슬래시 명령: 이름 거절 이유가 다르다 ' + e.message) }
+          await pg.keyboard.press('Meta+Shift+D'); await wait(400)   // 문서 열을 닫아 뒤 검사(⌘⇧D 로 여닫는 것)의 전제를 지킨다
+          await pg.fill('.composer textarea', '/hel'); await wait(500)
+          const sp2 = await pg.textContent('.cpop').catch(() => null)
+          if (!sp2 || !/hello-bot/.test(sp2)) fail('슬래시 명령: 만든 명령이 `/` 메뉴에 안 나온다 ' + sp2)
+          await pg.fill('.composer textarea', ''); await wait(200)
+          ok('슬래시 명령 관리 — 목록(파일 그대로) · + 로 만들면 문서 열과 `/` 메뉴에 바로')
+        }
         // 🔴 문장 중간의 / 도 자동완성이 떠야 한다 (2026-09-13 Dave: «입력 중간에 / 를 입력해도»)
         await pg.fill('.composer textarea', '안녕 /st'); await wait(400)
         const midp = await pg.textContent('.cpop').catch(() => null)

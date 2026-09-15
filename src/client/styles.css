@@ -658,6 +658,7 @@ b,strong { color:var(--w); font-weight:600 }
 .hz > svg { flex:none }
 .hz .n { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--t) }
 .hz .sc { flex:none; font-size:11px; color:var(--t3); white-space:nowrap }
+.hsec.cmds .hz .n b { font-family:var(--mono); font-weight:500; font-size:12px } .hsec.cmds .hz .n small { color:var(--t3); font-size:11.5px } .hsec.cmds .hz.ro { cursor:default; color:var(--t3) }
 .hz.more { color:var(--t3); font-size:11.5px; padding-left:38px }
 .hz.more:hover { color:var(--t2) }
 @media (max-width: 760px) { .hz { min-height:36px; font-size:14px; padding:6px 18px } .hz .sc { font-size:12px } }
