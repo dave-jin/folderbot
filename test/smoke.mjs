@@ -608,7 +608,18 @@ try {
             const wiki = await pg.evaluate(() => { const t = document.querySelector('.cm-tooltip-autocomplete'); return t ? [...t.querySelectorAll('li')].map((x) => x.textContent) : null })
             if (!wiki || !wiki.length) fail('`[[` 자동완성이 안 뜬다')
             if (!wiki.some((x) => /todo|CLAUDE|readme/i.test(x ?? ''))) fail('`[[` 자동완성에 이 폴더 문서가 없다 ' + JSON.stringify(wiki.slice(0, 6)))
-            await pg.keyboard.press('Escape'); await pg.keyboard.press('Backspace'); await pg.keyboard.press('Backspace'); await wait(400)
+            // 루프 5/10 — 글자를 더 치면 **좁혀지고**, 고르면 `]]` 가 한 짝만 남는다(자동 짝맞춤과 겹쳐 `]]]]` 가 되면 회귀)
+            await pg.keyboard.type('read'); await wait(600)
+            const narrowed = await pg.evaluate(() => { const t = document.querySelector('.cm-tooltip-autocomplete'); return t ? [...t.querySelectorAll('li')].map((x) => x.textContent) : null })
+            if (!narrowed || !narrowed.length || !narrowed.every((x) => /read/i.test(x ?? ''))) fail('`[[read` 가 좁혀지지 않는다 ' + JSON.stringify(narrowed?.slice(0, 6)))
+            await pg.keyboard.press('Enter'); await wait(1200)
+            const linked = readFileSync(abs, 'utf8')
+            const wl = linked.match(/\[\[[^\]]*readme[^\]]*\]\]/i)
+            if (!wl) fail('`[[` 고른 문서가 파일에 위키링크로 안 들어갔다 ' + JSON.stringify(linked.slice(-120)))
+            if (/\]\]\]/.test(linked)) fail('`[[` 닫는 괄호가 겹쳤다 ' + JSON.stringify(wl[0]))
+            // 넣은 줄을 지워 뒤 검사(목차·찾기)가 보는 문서를 원래대로
+            await pg.evaluate(() => { const c = document.querySelector('.mded .cm-content'); c.focus() })
+            await pg.keyboard.press('Control+End'); await pg.keyboard.down('Shift'); await pg.keyboard.press('Home'); await pg.keyboard.up('Shift'); await pg.keyboard.press('Backspace'); await pg.keyboard.press('Backspace'); await wait(600)
             ok('서식 — 고른 글 위 막대 · `/` 메뉴 · `[[` 문서 고르기')
           }
           /**
