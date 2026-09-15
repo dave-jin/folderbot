@@ -242,6 +242,38 @@ function Main() {
   useEffect(() => { if (bot) void loadTodo(bot.id) }, [bot?.id, s.filesTick[bot?.id ?? '']])
   const go = (b: string, sid?: string) => { setHash(sid ? { bot: b, s: sid } : { bot: b }); setView('chat') }
   /**
+   * 🔴 **대기 메시지는 «그 세션의 것»이다** (2026-09-15 Dave: *«que 메시지를 보내놓은 상태에서 다른
+   *    폴더를 띄우면 거기에 큐 메시지가 전달되는 버그»*).
+   *
+   * 종전에는 대기열이 대화 화면(`Chat`)의 지역 상태였다. 폴더를 바꿔도 그 컴포넌트는 그대로 살아 있고
+   * 세션만 갈리는데, 「세션이 바뀌면 비운다」 는 이펙트와 「한가해지면 보낸다」 는 이펙트가 **같은 commit
+   * 에서** 돈다 — 비우기는 다음 렌더에나 반영되므로, 그사이 **옛 대기열이 새 폴더의 세션으로 나갔다.**
+   *
+   * 그래서 대기열을 여기(부모)로 올리고 **세션 id 를 열쇠로** 담는다. 보내는 일도 여기서 한다:
+   * 세션이 한가해지면 **보고 있지 않아도** 그 세션으로 나간다(대기열의 존재 이유가 그것이다).
+   * ⚠ 한 세션에 **한 번에 하나만** 내보낸다(`flushing`) — 두 개가 겹치면 순서가 뒤집힌다.
+   * ⚠ 세션이 사라졌으면 조용히 버린다 — 지운 대화로는 보낼 곳이 없다.
+   */
+  const [queues, setQueues] = useState<Record<string, string[]>>({})
+  const flushing = useRef<Set<string>>(new Set())
+  const allSessions = useMemo(() => Object.values(s.sessionsByBot).flat(), [s.sessionsByBot])
+  useEffect(() => {
+    for (const [sid, list] of Object.entries(queues)) {
+      if (!list.length || flushing.current.has(sid)) continue
+      const info = allSessions.find((x) => x.id === sid)
+      if (!info) { setQueues((q) => { const { [sid]: _gone, ...rest } = q; return rest }); continue }
+      if (info.state === 'running' || info.state === 'awaiting_input') continue
+      flushing.current.add(sid)
+      const [next, ...rest] = list
+      setQueues((q) => ({ ...q, [sid]: rest }))
+      void api(`/sessions/${sid}/send`, { body: { text: next } })
+        .catch((e) => say((e as Error).message))
+        .finally(() => flushing.current.delete(sid))
+    }
+  }, [queues, allSessions])
+  const queueFor = (sid?: string): string[] => (sid ? queues[sid] ?? [] : [])
+  const onQueue = (sid: string, f: (q: string[]) => string[]) => setQueues((qs) => ({ ...qs, [sid]: f(qs[sid] ?? []) }))
+  /**
    * 🔴 **껐다 켜면 마지막에 보던 폴더에서 시작한다** (2026-09-15 Dave: «마지막으로 작업했던 프로젝트도
    *    기억하고 그 창에서 시작되면 좋겠어»). 셸은 창을 띄울 때 주소를 **해시 없이** 연다 —
    *    그래서 매번 오케스트레이터로 떨어졌다. 어디에 있었는지는 **기기마다** 다르므로 이 기기에 적어 둔다
@@ -469,7 +501,7 @@ function Main() {
       <div className="divx" onPointerDown={sbOpen ? dragX('sb', 1) : undefined} onDoubleClick={() => setLay({ ...lay, sb: DEF.sb, sbOpen: true, sbPin: true })} />
 
       {/* ── 채팅 ── */}
-      <Chat bot={bot} sessions={sessions} cur={cur} items={items} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openDoc(rel, pin)} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={() => setView('list')} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} />
+      <Chat bot={bot} sessions={sessions} cur={cur} items={items} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openDoc(rel, pin)} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={() => setView('list')} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} queue={queueFor(sessionId)} onQueue={(f) => { if (sessionId) onQueue(sessionId, f) }} />
 
       {/* ── 문서 열 ── */}
       {showDoc ? <>{!phone ? <div className="divx" onPointerDown={dragX('doc', -1)} onDoubleClick={() => setLay({ ...lay, doc: DEF.doc })} /> : null}<div className="docwrap" style={{ width: wide || phone ? undefined : fit.doc, flex: wide ? 3 : 'none', display: 'flex', minWidth: 0 }}><DocPane bot={bot} docs={docs} filesTick={s.filesTick[bot.id]} onTalk={(rel) => { setPrefill(`${rel} 파일 봐 줘: `); if (phone) setView('chat') }} onHide={() => setDocOpen((d) => ({ ...d, [bot.id]: false }))} wide={wide} onWide={() => setWide(!wide)} onAttach={(rel) => addAttach({ rel, abs: `${bot.abs}/${rel}` })} say={say} phone={phone} onBack={() => setView('panel')} /></div></> : null}
@@ -580,12 +612,11 @@ interface FileNode { rel: string; dir: boolean; mtime: number }
 // ⚠ 맥 파일 이름은 NFD 로 저장된다 — 비교 전에 양쪽을 NFC 로 맞추지 않으면 한글이 «아예» 안 걸린다(core/search 머리말)
 const fuzzy = (q: string, s: string): number => { if (!q) return 1; const t = norm(s); const nq = norm(q); if (t.includes(nq)) return t.startsWith(nq) ? 3 : 2; let i = 0; for (const c of t) if (c === nq[i]) i++; return i === nq.length ? 1 : 0 }
 
-function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attachReq, onAttached, mentionReq, onMentioned, focusReq, onSession, onFile, docBadge, docTabs, docOn, onDocToggle, say, refreshAll, collapsed, onUncollapse, phone, onBack, onPanel, newSession, filesTick }: { bot: Bot; sessions: SessionInfo[]; cur?: SessionInfo; items: ChatItem[]; pending: PermissionRequest[]; prefill: string; onPrefilled: () => void; attachReq: Att[]; onAttached: () => void; mentionReq: string[]; onMentioned: () => void; focusReq: number; onSession: (sid: string) => void; onFile: (rel: string, pin?: boolean) => void; docBadge: number; docTabs: string[]; docOn: boolean; onDocToggle: () => void; say: (m: string) => void; refreshAll: () => Promise<void>; collapsed: boolean; onUncollapse: () => void; phone: boolean; onBack: () => void; onPanel: () => void; newSession: () => Promise<void>; filesTick?: number }) {
+function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attachReq, onAttached, mentionReq, onMentioned, focusReq, onSession, onFile, docBadge, docTabs, docOn, onDocToggle, say, refreshAll, collapsed, onUncollapse, phone, onBack, onPanel, newSession, filesTick, queue, onQueue }: { bot: Bot; sessions: SessionInfo[]; cur?: SessionInfo; items: ChatItem[]; pending: PermissionRequest[]; prefill: string; onPrefilled: () => void; attachReq: Att[]; onAttached: () => void; mentionReq: string[]; onMentioned: () => void; focusReq: number; onSession: (sid: string) => void; onFile: (rel: string, pin?: boolean) => void; docBadge: number; docTabs: string[]; docOn: boolean; onDocToggle: () => void; say: (m: string) => void; refreshAll: () => Promise<void>; collapsed: boolean; onUncollapse: () => void; phone: boolean; onBack: () => void; onPanel: () => void; newSession: () => Promise<void>; filesTick?: number; queue: string[]; onQueue: (f: (q: string[]) => string[]) => void }) {
   const { s } = useStore()
   const [text, setText] = useState(''); const [caret, setCaret] = useState(0); const [sessMenu, setSessMenu] = useState(false); const [busy, setBusy] = useState(false)
   const [attach, setAttach] = useState<Att[]>([]); const [pop, setPop] = useState<'' | 'plus' | 'mode' | 'model' | 'effort' | 'ctx'>(''); const [pickOpen, setPickOpen] = useState(false); const [uploading, setUploading] = useState(false)
   const [routineDraft, setRoutineDraft] = useState<RoutineDef | null>(null)
-  const [queue, setQueue] = useState<string[]>([])
   /**
    * 쓰다 만 메시지는 앱을 껐다 켜도 남는다 (2026-09-13 Dave: «작성중인 채팅 텍스트 메시지가 앱을 껐다가 켜면 날라가»).
    *
@@ -638,7 +669,8 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   /** ⚠ 기본값도 벤더마다 다르다 — Codex 세션에 Claude 기본 모델이 박히면 첫 턴에 죽는다 */
   const vendOf = () => cur?.vendor ?? bot.vendor
   const cfg = { model: cur?.model || draft.model || (vendOf() === 'codex' ? (s.defaults.codex?.model || DEFAULT_MODEL.codex) : (s.defaults.model || DEFAULT_MODEL.claude)), effort: cur?.effort || draft.effort || (vendOf() === 'codex' ? (s.defaults.codex?.effort || DEFAULT_EFFORT.codex) : (s.defaults.effort || DEFAULT_EFFORT.claude)), mode: (cur?.permissionMode || draft.permissionMode || 'default') as PermissionMode }
-  useEffect(() => { setDrill(null); setQueue([]); setDraft({}); setPop('') }, [cur?.id])
+  // ⚠ 대기열은 여기서 비우지 않는다 — 세션마다 부모가 따로 들고 있다(위 `queues` 머리말)
+  useEffect(() => { setDrill(null); setDraft({}); setPop('') }, [cur?.id])
   useEffect(() => { if (prefill) { setText((t) => (t ? `${t} ${prefill}` : prefill)); onPrefilled(); taRef.current?.focus() } }, [prefill])
   useEffect(() => { if (focusReq) taRef.current?.focus() }, [focusReq])
   useEffect(() => { if (attachReq.length) { setAttach((a) => [...a, ...attachReq.filter((r) => !a.some((x) => x.rel === r.rel))]); onAttached() } }, [attachReq])
@@ -658,8 +690,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   useEffect(() => { if (!pop) return; const off = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest('.cpop, .cbtn, .ring, .plusb')) setPop('') }; const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setPop(''); if (pop === 'mode' && /^[1-4]$/.test(e.key) && !(e.target as HTMLElement).matches('textarea,input')) { e.preventDefault(); void applyCfg({ permissionMode: MODES[Number(e.key) - 1].v }) } }; window.addEventListener('mousedown', off); window.addEventListener('keydown', key); return () => { window.removeEventListener('mousedown', off); window.removeEventListener('keydown', key) } }, [pop])
   const applyCfg = async (p: { model?: string; effort?: string; permissionMode?: PermissionMode }) => { setPop(''); if (cur) { try { await api(`/sessions/${cur.id}/settings`, { body: p }); if (cur.alive && (running || state === 'awaiting_input')) say('이 턴이 끝나면 적용돼요') } catch (e) { say((e as Error).message) } } else setDraft((d) => ({ ...d, ...p })) }
   const post = async (t: string) => { if (cur) await api(`/sessions/${cur.id}/send`, { body: { text: t } }); else { const r = await api<{ sessionId: string }>(`/bots/${bot.id}/send`, { body: { text: t, name: '메인', ...draft } }); await refreshAll(); onSession(r.sessionId) } }
-  // 대기열 — 턴이 끝나면 순서대로
-  useEffect(() => { if (!running && state !== 'awaiting_input' && queue.length && !busy) { const [n, ...rest] = queue; setQueue(rest); void post(n).catch((e) => say((e as Error).message)) } }, [state, queue.length, busy])
+  // ⚠ 대기열을 내보내는 일은 **부모**가 한다 — 보고 있지 않은 세션의 것도 나가야 하기 때문(위 머리말)
   const sendText = async (raw: string) => {
     let t = raw.trim(); if ((!t && !attach.length) || busy || uploading) return
     if (attach.length) t = `${t || '첨부한 파일을 봐 줘.'}\n\n첨부 파일 (읽어서 참고해):\n${attach.map((a) => (a.dir ? `- ${a.abs}/ (폴더 — 안의 파일들)` : `- ${a.abs}`)).join('\n')}`
@@ -667,7 +698,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
     // 보냈으면 초안은 그 자리에서 지운다. ⚠ 첫 메시지는 세션을 만들며 키가 `new` → 실제 id 로 바뀌므로
     //    지연 저장이 새 키에 대고 지우는 수가 있다 — 둘 다 명시적으로 치운다.
     try { localStorage.removeItem(draftRef.current); localStorage.removeItem(`fb:draft:${bot.id}:new`) } catch { /* */ }
-    if (running || state === 'awaiting_input') { setQueue((q) => [...q, t]); return }
+    if (running || state === 'awaiting_input') { onQueue((q) => [...q, t]); return }
     setBusy(true); try { await post(t) } catch (e) { say((e as Error).message) } finally { setBusy(false) }
   }
   const send = () => sendText(text)
@@ -842,8 +873,8 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
           아직 안 보낸 말이다 — 못 고치면 지우고 처음부터 다시 쓰는 수밖에 없었다.
           ⚠ 여기의 ⏎ 는 **고치기 끝**이다(보내기가 아니다) · ⎋ 는 되돌리기. ⛔ 빈 글로 두면 그 줄은 사라진다. */}
       {queue.map((q, i) => <QueueRow key={i} n={i + 1} text={q}
-        onSave={(v) => setQueue(v.trim() ? queue.map((x, k) => (k === i ? v : x)) : queue.filter((_, k) => k !== i))}
-        onDrop={() => setQueue(queue.filter((_, k) => k !== i))} />)}
+        onSave={(v) => onQueue((l) => (v.trim() ? l.map((x, k) => (k === i ? v : x)) : l.filter((_, k) => k !== i)))}
+        onDrop={() => onQueue((l) => l.filter((_, k) => k !== i))} />)}
       {/* 🔴 **입력창의 링크도 아이콘을 갖는다** (2026-09-13 Dave). ⚠ `textarea` 안에는 그림을 못 넣는다 —
           글자만 담는 칸이다. 그래서 쓰는 중인 주소를 **입력칸 위 칩**으로 올린다: 같은 캐시, 같은 아이콘,
           그리고 «이 주소가 맞나» 를 보내기 전에 확인할 수 있다. */}

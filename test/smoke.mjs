@@ -823,6 +823,54 @@ try {
             await pg.keyboard.press('Escape'); await wait(300)
             ok('모델 고르기 — 첫 목록 넷 · 「더 많은 모델」에 옛 판과 1M')
           }
+          /**
+           * 🔴 **대기 메시지는 «그 세션의 것»이다** (2026-09-15 Dave: *«que 메시지를 보내놓은 상태에서
+           *    다른 폴더를 띄우면 거기에 큐 메시지가 전달되는 버그»*).
+           *
+           * 대기열이 대화 화면의 지역 상태라, 폴더를 바꾸면 「비운다」 와 「한가하니 보낸다」 가 같은
+           * commit 에서 돌아 **옛 대기열이 새 폴더로 나갔다**. 이제 세션 id 를 열쇠로 부모가 들고,
+           * 보내는 것도 부모가 한다 — 그래서 **보고 있지 않아도** 제 세션으로 나간다.
+           */
+          {
+            const other = (await api('/bots')).find((b) => b.id !== bot.id && !b.orchestrator)
+            if (!other) fail('큐 검사: 옮겨 갈 다른 폴더가 없다')
+            await pg.fill('.composer textarea', '승인이 필요한 일 해 줘'); await pg.click('.composer .sendb')
+            let wait_ = null
+            for (let i = 0; i < 60; i++) { wait_ = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.state === 'awaiting_input'); if (wait_) break; await wait(250) }
+            if (!wait_) fail('큐 검사: 승인 대기 상태를 못 만들었다')
+            // ⚠ 여기서는 **보내기 단추**로 넣는다 — ⏎ 경로는 바로 위에서 따로 재고, 이 검사는
+            //   «대기열이 어느 세션의 것인가» 만 본다(키 입력이 어디로 가느냐에 흔들리면 안 된다)
+            await pg.fill('.composer textarea', '큐에 남아야 하는 말'); await pg.click('.composer .sendb'); await wait(500)
+            if (!(await pg.$('.chat-foot .queue'))) {
+              const diag = await pg.evaluate(() => ({ hash: location.hash, ta: document.querySelector('.composer textarea')?.value, badge: document.querySelector('.sendb .bd')?.textContent, foot: document.querySelector('.chat-foot')?.textContent?.slice(0, 160) }))
+              fail('큐 검사: 대기 줄이 안 보인다 · ' + JSON.stringify(diag) + ' · 세션=' + JSON.stringify((await api(`/bots/${bot.id}/sessions`)).map((x) => [x.id.slice(-4), x.state])))
+            }
+            // 다른 폴더로 옮긴다 — 여기서 새던 자리
+            await pg.evaluate((id) => { location.hash = `bot=${id}` }, other.id)
+            await wait(1500)
+            const leaked = async () => {
+              for (const x of await api(`/bots/${other.id}/sessions`)) {
+                const c = await api(`/sessions/${x.id}/chat`)
+                if (c.items.some((i) => i.kind === 'user' && /큐에 남아야 하는 말/.test(i.text ?? ''))) return true
+              }
+              return false
+            }
+            if (await leaked()) fail('🔴 큐 메시지가 다른 폴더로 갔다 — 대기열이 세션을 안 따라간다')
+            // 원래 세션이 한가해지면 **보고 있지 않아도** 그쪽으로 나간다
+            const pend = (await api(`/sessions/${wait_.id}/chat`)).info.pending[0]
+            await api(`/sessions/${wait_.id}/permission`, { requestId: pend.requestId, allow: true })
+            let landed = false
+            for (let i = 0; i < 60; i++) {
+              const c = await api(`/sessions/${wait_.id}/chat`)
+              if (c.items.some((i2) => i2.kind === 'user' && /큐에 남아야 하는 말/.test(i2.text ?? ''))) { landed = true; break }
+              await wait(300)
+            }
+            if (!landed) fail('큐 검사: 한가해졌는데 원래 세션으로 안 나갔다')
+            if (await leaked()) fail('🔴 큐 메시지가 뒤늦게 다른 폴더로도 갔다')
+            await pg.evaluate((id) => { location.hash = `bot=${id}` }, bot.id)
+            await wait(600); await pg.fill('.composer textarea', ''); await wait(200)
+            ok('대기 메시지는 제 세션으로만 나간다 (폴더를 바꿔도 · 안 보고 있어도)')
+          }
           // 🔴 **링크 앞에 파비콘** (2026-09-13 Dave) — 자리표시자를 먼저 놓으므로 인터넷이 없어도 자리는 있다.
           //    ⛔ 비워 두고 도착할 때 넣으면 글줄이 그때마다 옆으로 밀린다.
           {
