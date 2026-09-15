@@ -819,21 +819,21 @@ try {
           if (ex['없는파일.md'] !== false) fail('exists: 없는 파일을 있다고 한다 ' + JSON.stringify(ex))
           if (ex['../밖.md'] !== false) fail('exists: 루트 밖이 새어 나간다 ' + JSON.stringify(ex))
           // 화면 — 스텁이 되돌려 주는 문장 안의 경로 중 **있는 것만** 칩이 된다
-          await pg.fill('.composer textarea', '첨부/회의록.txt 와 없는폴더/없음.md 를 봐')
+          await pg.fill('.composer .cin', '첨부/회의록.txt 와 없는폴더/없음.md 를 봐')
           await pg.keyboard.press('Meta+Enter')
           let chip = null
           for (let i = 0; i < 40; i++) { chip = await pg.evaluate(() => { const c = [...document.querySelectorAll('.chat-body .pchip')]; return { n: c.length, titles: c.map((x) => x.title), last: (document.querySelector('.chat-body .md:last-of-type')?.textContent ?? '') } }); if (chip.n) break; await wait(300) }
           if (!chip.n) fail('경로 칩: 있는 파일이 칩이 안 됐다 ' + JSON.stringify(chip))
           if (!chip.titles.some((t) => t.endsWith('첨부/회의록.txt'))) fail('경로 칩: 엉뚱한 것이 칩이 됐다 ' + JSON.stringify(chip))
           if (chip.titles.some((t) => t.includes('없는폴더'))) fail('경로 칩: 없는 파일이 칩이 됐다 — 죽은 링크가 쌓인다 ' + JSON.stringify(chip))
-          await pg.fill('.composer textarea', ''); await wait(400)
+          await pg.fill('.composer .cin', ''); await wait(400)
           /**
            * 🔴 **백틱에 싸인 경로도 칩이 된다** (2026-09-15 Dave: *«답변 내용안에는 바로 클릭가능한 칩이
            *    없어»*). 에이전트는 파일 이름을 거의 언제나 `` `…` `` 로 감싼다 — 인라인 코드를 통째로
            *    건너뛰던 종전 규칙은 사실상 «칩을 만들지 않는다» 였다(실제 답변에서 칩이 거의 안 보인 이유).
            */
           {
-            await pg.fill('.composer textarea', '정본은 `첨부/회의록.txt` 입니다')
+            await pg.fill('.composer .cin', '정본은 `첨부/회의록.txt` 입니다')
             await pg.keyboard.press('Enter')
             let bt = null
             for (let i = 0; i < 40; i++) {
@@ -846,7 +846,7 @@ try {
             }
             if (!bt || !bt.chips.some((t) => t.endsWith('첨부/회의록.txt'))) fail('백틱 경로 칩: 코드로 싸인 경로가 칩이 안 됐다 ' + JSON.stringify(bt))
             if (bt.code.some((c) => (c ?? '').includes('첨부/회의록.txt'))) fail('백틱 경로 칩: 코드 조각이 그대로 남아 두 겹이다 ' + JSON.stringify(bt))
-            await pg.fill('.composer textarea', ''); await wait(300)
+            await pg.fill('.composer .cin', ''); await wait(300)
             ok('백틱에 싸인 경로도 답 안에서 바로 누를 수 있다')
           }
           /**
@@ -860,7 +860,7 @@ try {
             // ⚠ 스텁은 받은 말의 앞 60자만 되읊는다 — 세 모양을 **따로** 보낸다
             const chipsOf = async (text) => {
               const before = await pg.evaluate(() => document.querySelectorAll('.chat-body .md').length)   // ⚠ «새 답» 을 기다린다 — 직전 답의 칩을 집지 않게
-              await pg.fill('.composer textarea', text); await pg.click('.composer .sendb')
+              await pg.fill('.composer .cin', text); await pg.click('.composer .sendb')
               let got = null
               for (let i = 0; i < 40; i++) {
                 got = await pg.evaluate((n) => { const all = document.querySelectorAll('.chat-body .md'); if (all.length <= n) return null; const md = all[all.length - 1]; return [...md.querySelectorAll('.pchip')].map((x) => ({ t: x.title, rel: x.dataset.rel, dir: x.classList.contains('dir') })) }, before)
@@ -889,12 +889,14 @@ try {
            *    글자로 가지만 사람에게 그 꼬리가 그대로 보이면 지시문 아래 경로 목록이 늘어선다.
            */
           {
-            await pg.fill('.composer textarea', '@todo.md 이 파일 봐 줘')
+            await pg.fill('.composer .cin', '@todo.md 이 파일 봐 줘')
+            // ⚠ 입력창 높이가 바뀌면 한 박자 뒤에 .chat-scroll 이 스크롤 이벤트를 낸다(발 높이 재기) — 메뉴는 스크롤에 닫히므로 그 뒤에 연다
+            await wait(300)
             await pg.evaluate(() => { const b = [...document.querySelectorAll('.panel .trow')].find((x) => /todo\.md/.test(x.textContent ?? '')); b?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 300, clientY: 300 })) })
             await wait(300)
             await pg.evaluate(() => { const b = [...document.querySelectorAll('button')].find((x) => /첨부로 보내기/.test(x.textContent ?? '')); b?.click() })
             await wait(300)
-            if (!(await pg.$('.chat-foot .files .chip'))) fail('첨부 칩: 첨부가 안 붙었다')
+            if (!(await pg.$('.composer .cin .ichip'))) fail('첨부 칩: 첨부가 안 붙었다(입력창 안 칩) · ' + JSON.stringify(await pg.evaluate(() => { const c = document.querySelector('.composer .cin'); return { html: c?.innerHTML.slice(0, 300), dv: c?.dataset.value, cnt: document.querySelector('.cbar .acount')?.textContent ?? null } })))
             await pg.click('.composer .sendb'); await wait(900)
             const um = await pg.evaluate(() => { const u = [...document.querySelectorAll('.chat-body .umsg')].pop(); return u ? { text: u.textContent ?? '', chips: [...u.querySelectorAll('.pchip')].map((x) => x.textContent ?? ''), raw: u.textContent?.includes('첨부 파일 (읽어서 참고해)') } : null })
             if (!um || um.raw) fail('첨부 칩: 첨부 꼬리가 글자로 보인다 · ' + JSON.stringify(um))
@@ -972,7 +974,7 @@ try {
             if (after === was) fail('모델 확인창: 눌렀는데 안 바뀌었다 · ' + JSON.stringify(after))
             await api(`/sessions/${sid}/settings`, { model: was })   // 원래대로 (API 로는 안 묻는다)
             await wait(400)
-            await pg.focus('.composer textarea')   // ⚠ 팝업·확인창을 닫으면 포커스가 입력칸을 떠난다
+            await pg.focus('.composer .cin')   // ⚠ 팝업·확인창을 닫으면 포커스가 입력칸을 떠난다
             ok('모델 고르기 — 목록 · 「더 많은 모델」 · 바꾸기 전 확인창(취소하면 그대로)')
           }
           /**
@@ -986,15 +988,15 @@ try {
           {
             const other = (await api('/bots')).find((b) => b.id !== bot.id && !b.orchestrator)
             if (!other) fail('큐 검사: 옮겨 갈 다른 폴더가 없다')
-            await pg.fill('.composer textarea', '승인이 필요한 일 해 줘'); await pg.click('.composer .sendb')
+            await pg.fill('.composer .cin', '승인이 필요한 일 해 줘'); await pg.click('.composer .sendb')
             let wait_ = null
             for (let i = 0; i < 60; i++) { wait_ = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.state === 'awaiting_input'); if (wait_) break; await wait(250) }
             if (!wait_) fail('큐 검사: 승인 대기 상태를 못 만들었다')
             // ⚠ 여기서는 **보내기 단추**로 넣는다 — ⏎ 경로는 바로 위에서 따로 재고, 이 검사는
             //   «대기열이 어느 세션의 것인가» 만 본다(키 입력이 어디로 가느냐에 흔들리면 안 된다)
-            await pg.fill('.composer textarea', '큐에 남아야 하는 말'); await pg.click('.composer .sendb'); await wait(500)
+            await pg.fill('.composer .cin', '큐에 남아야 하는 말'); await pg.click('.composer .sendb'); await wait(500)
             if (!(await pg.$('.chat-foot .queue'))) {
-              const diag = await pg.evaluate(() => ({ hash: location.hash, ta: document.querySelector('.composer textarea')?.value, badge: document.querySelector('.sendb .bd')?.textContent, foot: document.querySelector('.chat-foot')?.textContent?.slice(0, 160) }))
+              const diag = await pg.evaluate(() => ({ hash: location.hash, ta: document.querySelector('.composer .cin')?.dataset.value, badge: document.querySelector('.sendb .bd')?.textContent, foot: document.querySelector('.chat-foot')?.textContent?.slice(0, 160) }))
               fail('큐 검사: 대기 줄이 안 보인다 · ' + JSON.stringify(diag) + ' · 세션=' + JSON.stringify((await api(`/bots/${bot.id}/sessions`)).map((x) => [x.id.slice(-4), x.state])))
             }
             // 다른 폴더로 옮긴다 — 여기서 새던 자리
@@ -1020,7 +1022,7 @@ try {
             if (!landed) fail('큐 검사: 한가해졌는데 원래 세션으로 안 나갔다')
             if (await leaked()) fail('🔴 큐 메시지가 뒤늦게 다른 폴더로도 갔다')
             await pg.evaluate((id) => { location.hash = `bot=${id}` }, bot.id)
-            await wait(600); await pg.fill('.composer textarea', ''); await wait(200)
+            await wait(600); await pg.fill('.composer .cin', ''); await wait(200)
             ok('대기 메시지는 제 세션으로만 나간다 (폴더를 바꿔도 · 안 보고 있어도)')
           }
           /**
@@ -1059,7 +1061,7 @@ try {
             if (!/알림 대상/.test(head ?? '')) fail('알림 점프: 화면이 그 세션을 안 보여 준다 · ' + JSON.stringify(head))
             await api(`/sessions/${two.id}`, undefined, 'DELETE')
             await pg.evaluate((h) => { location.hash = h }, backHash); await wait(600)
-            await pg.focus('.composer textarea')   // ⚠ 뒤 검사들이 «입력칸에 포커스» 를 전제로 ⌘⏎ 를 친다
+            await pg.focus('.composer .cin')   // ⚠ 뒤 검사들이 «입력칸에 포커스» 를 전제로 ⌘⏎ 를 친다
             ok('알림을 누르면 그 폴더의 그 세션이 열린다')
           }
           /**
@@ -1069,7 +1071,7 @@ try {
            * ⚠ 그래서 둘째 질문에만 쓰고 ① 첫 질문 칸이 비어 있는지 ② 답이 **둘째 질문에 붙어** 가는지 잰다.
            */
           {
-            await pg.fill('.composer textarea', '질문 좀 해 줘'); await pg.click('.composer .sendb')
+            await pg.fill('.composer .cin', '질문 좀 해 줘'); await pg.click('.composer .sendb')
             await pg.waitForSelector('.card .opt input', { timeout: 8000 })
             const ins = await pg.$$('.card .opt input')
             if (ins.length < 2) fail('질문 카드: 「기타」 칸이 질문 수만큼 없다 · ' + ins.length)
@@ -1094,7 +1096,7 @@ try {
           // 🔴 **링크 앞에 파비콘** (2026-09-13 Dave) — 자리표시자를 먼저 놓으므로 인터넷이 없어도 자리는 있다.
           //    ⛔ 비워 두고 도착할 때 넣으면 글줄이 그때마다 옆으로 밀린다.
           {
-            await pg.fill('.composer textarea', 'https://example.com 을 봐 줘')
+            await pg.fill('.composer .cin', 'https://example.com 을 봐 줘')
             const chip = await pg.evaluate(() => { const c = document.querySelector('.lchips .lchip'); return c ? { t: c.textContent, ic: !!c.querySelector('img.fvic') } : null })
             if (!chip || !chip.ic) fail('입력창: 쓰는 중인 주소에 아이콘 칩이 없다 ' + JSON.stringify(chip))
             if (!/example\.com/.test(chip.t ?? '')) fail('입력창: 칩이 도메인을 안 보여 준다 ' + JSON.stringify(chip))
@@ -1102,7 +1104,7 @@ try {
             let fv = 0
             for (let i = 0; i < 40; i++) { fv = await pg.evaluate(() => document.querySelectorAll('.chat-body .md a img.fvic').length); if (fv) break; await wait(300) }
             if (!fv) fail('채팅: 답 속 링크에 파비콘 자리가 없다')
-            await pg.fill('.composer textarea', ''); await wait(300)
+            await pg.fill('.composer .cin', ''); await wait(300)
             ok('링크 파비콘 — 채팅 · 문서 · 입력창이 같은 캐시를 본다')
           }
           /**
@@ -1112,7 +1114,7 @@ try {
            * ⚠ 미리보기 카드는 **body 에** 뜬다(말풍선 안이면 대화의 overflow 에 잘린다).
            */
           {
-            await pg.fill('.composer textarea', '링크박스 테스트')
+            await pg.fill('.composer .cin', '링크박스 테스트')
             await pg.keyboard.press('Meta+Enter')
             let box = null
             for (let i = 0; i < 40; i++) {
@@ -1154,7 +1156,7 @@ try {
             })
             if (!pos) fail('미리보기: 카드나 기준 요소를 못 찾겠다')
             if (pos.cardBottom > pos.anchorTop + 1) fail('미리보기가 아래로 펴졌다 — 항상 위쪽이어야 한다 ' + JSON.stringify(pos))
-            await pg.fill('.composer textarea', ''); await wait(300)
+            await pg.fill('.composer .cin', ''); await wait(300)
             ok('링크 박스 — 혼자 선 링크만 박스 · 오버하면 body 에 미리보기')
           }
           /**
@@ -1167,7 +1169,7 @@ try {
              *    (본체 청크에 섞이면 안 된다 — 아래 번들 검사가 잡는다). 코드 안·돈(`$5`)은 그대로.
              */
             {
-              await pg.fill('.composer textarea', '그림수식 테스트'); await pg.click('.composer .sendb')
+              await pg.fill('.composer .cin', '그림수식 테스트'); await pg.click('.composer .sendb')
               await pg.waitForSelector('.md .mmd svg', { timeout: 20000 })
               await pg.waitForSelector('.md .katex', { timeout: 10000 }); await wait(300)
               const mk = await pg.evaluate(() => { const md = [...document.querySelectorAll('.chat-body .md')].pop(); return { svg: md.querySelectorAll('.mmd svg').length, inline: md.querySelectorAll('.katex').length, block: md.querySelectorAll('.katex-display').length, err: md.querySelectorAll('.mmderr').length, txt: md.textContent ?? '', pre: md.querySelectorAll('pre').length } })
@@ -1178,7 +1180,7 @@ try {
               if (mk.pre) fail('mermaid: 그린 뒤에도 코드 블록이 남아 있다 ' + JSON.stringify(mk))
               ok('mermaid · KaTeX — 그림 펜스는 svg · $…$ 는 수식 · 돈은 그대로 (둘 다 지연 로드)')
             }
-            await pg.fill('.composer textarea', '코드블록 테스트')
+            await pg.fill('.composer .cin', '코드블록 테스트')
             await pg.keyboard.press('Meta+Enter')
             let cb = null
             for (let i = 0; i < 40; i++) {
@@ -1196,7 +1198,7 @@ try {
             if (!cb.cp) fail('코드 블록: 복사 단추가 없다 ' + JSON.stringify(cb))
             if (cb.inPre) fail('🔴 코드 블록: 머리줄이 pre 안에 있다 — 복사에 딸려 온다 ' + JSON.stringify(cb))
             if (cb.code !== 'const a = 1') fail('코드 블록: 코드 글자에 다른 게 섞였다 ' + JSON.stringify(cb))
-            await pg.fill('.composer textarea', ''); await wait(300)
+            await pg.fill('.composer .cin', ''); await wait(300)
             ok('코드 블록 — 언어 이름 · 복사 단추 (코드 글자에는 안 섞인다)')
           }
         }
@@ -1235,16 +1237,16 @@ try {
         }
         // 🔴 쓰다 만 메시지는 새로고침해도 남는다 (2026-09-13 Dave: «앱을 껐다가 켜면 날라가»)
         {
-          await pg.fill('.composer textarea', '쓰다 만 메시지')
+          await pg.fill('.composer .cin', '쓰다 만 메시지')
           await wait(600)                                  // 지연 저장(300ms)이 끝나길 기다린다
           const keys = await pg.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('fb:draft:')))
           if (!keys.length) fail('초안: localStorage 에 안 남았다')
           if (!/:.+:/.test(keys[0])) fail('초안: 키가 봇·세션으로 안 갈렸다 ' + JSON.stringify(keys))
-          await pg.reload({ waitUntil: 'domcontentloaded' }); await pg.waitForSelector('.composer textarea', { timeout: 8000 }); await wait(1200)
-          const back = await pg.inputValue('.composer textarea')
+          await pg.reload({ waitUntil: 'domcontentloaded' }); await pg.waitForSelector('.composer .cin', { timeout: 8000 }); await wait(1200)
+          const back = await pg.getAttribute('.composer .cin', 'data-value')
           if (back !== '쓰다 만 메시지') fail('초안: 새로고침 뒤 안 돌아왔다 · ' + JSON.stringify(back))
           // 보내면 지워진다
-          await pg.fill('.composer textarea', ''); await wait(600)
+          await pg.fill('.composer .cin', ''); await wait(600)
           const left = await pg.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('fb:draft:')).length)
           if (left) fail('초안: 비웠는데 키가 남아 있다 ' + left)
         }
@@ -1315,7 +1317,7 @@ try {
         // 🔴 **채팅에 쓴 한 줄이 그대로 루틴이 된다** (2026-09-13 Dave: «폴더 채팅에서 바로 루틴 생성»)
         //    ⛔ 저장은 사람이 누른다 — 주기는 글에서 «읽어낸» 추측이라, 조용히 저장하면 엉뚱한 시각에 봇이 혼자 일한다.
         {
-          await pg.fill('.composer textarea', '매주 월요일 아침 8시에 지난주 한 일 정리해 줘')
+          await pg.fill('.composer .cin', '매주 월요일 아침 8시에 지난주 한 일 정리해 줘')
           await pg.click('.cbar button[title="첨부"]'); await wait(200)
           await pg.click('.cpop.plus .prow2:has-text("루틴으로 만들기")'); await wait(500)
           const sheet = await pg.evaluate(() => {
@@ -1331,7 +1333,7 @@ try {
           await pg.click('.sheet-h .btn:has-text("취소")'); await wait(400)
           const after = (await api('/bots')).find((b) => b.id === bot.id)
           if ((after?.routines ?? []).some((r) => /지난주/.test(r.name))) fail('루틴: 안 눌렀는데 저장됐다')
-          await pg.fill('.composer textarea', ''); await wait(200)
+          await pg.fill('.composer .cin', ''); await wait(200)
           ok('채팅 한 줄 → 루틴 (주기까지 읽어서 채워 준다 · 저장은 사람이)')
         }
         // 🔴 **맥 기본 단축키** (2026-09-13 Dave: «키보드 단축키를 전 영역에 적용해줘. 맥 기본 단축키로»)
@@ -1347,24 +1349,24 @@ try {
           if (!(await pg.$('.snav'))) fail('단축키: ⌘, 로 설정이 안 열린다')
           await pg.keyboard.press('Escape'); await wait(300)
           // ⛔ 입력칸에서 글을 칠 때는 단축키가 돌면 안 된다 — ⌘ 없이 치는 글자는 그냥 글자다
-          await pg.fill('.composer textarea', 'nk,/')
+          await pg.fill('.composer .cin', 'nk,/')
           if (await pg.$('.modal.keys')) fail('단축키: 글자를 쳤는데 명령이 돌았다')
-          await pg.fill('.composer textarea', ''); await wait(200)
+          await pg.fill('.composer .cin', ''); await wait(200)
           /**
            * 🔴 **자판 앞에서는 ⏎ 가 보내기, ⇧⏎ 가 줄 바꿈** (2026-09-15 Dave — Claude Desktop 과 같은 방향).
            * ⚠ 하루 전(2026-09-14)에는 **반대**였다(양쪽 다 ⌘⏎). 두 기기를 같이 쓰니 방향을 통일하자는
            *   결정이고, 통일의 기준은 «자판이 딸려 있나» 다 — 폰 쪽 계약은 phone 페이지에서 따로 잰다.
            */
           {
-            await pg.fill('.composer textarea', '⇧⏎ 는 줄 바꿈')
+            await pg.fill('.composer .cin', '⇧⏎ 는 줄 바꿈')
             await pg.keyboard.press('Shift+Enter'); await wait(400)
-            const nl = await pg.inputValue('.composer textarea')
+            const nl = await pg.getAttribute('.composer .cin', 'data-value')
             if (!nl.includes('⇧⏎ 는 줄 바꿈')) fail('🔴 ⇧⏎ 로 보내졌다 — 줄을 바꾸려다 말이 나간다 · ' + JSON.stringify(nl))
             if (!/\n/.test(nl)) fail('⇧⏎ 가 줄바꿈을 안 했다 · ' + JSON.stringify(nl))
-            await pg.fill('.composer textarea', ''); await wait(200)
-            await pg.fill('.composer textarea', '엔터로 보낸다')
+            await pg.fill('.composer .cin', ''); await wait(200)
+            await pg.fill('.composer .cin', '엔터로 보낸다')
             await pg.keyboard.press('Enter'); await wait(900)
-            const gone = await pg.inputValue('.composer textarea')
+            const gone = await pg.getAttribute('.composer .cin', 'data-value')
             if (gone.trim()) fail('🔴 자판 앞인데 ⏎ 로 안 나갔다 · ' + JSON.stringify(gone))
             let said = false
             for (let i = 0; i < 20; i++) { if (await pg.$('.umsg:has-text("엔터로 보낸다")')) { said = true; break } await wait(200) }
@@ -1409,9 +1411,9 @@ try {
            */
           {
             // 돌고 있는 동안 보내면 대기열로 간다 — 스텁이 도는 사이에 두 번 보낸다
-            await pg.fill('.composer textarea', '느린일 하나')
+            await pg.fill('.composer .cin', '느린일 하나')
             await pg.keyboard.press('Meta+Enter'); await wait(80)
-            await pg.fill('.composer textarea', '대기에 들어갈 말')
+            await pg.fill('.composer .cin', '대기에 들어갈 말')
             await pg.keyboard.press('Meta+Enter'); await wait(300)
             await pg.waitForSelector('.queue .tx', { timeout: 6000 }).catch(() => {})
             const q = await pg.$('.queue .tx')
@@ -1426,7 +1428,7 @@ try {
             }
             // ⚠ 대기열을 비우고 나간다 — 안 그러면 느린 턴이 끝나며 그 말이 진짜로 나간다
             await pg.click('.queue button:not(.tx)').catch(() => {})
-            await pg.fill('.composer textarea', ''); await wait(200)
+            await pg.fill('.composer .cin', ''); await wait(200)
           }
           /**
            * ⛔ **생각 줄에는 중단 단추가 없다** (2026-09-14 Dave) — 입력줄의 것과 겹친다.
@@ -1499,7 +1501,7 @@ try {
           if (!want.some((w) => w.bot === at.bot && (w.s === at.s || !at.s))) fail('지난 대화: 고른 줄이 그 세션으로 안 갔다 ' + JSON.stringify({ at, want }))
           if (await pg.$('.modal.pal')) fail('지난 대화: 고르면 팔레트가 닫혀야 한다')
           await pg.evaluate((h) => { location.hash = h }, home); await wait(900)
-          await pg.focus('.composer textarea')
+          await pg.focus('.composer .cin')
           ok('지난 대화 찾기 — ⌘P 에 두 글자면 볼트 전체의 말까지 · 고르면 그 세션으로')
         }
         /**
@@ -1814,14 +1816,14 @@ try {
         if (!(await pg.$('.sech .ib.mdb'))) fail('ui todo: todo.md button missing')
         const cbar = await pg.textContent('.composer .cbar'); if (!/Fable 5.1|Sonnet 5/.test(cbar) || !/자동|계획/.test(cbar) || !/높음/.test(cbar)) fail('ui cbar labels: ' + cbar)
         // 슬래시 자동완성 → 스킬이 뜬다 · @ → 파일이 뜬다
-        await pg.fill('.composer textarea', '/st'); await wait(300); const sp = await pg.textContent('.cpop'); if (!/standup/.test(sp ?? '') || !/status/.test(sp ?? '')) fail('ui slash popup: ' + sp)
+        await pg.fill('.composer .cin', '/st'); await wait(300); const sp = await pg.textContent('.cpop'); if (!/standup/.test(sp ?? '') || !/status/.test(sp ?? '')) fail('ui slash popup: ' + sp)
         /**
          * 🔴 **슬래시 명령 관리** (루프 8/10) — 패널 「슬래시 명령」 에 파일 그대로 목록이 서고, + 로 만들면
          *    `.claude/commands/<이름>.md` 가 생겨 문서 열에 열리고, 같은 자리에서 `/` 메뉴에 나온다.
          * ⚠ 루트의 `status` 는 «볼트» 로, 이 폴더에 만든 것은 «이 폴더» 로 표시된다.
          */
         {
-          await pg.fill('.composer textarea', ''); await wait(200)
+          await pg.fill('.composer .cin', ''); await wait(200)
           const hdr = pg.locator('.sech', { hasText: '슬래시 명령' })
           if (!(await hdr.count())) fail('슬래시 명령: 패널에 절이 없다')
           if (!(await pg.$('.hsec.cmds'))) { await hdr.click(); await wait(500) }
@@ -1841,26 +1843,26 @@ try {
           try { await api(`/bots/${bot.id}/commands`, { name: 'hello-bot', scope: 'folder' }); fail('슬래시 명령: 같은 이름을 거절하지 않는다') } catch (e) { if (!/이미 있어요/.test(e.message)) fail('슬래시 명령: 거절 이유가 다르다 ' + e.message) }
           try { await api(`/bots/${bot.id}/commands`, { name: '한글 이름', scope: 'folder' }); fail('슬래시 명령: 부를 수 없는 이름을 받았다') } catch (e) { if (!/영문/.test(e.message)) fail('슬래시 명령: 이름 거절 이유가 다르다 ' + e.message) }
           await pg.keyboard.press('Meta+Shift+D'); await wait(400)   // 문서 열을 닫아 뒤 검사(⌘⇧D 로 여닫는 것)의 전제를 지킨다
-          await pg.fill('.composer textarea', '/hel'); await wait(500)
+          await pg.fill('.composer .cin', '/hel'); await wait(500)
           const sp2 = await pg.textContent('.cpop').catch(() => null)
           if (!sp2 || !/hello-bot/.test(sp2)) fail('슬래시 명령: 만든 명령이 `/` 메뉴에 안 나온다 ' + sp2)
-          await pg.fill('.composer textarea', ''); await wait(200)
+          await pg.fill('.composer .cin', ''); await wait(200)
           ok('슬래시 명령 관리 — 목록(파일 그대로) · + 로 만들면 문서 열과 `/` 메뉴에 바로')
         }
         // 🔴 문장 중간의 / 도 자동완성이 떠야 한다 (2026-09-13 Dave: «입력 중간에 / 를 입력해도»)
-        await pg.fill('.composer textarea', '안녕 /st'); await wait(400)
+        await pg.fill('.composer .cin', '안녕 /st'); await wait(400)
         const midp = await pg.textContent('.cpop').catch(() => null)
         if (!midp || !/standup/.test(midp)) fail('문장 중간 «/» 에 스킬 목록이 안 뜬다 · ' + midp)
         await pg.keyboard.press('Enter'); await wait(300)
-        const midv = await pg.inputValue('.composer textarea')
+        const midv = await pg.getAttribute('.composer .cin', 'data-value')
         if (!/^안녕 \/standup $/.test(midv)) fail('문장 중간 «/» 를 고르면 앞 문장이 사라진다 · ' + JSON.stringify(midv))
         // 경로의 슬래시에는 안 뜬다
-        await pg.fill('.composer textarea', 'src/cli'); await wait(400)
+        await pg.fill('.composer .cin', 'src/cli'); await wait(400)
         if (await pg.$('.cpop')) fail('경로의 «/» 에 목록이 떴다')
-        await pg.fill('.composer textarea', ''); await wait(200)
-        await pg.keyboard.press('Escape'); await pg.fill('.composer textarea', '@todo'); await wait(600); const ap = await pg.textContent('.cpop'); if (!/todo\.md/.test(ap ?? '')) fail('ui @ popup: ' + ap)
-        await pg.keyboard.press('Enter'); await wait(200); const ta = await pg.inputValue('.composer textarea'); if (!/@todo\.md /.test(ta)) fail('ui @ insert: ' + ta); if (!(await pg.$('.chat-foot .files .chip'))) fail('ui @ attach chip')
-        await pg.fill('.composer textarea', '')
+        await pg.fill('.composer .cin', ''); await wait(200)
+        await pg.keyboard.press('Escape'); await pg.fill('.composer .cin', '@todo'); await wait(600); const ap = await pg.textContent('.cpop'); if (!/todo\.md/.test(ap ?? '')) fail('ui @ popup: ' + ap)
+        await pg.keyboard.press('Enter'); await wait(200); const ta = await pg.getAttribute('.composer .cin', 'data-value'); if (!/@todo\.md /.test(ta)) fail('ui @ insert: ' + ta); if (!(await pg.$('.composer .cin .ichip'))) fail('ui @ attach chip')
+        await pg.fill('.composer .cin', '')
         // 모드 팝업 · 모델 팝업
         await pg.click('.cbar .cbtn'); await wait(150); if (!/편집 자동 수락/.test((await pg.textContent('.cpop')) ?? '')) fail('ui mode popup'); await pg.keyboard.press('Escape')
         // ↓ 최근으로 — 위로 스크롤하면 뜨고, 직전 질문이 고정된다
@@ -1930,7 +1932,7 @@ try {
           await pg.screenshot({ path: 'test/tmp/desktop-diff.png' })
           await pg.keyboard.press('Escape'); await wait(300)
           if (await pg.$('.modal.dif')) fail('전후 diff: ⎋ 로 안 닫힌다')
-          await pg.focus('.composer textarea')
+          await pg.focus('.composer .cin')
           ok('파일 전후 diff — 칩 옆 ⇄ 로 «턴 전 ↔ 지금» · ⎋ 로 닫힘')
         }
         await pg.click('.files .chip'); await pg.waitForSelector('.doc .dbody', { timeout: 5000 }); await wait(400)
@@ -1980,20 +1982,25 @@ try {
           if (zone.pe !== 'none') fail('놓기: 카드가 마우스를 가로채면 놓기·떠남이 열에 안 닿는다 ' + zone.pe)
           // 대화 위에 놓는다 → 첨부/ 에 복사 · 입력창 위 칩(표식 「첨부」)
           await pg.evaluate(() => { const dt = new DataTransfer(); dt.items.add(new File(['놓은 글'], 'dropped-by-smoke.txt', { type: 'text/plain' })); document.querySelector('.chat-body').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt })) })
-          for (let i = 0; i < 40; i++) { if (await pg.$('.chat-foot .files .fchip:not(.busy)')) break; await wait(150) }
+          for (let i = 0; i < 40; i++) { if (await pg.$('.composer .cin .ichip:not(.busy)')) break; await wait(150) }
           if (await pg.$('.dropzone')) fail('놓기: 놓았는데 점선 카드가 남아 있다')
-          const att = await pg.evaluate(() => [...document.querySelectorAll('.chat-foot .files .fchip')].map((c) => ({ nm: c.querySelector('.nm')?.textContent, fb: c.querySelector('.fb')?.textContent ?? null, busy: c.classList.contains('busy') })))
+          const att = await pg.evaluate(() => [...document.querySelectorAll('.composer .cin .ichip')].map((c) => ({ nm: c.querySelector('.nm')?.textContent, fb: c.querySelector('.fb')?.textContent ?? null, busy: c.classList.contains('busy') })))
           if (!att.some((a) => a.nm === 'dropped-by-smoke.txt' && a.fb === '첨부' && !a.busy)) fail('놓기: 복사된 파일 칩이 「첨부」 표식으로 안 선다 ' + JSON.stringify(att))
           if (!existsSync(join(root, '3. Area/제품_Rondo/첨부/dropped-by-smoke.txt'))) fail('놓기: 첨부/ 에 파일이 안 생겼다')
           // 트리에서 끌어온 파일도 같은 자리 · 표식 없음
           await pg.evaluate(() => { const dt = new DataTransfer(); dt.setData('text/x-fb-rel', 'todo.md'); dt.setData('text/x-fb-rels', JSON.stringify(['todo.md'])); dt.setData('text/x-fb-dir', '0'); const el = document.querySelector('.chat-body'); el.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt })); el.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt })) })
           await wait(300)
-          const att2 = await pg.evaluate(() => [...document.querySelectorAll('.chat-foot .files .fchip')].map((c) => ({ nm: c.querySelector('.nm')?.textContent, fb: c.querySelector('.fb')?.textContent ?? null })))
+          const att2 = await pg.evaluate(() => [...document.querySelectorAll('.composer .cin .ichip')].map((c) => ({ nm: c.querySelector('.nm')?.textContent, fb: c.querySelector('.fb')?.textContent ?? null })))
           if (!att2.some((a) => a.nm === 'todo.md' && a.fb === null)) fail('놓기: 트리 파일이 이름만으로 안 선다 ' + JSON.stringify(att2))
           await pg.screenshot({ path: 'test/tmp/desktop-attach-chips.png' })
-          // × 로 뺀다 — 뒤 검사가 첨부를 들고 가면 안 된다
-          for (let i = 0; i < 6 && (await pg.$('.chat-foot .files .fchip .x')); i++) { await pg.click('.chat-foot .files .fchip .x'); await wait(150) }
-          if (await pg.$('.chat-foot .files .fchip')) fail('놓기: × 로 첨부가 안 빠진다')
+          // 칩은 글이다 — 입력창의 글이 곧 첨부 목록. 글 속 토큰 확인 · 비우면 첨부도 빠진다(뒤 검사가 첨부를 들고 가면 안 된다)
+          const dv = await pg.getAttribute('.composer .cin', 'data-value')
+          if (!/@dropped-by-smoke\.txt/.test(dv ?? '') || !/@todo\.md/.test(dv ?? '')) fail('놓기: 글 속에 @토큰이 없다 ' + JSON.stringify(dv))
+          const cnt = await pg.textContent('.cbar .acount').catch(() => null)
+          if (!/첨부 2개/.test(cnt ?? '')) fail('놓기: 아래 줄의 첨부 수가 틀리다 ' + cnt)
+          await pg.fill('.composer .cin', ''); await wait(300)
+          if (await pg.$('.composer .cin .ichip')) fail('놓기: 글을 비웠는데 칩이 남아 있다')
+          if (await pg.$('.cbar .acount')) fail('놓기: 글을 비웠는데 첨부 수가 남아 있다')
           ok('파일 칩 B안 — 이름 + 폴더 표식 · 채팅 열 어디에 놓아도 첨부 · 파인더 파일은 첨부/ 로')
         }
         /**
@@ -2006,7 +2013,7 @@ try {
           const was = await pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('bot'))
           if (!was) fail('마지막 폴더: 검사 전에 폴더가 안 열려 있다')
           await pg.goto(base, { waitUntil: 'domcontentloaded' })   // 해시 없이 = 앱을 새로 켠 셈
-          await pg.waitForSelector('.composer textarea', { timeout: 10000 }); await wait(700)
+          await pg.waitForSelector('.composer .cin', { timeout: 10000 }); await wait(700)
           const back = await pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('bot'))
           if (back !== was) fail(`마지막 폴더: 다시 열었더니 «${back}» 로 갔다(기대 «${was}»)`)
           ok('껐다 켜면 마지막에 보던 폴더에서 시작한다')
@@ -2026,7 +2033,7 @@ try {
           // ⚠ 뒤 검사들은 **대화 화면**을 전제로 한다 — 홈으로 나왔으면 다시 들어가 둔다
           if (back) {
             await pg.evaluate((n) => { const r = [...document.querySelectorAll('.mhome .mrow')].find((x) => x.textContent?.includes(n)); r?.click() }, wasName)
-            await pg.waitForSelector('.composer textarea', { timeout: 8000 }); await wait(400)
+            await pg.waitForSelector('.composer .cin', { timeout: 8000 }); await wait(400)
             const now = await pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('bot'))
             if (now !== wasBot) fail('폰 홈 4칸: 검사 뒤 원래 폴더로 안 돌아왔다 · ' + JSON.stringify([wasBot, now]))
           }
@@ -2039,15 +2046,15 @@ try {
          * ⚠ 자판 앞(desktop 페이지)에서는 반대다 — 그 계약은 위에서 따로 잰다. 한 코드가 두 답을 낸다.
          */
         {
-          await pg.fill('.composer textarea', '폰에서는 줄 바꿈')
+          await pg.fill('.composer .cin', '폰에서는 줄 바꿈')
           await pg.keyboard.press('Enter'); await wait(600)
-          const still = await pg.inputValue('.composer textarea')
+          const still = await pg.getAttribute('.composer .cin', 'data-value')
           if (!still.includes('폰에서는 줄 바꿈')) fail('🔴 폰에서 ⏎ 로 보내졌다 — 반쯤 쓴 말이 나간다 · ' + JSON.stringify(still))
           if (!/\n/.test(still)) fail('폰: ⏎ 가 줄바꿈도 안 했다 · ' + JSON.stringify(still))
           // 보내기는 단추로 — 그 길까지 살아 있어야 «⏎ 를 막았다» 가 완성된다
-          await pg.fill('.composer textarea', '단추로 보낸다'); await wait(200)
+          await pg.fill('.composer .cin', '단추로 보낸다'); await wait(200)
           await pg.click('.composer .sendb'); await wait(900)
-          const gone = await pg.inputValue('.composer textarea')
+          const gone = await pg.getAttribute('.composer .cin', 'data-value')
           if (gone.trim()) fail('폰: 보내기 단추로 안 나갔다 · ' + JSON.stringify(gone))
           ok('폰에서는 ⏎ 가 줄 바꿈 · 보내기는 단추')
         }
@@ -2058,7 +2065,7 @@ try {
         const bp = await pg.evaluate(() => { const b = document.querySelector('.bpill b'); const p = document.querySelector('.bpill'); return { text: b.textContent, sw: b.scrollWidth, cw: b.clientWidth, pw: p.getBoundingClientRect().width, hw: document.querySelector('.chat-hdr').getBoundingClientRect().width } })
         if (!(bp.cw > 40 && bp.sw <= bp.cw + 1 && /제품_Rondo/.test(bp.text))) fail('phone: header pill name clipped ' + JSON.stringify(bp))
         // 키보드: 입력칸에 포커스 → 시각 뷰포트 336px 축소 → 루트가 그만큼 줄고 컴포저는 그 바닥, 헤더는 숨고, 마지막 말은 컴포저 위에 보인다
-        await pg.focus('.composer textarea'); await pg.evaluate(() => window.__kb(336)); await wait(500)
+        await pg.focus('.composer .cin'); await pg.evaluate(() => window.__kb(336)); await wait(500)
         const kbm = await pg.evaluate(() => { const r = document.querySelector('#root').getBoundingClientRect(); const c = document.querySelector('.composer').getBoundingClientRect(); const items = document.querySelectorAll('.chat-body > *'); const last = items[items.length - 1].getBoundingClientRect(); const hdr = getComputedStyle(document.querySelector('.chat-hdr')).display; return { kb: document.querySelector('.app').classList.contains('kb'), rootH: r.height, compBottom: c.bottom, compTop: c.top, lastBottom: last.bottom, hdr, ih: innerHeight } })
         if (!kbm.kb || Math.abs(kbm.rootH - (kbm.ih - 336)) > 2 || kbm.compBottom > kbm.ih - 336 + 1 || kbm.hdr !== 'none' || kbm.lastBottom > kbm.compTop + 1) fail('phone: keyboard layout ' + JSON.stringify(kbm))
         await pg.screenshot({ path: 'test/tmp/phone-kb.png' })
@@ -2073,7 +2080,7 @@ try {
         // 🔴 iOS 가 시각 뷰포트를 아래로 밀어도(offsetTop) «키보드가 닫혔다» 고 착각하지 않는다
         //    종전 식은 offsetTop 을 빼서 140 아래로 떨어졌고, --vvh 를 지워 컴포저가 키보드 밑에 묻혔다
         //    (2026-09-13 Dave: «다시 키보드 올라갔을 때 채팅 화면 타이핑 위치 안 잡혀»)
-        await pg.focus('.composer textarea'); await pg.evaluate(() => window.__kbOff(336, 300)); await wait(400)
+        await pg.focus('.composer .cin'); await pg.evaluate(() => window.__kbOff(336, 300)); await wait(400)
         const push = await pg.evaluate(() => { const r = document.querySelector('#root').getBoundingClientRect(); const c = document.querySelector('.composer').getBoundingClientRect(); return { kb: document.querySelector('.app').classList.contains('kb'), rootTop: r.top, rootH: r.height, compBottom: c.bottom, ih: innerHeight, vh: visualViewport.height, top: visualViewport.offsetTop } })
         if (!push.kb) fail('phone: 밀린 시각 뷰포트를 «닫힘» 으로 착각 ' + JSON.stringify(push))
         if (Math.abs(push.rootH - push.vh) > 2 || Math.abs(push.rootTop - push.top) > 2) fail('phone: 밀린 만큼 루트가 안 따라감 ' + JSON.stringify(push))
@@ -2084,7 +2091,7 @@ try {
         //    종전에는 «키보드가 140px 이상 먹었을 때만» 맞췄는데, 이 판에서는 innerHeight − vv.height 가 0 이라
         //    «닫혔다» 로 떨어지고 루트가 100dvh 로 돌아갔다 — 그 dvh 는 키보드를 모르니 대화가 안 올라온다
         //    (2026-09-13 Dave 3차 스크린샷 · 그 라운드에 넣었던 interactive-widget 메타가 이 상황을 만들었다)
-        await pg.focus('.composer textarea'); await pg.evaluate(() => window.__kbBoth(336)); await wait(500)
+        await pg.focus('.composer .cin'); await pg.evaluate(() => window.__kbBoth(336)); await wait(500)
         const both = await pg.evaluate(() => { const r = document.querySelector('#root').getBoundingClientRect(); const c = document.querySelector('.composer').getBoundingClientRect(); return { rootH: r.height, compBottom: c.bottom, vh: visualViewport.height, ih: innerHeight } })
         if (Math.abs(both.rootH - both.vh) > 2) fail('phone: 레이아웃까지 줄어든 판에서 루트가 안 맞음 ' + JSON.stringify(both))
         if (both.compBottom > both.vh + 1) fail('phone: 대화·입력창이 키보드 위로 안 올라옴 ' + JSON.stringify(both))
@@ -2105,7 +2112,7 @@ try {
 
         // 입력칸을 누르면 대화가 맨 아래로 붙는다 — «무엇에 답하는지» 가 보여야 한다
         await pg.evaluate(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop = 0 }); await wait(200)
-        await pg.focus('.composer textarea'); await pg.evaluate(() => window.__kb(336)); await wait(900)
+        await pg.focus('.composer .cin'); await pg.evaluate(() => window.__kb(336)); await wait(900)
         const stick = await pg.evaluate(() => { const el = document.querySelector('.chat-scroll'); return { d: el.scrollHeight - el.scrollTop - el.clientHeight, sh: el.scrollHeight, ch: el.clientHeight } })
         if (stick.sh > stick.ch + 20 && stick.d > 20) fail('phone: 키보드가 올라와도 맨 아래로 안 붙음 ' + JSON.stringify(stick))
         await pg.evaluate(() => window.__kb(0)); await pg.evaluate(() => document.activeElement.blur()); await wait(300)

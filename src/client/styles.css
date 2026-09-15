@@ -182,7 +182,14 @@ b,strong { color:var(--w); font-weight:600 }
 .chip.more { border-style:dashed; color:var(--t3); height:24px } .chip.more:hover { color:var(--w) }
 .umsg .files.uatt .fchip { vertical-align:middle }
 .composer .crow { display:flex; align-items:flex-end; gap:8px }
-.composer textarea { flex:1; background:none; border:0; outline:0; resize:none; min-height:26px; max-height:180px; padding:2px 0; color:var(--w); font-size:13.5px; line-height:1.5 } .composer textarea::placeholder { color:var(--t3) }
+/* 입력창 — contenteditable. 글 속에 칩(.ichip)이 선다 (InlineInput.tsx 머리말) */
+.composer .cin { flex:1; min-width:0; min-height:26px; max-height:180px; overflow:auto; padding:2px 0; color:var(--w); font-size:13.5px; line-height:1.6; white-space:pre-wrap; word-break:break-word; outline:0; cursor:text }
+.composer .cin[data-value=""]::before { content:attr(data-placeholder); color:var(--t3); pointer-events:none }
+.ichip { display:inline-flex; align-items:center; gap:5px; height:22px; padding:0 8px 0 7px; margin:0 2px; border:1px solid var(--line2); border-radius:6px; background:var(--box); color:var(--t); font-family:var(--mono); font-size:12px; vertical-align:-5px; max-width:260px; white-space:nowrap; user-select:none; cursor:pointer }
+.ichip:hover { border-color:var(--t3) } .ichip .nm { overflow:hidden; text-overflow:ellipsis; min-width:0 }
+.ichip .fb { flex:none; font-family:var(--ui); font-size:10px; line-height:16px; color:var(--t3); background:var(--bg); border-radius:3px; padding:0 5px }
+.ichip.busy { border-color:#3a2a1f } .ichip .spin { border-top-color:var(--run) }
+.cbar .acount { font-size:11px; color:var(--t3); margin-left:8px; white-space:nowrap }
 .cbar { display:flex; align-items:center; gap:2px; font-size:12.5px; color:var(--t2) } .cbar .sp { flex:1 }
 .cbtn { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:6px; font-size:12.5px; color:var(--t2); white-space:nowrap; position:relative } .cbtn:hover { color:var(--w); background:var(--hover) } .cbtn.on { color:var(--w); background:var(--sel) } .cbtn .chev { color:var(--t3) }
 /* ⚠ 큰 링도 12시에서 시작하고, 빠듯하면 같은 색으로 경고한다 (작은 링 `.ring` 과 한 몸) */
@@ -486,7 +493,7 @@ b,strong { color:var(--w); font-weight:600 }
   .cchips { display:flex; gap:6px; padding:0 22px 8px; width:100%; overflow-x:auto; scrollbar-width:none } .cchips::-webkit-scrollbar { display:none } .cchips .cbtn { padding:5px 11px; border-radius:15px; border:1px solid var(--hair); font-size:12.5px; background:var(--box); flex:none }
   .composer { margin:0 16px; width:calc(100% - 32px); max-width:none; min-height:60px; border-radius:30px; padding:8px 10px 8px 8px; gap:0; justify-content:center; box-shadow:0 10px 30px rgba(0,0,0,.45) } .composer.multi { border-radius:22px }
   .composer .crow { align-items:center; gap:10px }
-  .composer textarea { font-size:17px; min-height:24px; padding:6px 0; max-height:140px }
+  .composer .cin { font-size:17px; min-height:24px; padding:6px 0; max-height:140px } .ichip { height:26px; font-size:14px; vertical-align:-7px; max-width:220px }
   .composer .plusb { width:40px; height:40px; border-radius:50%; background:rgba(255,255,255,.06); display:inline-flex; align-items:center; justify-content:center; color:var(--t); flex:none }
   .sendb { width:36px; height:36px } .sendb.mic { background:transparent; color:var(--t2) }
   .cpop { left:0; right:0; width:auto; border-radius:20px; padding:6px; bottom:calc(100% + 10px) } .cpop.r { width:auto } .prow2 { min-height:52px; padding:10px 14px; border-radius:12px } .prow2 .t b { font-size:16px } .prow2 .t small { font-size:13px }

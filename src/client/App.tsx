@@ -13,6 +13,7 @@ import { machSummary } from '../core/chat'
 import { buildRows, type ChatRow } from '../core/chatRows'
 import { splitAttach } from '../core/attach'
 import { chipParts } from '../core/chipName'
+import { InlineInput, type InlineInputHandle } from './InlineInput'
 import { norm, scoreName } from '../core/search'
 import { fmtTime, useStore } from './store'
 import { ICON_PX, useIconSize, useTheme } from './theme'
@@ -824,7 +825,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
    */
   const stickBottom = () => { const el = scRef.current; if (!el) return; const go = () => { el.scrollTop = el.scrollHeight }; go(); setTimeout(go, 120); setTimeout(go, 400); setTimeout(go, 800) }
   const [draft, setDraft] = useState<{ model?: string; effort?: string; permissionMode?: PermissionMode }>({})
-  const fileRef = useRef<HTMLInputElement>(null); const endRef = useRef<HTMLDivElement>(null); const taRef = useRef<HTMLTextAreaElement>(null); const scRef = useRef<HTMLDivElement>(null); const footRef = useRef<HTMLDivElement>(null); const colRef = useRef<HTMLDivElement>(null); const lastUserRef = useRef<HTMLDivElement | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null); const endRef = useRef<HTMLDivElement>(null); const taRef = useRef<InlineInputHandle>(null); const scRef = useRef<HTMLDivElement>(null); const footRef = useRef<HTMLDivElement>(null); const colRef = useRef<HTMLDivElement>(null); const lastUserRef = useRef<HTMLDivElement | null>(null)
   const state = cur?.state ?? 'idle'; const running = state === 'running'
   /** ⚠ 기본값도 벤더마다 다르다 — Codex 세션에 Claude 기본 모델이 박히면 첫 턴에 죽는다 */
   const vendOf = () => cur?.vendor ?? bot.vendor
@@ -833,7 +834,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   useEffect(() => { setDrill(null); setDraft({}); setPop('') }, [cur?.id])
   useEffect(() => { if (prefill) { setText((t) => (t ? `${t} ${prefill}` : prefill)); onPrefilled(); taRef.current?.focus() } }, [prefill])
   useEffect(() => { if (focusReq) taRef.current?.focus() }, [focusReq])
-  useEffect(() => { if (attachReq.length) { setAttach((a) => [...a, ...attachReq.filter((r) => !a.some((x) => x.rel === r.rel))]); onAttached() } }, [attachReq])
+  useEffect(() => { if (attachReq.length) { for (const r of attachReq) addAtt(r); onAttached() } }, [attachReq])
   useEffect(() => { if (mentionReq.length) { for (const rel of mentionReq) mention(rel); onMentioned() } }, [mentionReq])
   // ⚠ `filesTick` 도 본다 — 새 슬래시 명령을 만들면(루프 8/10) 그 자리에서 `/` 메뉴에 나와야 한다
   useEffect(() => { void api<SlashCmd[]>(`/bots/${bot.id}/slash${cur?.id ? `?sid=${cur.id}` : ''}`).then(setSlash).catch(() => {}) }, [bot.id, cur?.id, filesTick])
@@ -875,7 +876,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const sendText = async (raw: string) => {
     let t = raw.trim(); if ((!t && !attach.length) || busy || uploading) return
     if (attach.length) t = `${t || '첨부한 파일을 봐 줘.'}\n\n첨부 파일 (읽어서 참고해):\n${attach.map((a) => (a.dir ? `- ${a.abs}/ (폴더 — 안의 파일들)` : `- ${a.abs}`)).join('\n')}`
-    setText(''); setAttach([]); if (taRef.current) taRef.current.style.height = 'auto'
+    setText(''); setAttach([])
     // 보냈으면 초안은 그 자리에서 지운다. ⚠ 첫 메시지는 세션을 만들며 키가 `new` → 실제 id 로 바뀌므로
     //    지연 저장이 새 키에 대고 지우는 수가 있다 — 둘 다 명시적으로 치운다.
     try { localStorage.removeItem(draftRef.current); localStorage.removeItem(`fb:draft:${bot.id}:new`) } catch { /* */ }
@@ -903,14 +904,33 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
           try { const ex = await api<Record<string, { rel: string; dir: boolean } | false>>(`/bots/${bot.id}/exists`, { body: { rels: [p] } }); const hit = ex[p]; if (hit) { addAtt({ rel: hit.rel, abs: p, dir: hit.dir }); continue } } catch { /* 호스트가 모르는 경로 — 복사로 */ }
         }
         const key = `pending:${f.name}:${Date.now()}:${Math.random()}`
-        setAttach((a) => [...a, { rel: key, abs: '', name: f.name, uploading: true }])
-        try { const r = await uploadFile(bot.id, f); setAttach((a) => a.map((x) => (x.rel === key ? { rel: r.rel, abs: r.abs, uploaded: true } : x))); copied++ }
-        catch (e) { setAttach((a) => a.filter((x) => x.rel !== key)); throw e }
+        addAtt({ rel: key, abs: '', name: f.name, uploading: true })
+        try { const r = await uploadFile(bot.id, f); const nn = r.rel.split('/').pop() ?? f.name; setAttach((a) => a.map((x) => (x.rel === key ? { rel: r.rel, abs: r.abs, uploaded: true } : x))); if (nn !== f.name) setText((t) => t.replace(`@${f.name}`, `@${nn}`)); copied++ }
+        catch (e) { setAttach((a) => a.filter((x) => x.rel !== key)); setText((t) => t.replace(`@${f.name} `, '').replace(`@${f.name}`, '')); throw e }
       }
       if (copied) say(`${copied}개 복사했어요 → 첨부/`)
     } catch (e) { say((e as Error).message) } finally { setUploading(false); if (fileRef.current) fileRef.current.value = '' }
   }
-  const addAtt = (a: Att) => setAttach((l) => (l.some((x) => x.rel === a.rel) ? l : [...l, a]))
+  /**
+   * 🔴 **첨부는 글 속 `@이름` 토큰이다** (2026-09-15 Dave: «칩이 채팅 창 안으로 들어가야 해»). 입력창(InlineInput)이 그 토큰을
+   *    칩으로 그린다. 그래서 첨부를 더하는 길은 하나 — 목록에 넣고 글에 토큰이 없으면 끝(또는 캐럿)에 붙인다.
+   *    반대로 사람이 글에서 칩을 지우면(⌫) 토큰이 사라지고, 아래 효과가 목록에서도 뺀다. 두 표면이 어긋날 수 없다.
+   */
+  const attName = (a: Att) => a.name ?? (a.rel.replace(/\/+$/, '').split('/').pop() ?? a.rel)
+  const hasTok = (t: string, name: string) => new RegExp(`(^|\\s)@${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=\\s|$)`).test(t)
+  const caretEnd = useRef(false)
+  const addAtt = (a: Att) => {
+    setAttach((l) => (l.some((x) => x.rel === a.rel) ? l : [...l, a]))
+    const name = attName(a)
+    setText((t) => { if (hasTok(t, name)) return t; caretEnd.current = true; return `${t}${t && !/\s$/.test(t) ? ' ' : ''}@${name} ` })
+  }
+  // 토큰을 끝에 붙였으면 캐럿도 끝으로 — 안 옮기면 옛 캐럿 자리에서 «@…» 를 읽어 @ 목록이 엉뚱하게 뜬다(실측 스크린샷)
+  useEffect(() => { if (!caretEnd.current) return; caretEnd.current = false; setCaret(text.length); if (document.activeElement === taRef.current?.el()) taRef.current?.setSelection(text.length) }, [text])
+  useEffect(() => {
+    const names = new Set(Array.from(text.matchAll(/@([^\s@]+)/g)).map((m) => m[1]))
+    setAttach((l) => (l.every((a) => names.has(attName(a))) ? l : l.filter((a) => names.has(attName(a)))))
+  }, [text])
+  const chipsByName = useMemo(() => Object.fromEntries(attach.map((a) => { const abs = a.abs || `${bot.abs}/첨부/${a.name ?? ''}`; return [attName(a), { abs, dir: a.dir, folder: chipParts(abs, bot.abs, !!a.dir).folder, busy: a.uploading, icon: <Icon n={a.dir ? 'folder' : 'doc'} size={11} color="var(--t3)" /> }] })), [attach, bot.abs])
   const relOf = (p: string) => (p.startsWith(bot.abs + '/') ? p.slice(bot.abs.length + 1) : null)
   const rows = useMemo(() => buildRows(items, drill), [items, drill])
   const drillSub = drill ? (items.find((x) => x.id === drill) as Sub | undefined) : undefined
@@ -939,13 +959,13 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
     const ins = `/${c.name} `
     setText(head + ins + tail); const pos = at + ins.length
     setCaret(pos); taRef.current?.focus()
-    requestAnimationFrame(() => taRef.current?.setSelectionRange(pos, pos))
+    requestAnimationFrame(() => taRef.current?.setSelection(pos))
   }
-  const pickAt = (f: FileNode) => { const name = f.rel.split('/').pop() ?? f.rel; const start = caret - (atQ?.length ?? 0) - 1; const next = `${text.slice(0, start)}@${name} ${text.slice(caret)}`; setText(next); setCaret(start + name.length + 2); addAtt({ rel: f.rel, abs: `${bot.abs}/${f.rel}`, dir: f.dir }); setDismissed(''); taRef.current?.focus() }
+  const pickAt = (f: FileNode) => { const name = f.rel.split('/').pop() ?? f.rel; const start = caret - (atQ?.length ?? 0) - 1; const next = `${text.slice(0, start)}@${name} ${text.slice(caret)}`; setText(next); setCaret(start + name.length + 2); addAtt({ rel: f.rel, abs: `${bot.abs}/${f.rel}`, dir: f.dir }); setDismissed(''); requestAnimationFrame(() => taRef.current?.setSelection(start + name.length + 2)) }
   const mention = (rel: string) => { const name = rel.split('/').pop() ?? rel; setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}@${name} `); addAtt({ rel, abs: `${bot.abs}/${rel}` }); taRef.current?.focus() }
   // 맥 메뉴의 «보내기» — 단축키(⌘⏎)와 **같은 길**로 들어온다
   useEffect(() => { const f = () => void send(); window.addEventListener('fb:send', f); return () => window.removeEventListener('fb:send', f) })
-  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const onKey = (e: React.KeyboardEvent<HTMLElement>) => {
     if (e.nativeEvent.isComposing) return
     const list: (SlashCmd | FileNode)[] = slashList.length ? slashList : atList
     if (list.length && (slashQ !== null || atQ !== null)) {
@@ -1107,7 +1127,6 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
           글자만 담는 칸이다. 그래서 쓰는 중인 주소를 **입력칸 위 칩**으로 올린다: 같은 캐시, 같은 아이콘,
           그리고 «이 주소가 맞나» 를 보내기 전에 확인할 수 있다. */}
       {draftLinks.length ? <div className="files lchips">{draftLinks.map((u) => <LinkChip key={u} url={u} />)}</div> : null}
-      {attach.length ? <div className="files">{attach.map((a) => <FileChip key={a.rel} abs={a.abs || `${bot.abs}/첨부/${a.name ?? ''}`} dir={a.dir} botAbs={bot.abs} botId={bot.id} rel={a.uploading ? undefined : a.rel} busy={a.uploading} onClick={() => { if (!a.uploading && !a.dir) onFile(a.rel) }} tail={<span className="x" role="button" title="빼기" onClick={(e) => { e.stopPropagation(); setAttach(attach.filter((x) => x.rel !== a.rel)) }}><Icon n="x" size={10} /></span>} />)}<span style={{ fontSize: 11, color: 'var(--t3)', alignSelf: 'center' }}>{attach.length}개 · 봇이 읽어서 참고</span></div> : null}
       <input ref={fileRef} type="file" multiple hidden onChange={(e) => void upload(Array.from(e.target.files ?? []))} />
       {phone ? <div className="cchips">{modeBtn}{modelBtn}{effortBtn}</div> : null}
       <div className={`composer glassb ${text.includes('\n') || text.length > 40 ? 'multi' : ''}`}
@@ -1115,10 +1134,10 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
         {popEl}
         <div className="crow">
           {phone ? plusBtn : null}
-          <textarea ref={taRef} rows={1} onFocus={() => { if (phone) stickBottom() }} placeholder={drill ? '메인 대화로 보냅니다 — 이 안에는 직접 말을 걸 수 없어요' : running ? `보내면 대기열에 들어갑니다 (${sendKey})` : state === 'awaiting_input' ? '답을 기다리는 중 — 보내면 대기열에' : enterSends ? '메시지…  ⏎ 보내기 · ⇧⏎ 줄 바꿈 · / 스킬 · @ 파일' : '메시지…  / 스킬 · @ 파일'} value={text} onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(180, e.target.scrollHeight)}px` }} onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? 0)} onClick={(e) => setCaret(e.currentTarget.selectionStart ?? 0)} onKeyDown={onKey} />
+          <InlineInput ref={taRef} placeholder={drill ? '메인 대화로 보냅니다 — 이 안에는 직접 말을 걸 수 없어요' : running ? `보내면 대기열에 들어갑니다 (${sendKey})` : state === 'awaiting_input' ? '답을 기다리는 중 — 보내면 대기열에' : enterSends ? '메시지…  ⏎ 보내기 · ⇧⏎ 줄 바꿈 · / 스킬 · @ 파일' : '메시지…  / 스킬 · @ 파일'} value={text} chips={chipsByName} onChange={(t, c) => { setText(t); setCaret(c) }} onCaret={setCaret} onKeyDown={onKey} onFocus={() => { if (phone) stickBottom() }} onChipClick={(name) => { const a = attach.find((x) => attName(x) === name); if (a && !a.uploading && !a.dir) onFile(a.rel) }} />
           {phone ? <>{ringBtn}{sendBtn}</> : null}
         </div>
-        {!phone ? <div className="cbar">{modeBtn}{plusBtn}<span className="sp" />{modelBtn}{effortBtn}{ringBtn}{sendBtn}</div> : null}
+        {!phone ? <div className="cbar">{modeBtn}{plusBtn}{attach.length ? <span className="acount">첨부 {attach.length}개 · 봇이 읽어서 참고</span> : null}<span className="sp" />{modelBtn}{effortBtn}{ringBtn}{sendBtn}</div> : null}
       </div>
       {!phone ? <div className="cfoot"><span className={`dot ${cur?.alive || running ? 'done' : 'none'}`} style={{ width: 5, height: 5 }} /><span>{cur?.hibernated && !running ? `${s.hostName} · 절전 (첫 답이 몇 초 늦어요)` : s.hostName}</span>{cur?.restartPending ? <span>· 턴이 끝나면 새 설정으로 재시작</span> : null}<span className="sp" />{uploading ? <span>올리는 중…</span> : null}</div> : null}
     </div>
