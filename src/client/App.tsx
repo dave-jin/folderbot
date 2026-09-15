@@ -28,6 +28,8 @@ import { copySay } from './clip'
 type Tool = Extract<ChatItem, { kind: 'tool' }>
 type Sub = Extract<ChatItem, { kind: 'subagent' }>
 type Att = { rel: string; abs: string; dir?: boolean; uploaded?: boolean }
+/** 이 기기가 마지막에 보던 폴더·세션 — 앱을 다시 켤 때 그 자리로 돌아간다 */
+const LAST_KEY = 'fb:last'
 const stateDot = (st?: string) => (st === 'running' ? 'run' : st === 'awaiting_input' ? 'wait' : st === 'error' ? 'err' : 'none')
 
 function useHash(): [Record<string, string>, (p: Record<string, string>) => void] {
@@ -238,6 +240,27 @@ function Main() {
   useEffect(() => { if (sessionId && !s.chats[sessionId]) void loadChat(sessionId) }, [sessionId])
   useEffect(() => { if (bot) void loadTodo(bot.id) }, [bot?.id, s.filesTick[bot?.id ?? '']])
   const go = (b: string, sid?: string) => { setHash(sid ? { bot: b, s: sid } : { bot: b }); setView('chat') }
+  /**
+   * 🔴 **껐다 켜면 마지막에 보던 폴더에서 시작한다** (2026-09-15 Dave: «마지막으로 작업했던 프로젝트도
+   *    기억하고 그 창에서 시작되면 좋겠어»). 셸은 창을 띄울 때 주소를 **해시 없이** 연다 —
+   *    그래서 매번 오케스트레이터로 떨어졌다. 어디에 있었는지는 **기기마다** 다르므로 이 기기에 적어 둔다
+   *    (호스트에 두면 폰에서 연 폴더가 맥의 첫 화면을 바꾼다).
+   * ⚠ 되돌리기는 **앱을 연 직후 한 번**뿐이다(`restored`) — 나중에도 계속 끌어당기면 사람이 나가려는
+   *   화면을 앱이 붙잡는다.
+   * ⚠ 그때 없어진 폴더(덜어내기·은퇴)면 **아무 일도 안 한다** — 비어 있는 대화로 들어가느니 기본 화면이 낫다.
+   * ⚠ 폰은 첫 화면(Home)에 그대로 머문다 — `view` 는 해시가 아니라 `go()` 가 옮기고, 여기서는 해시만 놓는다.
+   */
+  const restored = useRef(false)
+  useEffect(() => {
+    if (restored.current || !s.bots.length) return
+    restored.current = true
+    if (hash.bot) return
+    try {
+      const l = JSON.parse(localStorage.getItem(LAST_KEY) ?? '') as { bot?: string; s?: string }
+      if (l?.bot && (l.bot === 'orch' || s.bots.some((b) => b.id === l.bot))) setHash(l.s ? { bot: l.bot, s: l.s } : { bot: l.bot })
+    } catch { /* 처음 켠 기기 */ }
+  }, [s.bots.length])
+  useEffect(() => { if (hash.bot) try { localStorage.setItem(LAST_KEY, JSON.stringify({ bot: hash.bot, s: sessionId ?? '' })) } catch { /* */ } }, [hash.bot, sessionId])
   const unread = s.notifications.filter((n) => !n.read).length
   const waiting = s.notifications.filter((n) => n.kind === 'awaiting' && !n.read).length
   const showDoc = !!bot && (phone || !!docOpen[bot.id]) && docs.tabs.length > 0

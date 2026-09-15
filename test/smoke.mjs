@@ -1433,6 +1433,21 @@ try {
         const tabs = await pg.$$eval('.doc .tab', (r) => r.length); if (tabs < 1) fail('doc tab')
         await pg.screenshot({ path: 'test/tmp/desktop-doc.png' })
         await pg.keyboard.press('Meta+Shift+D'); await wait(500); if (await pg.$('.doc')) fail('doc column should hide on ⌘⇧D · tabs=' + (await pg.$$eval('.doc .tab', (r) => r.length)) + ' · focus=' + (await pg.evaluate(() => document.activeElement?.tagName + '.' + document.activeElement?.className)))
+        /**
+         * 🔴 **껐다 켜면 마지막 폴더에서 시작한다** (2026-09-15 Dave: «마지막으로 작업했던 프로젝트도
+         *    기억하고 그 창에서 시작되면 좋겠어»). 셸은 창을 띄울 때 주소를 **해시 없이** 열기 때문에
+         *    (`loadHome()`), 이 검사도 해시 없는 주소로 다시 여는 것으로 «앱을 껐다 켠 것» 을 흉내 낸다.
+         * ⚠ 기억하는 자리는 **이 기기**(localStorage)다 — 폰에서 연 폴더가 맥의 첫 화면을 바꾸면 안 된다.
+         */
+        {
+          const was = await pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('bot'))
+          if (!was) fail('마지막 폴더: 검사 전에 폴더가 안 열려 있다')
+          await pg.goto(base, { waitUntil: 'domcontentloaded' })   // 해시 없이 = 앱을 새로 켠 셈
+          await pg.waitForSelector('.composer textarea', { timeout: 10000 }); await wait(700)
+          const back = await pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('bot'))
+          if (back !== was) fail(`마지막 폴더: 다시 열었더니 «${back}» 로 갔다(기대 «${was}»)`)
+          ok('껐다 켜면 마지막에 보던 폴더에서 시작한다')
+        }
         if (errs.length) fail('page errors: ' + errs.join(' | '))
       }
       if (name === 'phone') {

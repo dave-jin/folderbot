@@ -7,6 +7,7 @@ const http = require('node:http'); const https = require('node:https')
 const updater = require('./updater')
 const perms = require('./perms')
 const { folderIcon } = require('./trayIcon')
+const { pickBounds } = require('./winBounds')
 
 const SETTINGS = () => join(app.getPath('userData'), 'settings.json')
 let settings = { mode: '', hostUrl: '', token: '', loginItem: false, root: '', port: 7373 }
@@ -29,9 +30,30 @@ function openDeepLink(url) {
 function navigate(hash) { if (!win) { pendingNav = hash; return } showWin(); win.webContents.executeJavaScript(`location.hash=${JSON.stringify(hash.replace(/^#/, ''))}`).catch(() => {}) }
 function showWin() { if (!win) createWin(); if (win.isMinimized()) win.restore(); win.show(); win.focus(); if (app.dock) app.dock.show(); try { updater.checkOnFocus() } catch {} }
 
+/**
+ * 🔴 **창도 마지막 모습으로 뜬다** (2026-09-15 Dave: «마지막으로 작업했던 프로젝트도 기억하고 그 창에서
+ *    시작되면»). 종전에는 켤 때마다 1280×860 한가운데였다 — 창을 넓혀 두고 쓰는 사람은 **매번 다시** 넓혔다.
+ * ⚠ 저장된 자리가 지금 화면 밖이면(모니터를 뺐거나 해상도가 바뀌었다) **크기만 살리고 자리는 버린다** —
+ *   안 그러면 창이 보이지 않는 곳에 떠서 «앱이 안 켜진다» 가 된다.
+ */
+function savedBounds() {
+  const { screen } = require('electron')
+  return pickBounds(settings.win, screen.getAllDisplays())
+}
 function createWin() {
-  win = new BrowserWindow({ width: 1280, height: 860, minWidth: 720, minHeight: 520, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 16 } /* 헤더 44px 의 중앙(12px 버튼) — 제목과 높이를 맞춘다 */, backgroundColor: '#141414', show: false, webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, sandbox: false } })
+  win = new BrowserWindow({ ...savedBounds(), minWidth: 720, minHeight: 520, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 16 } /* 헤더 44px 의 중앙(12px 버튼) — 제목과 높이를 맞춘다 */, backgroundColor: '#141414', show: false, webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, sandbox: false } })
   win.once('ready-to-show', () => { win.show(); if (pendingNav) { navigate(pendingNav); pendingNav = null } })
+  // ⚠ 창을 움직이는 동안 매 픽셀마다 파일을 쓰지 않는다 — 멈춘 뒤 한 번만
+  let bt = null
+  const remember = () => {
+    if (!win || win.isDestroyed() || win.isMinimized() || win.isFullScreen()) return
+    const b = win.getNormalBounds ? win.getNormalBounds() : win.getBounds()
+    if (!b || !b.width || !b.height) return
+    settings.win = { x: b.x, y: b.y, width: b.width, height: b.height }; save()
+  }
+  const later = () => { clearTimeout(bt); bt = setTimeout(remember, 600) }
+  win.on('resize', later); win.on('move', later)
+  win.on('close', () => { clearTimeout(bt); remember() })
   win.on('closed', () => { win = null })
   win.on('focus', () => { try { win.webContents.send('fb:perms', perms.list({ host: settings.mode === 'host' })) } catch {} })
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' } })
