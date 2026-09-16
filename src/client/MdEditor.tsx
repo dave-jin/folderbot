@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react'
-import { EditorState, StateField, type Extension, type Range } from '@codemirror/state'
-import { EditorView, Decoration, WidgetType, keymap, type DecorationSet } from '@codemirror/view'
+import { EditorSelection, EditorState, StateEffect, StateField, type Extension, type Range } from '@codemirror/state'
+import { EditorView, Decoration, ViewPlugin, WidgetType, keymap, type DecorationSet } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { search, searchKeymap } from '@codemirror/search'
-import { markdown } from '@codemirror/lang-markdown'
+import { markdown, markdownKeymap } from '@codemirror/lang-markdown'
 import { GFM } from '@lezer/markdown'
 import { syntaxTree, syntaxHighlighting, defaultHighlightStyle, HighlightStyle } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
@@ -494,8 +494,38 @@ const TASK_RE = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]\s/
 const WIKI_RE = /\[\[([^\]|]+)(\|[^\]]*)?\]\]/g
 const IMG_LINE_RE = /^!\[([^\]]*)\]\(([^)\s]+)\)\s*$/
 
+/**
+ * 🔴 **마우스를 누르고 있는 동안은 아무것도 드러내지 않는다** (Rondo 라운드 324 `dragFreeze` 이식, 2026-09-16 Dave:
+ *    «마우스 클릭시 다른곳에 클릭되는 현상»). 클릭 좌표 → 문서 위치 계산은 **누르는 순간의 배치**로 하는데,
+ *    캐럿이 들어온 줄이 원문을 드러내며 밀리면 그 계산이 이미 틀린 배치 위에서 이뤄진다(5회 중 1~2회 어긋나는
+ *    간헐 사고 — 눈으로 못 잡는 종류). 누르는 동안 얼려 두면 배치가 안 바뀌고, 떼는 순간 드러난다 —
+ *    그때는 캐럿의 **문서 위치**가 이미 맞으므로 밀려도 글자를 따라간다.
+ */
+const setFrozen = StateEffect.define<boolean>()
+const frozenField = StateField.define<boolean>({
+  create: () => false,
+  update: (v, tr) => { for (const e of tr.effects) if (e.is(setFrozen)) return e.value; return v }
+})
+const dragFreeze = ViewPlugin.fromClass(class {
+  down: () => void; up: () => void
+  constructor(readonly view: EditorView) {
+    this.down = () => { if (!view.state.field(frozenField, false)) view.dispatch({ effects: setFrozen.of(true) }) }
+    this.up = () => { if (view.state.field(frozenField, false)) view.dispatch({ effects: setFrozen.of(false) }) }
+    view.contentDOM.addEventListener('mousedown', this.down, true)
+    window.addEventListener('mouseup', this.up, true)
+  }
+  destroy() { this.view.contentDOM.removeEventListener('mousedown', this.down, true); window.removeEventListener('mouseup', this.up, true) }
+})
+
+/** 선택이 이 범위에 **닿았나** — 끝점 포함. 링크·이미지·프론트매터처럼 «내용» 인 숨김은 닿으면 원문을 드러낸다 */
+function touches(state: EditorState, from: number, to: number, strict = false): boolean {
+  if (state.field(frozenField, false)) return false
+  return state.selection.ranges.some((r) => (strict ? r.to > from && r.from < to : r.to >= from && r.from <= to))
+}
+
 /** 선택이 닿은 줄 번호 — 이 줄에서는 마커를 안 숨긴다 */
 function activeLines(state: EditorState): Set<number> {
+  if (state.field(frozenField, false)) return new Set()
   const out = new Set<number>()
   for (const r of state.selection.ranges) {
     const a = state.doc.lineAt(r.from).number, b = state.doc.lineAt(r.to).number
@@ -553,22 +583,25 @@ interface BuildOpts { onOpen?: (t: string) => void; rawUrl?: (rel: string) => st
 let opts: BuildOpts = {}
 export function setEditorOpts(o: BuildOpts): void { opts = o }
 
-function build(state: EditorState): { deco: DecorationSet; atoms: { from: number; to: number }[] } {
+interface Atom { from: number; to: number; block?: boolean }
+function build(state: EditorState): { deco: DecorationSet; atoms: Atom[] } {
   const active = activeLines(state)
   const marks: Range<Decoration>[] = []
-  const atoms: { from: number; to: number }[] = []
+  const atoms: Atom[] = []
   // ── 표는 제일 먼저 — 접은 표 안에는 다른 데코레이션이 겹치면 안 된다(겹친 replace 는 예외를 던진다) ──
   const skip = new Set<number>()
   for (const tb of findTables(state)) {
     if (tb.lines.some((n) => active.has(n))) continue    // 커서가 안에 있으면 원문 그대로
     for (const n of tb.lines) skip.add(n)
     marks.push(Decoration.replace({ widget: new TableWidget(tb, `${tb.from}:${state.doc.sliceString(tb.from, tb.to)}`), block: true }).range(tb.from, tb.to))
-    atoms.push({ from: tb.from, to: tb.to })
+    atoms.push({ from: tb.from, to: tb.to, block: true })
   }
   const tree = syntaxTree(state)
+  let link: { from: number; to: number } | null = null
   tree.iterate({
     enter: (n) => {
       if (skip.has(state.doc.lineAt(n.from).number)) return false
+      if (n.name === 'Link') link = { from: n.from, to: n.to }
       // 제목 크기는 **줄 단위 클래스**로 준다 — 토큰에 걸면 «# » 를 치는 순간에는 아직 안 커진다
       const h = /^ATXHeading([1-6])$/.exec(n.name)
       if (h) {
@@ -601,7 +634,13 @@ function build(state: EditorState): { deco: DecorationSet; atoms: { from: number
        *    그냥 적어 둔 `https://…` 는 그 자체가 보이는 전부다. 여는 괄호 뒤인지로 가른다.
        */
       if (n.name === 'URL' && state.doc.sliceString(n.from - 1, n.from) !== '(') return
-      if (active.has(line.number)) return
+      /**
+       * 🔴 **줄이 아니라 링크에 닿았을 때만 드러낸다** (2026-09-16 Dave: «화살표 이동시 제대로 위치하지 못하는 현상»).
+       *    종전에는 커서가 그 **줄**에 들어오기만 해도 `[글](주소)` 의 괄호·주소가 전부 나와 줄이 통째로 밀렸다 —
+       *    ↑↓ 로 지나가기만 해도 캐럿이 옆으로 튀는 것으로 보였다. 링크 **안**에 캐럿이 있을 때만 그 링크를 편다.
+       */
+      const inLink = link && n.from >= link.from && n.to <= link.to ? link : null
+      if (inLink ? touches(state, inLink.from, inLink.to) : active.has(line.number)) return
       hide(n.to)
     }
   })
@@ -612,9 +651,10 @@ function build(state: EditorState): { deco: DecorationSet; atoms: { from: number
     for (let n = 2; n <= Math.min(state.doc.lines, 60); n++) { if (state.doc.line(n).text.trim() === '---') { end = n; break } }
     if (end) {
       fmEnd = end
-      const touched = [...active].some((n) => n >= 1 && n <= end)
+      const from = state.doc.line(1).from, to = state.doc.line(end).to
+      // ⚠ 맨 앞(0)에 선 캐럿은 «안» 이 아니다 — ↑ 로 문서 맨 위에 닿을 때마다 YAML 이 펴지면 화살표가 튄 것처럼 보인다
+      const touched = touches(state, from, to, true)
       if (!touched) {
-        const from = state.doc.line(1).from, to = state.doc.line(end).to
         const body = state.doc.sliceString(state.doc.line(2).from, state.doc.line(Math.max(2, end - 1)).to)
         marks.push(Decoration.replace({ widget: new FmWidget(fmSummary(body)) }).range(from, to))
         atoms.push({ from, to })
@@ -627,7 +667,6 @@ function build(state: EditorState): { deco: DecorationSet; atoms: { from: number
   for (let n = 1; n <= state.doc.lines; n++) {
     if (skip.has(n)) continue
     const line = state.doc.line(n)
-    const live = active.has(n)
     const text = line.text
 
     // 콜아웃 `> [!note] …` — 표시는 숨기고 줄에 색을 준다 (Obsidian 표기)
@@ -644,12 +683,12 @@ function build(state: EditorState): { deco: DecorationSet; atoms: { from: number
     // 가로줄 — 프론트매터 안(경계)은 빼고
     if (n > fmEnd && HR_RE.test(text) && text.trim()) {
       marks.push(Decoration.replace({ widget: new HrWidget(), block: true }).range(line.from, line.to))
-      atoms.push({ from: line.from, to: line.to })
+      atoms.push({ from: line.from, to: line.to, block: true })
       continue
     }
 
     const img = IMG_LINE_RE.exec(text)
-    if (img && !live && opts.rawUrl) {
+    if (img && !touches(state, line.from, line.to) && opts.rawUrl) {
       const src = opts.rawUrl(img[2])
       if (src) { marks.push(Decoration.replace({ widget: new ImgWidget(src, img[1]), block: false }).range(line.from, line.to)); atoms.push({ from: line.from, to: line.to }); continue }
     }
@@ -673,13 +712,16 @@ function build(state: EditorState): { deco: DecorationSet; atoms: { from: number
       marks.push(Decoration.widget({ widget: new FavWidget(m[0]), side: -1 }).range(line.from + m.index))
     }
 
-    if (!live) {
-      WIKI_RE.lastIndex = 0
-      for (let m = WIKI_RE.exec(text); m; m = WIKI_RE.exec(text)) {
-        const from = line.from + m.index, to = from + m[0].length
-        marks.push(Decoration.replace({ widget: new WikiWidget(m[1].trim(), opts.onOpen) }).range(from, to))
-        atoms.push({ from, to })
-      }
+    /**
+     * 위키링크 — ⚠ **원자가 아니다.** 원자로 두면 캐럿이 안에 못 들어가 글자를 고칠 길이 없고, 줄에 들어오기만 해도
+     *    펴면 ↑↓ 때마다 줄이 밀린다. 옵시디언과 같이 캐럿이 **안**(대괄호 사이)에 있을 때만 원문이다 —
+     *    ←→ 로 지나가다 들어가면 펴지고, 나가면 접힌다.
+     */
+    WIKI_RE.lastIndex = 0
+    for (let m = WIKI_RE.exec(text); m; m = WIKI_RE.exec(text)) {
+      const from = line.from + m.index, to = from + m[0].length
+      if (touches(state, from, to, true)) continue
+      marks.push(Decoration.replace({ widget: new WikiWidget(m[1].trim(), opts.onOpen) }).range(from, to))
     }
   }
 
@@ -687,7 +729,7 @@ function build(state: EditorState): { deco: DecorationSet; atoms: { from: number
   return { deco: Decoration.set(marks, true), atoms }
 }
 
-const lpField = StateField.define<{ deco: DecorationSet; atoms: { from: number; to: number }[] }>({
+const lpField = StateField.define<{ deco: DecorationSet; atoms: Atom[] }>({
   create: build,
   update: (v, tr) => (tr.docChanged || tr.selection || tr.effects.length ? build(tr.state) : v),
   provide: (f) => EditorView.decorations.from(f, (v) => v.deco)
@@ -701,18 +743,46 @@ const atomic = EditorView.atomicRanges.of((view) => {
 })
 
 /**
- * 캐럿이 숨긴 마커 **안**에 떨어지면 내용 쪽으로 민다.
+ * 캐럿이 숨긴 마커 **안**에 떨어지면 밖으로 민다.
  * ⚠ 원자 범위만으로는 부족하다 — 클릭으로 들어오는 캐럿은 `atomicRanges` 를 거치지 않는다.
+ * 🔴 **선택의 앵커를 잃지 않는다** (2026-09-16 Dave: «커맨드 + 키보드에서 선택에 문제»). 종전에는 `{ anchor: hit.to }`
+ *    하나로 갈아 끼워 ⇧→·⌘⇧→ 로 넓히던 선택이 마커에 닿는 순간 **캐럿 하나로 접혔다.** 머리만 밀고 앵커는 둔다.
+ * ⚠ 방향을 본다 — 왼쪽으로 가던 캐럿은 마커 앞으로, 그 외(클릭·오른쪽·↑↓)는 마커 뒤(내용 쪽)로.
+ * 🔴 **표를 걸친 선택은 표를 통째로 삼킨다** (Rondo 라운드 325). 표는 블록 위젯이라 위에서 끌어 내리면 `posAtCoords` 가
+ *    표 시작을 돌려주고, 그대로 ⌫ 를 누르면 표 앞 줄바꿈만 지워져 표가 평문으로 무너진다.
  */
 const caretGuard = EditorState.transactionFilter.of((tr) => {
-  if (!tr.selection) return tr
-  const atoms = tr.startState.field(lpField, false)?.atoms
-  if (!atoms?.length) return tr
-  const head = tr.newSelection.main.head
-  const hit = atoms.find((a) => head > a.from && head < a.to)
-  if (!hit) return tr
-  return [tr, { selection: { anchor: hit.to }, sequential: true }]
+  if (!tr.selection || tr.newSelection.ranges.length !== 1) return tr
+  const raw = tr.startState.field(lpField, false)?.atoms
+  if (!raw?.length) return tr
+  /**
+   * ⚠ 원자 범위는 **바뀌기 전 문서** 의 좌표다 — 글자를 넣은 트랜잭션에는 `tr.changes` 로 옮겨서 대야 한다.
+   *    안 옮기면 ⏎ 로 새 줄을 만든 캐럿이 옛 좌표의 다음 줄 마커(`## `)에 «들어간» 것으로 보여 그 뒤로 밀린다
+   *    (실측: `- 항목` 끝에서 ⏎ → 캐럿이 두 줄 아래 제목으로 튀었다). 사라진 범위는 뺀다.
+   */
+  const atoms = tr.docChanged ? raw.map((a) => ({ ...a, from: tr.changes.mapPos(a.from, 1), to: tr.changes.mapPos(a.to, -1) })).filter((a) => a.to > a.from) : raw
+  if (!atoms.length) return tr
+  const sel = tr.newSelection.main
+  const prevHead = tr.startState.selection.main.head
+  const out = (p: number, left: boolean) => { const a = atoms.find((x) => p > x.from && p < x.to); return a ? (left ? a.from : a.to) : p }
+  let head = out(sel.head, sel.head < prevHead)
+  let anchor = sel.empty ? head : out(sel.anchor, sel.anchor < sel.head)
+  if (anchor !== head) {
+    const f = Math.min(anchor, head), t = Math.max(anchor, head)
+    for (const a of atoms) {
+      if (!a.block) continue
+      const cross = (f < a.from && t >= a.from && t <= a.to) || (t > a.to && f >= a.from && f <= a.to)
+      if (!cross) continue
+      const nf = Math.min(f, a.from), nt = Math.max(t, a.to)
+      if (anchor <= head) { anchor = nf; head = nt } else { anchor = nt; head = nf }
+    }
+  }
+  if (head === sel.head && anchor === sel.anchor) return tr
+  return [tr, { selection: EditorSelection.range(anchor, head), sequential: true }]
 })
+
+/** 유닛테스트 손잡이 — 필터·필드를 DOM 없이 EditorState 만으로 잰다 */
+export const _forTest = { lpField, caretGuard, frozenField, build }
 
 const HL = HighlightStyle.define([
   { tag: t.heading1, fontSize: '1.6em', fontWeight: '600' },
@@ -784,7 +854,11 @@ export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, 
     const el = box.current; if (!el) return
     let timer = 0
     const ext: Extension[] = [
-      history(), formatKeymap, keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+      /**
+       * ⏎ 는 목록·체크박스·인용을 **이어 쓴다**, 빈 항목에서 ⏎ 는 목록을 끝낸다 (`markdownKeymap`, 2026-09-16).
+       * ⚠ `defaultKeymap` 보다 **앞**에 둔다 — 같은 ⏎ 를 기본 키맵이 먼저 먹으면 그냥 줄바꿈이다.
+       */
+      history(), formatKeymap, keymap.of(markdownKeymap), keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
       /**
        * 🔴 **문서 안에서 찾기 (⌘F)** — `searchKeymap` 만으로는 안 뜬다. `openSearchPanel` 이 읽는
        *    상태(패널·검색어)는 **`search()` 확장**이 만든다 — 키만 꽂아 두면 명령이 조용히 false 를
@@ -799,7 +873,7 @@ export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, 
          텍스트가 왜 같이 선택되는거야?»*). CodeMirror 의 «찾기» 편의 기능이라 고른 낱말과 **같은 글자를
          문서 전체에서 물들인다** — 코드 편집기에서는 도움이 되지만 글을 쓰는 화면에서는 «내가 고르지
          않은 곳이 골라진 것»처럼 보인다. 찾기는 ⌘F 가 따로 한다. */
-      lpField, atomic, caretGuard,
+      frozenField, dragFreeze, lpField, atomic, caretGuard,
       EditorView.lineWrapping,
       EditorView.editable.of(!readOnly),
       EditorView.updateListener.of((u) => {
@@ -822,6 +896,8 @@ export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, 
     }
     const view = new EditorView({ state: EditorState.create({ doc: doc0, selection: { anchor }, extensions: ext }), parent: el })
     viewRef.current = view
+    // QA 손잡이 — 스모크가 캐럿의 **문서 위치**를 읽는다(DOM 선택으로는 위젯 사이 자리를 못 잰다). 제품 코드는 이걸 안 쓴다
+    ;(window as unknown as { __fbEditor?: EditorView }).__fbEditor = view
     /**
      * 밖에서 쓸 손잡이 — 목차가 «그 줄로» 부른다.
      * ⚠ `scrollIntoView` 는 **가운데**로 맞춘다(`y: 'center'`) — 맨 위로 붙이면 그 제목이 화면

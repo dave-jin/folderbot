@@ -808,7 +808,9 @@ b,strong { color:var(--w); font-weight:600 }
 .mded .lp-cal-note { border-left-color:#6ea6f7 } .mded .lp-cal-tip, .mded .lp-cal-success { border-left-color:var(--done) }
 .mded .lp-cal-warning { border-left-color:var(--wait) } .mded .lp-cal-danger { border-left-color:var(--err) }
 .mded .lp-cal-info { border-left-color:var(--t2) }
-.mded .lp-hr { display:block; height:1px; background:var(--line2); margin:10px 0 }
+/* 🔴 블록 위젯에 margin 을 주지 않는다 (2026-09-16) — CodeMirror 는 위젯 높이를 rect 로 재는데 margin 은 rect 밖이라 줄 높이 지도가
+   그만큼 어긋난다. `---`·표 아래를 누르면 **다음 줄**에 캐럿이 서던 원인(실측: 인용 줄을 눌렀는데 그 아래 빈 줄로). 여백은 padding 으로 */
+.mded .lp-hr { display:block; padding:10px 0; cursor:default } .mded .lp-hr::after { content:''; display:block; height:1px; background:var(--line2) }
 .mded .lp-quote { padding-left:12px; border-left:2px solid var(--line2); color:var(--t2) }
 
 /* 편집기 위젯 — 체크박스 · 위키링크 · 단독 이미지 */
@@ -818,7 +820,7 @@ b,strong { color:var(--w); font-weight:600 }
 .mded .lp-check.on::after { content:''; position:absolute; left:4px; top:1px; width:4px; height:8px; border:solid #111; border-width:0 2px 2px 0; transform:rotate(42deg) }
 .mded .lp-wiki { color:var(--blue, #6ea6f7); border-bottom:1px solid rgba(110,166,247,.35); cursor:pointer }
 .mded .lp-wiki:hover { color:var(--w) }
-.mded .lp-img { display:block; margin:6px 0 }
+.mded .lp-img { display:block; padding:6px 0 }
 .mded .lp-img img { max-width:100%; border-radius:6px; display:block }
 
 /* HTML 문서 — 문서 열 안에서 브라우저처럼. 크롬은 «여기서부터는 남의 페이지» 라는 표시다 */
@@ -830,12 +832,12 @@ b,strong { color:var(--w); font-weight:600 }
 .mded .lp-fm { display:inline-block; font-family:var(--mono); font-size:10.5px; letter-spacing:.4px; color:var(--t3); padding:2px 0; cursor:text }
 .mded .lp-fm:hover { color:var(--t2) }
 /* 표 — 읽을 땐 진짜 표, 칸을 누르면 그 자리에서 고친다 (기계는 접는다: 단추는 올려야 나온다) */
-.mded .lp-tblw { position:relative; margin:10px 0 }
+.mded .lp-tblw { position:relative; padding:12px 0 10px }
 .mded .lp-tbl { border-collapse:collapse; width:100%; table-layout:fixed; font-size:13px; line-height:1.6 }
 .mded .lp-tbl th, .mded .lp-tbl td { border:1px solid var(--line); padding:5px 9px; text-align:left; vertical-align:top; word-break:break-word; min-width:0 }
 .mded .lp-tbl th { color:var(--w); font-weight:600; background:var(--hover) }
 .mded .lp-tbl th:focus, .mded .lp-tbl td:focus { outline:none; box-shadow:inset 0 0 0 1.5px var(--t3) }
-.mded .lp-tbtn { position:absolute; right:0; top:-20px; display:flex; gap:4px; opacity:0; transition:opacity .12s }
+.mded .lp-tbtn { position:absolute; right:0; top:-8px; display:flex; gap:4px; opacity:0; transition:opacity .12s }
 .mded .lp-tblw:hover .lp-tbtn, .mded .lp-tblw:focus-within .lp-tbtn { opacity:1 }
 .mded .lp-tb { font-size:11px; line-height:1.5; color:var(--t3); border:1px solid var(--line); border-radius:5px; padding:0 6px; background:var(--bg) }
 .mded .lp-tb:hover { color:var(--w); border-color:var(--line2) }

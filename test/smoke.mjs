@@ -486,7 +486,7 @@ try {
           const rel = 'churn.md'
           const abs = join(root, '3. Area/제품_Rondo', rel)
           // ⚠ 제목이 **둘** 이어야 목차 단추가 나온다(하나짜리 문서에 목차는 자리만 먹는다)
-          const src = ['---', 'type: reference', 'tags: [PARA, 지침]', '---', '', '# 제목', '', '**굵게** 와 *기울임* 과 `코드`.', '', '- [ ] 할 일', '- 항목', '', '## 두 번째 제목', '', '---', '', '> 인용', '', '> [!note] 콜아웃 줄', '', '[[위키링크]] 와 https://example.com', ''].join('\n')
+          const src = ['---', 'type: reference', 'tags: [PARA, 지침]', '---', '', '# 제목', '', '**굵게** 와 *기울임* 과 `코드`.', '', '- [ ] 할 일', '- 항목', '', '## 두 번째 제목', '', '---', '', '> 인용', '', '> [!note] 콜아웃 줄', '', '[[위키링크]] 와 https://example.com', '', '[예시 링크](https://example.com/page) 옆 글', '', '| 가 | 나 |', '|---|---|', '| 1 | 2 |', ''].join('\n')
           // ⚠ API 로 만든다 — 파일을 직접 쓰면 호스트가 모르고 트리가 안 새로 그려진다
           await api(`/bots/${bot.id}/file`, { rel, text: src })
           const before = readFileSync(abs)
@@ -545,6 +545,110 @@ try {
           // `---` 는 가로줄로 (2026-09-13 Dave)
           if (!(await pg.$('.mded .lp-hr'))) fail('`---` 가 가로줄이 안 됐다')
           ok('편집기 — 누른 자리에 커서가 선다(서식 마커는 계속 숨는다)')
+          /**
+           * 🔴 **편집기 QA — 클릭 · 화살표 · 선택** (2026-09-16 Dave: «편집 기능에 버그가 많아 … ① 화살표 이동시 제대로 위치하지
+           *    못하는 현상 ② 마우스 클릭시 다른곳에 클릭되는 현상 ③ 커맨드 + 키보드에서 선택에 문제»).
+           *    재는 것은 DOM 선택이 아니라 **문서 위치**(`window.__fbEditor`, QA 손잡이) — 위젯 사이 자리는 DOM 으로 못 잰다.
+           *    ⚠ 이 검사들은 고치기 전 판에서 실제로 빨갰다: 링크 줄에 들어가면 줄이 밀려 ↑↓ 왕복이 어긋났고, ⇧→ 가 숨은 `**` 에
+           *       닿는 순간 선택이 캐럿으로 접혔고, 위에서 표로 끌어 내리면 선택이 표 앞에서 멈췄다.
+           */
+          {
+            const ed = () => pg.evaluate(() => { const v = window.__fbEditor; const m = v.state.selection.main; return { anchor: m.anchor, head: m.head, line: v.state.doc.lineAt(m.head).number, doc: v.state.doc.toString(), lines: v.state.doc.lines } })
+            const idx = (w) => pg.evaluate((w) => window.__fbEditor.state.doc.toString().indexOf(w), w)
+            const setCaret = (pos, head) => pg.evaluate(({ pos, head }) => { const v = window.__fbEditor; v.dispatch({ selection: { anchor: pos, head: head ?? pos } }); v.focus() }, { pos, head })
+            // 낱말의 화면 가운데 — 글자 노드를 훑어 찾는다(마크 span 안에 있어도)
+            const wordBox = (w) => pg.evaluate((w) => {
+              const walker = document.createTreeWalker(document.querySelector('.mded .cm-content'), NodeFilter.SHOW_TEXT)
+              for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+                const i = (n.textContent ?? '').indexOf(w); if (i < 0) continue
+                const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + w.length); const b = r.getBoundingClientRect()
+                return { x: b.left + b.width / 2, y: b.top + b.height / 2 }
+              }
+              return null
+            }, w)
+            // ② 클릭 — 누른 낱말 **안**에 캐럿이 선다 (여러 줄 종류에서)
+            for (const w of ['제목', '굵게', '기울임', '코드', '항목', '인용', '콜아웃', '옆 글', '예시 링크']) {
+              const b = await wordBox(w); if (!b) fail(`클릭: «${w}» 를 화면에서 못 찾았다`)
+              await pg.mouse.click(b.x, b.y); await wait(250)
+              const at = await idx(w); const st = await ed()
+              if (st.head < at || st.head > at + w.length) fail(`클릭: «${w}» 를 눌렀는데 캐럿이 딴 데 섰다 head=${st.head} 낱말=[${at},${at + w.length}] 줄=${st.line} · ` + JSON.stringify(await pg.evaluate((b) => { const v = window.__fbEditor; const el = document.elementFromPoint(b.x, b.y); return { b, pac: v.posAtCoords({ x: b.x, y: b.y }), lineTxt: el?.closest('.cm-line')?.textContent } }, b)))
+              if (st.anchor !== st.head) fail(`클릭: «${w}» 클릭이 선택이 됐다 ${JSON.stringify(st)}`)
+            }
+            // 링크 안에 캐럿이 있으면 원문(주소)이 보이고, 나가면 다시 숨는다
+            const shown = await pg.evaluate(() => document.querySelector('.mded .cm-content')?.textContent ?? '')
+            if (!/\(https:\/\/example\.com\/page\)/.test(shown)) fail('링크: 캐럿이 링크 안인데 주소가 안 보인다 — 고칠 길이 없다')
+            await setCaret(await idx('옆 글')); await wait(200)
+            const hidden = await pg.evaluate(() => document.querySelector('.mded .cm-content')?.textContent ?? '')
+            if (/\(https:\/\/example\.com\/page\)/.test(hidden)) fail('링크: 캐럿이 링크 밖(같은 줄)인데 주소가 보인다 — 줄이 밀린다')
+            // ① ↑↓ — 한 줄씩 내려가고(건너뛰지 않고), 왕복하면 제자리
+            await setCaret((await idx('제목')) + 1); await wait(100)
+            const seq = []
+            for (let i = 0; i < 8; i++) { await pg.keyboard.press('ArrowDown'); await wait(80); seq.push((await ed()).line) }
+            const bad = seq.findIndex((l, i) => l !== 6 + i + 1)
+            if (bad >= 0) fail('↓: 줄을 건너뛰거나 제자리다 ' + JSON.stringify(seq))
+            const mid = (await idx('기울임')) + 1
+            await setCaret(mid); await wait(100)
+            for (let i = 0; i < 4; i++) { await pg.keyboard.press('ArrowDown'); await wait(60) }
+            for (let i = 0; i < 4; i++) { await pg.keyboard.press('ArrowUp'); await wait(60) }
+            const back = await ed()
+            if (back.head !== mid) fail(`↑↓ 왕복: 제자리로 안 돌아온다 ${mid} → ${back.head} (줄 ${back.line})`)
+            // ↑ 로 맨 위에 닿아도 프론트매터는 접힌 채 (펴지면 화살표가 튄 것처럼 보인다)
+            for (let i = 0; i < 8; i++) { await pg.keyboard.press('ArrowUp'); await wait(40) }
+            const top = await ed()
+            if (top.head !== 0) fail('↑: 맨 위(0)에 못 닿는다 ' + JSON.stringify({ head: top.head, line: top.line }))
+            if (!(await pg.$('.mded .lp-fm'))) fail('↑: 맨 위에 닿으니 프론트매터가 펴졌다')
+            // ③ ⇧→ · ⇧← · ⌘⇧→ · ⌘A — 앵커가 남고, 숨은 마커에 닿아도 선택이 안 접힌다
+            const bold = await idx('굵게')
+            await setCaret(bold); await wait(100)
+            await pg.keyboard.press('Shift+ArrowRight'); await pg.keyboard.press('Shift+ArrowRight'); await wait(150)
+            let st = await ed()
+            if (st.anchor !== bold || st.head !== bold + 2) fail(`⇧→: 선택이 틀리다 ${JSON.stringify({ anchor: st.anchor, head: st.head, bold })}`)
+            await pg.keyboard.press('Shift+ArrowRight'); await wait(150)   // 숨은 `**` 에 닿는다
+            st = await ed()
+            if (st.anchor !== bold || st.head <= bold + 2) fail(`⇧→: 숨은 마커에 닿으니 선택이 접혔다 ${JSON.stringify({ anchor: st.anchor, head: st.head })}`)
+            const wa = await idx(' 와 *')
+            await setCaret(wa + 1); await wait(100)      // «와» 앞
+            await pg.keyboard.press('Shift+ArrowLeft'); await pg.keyboard.press('Shift+ArrowLeft'); await wait(150)
+            st = await ed()
+            if (st.anchor !== wa + 1 || st.head >= st.anchor) fail(`⇧←: 왼쪽으로 넓히면서 앵커를 잃었다 ${JSON.stringify({ anchor: st.anchor, head: st.head, want: wa + 1 })}`)
+            // ⚠ 맥의 ⌘⇧→ 는 CodeMirror 가 `navigator.platform` 으로 고르는 mac 바인딩이라 리눅스 헤드리스에서는 못 누른다 —
+            //    같은 명령(selectLineBoundary · selectAll)을 플랫폼 공통 키로 잰다. 앵커를 접던 것은 키가 아니라 필터였다.
+            await setCaret(bold); await wait(100)
+            await pg.keyboard.press('Shift+End'); await wait(150)
+            st = await ed()
+            const boldLineEnd = await pg.evaluate((p) => window.__fbEditor.state.doc.lineAt(p).to, bold)
+            if (st.anchor !== bold || st.head !== boldLineEnd) fail(`⌘⇧→(줄 끝 선택): 줄 끝까지 안 고른다 ${JSON.stringify({ anchor: st.anchor, head: st.head, end: boldLineEnd })}`)
+            await pg.keyboard.press('Control+a'); await wait(150)
+            st = await ed()
+            if (st.anchor !== 0 || st.head !== st.doc.length) fail(`⌘A: 전체가 안 골라진다 ${JSON.stringify({ anchor: st.anchor, head: st.head, len: st.doc.length })}`)
+            // 표를 걸친 선택은 표를 통째로 — 위에서 표 시작까지 끌어 내린 꼴을 흉내 낸다
+            const tFrom = await idx('| 가 | 나 |'); const tTo = (await idx('| 1 | 2 |')) + '| 1 | 2 |'.length
+            // ⚠ 먼저 표 **위**에 캐럿을 둔다(표가 접힌 상태) — 그 뒤 머리를 표 시작으로 끄는 것이 «위에서 끌어 내린» 꼴이다
+            await setCaret(await idx('옆 글')); await wait(120)
+            await setCaret(await idx('옆 글'), tFrom); await wait(150)
+            st = await ed()
+            if (st.head < tTo) fail(`표 선택: 표 앞에서 멈춘다 head=${st.head} 표=[${tFrom},${tTo}] — ⌫ 를 누르면 표가 평문으로 무너진다`)
+            // ⏎ 는 목록·체크박스를 이어 쓴다 — 끝에 새 항목 표식이 생기고, 빈 항목에서 한 번 더 누르면 목록이 끝난다(원문은 되돌려 churn 0 유지)
+            const itemEnd = (await idx('- 항목')) + '- 항목'.length
+            await setCaret(itemEnd); await wait(80)
+            await pg.keyboard.press('Enter'); await wait(150)
+            let cont = await ed()
+            if (!/^- $/.test(cont.doc.split('\n')[cont.line - 1])) fail('⏎: 목록 항목이 이어지지 않는다 ' + JSON.stringify({ line: cont.doc.split('\n')[cont.line - 1], head: cont.head, itemEnd, around: cont.doc.slice(itemEnd - 6, itemEnd + 24), focus: await pg.evaluate(() => document.activeElement?.className) }))
+            await pg.keyboard.press('Enter'); await wait(150)
+            cont = await ed()
+            if (cont.doc.includes('- \n')) fail('⏎⏎: 빈 항목에서 목록이 안 끝난다 ' + JSON.stringify(cont.doc.slice(itemEnd, itemEnd + 12)))
+            const taskEnd = (await idx('- [ ] 할 일')) + '- [ ] 할 일'.length
+            await setCaret(taskEnd); await wait(80)
+            await pg.keyboard.press('Enter'); await wait(150)
+            cont = await ed()
+            if (!/^- \[ \] $/.test(cont.doc.split('\n')[cont.line - 1])) fail('⏎: 체크박스 항목이 이어지지 않는다 ' + JSON.stringify(cont.doc.split('\n')[cont.line - 1]))
+            // 되돌린다 — 아래 churn 검사가 원문 그대로를 본다
+            await pg.keyboard.press('Control+z'); await pg.keyboard.press('Control+z'); await pg.keyboard.press('Control+z'); await wait(300)
+            cont = await ed()
+            if (cont.doc.includes('- [ ] \n') || cont.doc.includes('\n\n\n- 항목')) fail('⏎ 검사 되돌리기 실패 ' + JSON.stringify(cont.doc.slice(70, 100)))
+            await setCaret(await idx('옆 글')); await wait(100)
+            ok('편집기 QA — 클릭은 누른 낱말에 · ↑↓ 는 한 줄씩 왕복 · ⇧/⌘⇧ 선택은 앵커를 지킨다 · 표는 통째로 · ⏎ 는 목록을 잇는다')
+          }
           }
           // 위젯 — 체크박스 · 위키링크. ⛔ 체크박스는 **한 글자만** 갈아야 churn 이 안 난다
           const w = await pg.evaluate(() => ({ check: document.querySelectorAll('.mded .lp-check').length, wiki: document.querySelectorAll('.mded .lp-wiki').length }))
