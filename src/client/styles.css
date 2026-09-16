@@ -21,6 +21,9 @@ button { font:inherit; color:inherit; background:none; border:0; cursor:pointer;
 :focus { outline:none }
 :focus-visible { outline:1px solid var(--t3); outline-offset:-1px }
 input,textarea,select { font:inherit; color:inherit }
+/* 🔴 스크롤바 전면 숨김 — 스크롤은 그대로 (2026-09-16 Dave: «왜 스크롤에 세로줄이 생기지?»). 채팅·문서·패널이 저마다 스크롤 상자라
+   크롬 기본 스크롤바가 세 줄로 섰다. Rondo 라운드 33 과 같은 결정 — 막대 없이도 위치는 내용이 말해 준다. */
+* { scrollbar-width:none } *::-webkit-scrollbar { width:0; height:0; display:none }
 a { color:var(--w) }
 b,strong { color:var(--w); font-weight:600 }
 .ico { stroke:currentColor; fill:none; stroke-width:1.4; stroke-linecap:round; stroke-linejoin:round; flex:none }
