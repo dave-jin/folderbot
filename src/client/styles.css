@@ -108,7 +108,10 @@ b,strong { color:var(--w); font-weight:600 }
 /* ── 채팅 — 스크롤 컨테이너 하나, 유리(헤더 · 고정 질문 · ↓ · 컴포저)는 그 형제 ── */
 .col.chat { position:relative; --footh:132px; min-width:360px } /* CHAT_MIN — 열 계산이 틀려도 CSS 가 마지막 방어선 */
 .chat-hdr { position:absolute; left:0; right:0; top:0; z-index:4; border-bottom:1px solid var(--hair) } .chat-hdr.glass { background:var(--bg); backdrop-filter:none; -webkit-backdrop-filter:none } .chat-hdr::after { content:''; position:absolute; left:0; right:0; top:100%; height:28px; background:linear-gradient(180deg, var(--bg), var(--fade0)); pointer-events:none }
-.chat-scroll { position:absolute; inset:0; overflow:auto; display:flex; flex-direction:column; overscroll-behavior:contain }
+/* 🔴 좌우는 고정이다 (2026-09-17 Dave: «모바일에서 화면이 좌우로 드래그 되면 안돼»). 넓은 코드 블록이 있으면 스크롤 상자가 통째로
+   옆으로 밀렸다 — 옆으로 흐르는 것은 그 블록 **안**에서만(.md pre 는 제 안에서 스크롤한다). 세로만 판다. */
+.chat-scroll { position:absolute; inset:0; overflow-x:hidden; overflow-y:auto; display:flex; flex-direction:column; overscroll-behavior:contain; touch-action:pan-y }
+.chat-body > *, .amsg, .amsg .md { min-width:0 } .md pre { max-width:100% }   /* ⚠ .md 에 max-width 를 두지 않는다 — «읽기 폭 제한 없음» 이 cursor 스타일 계약이다 */
 /* 채팅 외양은 **cursor 스타일**로 되돌렸다 (2026-09-13 Dave: «이전 스타일이 더 나»).
    ⛔ 「A · 문서처럼」의 26px 리듬 · 오른쪽 정렬 · 58ch · 머리줄 · 턴 경계선은 전부 되돌렸다.
    ✅ 남긴 것은 **기계 접기(.mach)** 와 **문서 링크칩(.pchip)** 둘뿐이다 — Dave 가 콕 집어 원한 것. */

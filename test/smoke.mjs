@@ -2161,6 +2161,25 @@ try {
           const gone = await pg.getAttribute('.composer .cin', 'data-value')
           if (gone.trim()) fail('폰: 보내기 단추로 안 나갔다 · ' + JSON.stringify(gone))
           ok('폰에서는 ⏎ 가 줄 바꿈 · 보내기는 단추')
+        /**
+         * 🔴 **좌우는 고정** (2026-09-17 Dave: «모바일에서 화면이 좌우로 드래그 되면 안돼»). 넓은 코드 블록이 오면 채팅 스크롤 상자가
+         *    통째로 옆으로 밀렸다. 옆으로 흐르는 것은 그 블록 **안**에서만이다.
+         * ⚠ 스텁은 긴 줄을 안 주므로 넓은 <pre> 를 답 안에 넣어 재고 뺀다 — CSS 계약(가두기)을 재는 것이지 내용을 재는 게 아니다.
+         */
+        {
+          const wide = await pg.evaluate(() => {
+            const md = [...document.querySelectorAll('.chat-body .amsg .md')].pop(); if (!md) return null
+            const pre = document.createElement('pre'); pre.className = 'qa-wide'; pre.textContent = 'x'.repeat(400); md.appendChild(pre)
+            const sc = document.querySelector('.chat-scroll')
+            const r = { scW: sc.scrollWidth, cW: sc.clientWidth, preScroll: pre.scrollWidth > pre.clientWidth, ox: getComputedStyle(sc).overflowX, ta: getComputedStyle(sc).touchAction, bodyW: document.querySelector('.chat-body').scrollWidth }
+            pre.remove(); return r
+          })
+          if (!wide) fail('좌우 고정: 답이 없어 잴 수 없다')
+          if (wide.scW > wide.cW + 1) fail('🔴 좌우 고정: 넓은 코드 블록에 채팅이 옆으로 밀린다 ' + JSON.stringify(wide))
+          if (!wide.preScroll) fail('좌우 고정: 코드 블록이 제 안에서 스크롤되지 않는다(잘려 보인다) ' + JSON.stringify(wide))
+          if (wide.ox !== 'hidden' || wide.ta !== 'pan-y') fail('좌우 고정: 스크롤 상자가 세로 전용이 아니다 ' + JSON.stringify(wide))
+          ok('폰 — 좌우는 고정, 넓은 코드는 제 안에서만 흐른다')
+        }
         }
         if (!(await pg.$('.chat-hdr .rb')) || !(await pg.$('.cchips')) || !(await pg.$('.composer .plusb'))) fail('phone: round buttons / chips / pill composer')
         // 위 헤더는 불투명(페이드 없음) — 글이 밑으로 비치지 않는다
