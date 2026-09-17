@@ -8,6 +8,7 @@ const updater = require('./updater')
 const perms = require('./perms')
 const { folderIcon } = require('./trayIcon')
 const { pickBounds } = require('./winBounds')
+const { navHash, withHash } = require('./nav')
 
 const SETTINGS = () => join(app.getPath('userData'), 'settings.json')
 let settings = { mode: '', hostUrl: '', token: '', loginItem: false, root: '', port: 7373 }
@@ -27,7 +28,15 @@ function openDeepLink(url) {
   // folderbot://bot/<id>?s=<sid>  → 해당 대화로
   try { const u = new URL(url); const parts = u.pathname.split('/').filter(Boolean); const bot = u.hostname === 'bot' ? parts[0] : null; if (bot) navigate(`#bot=${bot}${u.searchParams.get('s') ? `&s=${u.searchParams.get('s')}` : ''}`) } catch {}
 }
-function navigate(hash) { if (!win) { pendingNav = hash; return } showWin(); win.webContents.executeJavaScript(`location.hash=${JSON.stringify(hash.replace(/^#/, ''))}`).catch(() => {}) }
+/**
+ * 🔴 창이 없으면 **만든다** (2026-09-17 Dave: «알람 버튼 클릭하면 해당 세션으로 이동해야 해»). 종전엔 목적지만 적고
+ *    돌아가 배너를 눌러도 아무 일이 없었다. 목적지는 `loadHome` 이 첫 로드 URL 에 싣는다(`desktop/nav.js` 머리말).
+ */
+function navigate(hash) {
+  if (!win) { pendingNav = hash; showWin(); return }
+  showWin()
+  win.webContents.executeJavaScript(`location.hash=${JSON.stringify(hash.replace(/^#/, ''))}`).catch(() => {})
+}
 function showWin() { if (!win) createWin(); if (win.isMinimized()) win.restore(); win.show(); win.focus(); if (app.dock) app.dock.show(); try { updater.checkOnFocus() } catch {} }
 
 /**
@@ -61,9 +70,11 @@ function createWin() {
   loadHome()
 }
 function loadHome() {
-  if (settings.mode === 'host' && hostRun) { win.loadURL(`${settings.hostUrl}/#token=${encodeURIComponent(hostRun.gateway.localToken())}`).catch(() => {}); return }
+  // 알림으로 창을 새로 띄웠으면 목적지를 첫 URL 에 함께 싣는다 — 토큰 리로드와 경합하지 않는다(`nav.js`)
+  const nav = pendingNav; pendingNav = null
+  if (settings.mode === 'host' && hostRun) { win.loadURL(withHash(`${settings.hostUrl}/#token=${encodeURIComponent(hostRun.gateway.localToken())}`, nav)).catch(() => {}); return }
   if (!settings.hostUrl) { win.loadFile(join(__dirname, 'connect.html')); return }
-  win.loadURL(settings.hostUrl).catch(() => win.loadFile(join(__dirname, 'connect.html')))
+  win.loadURL(withHash(settings.hostUrl, nav)).catch(() => win.loadFile(join(__dirname, 'connect.html')))
 }
 
 // ── 호스트 모드: 이 맥(미니)에서 호스트를 앱 안에서 띄운다 — GUI 앱이라 claude 가 키체인을 읽는다 ──
@@ -73,6 +84,12 @@ function hostAvailable() { return existsSync(HOST_BUNDLE) && existsSync(join(HOS
 async function startHostMode(root) {
   if (!hostAvailable()) throw new Error('이 빌드에는 호스트가 안 들어 있어요')
   process.env.FOLDERBOT_DATA = join(app.getPath('userData'), 'host')
+  /**
+   * 🔴 호스트가 이 앱 안에서 돌면 **맥 배너는 이 앱(Electron)이 띄운다** — 눌러서 그 대화로 갈 수 있는 쪽이다.
+   *    호스트의 자체 배너(terminal-notifier·osascript)는 같은 사건에 **하나 더** 뜨고, 눌러도 브라우저 첫 화면이 열리거나
+   *    아무 일도 없다 — «알림을 눌렀는데 안 간다» 의 절반이 이 배너였다. 터미널로 띄운 호스트(앱 없음)에서는 그대로 뜬다.
+   */
+  process.env.FOLDERBOT_NO_MAC_NOTIFY = '1'
   const mod = await import(pathToFileURL(HOST_BUNDLE).href)
   hostRun = await mod.startHost({ root, port: settings.port || 7373, webRoot: HOST_CLIENT, log: (m) => console.log('[host]', m), onRoot: (r) => switchRoot(r) })
   settings.mode = 'host'; settings.root = root; settings.hostUrl = `http://127.0.0.1:${settings.port || 7373}`; settings.token = hostRun.gateway.localToken(); save()
@@ -411,7 +428,7 @@ function recount() { let w = 0, work = 0; for (const s of states.values()) { if 
 function notify(n) {
   if (!Notification.isSupported()) return
   const no = new Notification({ title: n.title, body: n.body, silent: false })
-  no.on('click', () => navigate(`#bot=${n.botId}${n.sessionId ? `&s=${n.sessionId}` : ''}`))
+  no.on('click', () => { const h = navHash(n); if (h) navigate(`#${h}`); else showWin() })
   no.show()
 }
 

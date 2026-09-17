@@ -28,7 +28,7 @@ export class Notifier {
     this.onEvent(n)
     const suppressed = this.quiet() && kind !== 'awaiting'
     if (!suppressed) {
-      if (opts.mac !== false) this.mac(title, body)
+      if (opts.mac !== false) this.mac(title, body, n)
       if (opts.push !== false) void this.push(n)
     }
     return n
@@ -37,11 +37,16 @@ export class Notifier {
     for (const e of this.events) if (!ids || ids.includes(e.id)) e.read = true
     atomicWrite(this.file, JSON.stringify(this.events))
   }
-  /** macOS 알림 센터 — terminal-notifier 가 있으면 클릭 시 앱 URL 열기, 없으면 osascript */
-  private mac(title: string, body: string): void {
+  /**
+   * macOS 알림 센터 — terminal-notifier 가 있으면 클릭 시 **그 대화**(`#bot=…&s=…`)를 열고, 없으면 osascript(클릭 없음).
+   * ⚠ 데스크톱 앱이 호스트를 안에서 돌릴 때는 `FOLDERBOT_NO_MAC_NOTIFY` 로 꺼진다 — 배너는 앱이 띄우고 앱이 연다.
+   *    이 경로는 터미널로 띄운 호스트의 것이라 갈 곳이 브라우저뿐이다(2026-09-17).
+   */
+  private mac(title: string, body: string, n?: NotifyEvent): void {
     if (platform() !== 'darwin' || process.env.FOLDERBOT_NO_MAC_NOTIFY) return
     const tn = ['/opt/homebrew/bin/terminal-notifier', '/usr/local/bin/terminal-notifier'].find((p) => existsSync(p))
-    const url = `http://127.0.0.1:${this.cfg.port}/`
+    const hash = n?.botId ? `#bot=${encodeURIComponent(n.botId)}${n.sessionId ? `&s=${encodeURIComponent(n.sessionId)}` : ''}` : ''
+    const url = `http://127.0.0.1:${this.cfg.port}/${hash}`
     if (tn) execFile(tn, ['-title', title, '-message', body, '-open', url, '-sound', 'default', '-group', 'folderbot'], () => {})
     else execFile('/usr/bin/osascript', ['-e', `display notification ${JSON.stringify(body)} with title ${JSON.stringify(title)} sound name "default"`], () => {})
   }
