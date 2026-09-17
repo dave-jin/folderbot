@@ -234,6 +234,8 @@ export class SessionManager extends EventEmitter {
   /** Codex 는 우리가 승인 화면을 못 띄운다 — 이 값이 곧 권한 정책이다(codex.ts 머리말) */
   codexSandbox: 'read-only' | 'workspace-write' | 'danger-full-access' = 'read-only'
   openaiApiKey?: string
+  /** Claude 새 세션의 기본 권한 모드 — 만들 때 값을 안 주면 이걸 쓴다(설정 › Claude). Codex 는 샌드박스가 그 자리다 */
+  defaultPermissionMode?: PermissionMode
 
   constructor() {
     super()
@@ -281,7 +283,7 @@ export class SessionManager extends EventEmitter {
 
   create(bot: Bot, name: string, opts: { permissionMode?: PermissionMode; model?: string; effort?: string; routine?: string; vendor?: 'claude' | 'codex' } = {}): SessionRec {
     const id = `s_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-    const r: SessionRec = { id, botId: bot.id, name, cwd: bot.repo ?? bot.abs, cliSessionId: null, state: 'idle', createdAt: Date.now(), lastActivity: Date.now(), items: [], routine: opts.routine, permissionMode: opts.permissionMode, vendor: opts.vendor ?? bot.vendor, model: opts.model ?? this.defaults[opts.vendor ?? bot.vendor].model, effort: opts.effort ?? this.defaults[opts.vendor ?? bot.vendor].effort }
+    const r: SessionRec = { id, botId: bot.id, name, cwd: bot.repo ?? bot.abs, cliSessionId: null, state: 'idle', createdAt: Date.now(), lastActivity: Date.now(), items: [], routine: opts.routine, permissionMode: opts.permissionMode ?? ((opts.vendor ?? bot.vendor) === 'codex' ? undefined : this.defaultPermissionMode), vendor: opts.vendor ?? bot.vendor, model: opts.model ?? this.defaults[opts.vendor ?? bot.vendor].model, effort: opts.effort ?? this.defaults[opts.vendor ?? bot.vendor].effort }
     this.recs.set(id, r)
     this.persist(r)
     this.emit('sessions', bot.id)

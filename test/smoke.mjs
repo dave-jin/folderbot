@@ -404,34 +404,59 @@ try {
         // 설정 V25 — 왼쪽 목차 · 한 화면에 한 가지 (2026-09-13 Dave 승인)
         {
           const navs = await pg.$$eval('.snav .nv', (ns) => ns.map((n) => n.textContent.trim()))
-          for (const want of ['일반', '호스트 · 연결', '에이전트', '하네스', '사용량', '화면', '할 일', '알림', '권한 · 보안'])
+          /**
+           * 2026-09-17 «설정 1안» (Dave: «설정 메뉴가 엉망진창임 … 종류별로 정리») — 가르는 기준이 «무엇의 설정인가».
+           * 아홉 칸 중 Codex 는 깔렸을 때만, 할 일은 폰에서만 목차에 나온다. 참고 칸은 맨 아래·보기만.
+           */
+          for (const want of ['일반', '호스트 · 볼트', '기기', 'Claude', '세션 · 사용량', '알림', '참고 · 커넥터 · 스킬'])
             if (!navs.includes(want)) fail('설정 목차에 «' + want + '» 가 없다 ' + JSON.stringify(navs))
+          for (const gone of ['에이전트', '하네스', '권한 · 보안', '화면', '할 일']) if (navs.includes(gone)) fail('설정 목차에 옛 칸 «' + gone + '» 이 남아 있다 ' + JSON.stringify(navs))
+          if (navs[navs.length - 1] !== '참고 · 커넥터 · 스킬') fail('참고 칸이 맨 아래가 아니다 ' + JSON.stringify(navs))
           // 줄은 늘 세 칸 — 조작 자리가 왼쪽 글보다 오른쪽에 있고, 칸 밖으로 안 나간다
-          await pg.click('.snav .nv:has-text("사용량")'); await wait(300)
+          await pg.click('.snav .nv:has-text("세션 · 사용량")'); await wait(300)
           const three = await pg.evaluate(() => [...document.querySelectorAll('.sp-b .setr')].filter((r) => r.querySelector('.c')).map((r) => {
             const p = r.getBoundingClientRect(), t = r.querySelector('.tx').getBoundingClientRect(), c = r.querySelector('.c').getBoundingClientRect()
             return { t: r.dataset.t, ok: c.left >= t.right - 1 && c.right <= p.right + 1 }
           }))
           if (!three.length || three.some((x) => !x.ok)) fail('설정: 조작 자리가 흔들린다 ' + JSON.stringify(three.filter((x) => !x.ok)))
-          if (!(await pg.$('.sp-b .setr[data-t="턴마다 기록하기"]'))) fail('설정 › 사용량: 훅 줄이 없다')
-          // 에이전트 — 깔린 CLI · 커넥터 · 스킬이 범위 칩과 함께
-          await pg.click('.snav .nv:has-text("에이전트")'); await wait(500)
-          const ag = await pg.textContent('.sp-b'); if (!/Claude Code/.test(ag)) fail('설정 › 에이전트: 깔린 CLI 가 없다')
-          if (!(await pg.$('.sp-b .hitem .scp'))) fail('설정 › 에이전트: 범위 칩이 없다')
-          if (!/Folder Bot/.test(ag)) fail('설정 › 에이전트: 내장 커넥터가 없다')
-          await pg.screenshot({ path: 'test/tmp/desktop-settings-agents.png' })
-          // 하네스 — 폴더별 표(보기 전용). 고치는 버튼이 있으면 계약 위반이다
-          await pg.click('.snav .nv:has-text("하네스")'); await wait(500)
-          if (!(await pg.$('.sp-b .htab .hrow'))) fail('설정 › 하네스: 표가 비었다')
-          const hz = await pg.textContent('.sp-b .htab'); if (!/CLAUDE\.md/.test(hz)) fail('설정 › 하네스: CLAUDE.md 칸이 없다 · ' + hz.slice(0, 120))
-          if (await pg.$('.sp-b .htab button')) fail('설정 › 하네스: 보기 전용인데 고치는 버튼이 있다')
-          await pg.screenshot({ path: 'test/tmp/desktop-settings-harness.png' })
-          // 검색 — 제목과 설명을 함께 찾는다
-          await pg.fill('.snav .sfind input', '토큰'); await wait(300)
-          const found = await pg.$$eval('.snav .nv', (ns) => ns.map((n) => n.textContent))
-          if (!found.some((t) => /토큰/.test(t))) fail('설정 검색: «토큰» 이 안 걸린다 ' + JSON.stringify(found))
+          if (!(await pg.$('.sp-b .setr[data-t="턴마다 기록하기"]'))) fail('설정 › 세션·사용량: 훅 줄이 없다')
+          if (!(await pg.$('.sp-b .setr[data-t="유휴 세션 절전"]'))) fail('설정 › 세션·사용량: 절전 줄이 없다')
+          // 🔴 범위 배지 — 줄마다 [메인]/[이 기기] 가 붙어 «어디에 남는 값인가» 가 보인다
+          await pg.click('.snav .nv:has-text("일반")'); await wait(300)
+          const at = await pg.evaluate(() => ({ main: !!document.querySelector('.sp-b .setr[data-t="메인(호스트) 이름"] .scp.at-main'), dev: !!document.querySelector('.sp-b .setr[data-t="테마"] .scp.at-dev') }))
+          if (!at.main || !at.dev) fail('설정: 범위 배지가 없다 ' + JSON.stringify(at))
+          // 호스트 · 볼트 — 깔린 CLI 가 여기로
+          await pg.click('.snav .nv:has-text("호스트 · 볼트")'); await wait(400)
+          const hs = await pg.textContent('.sp-b'); if (!/Claude Code/.test(hs)) fail('설정 › 호스트·볼트: 깔린 CLI 가 없다')
+          if (!(await pg.$('.sp-b .setr[data-t="볼트 루트"]'))) fail('설정 › 호스트·볼트: 볼트 루트가 없다')
+          // 기기 — 흩어져 있던 기기 항목이 한 칸에 (페어링 · 로그아웃이 맨 아래)
+          await pg.click('.snav .nv:has-text("기기")'); await wait(400)
+          const dv = await pg.$$eval('.sp-b .setr', (rs) => rs.map((r) => r.dataset.t))
+          if (!dv.includes('새 기기 연결')) fail('설정 › 기기: 페어링 줄이 없다 ' + JSON.stringify(dv))
+          if (dv[dv.length - 1] !== '이 기기 로그아웃') fail('설정 › 기기: 위험한 줄(로그아웃)이 맨 아래가 아니다 ' + JSON.stringify(dv))
+          // 🔴 Claude — 인증 → 새 채팅 기본값(모델 · **권한**) → 연결. 권한 기본값은 이 판에서 생겼다
+          await pg.click('.snav .nv:has-text("Claude")'); await wait(500)
+          const cl = await pg.$$eval('.sp-b .setr', (rs) => rs.map((r) => r.dataset.t))
+          for (const w of ['Claude 로그인 상태', '모델 · 생각 레벨', '새 채팅 기본 권한', '다시 연결', '연결 진단']) if (!cl.includes(w)) fail('설정 › Claude: «' + w + '» 줄이 없다 ' + JSON.stringify(cl))
+          if (cl.indexOf('Claude 로그인 상태') > cl.indexOf('새 채팅 기본 권한')) fail('설정 › Claude: 인증이 기본값보다 뒤에 있다 ' + JSON.stringify(cl))
+          await pg.screenshot({ path: 'test/tmp/desktop-settings-claude.png' })
+          // 참고 — 커넥터·스킬·폴더별 하네스(보기 전용). 고치는 버튼이 있으면 계약 위반이다
+          await pg.click('.snav .nv:has-text("참고")'); await wait(500)
+          const ag = await pg.textContent('.sp-b')
+          if (!(await pg.$('.sp-b .hitem .scp'))) fail('설정 › 참고: 범위 칩이 없다')
+          if (!/Folder Bot/.test(ag)) fail('설정 › 참고: 내장 커넥터가 없다')
+          if (!(await pg.$('.sp-b .htab .hrow'))) fail('설정 › 참고: 하네스 표가 비었다')
+          const hz = await pg.textContent('.sp-b .htab'); if (!/CLAUDE\.md/.test(hz)) fail('설정 › 참고: CLAUDE.md 칸이 없다 · ' + hz.slice(0, 120))
+          if (await pg.$('.sp-b .htab button')) fail('설정 › 참고: 보기 전용인데 고치는 버튼이 있다')
+          await pg.screenshot({ path: 'test/tmp/desktop-settings-ref.png' })
+          // 검색 — 제목과 설명을 함께 찾는다 · 옛 판에서 안 걸리던 «절전»·«진단» 도 걸린다
+          for (const [word, want] of [['토큰', /토큰/], ['절전', /절전/], ['진단', /진단/], ['권한', /권한/]]) {
+            await pg.fill('.snav .sfind input', word); await wait(250)
+            const found = await pg.$$eval('.snav .nv', (ns) => ns.map((n) => n.textContent))
+            if (!found.some((t) => want.test(t))) fail('설정 검색: «' + word + '» 이 안 걸린다 ' + JSON.stringify(found))
+          }
           await pg.fill('.snav .sfind input', ''); await wait(200)
-          await pg.click('.snav .nv:has-text("화면")'); await wait(300)
+          await pg.click('.snav .nv:has-text("일반")'); await wait(300)
         }
         // 🔴 표식은 **이름 줄**에 산다 (V24 C 안, 2026-09-13 Dave 선택) — 아이콘 모서리는 상태 배지의 자리다
         {
@@ -442,12 +467,12 @@ try {
         }
         // 원격에 «메인 것» 을 안 보여 준다 — 이 화면은 메인이라 훅 버튼이 있어야 한다(반대편 판정의 기준점)
         {
-          await pg.click('.snav .nv:has-text("사용량")'); await wait(400)
+          await pg.click('.snav .nv:has-text("세션 · 사용량")'); await wait(400)
           const hook = await pg.$('.sp-b .setr[data-t="턴마다 기록하기"] .c button')
           const isMain = await pg.evaluate(() => /메인/.test(document.querySelector('.sb-foot')?.textContent ?? ''))
           if (isMain && !hook) fail('메인인데 훅 설치 버튼이 없다')
           if (!isMain && hook) fail('원격인데 훅 설치 버튼이 있다 — 메인의 ~/.claude 를 고치는 줄이다')
-          await pg.click('.snav .nv:has-text("화면")'); await wait(200)
+          await pg.click('.snav .nv:has-text("일반")'); await wait(200)
         }
         const segs = await pg.$$eval('.sp-b .seg', (ss) => ss.map((x) => x.textContent))
         if (!segs.some((t) => /작게.*보통.*크게/.test(t))) fail('설정에 폴더봇 크기 없음: ' + JSON.stringify(segs))
@@ -1825,7 +1850,7 @@ try {
          */
         {
           await pg.keyboard.press('Meta+,'); await wait(600)
-          await pg.click('.modal.setw .nv:has-text("에이전트")').catch(() => {})
+          await pg.click('.modal.setw .nv:has-text("참고")').catch(() => {})
           await wait(600)
           const txt = await pg.textContent('.modal.setw')
           if (/Akiflow|아키플로/.test(txt ?? '')) fail('설정 문구에 특정 서비스 이름이 박혀 있다')
@@ -2352,11 +2377,11 @@ try {
         await pg.click('.mtop .rb'); await pg.waitForSelector('.setp', { timeout: 4000 }); await wait(300)
         {
           const rows = await pg.$$eval('.setp .sec-row', (r) => r.map((x) => x.textContent))
-          if (rows.length < 9) fail('폰 설정: 목차가 목록이 아니다 ' + JSON.stringify(rows))
+          if (rows.length < 8 || !rows.some((r) => /할 일/.test(r))) fail('폰 설정: 목차가 목록이 아니거나 폰 전용 «할 일» 이 없다 ' + JSON.stringify(rows))
           const mr = await pg.evaluate(() => { const r = document.querySelector('.setp').getBoundingClientRect(); return { top: r.top, bottom: r.bottom, h: innerHeight } })
           if (!(mr.top >= 0 && mr.bottom <= mr.h + 1)) fail('phone: settings out of viewport ' + JSON.stringify(mr))
           await pg.screenshot({ path: 'test/tmp/phone-settings.png' })
-          await pg.click('.setp .sec-row:has-text("화면")'); await wait(300)
+          await pg.click('.setp .sec-row:has-text("일반")'); await wait(300)
           if (!(await pg.$('.setp .setr[data-t="테마"]'))) fail('폰 설정: 한 칸으로 안 들어간다')
           const ov2 = await pg.evaluate(() => ({ dw: document.documentElement.scrollWidth, iw: innerWidth }))
           if (ov2.dw > ov2.iw) fail('폰 설정: 가로로 넘친다 ' + JSON.stringify(ov2))
@@ -2796,6 +2821,41 @@ try {
     if ((await api('/state')).defaults.idleMinutes !== 0) fail('절전: «재우지 않음»(0) 이 안 붙었다')
     await api('/idle', { minutes: 60 })
     ok('절전 시간 — 설정이 호스트에 남고 상태로 돌아온다 (0 = 안 재움)')
+  }
+  /**
+   * 🔴 **Claude 새 채팅 기본 권한** (2026-09-17 Dave: «claude 의 경우 새채팅 기본 권한 설정도 빠져있음»).
+   *    입력창 팝오버가 «새 세션은 설정의 기본값으로» 라고 약속하던 그 값이다. 저장 → 상태에 실림 → 값 없이 만든
+   *    새 세션이 그 모드로 뜬다. 루틴·명시값은 그대로다. ⚠ Codex 세션에는 안 붙는다(샌드박스가 그 자리).
+   * 🔴 **조용한 시간** — 종전엔 설정에 있으면서 고칠 길이 없었다. HH:MM 둘, 틀리면 거절.
+   */
+  {
+    const st0 = await api('/state')
+    if ((st0.defaults.permissionMode ?? 'default') !== 'default') fail('기본 권한: 처음은 default 여야 한다 ' + st0.defaults.permissionMode)
+    await api('/defaults', { model: st0.defaults.model, effort: st0.defaults.effort, agent: 'claude', permissionMode: 'acceptEdits' })
+    const st1 = await api('/state')
+    if (st1.defaults.permissionMode !== 'acceptEdits') fail('기본 권한: 저장이 상태에 안 실린다 ' + JSON.stringify(st1.defaults))
+    const bots = (await api('/state')).bots; const b0 = bots[0]
+    const sNew = await api(`/bots/${b0.id}/sessions`, { name: '권한 기본값 검사' })
+    if (sNew.permissionMode !== 'acceptEdits') fail('기본 권한: 값 없이 만든 새 세션이 기본값으로 안 떴다 ' + JSON.stringify({ permissionMode: sNew.permissionMode }))
+    const sExplicit = await api(`/bots/${b0.id}/sessions`, { name: '명시 권한 검사', permissionMode: 'plan' })
+    if (sExplicit.permissionMode !== 'plan') fail('기본 권한: 명시한 값을 기본값이 덮었다 ' + sExplicit.permissionMode)
+    await api(`/sessions/${sNew.id}`, undefined, 'DELETE'); await api(`/sessions/${sExplicit.id}`, undefined, 'DELETE')
+    await api('/defaults', { model: st0.defaults.model, effort: st0.defaults.effort, agent: 'claude', permissionMode: 'default' })
+    if ((await api('/state')).defaults.permissionMode !== 'default') fail('기본 권한: default 로 되돌리기가 안 된다')
+    let bad = false
+    try { await api('/defaults', { model: st0.defaults.model, effort: st0.defaults.effort, agent: 'claude', permissionMode: 'yolo' }) } catch { bad = true }
+    if ((await api('/state')).defaults.permissionMode !== 'default') fail('기본 권한: 모르는 값이 저장됐다')
+    // 조용한 시간
+    const q0 = (await api('/state')).quiet
+    if (!q0 || q0.from !== '23:00' || q0.to !== '07:00') fail('조용한 시간: 기본값이 23:00–07:00 이어야 한다 ' + JSON.stringify(q0))
+    await api('/quiet', { from: '22:30', to: '08:00' })
+    const q1 = (await api('/state')).quiet
+    if (q1.from !== '22:30' || q1.to !== '08:00') fail('조용한 시간: 저장이 상태에 안 실린다 ' + JSON.stringify(q1))
+    let rejected = false
+    try { await api('/quiet', { from: '25:00', to: '08:00' }) } catch { rejected = true }
+    if (!rejected) fail('조용한 시간: 틀린 시각(25:00)을 받았다')
+    await api('/quiet', { from: '23:00', to: '07:00' })
+    ok(`Claude 새 채팅 기본 권한 — 저장 · 상태 · 새 세션에 적용 · 명시값 우선 · 모르는 값 거절${bad ? '' : '(조용히)'} · 조용한 시간 저장·검증`)
   }
   }
 

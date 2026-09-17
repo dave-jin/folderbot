@@ -51,7 +51,7 @@ export function AgentPickHost() {
   const env: [string, string, boolean, (() => void) | null][] = [
     ['폴더', q.rel, false, null],
     ['지침', hz ? `${guide || '없음'}${hz.skills ? ` · 스킬 ${hz.skills}` : ''}${hz.mcp ? ` · 커넥터 ${hz.mcp}` : ''}` : '읽는 중…', !!(hz && (sel === 'codex' ? hz.agentsMd : hz.claudeMd)), null],
-    ['모델', `${model} · 생각 ${s.defaults.effort || 'high'}`, false, () => { done(null); window.dispatchEvent(new CustomEvent('fb:settings', { detail: 'agents' })) }],
+    ['모델', `${model} · 생각 ${s.defaults.effort || 'high'}`, false, () => { done(null); window.dispatchEvent(new CustomEvent('fb:settings', { detail: sel === 'codex' ? 'codex' : 'claude' })) }],
     ['권한', '물어봄 — 쓰기 전에 확인', false, null]
   ]
   return <>

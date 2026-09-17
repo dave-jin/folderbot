@@ -641,6 +641,16 @@ b,strong { color:var(--w); font-weight:600 }
 .scp.user { background:color-mix(in srgb,#7aa2f7 16%,transparent); color:#7aa2f7 }
 .scp.root { background:color-mix(in srgb,var(--done) 16%,transparent); color:var(--done) }
 .scp.folder { background:color-mix(in srgb,var(--run) 16%,transparent); color:var(--run) }
+/* 2026-09-17 설정 1안 — 범위 배지: [메인]=호스트에 저장(모든 기기) · [이 기기]=이 브라우저에만. 제목 옆에 작게 */
+.setr .t .scp, .lead .scp { margin-left:7px; height:17px; padding:0 6px; font-size:10.5px; vertical-align:1px; font-weight:500 }
+.scp.at-main { background:color-mix(in srgb,#7aa2f7 14%,transparent); color:#7aa2f7 }
+.scp.at-dev { background:color-mix(in srgb,var(--t3) 18%,transparent); color:var(--t2) }
+.scp.ref { background:color-mix(in srgb,var(--t3) 18%,transparent); color:var(--t2); margin-left:8px }
+/* 참고 칸(보기만)은 목차에서 한 톤 옅고 위에 선 하나로 갈린다 */
+.snav .nv.ref { color:var(--t3); margin-top:6px; position:relative }
+.snav .nv.ref::before { content:''; position:absolute; left:11px; right:11px; top:-4px; border-top:1px solid var(--line) }
+.sec-row.ref .nm { color:var(--t2) }
+.sin.tm { width:96px; padding:0 8px }
 .scp.builtin { background:var(--box); color:var(--t3) }
 /* 하네스 표 — 보기 전용 */
 .hfilter { display:flex; align-items:center; gap:9px; margin-bottom:10px } .hfilter .sfind { flex:1; margin:0 }
