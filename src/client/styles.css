@@ -189,8 +189,9 @@ b,strong { color:var(--w); font-weight:600 }
 .umsg .files.uatt .fchip { vertical-align:middle }
 .composer .crow { display:flex; align-items:flex-end; gap:8px }
 /* 입력창 — contenteditable. 글 속에 칩(.ichip)이 선다 (InlineInput.tsx 머리말) */
-.composer .cin { flex:1; min-width:0; min-height:26px; max-height:180px; overflow:auto; padding:2px 0; color:var(--w); font-size:13.5px; line-height:1.6; white-space:pre-wrap; word-break:break-word; outline:0; cursor:text }
-.composer .cin[data-value=""]::before { content:attr(data-placeholder); color:var(--t3); pointer-events:none }
+.composer .cin { position:relative; flex:1; min-width:0; min-height:26px; max-height:180px; overflow:auto; padding:2px 0; color:var(--w); font-size:13.5px; line-height:1.6; white-space:pre-wrap; word-break:break-word; outline:0; cursor:text }
+/* 안내글은 흐름 밖(absolute)에 둔다 — 흐름 안에 두면 캐럿이 안내글 **뒤**에 선다(2026-09-17 Dave 실측). 누르거나 치면 사라진다(:focus) */
+.composer .cin[data-value=""]:not(:focus)::before { content:attr(data-placeholder); position:absolute; left:0; top:2px; color:var(--t3); pointer-events:none; white-space:nowrap; overflow:hidden; max-width:100%; text-overflow:ellipsis }
 .ichip { display:inline-flex; align-items:center; gap:5px; height:22px; padding:0 8px 0 7px; margin:0 2px; border:1px solid var(--line2); border-radius:6px; background:var(--box); color:var(--t); font-family:var(--mono); font-size:12px; vertical-align:-5px; max-width:260px; white-space:nowrap; user-select:none; cursor:pointer }
 .ichip:hover { border-color:var(--t3) } .ichip .nm { overflow:hidden; text-overflow:ellipsis; min-width:0 }
 .ichip .fb { flex:none; font-family:var(--ui); font-size:10px; line-height:16px; color:var(--t3); background:var(--bg); border-radius:3px; padding:0 5px }

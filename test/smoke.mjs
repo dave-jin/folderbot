@@ -2108,6 +2108,26 @@ try {
           ok('파일 칩 B안 — 이름 + 폴더 표식 · 채팅 열 어디에 놓아도 첨부 · 파인더 파일은 첨부/ 로')
         }
         /**
+         * 🔴 **안내글은 캐럿 뒤에 서지 않는다** (2026-09-17 Dave: «커서 위치는 임시 안내 메시지 끝 부분이 아니라 맨 앞부분이 되어야 해.
+         *    그리고 키보드 입력이나 마우스 클릭시 사라져야 해»). 안내글이 흐름 안에 있으면 캐럿이 그 뒤에 선다.
+         */
+        {
+          await pg.evaluate(() => document.activeElement?.blur())
+          await wait(150)
+          const ph0 = await pg.evaluate(() => getComputedStyle(document.querySelector('.composer .cin'), '::before').content)
+          if (!/메시지/.test(ph0)) fail('안내글: 비어 있고 초점이 없을 때 안내글이 안 보인다 ' + ph0)
+          await pg.click('.composer .cin'); await wait(200)
+          const ph1 = await pg.evaluate(() => { const c = document.querySelector('.composer .cin'); const sel = window.getSelection(); const r = sel && sel.rangeCount ? sel.getRangeAt(0).getBoundingClientRect() : null; const cr = c.getBoundingClientRect(); return { content: getComputedStyle(c, '::before').content, caretDx: r ? r.left - cr.left : null, focused: document.activeElement === c } })
+          if (!ph1.focused) fail('안내글: 눌렀는데 초점이 안 온다')
+          if (ph1.content !== 'none') fail('안내글: 눌렀는데 안내글이 남아 있다 ' + ph1.content)
+          if (ph1.caretDx === null || ph1.caretDx > 4) fail('안내글: 캐럿이 맨 앞이 아니다 (왼쪽에서 ' + ph1.caretDx + 'px)')
+          await pg.keyboard.type('가'); await wait(150)
+          const ph2 = await pg.evaluate(() => getComputedStyle(document.querySelector('.composer .cin'), '::before').content)
+          if (ph2 !== 'none') fail('안내글: 글자를 쳤는데 안내글이 남아 있다 ' + ph2)
+          await pg.fill('.composer .cin', ''); await wait(150)
+          ok('입력창 안내글 — 캐럿은 맨 앞 · 누르거나 치면 사라진다')
+        }
+        /**
          * 🔴 **껐다 켜면 마지막 폴더에서 시작한다** (2026-09-15 Dave: «마지막으로 작업했던 프로젝트도
          *    기억하고 그 창에서 시작되면 좋겠어»). 셸은 창을 띄울 때 주소를 **해시 없이** 열기 때문에
          *    (`loadHome()`), 이 검사도 해시 없는 주소로 다시 여는 것으로 «앱을 껐다 켠 것» 을 흉내 낸다.
@@ -2142,6 +2162,19 @@ try {
             if (now !== wasBot) fail('폰 홈 4칸: 검사 뒤 원래 폴더로 안 돌아왔다 · ' + JSON.stringify([wasBot, now]))
           }
           ok('폰 홈 4칸도 같은 것 — 확인 대기 · 일하는 중 · 할 일 · 마지막 결과')
+          /**
+           * 🔴 **폰도 껐다 켜면 마지막 화면이다** (2026-09-17 Dave: «모바일에서 화면으로 들어가면 마지막 화면이 저장이 안되네»).
+           *    폴더는 돌아오는데 화면이 «목록» 에 남던 것 — 대화 화면으로 함께 돌아와야 한다.
+           */
+          {
+            const was = await pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('bot'))
+            await pg.goto(base, { waitUntil: 'domcontentloaded' })
+            await pg.waitForSelector('.app', { timeout: 10000 }); await wait(1000)
+            const st = await pg.evaluate(() => ({ bot: new URLSearchParams(location.hash.slice(1)).get('bot'), view: document.querySelector('.app')?.getAttribute('data-view'), composer: !!document.querySelector('.composer .cin') }))
+            if (st.bot !== was) fail('폰 마지막 화면: 폴더가 안 돌아왔다 ' + JSON.stringify(st))
+            if (st.view !== 'chat' || !st.composer) fail('폰 마지막 화면: 대화 화면이 아니라 «' + st.view + '» 로 열렸다')
+            ok('폰 — 껐다 켜면 마지막에 보던 대화 화면으로')
+          }
         }
         /**
          * 🔴 **폰의 ⏎ 는 줄 바꿈이다** (2026-09-15 Dave: *«모바일에서는 엔터가 줄내림으로 작동하고
@@ -2386,7 +2419,9 @@ try {
         }
         await pg.click('.panel .secb button.trow:not(.dir)'); await wait(600); if (!(await pg.$('.docwrap .dfoot'))) fail('phone: doc page'); await pg.screenshot({ path: 'test/tmp/phone-doc.png' })
         // ── 폰 폴더 고르기 (V17 B안) — 한 단계씩 들어가고, 푸터가 안 넘치고, 이름이 폭을 전부 쓴다 ──
-        // 홈으로 — 화면 상태는 React 가 쥐고 있으니 해시를 지우고 **다시 연다**(부팅 시 목록 화면)
+        // 홈으로 — 화면 상태는 React 가 쥐고 있으니 해시를 지우고 다시 연다. ⚠ 부팅은 이제 **마지막 화면(대화)** 으로 돌아오므로(2026-09-17) 뒤로 한 번
+        //   기억을 지우고 열면 첫 화면(목록)이다 — 마지막 화면 복원은 위에서 따로 잰다
+        await pg.evaluate(() => localStorage.removeItem('fb:last'))
         await pg.goto(base + '/'); await pg.waitForSelector('.mhome .mtop', { timeout: 15000 }); await wait(800)
         // 폰 첫 화면은 **한 줄 띠** 다 — 카드는 누를 때만 (2026-09-13 Dave: «너무 커»)
         if (!(await pg.$('.mhome .ustrip'))) fail('사용량: 폰 홈에 한 줄 띠가 없다')

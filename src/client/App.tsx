@@ -361,11 +361,19 @@ function Main() {
     restored.current = true
     if (hash.bot) return
     try {
-      const l = JSON.parse(localStorage.getItem(LAST_KEY) ?? '') as { bot?: string; s?: string }
-      if (l?.bot && (l.bot === 'orch' || s.bots.some((b) => b.id === l.bot))) setHash(l.s ? { bot: l.bot, s: l.s } : { bot: l.bot })
+      const l = JSON.parse(localStorage.getItem(LAST_KEY) ?? '') as { bot?: string; s?: string; view?: string }
+      if (l?.bot && (l.bot === 'orch' || s.bots.some((b) => b.id === l.bot))) {
+        setHash(l.s ? { bot: l.bot, s: l.s } : { bot: l.bot })
+        /**
+         * 🔴 **폰은 화면도 되돌린다** (2026-09-17 Dave: «모바일에서 화면으로 들어가면 마지막 화면이 저장이 안되네»).
+         *    `view` 의 초기값은 첫 렌더의 해시로 정해지는데, 해시는 **이 효과가 뒤늦게** 넣는다 — 그래서 폴더는 돌아와도
+         *    화면은 «목록» 에 남았다. 마지막에 보던 화면(대화·문서)으로 함께 되돌린다.
+         */
+        if (phone) setView(l.view === 'doc' ? 'doc' : 'chat')
+      }
     } catch { /* 처음 켠 기기 */ }
   }, [s.bots.length])
-  useEffect(() => { if (hash.bot) try { localStorage.setItem(LAST_KEY, JSON.stringify({ bot: hash.bot, s: sessionId ?? '' })) } catch { /* */ } }, [hash.bot, sessionId])
+  useEffect(() => { if (hash.bot) try { localStorage.setItem(LAST_KEY, JSON.stringify({ bot: hash.bot, s: sessionId ?? '', view })) } catch { /* */ } }, [hash.bot, sessionId, view])
   const unread = s.notifications.filter((n) => !n.read).length
   const waiting = s.notifications.filter((n) => n.kind === 'awaiting' && !n.read).length
   const showDoc = !!bot && (phone || !!docOpen[bot.id]) && docs.tabs.length > 0
