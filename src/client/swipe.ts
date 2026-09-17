@@ -24,6 +24,19 @@ export function slotOf(dx: number, width: number): SwipeSlot | null {
   const long = r >= LONG
   return dx > 0 ? (long ? 'rightLong' : 'rightShort') : long ? 'leftLong' : 'leftShort'
 }
+/**
+ * 폰 화면 넘기기 (2026-09-17 Dave: «화면을 눌러서 오른쪽으로 슬라이딩하면 뒤로 가기, 왼쪽으로 슬라이딩하면 폴더로 이동»).
+ * 🔴 **가로가 세로를 분명히 이겨야 한다** — 대화는 세로로 스크롤하는 화면이라, 비스듬한 스크롤을 넘기기로 읽으면
+ *    글을 읽다가 화면이 날아간다. 세로의 1.6배 이상 가로로 움직였고, 72px 또는 화면 폭의 22% 를 넘어야 한다.
+ * @returns 'back'(오른쪽으로 끌었다 = 뒤로) · 'panel'(왼쪽으로 = 이 폴더에서) · null(아무것도 아님)
+ */
+export const NAV_MIN_PX = 72, NAV_MIN_RATIO = 0.22, NAV_DOMINANCE = 1.6
+export function navOf(dx: number, dy: number, width: number): 'back' | 'panel' | null {
+  const ax = Math.abs(dx), ay = Math.abs(dy)
+  if (ax < Math.max(NAV_MIN_PX, width * NAV_MIN_RATIO)) return null
+  if (ax < ay * NAV_DOMINANCE) return null
+  return dx > 0 ? 'back' : 'panel'
+}
 /** 그 자리에 놓인 동작 — 'none' 이면 아무 일도 없다(예고도 안 한다) */
 export function actOf(cfg: SwipeCfg, slot: SwipeSlot | null): SwipeAct | null {
   if (!slot) return null

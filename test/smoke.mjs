@@ -2402,6 +2402,42 @@ try {
           await pg.screenshot({ path: 'test/tmp/phone-notify.png' })
           await pg.click('.nmodal .modal-h .ib'); await wait(250)
         }
+        /**
+         * 🔴 **폰 화면 넘기기** (2026-09-17 Dave: «오른쪽으로 슬라이딩하면 뒤로 가기 · 왼쪽으로 슬라이딩하면 폴더로 이동»)
+         *    대화 화면에서 가로로 끌면 화면이 바뀐다. 세로가 섞인 끌기(읽어 내려가기)는 넘기기가 아니다.
+         * 🔴 **«최신으로» 단추는 눌러도 제자리다** — `.rb:active { transform:scale }` 이 `translateX(-50%)` 를 덮어써
+         *    누르는 순간 오른쪽으로 반 폭 튀던 버그. 가운데 맞춤이 `translate`(독립 속성)여야 한다.
+         */
+        {
+          const view = () => pg.evaluate(() => document.querySelector('.app')?.getAttribute('data-view'))
+          const drag = async (x0, y0, x1, y1) => { await pg.mouse.move(x0, y0); await pg.mouse.down(); for (let i = 1; i <= 6; i++) await pg.mouse.move(x0 + ((x1 - x0) * i) / 6, y0 + ((y1 - y0) * i) / 6); await pg.mouse.up(); await wait(250) }
+          await pg.click('.mrow'); await wait(400)
+          if ((await view()) !== 'chat') fail('폰 제스처: 대화 화면에서 시작해야 한다 ' + (await view()))
+          await drag(120, 420, 300, 428)                  // 오른쪽으로 → 뒤로(홈)
+          if ((await view()) !== 'list') fail('폰 제스처: 오른쪽으로 끌었는데 뒤로 안 간다 ' + (await view()))
+          await pg.click('.mrow'); await wait(400)
+          await drag(200, 420, 260, 560)                  // 비스듬히 아래로 = 읽어 내려가기 — 넘기지 않는다
+          if ((await view()) !== 'chat') fail('폰 제스처: 세로가 섞인 끌기를 넘기기로 읽었다 ' + (await view()))
+          await drag(300, 420, 110, 426)                  // 왼쪽으로 → 이 폴더에서(패널)
+          if ((await view()) !== 'panel') fail('폰 제스처: 왼쪽으로 끌었는데 폴더로 안 간다 ' + (await view()))
+          await pg.click('.rpwrap .rb'); await wait(300)  // 패널의 「대화로」
+          if ((await view()) !== 'chat') fail('폰 제스처: 패널에서 대화로 못 돌아왔다')
+          // «최신으로» — 규칙 자체를 잰다(transform 으로 가운데를 맞추면 :active 에 진다) + 보이면 눌러서 제자리인지
+          const rule = await pg.evaluate(() => [...document.styleSheets].flatMap((sh) => { try { return [...sh.cssRules].map((r) => r.cssText) } catch { return [] } }).find((t) => t.startsWith('.tobot {') || t.startsWith('.tobot{')) ?? '')
+          if (/transform:\s*translate/.test(rule) || !/translate:\s*-50%/.test(rule)) fail('최신으로: 가운데 맞춤이 transform 이다 — :active 의 scale 에 덮인다 · ' + rule)
+          await pg.evaluate(() => { const el = document.querySelector('.chat-scroll'); if (el) el.scrollTop = 0 }); await wait(400)
+          const tb = await pg.$('.tobot:not(.off)')
+          if (tb) {
+            const c0 = await tb.boundingBox()
+            await pg.mouse.move(c0.x + c0.width / 2, c0.y + c0.height / 2); await pg.mouse.down(); await wait(120)
+            const c1 = await tb.boundingBox(); await pg.mouse.up(); await wait(600)
+            if (Math.abs((c1.x + c1.width / 2) - (c0.x + c0.width / 2)) > 1.5) fail('최신으로: 누르니 옆으로 튄다 ' + JSON.stringify({ before: c0.x, during: c1.x }))
+            const at = await pg.evaluate(() => { const el = document.querySelector('.chat-scroll'); return el ? el.scrollHeight - el.scrollTop - el.clientHeight : 0 })
+            if (at > 80) fail('최신으로: 눌렀는데 아래로 안 내려간다 ' + at)
+          }
+          await pg.click('.chat-hdr .rb'); await wait(350)  // 뒤로 → 홈 (아래 검사들의 출발점)
+          ok('폰 제스처 — 오른쪽 끌기 = 뒤로 · 왼쪽 끌기 = 폴더 · 비스듬한 끌기는 스크롤 · 최신으로 단추는 제자리' + (tb ? '(눌러서 확인)' : '(규칙만 — 단추가 안 떴다)'))
+        }
         await pg.click('.mrow'); await wait(300); await pg.click('.chat-hdr .rb:last-child'); await wait(300); if (!(await pg.$('.rpwrap .rb'))) fail('phone: panel page'); await pg.screenshot({ path: 'test/tmp/phone-panel.png' })
         // 쓸어서 처리 — 행 도구는 없고, 오른쪽으로 길게 쓸면 완료된다 (터치 흉내)
         {
