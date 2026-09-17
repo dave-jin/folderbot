@@ -761,6 +761,12 @@ b,strong { color:var(--w); font-weight:600 }
 .fvic { width:13px; height:13px; border-radius:2.5px; vertical-align:-2px; margin-right:5px; object-fit:contain; flex:none; display:inline-block }
 .md a { text-decoration:none; border-bottom:1px solid var(--line2) } .md a:hover { border-bottom-color:var(--t3) }
 .mded .fvic { margin-right:4px }
+/* 2026-09-17 Dave: «문서의 링크도 파비콘 + 바로 클릭, 표 안에서도». 본문 표식(.lp-xl)은 마크라 글자를 안 바꾸고,
+   표 칸의 링크(.lp-cl)는 칸에 들어가면 원문으로 풀린다 (MdEditor `xlink` · `cellNodes`) */
+.mded .lp-xl { cursor:pointer }
+.mded .cm-line span.lp-xl:hover { text-decoration:underline; text-underline-offset:2px }
+.mded .lp-cl { color:var(--w); text-decoration:underline; text-underline-offset:2px; cursor:pointer }
+.mded .lp-cl:hover { color:var(--t) }
 .lchips { display:flex; gap:6px; flex-wrap:wrap }
 .lchip { cursor:default } .lchip span { max-width:200px }
 .sempty { display:flex; align-items:center; gap:6px; color:var(--t3); width:100% } .sempty:hover { color:var(--t2) }

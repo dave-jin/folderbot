@@ -567,16 +567,33 @@ try {
               return null
             }, w)
             // ② 클릭 — 누른 낱말 **안**에 캐럿이 선다 (여러 줄 종류에서)
-            for (const w of ['제목', '굵게', '기울임', '코드', '항목', '인용', '콜아웃', '옆 글', '예시 링크']) {
+            for (const w of ['제목', '굵게', '기울임', '코드', '항목', '인용', '콜아웃', '옆 글']) {
               const b = await wordBox(w); if (!b) fail(`클릭: «${w}» 를 화면에서 못 찾았다`)
               await pg.mouse.click(b.x, b.y); await wait(250)
               const at = await idx(w); const st = await ed()
               if (st.head < at || st.head > at + w.length) fail(`클릭: «${w}» 를 눌렀는데 캐럿이 딴 데 섰다 head=${st.head} 낱말=[${at},${at + w.length}] 줄=${st.line} · ` + JSON.stringify(await pg.evaluate((b) => { const v = window.__fbEditor; const el = document.elementFromPoint(b.x, b.y); return { b, pac: v.posAtCoords({ x: b.x, y: b.y }), lineTxt: el?.closest('.cm-line')?.textContent } }, b)))
               if (st.anchor !== st.head) fail(`클릭: «${w}» 클릭이 선택이 됐다 ${JSON.stringify(st)}`)
             }
-            // 링크 안에 캐럿이 있으면 원문(주소)이 보이고, 나가면 다시 숨는다
+            /**
+             * 🔴 링크 라벨은 **누르면 열린다** (2026-09-17 Dave: «바로 클릭이 가능해야 해») — 캐럿은 안 움직인다.
+             *    캐럿이 링크 **안**에 있을 때(원문이 펴진 상태)의 클릭만 편집(캐럿 이동)이다. 종전엔 라벨 클릭도
+             *    «누른 낱말에 캐럿» 목록에 있었는데, 그 계약은 이 요청과 정면으로 부딪혀 여기서 갈아 끼웠다.
+             */
+            await pg.evaluate(() => { window.__opened = []; window.open = (u) => { window.__opened.push(String(u)); return null } })
+            const beforeLink = await ed()
+            { const b = await wordBox('예시 링크'); if (!b) fail('클릭: «예시 링크» 를 화면에서 못 찾았다'); await pg.mouse.click(b.x, b.y); await wait(250) }
+            const afterLink = await ed()
+            const openedLink = await pg.evaluate(() => window.__opened)
+            if (openedLink.join() !== 'https://example.com/page') fail('링크: 라벨을 눌렀는데 바깥에서 안 열린다 ' + JSON.stringify(openedLink))
+            if (afterLink.head !== beforeLink.head) fail(`링크: 열기 클릭인데 캐럿이 움직였다 ${beforeLink.head} → ${afterLink.head}`)
+            // 링크 안에 캐럿이 있으면 원문(주소)이 보이고, 나가면 다시 숨는다 — 그때의 클릭은 편집이다
+            await setCaret((await idx('예시 링크')) + 1); await wait(200)
             const shown = await pg.evaluate(() => document.querySelector('.mded .cm-content')?.textContent ?? '')
             if (!/\(https:\/\/example\.com\/page\)/.test(shown)) fail('링크: 캐럿이 링크 안인데 주소가 안 보인다 — 고칠 길이 없다')
+            { const b = await wordBox('예시 링크'); if (!b) fail('링크: 펴진 원문에서 «예시 링크» 를 못 찾았다'); await pg.mouse.click(b.x, b.y); await wait(250)
+              const st = await ed(); const at = await idx('예시 링크')
+              if (st.head < at || st.head > at + 5) fail(`링크: 캐럿이 링크 안일 때의 클릭은 편집이어야 하는데 캐럿이 딴 데 섰다 head=${st.head} 낱말=[${at},${at + 5}]`)
+              if ((await pg.evaluate(() => window.__opened)).length !== 1) fail('링크: 편집 중의 클릭인데 또 열렸다') }
             await setCaret(await idx('옆 글')); await wait(200)
             const hidden = await pg.evaluate(() => document.querySelector('.mded .cm-content')?.textContent ?? '')
             if (/\(https:\/\/example\.com\/page\)/.test(hidden)) fail('링크: 캐럿이 링크 밖(같은 줄)인데 주소가 보인다 — 줄이 밀린다')
@@ -912,6 +929,57 @@ try {
           await wait(1800)
           if (readFileSync(todoAbs, 'utf8') !== todo0) fail('문서 이동: 편집하던 글이 새 문서에 덮여 썼다\n--- 지금\n' + JSON.stringify(readFileSync(todoAbs, 'utf8').slice(0, 200)))
           ok('문서를 옮겨도 편집하던 글이 따라오지 않는다')
+          try { rmSync(abs) } catch {}
+          await wait(400)
+        }
+        /**
+         * 🔴 **문서의 링크 — 파비콘이 앞에 서고 누르면 바깥에서 열린다, 표 안에서도**
+         *    (2026-09-17 Dave: «문서의 링크도 favicon 이 포함되어야 하고 바로 클릭이 가능해야 해. 표안에 있는 링크 포함해서.»)
+         * ⚠ 바깥으로 여는 길(`window.open`)을 가로채 기록한다 — 스모크 브라우저에 새 탭이 뜨면 안 된다.
+         * ⚠ 표 칸의 링크는 **누르면 열리고 칸은 편집으로 안 들어간다**(들어가면 원문이 드러나 링크가 사라진다).
+         *    글자 자리를 누르면 원문으로 펴지고 Esc 로 나오면 다시 링크다 — 그동안 파일은 한 바이트도 안 바뀐다(churn 0).
+         */
+        {
+          const rel = 'lnk.md'
+          const abs = join(root, '3. Area/제품_Rondo', rel)
+          const src = ['# 링크', '', '본문 https://example.com/a 와 [루마](https://luma.com/x) 가 있다', '', '| 무엇 | 링크 |', '| --- | --- |', '| 등록 | [루마](https://luma.com/x) |', '| 안내 | https://ai-guide.vercel.app |', ''].join('\n')
+          await api(`/bots/${bot.id}/file`, { rel, text: src })
+          await wait(900)
+          const opened = await pg.evaluate((r) => { const hit = [...document.querySelectorAll('.trow')].find((x) => (x.textContent ?? '').includes(r)); if (hit) { hit.click(); return true } return false }, rel)
+          if (!opened) fail('링크: 트리에 새 파일이 안 나타난다')
+          await pg.waitForSelector('.mded .lp-tbl', { timeout: 9000 }); await wait(500)
+          await pg.evaluate(() => { window.__opened = []; window.open = (u) => { window.__opened.push(String(u)); return null } })
+          const shape = await pg.evaluate(() => ({
+            body: [...document.querySelectorAll('.mded .cm-line .lp-xl:not(img)')].map((e) => ({ href: e.dataset.href, text: e.textContent })),
+            favBody: document.querySelectorAll('.mded .cm-line img.fvic').length,
+            cells: [...document.querySelectorAll('.mded .lp-tbl td .lp-cl')].map((e) => ({ href: e.dataset.href, text: e.textContent, fav: !!e.querySelector('img.fvic') }))
+          }))
+          if (shape.body.length !== 2 || shape.body[0].href !== 'https://example.com/a' || shape.body[1].href !== 'https://luma.com/x' || shape.body[1].text !== '루마') fail('본문 링크: 누를 수 있는 표식이 없다 ' + JSON.stringify(shape.body))
+          if (shape.favBody < 2) fail('본문 링크: 파비콘 자리가 없다 ' + shape.favBody)
+          if (shape.cells.length !== 2 || !shape.cells.every((c) => c.fav) || shape.cells[0].href !== 'https://luma.com/x' || shape.cells[0].text !== '루마' || shape.cells[1].href !== 'https://ai-guide.vercel.app') fail('표 링크: 파비콘·링크가 없다 ' + JSON.stringify(shape.cells))
+          const cellSel = '.mded .lp-tbl tr:nth-child(2) td:nth-child(2)'
+          const txtOf = (sel) => pg.evaluate((s2) => { const c = document.querySelector(s2); return c ? [...c.childNodes].filter((n) => !(n.nodeType === 1 && n.classList.contains('lp-grip'))).map((n) => n.textContent).join('') : null }, sel)
+          // 표 안 링크를 누르면 — 바깥에서 열리고, 칸은 편집으로 안 들어간다
+          await pg.click(cellSel + ' .lp-cl'); await wait(300)
+          const after1 = await pg.evaluate(() => ({ opened: window.__opened, focusCell: !!document.activeElement?.closest?.('.lp-tbl td, .lp-tbl th') }))
+          if (after1.opened.join() !== 'https://luma.com/x') fail('표 링크: 눌러도 바깥에서 안 열린다 ' + JSON.stringify(after1))
+          if (after1.focusCell) fail('표 링크: 누르니 칸이 편집으로 들어갔다 ' + JSON.stringify(after1))
+          // 글자 자리(왼쪽 안여백)를 누르면 원문으로 펴진다 → Esc 로 나오면 다시 링크 · 파일은 그대로
+          await pg.click(cellSel, { position: { x: 4, y: 8 } })
+          await pg.waitForFunction((s2) => document.activeElement === document.querySelector(s2), cellSel, { timeout: 5000 })
+          const rawCell = await txtOf(cellSel)
+          if (rawCell !== '[루마](https://luma.com/x)') fail('표 링크: 편집에 들어가면 원문이어야 한다 ' + JSON.stringify(rawCell))
+          await pg.keyboard.press('Escape'); await wait(300)
+          if (!(await pg.$(cellSel + ' .lp-cl'))) fail('표 링크: Esc 로 나왔는데 링크로 안 돌아온다')
+          await wait(1200)
+          if (readFileSync(abs, 'utf8') !== src) fail('표 링크: 들어갔다 나왔을 뿐인데 파일이 바뀌었다(churn)\n' + JSON.stringify(readFileSync(abs, 'utf8')))
+          // 본문 링크 — 누르면 바깥에서 열린다 (캐럿은 첫 줄에 있으므로 편집이 아니다)
+          await pg.click('.mded .cm-line .lp-xl:not(img) >> nth=0'); await wait(300)
+          const after2 = await pg.evaluate(() => window.__opened)
+          if (after2.join() !== 'https://luma.com/x,https://example.com/a') fail('본문 링크: 눌러도 바깥에서 안 열린다 ' + JSON.stringify(after2))
+          ok('문서 링크 — 파비콘 + 누르면 바깥에서, 표 안에서도 · 편집 들어가면 원문 · 파일은 그대로')
+          await pg.evaluate(() => { const t = [...document.querySelectorAll('.trow')].find((x) => /todo\.md/.test(x.textContent ?? '')); t?.click() })
+          await wait(700)
           try { rmSync(abs) } catch {}
           await wait(400)
         }

@@ -16,6 +16,7 @@ files:
   - perm-core.js
   - trayIcon.js
   - winBounds.js
+  - nav.js
   - tray-preload.js
   - connect.html
   - package.json
