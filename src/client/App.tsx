@@ -16,6 +16,7 @@ import { chipParts } from '../core/chipName'
 import { InlineInput, type InlineInputHandle } from './InlineInput'
 import { norm, scoreName } from '../core/search'
 import { fmtTime, useStore } from './store'
+import { navOf } from './swipe'
 import { ICON_PX, useIconSize, useTheme } from './theme'
 import { UsageCard, UsageStrip, useUsage } from './Usage'
 import { PermGate, usePerms } from './Perms'
@@ -1091,7 +1092,36 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
     }
     if (e.dataTransfer.files.length) void upload(Array.from(e.dataTransfer.files))
   }
+  /**
+   * 폰 화면 넘기기 (2026-09-17 Dave) — 오른쪽으로 끌면 **뒤로**(드릴인 중이면 드릴에서 나온다), 왼쪽으로 끌면 **이 폴더에서**.
+   * 판정은 `swipe.ts` 의 `navOf`(순수 · 유닛). 여기서는 손가락이 어디서 시작했는지만 가른다:
+   * ⛔ 입력칸·칩·발판(footer) 에서 시작한 끌기는 넘기기가 아니다 — 글을 고르거나 칩을 미는 중이다.
+   * ⚠ `.chat-scroll` 은 `touch-action:pan-y` 라 세로는 브라우저가 스크롤하고 가로 움직임만 우리에게 온다.
+   *    그래도 첫 10px 이 세로면 그 끌기는 끝까지 스크롤로 본다(비스듬히 읽어 내려가다 화면이 날아가지 않게).
+   */
+  const gest = useRef<{ id: number; x: number; y: number; lock: '' | 'h' | 'v' } | null>(null)
+  const gestDown = (e: React.PointerEvent) => {
+    if (!phone || e.button !== 0) return
+    const t = e.target as HTMLElement
+    if (!t.closest?.('.chat-scroll, .chat-hdr') || t.closest?.('textarea, input, [contenteditable="true"], .cchips, .chat-foot, .menu, .cpop')) return
+    gest.current = { id: e.pointerId, x: e.clientX, y: e.clientY, lock: '' }
+  }
+  const gestMove = (e: React.PointerEvent) => {
+    const g = gest.current; if (!g || g.id !== e.pointerId || g.lock) return
+    const ax = Math.abs(e.clientX - g.x), ay = Math.abs(e.clientY - g.y)
+    if (ax < 10 && ay < 10) return
+    g.lock = ax > ay ? 'h' : 'v'
+  }
+  const gestUp = (e: React.PointerEvent) => {
+    const g = gest.current; if (!g || g.id !== e.pointerId) return
+    gest.current = null
+    if (g.lock !== 'h') return
+    const nav = navOf(e.clientX - g.x, e.clientY - g.y, colRef.current?.clientWidth ?? window.innerWidth)
+    if (nav === 'back') { if (drillSub) setDrill(null); else onBack() }
+    else if (nav === 'panel') onPanel()
+  }
   return <div className="col chat" style={{ flex: 1 }} ref={colRef}
+    onPointerDown={gestDown} onPointerMove={gestMove} onPointerUp={gestUp} onPointerCancel={() => { gest.current = null }}
     onDragEnter={(e) => { const k = dragKind(e.dataTransfer); if (!k) return; e.preventDefault(); dragN.current++; setDrop(k); setDropN(e.dataTransfer.items?.length ?? 0) }}
     onDragOver={(e) => { const k = dragKind(e.dataTransfer); if (!k) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
     onDragLeave={() => { if (!dragN.current) return; dragN.current -= 1; if (!dragN.current) setDrop('') }}

@@ -116,9 +116,11 @@ b,strong { color:var(--w); font-weight:600 }
    ⛔ 「A · 문서처럼」의 26px 리듬 · 오른쪽 정렬 · 58ch · 머리줄 · 턴 경계선은 전부 되돌렸다.
    ✅ 남긴 것은 **기계 접기(.mach)** 와 **문서 링크칩(.pchip)** 둘뿐이다 — Dave 가 콕 집어 원한 것. */
 .chat-body { display:flex; flex-direction:column; gap:16px; padding:calc(var(--hh) + 22px) 24px calc(var(--footh) + 12px); width:100%; max-width:760px; align-self:center; flex:1 }
-.pinq { position:absolute; top:calc(var(--hh) + 10px); left:50%; transform:translateX(-50%); width:calc(100% - 48px); max-width:712px; z-index:4; border:1px solid var(--hair); border-radius:8px; padding:8px 14px; color:var(--w); font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:0 8px 24px rgba(0,0,0,.35); cursor:pointer; animation:fadein .18s ease-out }
+.pinq { position:absolute; top:calc(var(--hh) + 10px); left:50%; translate:-50% 0; width:calc(100% - 48px); max-width:712px; z-index:4; border:1px solid var(--hair); border-radius:8px; padding:8px 14px; color:var(--w); font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:0 8px 24px rgba(0,0,0,.35); cursor:pointer; animation:fadein .18s ease-out }
 /* ⛔ 등장 애니메이션(4px 떠오르기)을 쓰지 않는다 — 글이 흘러드는 동안 다시 돌면 «다가가면 도망가는» 단추가 된다 */
-.tobot { position:absolute; left:50%; transform:translateX(-50%); bottom:calc(var(--footh) + 14px); z-index:5; width:32px; height:32px; opacity:1; transition:opacity .14s ease }
+/* 🔴 가운데 맞춤은 `translate`(독립 속성)로 — `transform` 으로 두면 `.rb:active { transform:scale(.96) }` 이 **덮어써**
+   누르는 순간 -50% 가 사라지고 단추가 오른쪽으로 반 폭 튄다(2026-09-17 Dave 폰 실측 · CLAUDE.md §5 «translate·scale 은 독립 속성»). */
+.tobot { position:absolute; left:50%; translate:-50% 0; bottom:calc(var(--footh) + 14px); z-index:5; width:32px; height:32px; opacity:1; transition:opacity .14s ease }
 .tobot.off { opacity:0; pointer-events:none } .tobot .dot { position:absolute; right:-1px; top:-1px; width:8px; height:8px; border:2px solid var(--bg) }
 .chat-foot { position:absolute; left:0; right:0; bottom:0; z-index:5; display:flex; flex-direction:column; align-items:center; padding:0 24px 8px; pointer-events:none } .chat-foot > * { pointer-events:auto }
 .chat-foot::before { content:''; position:absolute; left:0; right:0; top:-56px; bottom:0; background:linear-gradient(180deg, var(--fade0) 0%, var(--fadeA) 40%, var(--fadeB) 100%); pointer-events:none; z-index:-1 }
@@ -641,6 +643,16 @@ b,strong { color:var(--w); font-weight:600 }
 .scp.user { background:color-mix(in srgb,#7aa2f7 16%,transparent); color:#7aa2f7 }
 .scp.root { background:color-mix(in srgb,var(--done) 16%,transparent); color:var(--done) }
 .scp.folder { background:color-mix(in srgb,var(--run) 16%,transparent); color:var(--run) }
+/* 2026-09-17 설정 1안 — 범위 배지: [메인]=호스트에 저장(모든 기기) · [이 기기]=이 브라우저에만. 제목 옆에 작게 */
+.setr .t .scp, .lead .scp { margin-left:7px; height:17px; padding:0 6px; font-size:10.5px; vertical-align:1px; font-weight:500 }
+.scp.at-main { background:color-mix(in srgb,#7aa2f7 14%,transparent); color:#7aa2f7 }
+.scp.at-dev { background:color-mix(in srgb,var(--t3) 18%,transparent); color:var(--t2) }
+.scp.ref { background:color-mix(in srgb,var(--t3) 18%,transparent); color:var(--t2); margin-left:8px }
+/* 참고 칸(보기만)은 목차에서 한 톤 옅고 위에 선 하나로 갈린다 */
+.snav .nv.ref { color:var(--t3); margin-top:6px; position:relative }
+.snav .nv.ref::before { content:''; position:absolute; left:11px; right:11px; top:-4px; border-top:1px solid var(--line) }
+.sec-row.ref .nm { color:var(--t2) }
+.sin.tm { width:96px; padding:0 8px }
 .scp.builtin { background:var(--box); color:var(--t3) }
 /* 하네스 표 — 보기 전용 */
 .hfilter { display:flex; align-items:center; gap:9px; margin-bottom:10px } .hfilter .sfind { flex:1; margin:0 }

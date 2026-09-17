@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs'
 import { homedir, platform } from 'node:os'
 import { join, resolve } from 'node:path'
-import { DEFAULT_PORT } from '../core/types'
+import { DEFAULT_PORT, type PermissionMode } from '../core/types'
 
 export interface HostConfig {
   root: string | null
@@ -27,6 +27,11 @@ export interface HostConfig {
   defaultCodexEffort?: string
   /** Codex 샌드박스 — 우리가 승인 화면을 못 띄우므로 이 값이 곧 권한 정책이다 */
   codexSandbox?: 'read-only' | 'workspace-write' | 'danger-full-access'
+  /**
+   * Claude 새 채팅의 기본 권한 모드 (2026-09-17 Dave: «claude 의 경우 새채팅 기본 권한 설정도 빠져있음»).
+   * 세션마다 입력창에서 바꾸는 값의 **출발점**이다 — 루틴은 루틴의 승인 설정이 이긴다(routines.ts). 비면 `default`.
+   */
+  defaultPermissionMode?: PermissionMode
   /** `codex login` 을 못 쓰는 문맥(헤드리스)의 대안 — 워커 환경에 OPENAI_API_KEY 로 들어간다 */
   openaiApiKey?: string
   /** 메인(호스트) 이름 — 비면 컴퓨터 이름 */

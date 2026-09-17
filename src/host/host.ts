@@ -15,6 +15,8 @@ import { readTodo, todoAdd, todoContext } from './todoStore'
 import { recent as recentFiles, tree as fileTree } from './files'
 
 /** 호스트 — 모든 부품을 묶고, 화면으로 나갈 프레임을 만든다 */
+const PERM_MODES: PermissionMode[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions', 'dontAsk']
+
 export class Host {
   readonly version: string
   readonly registry: Registry
@@ -150,16 +152,28 @@ export class Host {
     }
     this.sessions.codexSandbox = cfg.codexSandbox ?? 'read-only'
     this.sessions.openaiApiKey = cfg.openaiApiKey
+    this.sessions.defaultPermissionMode = cfg.defaultPermissionMode && cfg.defaultPermissionMode !== 'default' ? cfg.defaultPermissionMode : undefined
     // 절전 — 0 이면 «안 재운다» (밤새 돌리는 사람) · 아니면 그 분 뒤. 기본은 60분 (루프 4/10)
     const idle = cfg.idleMinutes === undefined ? 60 : cfg.idleMinutes
     this.sessions.idleTtlMs = idle > 0 ? idle * 60 * 1000 : Number.POSITIVE_INFINITY
   }
   setIdle(minutes: number): void { this.cfg.idleMinutes = Math.max(0, Math.round(minutes)); this.applyDefaults(); saveConfig(this.cfg) }
   /** 기본 모델·생각 레벨 — 저장하면 다음 세션부터. `agent` 로 어느 CLI 것인지 가른다 */
-  setDefaults(model: string, effort: string, agent: 'claude' | 'codex' = 'claude'): void {
+  setDefaults(model: string, effort: string, agent: 'claude' | 'codex' = 'claude', permissionMode?: string): void {
     if (agent === 'codex') { this.cfg.defaultCodexModel = model || undefined; this.cfg.defaultCodexEffort = effort || undefined }
-    else { this.cfg.defaultModel = model || undefined; this.cfg.defaultEffort = effort || undefined }
+    else {
+      this.cfg.defaultModel = model || undefined; this.cfg.defaultEffort = effort || undefined
+      // 새 채팅 기본 권한 — 아는 값만 받는다. `default` 는 «안 정함» 과 같아서 지운다
+      if (permissionMode !== undefined) this.cfg.defaultPermissionMode = PERM_MODES.includes(permissionMode as PermissionMode) && permissionMode !== 'default' ? (permissionMode as PermissionMode) : undefined
+    }
     this.applyDefaults()
+    saveConfig(this.cfg)
+  }
+  /** 조용한 시간 — `HH:MM` 둘. 종전엔 설정에 있으면서 화면이 고칠 길이 없었다(2026-09-17) */
+  setQuiet(from: string, to: string): void {
+    const ok = (t: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t)
+    if (!ok(from) || !ok(to)) throw new Error('시간은 HH:MM 이어야 해요')
+    this.cfg.quiet = { from, to }
     saveConfig(this.cfg)
   }
   /** Codex 설정 — 샌드박스(= 권한 정책)와 API 키 */
