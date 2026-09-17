@@ -112,15 +112,56 @@ class FavWidget extends WidgetType {
   constructor(readonly url: string) { super() }
   eq(o: FavWidget) { return o.url === this.url }
   toDOM() {
-    const img = document.createElement('img')
-    img.className = 'fvic'; img.alt = ''; img.width = 13; img.height = 13
-    const now = faviconNow(this.url)
-    img.src = now ?? GLOBE
-    if (now === undefined) onFavicon(this.url, (d) => { if (d) img.src = d })
+    const img = favImg(this.url)
+    img.classList.add('lp-xl'); img.dataset.href = this.url   // 아이콘을 눌러도 열린다 — 눌리게 생겼는데 안 눌리는 게 가장 나쁘다
     return img
   }
+  /** mousedown 이 편집기 핸들러(`linkClick`)까지 올라가야 아이콘 클릭이 링크를 연다 */
+  ignoreEvent() { return false }
+}
+/** 파비콘 한 장 — 지구본으로 시작해 도착하면 같은 자리에서 갈아 끼운다(폭이 안 변한다 → 밀림 없음) */
+function favImg(url: string): HTMLImageElement {
+  const img = document.createElement('img')
+  img.className = 'fvic'; img.alt = ''; img.width = 13; img.height = 13
+  const now = faviconNow(url)
+  img.src = now ?? GLOBE
+  if (now === undefined) onFavicon(url, (d) => { if (d) img.src = d })
+  return img
 }
 const MDLINK_RE = /\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g
+
+/**
+ * 바깥 링크는 바깥에서 연다 (2026-09-17 Dave: «문서의 링크도 … 바로 클릭이 가능해야 해»).
+ * 길은 `window.open(_blank)` 하나뿐이다 — 데스크톱 셸의 `setWindowOpenHandler` 가 받아 기본 브라우저로 넘기고
+ * (`desktop/main.js`), 폰·브라우저에서는 새 탭이다. 채팅 답변(`Sheets.tsx`)과 같은 계약.
+ */
+function openExt(url: string): void { window.open(url, '_blank', 'noopener,noreferrer') }
+
+/**
+ * 본문 링크의 «누르면 열린다» 표식 — **마크**라 문서 글자는 한 자도 안 바뀐다(churn 0).
+ * `data-lf/lt` 는 mousedown 에서 «캐럿이 이 링크 안인가» 를 가리는 데 쓴다 — 안이면 누르는 것은 편집이다.
+ */
+function xlink(url: string, lf: number, lt: number): Decoration {
+  return Decoration.mark({ class: 'lp-xl', attributes: { 'data-href': url, 'data-lf': String(lf), 'data-lt': String(lt), title: url } })
+}
+
+/**
+ * 링크를 누르면 연다. 캐럿이 **그 링크 안**에 있을 때만 누르는 것이 편집이라 캐럿만 옮긴다(원문이 펴져 있는 상태).
+ * ⚠ 보조키(⌘·⌥·⇧·⌃)가 있으면 기본 동작에 맡긴다 — 선택을 넓히는 중일 수 있다.
+ */
+const linkClick = EditorView.domEventHandlers({
+  mousedown: (e, view) => {
+    if (e.button !== 0 || e.metaKey || e.altKey || e.shiftKey || e.ctrlKey) return false
+    const el = (e.target as HTMLElement | null)?.closest?.('.lp-xl') as HTMLElement | null
+    const href = el?.dataset.href
+    if (!el || !href) return false
+    const lf = Number(el.dataset.lf), lt = Number(el.dataset.lt)
+    if (Number.isFinite(lf) && Number.isFinite(lt) && view.state.selection.ranges.some((r) => r.to >= lf && r.from <= lt)) return false
+    e.preventDefault()
+    openExt(href)
+    return true
+  }
+})
 
 /** `type: reference` · `tags: [PARA, 지침]` → `REFERENCE · PARA · 지침` */
 function fmSummary(body: string): string {
@@ -230,9 +271,43 @@ function cellText(el: HTMLElement): string {
   let out = ''
   for (const n of Array.from(el.childNodes)) {
     if (n.nodeType === 1 && (n as HTMLElement).classList.contains('lp-grip')) continue
+    // 링크 조각은 보이는 글(라벨)이 아니라 **원문**(`[글](주소)`)으로 되읽는다 — 안 그러면 주소가 사라진다
+    if (n.nodeType === 1 && (n as HTMLElement).classList.contains('lp-cl')) { out += (n as HTMLElement).dataset.md ?? ''; continue }
     out += n.textContent ?? ''
   }
   return out
+}
+/**
+ * 칸 안의 링크 — `[글](주소)` 와 맨 주소를 **파비콘 + 누르면 열리는 조각**으로 (2026-09-17 Dave).
+ * 링크가 없으면 글자 하나만 둔다(위 `cellText`·`placeEnd` 와 «손잡이 빼고 전부 글자» 규칙을 그대로 지킨다).
+ * ⚠ 조각은 `contenteditable=false` — 캐럿이 안에 못 들어간다. 고치려면 칸에 들어오면 되고, 그때 원문으로 풀린다.
+ * ⚠ 누르면 **칸에 포커스가 가기 전에** 연다(mousedown 에서 preventDefault) — 포커스가 가면 원문이 드러나 링크가 사라진다.
+ */
+function cellNodes(raw: string): Node[] {
+  const out: Node[] = []
+  const re = new RegExp(`${MDLINK_RE.source}|${BARE_URL_RE.source}`, 'g')
+  let last = 0
+  for (let m = re.exec(raw); m; m = re.exec(raw)) {
+    const md = m[1] != null
+    const url = md ? m[2] : m[0]
+    if (m.index > last) out.push(document.createTextNode(raw.slice(last, m.index)))
+    const a = document.createElement('span')
+    a.className = 'lp-cl'; a.contentEditable = 'false'; a.title = url
+    a.dataset.href = url; a.dataset.md = m[0]
+    a.appendChild(favImg(url))
+    a.appendChild(document.createTextNode(md ? m[1] : m[0]))
+    a.onmousedown = (e) => { if (e.button !== 0) return; e.preventDefault(); e.stopPropagation(); openExt(url) }
+    out.push(a)
+    last = m.index + m[0].length
+  }
+  if (last < raw.length || !out.length) out.push(document.createTextNode(raw.slice(last)))
+  return out
+}
+/** 칸을 원문에서 다시 그린다 — 손잡이(`.lp-grip`)는 그대로 두고 그 앞을 갈아 끼운다 */
+function renderCell(el: HTMLElement, raw: string): void {
+  for (const n of Array.from(el.childNodes)) if (!(n.nodeType === 1 && (n as HTMLElement).classList.contains('lp-grip'))) n.remove()
+  const grip = el.firstChild
+  for (const n of cellNodes(raw)) el.insertBefore(n, grip)
 }
 /** 글자만 갈아 끼운다 — 손잡이는 그대로 둔다 */
 function setCellText(el: HTMLElement, text: string): void {
@@ -270,11 +345,18 @@ class TableWidget extends WidgetType {
         const td = document.createElement(ri === 0 ? 'th' : 'td')
         const a = t.align[ci]
         if (a) td.style.textAlign = a === 'c' ? 'center' : 'right'
-        td.textContent = cell.text.replace(/\\\|/g, '|')
+        renderCell(td, cell.text.replace(/\\\|/g, '|'))
         td.contentEditable = 'true'
         td.spellcheck = false
         td.dataset.rc = `${ri},${ci}`
-        td.onblur = () => { commitCell(view, cell, td) }
+        /**
+         * 링크가 든 칸은 **편집에 들어갈 때 원문으로 푼다** (2026-09-17 Dave: «표안에 있는 링크 포함해서»).
+         * ⚠ 링크 없는 칸은 손대지 않는다 — 글자를 다시 쓰면 클릭이 놓은 캐럿이 무효가 돼 End 를 눌러도
+         *    캐럿이 셀 가운데 남는다(Rondo 라운드 246 실측). 푼 칸은 캐럿을 끝에 둔다(조각 잔해에 걸리지 않게).
+         * ⚠ 나올 때(blur) 글이 안 바뀌었으면 다시 링크로 그린다 — 바뀌었으면 표가 통째로 다시 그려진다.
+         */
+        td.onfocus = () => { if (td.querySelector('.lp-cl')) { setCellText(td, cellText(td)); placeEnd(td) } }
+        td.onblur = () => { if (!commitCell(view, cell, td)) renderCell(td, cellText(td)) }
         td.onkeydown = (e) => cellKey(e, view, rows, t, ri, ci, cell, td)
         /**
          * 손잡이 — 머리줄 칸에는 **열** 메뉴, 본문 첫 칸 왼쪽에는 **행** 메뉴.
@@ -701,15 +783,19 @@ function build(state: EditorState): { deco: DecorationSet; atoms: Atom[] } {
     }
 
     // 링크 앞 파비콘 — `[글](주소)` 는 글 앞에, 맨 URL 은 그 앞에
+    // 링크 앞 파비콘 + 누르면 열리는 표식(`xlink`) — `[글](주소)` 는 글에, 맨 URL 은 주소 그 자체에
     MDLINK_RE.lastIndex = 0
     for (let m = MDLINK_RE.exec(text); m; m = MDLINK_RE.exec(text)) {
       const at = line.from + m.index + 1
       marks.push(Decoration.widget({ widget: new FavWidget(m[2]), side: -1 }).range(at))
+      marks.push(xlink(m[2], line.from + m.index, line.from + m.index + m[0].length).range(at, at + m[1].length))
     }
     const bare = new RegExp(BARE_URL_RE.source, 'g')
     for (let m = bare.exec(text); m; m = bare.exec(text)) {
       if (text[m.index - 1] === '(') continue          // `[글](주소)` 의 주소 — 위에서 이미 달았다
-      marks.push(Decoration.widget({ widget: new FavWidget(m[0]), side: -1 }).range(line.from + m.index))
+      const from = line.from + m.index, to = from + m[0].length
+      marks.push(Decoration.widget({ widget: new FavWidget(m[0]), side: -1 }).range(from))
+      marks.push(xlink(m[0], from, to).range(from, to))
     }
 
     /**
@@ -873,7 +959,7 @@ export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, 
          텍스트가 왜 같이 선택되는거야?»*). CodeMirror 의 «찾기» 편의 기능이라 고른 낱말과 **같은 글자를
          문서 전체에서 물들인다** — 코드 편집기에서는 도움이 되지만 글을 쓰는 화면에서는 «내가 고르지
          않은 곳이 골라진 것»처럼 보인다. 찾기는 ⌘F 가 따로 한다. */
-      frozenField, dragFreeze, lpField, atomic, caretGuard,
+      frozenField, dragFreeze, lpField, atomic, caretGuard, linkClick,
       EditorView.lineWrapping,
       EditorView.editable.of(!readOnly),
       EditorView.updateListener.of((u) => {
