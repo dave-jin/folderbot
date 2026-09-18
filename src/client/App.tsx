@@ -22,6 +22,7 @@ import { UsageCard, UsageStrip, useUsage } from './Usage'
 import { PermGate, usePerms } from './Perms'
 import { Palette } from './Palette'
 import { MODES, effortLabel, effortsFor, fmtK, modeLabel, modelLabel, modelsFor, moreModelsFor, onModels, refreshModels } from './consts'
+import { rulesLabel } from '../core/permPolicy'
 import { DEFAULT_EFFORT, DEFAULT_MODEL } from '../core/agents'
 import { cronFromText, routineName } from '../core/routineText'
 import { BARE_URL_RE, faviconHost } from '../core/favicon'
@@ -1031,7 +1032,14 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
     setRoutineDraft({ name: routineName(g.rest || src), cron: g.cron, prompt: g.rest || src, approve: 'readonly', push: true })
     setText('')
   }
-  const modeBtn = <button className={`cbtn ${pop === 'mode' ? 'on' : ''}`} onClick={() => setPop(pop === 'mode' ? '' : 'mode')} title="모드">{modeLabel(cfg.mode)}<span className="chev">▾</span></button>
+  /**
+   * 🔴 **칩은 실제 워커의 모드를 말해야 한다** (2026-09-18 Dave: «중간에 권한을 바꿨는데 그 이후에도 계속
+   *    실행하기 전에 물어보네»). 모드는 스폰 인자라 이 턴이 끝나야 새 워커가 뜬다 — 그 사이 칩이 새 값만
+   *    보여 주면 «바꿨는데 왜 물어봐» 가 된다. 그 사이는 호스트가 새 모드를 대신 집행하고(host/session.ts
+   *    `autoAllow`), 칩에는 «적용 중» 을 단다. 데스크톱 푸터에만 있던 힌트는 폰에서 안 보였다.
+   */
+  const modePendTitle = '이 턴은 Folder Bot 이 새 모드대로 대신 답하고, 턴이 끝나면 새 모드로 이어서 재시작해요 (대화 유지)'
+  const modeBtn = <button className={`cbtn ${pop === 'mode' ? 'on' : ''}`} onClick={() => setPop(pop === 'mode' ? '' : 'mode')} title={cur?.restartPending ? modePendTitle : '모드'}>{modeLabel(cfg.mode)}{cur?.restartPending ? <span className="pend">적용 중</span> : null}<span className="chev">▾</span></button>
   /**
    * 🔴 **고를 목록은 «이 세션의 벤더» 가 정한다** — Claude 목록을 Codex 세션에 보여 주면
    *    고르는 순간 CLI 가 «모델이 없다» 로 그 자리에서 죽는다(이름 체계가 다르다).
@@ -1054,7 +1062,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const sendBtn = mode === 'stop' ? <button className="sendb" onClick={() => cur && api(`/sessions/${cur.id}/interrupt`, { body: {} })} title="중단"><Icon n="stop" size={phone ? 14 : 11} /></button>
     : mode === 'off' && phone ? <span className="sendb mic"><Icon n="mic" size={20} /></span>
       : <button className={`sendb ${mode === 'off' ? 'off' : ''}`} onClick={send} disabled={mode === 'off' || busy || uploading} title={mode === 'queue' ? `대기열에 넣기 (${sendKey})` : `보내기 (${sendKey})`}><Icon n="up" size={phone ? 16 : 12} />{mode === 'queue' ? <span className="bd">+{queue.length + 1}</span> : null}</button>
-  const popEl = pop === 'mode' ? <div className="cpop"><div className="h">모드 · 이 세션</div>{MODES.map((m, i) => <button key={m.v} className={`prow2 ${cfg.mode === m.v ? 'on' : ''}`} onClick={() => void applyCfg({ permissionMode: m.v })}><div className="t"><b>{m.t}</b><small>{m.d}</small></div>{cfg.mode === m.v ? <Icon n="check" size={13} /> : <span className="k">{i + 1}</span>}</button>)}<div className="hint"><span>1~4</span><span className="sp" /><span>새 세션은 설정의 기본값으로</span></div></div>
+  const popEl = pop === 'mode' ? <div className="cpop"><div className="h">모드 · 이 세션</div>{MODES.map((m, i) => <button key={m.v} className={`prow2 ${cfg.mode === m.v ? 'on' : ''}`} onClick={() => void applyCfg({ permissionMode: m.v })}><div className="t"><b>{m.t}</b><small>{m.d}</small></div>{cfg.mode === m.v ? <Icon n="check" size={13} /> : <span className="k">{i + 1}</span>}</button>)}<div className="hint"><span>1~4</span><span className="sp" /><span>새 세션은 설정의 기본값으로</span></div>{cur?.restartPending ? <div className="hint pend">{modePendTitle}</div> : null}</div>
     /**
      * 🔴 **종류별 최신 하나씩만 보인다** (2026-09-14 Dave: «다른 모델은 안쓰고 최신 버전만 종류별로만
      *    선택하게 할꺼야»). 나머지(긴 문맥·기계에서 주워 온 이름)는 **「더 많은 모델」** 아래로.
@@ -1385,5 +1393,6 @@ function PermCard({ p, sid }: { p: PermissionRequest; sid: string }) {
   const i = p.input; const cmd = typeof i.command === 'string' ? i.command : typeof i.file_path === 'string' ? i.file_path : typeof i.url === 'string' ? i.url : JSON.stringify(i).slice(0, 400)
   const human = p.description || (typeof i.command === 'string' ? `명령을 실행합니다` : typeof i.file_path === 'string' ? `파일을 ${/Write|Edit/.test(p.toolName) ? '고칩니다' : '읽습니다'} — ${String(i.file_path).split('/').pop()}` : `${p.displayName} 를 씁니다`)
   return <div className="card"><div className="lab">권한 · {p.displayName}</div><div className="q">{human}</div><div className="cmd">{cmd}</div>
-    <div className="btns"><button className="btn primary" disabled={busy} onClick={() => act({ allow: true }, 'permission')}>허용</button>{p.suggestions.length ? <button className="btn" disabled={busy} onClick={() => act({ allow: true, always: true }, 'permission')}>이 세션에서 항상 허용</button> : null}<button className="btn ghost" disabled={busy} onClick={() => act({ allow: false }, 'permission')}>거부</button></div></div>
+    <div className="btns"><button className="btn primary" disabled={busy} onClick={() => act({ allow: true }, 'permission')}>허용</button>{p.suggestions.length ? <button className="btn" disabled={busy} title={rulesLabel(p.suggestions)} onClick={() => act({ allow: true, always: true }, 'permission')}>이 세션에서 항상 허용</button> : null}<button className="btn ghost" disabled={busy} onClick={() => act({ allow: false }, 'permission')}>거부</button></div>
+    {p.suggestions.length ? <div className="meta rule">항상 허용 = {rulesLabel(p.suggestions) || '이 도구'}</div> : null}</div>
 }

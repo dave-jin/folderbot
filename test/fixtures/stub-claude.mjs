@@ -45,11 +45,14 @@ rl.on('line', (raw) => {
   }
   if (msg.type === 'control_response' && pendingReq) {
     const allow = msg.response?.response?.behavior === 'allow'
+    // «항상 허용» 이 무엇을 보냈는지 되읊는다 — 호스트가 만든 접두어 규칙이 CLI 까지 오는지 재려고
+    const rules = msg.response?.response?.updatedPermissions
+    const ruleNote = Array.isArray(rules) && rules.length ? ` · 규칙 ${JSON.stringify(rules.flatMap((u) => (u.rules ?? []).map((r) => r.ruleContent ?? r.toolName)))}` : ''
     const { text } = pendingReq; pendingReq = null
     say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'stub-t2', name: 'Write', input: { file_path: join(process.cwd(), 'stub-output.md'), content: 'x' } }] } })
     if (allow) { try { writeFileSync(join(process.cwd(), 'stub-output.md'), `# 스텁 산출물\n\n${text}\n`) } catch {} }
     say({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'stub-t2', content: allow ? 'ok' : 'denied', is_error: !allow }] } })
-    say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: allow ? `스텁이 처리했습니다: ${text.slice(0, 60)}` : '거부돼서 멈췄어요.' }], stop_reason: 'end_turn' } })
+    say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: allow ? `스텁이 처리했습니다: ${text.slice(0, 60)}${ruleNote}` : '거부돼서 멈췄어요.' }], stop_reason: 'end_turn' } })
     say({ type: 'result', subtype: 'success', duration_ms: 321, total_cost_usd: 0.001 })
     return
   }
@@ -123,6 +126,12 @@ rl.on('line', (raw) => {
       { question: '첫 질문은 무엇으로 할까요?', header: '하나', options: [{ label: '가 안', description: '첫째' }, { label: '나 안' }] },
       { question: '둘째 질문은 무엇으로 할까요?', header: '둘', options: [{ label: '다 안' }, { label: '라 안' }] }
     ] }, permission_suggestions: [] } }) + '\n')
+    return
+  }
+  // 복합 Bash — 실 CLI 는 이런 명령에 permission_suggestions 를 **비워** 보낸다(«항상 허용» 단추가 사라지던 원인)
+  if (/맨손 승인/.test(text)) {
+    pendingReq = { text }
+    process.stdout.write(JSON.stringify({ type: 'control_request', request_id: `req-${randomUUID()}`, request: { subtype: 'can_use_tool', tool_name: 'Bash', display_name: 'Bash', description: '명령을 실행합니다', input: { command: 'cd /tmp/x && npm run qa 2>&1 | tee log.txt' }, permission_suggestions: [] } }) + '\n')
     return
   }
   if (/승인|permission/.test(text) || process.env.STUB_ASK_PERMISSION) {

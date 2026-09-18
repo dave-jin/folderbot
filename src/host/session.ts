@@ -12,6 +12,7 @@ import { fitsProvider, sameModel } from '../core/agents'
 import { CODEX_LOCAL, parseLocalSlash } from '../core/slashLocal'
 import { isAutoSessionName, titleFromText } from '../core/sessionTitle'
 import { isModelRejected } from '../core/codexMap'
+import { autoAllows, fallbackRules, rulesLabel } from '../core/permPolicy'
 import type { Bot, ChatItem, PermissionMode, PermissionRequest, SessionInfo, SessionState } from '../core/types'
 import { atomicWrite, dataDir, ensureDir } from './paths'
 
@@ -114,7 +115,10 @@ export class ClaudeWorker extends EventEmitter {
     if (line.type === 'control_request') {
       const req = (line.request ?? {}) as Record<string, unknown>
       if (req.subtype === 'can_use_tool' && line.request_id) {
-        const p: PermissionRequest = { requestId: line.request_id, toolName: String(req.tool_name ?? 'tool'), displayName: String(req.display_name ?? req.tool_name ?? 'tool'), description: String(req.description ?? ''), input: (req.input ?? {}) as Record<string, unknown>, suggestions: (req.permission_suggestions as unknown[]) ?? [], ask: req.tool_name === 'AskUserQuestion' }
+        const p: PermissionRequest = { requestId: line.request_id, toolName: String(req.tool_name ?? 'tool'), displayName: String(req.display_name ?? req.tool_name ?? 'tool'), description: String(req.description ?? ''), input: (req.input ?? {}) as Record<string, unknown>, suggestions: [], ask: req.tool_name === 'AskUserQuestion' }
+        // CLI 제안이 비면(복합 Bash) 호스트가 만든다 — «이 세션에서 항상 허용» 이 항상 있어야 한다(core/permPolicy)
+        const sugg = (req.permission_suggestions as unknown[] | undefined) ?? []
+        p.suggestions = sugg.length ? sugg : fallbackRules(p.toolName, p.input)
         this.pending.set(p.requestId, p)
         this.emit('permission', p)
       }
@@ -323,8 +327,21 @@ export class SessionManager extends EventEmitter {
     if (o.permissionMode !== undefined && o.permissionMode !== r.permissionMode) { r.permissionMode = o.permissionMode; changed = true }
     if (!changed) return
     const w = this.workers.get(r.id)
-    if (w?.alive) { if (r.state === 'running' || r.state === 'awaiting_input' || w.pending.size) r.restartPending = true; else { w.kill(); this.workers.delete(r.id) } }
+    if (w?.alive) {
+      // 새 모드가 대신 답해도 되는 물음은 지금 바로 닫는다 — 화면에 남은 카드를 하나하나 누르게 두지 않는다
+      let answered = false
+      for (const p of [...w.pending.values()]) if (this.autoAllow(r, w, p)) answered = true
+      if (answered && !w.pending.size) this.setState(r, { kind: 'input_provided' })
+      if (r.state === 'running' || r.state === 'awaiting_input' || w.pending.size) r.restartPending = true; else { w.kill(); this.workers.delete(r.id) }
+    }
     this.persist(r); this.emit('sessions', r.botId)
+  }
+  /** 새 모드가 허락하는 물음이면 호스트가 «허용» 을 누른다 — 기록은 남긴다(조용히 넘어가지 않는다) */
+  private autoAllow(r: SessionRec, w: Worker, p: PermissionRequest): boolean {
+    if (!autoAllows(r.permissionMode, p.toolName) || !w.pending.has(p.requestId)) return false
+    w.respondPermission(p.requestId, true)
+    this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `자동 허용 · ${p.displayName} (${r.permissionMode === 'acceptEdits' ? '편집 자동 수락' : '항상 허용'} 모드)` })
+    return true
   }
   slashOf(id: string): string[] { return this.recs.get(id)?.slash ?? [] }
 
@@ -365,7 +382,15 @@ export class SessionManager extends EventEmitter {
       : new ClaudeWorker({ cwd: r.cwd, resume: r.cliSessionId, permissionMode: r.permissionMode, addDirs: bot.repo ? [bot.abs] : undefined, mcpConfig: this.mcpUrl(r.id, bot.id), model: r.model, effort: r.effort, name: `${bot.name}-${r.name}`, appendSystemPrompt: this.systemPromptFor(bot) || undefined, bin: this.bin })
     this.workers.set(r.id, w)
     w.on('line', (line: StreamLine) => this.onLine(r, line))
-    w.on('permission', (p: PermissionRequest) => { this.setState(r, { kind: 'permission_requested' }); this.emit('permission', r, p) })
+    w.on('permission', (p: PermissionRequest) => {
+      /**
+       * 🔴 **모드는 스폰 인자다 — 바꾼 뒤 이 턴이 끝날 때까지 워커는 옛 모드로 묻는다** (2026-09-18 Dave:
+       *    «중간에 권한을 바꿨는데 그 이후에도 계속 실행하기 전에 물어보네»). 그 사이는 호스트가 새 모드를
+       *    대신 집행한다 — 워커를 턴 중간에 죽이면 하던 일이 끊기므로 답만 대신한다. 정책은 core/permPolicy.
+       */
+      if (this.autoAllow(r, w, p)) return
+      this.setState(r, { kind: 'permission_requested' }); this.emit('permission', r, p)
+    })
     w.on('exit', (code: number | null, _sig: string | null, err: string) => {
       if (this.workers.get(r.id) === w) this.workers.delete(r.id)
       if (w.cliSessionId) r.cliSessionId = w.cliSessionId
@@ -558,7 +583,7 @@ export class SessionManager extends EventEmitter {
       const ctx = contextOf(line, r.ctx, r.model); if (ctx) r.ctx = ctx
       this.setActivity(r, '', true)
       this.setState(r, { kind: 'result_received', isError: !!line.is_error })
-      if (r.restartPending) { r.restartPending = false; const w = this.workers.get(r.id); if (w && !w.pending.size) { w.kill(); this.workers.delete(r.id) } }
+      if (r.restartPending) { const w = this.workers.get(r.id); if (!w || !w.pending.size) { r.restartPending = false; if (w) { w.kill(); this.workers.delete(r.id) } } }
       this.persist(r); this.emit('sessions', r.botId)
     }
   }
@@ -601,8 +626,9 @@ export class SessionManager extends EventEmitter {
   }
   respondPermission(r: SessionRec, requestId: string, allow: boolean, always = false): void {
     const w = this.workers.get(r.id); if (!w) return
+    const label = always ? rulesLabel(w.pending.get(requestId)?.suggestions ?? []) : ''
     w.respondPermission(requestId, allow, always)
-    this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: allow ? (always ? '항상 허용' : '허용') : '거부' })
+    this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: allow ? (always ? `이 세션에서 항상 허용${label ? ` · ${label}` : ''}` : '허용') : '거부' })
     this.setState(r, { kind: 'input_provided' })
   }
   respondAsk(r: SessionRec, requestId: string, answers: Record<string, string>): void {
