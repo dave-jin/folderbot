@@ -20,6 +20,8 @@ export interface FolderRules {
   roles: { inbox: string[]; active: string[]; reference: string[]; archive: string[] }
   naming: { project?: string }
   harness: string[]
+  /** 폴더명 `날짜_타입-이름` 의 타입 목록 — 없으면 core/botName 의 기본 목록 */
+  types?: string[]
 }
 
 export interface Candidate {
@@ -57,6 +59,12 @@ export interface Bot {
   rel: string
   abs: string
   name: string
+  /** 레일 표시 이름 — 폴더명에서 파생(core/botName) · `display_name:` 으로 덮음. 정렬·검색·rel 은 여전히 `name` */
+  displayName: string
+  /** 폴더명의 타입 조각(강의·컨설팅…) — 목록에 있을 때만 */
+  kind?: string
+  /** 폴더명의 날짜 — 표시용 마감 칩 */
+  due?: { date: string; precision: 'day' | 'month' | 'year' }
   section: string
   color: string
   orchestrator: boolean

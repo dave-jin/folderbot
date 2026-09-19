@@ -18,6 +18,7 @@ import { norm, scoreName } from '../core/search'
 import { fmtTime, useStore } from './store'
 import { ACT_ICON, FOLDER_SWIPE, navOf, type SwipeAct } from './swipe'
 import { SwipeRow } from './SwipeRow'
+import { dueChip } from '../core/botName'
 import { ICON_PX, useIconSize, useTheme } from './theme'
 import { UsageCard, UsageStrip, useUsage } from './Usage'
 import { PermGate, usePerms } from './Perms'
@@ -577,7 +578,7 @@ function Main() {
               onDragOver={(e) => { if (!dragBot || b.orchestrator || dragBot === b.id) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOverBot(b.id) }}
               onDragLeave={() => setOverBot((x) => (x === b.id ? null : x))}
               onDrop={(e) => { e.preventDefault(); void dropBot(b.id) }}
-              onContextMenu={(e) => { e.preventDefault(); hovOut(); if (!b.orchestrator) setRailCtx({ x: e.clientX, y: e.clientY, id: b.id, name: b.name }) }} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={ICON_PX[iconSz]} mood={sum.mood} mono /><span className="n"><Mid s={b.name} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span><time>{fmtTime(sum.t)}</time></button>)}
+              onContextMenu={(e) => { e.preventDefault(); hovOut(); if (!b.orchestrator) setRailCtx({ x: e.clientX, y: e.clientY, id: b.id, name: b.name }) }} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={ICON_PX[iconSz]} mood={sum.mood} mono /><span className="n"><BotName b={b} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span>{b.due ? null : <time>{fmtTime(sum.t)}</time>}</button>)}
           </div>)}
         </div>
         {hovRow ? <HoverCard b={hovRow.b} sum={hovRow.sum} top={hov!.top} left={fit.sb + 6} /> : null}
@@ -603,7 +604,7 @@ function Main() {
         <button className="ib" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span className="fly"><b>폴더 선택 · 시작</b><span>후보 {s.candidates.filter((c) => !c.active).length}</span></span></button>
         <button className="ib" onClick={() => setModal('notify')}><Icon n="bell" size={14} />{unread ? <span className="bd">{unread}</span> : null}<span className="fly"><b>알림</b><span>{unread ? `읽지 않음 ${unread}` : '없음'}</span></span></button>
         <div className="gap" />
-        {stripBots.map(({ b, sum }) => <button key={b.id} className={`bot ${b.id === bot.id ? 'on' : ''}`} onClick={() => go(b.id)}><FolderBot color={b.color} size={17} mood={sum.mood} mono /><span className="fly"><b><Mid s={b.name} /></b><span><span className={`dot ${stateDot(sum.state ?? undefined)}`} style={{ marginRight: 5 }} />{sum.text}</span><span className="t3">{b.section} · {fmtTime(sum.t)}</span></span></button>)}
+        {stripBots.map(({ b, sum }) => <button key={b.id} className={`bot ${b.id === bot.id ? 'on' : ''}`} onClick={() => go(b.id)}><FolderBot color={b.color} size={17} mood={sum.mood} mono /><span className="fly"><b><Mid s={b.displayName} /></b><span><span className={`dot ${stateDot(sum.state ?? undefined)}`} style={{ marginRight: 5 }} />{sum.text}</span><span className="t3">{b.section} · {fmtTime(sum.t)}</span></span></button>)}
       </div>}
       <div className="divx" onPointerDown={sbOpen ? dragX('sb', 1) : undefined} onDoubleClick={() => setLay({ ...lay, sb: DEF.sb, sbOpen: true, sbPin: true })} />
 
@@ -653,7 +654,7 @@ function HoverCard({ b, sum, top, left }: { b: Bot; sum: ReturnType<typeof botSu
   const y = Math.max(8, Math.min(top - 8, (typeof window !== 'undefined' ? window.innerHeight : 800) - 230))
   const say = lastMsg ? `${lastMsg.kind === 'user' ? '나' : '봇'}: ${lastMsg.text.replace(/\s+/g, ' ').slice(0, 140)}` : lastN ? `${lastN.title}: ${lastN.body}`.slice(0, 140) : ''
   return <div className="hcard" style={{ top: y, left }}>
-    <div className="hh"><FolderBot color={b.color} size={28} mood={sum.mood} mono /><b><Mid s={b.name} /></b><span className={`dot ${stateDot(sum.state ?? undefined)}`} /></div>
+    <div className="hh"><FolderBot color={b.color} size={28} mood={sum.mood} mono /><b title={b.name}><Mid s={b.displayName} /></b><span className={`dot ${stateDot(sum.state ?? undefined)}`} /></div>
     <div className="hp mono">{b.rel || '볼트 (오케스트레이터)'}</div>
     <div className="hs">{sum.text}</div>
     <div className="hk">
@@ -755,6 +756,31 @@ function ActionTiles({ go, setModal, onTodo, say, compact }: { go: (b: string, s
 
 /* ── 폰 홈 — 큰 제목 · 카드 4 · 봇 목록 · 떠 있는 알약 (탭바 없음) ── */
 type Row = [string, { b: Bot; sum: ReturnType<typeof botSummary> }[]]
+/**
+ * 레일·헤더의 봇 이름 (F · 2026-09-19 Dave 1안 확정) — «이름 굵게 · 타입 태그 · 오른쪽 날짜 칩».
+ * 파생은 호스트(core/botName)가 하고 여기는 그리기만 한다. 잘릴 때는 제목 끝을 자르고 태그가 먼저 접히며
+ * (태그 `flex-shrink` 가 크다), 날짜 칩은 `flex:none` 이라 끝까지 남는다. D-3 이내 강조 · 지난 날짜 흐림.
+ * 툴팁은 원래 폴더명 전체. 관제·규칙 밖 폴더는 제목만 나온다.
+ */
+function BotName({ b, chip = true }: { b: Bot; chip?: boolean }) {
+  const due = chip && b.due ? dueChip(b.due.date, b.due.precision) : null
+  const ref = useRef<HTMLSpanElement>(null); const tagW = useRef(0)
+  const [hideTag, setHideTag] = useState(false)
+  // 태그는 «반쯤» 보이지 않는다 — 제목의 본래 폭 + 태그 + 칩이 안 들어가면 태그를 통째로 접고, 다시 들어가면 편다
+  useEffect(() => {
+    const el = ref.current; if (!el || !b.kind) return
+    const fit = () => {
+      const dn = el.querySelector('.dn') as HTMLElement | null, tag = el.querySelector('.tag') as HTMLElement | null, du = el.querySelector('.due') as HTMLElement | null
+      if (!dn) return
+      if (tag) tagW.current = tag.offsetWidth
+      const need = dn.scrollWidth + (tagW.current + 6) + (du ? du.offsetWidth + 6 : 0)
+      setHideTag(need > el.clientWidth + 1)
+    }
+    fit(); const ro = new ResizeObserver(fit); ro.observe(el); return () => ro.disconnect()
+  }, [b.kind, b.displayName, due?.text])
+  return <span ref={ref} className="bname" title={b.name}><b className="dn">{b.displayName}</b>{b.kind && !hideTag ? <span className="tag">{b.kind}</span> : null}{due ? <span className={`due ${due.tone}`}>{due.text}</span> : null}</span>
+}
+
 function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say }: { rows: Row[]; bot: Bot; go: (b: string, sid?: string) => void; setModal: (m: 'picker' | 'notify' | 'settings') => void; waiting: number; unread: number; onAsk: () => void; onTodo: (botId: string) => void; say: (m: string) => void }) {
   const usage = useUsage() // 폰 홈 맨 위 — 한 줄 띠. 누르면 카드가 시트로 올라온다
   const [uSheet, setUSheet] = useState(false)
@@ -785,7 +811,7 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say }: 
       {rows.map(([sec, list]) => <div key={sec}>
         <div className="secl">{sec}</div>
         {list.map(({ b, sum }) => {
-          const row = <button key={b.id} className="mrow" onClick={() => go(b.id)}><span className="av"><FolderBot color={b.color} size={46} mood={sum.mood} mono /></span><span className="t"><span className="l1"><b><Mid s={b.name} /></b><time>{fmtTime(sum.t)}</time></span><span className="l2">{sum.text}</span></span></button>
+          const row = <button key={b.id} className="mrow" onClick={() => go(b.id)}><span className="av"><FolderBot color={b.color} size={46} mood={sum.mood} mono /></span><span className="t"><span className="l1"><BotName b={b} chip={false} />{b.due ? (() => { const d = dueChip(b.due.date, b.due.precision); return d ? <span className={`due ${d.tone}`}>{d.text}</span> : null })() : <time>{fmtTime(sum.t)}</time>}</span><span className="l2">{sum.text}</span></span></button>
           // 관제(오케스트레이터)는 고정·지우기·은퇴의 대상이 아니다 — 쓸리지 않는다
           return b.orchestrator ? row : <SwipeRow key={b.id} cfg={FOLDER_SWIPE} labelFor={(a) => (a === 'pin' && b.pinned ? '고정 풀기' : undefined)} onAct={(a) => void folderAct(b, a)}>{row}</SwipeRow>
         })}
@@ -1164,7 +1190,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
         <span style={{ position: 'relative', minWidth: 0, flex: '0 1 auto', display: 'flex' }}><button className="bpill glassb" onClick={() => setSessMenu(!sessMenu)}><FolderBot color={bot.color} size={26} mood={moodOf(state, !!cur?.hibernated)} mono /><b><Mid s={drillSub ? drillSub.name : bot.name} /></b><VendorMark vendor={cur?.vendor} size={12} />{stateDot(state) !== 'none' ? <span className={`dot ${stateDot(state)}`} style={{ width: 7, height: 7 }} /> : null}</button>{sessMenuEl}</span>
         <span className="sp" /><button className="rb glassb" onClick={onPanel} title="이 폴더에서"><Icon n="folder" size={20} /></button></>
         : drillSub ? <><button className="ib" onClick={() => setDrill(null)} title="메인 대화로"><Icon n="back" size={14} /></button><span style={{ color: 'var(--t3)' }}>/</span><span className="ttl">{drillSub.name}</span>{drillSub.status === 'run' ? <span className="spin run" /> : <Icon n={drillSub.status === 'error' ? 'x' : 'check'} size={11} color={drillSub.status === 'error' ? 'var(--err)' : 'var(--done)'} />}<span style={{ color: 'var(--t3)', fontSize: 12, whiteSpace: 'nowrap' }}>도구 {drillSub.tools}</span><span className="sp" /></>
-          : <><FolderBot color={bot.color} size={16} mood={moodOf(state, !!cur?.hibernated)} mono /><span className="ttl"><Mid s={bot.name} /></span><VendorMark vendor={cur?.vendor} size={12} />
+          : <><FolderBot color={bot.color} size={16} mood={moodOf(state, !!cur?.hibernated)} mono /><span className="ttl" title={bot.name}><Mid s={bot.displayName} /></span><VendorMark vendor={cur?.vendor} size={12} />
             <span style={{ position: 'relative', flex: 'none' }}><button onClick={() => setSessMenu(!sessMenu)} style={{ color: 'var(--t3)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}>{cur?.name ?? '새 대화'} <Icon n="chevd" size={10} /></button>{sessMenuEl}</span>
             <span className={`dot ${stateDot(state)}`} /><span className="sp" />
             <div className="acts"><button className={`ib ${docOn ? 'on' : ''}`} onClick={onDocToggle} title="문서 열 (⌘⇧D)"><Icon n="doc" size={14} />{!docOn && docBadge ? <span className="bd">{docBadge}</span> : null}</button></div></>}

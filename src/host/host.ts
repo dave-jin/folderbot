@@ -27,7 +27,13 @@ export class Host {
   auth: AuthState = { verdict: 'unknown', checkedAt: 0 }
   private queued: { botId: string; sessionId: string; text: string }[] = []
   broadcast: (f: Frame) => void = () => {}
-  watcher = new FolderWatch((botId) => this.broadcast({ ev: 'files', botId }))
+  watcher = new FolderWatch((botId) => { this.broadcast({ ev: 'files', botId }); this.refreshNames() })
+  private lastNames = ''
+  /** 봇 폴더의 CLAUDE.md `display_name:` 이 바뀌면 레일도 바뀌어야 한다 — 파일 신호 뒤에 표시 이름을 다시 재 본다 */
+  private refreshNames(): void {
+    const now = this.registry.bots().map((b) => `${b.id}=${b.displayName}`).join('|')
+    if (now !== this.lastNames) { this.lastNames = now; this.afterBotsChanged() }
+  }
   log: (s: string) => void = (s) => console.log(`[folderbot] ${s}`)
   /**
    * 🔴 **루트를 바꾸는 일은 «저장» 과 «다시 세우기» 둘로 갈린다.** 호스트는 저장만 하고, 다시 세우는

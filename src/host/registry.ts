@@ -6,6 +6,7 @@ import { applyNaming, globMatch, globParents, PARA_PRESET, JD_PRESET, parseRules
 import type { Bot, BotConfig, Candidate, FolderRules, RoutineDef } from '../core/types'
 import { BOT_COLORS, ORCH_COLOR } from '../core/types'
 import { atomicWrite } from './paths'
+import { DEFAULT_TYPES, parseFolderName } from '../core/botName'
 
 export const ORCH_ID = 'orch'
 const STATE_DIR = '.folderbot'
@@ -157,7 +158,7 @@ export class Registry extends EventEmitter {
     this.emit('bots', this.bots())
   }
   bots(): Bot[] {
-    const orch: Bot = { id: ORCH_ID, rel: '', abs: this.root, name: '오케스트레이터', section: '관제', color: ORCH_COLOR, orchestrator: true, startedAt: 0, vendor: 'claude', routines: this.orchRoutines() }
+    const orch: Bot = { id: ORCH_ID, rel: '', abs: this.root, name: '오케스트레이터', displayName: '오케스트레이터', section: '관제', color: ORCH_COLOR, orchestrator: true, startedAt: 0, vendor: 'claude', routines: this.orchRoutines() }
     const rest = this.active.map((a) => this.toBot(a)).filter((b): b is Bot => !!b)
     return [orch, ...rest]
   }
@@ -169,12 +170,35 @@ export class Registry extends EventEmitter {
    *    (옛 형제 봇이 이미 있으면 두 줄로 남지만, 새로 만들지는 않는다 — 지우는 건 사람 몫이다.)
    */
   private botName(a: ActiveRec): string { return basename(a.rel) }
+  /**
+   * 레일 표시 이름 (F · 2026-09-19) — 폴더명을 `날짜_타입-이름` 으로 파싱만 한다(core/botName). 봇 폴더의
+   * CLAUDE.md(또는 claude.md) frontmatter 에 `display_name:` 이 있으면 제목만 덮고 날짜 칩은 폴더명 그대로다.
+   * 볼트 안 파일이라 다른 맥에서 열어도 같이 따라온다. 읽기는 mtime 으로 캐시한다(bots() 가 자주 불린다).
+   */
+  private display(a: ActiveRec, abs: string): { displayName: string; kind?: string; due?: Bot['due'] } {
+    const parsed = parseFolderName(basename(a.rel), this.rules.types?.length ? this.rules.types : DEFAULT_TYPES)
+    const over = this.displayOverride(abs)
+    return { displayName: over || parsed.title || basename(a.rel), ...(parsed.type ? { kind: parsed.type } : {}), ...(parsed.precision !== 'none' ? { due: { date: parsed.date, precision: parsed.precision } } : {}) }
+  }
+  private overrides = new Map<string, { mtime: number; v: string }>()
+  private displayOverride(abs: string): string {
+    for (const f of ['CLAUDE.md', 'claude.md']) {
+      const file = join(abs, f)
+      let st; try { st = statSync(file) } catch { continue }
+      const c = this.overrides.get(file); if (c && c.mtime === st.mtimeMs) return c.v
+      let v = ''
+      try { const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(readFileSync(file, 'utf8')); const m = fm && /^display_name:\s*(.+)$/m.exec(fm[1]); if (m) v = m[1].trim().replace(/^["']|["']$/g, '').slice(0, 80) } catch { /* */ }
+      this.overrides.set(file, { mtime: st.mtimeMs, v })
+      return v
+    }
+    return ''
+  }
   /** ⚠ 벤더는 **시작할 때 고른 것**(a.vendor)이 이긴다 — `.bot.yml` 은 고르기 화면이 없던 시절의 폴백이다 */
   private toBot(a: ActiveRec): Bot | null {
     const abs = join(this.root, a.rel)
     if (!existsSync(abs)) return null
     const cfg = this.botConfig(abs)
-    return { id: a.id, rel: a.rel, abs, name: this.botName(a), section: a.rel.split('/')[0] === a.rel ? '' : a.rel.split('/')[0], color: cfg.color ?? a.color, orchestrator: false, startedAt: a.startedAt, vendor: a.vendor ?? cfg.vendor ?? 'claude', repo: cfg.repo ? resolve(abs, cfg.repo.replace(/^~/, process.env.HOME ?? '')) : undefined, routines: cfg.routines ?? [] , pinned: a.pinned}
+    return { id: a.id, rel: a.rel, abs, name: this.botName(a), ...this.display(a, abs), section: a.rel.split('/')[0] === a.rel ? '' : a.rel.split('/')[0], color: cfg.color ?? a.color, orchestrator: false, startedAt: a.startedAt, vendor: a.vendor ?? cfg.vendor ?? 'claude', repo: cfg.repo ? resolve(abs, cfg.repo.replace(/^~/, process.env.HOME ?? '')) : undefined, routines: cfg.routines ?? [] , pinned: a.pinned}
   }
   bot(id: string): Bot | undefined { return this.bots().find((b) => b.id === id) }
   botByRel(rel: string): Bot | undefined { return this.bots().find((b) => b.rel === rel) }

@@ -400,14 +400,55 @@ try {
         // 버전 칩을 누르면 확인 — 브라우저 화면에선 안내 토스트
         await pg.click('.sb-foot .bd.upd'); await wait(200); const vt = await pg.textContent('.toast'); if (!/업데이트/.test(vt ?? '')) fail('ui version chip toast: ' + vt)
         // 레일 순서 — 섹션은 관제 → 2 → 3 → 4, 행은 이름 내림차순(날짜 최신 먼저), 활동으로 자리가 안 바뀐다
-        const order = await pg.evaluate(() => Array.from(document.querySelectorAll('.sb-list > div')).map((sec) => ({ s: sec.querySelector('.secl')?.textContent, n: Array.from(sec.querySelectorAll('.brow .n .mid')).map((e) => e.textContent) })))
+        const order = await pg.evaluate(() => Array.from(document.querySelectorAll('.sb-list > div')).map((sec) => ({ s: sec.querySelector('.secl')?.textContent, n: Array.from(sec.querySelectorAll('.brow .n .bname')).map((e) => e.getAttribute('title')) })))
         const secNames = order.map((o) => o.s); const sorted = [...secNames].sort((a, b) => (a === '관제' ? -1 : b === '관제' ? 1 : a.localeCompare(b, 'ko', { numeric: true })))
         if (JSON.stringify(secNames) !== JSON.stringify(sorted)) fail('ui section order ' + secNames.join(' | '))
         for (const o of order) { const d = [...o.n].sort((a, b) => b.localeCompare(a, 'ko', { numeric: true, sensitivity: 'base' })); if (JSON.stringify(o.n) !== JSON.stringify(d)) fail(`ui row order in ${o.s}: ${o.n.join(' | ')}`) }
         // NFD 파일명이 자모 분리 없이 합쳐져 보인다
         const nfdName = await pg.$$eval('.panel .trow .n', (els) => els.map((e) => e.textContent).find((t) => t && t.includes('_MAP_'))); if (!nfdName || nfdName !== nfdName.normalize('NFC') || !/전체구조/.test(nfdName)) fail('ui NFD name: ' + JSON.stringify(nfdName))
-        // 이름은 가운데 말줄임 — 꼬리(.mt)가 남아 있다
-        if (!(await pg.$('.brow .n .mid .mt')) || !(await pg.$('.panel .trow .n .mid'))) fail('ui mid ellipsis')
+        // 트리 이름은 가운데 말줄임 — 꼬리(.mt)가 남아 있다 (레일은 F 로 «제목 끝 자르기» 가 됐다)
+        if (!(await pg.$('.brow .n .bname .dn')) || !(await pg.$('.panel .trow .n .mid'))) fail('ui mid ellipsis')
+        /**
+         * 🔴 **레일 이름 파생** (F · 2026-09-19 Dave 1안 확정) — 폴더명 `날짜_타입-이름` 을 파싱해 «제목 굵게 · 타입 태그 ·
+         *    오른쪽 날짜 칩». 정렬·rel 은 폴더명 그대로(위 정렬 검사가 title 속성 = 폴더명으로 재는 이유).
+         */
+        {
+          const rowOf = (folder) => pg.evaluate((f) => { const r = [...document.querySelectorAll('.sb-list .brow')].find((x) => x.querySelector('.bname')?.getAttribute('title') === f); if (!r) return null
+            const dn = r.querySelector('.dn'), due = r.querySelector('.due'); const rr = r.getBoundingClientRect(), dr = due?.getBoundingClientRect()
+            return { dn: dn?.textContent, tag: r.querySelector('.tag')?.textContent ?? null, due: due?.textContent ?? null, cls: due?.className ?? '', time: !!r.querySelector('time'), cut: dn ? dn.scrollWidth > dn.clientWidth + 1 : false, dueIn: dr ? dr.width > 0 && dr.right <= rr.right + 1 : null } }, folder)
+          const now = new Date(); const pad = (n) => String(n).padStart(2, '0'); const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+          const a = await rowOf('2026-09_예시고객-자문')
+          const sepTone = now.getFullYear() > 2026 || (now.getFullYear() === 2026 && now.getMonth() + 1 > 9) ? 'past' : 'normal'
+          if (!a || a.dn !== '예시고객 자문' || a.tag !== null || a.due !== '9월' || !a.cls.includes(sepTone) || a.time) fail('F 예시: 2026-09_예시고객-자문 ' + JSON.stringify(a))
+          await mcp('tools/call', { name: 'bot_start', arguments: { rel: '2. Projects/2026-10_해커톤-제안' } }); await wait(600)
+          const h = await rowOf('2026-10_해커톤-제안'); if (!h || h.dn !== '해커톤 제안' || h.tag !== null || h.due !== '10월') fail('F 예시: 2026-10_해커톤-제안 ' + JSON.stringify(h))
+          const r0 = await rowOf('제품_Rondo'); if (!r0 || r0.dn !== '제품_Rondo' || r0.due !== null || !r0.time) fail('F 규칙 밖: 제품_Rondo 는 그대로 + 활동 시각 ' + JSON.stringify(r0))
+          // D-2(강조) · 어제(지남 흐림) · 아주 긴 제목(잘림에도 칩이 남는다)
+          const d2 = new Date(now); d2.setDate(d2.getDate() + 2); const y1 = new Date(now); y1.setDate(y1.getDate() - 1)
+          const soonRel = `2. Projects/${ymd(d2)}_컨설팅-마감임박`, pastRel = `2. Projects/${ymd(y1)}_행사-지난-행사-아주-긴-이름-말줄임-검사용-폴더-이름-끝까지`
+          for (const rel of [soonRel, pastRel]) { mkdirSync(join(root, rel), { recursive: true }); await mcp('tools/call', { name: 'bot_start', arguments: { rel } }) }
+          await wait(900)
+          const so = await rowOf(soonRel.split('/')[1]); if (!so || so.dn !== '마감임박' || so.tag !== '컨설팅' || !/D-2$/.test(so.due ?? '') || !so.cls.includes('soon')) fail('F D-3 강조: ' + JSON.stringify(so))
+          const pa = await rowOf(pastRel.split('/')[1]); if (!pa || !/지남$/.test(pa.due ?? '') || !pa.cls.includes('past') || !pa.cut || pa.dueIn !== true) fail('F 지남·잘림: 제목이 잘려도 칩이 남아야 한다 ' + JSON.stringify(pa))
+          // display_name: — 봇 폴더 CLAUDE.md frontmatter 로 제목만 덮는다 · 날짜 칩은 그대로 · 파일이 바뀌면 레일도 바뀐다
+          const cm = join(root, soonRel, 'CLAUDE.md'); const body = existsSync(cm) ? readFileSync(cm, 'utf8') : ''
+          writeFileSync(cm, `---\ndisplay_name: 덮은 이름\n---\n${body}`)
+          let ov = null; for (let i = 0; i < 30 && !(ov && ov.dn === '덮은 이름'); i++) { await wait(150); ov = await rowOf(soonRel.split('/')[1]) }
+          if (!ov || ov.dn !== '덮은 이름' || !/D-2$/.test(ov.due ?? '')) fail('F display_name: ' + JSON.stringify(ov))
+          const bl = JSON.parse((await mcp('tools/call', { name: 'bots_list', arguments: {} })).result.content[0].text); const me = bl.find((b) => b.rel === soonRel)
+          if (!me || me.displayName !== '덮은 이름' || me.name !== soonRel.split('/')[1]) fail('F bots_list displayName: ' + JSON.stringify(me))
+          // 시안 「1안」 과 나란히 — 스크린샷으로 남긴다
+          await pg.$eval('.sb-list', (e) => e.scrollTo(0, 0)); await (await pg.$('.sb-list')).screenshot({ path: 'test/tmp/rail-f.png' })
+          const mp = await pg.context().browser().newPage(); await mp.setViewportSize({ width: 1400, height: 900 }); await mp.goto('file://' + join(process.cwd(), 'test/tmp/rail-name-mock.html')); await wait(300)
+          const cols = await mp.$$('.col'); if (cols[1]) await cols[1].screenshot({ path: 'test/tmp/rail-mock-1.png' }); await mp.close()
+          const cp = await pg.context().browser().newPage(); await cp.setViewportSize({ width: 900, height: 700 })
+          const b64 = (f) => 'data:image/png;base64,' + readFileSync(join(process.cwd(), f)).toString('base64')   // about:blank 은 file:// 을 못 읽는다
+          await cp.setContent(`<body style="margin:0;background:#111;display:flex;gap:24px;padding:20px;font:12px -apple-system,sans-serif;color:#aaa"><div><div>Folder Bot 레일 (F 구현)</div><img src="${b64('test/tmp/rail-f.png')}" style="max-width:400px"></div><div><div>시안 · 1안</div><img src="${b64('test/tmp/rail-mock-1.png')}" style="max-width:420px"></div></body>`); await wait(400)
+          await cp.screenshot({ path: 'test/tmp/rail-compare.png' }); await cp.close()
+          for (const rel of [soonRel, pastRel, '2. Projects/2026-10_해커톤-제안']) await mcp('tools/call', { name: 'bot_stop', arguments: { bot: rel } })
+          await wait(400)
+          ok('레일 이름 파생 — 예시 3 · D-2 강조 · 지남 흐림 · 잘려도 칩 · display_name · bots_list.displayName · 시안 비교 test/tmp/rail-compare.png')
+        }
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
         await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)
         await pg.mouse.move(700, 300); await wait(200); if (await pg.$('.hcard')) fail('ui hover card stuck')
@@ -2421,7 +2462,7 @@ try {
         if (Math.abs(stuck.rootH - stuck.ih) > 2 || stuck.ih - stuck.compBottom > 24) fail('phone: stale visual viewport left a bottom gap ' + JSON.stringify(stuck))
         await pg.evaluate(() => window.__kb(0)); await wait(200)
         await pg.click('.chat-hdr .rb'); await wait(300); if (!(await pg.$('.mhome .mcards')) || (await pg.$$eval('.mrow', (r) => r.length)) < 3) fail('phone: home cards/rows'); await pg.screenshot({ path: 'test/tmp/phone-home.png' })
-        if (!(await pg.$('.mrow .l1 b .mid .mt'))) fail('phone: home row names should use middle ellipsis')
+        if (!(await pg.$('.mrow .l1 .bname .dn'))) fail('phone: home row names should use the derived display name')
         /**
          * 🔴 **폰 홈 폴더 행 쓸기** (2026-09-18 Dave: «모바일 화면에서 todo 처럼 슬라이딩으로 기본값 고정해서 만들어줘»)
          *    데스크톱 레일 우클릭의 세 가지(맨 위에 고정 · 지우기(연결 해지) · 은퇴)를 폰에서는 쓸어서 한다.
