@@ -54,7 +54,7 @@ try {
   if (st.candidates.filter((c) => c.harness).length !== 3) fail('harness count')
   // SSE
   const frames = []
-  const sse = fetch(base + '/api/events').then(async (r) => { const rd = r.body.getReader(); const dec = new TextDecoder(); let buf = ''; for (;;) { const { value, done } = await rd.read(); if (done) break; buf += dec.decode(value, { stream: true }); let i; while ((i = buf.indexOf('\n\n')) >= 0) { const c = buf.slice(0, i); buf = buf.slice(i + 2); for (const l of c.split('\n')) if (l.startsWith('data: ')) frames.push(JSON.parse(l.slice(6))) } } }).catch(() => {})
+  const sse = fetch(base + '/api/events').then(async (r) => { const rd = r.body.getReader(); const dec = new TextDecoder(); let buf = ''; for (;;) { const { value, done } = await rd.read(); if (done) break; buf += dec.decode(value, { stream: true }); let i; while ((i = buf.indexOf('\n\n')) >= 0) { const c = buf.slice(0, i); buf = buf.slice(i + 2); for (const l of c.split('\n')) if (l.startsWith('data: ')) { const f = JSON.parse(l.slice(6)); if (f.ev === 'files') f._out = existsSync(join(root, '3. Area/제품_Rondo/stub-output.md')); frames.push(f) } } } }).catch(() => {})
   await wait(300)
   // 폴더에서 시작
   const bot = await api('/bots/start', { rel: '3. Area/제품_Rondo' }); ok(`bot started ${bot.name} ${bot.color}`)
@@ -144,6 +144,7 @@ try {
   chat = await api(`/sessions/${s1.sessionId}/chat`)
   if (chat.info.cliSessionId !== idBefore || chat.info.model !== 'claude-sonnet-5' || !chat.info.alive) fail('settings resume: ' + JSON.stringify(chat.info)); ok('session settings → hibernate → resume with new model')
   // 승인 흐름
+  const fr0 = frames.length
   await api(`/sessions/${s1.sessionId}/send`, { text: '승인이 필요한 일 해 줘' })
   await wait(700)
   chat = await api(`/sessions/${s1.sessionId}/chat`)
@@ -156,6 +157,20 @@ try {
   if (chat.info.state !== 'done') fail(`after allow state ${chat.info.state}`)
   if (!chat.items.some((i) => i.kind === 'files' && i.paths.some((p) => p.endsWith('stub-output.md')))) fail('files chip missing'); ok('allow → Write → files chip → done')
   if (!existsSync(join(root, '3. Area/제품_Rondo/stub-output.md'))) fail('stub output file')
+  /**
+   * 🔴 **«파일 바뀜» 은 파일이 디스크에 있은 뒤에 알린다** (2026-09-18 Dave: «원격환경에서 생성된 파일이 폴더에
+   *    바로 반영이 안 되는 문제»). 종전엔 Write 도구를 *부르는* 줄에서 알려서 화면이 아직 없는 파일을 읽고 끝났다.
+   */
+  { const fs_ = frames.slice(fr0).filter((f) => f.ev === 'files' && f.botId === bot.id)
+    if (!fs_.length) fail('files frame: none after the Write turn')
+    if (!fs_.every((f) => f._out)) fail('🔴 files frame arrived before the file existed on disk ' + JSON.stringify(fs_.map((f) => f._out)))
+    ok('files frame only after the file exists on disk') }
+  // 🔴 **호스트가 폴더를 본다** — Bash·Codex·Dropbox·Finder 가 만든 파일도 트리에 온다(세션을 거치지 않은 쓰기)
+  { const n0 = frames.length
+    writeFileSync(join(root, '3. Area/제품_Rondo/watch-me.md'), '# 밖에서 만든 파일\n')
+    let seen = false; for (let i = 0; i < 40 && !seen; i++) { await wait(100); seen = frames.slice(n0).some((f) => f.ev === 'files' && f.botId === bot.id) }
+    if (!seen) fail('🔴 folder watch: a file written outside the session never produced a files frame')
+    ok('folder watch → files frame for a file written outside the session') }
   /**
    * 🔴 **모드를 턴 중간에 바꾸면 그 자리에서 먹는다** (2026-09-18 Dave: «중간에 권한을 바꿨는데 그 이후에도
    *    계속 실행하기 전에 물어보네»). 모드는 스폰 인자라 워커는 옛 모드로 묻는다 — 호스트가 대신 답하고

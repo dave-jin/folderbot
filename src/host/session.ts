@@ -189,6 +189,8 @@ export interface SessionRec {
   turnStartedAt?: number
   ctx?: { used: number; window: number }
   restartPending?: boolean
+  /** 이 턴에 파일을 썼나 — 턴 끝에 «파일 바뀜» 을 한 번 더 알리는 안전망용 */
+  wroteThisTurn?: boolean
   /** 모델 거절로 한 번 다시 보냈나 — 두 번은 안 한다 */
   modelRetried?: boolean
   /** CLI init 이 알려준 슬래시 명령 이름들 */
@@ -554,7 +556,10 @@ export class SessionManager extends EventEmitter {
         const tp = touchedPath(name, input); if (tp) { touched.push(tp); this.captureBefore(r, tp, name) }
         else if (name === 'Read' && typeof input.file_path === 'string') this.seenOf(r).set(input.file_path, this.diskText(input.file_path))
       }
-      if (touched.length) { this.push(r, { id: itemId('f'), t: Date.now(), kind: 'files', paths: touched }); this.emit('files', r.botId) }
+      // ⚠ 칩만 만든다 — «파일 바뀜»(files 프레임)은 여기서 쏘지 않는다. 이 줄은 도구를 *부르는* 줄이라 파일은
+      //    아직 없다(권한 확인 → 실행이 뒤따른다). 신호는 tool_result 가 성공으로 돌아왔을 때(아래) 나간다.
+      //    2026-09-18 실측: 여기서 쏘면 화면이 빈 폴더를 읽고 끝나 트리가 낡은 채로 남았다.
+      if (touched.length) this.push(r, { id: itemId('f'), t: Date.now(), kind: 'files', paths: touched })
       this.setState(r, { kind: 'stream_activity' })
       return
     }
@@ -568,7 +573,7 @@ export class SessionManager extends EventEmitter {
         if (it && it.kind === 'tool') {
           it.result = resText; it.isError = !!b.is_error; this.push(r, it, true)
           // 고친 뒤의 디스크가 다음 턴의 «전» 이다
-          const tp = touchedPath(it.name, it.input ?? {}); if (tp && !b.is_error) this.seenOf(r).set(tp, this.diskText(tp))
+          const tp = touchedPath(it.name, it.input ?? {}); if (tp && !b.is_error) { this.seenOf(r).set(tp, this.diskText(tp)); r.wroteThisTurn = true; this.emit('files', r.botId) }
         }
         else if (it && it.kind === 'subagent') { if (it.bg || /^Async agent launched/i.test(resText)) { it.bg = true; this.push(r, it, true) } else { it.status = b.is_error ? 'error' : 'done'; it.result = resText; this.push(r, it, true) } }
       }
@@ -583,6 +588,8 @@ export class SessionManager extends EventEmitter {
       const ctx = contextOf(line, r.ctx, r.model); if (ctx) r.ctx = ctx
       this.setActivity(r, '', true)
       this.setState(r, { kind: 'result_received', isError: !!line.is_error })
+      // 안전망 — 이 턴에 파일을 썼으면 턴이 끝날 때 한 번 더 알린다(중간 신호를 놓친 화면도 여기서 따라잡는다)
+      if (r.wroteThisTurn) { r.wroteThisTurn = false; this.emit('files', r.botId) }
       if (r.restartPending) { const w = this.workers.get(r.id); if (!w || !w.pending.size) { r.restartPending = false; if (w) { w.kill(); this.workers.delete(r.id) } } }
       this.persist(r); this.emit('sessions', r.botId)
     }

@@ -50,10 +50,14 @@ rl.on('line', (raw) => {
     const ruleNote = Array.isArray(rules) && rules.length ? ` · 규칙 ${JSON.stringify(rules.flatMap((u) => (u.rules ?? []).map((r) => r.ruleContent ?? r.toolName)))}` : ''
     const { text } = pendingReq; pendingReq = null
     say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'stub-t2', name: 'Write', input: { file_path: join(process.cwd(), 'stub-output.md'), content: 'x' } }] } })
-    if (allow) { try { writeFileSync(join(process.cwd(), 'stub-output.md'), `# 스텁 산출물\n\n${text}\n`) } catch {} }
-    say({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'stub-t2', content: allow ? 'ok' : 'denied', is_error: !allow }] } })
-    say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: allow ? `스텁이 처리했습니다: ${text.slice(0, 60)}${ruleNote}` : '거부돼서 멈췄어요.' }], stop_reason: 'end_turn' } })
-    say({ type: 'result', subtype: 'success', duration_ms: 321, total_cost_usd: 0.001 })
+    // 🔴 실 CLI 는 tool_use 줄을 내보낸 **뒤에** 파일을 쓴다(권한 확인 → 실행). 그 틈을 그대로 둔다 —
+    //    호스트가 «파일 바뀜» 을 너무 일찍 알리면 화면이 빈 폴더를 읽고 끝나던 사고(2026-09-18)를 재려고.
+    setTimeout(() => {
+      if (allow) { try { writeFileSync(join(process.cwd(), 'stub-output.md'), `# 스텁 산출물\n\n${text}\n`) } catch {} }
+      say({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'stub-t2', content: allow ? 'ok' : 'denied', is_error: !allow }] } })
+      say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: allow ? `스텁이 처리했습니다: ${text.slice(0, 60)}${ruleNote}` : '거부돼서 멈췄어요.' }], stop_reason: 'end_turn' } })
+      say({ type: 'result', subtype: 'success', duration_ms: 321, total_cost_usd: 0.001 })
+    }, 150)
     return
   }
   if (msg.type !== 'user') return
