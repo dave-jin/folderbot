@@ -2,7 +2,7 @@
 // 원리: Dropbox·iCloud 는 폴더 구조를 그대로 옮기므로 **이 기기의 볼트 루트 + 볼트 기준 상대 경로** 가 같은 파일이다.
 // 🔴 판정에 필요한 것은 전부 여기서 «재고», 화면은 결과만 그린다. electron 은 안 부른다(유닛테스트가 그대로 돈다).
 'use strict'
-const { existsSync, statSync, readdirSync, realpathSync, openSync, readSync, closeSync, mkdirSync, writeFileSync, watch } = require('node:fs')
+const { existsSync, statSync, readdirSync, realpathSync, openSync, readSync, closeSync, mkdirSync, writeFileSync, watch, writeSync, renameSync, unlinkSync, rmSync } = require('node:fs')
 const { createHash } = require('node:crypto')
 const { join, dirname, basename } = require('node:path')
 const { homedir } = require('node:os')
@@ -73,4 +73,35 @@ async function download(url, headers, dest) {
 /** iCloud «클라우드에만» 파일 내려받기 — 맥의 brctl. 없으면 조용히 실패(기다림이 판정한다) */
 function icloudDownload(path) { return new Promise((res) => { if (process.platform !== 'darwin') return res(false); execFile('/usr/bin/brctl', ['download', path], (e) => res(!e)) }) }
 
-module.exports = { tails, syncRoots, rank, detect, countFiles, headHash, stat, waitFor, cachePath, download, icloudDownload, placeholderName }
+/**
+ * M-4 · 진행을 알리며 받기 — 조각마다 `onProgress({done,total})`, `signal` 로 취소하면 **부분 파일을 지운다**(반쯤 받은 파일이 캐시에 남으면 «같음» 대조가 속는다).
+ * `.part` 로 받다가 다 받으면 제자리로 옮긴다 — 어느 순간 죽어도 목적지에 반쪽이 없다.
+ */
+async function downloadStream(url, headers, dest, onProgress, signal) {
+  const r = await fetch(url, { headers, signal }); if (!r.ok) throw new Error(`받기 실패 ${r.status}`)
+  const total = Number(r.headers.get('content-length') || 0)
+  mkdirSync(dirname(dest), { recursive: true }); const part = dest + '.part'
+  const fh = openSync(part, 'w'); let done = 0
+  try {
+    const reader = r.body.getReader()
+    for (;;) { const { value, done: end } = await reader.read(); if (end) break; writeSync(fh, value); done += value.length; if (onProgress) onProgress({ done, total }) }
+    closeSync(fh); renameSync(part, dest); return dest
+  } catch (e) { try { closeSync(fh) } catch {} try { unlinkSync(part) } catch {} throw e }
+}
+/** 캐시 목록 — 지우기 판정(evict)의 입력 */
+function cacheEntries(dir) {
+  const out = []
+  const walk = (d) => { let names = []; try { names = readdirSync(d, { withFileTypes: true }) } catch { return } for (const e of names) { const p = join(d, e.name); if (e.isDirectory()) walk(p); else { try { const st = statSync(p); out.push({ path: p, size: st.size, atime: Math.max(st.atimeMs || 0, st.mtimeMs || 0) }) } catch {} } } }
+  walk(dir); return out
+}
+/** 상한을 넘으면 오래 안 쓴 것부터 — core/cache.evictPlan 과 같은 규칙(셸은 TS 를 못 부르므로 여기 한 번 더, 유닛이 둘을 같이 잰다) */
+function evictPlan(entries, limit) {
+  let total = entries.reduce((a, e) => a + e.size, 0); if (total <= limit) return []
+  const out = []; for (const e of [...entries].sort((a, b) => a.atime - b.atime)) { if (total <= limit) break; out.push(e.path); total -= e.size }
+  return out
+}
+function cacheEvict(dir, limit) { const plan = evictPlan(cacheEntries(dir), limit); for (const p of plan) { try { unlinkSync(p) } catch {} } return plan.length }
+function cacheInfo(dir) { const e = cacheEntries(dir); return { files: e.length, bytes: e.reduce((a, x) => a + x.size, 0) } }
+function cacheClear(dir) { try { rmSync(dir, { recursive: true, force: true }) } catch {} return cacheInfo(dir) }
+
+module.exports = { tails, syncRoots, rank, detect, countFiles, headHash, stat, waitFor, cachePath, download, downloadStream, icloudDownload, placeholderName, cacheEntries, evictPlan, cacheEvict, cacheInfo, cacheClear }

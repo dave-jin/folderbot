@@ -63,3 +63,36 @@ describe('stat · headHash · placeholder · waitFor · cachePath', () => {
     } finally { rmSync(d, { recursive: true, force: true }) }
   })
 })
+
+import { createServer } from 'node:http'
+import { readFileSync as rfs, mkdtempSync as mkd, writeFileSync as wfs, mkdirSync as mkdS, existsSync as ex, utimesSync as ut } from 'node:fs'
+import { join as j } from 'node:path'
+import { tmpdir as td } from 'node:os'
+const lf2 = createRequire(import.meta.url)('../../desktop/localfs.js') as { downloadStream: (u: string, h: Record<string, string>, d: string, p: (x: { done: number; total: number }) => void, s?: AbortSignal) => Promise<string>; cacheEntries: (d: string) => { path: string; size: number; atime: number }[]; evictPlan: (e: { path: string; size: number; atime: number }[], l: number) => string[]; cacheEvict: (d: string, l: number) => number; cacheInfo: (d: string) => { files: number; bytes: number }; cacheClear: (d: string) => { files: number; bytes: number } }
+import { evictPlan as coreEvict } from '../../src/core/cache'
+
+describe('localfs · 받기 진행 · 캐시 (M-4)', () => {
+  it('조각마다 진행을 알리고 .part 로 받다가 제자리로 · 취소하면 부분 파일이 없다', async () => {
+    const body = Buffer.alloc(200_000, 7)
+    const srv = createServer((_q, r) => { r.writeHead(200, { 'content-length': String(body.length) }); let i = 0; const t = setInterval(() => { r.write(body.subarray(i, i + 50_000)); i += 50_000; if (i >= body.length) { clearInterval(t); r.end() } }, 15) })
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', () => r()))
+    const port = (srv.address() as { port: number }).port; const dir = mkd(j(td(), 'fb-dl-'))
+    const seen: number[] = []
+    const dest = await lf2.downloadStream(`http://127.0.0.1:${port}/a`, {}, j(dir, 'x', 'a.bin'), (p) => seen.push(p.done))
+    expect(rfs(dest).length).toBe(body.length); expect(seen[seen.length - 1]).toBe(body.length); expect(seen.length).toBeGreaterThan(1); expect(ex(dest + '.part')).toBe(false)
+    const ac = new AbortController(); setTimeout(() => ac.abort(), 20)
+    await expect(lf2.downloadStream(`http://127.0.0.1:${port}/b`, {}, j(dir, 'b.bin'), () => {}, ac.signal)).rejects.toThrow()
+    expect(ex(j(dir, 'b.bin'))).toBe(false); expect(ex(j(dir, 'b.bin.part'))).toBe(false)
+    srv.close()
+  })
+  it('상한을 넘으면 오래 안 쓴 것부터 — 셸의 evict 와 core 의 evictPlan 이 같은 답', () => {
+    const dir = mkd(j(td(), 'fb-cache-')); mkdS(j(dir, 'h'), { recursive: true })
+    const mk = (n: string, size: number, age: number) => { const p = j(dir, 'h', n); wfs(p, Buffer.alloc(size)); const t = (Date.now() - age * 1000) / 1000; ut(p, t, t) }
+    mk('old', 600, 300); mk('mid', 500, 200); mk('new', 400, 100)
+    const e = lf2.cacheEntries(dir); expect(e.length).toBe(3)
+    expect(lf2.evictPlan(e, 1000).map((p) => p.split('/').pop())).toEqual(['old'])
+    expect(coreEvict(e, 1000).map((p) => p.split('/').pop())).toEqual(['old'])
+    expect(lf2.cacheEvict(dir, 1000)).toBe(1); expect(lf2.cacheInfo(dir)).toEqual({ files: 2, bytes: 900 })
+    expect(lf2.cacheClear(dir)).toEqual({ files: 0, bytes: 0 })
+  })
+})

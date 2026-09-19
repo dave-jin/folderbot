@@ -21,6 +21,15 @@ export interface LocalBridge {
   settings: () => Promise<LocalSettings>; set: (p: Partial<LocalSettings>) => Promise<LocalSettings>; detect: (hostRoot: string) => Promise<LocalCand[]>
   stat: (p: string) => Promise<LocalStat & { mtime?: number }>; open: (p: string) => Promise<string>; reveal: (p: string) => Promise<string>
   wait: (p: string, want: HostStat, ms: number) => Promise<boolean>; download: (url: string, hostName: string, rel: string) => Promise<string>; icloud: (p: string) => Promise<boolean>; pick: () => Promise<string>
+  // M · 복사 · 진행 있는 받기 · 캐시 (옛 셸에는 없다 — 전부 선택)
+  copyImage?: (a: { url?: string; path?: string }) => Promise<boolean>
+  copyFiles?: (paths: string[]) => Promise<boolean>
+  fetch?: (id: string, url: string, hostName: string, rel: string) => Promise<string>
+  cancel?: (id: string) => Promise<boolean>
+  cachePath?: (hostName: string, rel: string) => Promise<string>
+  cacheInfo?: () => Promise<{ files: number; bytes: number; limit: number }>
+  cacheClear?: () => Promise<{ files: number; bytes: number; limit: number }>
+  onProgress?: (cb: (p: { id: string; done: number; total: number }) => void) => () => void
 }
 export const localBridge = (): LocalBridge | undefined => (window as unknown as { folderbotDesktop?: { local?: LocalBridge } }).folderbotDesktop?.local
 

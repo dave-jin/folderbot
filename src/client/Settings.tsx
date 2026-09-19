@@ -7,6 +7,7 @@ import { FolderBot, Icon, Mid } from './FolderBot'
 import { Mark } from './Brand'
 import { ICON_LABEL, ICON_PX, useIconSize, useTheme, type IconSize, type Theme } from './theme'
 import { ACT_ICON, ACT_LABEL, SWIPE_DEFAULT, useSwipeCfg, type SwipeAct, type SwipeSlot } from './swipe'
+import { CacheRow } from './fileCopy'
 import { fmtTime, useStore } from './store'
 import { LocalOpenPicker, localBridge, useLocalSettings } from './localOpen'
 import { EFFORTS, MODES, modelsFor, moreModelsFor, setFoundModels } from './consts'
@@ -140,6 +141,7 @@ export const INDEX: { sec: SecId; t: string; d: string }[] = [
   { sec: 'devices', t: '새 기기 연결', d: '페어링 코드 폰 맥북' },
   { sec: 'devices', t: '이 기기에서 파일 열기', d: 'Finder 열기 동기화 볼트 Dropbox iCloud 호스트에서 받기 원격' },
   { sec: 'devices', t: '동기화 볼트 위치', d: 'Dropbox iCloud 폴더 찾기 경로 원격' },
+  { sec: 'devices', t: '받은 사본 캐시', d: '호스트에서 받아 연 파일·복사한 파일의 사본 · 상한 2GB · 비우기' },
   { sec: 'devices', t: '이 기기 로그아웃', d: '연결 끊기 보안' },
   { sec: 'claude', t: 'Claude 로그인 상태', d: '키체인 인증 상태 다시 확인' },
   { sec: 'claude', t: '쓰는 인증', d: '키체인 장기 토큰 커넥터' },
@@ -306,6 +308,9 @@ function LocalOpenRows() {
     </Row>
     <Row t="동기화 볼트 위치" d={cfg?.vaultLocal ? cfg.vaultLocal : '아직 안 정했어요 — 찾기를 누르면 Dropbox·iCloud 에서 같은 볼트를 찾아요.'} at="dev">
       <LocalOpenPicker root={s.root} compact />
+    </Row>
+    <Row t="받은 사본 캐시" d="호스트에서 받아 연 파일·복사한 파일의 사본. 상한(2GB)을 넘으면 오래 안 쓴 것부터 지워요." at="dev">
+      <CacheRow />
     </Row>
   </>
 }

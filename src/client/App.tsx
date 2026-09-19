@@ -17,6 +17,7 @@ import { InlineInput, type InlineInputHandle } from './InlineInput'
 import { norm, scoreName } from '../core/search'
 import { fmtTime, useStore } from './store'
 import { ACT_ICON, FOLDER_SWIPE, navOf, type SwipeAct } from './swipe'
+import { CopyProgressHost } from './fileCopy'
 import { SwipeRow } from './SwipeRow'
 import { dueChip } from '../core/botName'
 import { LocalOpenHost, openOnThisDevice } from './localOpen'
@@ -682,6 +683,7 @@ function Main() {
     <DiffHost />
     <AgentPickHost />
     {toast ? <div className="toast">{toast}</div> : null}
+    <CopyProgressHost />
   </div>
 }
 

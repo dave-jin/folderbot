@@ -1,5 +1,6 @@
 // 원격 왕복 스모크 — 픽스처 볼트 + 스텁 CLI 로 호스트를 띄우고 API·SSE·MCP·화면을 검사한다
-import { spawn } from 'node:child_process'
+import { deflateSync as zlibDeflate } from 'node:zlib'
+import { execSync, spawn } from 'node:child_process'
 import { createServer } from 'node:net'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -45,6 +46,16 @@ const api = async (p, body, method) => { const r = await fetch(base + '/api' + p
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 const fail = (m) => { console.error('✗', m); console.error(hostLog); host.kill(); process.exit(1) }
 const ok = (m) => console.log('✓', m)
+
+/** 진짜 PNG 하나 (M-1 뷰어 검사용) — 라이브러리 없이 zlib 로. 상자보다 큰 그림이어야 «커서 기준» 이 보인다 */
+function bigPng(w, h) {
+  const raw = Buffer.alloc((w * 3 + 1) * h); for (let y = 0; y < h; y++) { raw[y * (w * 3 + 1)] = 0; for (let x = 0; x < w; x++) { const o = y * (w * 3 + 1) + 1 + x * 3; raw[o] = (x * 255 / w) | 0; raw[o + 1] = (y * 255 / h) | 0; raw[o + 2] = ((x ^ y) & 32) ? 200 : 60 } }
+  const crcTable = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crcTable[n] = c >>> 0 }
+  const crc = (b) => { let c = 0xffffffff; for (const x of b) c = crcTable[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0 }
+  const chunk = (t, d) => { const len = Buffer.alloc(4); len.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(t), d]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([len, td, c]) }
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlibDeflate(raw)), chunk('IEND', Buffer.alloc(0))])
+}
 try {
   for (let i = 0; i < 40; i++) { try { await fetch(base + '/api/health'); break } catch { await wait(250) } }
   const st = await api('/state')
@@ -707,6 +718,112 @@ try {
           await pg.screenshot({ path: 'test/tmp/k-1236.png' })
           await closeDoc(); await fetch(base + `/api/sessions/${sidK}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(600)
           ok('K 채팅 렌더 — ![[그림]]→img(호스트 raw) · [[노트]]→문서 창 · 그림 탭→문서 창 · 없는 그림 「찾을 수 없음」 · 코드 안 칩 없음 · 통째 칩 하나')
+        }
+        /**
+         * 🔴 **M · 이미지 확대·복사 · 파일 복사 → 붙여넣기** (2026-09-19). 뷰어 수학은 유닛(core/zoom), 여기서는 이벤트 → 배율·기준점·터치·키.
+         *    복사는 가짜 셸 브리지로 «어느 길로 무엇을 넘겼나» 를 잰다 — 호스트(경로 그대로) · 원격(캐시 받기 + 진행 + 취소 + 캐시 적중) · 폰(공유 시트 · 폴더 zip).
+         */
+        {
+          const hashBefore = await pg.evaluate(() => location.hash)
+          const fdir = join(root, '3. Area/제품_Rondo/files'); mkdirSync(join(fdir, 'many'), { recursive: true }); for (let i = 0; i < 60; i++) writeFileSync(join(fdir, 'many', `f${i}.txt`), 'x')
+          writeFileSync(join(fdir, '큰그림.png'), bigPng(1600, 1200)); await wait(400)
+          const closeDoc = async (p) => { for (let i = 0; i < 3 && (await p.$('.docwrap')); i++) { await p.keyboard.press('Meta+Shift+D'); await wait(300) } }
+          // ── M-1 뷰어 (호스트 화면) ──
+          const rowName = (x) => (x.querySelector('.n')?.textContent ?? x.textContent ?? '').trim()
+          const clickRow = async (p, name) => { const hit = await p.evaluate((n) => { const b = [...document.querySelectorAll('.panel .trow')].find((x) => (x.querySelector('.n')?.textContent ?? x.textContent ?? '').trim() === n); if (b) b.click(); return !!b }, name); await wait(500); return hit }
+          await closeDoc(pg); if (!(await pg.$('.panel .trow:has-text("그림.png")'))) await clickRow(pg, 'files')
+          if (!(await clickRow(pg, '큰그림.png'))) fail('M-1: 트리에 큰그림.png 가 없다'); await wait(600)
+          await pg.waitForSelector('.docwrap .imgv img', { timeout: 5000 })
+          const pct = async () => Number(((await pg.textContent('.docwrap .zbar .pct')) ?? '0').replace('%', ''))
+          const p0 = await pct()
+          await pg.keyboard.press('Meta+='); await wait(120); const p1 = await pct(); if (!(p1 > p0)) fail(`M-1: ⌘+ 로 커지지 않았다 ${p0} → ${p1}`)
+          await pg.keyboard.press('Meta+-'); await wait(120); const p2 = await pct(); if (!(p2 < p1)) fail('M-1: ⌘− 로 작아지지 않았다')
+          await pg.keyboard.press('Meta+0'); await wait(120); if ((await pct()) !== 100) fail('M-1: ⌘0 은 원본 100%')
+          await pg.keyboard.press('Meta+9'); await wait(120); if ((await pct()) !== p0) fail('M-1: ⌘9 는 맞춤')
+          // 트랙패드 핀치 = ctrl+휠 · 기준점은 커서 — 커서 아래 그림 점이 그대로다
+          const anchorTest = await pg.evaluate(() => { const box = document.querySelector('.docwrap .imgv'); const im = box.querySelector('img'); const r = box.getBoundingClientRect(); const px = r.width / 2 - 60, py = r.height / 2 - 40; /* 그림 위의 점이어야 한다 — 빈 곳은 가운데 맞춤이 이긴다 */ const at = () => { const m = new DOMMatrixReadOnly(getComputedStyle(im).transform); return { s: m.a, x: m.e, y: m.f } }; const b = at(); const ub = (px - b.x) / b.s, vb = (py - b.y) / b.s; box.dispatchEvent(new WheelEvent('wheel', { deltaY: -120, ctrlKey: true, clientX: r.left + px, clientY: r.top + py, bubbles: true, cancelable: true })); return new Promise((res) => setTimeout(() => { const a = at(); res({ before: b.s, after: a.s, dx: Math.abs(a.x + ub * a.s - px), dy: Math.abs(a.y + vb * a.s - py) }) }, 120)) })
+          if (!(anchorTest.after > anchorTest.before) || anchorTest.dx > 1 || anchorTest.dy > 1) fail('M-1: ctrl+휠 확대의 기준점이 커서가 아니다 ' + JSON.stringify(anchorTest))
+          if (!(await pg.$('.docwrap .imgv[data-consume-x]'))) fail('M-1: 확대 상태면 data-consume-x 가 있어야 한다(H 서랍 양보)')
+          // 터치 핀치 — 두 손가락 벌리기 → 커짐 · 더블탭 → 맞춤으로 돌아옴
+          await pg.keyboard.press('Meta+9'); await wait(120)
+          const pinch = await pg.evaluate(() => { const box = document.querySelector('.docwrap .imgv'); const r = box.getBoundingClientRect(); const ev = (t, id, x, y) => box.dispatchEvent(new PointerEvent(t, { pointerId: id, pointerType: 'touch', clientX: r.left + x, clientY: r.top + y, bubbles: true, isPrimary: id === 1 })); const pct = () => document.querySelector('.docwrap .zbar .pct').textContent; const a = pct(); ev('pointerdown', 1, 100, 100); ev('pointerdown', 2, 140, 100); ev('pointermove', 1, 60, 100); ev('pointermove', 2, 180, 100); return new Promise((res) => setTimeout(() => { const b = pct(); ev('pointerup', 1, 60, 100); ev('pointerup', 2, 180, 100); setTimeout(() => { ev('pointerdown', 1, 120, 100); ev('pointerup', 1, 120, 100); ev('pointerdown', 1, 121, 101); ev('pointerup', 1, 121, 101); setTimeout(() => res({ a, b, c: pct(), consume: !!document.querySelector('.docwrap .imgv[data-consume-x]') }), 150) }, 30) }, 100)) })
+          if (!(parseInt(pinch.b) > parseInt(pinch.a)) || pinch.c !== pinch.a || pinch.consume) fail('M-1: 터치 핀치·더블탭 ' + JSON.stringify(pinch))
+          if (!(await pg.$('.docwrap .zbar .cp'))) fail('M-2: 뷰어에 [복사] 가 없다')
+          await pg.screenshot({ path: 'test/tmp/m1-zoom.png' })
+          await closeDoc(pg); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(400)
+          // ── 가짜 셸 브리지 페이지 둘: 호스트(main) · 원격(x-fb-as) ──
+          const mkBridge = async (remote) => {
+            const p = await br.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
+            await p.addInitScript((remote) => {
+              localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark'); localStorage.removeItem('fb:docopen')
+              const L = { settings: { openMode: 'download', vaultLocal: '' }, calls: [], stat: null, prog: null, cancelled: '', slow: false }; window.__local = L
+              window.folderbotDesktop = { version: 'qa', perms: { list: async () => [], open: async () => ({ ok: true }), ack: async () => [], reset: async () => [], test: async () => ({ ok: true }), relaunch: () => {}, onChange: () => () => {} },
+                local: { settings: async () => ({ ...L.settings }), set: async (q) => { Object.assign(L.settings, q); return { ...L.settings } }, detect: async () => [], stat: async (q) => (L.stat ? L.stat(q) : { exists: false }), open: async () => '', reveal: async () => '', wait: async () => true, download: async (u, h, rel) => '/cache/' + rel, icloud: async () => true, pick: async () => '',
+                  copyImage: async (a) => { L.calls.push(['copyImage', a]); return true }, copyFiles: async (ps) => { L.calls.push(['copyFiles', ps]); return true },
+                  fetch: async (id, url, host, rel) => { L.calls.push(['fetch', id, url, host, rel]); const total = 4000; for (let d = 0; d <= total; d += 1000) { if (L.cancelled === id) { const e = new Error('aborted'); e.name = 'AbortError'; throw e } if (L.prog) L.prog({ id, done: d, total }); await new Promise((r) => setTimeout(r, L.slow ? 500 : 60)) } return '/cache/' + rel },
+                  cancel: async (id) => { L.calls.push(['cancel', id]); L.cancelled = id; return true }, cachePath: async (h, rel) => '/cache/' + rel, cacheInfo: async () => ({ files: 3, bytes: 12345678, limit: 2147483648 }), cacheClear: async () => { L.calls.push(['cacheClear']); return { files: 0, bytes: 0, limit: 2147483648 } }, onProgress: (cb) => { L.prog = cb; return () => { L.prog = null } } } }
+              if (remote) { const of = window.fetch.bind(window); window.fetch = (u, o = {}) => { const h = new Headers(o.headers || {}); h.set('x-fb-as', 'macbook'); return of(u, { ...o, headers: h }) } }
+            }, remote)
+            await p.goto(base + `/#bot=${bot.id}`); await p.waitForSelector('.panel .trow', { timeout: 15000 }); await wait(600)
+            if (await p.$('.perm-gate')) { await p.click('.perm-gate button.btn.on:has-text("계속")').catch(() => {}); await wait(400) }
+            return p
+          }
+          const calls = (p) => p.evaluate(() => window.__local.calls)
+          const ctxOn = async (p, name, label) => { const hit = await p.evaluate((n) => { const b = [...document.querySelectorAll('.panel .trow')].find((x) => (x.querySelector('.n')?.textContent ?? x.textContent ?? '').trim() === n); if (b) b.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 700, clientY: 300 })); return !!b }, name); if (!hit) fail(`M-3: 트리에 ${name} 이 없다`); await wait(250); const btn = await p.$(`.menu button:has-text("${label}")`); if (!btn) fail(`M-3: 메뉴에 «${label}» 이 없다`); await btn.click(); await wait(300) }
+          const expandFiles = async (p) => { if (!(await p.$('.panel .trow:has-text("설명서.pdf")'))) await clickRow(p, 'files') }
+          // 호스트 맥 앱 — 경로 그대로 · 뷰어 [복사] 는 파일 경로로 nativeImage
+          const hp = await mkBridge(false); await expandFiles(hp)
+          await ctxOn(hp, '설명서.pdf', '파일 복사')
+          let c = await calls(hp); if (!c.some((x) => x[0] === 'copyFiles' && x[1][0] === `${bot.abs}/files/설명서.pdf`)) fail('M-3 호스트: 파일 경로 그대로 copyFiles 여야 한다 ' + JSON.stringify(c))
+          await clickRow(hp, '그림.png'); await hp.waitForSelector('.docwrap .zbar .cp', { timeout: 5000 }); await hp.click('.docwrap .zbar .cp'); await wait(300)
+          c = await calls(hp); if (!c.some((x) => x[0] === 'copyImage' && x[1].path === `${bot.abs}/files/그림.png` && /raw\?rel=/.test(x[1].url))) fail('M-2 호스트: copyImage 에 파일 경로 + raw url ' + JSON.stringify(c.filter((x) => x[0] === 'copyImage')))
+          // ⌘C — 트리 줄에 초점이 있으면 파일 복사, ⌥⌘C 는 경로 복사
+          await hp.focus('.panel .trow:has-text("설명서.pdf")'); await hp.keyboard.press('Control+C'); await wait(300)
+          c = await calls(hp); if (c.filter((x) => x[0] === 'copyFiles').length < 2) fail('M-3: 트리에서 ⌘C 가 파일 복사여야 한다 ' + JSON.stringify(c))
+          await hp.close()
+          // 원격 맥 앱 — 캐시로 받기(진행 띠: 용량·속도·남은·취소) → 사본 경로로 copyFiles → 같은 사본이면 즉시 → 취소하면 부분 없음 → 폴더 50개 초과는 확인창
+          const rp2 = await mkBridge(true); await expandFiles(rp2)
+          await rp2.evaluate(() => { window.__local.slow = true }); await ctxOn(rp2, '설명서.pdf', '파일 복사')
+          await rp2.waitForSelector('.cprog', { timeout: 3000 }); await wait(700)
+          const ptxt = (await rp2.textContent('.cprog')) ?? ''; if (!/KB|B \//.test(ptxt) || !/\/s/.test(ptxt) || !/취소/.test(ptxt)) fail('M-4: 진행 띠에 용량·속도·[취소] 가 있어야 한다 · ' + ptxt)
+          await rp2.screenshot({ path: 'test/tmp/m4-progress.png' })
+          await rp2.evaluate(() => { window.__local.slow = false }); await rp2.waitForSelector('.cprog', { state: 'detached', timeout: 8000 })
+          c = await calls(rp2); const fe = c.find((x) => x[0] === 'fetch'); if (!fe || !/raw\?rel=/.test(fe[2]) || fe[3] !== 'macbook' && !fe[3] || !/설명서\.pdf$/.test(fe[4])) fail('M-3 원격: fetch(url, host, rel) ' + JSON.stringify(fe))
+          if (!c.some((x) => x[0] === 'copyFiles' && /^\/cache\//.test(x[1][0]))) fail('M-3 원격: 사본 경로로 copyFiles ' + JSON.stringify(c))
+          // 캐시 적중 — 호스트 manifest 와 같은 size·head 를 돌려주는 가짜 stat → fetch 없이 즉시
+          const man = await api(`/bots/${bot.id}/manifest?rel=${encodeURIComponent('files/설명서.pdf')}`); if (man.dir || man.files.length !== 1) fail('M manifest: ' + JSON.stringify(man))
+          await rp2.evaluate((f) => { window.__local.stat = () => ({ exists: true, size: f.size, head: f.head }); window.__local.calls = [] }, man.files[0])
+          await ctxOn(rp2, '설명서.pdf', '파일 복사'); await wait(400)
+          c = await calls(rp2); if (c.some((x) => x[0] === 'fetch') || !c.some((x) => x[0] === 'copyFiles')) fail('M-3 캐시 적중: fetch 없이 copyFiles 여야 한다 ' + JSON.stringify(c))
+          // 취소
+          await rp2.evaluate(() => { window.__local.stat = null; window.__local.slow = true; window.__local.calls = [] }); await ctxOn(rp2, '그림.png', '파일 복사')
+          await rp2.waitForSelector('.cprog button', { timeout: 3000 }); await rp2.click('.cprog button'); await rp2.waitForSelector('.cprog', { state: 'detached', timeout: 8000 })
+          c = await calls(rp2); if (!c.some((x) => x[0] === 'cancel') || c.some((x) => x[0] === 'copyFiles')) fail('M-4 취소: cancel 뒤 copyFiles 가 없어야 한다 ' + JSON.stringify(c))
+          if (!/취소했어요/.test((await rp2.textContent('.toast').catch(() => '')) ?? '')) fail('M-4 취소: 토스트')
+          // 폴더 60개 → 확인창 → 취소하면 아무것도 안 받는다
+          await rp2.evaluate(() => { window.__local.slow = false; window.__local.calls = [] }); await ctxOn(rp2, 'many', '폴더 복사')
+          await rp2.waitForSelector('.modal.conf', { timeout: 3000 }); const ct = (await rp2.textContent('.modal.conf')) ?? ''; if (!/60개/.test(ct)) fail('M-3 폴더: 확인창에 개수 · ' + ct)
+          await rp2.click('.modal.conf button:has-text("취소")'); await wait(300); c = await calls(rp2); if (c.some((x) => x[0] === 'fetch')) fail('M-3 폴더: 취소했는데 받기 시작')
+          // 설정 › 기기 — 캐시 크기·상한·비우기
+          await rp2.keyboard.press('Meta+,'); await rp2.waitForSelector('.setw', { timeout: 5000 }); await rp2.click('.snav .nv:has-text("기기")'); await wait(400)
+          const crow = (await rp2.textContent('.setw .crow').catch(() => '')) ?? ''; if (!/12\.3MB/.test(crow) || !/2\.1GB/.test(crow)) fail('M 캐시: 크기·상한 표시 · ' + crow)
+          await rp2.click('.setw .crow button'); await wait(300); if (!(await calls(rp2)).some((x) => x[0] === 'cacheClear')) fail('M 캐시: 비우기가 안 불렸다')
+          await rp2.close()
+          // 폰 — 공유 시트 (파일 그대로 · 폴더는 zip)
+          const ph = await br.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+          await ph.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark'); window.__shared = []; navigator.share = async (d) => { window.__shared.push((d.files || []).map((f) => [f.name, f.size, f.type])) }; navigator.canShare = () => true; const of = window.fetch.bind(window); window.fetch = (u, o = {}) => { const h = new Headers(o.headers || {}); h.set('x-fb-as', 'iphone'); return of(u, { ...o, headers: h }) } })
+          await ph.goto(base + `/#bot=${bot.id}`); await ph.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(500)
+          await ph.click('.col.chat .hdr button[title="이 폴더에서"]'); await wait(600)
+          await ph.waitForSelector('.panel .trow', { timeout: 5000 }); await expandFiles(ph)
+          await ctxOn(ph, '설명서.pdf', '공유…'); await wait(800)
+          await ctxOn(ph, 'many', '공유…'); await wait(1500)
+          const shared = await ph.evaluate(() => window.__shared)
+          if (shared.length !== 2 || shared[0][0][0] !== '설명서.pdf' || !/\.zip$/.test(shared[1][0][0]) || shared[1][0][1] < 100) fail('M-3 폰: 공유 시트에 파일·zip ' + JSON.stringify(shared))
+          await ph.close()
+          // zip 끝점 — 진짜 zip 인지
+          const zr = await fetch(base + `/api/bots/${bot.id}/zip?rel=${encodeURIComponent('files/many')}`); if (zr.status !== 200 || !/zip/.test(zr.headers.get('content-type') ?? '')) fail('M zip: ' + zr.status)
+          const zbuf = Buffer.from(await zr.arrayBuffer()); writeFileSync('test/tmp/m-many.zip', zbuf); const zl = execSync('unzip -l test/tmp/m-many.zip').toString(); if (!/many\/f59\.txt/.test(zl)) fail('M zip: 안에 파일이 없다 ' + zl.slice(0, 200))
+          ok('M 이미지·파일 복사 — 뷰어(⌘+/−/0/9 · ctrl+휠 커서 기준 · 터치 핀치·더블탭) · [복사] · 호스트 경로 그대로 · 원격 캐시 받기(진행·취소·적중) · 폴더 확인창 · 폰 공유(zip) · 캐시 비우기')
         }
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
         await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)
