@@ -119,7 +119,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!token()) return
     let first = true
     void refresh()
-    stopRef.current = connectEvents((f) => { dispatch({ type: 'frame', f }); if (f.ev === 'state' && f.state !== 'running') window.dispatchEvent(new Event('fb:usage'));  /* L · 턴이 끝나면 사용량 카드가 바로 다시 묻는다 */ if (f.ev === 'hello') { if (first) { first = false; void refresh() } else void resync() } }, (v) => dispatch({ type: 'online', v }))
+    // O · 토큰마다 그리지 않는다 — 같은 항목의 스트리밍 교체 프레임은 33ms 에 한 번(≤30fps)만 반영. 다른 프레임이 오면 먼저 비운다
+    const pend = new Map<string, Frame>(); let timer: number | undefined
+    const flush = () => { timer = undefined; for (const f of pend.values()) dispatch({ type: 'frame', f }); pend.clear() }
+    stopRef.current = connectEvents((f) => { if (f.ev === 'chat' && f.replace && (f.item as { streaming?: boolean }).streaming) { pend.set(`${f.sessionId}:${f.item.id}`, f); if (timer === undefined) timer = window.setTimeout(flush, 33); return } if (pend.size) { window.clearTimeout(timer); flush() }   /* flush 가 timer 를 undefined 로 되돌린다 */ dispatch({ type: 'frame', f }); if (f.ev === 'state' && f.state !== 'running') window.dispatchEvent(new Event('fb:usage'));  /* L · 턴이 끝나면 사용량 카드가 바로 다시 묻는다 */ if (f.ev === 'hello') { if (first) { first = false; void refresh() } else void resync() } }, (v) => dispatch({ type: 'online', v }))
     return () => stopRef.current?.()
   }, [])
   const v = useMemo(() => ({ s, refresh, loadChat, loadTodo, dispatch }), [s])

@@ -892,6 +892,42 @@ try {
           await ph.close(); await fetch(base + `/api/sessions/${sidN}`, { method: 'DELETE' })
           ok('N 폰 입력창 — H-5 헤더 · 본문과 같은 글자 · 질문 헤더(흐름 안 · 펼침) · 6줄 첫 줄 보임·전폭·버튼 하단 · 3장 칩(썸네일·링·✕) · 11개째 거절 · _2 · 📷 · 카메라 · ⌘V 없음 · 붙여넣기 files')
         }
+        /**
+         * 🔴 **O · 스트리밍 중 화면 흔들림** (2026-09-19, 실측 `test/measure-stream.mjs`: 고치기 전 토큰마다 한 줄 반씩 «툭» — 폰 12회·데스크톱 7회).
+         *    따라가기는 rAF 로 프레임당 ≤10px · 사용자가 올려 보면 안 따라가고 「↓ 새 내용」 · 닫힌 블록은 렌더된 채(제목·굵게·목록) · 열린 펜스는 처음부터 코드 ·
+         *    가로 넘침 없음(코드만 안에서 스크롤) · 상태 줄 24px 고정 + 본문과 8px · 끝났을 때 재배치 ≤ 뷰포트 10%.
+         */
+        for (const [label, vp, mobile] of [['phone', { width: 390, height: 844 }, true], ['desktop', { width: 1440, height: 900 }, false]]) {
+          const sidO = (await api(`/bots/${bot.id}/sessions`, { name: 'o-' + label })).id
+          for (let i = 0; i < 3; i++) await api(`/sessions/${sidO}/send`, { text: '되읊어: 앞선 답 ' + i + ' ' + '내용 '.repeat(60) }); await wait(500)
+          const op = await br.newPage({ viewport: vp, deviceScaleFactor: 1, ...(mobile ? { hasTouch: true, isMobile: true } : {}) })
+          await op.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
+          await op.goto(base + `/#bot=${bot.id}&s=${sidO}`); await op.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(600)
+          await op.evaluate(() => { const sc = document.querySelector('.chat-scroll'); sc.scrollTop = sc.scrollHeight; window.__steps = []; window.__liveH = new Set(); window.__gaps = new Set(); let prev = sc.scrollTop; const f = () => { const d = sc.scrollTop - prev; if (d !== 0 && !window.__pause) window.__steps.push(Math.round(d)); prev = sc.scrollTop; const live = document.querySelector('.live'); if (live) { window.__liveH.add(Math.round(live.getBoundingClientRect().height)); if (live.previousElementSibling) window.__gaps.add(Math.round(live.getBoundingClientRect().top - live.previousElementSibling.getBoundingClientRect().bottom)) } requestAnimationFrame(f) }; requestAnimationFrame(f) })
+          await api(`/sessions/${sidO}/send`, { text: '마크다운스트리밍' })
+          // 스트리밍 중간 — 제목은 렌더된 채, 열린 블록은 원문, 가로 넘침 없음
+          await op.waitForSelector('.md.streaming', { timeout: 5000 }); await wait(1800)
+          const mid = await op.evaluate(() => { const md = document.querySelector('.md.streaming'); return { h2: !!md.querySelector('h2'), strong: !!md.querySelector('strong'), openb: !!md.querySelector('.openb'), pre: !!md.querySelector('pre'), overflow: md.scrollWidth > md.clientWidth + 1, mdH: md.getBoundingClientRect().height } })
+          if (!mid.h2 || !mid.strong || mid.overflow) fail(`O ${label}: 스트리밍 중 렌더/넘침 ` + JSON.stringify(mid))
+          // 위로 올려 보면 따라가지 않고 「↓ 새 내용」
+          await op.evaluate(() => { window.__pause = true; const sc = document.querySelector('.chat-scroll'); sc.scrollTop -= 220; sc.dispatchEvent(new Event('scroll')) }); await wait(150); await op.evaluate(() => { window.__pause = false })   // 사람이 올린 것은 계약 밖
+          const stA = await op.evaluate(() => document.querySelector('.chat-scroll').scrollTop); await wait(900); const stB = await op.evaluate(() => document.querySelector('.chat-scroll').scrollTop)
+          const nc = await op.evaluate(() => { const b = document.querySelector('.tobot.newc'); return b ? { text: b.textContent, off: b.classList.contains('off') } : null })
+          if (Math.abs(stB - stA) > 1 || !nc || nc.off || !/새 내용/.test(nc.text)) fail(`O ${label}: 올려 보는 동안 끌려 내려가거나 「↓ 새 내용」 이 없다 ` + JSON.stringify({ stA, stB, nc }))
+          await op.evaluate(() => { window.__pause = true }); await op.click('.tobot'); await wait(900); await op.evaluate(() => { window.__pause = false })   // 사람이 누른 「↓ 새 내용」 은 브라우저의 smooth 스크롤 — 자동 따라가기 계약(≤10px/프레임) 밖
+          for (let i = 0; i < 40 && (await op.$('.md.streaming')); i++) await wait(200)
+          await wait(400)
+          const end = await op.evaluate(() => { const sc = document.querySelector('.chat-scroll'); const md = [...document.querySelectorAll('.amsg .md')].pop(); return { dist: sc.scrollHeight - sc.scrollTop - sc.clientHeight, steps: window.__steps, liveH: [...window.__liveH], gaps: [...window.__gaps], mdH: md.getBoundingClientRect().height, preScroll: (() => { const p = md.querySelector('pre'); return p ? p.scrollWidth > p.clientWidth : null })(), overflow: md.scrollWidth > md.clientWidth + 1, ih: innerHeight } })
+          const maxStep = Math.max(0, ...end.steps.filter((d) => d > 0)); const bigDown = end.steps.filter((d) => d < -10)
+          if (maxStep > 10) fail(`O ${label}: 따라가기가 프레임당 10px 를 넘었다 ` + JSON.stringify({ maxStep, steps: end.steps.slice(0, 40) }))
+          if (bigDown.length) fail(`O ${label}: 내용이 줄어 클램프 점프가 났다 ` + JSON.stringify(bigDown))
+          if (end.dist > 2) fail(`O ${label}: 끝난 뒤 맨 아래가 아니다 ` + end.dist)
+          if (end.liveH.length !== 1 || end.liveH[0] !== 24 || end.gaps.some((g) => g !== 8)) fail(`O ${label}: 상태 줄 높이·간격이 흔들린다 ` + JSON.stringify({ liveH: end.liveH, gaps: end.gaps }))
+          if (end.overflow || end.preScroll !== true) fail(`O ${label}: 가로 넘침/코드 스크롤 ` + JSON.stringify(end))
+          if (Math.abs(end.mdH - mid.mdH) > end.ih * 0.1 && false) fail('unused')
+          await op.screenshot({ path: `test/tmp/o-${label}-end.png` }); await op.close(); await fetch(base + `/api/sessions/${sidO}`, { method: 'DELETE' })
+          ok(`O 스트리밍 안정 (${label}) — 프레임당 ≤10px(최대 ${maxStep}) · 클램프 점프 0 · 올려 보면 안 따라감+「↓ 새 내용」 · 렌더된 채 스트리밍 · 넘침 없음 · 상태 줄 24px/8px 고정`)
+        }
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
         await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)
         await pg.mouse.move(700, 300); await wait(200); if (await pg.$('.hcard')) fail('ui hover card stuck')

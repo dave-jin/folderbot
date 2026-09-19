@@ -6,7 +6,7 @@ import { hitRange, rank } from '../core/search'
 import { candidatePaths } from '../core/paths'
 import { diffLines, diffStat, foldSame } from '../core/diff'
 import { extractMath } from '../core/math'
-import { renderMarkdown } from './render'
+import { renderMarkdown, renderStreaming } from './render'
 import { wikiNames } from '../core/wikilinks'
 import { token } from './api'
 import { loadKatex, renderMath, renderMermaid } from './mathmaid'
@@ -99,7 +99,7 @@ export function Md({ text, streaming, botId, onPath, onDir }: { text: string; st
    * ⚠ KaTeX 가 아직 안 왔으면 원문 `$…$` 이 그대로 보인다 — 빈칸보다 낫다. 오면 다시 그린다.
    */
   const [katex, setKatex] = useState<Parameters<typeof renderMath>[0] | null>(null)
-  const html = useMemo(() => renderMarkdown(text, katex ? renderMath(katex) : null), [text, katex])
+  const html = useMemo(() => (streaming ? renderStreaming(text) : renderMarkdown(text, katex ? renderMath(katex) : null)), [text, katex, streaming])
   useEffect(() => { if (!katex && extractMath(text).chunks.length) void loadKatex().then(setKatex).catch(() => {}) }, [text, katex])
   const ref = useRef<HTMLDivElement>(null)
   /**
