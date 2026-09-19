@@ -923,7 +923,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
    *    ② 사라질 때도 **DOM 에서 빼지 않고** 투명도만 낮춘다 — 다시 뜰 때 제자리에 그대로 있다.
    */
   const [showJump, setShowJump] = useState(false)
-  useEffect(() => { const el = scRef.current; if (!el || typeof ResizeObserver === 'undefined') return; const ro = new ResizeObserver(() => { if (atBottomRef.current) el.scrollTop = el.scrollHeight }); ro.observe(el); return () => ro.disconnect() }, [])
+  useEffect(() => { const el = scRef.current; if (!el || typeof ResizeObserver === 'undefined') return; const ro = new ResizeObserver(() => { if (atBottomRef.current) followBottom() }); ro.observe(el); return () => ro.disconnect() }, []) // eslint-disable-line react-hooks/exhaustive-deps
   /**
    * 폰에서 키보드가 올라오면 **대화를 맨 아래로 붙인다** — 읽으려고 위로 올려 둔 채 입력칸을 누르면
    * 종전에는 그 자리에 그대로 멈춰 있어 «무엇에 답하는지» 가 안 보였다(Dave: «타이핑 위치 안 잡혀»).
@@ -952,11 +952,44 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   // 컴포저 높이 → 본문 아래 여백 (유리 뒤로 글이 지나가되 가려지진 않게)
   // I-2 · 컴포저가 자라면(줄이 늘면) 본문 아래 여백(--footh)이 커진다 — 맨 아래를 보고 있었으면 **그 자리에서 따라 붙는다.**
   //   위의 스크롤 컨테이너 ResizeObserver 는 «상자 크기» 만 보므로 패딩만 커지는 이 경우를 못 본다(실측: 마지막 메시지가 52px 가려짐).
-  useEffect(() => { const el = footRef.current, col = colRef.current; if (!el || !col) return; const ro = new ResizeObserver(() => { col.style.setProperty('--footh', `${el.offsetHeight}px`); const sc = scRef.current; if (sc && atBottomRef.current) requestAnimationFrame(() => { sc.scrollTop = sc.scrollHeight }) }); ro.observe(el); return () => ro.disconnect() }, [collapsed])
+  useEffect(() => { const el = footRef.current, col = colRef.current; if (!el || !col) return; const ro = new ResizeObserver(() => { col.style.setProperty('--footh', `${el.offsetHeight}px`); if (atBottomRef.current) followBottom() }); ro.observe(el); return () => ro.disconnect() }, [collapsed]) // eslint-disable-line react-hooks/exhaustive-deps
   // 스크롤 위치 → ↓ 버튼(맨 아래가 아닐 때) · 직전 질문 고정(원래 메시지가 헤더 위로 사라졌을 때)
-  const measure = () => { const el = scRef.current; if (!el) return; const d = el.scrollHeight - el.scrollTop - el.clientHeight; setAtBottom(d < 80); setShowJump((was) => (was ? d > 40 : d > 240)); const u = lastUserRef.current; setPinned(!!u && u.getBoundingClientRect().bottom < el.getBoundingClientRect().top + (phone ? 60 : 44)) }
-  useEffect(() => { const el = scRef.current; if (!el) return; measure(); el.addEventListener('scroll', measure, { passive: true }); return () => el.removeEventListener('scroll', measure) }, [collapsed, cur?.id, phone])
-  useEffect(() => { const el = scRef.current; if (atBottom && el) el.scrollTop = el.scrollHeight; measure() }, [items.length, last && (last.kind === 'assistant' || last.kind === 'thinking') ? last.text.length : 0, pending.length, cur?.activity, lastUser?.id])
+  /**
+   * O · **따라가기는 부드럽게, 맨 아래일 때만** (2026-09-19 실측: 토큰마다 `scrollTop = scrollHeight` 로 한 줄 반씩 «툭» 붙었다 — 폰 12회·데스크톱 7회).
+   *    rAF 로 프레임당 최대 10px 씩 옮긴다(120ms 안에 한 줄). 사용자가 60px 이상 올려 봤으면 따라가지 않고 「↓ 새 내용」 만 켠다 — 다시 맨 아래로 오면 재개.
+   *    ⚠ 자동 따라가기가 만든 스크롤은 «사용자가 올렸다» 로 세지 않는다(`autoScrollRef`).
+   */
+  const followRaf = useRef(0); const autoScrollRef = useRef(false); const streamingRef = useRef(false); streamingRef.current = streaming
+  // O · 상태 줄이 사라지는 순간의 «툭» — 사라진 높이만큼 아래 여백(--settle)을 남겨 scrollHeight 가 줄지 않게 한다(클램프 점프 없음). 다음 내용이 자라면 0 으로
+  const liveWas = useRef(false)
+  useEffect(() => {
+    const on = !!(cur && (running || state === 'awaiting_input')); const col = colRef.current
+    if (liveWas.current && !on && col && atBottomRef.current) col.style.setProperty('--settle', '32px')
+    if (on && col) col.style.setProperty('--settle', '0px')
+    liveWas.current = on
+  }, [cur?.id, running, state])
+  const followBottom = () => {
+    const el = scRef.current; if (!el || followRaf.current) return
+    const step = () => {
+      followRaf.current = 0; const el2 = scRef.current; if (!el2 || !atBottomRef.current) return
+      const target = el2.scrollHeight - el2.clientHeight; const d = target - el2.scrollTop
+      if (d <= 1) return
+      // 몇 줄이 아니라 화면 하나가 넘게 벌어졌으면(처음 열기 · 한꺼번에 온 메시지) 기어가지 않고 한 번에 — 10px/프레임은 «토큰이 자라는 한 줄» 을 위한 값이다
+      if (d > 160 && !streamingRef.current) { autoScrollRef.current = true; el2.scrollTop = target; return }
+      const before = el2.scrollTop; autoScrollRef.current = true; el2.scrollTop = before + Math.min(10, d)
+      // ⚠ 더 못 내려가면(소수점 끝) 멈춘다 — 안 그러면 rAF 가 매 프레임 scrollTop 을 건드려 열린 메뉴(Float 는 scroll 에 닫힌다)가 바로 닫힌다(스모크 E 실측)
+      if (Math.abs(el2.scrollTop - before) < 0.25) { autoScrollRef.current = false; return }
+      followRaf.current = requestAnimationFrame(step)
+    }
+    followRaf.current = requestAnimationFrame(step)
+  }
+  useEffect(() => () => cancelAnimationFrame(followRaf.current), [])
+  const measure = (keepBottom = false) => { const el = scRef.current; if (!el) return; const d = el.scrollHeight - el.scrollTop - el.clientHeight; if (autoScrollRef.current || keepBottom) { autoScrollRef.current = false; setAtBottom(true) } else setAtBottom(d < 60);   /* 우리가 옮긴 스크롤은 «맨 아래를 보는 중» 을 유지한다 */ setShowJump((was) => (was ? d > 40 : d > 240)); const u = lastUserRef.current; setPinned(!!u && u.getBoundingClientRect().bottom < el.getBoundingClientRect().top + (phone ? 60 : 44)) }
+  useEffect(() => { const el = scRef.current; if (!el) return; measure(); const onScroll = () => measure(); el.addEventListener('scroll', onScroll, { passive: true }); return () => el.removeEventListener('scroll', onScroll) }, [collapsed, cur?.id, phone]) // eslint-disable-line react-hooks/exhaustive-deps
+  // ⚠ 내용이 자란 직후의 거리(d)는 «사용자가 올렸다» 가 아니다 — 따라가는 중이면 맨 아래 상태를 지킨 채 잰다(keepBottom)
+  useEffect(() => { const el = scRef.current; if (!el) return; if (atBottom) { followBottom(); measure(true) } else measure() }, [items.length, last && (last.kind === 'assistant' || last.kind === 'thinking') ? last.text.length : 0, pending.length, cur?.activity, lastUser?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  // 세션을 바꿨을 때만 **즉시** 맨 아래 — 그 밖의 모든 따라가기는 부드럽게(followBottom)
+  useEffect(() => { const el = scRef.current; if (el) { autoScrollRef.current = true; el.scrollTop = el.scrollHeight } }, [cur?.id])
   useEffect(() => { if (!pop) return; const off = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest('.cpop, .cbtn, .ring, .plusb')) setPop('') }; const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setPop(''); if (pop === 'mode' && /^[1-4]$/.test(e.key) && !(e.target as HTMLElement).matches('textarea,input')) { e.preventDefault(); void applyCfg({ permissionMode: MODES[Number(e.key) - 1].v }) } }; window.addEventListener('mousedown', off); window.addEventListener('keydown', key); return () => { window.removeEventListener('mousedown', off); window.removeEventListener('keydown', key) } }, [pop])
   /**
    * 🔴 **돌던 대화의 모델을 바꾸는 건 공짜가 아니다** (2026-09-15 Dave 지정 — Claude Code 와 같은 확인창).
@@ -1257,7 +1290,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
     {pinned && lastUser && !drill ? (phone
       ? <button className={`qhdr ${qOpen ? 'open' : ''}`} onClick={() => setQOpen((o) => !o)} title={qOpen ? '접기' : '전체 질문 보기'}>{streaming ? <span className="dot run" /> : null}<span className="tx">{lastUser.text}</span></button>
       : <button className="pinq glassb" onClick={() => lastUserRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })} title="직전 질문으로">{lastUser.text}</button>) : null}
-    <div className="chat-scroll" ref={scRef}>
+    <div className="chat-scroll" ref={scRef} data-autoscroll="1">
       <div className="chat-body">
         {!cur && !drill ? <div className="empty" style={{ flex: 1 }}><FolderBot color={bot.color} size={40} mood="idle" /><div><b>{bot.name}</b>{bot.orchestrator ? ' — 볼트 전체를 보는 관제 봇이에요. "지금 뭐 돌고 있어?", "Inbox 정리해 줘", "X 폴더에서 시작해".' : ' 봇이에요. 이 폴더의 지침·기억·자료를 들고 일해요.'}</div></div> : null}
         {drillSub ? <div className="drill-p"><div className="meta" style={{ cursor: 'default' }}>무엇을 시켰나</div><div className="tx">{drillSub.prompt || drillSub.name}</div><hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '4px 0', width: '100%' }} /></div> : null}
@@ -1265,12 +1298,13 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
           ? <ToolGroup key={r.items[0].id} items={r.items} endT={r.endT} base={bot.abs} onFile={(p) => { const rel = relOf(p); if (rel) onFile(rel) }} />
           : <Item key={r.it.id} it={r.it} bot={bot} items={items} onFile={(p) => onFile(p)} onReveal={onReveal} onDrill={(id) => setDrill(id)} state={state} say={say} isLastAssistant={r.it.id === lastAssistant} isLastUser={r.it.id === lastUser?.id} userRef={lastUserRef} onRetry={lastUser ? () => void sendText(lastUser.text) : undefined} />)}</SidCtx.Provider>
         {cur && !drill ? pending.map((p) => <PermCard key={p.requestId} p={p} sid={cur.id} />) : null}
-        <div style={{ flex: 1 }} />
+        {/* O · 본문과 상태 줄 사이는 8px 고정 — 남는 공간은 상태 줄 **뒤**로 보낸다(종전엔 스페이서가 앞에 있어 큰 빈 공간이 생겼다) */}
         {cur && (running || state === 'awaiting_input') ? <Live cur={cur} state={state} color={bot.color} /> : null}
+        <div style={{ flex: 1 }} />
         <div ref={endRef} />
       </div>
     </div>
-    <button className={`tobot rb glassb${showJump ? '' : ' off'}`} onClick={() => { const el = scRef.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }) }} title="최근으로" tabIndex={showJump ? 0 : -1} aria-hidden={!showJump}><Icon n="chevd" size={16} />{streaming ? <span className="dot run" /> : null}</button>
+    <button className={`tobot rb glassb${showJump || (streaming && !atBottom) ? '' : ' off'}${streaming && !atBottom ? ' newc' : ''}`} onClick={() => { const el = scRef.current; if (el) { setAtBottom(true); el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }) } }} title="최근으로" tabIndex={showJump ? 0 : -1} aria-hidden={!showJump && !(streaming && !atBottom)}><Icon n="chevd" size={16} />{streaming && !atBottom ? <span className="nc">새 내용</span> : streaming ? <span className="dot run" /> : null}</button>
     <div className="chat-foot" ref={footRef}>
       {/* 🔴 **대기 메시지는 고칠 수 있어야 한다** (2026-09-14 Dave: «현재 대기 메시지 수정이 안돼»).
           아직 안 보낸 말이다 — 못 고치면 지우고 처음부터 다시 쓰는 수밖에 없었다.

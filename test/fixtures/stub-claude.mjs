@@ -76,6 +76,17 @@ rl.on('line', (raw) => {
     return
   }
   // 「입력창 흔들림」 재현용 — 글자 조각을 3초 동안 40ms 마다 흘려 «답변 스트리밍 중 타이핑» 조건을 만든다
+  // O · 마크다운을 조각조각 흘리는 긴 답 — 제목·굵게·목록·펜스 코드·긴 줄. 화면 흔들림(±px 왕복·점프)을 재는 데 쓴다
+  if (/마크다운스트리밍/.test(text)) {
+    const doc = '## 증상 정리\n\n**증상**: 스트리밍 중에 화면이 흔들린다. 토큰이 도착할 때마다 무언가가 생겼다 사라진다.\n\n### N-3. 여러 장 첨부\n\n- 첫째 줄 — 아주 긴 줄입니다 ' + 'ㄱㄴㄷㄹㅁㅂㅅ'.repeat(12) + ' 끝\n- 둘째 줄 `코드조각` 과 **굵게**\n- 셋째 줄\n\n```js\nconst a = 1\nconst reallyLongLine = "' + 'x'.repeat(140) + '"\n```\n\n1. 하나\n2. 둘\n3. 셋\n\n마무리 문단입니다. 여기까지 오면 끝.\n'
+    const parts = []; for (let i = 0; i < doc.length; i += 6) parts.push(doc.slice(i, i + 6))
+    let n = 0
+    const tick = setInterval(() => {
+      if (n >= parts.length) { clearInterval(tick); say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: doc }], stop_reason: 'end_turn' } }); say({ type: 'result', subtype: 'success', duration_ms: 8000, total_cost_usd: 0.001 }); return }
+      say({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: parts[n] } } }); n++
+    }, 40)
+    return
+  }
   if (/긴스트리밍/.test(text)) {
     let n = 0; const words = '스트리밍 중에 입력창이 흔들리는지 재는 긴 답변입니다 '.split(' ')
     const tick = setInterval(() => {

@@ -122,7 +122,7 @@ b,strong { color:var(--w); font-weight:600 }
 /* 채팅 외양은 **cursor 스타일**로 되돌렸다 (2026-09-13 Dave: «이전 스타일이 더 나»).
    ⛔ 「A · 문서처럼」의 26px 리듬 · 오른쪽 정렬 · 58ch · 머리줄 · 턴 경계선은 전부 되돌렸다.
    ✅ 남긴 것은 **기계 접기(.mach)** 와 **문서 링크칩(.pchip)** 둘뿐이다 — Dave 가 콕 집어 원한 것. */
-.chat-body { display:flex; flex-direction:column; gap:16px; padding:calc(var(--hh) + 22px) 24px calc(var(--footh) + 12px); width:100%; max-width:760px; align-self:center; flex:1 }
+.chat-body { display:flex; flex-direction:column; gap:16px; padding:calc(var(--hh) + 22px) 24px calc(var(--footh) + 12px + var(--settle, 0px)); width:100%; max-width:760px; align-self:center; flex:1 }
 .pinq { position:absolute; top:calc(var(--hh) + 10px); left:50%; translate:-50% 0; width:calc(100% - 48px); max-width:712px; z-index:4; border:1px solid var(--hair); border-radius:8px; padding:8px 14px; color:var(--w); font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:0 8px 24px rgba(0,0,0,.35); cursor:pointer; animation:fadein .18s ease-out }
 /* ⛔ 등장 애니메이션(4px 떠오르기)을 쓰지 않는다 — 글이 흘러드는 동안 다시 돌면 «다가가면 도망가는» 단추가 된다 */
 /* 🔴 가운데 맞춤은 `translate`(독립 속성)로 — `transform` 으로 두면 `.rb:active { transform:scale(.96) }` 이 **덮어써**
@@ -508,7 +508,7 @@ b,strong { color:var(--w); font-weight:600 }
   /* 위는 페이드 없이 불투명 — 글이 헤더 밑으로 비쳐 보이지 않는다 (Dave 2026-09-13: «상단도 fade 안되게, 채팅만 fade»). 페이드는 아래(컴포저 위)에만 */
   .chat-hdr.hdr { height:auto; padding:calc(var(--sat) + 10px) 16px 10px; border-bottom:0; background:var(--bg); backdrop-filter:none; -webkit-backdrop-filter:none; gap:10px }
   .bpill { display:inline-flex; align-items:center; gap:8px; height:44px; padding:0 14px 0 8px; border-radius:22px; border:1px solid var(--hair); max-width:100%; min-width:0 } .bpill b { font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 }
-  .chat-body { padding:calc(var(--sat) + 72px) 18px calc(var(--footh) + 10px); gap:14px; font-size:16px; line-height:1.6 }
+  .chat-body { padding:calc(var(--sat) + 72px) 18px calc(var(--footh) + 10px + var(--settle, 0px)); gap:14px; font-size:16px; line-height:1.6 }
   .pinq { top:calc(var(--sat) + 62px); width:calc(100% - 36px); border-radius:14px; padding:10px 14px; font-size:15px }
   .tobot { width:40px; height:40px }
   .chat-foot { padding:0 0 calc(var(--sab) + 4px) }
@@ -1067,3 +1067,13 @@ b,strong { color:var(--w); font-weight:600 }
 .qhdr.open .tx { white-space:pre-wrap; overflow:auto; max-height:calc(1.45em * 3); word-break:break-word }
 /* N-2 · 폰은 헤더·질문 헤더가 흐름 안에 있으므로 스크롤 영역도 그 아래 남는 자리를 채운다(절대 위치로 헤더 밑에 깔리지 않는다) */
 .app.phone .chat-scroll { position:relative; inset:auto; flex:1; min-height:0 }
+
+/* ── O · 스트리밍 안정화 — 높이가 변하는 것은 자리를 미리 잡는다 ── */
+.md { overflow-wrap:anywhere } .md pre { overflow-x:auto; max-width:100% } .md table { display:block; max-width:100%; overflow-x:auto }
+.md .openb { white-space:pre-wrap; overflow-wrap:anywhere; margin:0 } .md .openb:empty { min-height:0 }
+.md .scaret { display:inline-block; width:2px; height:1em; vertical-align:text-bottom; background:var(--w); margin-left:2px; animation:caret 1s steps(1) infinite }
+.md.streaming > :last-child::after { content:none }   /* 커서는 .scaret 하나뿐 — ::after 가 목록·코드 끝에 붙어 줄 높이를 흔들던 것을 뗀다 */
+.live { height:24px; min-height:24px; margin-top:-8px; font-variant-numeric:tabular-nums } .live .el { font-variant-numeric:tabular-nums; min-width:4.5em }
+.chat-body { gap:16px } .chat-body > .live { margin-top:-8px }
+.tobot.newc { width:auto; padding:0 12px 0 10px; border-radius:16px; gap:4px; font-size:12px; color:var(--w) } .tobot .nc { white-space:nowrap }
+.chat-scroll { overflow-anchor:none }   /* O · 따라가기는 우리가 한다 — 브라우저 앵커링이 끼어들면 프레임당 10px 계약이 깨진다 */

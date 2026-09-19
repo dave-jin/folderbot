@@ -30,7 +30,8 @@ export function Float({ at, onClose, children, className = 'menu', width = 200 }
   }, [el])
   useEffect(() => {
     // ⚠ 스크롤·리사이즈에는 닫는다 — 좌표를 열 때 고정했으므로 따라갈 수 없다
-    const off = () => onClose()
+    // ⚠ 채팅의 자동 따라가기(O · data-autoscroll)가 만드는 scroll 로는 닫지 않는다 — 스트리밍 중에 연 트리 메뉴가 한 프레임 만에 사라졌다(실측)
+    const off = (e?: Event) => { const t = e?.target as Element | null; if (t && t !== (document as unknown as Element) && typeof t.closest === 'function' && t.closest('[data-autoscroll]')) return; onClose() }
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('scroll', off, true)
     window.addEventListener('resize', off)
