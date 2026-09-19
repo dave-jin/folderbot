@@ -1,3 +1,4 @@
+import { invalidateUsage } from './usage'
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { hostname } from 'node:os'
@@ -83,6 +84,8 @@ export class Host {
     })
     this.sessions.on('state', (r: SessionRec, prev: SessionState, notify: boolean) => {
       this.broadcast({ ev: 'state', sessionId: r.id, botId: r.botId, state: r.state })
+      // L · 턴이 끝나면 사용량 캐시를 비운다 — 다음 /api/usage 가 새 기록을 훑어 60초 안에 원격 패널이 바뀐다
+      if (prev === 'running' && r.state !== 'running') invalidateUsage()
       this.broadcast({ ev: 'sessions', botId: r.botId, sessions: this.sessions.list(r.botId) })
       if (!notify || r.state === 'awaiting_input') return
       const bot = this.registry.bot(r.botId)

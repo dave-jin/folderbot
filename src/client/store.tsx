@@ -119,7 +119,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!token()) return
     let first = true
     void refresh()
-    stopRef.current = connectEvents((f) => { dispatch({ type: 'frame', f }); if (f.ev === 'hello') { if (first) { first = false; void refresh() } else void resync() } }, (v) => dispatch({ type: 'online', v }))
+    stopRef.current = connectEvents((f) => { dispatch({ type: 'frame', f }); if (f.ev === 'state' && f.state !== 'running') window.dispatchEvent(new Event('fb:usage'));  /* L · 턴이 끝나면 사용량 카드가 바로 다시 묻는다 */ if (f.ev === 'hello') { if (first) { first = false; void refresh() } else void resync() } }, (v) => dispatch({ type: 'online', v }))
     return () => stopRef.current?.()
   }, [])
   const v = useMemo(() => ({ s, refresh, loadChat, loadTodo, dispatch }), [s])

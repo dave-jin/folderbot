@@ -501,7 +501,7 @@ function SessionsPane() {
     </Row>
     <Row t="예산 — 5시간 창" d="막대가 이 값을 기준으로 줄어듭니다." at="main"><input className="bud" defaultValue={st?.budget?.window ?? ''} onBlur={(e) => void setB('window', e.target.value)} /><span className="unit">달러</span></Row>
     <Row t="예산 — 하루" at="main"><input className="bud" defaultValue={st?.budget?.day ?? ''} onBlur={(e) => void setB('day', e.target.value)} /><span className="unit">달러</span></Row>
-    <Row t="예산 — 한 주" at="main"><input className="bud" defaultValue={st?.budget?.week ?? ''} onBlur={(e) => void setB('week', e.target.value)} /><span className="unit">달러</span></Row>
+    <Row t="예산 — 한 주" d="0 이면 예산 없음 — 패널에 «—» 로 보입니다." at="main"><input className="bud" defaultValue={st?.budget?.week ?? ''} onBlur={(e) => void setB('week', e.target.value)} /><span className="unit">달러</span></Row>
   </>
 }
 
