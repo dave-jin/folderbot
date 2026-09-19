@@ -16,7 +16,8 @@ import { chipParts } from '../core/chipName'
 import { InlineInput, type InlineInputHandle } from './InlineInput'
 import { norm, scoreName } from '../core/search'
 import { fmtTime, useStore } from './store'
-import { navOf } from './swipe'
+import { ACT_ICON, FOLDER_SWIPE, navOf, type SwipeAct } from './swipe'
+import { SwipeRow } from './SwipeRow'
 import { ICON_PX, useIconSize, useTheme } from './theme'
 import { UsageCard, UsageStrip, useUsage } from './Usage'
 import { PermGate, usePerms } from './Perms'
@@ -757,7 +758,20 @@ type Row = [string, { b: Bot; sum: ReturnType<typeof botSummary> }[]]
 function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say }: { rows: Row[]; bot: Bot; go: (b: string, sid?: string) => void; setModal: (m: 'picker' | 'notify' | 'settings') => void; waiting: number; unread: number; onAsk: () => void; onTodo: (botId: string) => void; say: (m: string) => void }) {
   const usage = useUsage() // 폰 홈 맨 위 — 한 줄 띠. 누르면 카드가 시트로 올라온다
   const [uSheet, setUSheet] = useState(false)
-  const { s } = useStore()
+  const { s, refresh } = useStore()
+  /** 폰 폴더 행 쓸기 — 자리는 `swipe.ts` 의 FOLDER_SWIPE 로 고정. 메뉴 시트는 레일 우클릭과 같은 세 가지 */
+  const [fsheet, setFsheet] = useState<Bot | null>(null)
+  const folderAct = async (b: Bot, a: SwipeAct) => {
+    try {
+      if (a === 'pin') { await api('/bots/pin', { body: { id: b.id, on: !b.pinned } }); say(b.pinned ? '고정을 풀었어요' : '맨 위에 고정했어요'); await refresh() }
+      else if (a === 'unlink') { await api(`/bots/${b.id}/stop`, { body: {} }); say(`${b.name} 을 레일에서 덜어냈어요 — 폴더는 그대로예요`); await refresh() }
+      else if (a === 'retire') {
+        if (!(await askConfirm({ title: `${b.name} 을 은퇴시킬까요?`, body: 'Archive 로 옮기고 레일에서 내려요. 세션 기록은 보관돼요.', ok: '은퇴' }))) return
+        const r = await api<{ to: string }>(`/bots/${b.id}/retire`, { body: {} }); say(`${r.to} 로 은퇴`); await refresh()
+      }
+      else if (a === 'menu') setFsheet(b)
+    } catch (e) { say((e as Error).message) }
+  }
   const all = rows.flatMap(([, l]) => l)
   const running = all.filter((x) => x.sum.state === 'running')
   const cands = s.candidates.filter((c) => !c.active).length
@@ -770,9 +784,18 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say }: 
       <ActionTiles go={go} setModal={setModal} onTodo={onTodo} say={say} />
       {rows.map(([sec, list]) => <div key={sec}>
         <div className="secl">{sec}</div>
-        {list.map(({ b, sum }) => <button key={b.id} className="mrow" onClick={() => go(b.id)}><span className="av"><FolderBot color={b.color} size={46} mood={sum.mood} mono /></span><span className="t"><span className="l1"><b><Mid s={b.name} /></b><time>{fmtTime(sum.t)}</time></span><span className="l2">{sum.text}</span></span></button>)}
+        {list.map(({ b, sum }) => {
+          const row = <button key={b.id} className="mrow" onClick={() => go(b.id)}><span className="av"><FolderBot color={b.color} size={46} mood={sum.mood} mono /></span><span className="t"><span className="l1"><b><Mid s={b.name} /></b><time>{fmtTime(sum.t)}</time></span><span className="l2">{sum.text}</span></span></button>
+          // 관제(오케스트레이터)는 고정·지우기·은퇴의 대상이 아니다 — 쓸리지 않는다
+          return b.orchestrator ? row : <SwipeRow key={b.id} cfg={FOLDER_SWIPE} labelFor={(a) => (a === 'pin' && b.pinned ? '고정 풀기' : undefined)} onAct={(a) => void folderAct(b, a)}>{row}</SwipeRow>
+        })}
       </div>)}
     </div>
+    {fsheet ? <><div className="backdrop" onClick={() => setFsheet(null)} /><div className="tsheet">
+      <div className="grip" />
+      <div className="ti">{fsheet.name}</div>
+      {([['pin', fsheet.pinned ? '고정 풀기' : '맨 위에 고정'], ['unlink', '지우기 (연결 해지) — 폴더는 그대로'], ['retire', '은퇴 (Archive 로)']] as [SwipeAct, string][]).map(([a, l]) => <button key={a} onClick={() => { const b = fsheet; setFsheet(null); void folderAct(b, a) }}><Icon n={ACT_ICON[a] as 'edit'} size={16} />{l}</button>)}
+    </div></> : null}
     <button className="mpill glassb" onClick={onAsk}><span className="pl"><Icon n="plus" size={20} /></span><span className="tx">폴더에 시키기…</span><Icon n="sub" size={20} color="var(--t2)" /></button>
   {uSheet && usage ? <><div className="backdrop" onClick={() => setUSheet(false)} /><div className="tsheet usheet"><div className="grip" /><UsageCard u={usage} /></div></> : null}</div>
 }

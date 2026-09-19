@@ -272,6 +272,7 @@ b,strong { color:var(--w); font-weight:600 }
 .sech .tools:has(.ib.mdb) { opacity:1 } .sech .tools .ib:not(.mdb) { opacity:0 } .sech:hover .tools .ib { opacity:1 }
 /* 폰 — 쓸어서 처리 (V16). 행은 껍데기 안에서 좌우로 움직이고, 뒤에서 색·아이콘이 무엇이 일어날지 미리 말한다 */
 .swwrap { position:relative; overflow:hidden; background:var(--bg); touch-action:pan-y }
+.mhome .swwrap .mrow { background:var(--bg) }   /* 폰 홈 폴더 행 — 쓸리는 동안 뒤의 예고색 위를 미끄러진다 */
 .swrow { position:relative; transition:transform .18s cubic-bezier(.2,.8,.2,1); background:var(--bg); will-change:transform }
 .swwrap.armed .swrow { box-shadow:0 0 22px rgba(0,0,0,.5) }
 .swhint { position:absolute; top:0; bottom:0; display:flex; align-items:center; gap:10px; padding:0 18px; pointer-events:none; color:#fff }

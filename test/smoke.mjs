@@ -2422,6 +2422,39 @@ try {
         await pg.evaluate(() => window.__kb(0)); await wait(200)
         await pg.click('.chat-hdr .rb'); await wait(300); if (!(await pg.$('.mhome .mcards')) || (await pg.$$eval('.mrow', (r) => r.length)) < 3) fail('phone: home cards/rows'); await pg.screenshot({ path: 'test/tmp/phone-home.png' })
         if (!(await pg.$('.mrow .l1 b .mid .mt'))) fail('phone: home row names should use middle ellipsis')
+        /**
+         * 🔴 **폰 홈 폴더 행 쓸기** (2026-09-18 Dave: «모바일 화면에서 todo 처럼 슬라이딩으로 기본값 고정해서 만들어줘»)
+         *    데스크톱 레일 우클릭의 세 가지(맨 위에 고정 · 지우기(연결 해지) · 은퇴)를 폰에서는 쓸어서 한다.
+         *    자리는 **고정**(설정 없음): →짧게·길게 = 고정 · ←짧게 = 메뉴 · ←길게 = 은퇴. 관제(오케스트레이터) 행은 안 쓸린다.
+         */
+        {
+          const rowSel = '.mhome .swwrap .swrow'
+          const n = (await pg.$$(rowSel)).length; if (n < 2) fail('phone home: folder rows should be swipeable (.swwrap) · ' + n)
+          if (await pg.$('.mhome .secl:has-text("관제") + .swwrap')) fail('phone home: orchestrator row must not be swipeable')
+          const sel = `${rowSel} >> nth=${n - 1}`
+          const name = await pg.$eval(sel + ' >> .l1 b', (e) => e.textContent)
+          const box = await pg.$eval(sel, (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height } }); const cy = box.y + box.h / 2
+          const swipe = async (dir, frac) => {
+            const x0 = dir > 0 ? box.x + 20 : box.x + box.w - 20
+            await pg.dispatchEvent(sel, 'pointerdown', { pointerId: 9, pointerType: 'touch', clientX: x0, clientY: cy, buttons: 1 })
+            for (const f of [0.08, 0.2, frac * 0.8, frac]) await pg.dispatchEvent(sel, 'pointermove', { pointerId: 9, pointerType: 'touch', clientX: x0 + dir * box.w * f, clientY: cy, buttons: 1 })
+            await wait(120); const hint = (await pg.textContent('.mhome .swhint').catch(() => '')) ?? ''
+            await pg.dispatchEvent(sel, 'pointerup', { pointerId: 9, pointerType: 'touch', clientX: x0 + dir * box.w * frac, clientY: cy })
+            return hint
+          }
+          await swipe(-1, 0.3); await wait(350)
+          const sheet = (await pg.textContent('.tsheet').catch(() => '')) ?? ''
+          for (const w of ['맨 위에 고정', '지우기', '은퇴']) if (!sheet.includes(w)) fail(`phone home: swipe left-short should open the menu sheet with «${w}» · ` + JSON.stringify(sheet))
+          if (await pg.$('.mhome .mrow.on, .chat-hdr')) { /* 시트가 떴다면 화면은 홈 그대로여야 한다 */ }
+          await pg.click('.backdrop'); await wait(250)
+          const h2 = await swipe(1, 0.6); if (!/고정/.test(h2)) fail('phone home: swipe right-long hint should say 고정 · ' + h2)
+          await wait(700)
+          if (!(await pg.$('.mhome'))) fail('phone home: a swipe must not open the folder (click leaked)')
+          const stP = await api('/state'); const bp = stP.bots.find((x) => x.name === name)
+          if (!bp?.pinned) fail('phone home: swipe right should pin the folder · ' + JSON.stringify({ name, pinned: bp?.pinned }))
+          await api('/bots/pin', { id: bp.id, on: false }); await wait(300)   // 되돌린다 — 뒤 검사가 순서를 믿는다
+          ok('폰 홈 폴더 행 쓸기 — ←짧게 메뉴(고정·지우기·은퇴) · →길게 고정 · 관제는 안 쓸림')
+        }
         const ov = await pg.evaluate(() => { const m = document.querySelector('.mscroll'); return { sw: m.scrollWidth, cw: m.clientWidth, dw: document.documentElement.scrollWidth, iw: innerWidth } }); if (ov.sw > ov.cw || ov.dw > ov.iw) fail('phone: horizontal overflow ' + JSON.stringify(ov))
         await pg.click('.mtop .rb'); await pg.waitForSelector('.setp', { timeout: 4000 }); await wait(300)
         {
