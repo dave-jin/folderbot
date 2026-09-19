@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { marked } from 'marked'
+import { renderMarkdown } from './render'
 
 /** ⚠ 지연 로드 — CodeMirror 와 마크다운 파서는 문서를 열 때만 받는다 (번들 계약) */
 const MdEditor = lazy(() => import('./MdEditor'))
@@ -217,7 +217,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
             {menu ? <Float at={menu} onClose={() => setMenu(null)}><div style={{ display: 'contents' }} onClick={() => setMenu(null)}><button onClick={() => onTalk(rel)}><Icon n="sub" size={13} /><span>봇에게 이 파일 말하기</span></button><button onClick={() => onAttach(rel)}><Icon n="plus" size={13} /><span>첨부로 보내기</span></button><button onClick={() => { void copySay(`${bot.abs}/${rel}`, say, '경로를 복사했어요') }}><Icon n="file" size={13} /><span>경로 복사</span></button><button onClick={openHere}><Icon n="open" size={13} /><span>{main ? '기본 앱으로 열기' : '이 기기에서 열기'}</span></button>
               {main ? null : <a className="menu-a" href={raw(rel)} download style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="doc" size={13} /><span>이 기기로 내려받기</span></a>}
               <a className="menu-a" href={raw(rel)} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="open" size={13} /><span>새 창에서 열기</span></a><hr /><button onClick={() => docs.pin(rel)}><Icon n="doc" size={13} /><span>탭 고정</span><span className="k">더블클릭</span></button>
-              {doc?.kind === 'text' ? <button onClick={() => setPrintHtml(marked.parse(draft || doc.text || '') as string)}><Icon n="file" size={13} /><span>PDF 로 저장</span></button> : null}
+              {doc?.kind === 'text' ? <button onClick={() => setPrintHtml(renderMarkdown(draft || doc.text || ''))}><Icon n="file" size={13} /><span>PDF 로 저장</span></button> : null}
               {/* 🔴 **읽기 편한 크기는 사람의 성질이다** (B9) — 문서마다 따로 두지 않고 이 기기에 남긴다.
                   ⚠ 폭은 «넓게»(문서 열을 키우는 것)와 다른 일이다 — 이건 **글줄 길이**다. */}
               <hr /><div className="mrow"><span>글자 크기</span><button className="mb" onClick={(e) => { e.stopPropagation(); setFs((v) => Math.max(11, +(v - 0.5).toFixed(1))) }}>−</button><b className="mono">{fs}</b><button className="mb" onClick={(e) => { e.stopPropagation(); setFs((v) => Math.min(22, +(v + 0.5).toFixed(1))) }}>＋</button></div>

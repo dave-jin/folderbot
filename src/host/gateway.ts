@@ -463,7 +463,9 @@ export class Gateway {
           // 파일명만(«설명서.pdf») — 봇 폴더 → 참조 폴더 → 볼트 전체 순으로 찾는다. 여럿이면 목록을 돌려주고 화면이 고르게 한다 (G)
           if (!out[c] && !c.includes('/')) {
             const found: string[] = []
-            for (const base of [bot.abs, ...(bot.repo ? [bot.repo] : []), reg.root]) { for (const f of findFiles(base, c)) if (!found.includes(f)) found.push(f); if (found.length) break }
+            // K-1 · 위키링크 `[[노트]]` 는 확장자를 안 쓴다 — 이름 그대로 없으면 `노트.md` 로도 찾는다
+            const names = extname(c) ? [c] : [c, `${c}.md`]
+            for (const base of [bot.abs, ...(bot.repo ? [bot.repo] : []), reg.root]) { for (const n of names) for (const f of findFiles(base, n)) if (!found.includes(f)) found.push(f); if (found.length) break }
             if (found.length) out[c] = { rel: relative(bot.abs, found[0]), dir: false, matches: found.map((f) => relative(bot.abs, f)) }
           }
         }

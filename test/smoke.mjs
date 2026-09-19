@@ -628,6 +628,86 @@ try {
           await closeDoc(); await fetch(base + `/api/sessions/${sidG}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(800)
           ok('PDF 칩 — pdf→뷰어 · png→img · docx→미리보기 없음+외부에서 열기 ↗ · 파일명만(찾기 · 여럿이면 고르기) · 원격은 호스트 스트리밍')
         }
+        /**
+         * 🔴 **I · 입력창 줄내림** (2026-09-19, 실측 `test/repro-enter.mjs`) — ⇧⏎ 한 번에 줄이 보인다(끝 줄바꿈의 자리표 <br>) ·
+         *    빈 칸의 ⇧⏎ 뒤 글자를 쳐도 줄이 남는다 · 조합 중 ⇧⏎ 는 확정+줄 한 번에 · 컴포저가 자라면 맨 아래를 따라간다.
+         */
+        {
+          const hashBefore = await pg.evaluate(() => location.hash)
+          const sidI = (await api(`/bots/${bot.id}/sessions`, { name: 'i-enter' })).id; await pg.evaluate((h) => { location.hash = h }, `#bot=${bot.id}&s=${sidI}`); await wait(600)
+          const cin = async () => pg.$eval('.composer .cin', (e) => ({ h: Math.round(e.getBoundingClientRect().height), v: e.dataset.value, br: e.lastChild?.nodeName === 'BR' }))
+          await pg.click('.composer .cin'); await pg.keyboard.type('abc'); const a = await cin(); await pg.keyboard.press('Shift+Enter'); await wait(80); const b = await cin()
+          if (b.v !== 'abc\n' || b.h <= a.h) fail('I-1: ⇧⏎ 한 번에 줄이 안 보인다 ' + JSON.stringify({ a, b }))
+          await pg.keyboard.type('d'); await wait(80); const c = await cin(); if (c.v !== 'abc\nd') fail('I-1: ⇧⏎ 뒤 글자를 치니 줄바꿈이 사라졌다 ' + c.v)
+          const clearCin = async () => { await pg.keyboard.press('Control+A'); await pg.keyboard.press('Backspace'); await wait(80); if ((await cin()).v !== '') fail('I: 입력창 비우기 실패 ' + JSON.stringify(await cin())) }
+          await clearCin()
+          await pg.keyboard.press('Shift+Enter'); await pg.keyboard.type('x'); await wait(80); const d = await cin(); if (d.v !== '\nx') fail('I-1: 빈 칸의 ⇧⏎ 이 사라졌다 ' + JSON.stringify(d.v))
+          await clearCin()
+          // 조합 중 ⇧⏎ (크롬 순서: keydown isComposing → 확정) — 한 번에 확정 + 줄
+          { await pg.keyboard.type('ab'); const cdp = await pg.context().newCDPSession(pg)
+            await pg.evaluate(() => document.querySelector('.composer .cin').dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' })))
+            await cdp.send('Input.imeSetComposition', { text: '하', selectionStart: 1, selectionEnd: 1 }); await pg.keyboard.press('Shift+Enter'); await wait(60)
+            await pg.evaluate(() => document.querySelector('.composer .cin').dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '하' }))); await wait(120); await cdp.detach()
+            const e = await cin(); if (e.v !== 'ab하\n' || !e.br) fail('I-1: 조합 중 ⇧⏎ 이 확정+줄 한 번이 아니다 ' + JSON.stringify(e)) }
+          await clearCin()
+          // 데스크톱 ⏎ 는 그대로 보내기
+          await pg.keyboard.type('되읊어: 보내기 확인'); await pg.keyboard.press('Enter'); await wait(900)
+          const sentI = (await api(`/sessions/${sidI}/chat`)).items.filter((i) => i.kind === 'user').map((i) => i.text); if (sentI[0] !== '되읊어: 보내기 확인') fail('I: 데스크톱 ⏎ 보내기가 바뀌었다 ' + JSON.stringify(sentI))
+          // I-2 · 폰 폭에서 줄을 5번 늘려도 마지막 메시지가 컴포저 위에 보인다
+          const ph = await br.newPage({ viewport: { width: 390, height: 700 }, hasTouch: true, isMobile: true }); await ph.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
+          for (let i = 0; i < 5; i++) await api(`/sessions/${sidI}/send`, { text: '되읊어: 메시지 ' + i + ' ' + 'x'.repeat(120) }); await wait(700)
+          await ph.goto(base + `/#bot=${bot.id}&s=${sidI}`); await ph.waitForSelector('.composer .cin'); await wait(700)
+          await ph.evaluate(() => { const sc = document.querySelector('.chat-body')?.parentElement; if (sc) sc.scrollTop = sc.scrollHeight }); await wait(200); await ph.click('.composer .cin'); await wait(300)
+          for (let i = 0; i < 5; i++) { await ph.keyboard.type('줄 ' + i); await ph.keyboard.press('Shift+Enter'); await wait(60) }
+          await wait(400)
+          const vis = await ph.evaluate(() => { const last = [...document.querySelectorAll('.chat-body > *')].pop(); const comp = document.querySelector('.composer').getBoundingClientRect(); const lb = last.getBoundingClientRect(); const sel = window.getSelection(); const r = sel.getRangeAt(0).cloneRange(); r.collapse(true); let cy = null; const rs = r.getClientRects(); if (rs.length) cy = rs[0].y; else { const sp = document.createElement('span'); sp.textContent = '\u200b'; r.insertNode(sp); cy = sp.getBoundingClientRect().y; sp.remove() } return { lastVisible: lb.bottom <= comp.top + 1, caretY: cy, lines: (document.querySelector('.composer .cin').dataset.value.match(/\n/g) || []).length } })
+          if (!vis.lastVisible || vis.lines !== 5 || vis.caretY === null || vis.caretY < 0 || vis.caretY > 700) fail('I-2: 줄을 늘렸더니 마지막 메시지나 캐럿이 안 보인다 ' + JSON.stringify(vis))
+          await ph.screenshot({ path: 'test/tmp/i2-after.png' }); await ph.close()
+          await fetch(base + `/api/sessions/${sidI}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(600)
+          ok('I 줄내림 — ⇧⏎ 한 번에 · 빈 줄 유지 · 조합 중 확정+줄 · ⏎ 보내기 불변 · 폰 줄 5번에도 마지막 메시지·캐럿 보임')
+        }
+        /**
+         * 🔴 **K · 채팅 렌더링** (2026-09-19) — `![[그림]]` 은 그림으로, `[[노트]]` 는 눌러서 문서 창으로(공유 렌더러 core/wikilinks ·
+         *    client/render), 없는 그림은 「찾을 수 없음」. 코드 안의 경로는 칩이 되지 않고, 코드 밖 긴 경로는 조각내지 않고 통째 칩 하나(스크린샷 1236).
+         */
+        {
+          const hashBefore = await pg.evaluate(() => location.hash)
+          const kdir = join(root, '3. Area/제품_Rondo'); mkdirSync(join(kdir, '첨부'), { recursive: true }); writeFileSync(join(kdir, '시안.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')); writeFileSync(join(kdir, '기획노트.md'), '# 기획\n')
+          mkdirSync(join(root, '1. Inbox/첨부'), { recursive: true }); writeFileSync(join(root, '1. Inbox/첨부/시안2.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'))
+          const sidK = (await api(`/bots/${bot.id}/sessions`, { name: 'k-md' })).id; await pg.evaluate((h) => { location.hash = h }, `#bot=${bot.id}&s=${sidK}`); await wait(600)
+          const closeDoc = async () => { for (let i = 0; i < 3 && (await pg.$('.docwrap')); i++) { await pg.keyboard.press('Meta+Shift+D'); await wait(300) } }
+          await closeDoc()
+          await api(`/sessions/${sidK}/send`, { text: '되읊어: **시안** ![[시안.png]]\n\n메모는 [[기획노트]] 를 보세요. 없는 그림 ![[없음.png]]\n\n원격에서는 `1. Inbox/첨부/시안2.png` 를 열면 돼요. 코드 속 `[[기획노트]]` 는 그대로. 예시:\n\n```\n1. Inbox/첨부/시안2.png\n```' })
+          let img = null; for (let i = 0; i < 40 && !img; i++) { await wait(250); img = await pg.$eval('.amsg .md img.wimg[src]', (e) => ({ src: e.getAttribute('src'), w: e.naturalWidth, complete: e.complete }), { strict: false }).catch(() => null) }
+          if (!img || !/raw\?rel=%EC%8B%9C%EC%95%88\.png|raw\?rel=[^&]*png/.test(img.src)) fail('K-1: ![[시안.png]] 이 그림으로 안 그려졌다 ' + JSON.stringify(img))
+          for (let i = 0; i < 20 && !(await pg.$eval('.amsg .md img.wimg[src]', (e) => e.complete && e.naturalWidth > 0).catch(() => false)); i++) await wait(150)
+          if (!(await pg.$eval('.amsg .md img.wimg[src]', (e) => e.complete && e.naturalWidth > 0))) fail('K-1: 그림이 로드되지 않았다(호스트 raw)')
+          const miss = await pg.$eval('.amsg .md .wmiss', (e) => e.textContent).catch(() => ''); if (!/찾을 수 없음 · 없음\.png/.test(miss)) fail('K-1: 없는 그림은 「찾을 수 없음」 이어야 한다 · ' + miss)
+          // [[기획노트]] → 문서 창 (확장자 없이 .md 를 찾는다)
+          await pg.click('.amsg .md .wlink[data-wiki="기획노트"]'); await wait(900)
+          if ((await pg.textContent('.docwrap .dtb .nm').catch(() => '')) !== '기획노트.md') fail('K-1: [[기획노트]] 클릭 → 문서 창에 기획노트.md 가 열려야 한다 · ' + (await pg.textContent('.docwrap .dtb').catch(() => '')))
+          // 그림 탭 → 문서 창에 크게
+          await pg.click('.amsg .md img.wimg[src]'); await wait(900)
+          if ((await pg.textContent('.docwrap .dtb .nm').catch(() => '')) !== '시안.png' || !(await pg.$('.docwrap .dbody img'))) fail('K-1: 그림 탭 → 문서 창에 시안.png')
+          // K-2 · 코드 안은 칩 없음 · 코드 밖 긴 경로는 통째 칩 하나
+          const k2 = await pg.evaluate(() => { const md = document.querySelector('.amsg .md'); return { chipInCode: md.querySelectorAll('code .pchip, pre .pchip').length, codeWiki: [...md.querySelectorAll('code')].some((c) => c.textContent === '[[기획노트]]'), preText: md.querySelector('pre')?.textContent.trim(), chips: [...md.querySelectorAll('.pchip')].map((c) => [c.textContent, c.dataset.rel]) } })
+          if (k2.chipInCode) fail('K-2: 코드 안에 칩이 생겼다 ' + JSON.stringify(k2))
+          if (!k2.codeWiki) fail('K-2: 코드 속 [[기획노트]] 가 그대로가 아니다 ' + JSON.stringify(k2))
+          if (k2.preText !== '1. Inbox/첨부/시안2.png') fail('K-2: 펜스 코드가 토막 났다 ' + JSON.stringify(k2))
+          // 코드 조각 전체가 경로 → 요소째 칩 하나(«1. Inbox/» · «첨부» 조각 칩이 없어야 한다)
+          if (!k2.chips.some((c) => c[0] === '시안2.png' && c[1] === '../../1. Inbox/첨부/시안2.png') || k2.chips.length !== 1) fail('K-2: 통째 칩 하나가 아니다 ' + JSON.stringify(k2.chips))
+          await pg.screenshot({ path: 'test/tmp/k-render.png' })
+          // 스크린샷 1236 의 메시지를 그대로 — 그림 둘은 그림으로, 코드 속 경로는 토막 없이(볼트 이름이 PARA 가 아니라 칩이 안 되고 코드 그대로 남는다)
+          writeFileSync(join(kdir, '첨부', 'folderbot-반응형-3단계-시안.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')); writeFileSync(join(kdir, '첨부', 'folderbot-레일-이름-시안.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'))
+          await closeDoc()
+          await api(`/sessions/${sidK}/send`, { text: '되읊어: **반응형 3단계 시안** (넓음 · 중간 · 좁음 · 좁음-좌 서랍 · 좁음-우 서랍)\n\n![[folderbot-반응형-3단계-시안.png]]\n\n**레일 이름 시안** (지금 · 1안 · 2안 · 3안)\n\n![[folderbot-레일-이름-시안.png]]\n\n원격에서 잘 안 보이면 Dropbox 앱에서 `PARA/folderbot-반응형-3단계-시안.png` 를 열면 돼. 프롬프트의 H 절은 HTML 경로를 가리키는데, 개발 에이전트는 메인 맥에서 도니까 그대로 두면 되고, PNG 경로(`PARA/첨부/folderbot-반응형-3단계-시안.png`)도 같이 적어 두면 더 안전해 — 원하면 H 절 「시안」 줄에 한 줄 덧붙일게.' })
+          let n1236 = 0; for (let i = 0; i < 40 && n1236 < 2; i++) { await wait(250); n1236 = await pg.$$eval('.amsg:last-of-type .md img.wimg[src]', (r) => r.length).catch(() => 0) }
+          const k1236 = await pg.evaluate(() => { const md = [...document.querySelectorAll('.amsg .md')].pop(); return { imgs: md.querySelectorAll('img.wimg[src]').length, codes: [...md.querySelectorAll('code')].map((c) => c.textContent), chipsInCode: md.querySelectorAll('code .pchip').length } })
+          if (k1236.imgs !== 2 || k1236.chipsInCode || k1236.codes.length !== 2 || !k1236.codes.every((c) => /^PARA\//.test(c))) fail('K 1236: ' + JSON.stringify(k1236))
+          await pg.screenshot({ path: 'test/tmp/k-1236.png' })
+          await closeDoc(); await fetch(base + `/api/sessions/${sidK}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(600)
+          ok('K 채팅 렌더 — ![[그림]]→img(호스트 raw) · [[노트]]→문서 창 · 그림 탭→문서 창 · 없는 그림 「찾을 수 없음」 · 코드 안 칩 없음 · 통째 칩 하나')
+        }
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
         await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)
         await pg.mouse.move(700, 300); await wait(200); if (await pg.$('.hcard')) fail('ui hover card stuck')
