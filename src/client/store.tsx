@@ -7,7 +7,7 @@ export interface StateShape {
   version: string
   root: string
   /** 마지막 «문서 창 열어 달라» 프레임(rondo_open/rondo_reveal) — n 은 같은 내용이 또 와도 효과가 돌게 하는 번호 */
-  docReq?: { botId: string; sid: string; rel: string; action: 'open' | 'reveal'; turn: number; n: number }
+  docReq?: { botId: string; sid: string; rel: string; action: 'open' | 'reveal'; turn: number; device?: string; n: number }
   rules: FolderRules | null
   rulesInstalled: boolean
   bots: Bot[]
@@ -69,7 +69,7 @@ function reducer(s: StateShape, a: Action): StateShape {
         case 'todo': return { ...s, todos: { ...s.todos, [f.botId]: f.items } }
         case 'files': return { ...s, filesTick: { ...s.filesTick, [f.botId]: Date.now() } }
         case 'inbox': return { ...s, inbox: f.count }
-        case 'doc': return { ...s, docReq: { botId: f.botId, sid: f.sid, rel: f.rel, action: f.action, turn: f.turn, n: Date.now() } }
+        case 'doc': return { ...s, docReq: { botId: f.botId, sid: f.sid, rel: f.rel, action: f.action, turn: f.turn, device: f.device, n: Date.now() } }
         default: return s
       }
     }

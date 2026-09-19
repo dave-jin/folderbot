@@ -38,11 +38,11 @@ if (argv[0] === 'exec' && argv.includes('--help')) {
  */
 const resume = argv[0] === 'exec' && argv[1] === 'resume' ? argv.slice(2).filter((a) => !a.startsWith('-') && !/^model_reasoning_effort=/.test(a))[0] ?? null : null
 const sid = resume ?? `cx-${randomUUID()}`
-const prompt = argv[argv.length - 1]
+const prompt = argv[argv.length - 1].replace(/^<folderbot-client\s+[^>]*\/>\s*/, '')   // J · 기기 블록은 떼고 본다(실제 CLI 는 그대로 읽는다)
 // ⚠ 우리가 무엇을 넘겼는지 **파일로 남긴다** — 모델·노력·샌드박스·키가 실제로 CLI 까지 가는지는
 //    이 방법으로만 잴 수 있다(가짜 CLI 는 플래그를 쓰지 않으니 화면에는 흔적이 안 남는다).
 if (process.env.FOLDERBOT_CODEX_ARGV) {
-  try { appendFileSync(process.env.FOLDERBOT_CODEX_ARGV, JSON.stringify({ argv, key: process.env.OPENAI_API_KEY ?? null }) + '\n') } catch {}
+  try { appendFileSync(process.env.FOLDERBOT_CODEX_ARGV, JSON.stringify({ argv: [...argv.slice(0, -1), prompt], key: process.env.OPENAI_API_KEY ?? null }) + '\n') } catch {}   // 프롬프트는 기기 블록을 뗀 것으로 남긴다
 }
 /**
  * 🔴 **진짜 codex 처럼 stdin 이 닫힐 때까지 기다린다** — `codex exec` 는 stdin 이 터미널이 아니면

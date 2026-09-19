@@ -1,3 +1,4 @@
+import { withClient, type ClientCtx } from '../core/clientCtx'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { EventEmitter } from 'node:events'
@@ -169,6 +170,8 @@ export type Worker = ClaudeWorker | CodexWorker
 
 /** 세션 하나의 정본 (호스트가 소유) */
 export interface SessionRec {
+  /** J · 마지막 메시지가 온 기기 — rondo_open/reveal 이 그 기기에만 간다 */
+  lastClient?: ClientCtx
   id: string
   botId: string
   name: string
@@ -595,8 +598,10 @@ export class SessionManager extends EventEmitter {
     }
   }
 
-  send(r: SessionRec, bot: Bot, text: string): void {
+  send(r: SessionRec, bot: Bot, text: string, client?: ClientCtx): void {
     this.autoTitle(r, text)
+    if (client) r.lastClient = client
+    const from = client ? { device: client.device, main: client.origin === 'host', tier: client.tier } : undefined
     this.turnAt.set(r.id, Date.now())
     /**
      * 🔴 **Codex 의 슬래시 명령은 우리가 처리한다** (2026-09-13 Dave: «codex 에서는 /clear 와 같은
@@ -624,8 +629,8 @@ export class SessionManager extends EventEmitter {
       }
     }
     const w = this.ensureWorker(r, bot)
-    this.push(r, { id: itemId('u'), t: Date.now(), kind: 'user', text })
-    w.send(text)
+    this.push(r, { id: itemId('u'), t: Date.now(), kind: 'user', text, ...(from ? { from } : {}) })
+    w.send(withClient(text, client))   // J-1 · 워커에게만 기기 블록을 앞세운다 — 채팅에는 사람의 글 그대로
     if (r.state !== 'running') r.turnStartedAt = Date.now()
     this.setActivity(r, '시작하는 중', true)
     this.setState(r, { kind: 'user_sent' })

@@ -21,7 +21,7 @@ import { CopyProgressHost } from './fileCopy'
 import { attachRoom } from '../core/attach'
 import { SwipeRow } from './SwipeRow'
 import { dueChip } from '../core/botName'
-import { LocalOpenHost, openOnThisDevice } from './localOpen'
+import { LocalOpenHost, localBridge, openOnThisDevice, useLocalSettings } from './localOpen'
 import { botRelOf } from '../core/paths'
 import { ICON_PX, useIconSize, useTheme } from './theme'
 import { UsageCard, UsageStrip, useUsage } from './Usage'
@@ -413,6 +413,8 @@ function Main() {
   // 에이전트의 rondo_open / rondo_reveal — 지금 보고 있는 봇의 것만 (J 에서 «보낸 기기» 로 좁힌다)
   useEffect(() => {
     const r = s.docReq; if (!r || !bot || r.botId !== bot.id) return
+    // J-3 · 요청이 온 기기만 연다 — 호스트(main)는 'host', 원격은 그 기기 이름. 내 것이 아니면 아무것도 안 뜬다
+    if (r.device && r.device !== (s.device.main ? 'host' : s.device.name)) return
     if (r.action === 'open') openInDocPane(r.rel, { source: 'agent', turnKey: `${r.sid}:${r.turn}` })
     else void openOnThisDevice(bot, r.rel, 'reveal', { main: s.device.main, hostName: s.hostName, phone, say })
   }, [s.docReq?.n])
@@ -1012,7 +1014,9 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
     }
     try { await api(`/sessions/${cur.id}/settings`, { body: p }); if (cur.alive && (running || state === 'awaiting_input')) say('이 턴이 끝나면 적용돼요') } catch (e) { say((e as Error).message) }
   }
-  const post = async (t: string) => { if (cur) await api(`/sessions/${cur.id}/send`, { body: { text: t } }); else { const r = await api<{ sessionId: string }>(`/bots/${bot.id}/send`, { body: { text: t, name: '메인', ...draft } }); await refreshAll(); onSession(r.sessionId) } }
+  // J-1 · 이 화면이 어떤 기기인지 — 호스트가 origin·device 를 붙이고, 화면은 종류·손가락·열 수 있나·모드를 말한다
+  const clientCtx = () => ({ tier: phone ? 'phone' : localBridge() ? 'desktop' : 'browser', touch, canOpenOnDevice: !!localBridge() && !phone, openMode: localBridge() ? (lcfgC?.openMode ?? '') : '' })
+  const post = async (t: string) => { if (cur) await api(`/sessions/${cur.id}/send`, { body: { text: t, client: clientCtx() } }); else { const r = await api<{ sessionId: string }>(`/bots/${bot.id}/send`, { body: { text: t, name: '메인', client: clientCtx(), ...draft } }); await refreshAll(); onSession(r.sessionId) } }
   // ⚠ 대기열을 내보내는 일은 **부모**가 한다 — 보고 있지 않은 세션의 것도 나가야 하기 때문(위 머리말)
   const sendText = async (raw: string) => {
     let t = raw.trim(); if ((!t && !attach.length) || busy || uploading) return
@@ -1026,7 +1030,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   }
   const send = () => sendText(text)
   /** ⏎ 가 보내기인 기기인가 — 폰 화면도 아니고 손가락 포인터도 아닐 때만 (위 `onKey` 머리말) */
-  const touch = useMedia('(pointer: coarse)')
+  const touch = useMedia('(pointer: coarse)'); const [lcfgC] = useLocalSettings()
   const enterSends = !phone && !touch
   const sendKey = enterSends ? '⏎' : '⌘⏎'
   /**
@@ -1439,7 +1443,7 @@ function Item({ it, bot, items, onFile, onReveal, onDrill, state, say, isLastAss
         while ((m = re.exec(body))) { const f = files.find((x) => x.name === m![1]); if (!f) continue; parts.push(body.slice(last, m.index)); parts.push(chipOf(f, `m${m.index}`)); last = m.index + m[0].length }
         parts.push(body.slice(last))
       }
-      return <div className={`umsg ${isLastUser ? 'last' : ''}`} ref={isLastUser ? userRef : undefined}>{files.length ? parts : it.text}{files.length ? <div className="files uatt">{files.map((f, i) => <FileChip key={`a${i}`} abs={f.abs} dir={f.dir} botAbs={bot.abs} botId={bot.id} onClick={() => openRef(f)} />)}</div> : null}</div>
+      return <div className={`umsg ${isLastUser ? 'last' : ''}`} ref={isLastUser ? userRef : undefined}>{/* J-4 · 어느 기기에서 보냈나 — 호스트가 아닌 기기만 표시 */}{it.from && !it.from.main ? <span className="dev" title={`${it.from.device} 에서 보냄`}><Icon n={it.from.tier === 'phone' ? 'phone' : 'panel'} size={10} />{it.from.tier === 'phone' ? '폰' : '원격'} · {it.from.device}</span> : null}{files.length ? parts : it.text}{files.length ? <div className="files uatt">{files.map((f, i) => <FileChip key={`a${i}`} abs={f.abs} dir={f.dir} botAbs={bot.abs} botId={bot.id} onClick={() => openRef(f)} />)}</div> : null}</div>
     }
     case 'assistant': return <div className="amsg"><Md text={it.text || ' '} streaming={!!it.streaming} botId={bot.id} onPath={onFile} onDir={onReveal} />{/* 답 아래 줄 — 🔴 **아이콘만** (2026-09-13 Dave: «복사 및 기능들을 아이콘으로»). 글자를 빼면
             답과 답 사이가 조용해지고, 무엇을 하는지는 툴팁이 말한다. ⚠ 시각은 남긴다(언제 온 답인지) */}
