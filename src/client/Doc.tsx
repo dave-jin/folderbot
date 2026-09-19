@@ -14,7 +14,7 @@ import { Icon, Mid } from './FolderBot'
 import { Md } from './Sheets'
 import { Float, anchorOf, type Anchor } from './Float'
 import { fmtTime, useStore } from './store'
-import { openOnThisDevice, useLocalSettings } from './localOpen'
+import { openOnThisDevice, useLocalSettings, vaultRelOf } from './localOpen'
 
 /** 문서 탭 — 봇별로 기억. 미리보기 탭(pinned=false)은 다음 클릭에 바뀐다 */
 export interface DocTab { rel: string; pinned: boolean }
@@ -44,8 +44,18 @@ interface DocData { kind: string; text?: string; size?: number; mtime?: number; 
 
 /** 문서 열 — 헤더(탭) · 툴바(폴더/파일 · 위치 · ⋯) · 본문. 편집은 자동 저장, 봇이 고치면 한 줄 배너 */
 export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, onAttach, say, phone, onBack }: { bot: Bot; docs: DocsApi; filesTick?: number; onTalk: (rel: string) => void; onHide: () => void; wide: boolean; onWide: () => void; onAttach: (rel: string) => void; say: (m: string) => void; phone?: boolean; onBack?: () => void }) {
-  const { device, hostName } = useStore().s; const main = device.main   // 원격이면 «이 기기에서» 연다(localOpen.openOnThisDevice) — E
+  const { s: { device, hostName, root }, refresh } = useStore(); const main = device.main   // 원격이면 «이 기기에서» 연다(localOpen.openOnThisDevice) — E
   const [lcfg] = useLocalSettings()
+  /**
+   * 폴더 밖 문서 (D · 2026-09-19) — rel 이 `../` 로 시작하면 이 봇 폴더 밖·볼트 안이다. **읽기로만** 열고(호스트도 쓰기는 봇 폴더
+   * 안으로 막는다) 「폴더 외 문서」 띠에 볼트 기준 경로와 «참조 폴더로 추가» 를 둔다. 참조 폴더는 봇당 하나라 비어 있을 때만.
+   */
+  const [repoMsg, setRepoMsg] = useState('')
+  const addRepo = async () => {
+    const dir = vaultRel.includes('/') ? vaultRel.slice(0, vaultRel.lastIndexOf('/')) : ''
+    if (!dir) { setRepoMsg('볼트 루트 바로 아래 파일은 참조 폴더로 둘 수 없어요'); return }
+    try { await api(`/bots/${bot.id}/repo`, { body: { path: `${root}/${dir}` } }); await refresh(); setRepoMsg('참조 폴더로 추가했어요 — 이 봇이 그 폴더를 읽을 수 있어요') } catch (e) { setRepoMsg((e as Error).message) }
+  }
   const openHere = () => void openOnThisDevice(bot, rel!, 'open', { main, hostName, phone: !!phone, say })
   const rel = docs.active
   const [doc, setDoc] = useState<DocData | null>(null)
@@ -184,13 +194,15 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
   const idx = rel ? sibs.indexOf(rel) : -1
   const name = rel?.split('/').pop() ?? ''; const dir = rel && rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : (bot.orchestrator ? '볼트' : bot.name)
   const isMd = /\.(md|markdown|txt)$/i.test(rel ?? '')
+  const outside = !!rel && rel.startsWith('../')
+  const vaultRel = rel ? vaultRelOf(bot.rel, rel) : ''
   return <div className="col doc" style={{ flex: wide ? 3 : 1.15 }}>
     <div className="hdr" style={phone ? undefined : { paddingLeft: 10 }}>
       {phone ? <><button className="rb glassb" onClick={onBack} title="폴더로"><Icon n="back" size={20} /></button><span className="ttl"><Mid s={name || '문서'} /></span><span className="sp" /></> : null}
       <div className="tabs">{docs.tabs.slice(0, 6).map((t) => <button key={t.rel} className={`tab ${t.rel === docs.active ? 'on' : ''} ${t.pinned ? '' : 'pv'}`} onClick={() => docs.setActive(t.rel)} onDoubleClick={() => docs.pin(t.rel)} title={t.rel}>{t.rel.split('/').pop()}<span className="x" onClick={(e) => { e.stopPropagation(); docs.close(t.rel) }}><Icon n="x" size={9} /></span></button>)}{docs.tabs.length > 6 ? <span className="more">+{docs.tabs.length - 6}</span> : null}</div>
       <div className="acts"><button className={`ib ${wide ? 'on' : ''}`} onClick={onWide} title="넓게"><Icon n="expand" size={13} /></button><button className="ib" onClick={onHide} title="문서 열 접기 (⌘⇧D)"><Icon n="x" size={13} /></button></div>
     </div>
-    {rel ? <div className="dtb"><span>{dir}</span><span>/</span><span className="nm">{name}</span>{!main && lcfg && lcfg.openMode !== 'sync' ? <span className="scp copy" title="이 기기에서 «열기» 를 누르면 호스트에서 받은 사본을 열어요 — 고쳐도 되돌아가지 않아요">사본</span> : null}
+    {rel ? <div className="dtb"><span>{dir}</span><span>/</span><span className="nm">{name}</span>{outside ? <span className="scp out" title={`볼트 기준: ${vaultRel}`}>폴더 외</span> : null}{!main && lcfg && lcfg.openMode !== 'sync' ? <span className="scp copy" title="이 기기에서 «열기» 를 누르면 호스트에서 받은 사본을 열어요 — 고쳐도 되돌아가지 않아요">사본</span> : null}
       <span className="r">
         {sibs.length > 1 ? <><button className="nb" onClick={() => docs.open(sibs[(idx - 1 + sibs.length) % sibs.length])}><Icon n="back" size={10} /></button><span className="pos">{idx + 1} / {sibs.length}</span><button className="nb" style={{ transform: 'scaleX(-1)' }} onClick={() => docs.open(sibs[(idx + 1) % sibs.length])}><Icon n="back" size={10} /></button></> : null}
         {/* 모드가 없으니 알릴 상태도 없다 — 저장 중·실패일 때만 한 마디. ⛔ 「편집 중」 배지를 다시 만들지 마라 */}
@@ -211,13 +223,14 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
               <hr /><div className="mrow"><span>글자 크기</span><button className="mb" onClick={(e) => { e.stopPropagation(); setFs((v) => Math.max(11, +(v - 0.5).toFixed(1))) }}>−</button><b className="mono">{fs}</b><button className="mb" onClick={(e) => { e.stopPropagation(); setFs((v) => Math.min(22, +(v + 0.5).toFixed(1))) }}>＋</button></div>
               <button onClick={() => setWideText(!wideText)}><Icon n="expand" size={13} /><span>글줄 넓게</span>{wideText ? <Icon n="check" size={11} /> : null}</button></div></Float> : null}</span>
       </span></div> : null}
+    {outside && rel ? <div className="outband"><Icon n="folder" size={12} /><span className="p">폴더 외 문서 · <span className="mono">{vaultRel}</span> · 읽기만</span><span className="sp" />{bot.repo ? <span className="h">참조 폴더는 하나뿐이에요 (지금: {bot.repo.split('/').pop()})</span> : <button className="btn" onClick={() => void addRepo()}>이 Folderbot 에 참조 폴더로 추가</button>}{repoMsg ? <span className="h">{repoMsg}</span> : null}</div> : null}
     {printHtml ? createPortal(<div className="printdoc md" dangerouslySetInnerHTML={{ __html: printHtml }} />, document.body) : null}
     {conflict ? <div className="dbanner"><span className="dot wait" /><span>봇이 이 파일을 바꿨어요 — 아직 안 낸 내 글과 다릅니다</span><button onClick={() => { setConflict(false); void save(draft) }}>내 것 유지</button><button onClick={() => { setConflict(false); dirtyRef.current = false; if (rel) void load(rel) }}>봇 것 받기</button></div>
       : botTouched ? <div className="dbanner"><span className="dot run" /><span>봇이 {fmtTime(botTouched)} 수정</span><button onClick={() => setBotTouched(null)}>닫기</button></div> : null}
     {!rel ? <div className="empty">오른쪽 파일에서 열거나, 대화의 파일 칩을 누르세요</div>
       : err ? <div className="empty">{err}</div>
       : !doc ? <div className="dbody"><div className="skel" style={{ width: '60%', marginBottom: 10 }} /><div className="skel" style={{ width: '85%', marginBottom: 10 }} /><div className="skel" style={{ width: '70%' }} /></div>
-      : doc.kind === 'text' ? (isMd && !doc.truncated
+      : doc.kind === 'text' ? (isMd && !doc.truncated && !outside
         ? <div className="dbody edit md-edit" style={{ ['--docfs' as string]: `${fs}px`, ['--docw' as string]: wideText ? '86ch' : '58ch' }}>
             {/* 목차 — 왼쪽에 붙는다. ⚠ 편집기와 **형제**로 둔다: 안에 넣으면 CodeMirror 가 제 DOM 으로 알고 지운다 */}
             {toc && heads.length > 1 ? <nav className="dtoc">{heads.map((h) => <button key={`${h.line}`} className={`l${h.level}`} onClick={() => edApi.current?.goToLine(h.line)} title={h.text}>{h.text}</button>)}</nav> : null}
@@ -232,8 +245,8 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
                 files={wikiFiles} onPasteImage={pasteImage} onReady={(a) => { edApi.current = a }} />
             </Suspense>
           </div>
-        : doc.truncated
-          ? <div className="dbody">{isMd ? <Md text={doc.text ?? ''} /> : <pre className="raw">{doc.text}</pre>}<div style={{ color: 'var(--t3)', fontSize: 12, marginTop: 12 }}>큰 파일이라 앞부분만 보여요 — 그래서 여기서는 못 고쳐요</div></div>
+        : doc.truncated || outside
+          ? <div className="dbody">{isMd ? <Md text={doc.text ?? ''} /> : <pre className="raw">{doc.text}</pre>}{doc.truncated ? <div style={{ color: 'var(--t3)', fontSize: 12, marginTop: 12 }}>큰 파일이라 앞부분만 보여요 — 그래서 여기서는 못 고쳐요</div> : null}</div>
           : <div className="dbody edit"><textarea value={draft} onChange={(e) => onDraft(e.target.value)} spellCheck={false} /></div>)
       : doc.kind === 'canvas' ? <div className="dbody cvswrap">
           {/* Obsidian 의 `.canvas` — 보기만이 아니라 **고치기까지** (2026-09-13 Dave 확정) */}

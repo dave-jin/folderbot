@@ -1027,3 +1027,7 @@ b,strong { color:var(--w); font-weight:600 }
 .lpick .cand .p { font-size:12px; color:var(--w); word-break:break-all; white-space:normal } .lpick .cand .n { font-size:11px; color:var(--t3) }
 .lpick .acts { display:flex; gap:6px; flex-wrap:wrap }
 .dtb .scp.copy { margin-left:6px; font-size:10px; padding:0 5px; border-radius:6px; border:1px solid var(--hair); color:var(--t3) }
+
+/* 폴더 외 문서 (D) — 띠 + 배지 */
+.outband { display:flex; align-items:center; gap:8px; padding:6px 12px; font-size:12px; color:var(--t2); border-bottom:1px solid var(--line); background:var(--box); flex:none; min-width:0 } .outband .p { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 } .outband .sp { flex:1 } .outband .h { color:var(--t3); white-space:nowrap }
+.dtb .scp.out { margin-left:6px; font-size:10px; padding:0 5px; border-radius:6px; border:1px solid var(--hair); color:var(--t3) }

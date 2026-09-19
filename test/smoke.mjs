@@ -559,6 +559,35 @@ try {
           await closeDoc(); await fetch(base + `/api/sessions/${sidC}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(800)   // 전용 세션을 지워 «최근 세션» 이 원래 것으로 돌아간다
           ok('문서 창 열기 — 닫힌 창 + 칩 → 열림 · rondo_open → 열림(같은 턴 두 번째 무시 · 볼트 밖 거부) · 열린 창의 탭 규칙 그대로')
         }
+        /**
+         * 🔴 **폴더 밖 문서** (D · 2026-09-19) — 볼트 안·봇 폴더 밖 파일은 `../` rel 로 열리고 「폴더 외」 배지 + 볼트 기준 경로 띠 + 읽기만.
+         *    «참조 폴더로 추가» 는 봇당 하나라 비어 있을 때만. 볼트 밖은 거부(C 의 rondo_open 검사 + botRelOf 유닛).
+         */
+        {
+          const hashBefore = await pg.evaluate(() => location.hash)
+          const sidD = (await api(`/bots/${bot.id}/sessions`, { name: 'd-doc' })).id; await pg.evaluate((h) => { location.hash = h }, `#bot=${bot.id}&s=${sidD}`); await wait(600)
+          await api(`/sessions/${sidD}/send`, { text: '되읊어: 바깥 자료는 `1. Inbox/예시랩_자문자료.txt` 에 있습니다' }); await wait(1000)
+          const oc = await pg.$('.amsg .pchip[data-rel="../../1. Inbox/예시랩_자문자료.txt"]'); if (!oc) fail('D: 폴더 밖 파일 칩이 없다 ' + JSON.stringify(await pg.$$eval('.amsg .pchip', (r) => r.map((x) => x.dataset.rel))))
+          await oc.click(); await wait(800)
+          if (!(await pg.$('.docwrap'))) fail('D: 폴더 밖 파일을 눌렀는데 창이 안 열렸다')
+          if (!(await pg.$('.docwrap .dtb .scp.out'))) fail('D: 「폴더 외」 배지가 없다')
+          const band = (await pg.textContent('.docwrap .outband').catch(() => '')) ?? ''
+          if (!band.includes('1. Inbox/예시랩_자문자료.txt') || !/읽기만/.test(band) || !/참조 폴더로 추가/.test(band)) fail('D: 띠에 볼트 기준 경로·읽기만·추가 단추가 있어야 한다 · ' + band)
+          if (await pg.$('.docwrap .mded, .docwrap textarea')) fail('D: 폴더 밖 문서는 편집기가 아니라 읽기 전용이어야 한다')
+          await pg.click('.docwrap .outband button:has-text("참조 폴더로 추가")'); await wait(700)
+          const rb = (await api('/bots')).find((b) => b.id === bot.id); if (!rb.repo || !rb.repo.endsWith('/1. Inbox')) fail('D: 참조 폴더가 .bot.yml 에 안 들어갔다 ' + JSON.stringify(rb.repo))
+          const band2 = (await pg.textContent('.docwrap .outband')) ?? ''; if (!/추가했어요|하나뿐/.test(band2)) fail('D: 추가 뒤 띠 문구 · ' + band2)
+          const again = await api(`/bots/${bot.id}/repo`, { path: join(root, '2. Projects') }).catch((e) => ({ error: String(e.message) })); if (!again.error || !/하나뿐/.test(again.error)) fail('D: 참조 폴더가 있으면 두 번째는 거부해야 한다 ' + JSON.stringify(again))
+          await api(`/bots/${bot.id}/repo`, { path: '' })   // 되돌린다 — 뒤 검사가 봇 설정을 믿는다
+          if ((await api('/bots')).find((b) => b.id === bot.id).repo) fail('D: 참조 폴더 풀기')
+          // 폴더 안 문서는 그대로 — 배지·띠 없음 + 편집기
+          await pg.evaluate(() => { const b = [...document.querySelectorAll('.panel .trow')].find((x) => /CLAUDE\.md/.test(x.textContent ?? '')); b?.click() }); await wait(800)
+          if (await pg.$('.docwrap .scp.out, .docwrap .outband')) fail('D: 폴더 안 문서에 폴더 외 표시가 붙었다')
+          if (!(await pg.$('.docwrap .mded'))) fail('D: 폴더 안 문서의 편집기가 사라졌다')
+          for (let i = 0; i < 3 && (await pg.$('.docwrap')); i++) { await pg.keyboard.press('Meta+Shift+D'); await wait(300) }
+          await fetch(base + `/api/sessions/${sidD}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(800)
+          ok('폴더 밖 문서 — 칩 → 열림 · 「폴더 외」 배지 · 볼트 경로 띠 · 읽기만 · 참조 폴더 추가(하나뿐 · 두 번째 거부) · 폴더 안 문서 불변')
+        }
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
         await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)
         await pg.mouse.move(700, 300); await wait(200); if (await pg.$('.hcard')) fail('ui hover card stuck')

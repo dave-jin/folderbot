@@ -570,6 +570,8 @@ export class Gateway {
         return json(200, { moved, failed })
       }
       // 원격 기기가 «내 사본이 호스트와 같은가» 를 재는 자 — 크기 · 앞 64KB 해시 (E · desktop/localfs.js 와 같은 식)
+      // 참조 폴더 (D) — 폴더 밖 문서를 보다가 «이 Folderbot 에 참조 폴더로 추가». 빈 path 면 푼다
+      if (sub === 'repo' && m === 'POST') { const b = await body(); try { const nb = reg.setRepo(bot.id, String(b.path ?? '')); h.afterBotsChanged(); return json(200, { ok: true, repo: nb.repo ?? null }) } catch (e) { return json(400, { error: (e as Error).message }) } }
       if (sub === 'stat' && m === 'GET') { const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')).slice(1)); if (!exists(abs)) return json(404, { error: '없는 파일' }); const st = statSync(abs); return json(200, { size: st.size, mtime: st.mtimeMs, head: headHash(abs), vaultRel: relative(reg.root, abs) }) }
       if (sub === 'raw') { const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')).slice(1)); if (!exists(abs)) return json(404, { error: 'none' }); res.writeHead(200, { 'content-type': mime(abs), 'cache-control': 'no-store' }); stream(abs).pipe(res); return }
       if (sub === 'routines' && m === 'GET') return json(200, bot.routines)

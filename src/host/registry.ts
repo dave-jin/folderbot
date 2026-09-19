@@ -139,6 +139,23 @@ export class Registry extends EventEmitter {
     if (!existsSync(f)) return {}
     try { return (parseYaml(readFileSync(f, 'utf8')) as BotConfig) ?? {} } catch { return {} }
   }
+  /**
+   * 참조 폴더 지정 (D · 2026-09-19) — 봇당 하나(`.bot.yml repo` = `--add-dir`). 🔴 **비어 있을 때만** 넣는다 — 있으면 바꿔치기가
+   * 되므로 거부하고 지금 것을 말해 준다. 빈 문자열이면 푼다. 볼트 안 폴더만.
+   */
+  setRepo(botId: string, absDir: string): Bot {
+    const b = this.bot(botId); if (!b) throw new Error('봇을 못 찾았어요')
+    const cfg = this.botConfig(b.abs)
+    if (absDir) {
+      if (cfg.repo) throw new Error(`참조 폴더는 하나뿐이에요 — 지금은 ${basename(b.repo ?? cfg.repo)} 예요`)
+      const dir = resolve(absDir); const inVault = canon(dir) === canon(this.root) || canon(dir).startsWith(canon(this.root) + sep)
+      if (!inVault || !existsSync(dir) || !statSync(dir).isDirectory()) throw new Error('볼트 안 폴더만 참조 폴더로 둘 수 있어요')
+      if (canon(dir) === canon(b.abs) || canon(dir).startsWith(canon(b.abs) + sep)) throw new Error('이미 이 봇의 폴더 안이에요')
+      this.saveBotConfig(b.abs, { ...cfg, repo: dir })
+    } else { const { repo: _r, ...rest } = cfg; this.saveBotConfig(b.abs, rest) }
+    this.emit('bots', this.bots())
+    return this.bot(botId)!
+  }
   saveBotConfig(abs: string, cfg: BotConfig): void {
     atomicWrite(join(abs, '.bot.yml'), stringify(cfg))
   }
