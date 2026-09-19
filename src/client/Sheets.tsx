@@ -27,16 +27,22 @@ import { fmtTime, useStore } from './store'
  */
 /** 답 속에서 «있는 것» 으로 확인된 경로 하나 — `text` 는 답에 적힌 그대로, `rel` 은 봇 폴더 기준(`../` 가능) */
 export interface PathHit { text: string; rel: string; dir: boolean; matches?: string[] }
+/** 긴 이름은 가운데 생략 — 줄 폭의 60% 를 글자 수로 어림(본문 15px 기준 약 28자). 확장자는 남긴다 */
+export function midEllipsis(name: string, max = 28): string { if (name.length <= max) return name; const m = /^(.*?)(\.[A-Za-z0-9]{1,8})?$/.exec(name)!; const base = m[1], ext = m[2] ?? ''; const keep = max - ext.length - 1; const head = Math.ceil(keep * 0.6), tail = keep - head; return `${base.slice(0, head)}…${base.slice(base.length - tail)}${ext}` }
 const FOLDER_SVG = '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M2 4h4l1.5 1.5H14V13H2z"/></svg>'
 function decorate(root: HTMLElement, hits: PathHit[], open: (rel: string) => void, openDir: ((rel: string) => void) | undefined, botId?: string): void {
   if (!hits.length) return
+  const made: [HTMLButtonElement, string, (n: string) => HTMLSpanElement][] = []
   const chip = (h: PathHit): HTMLButtonElement => {
     const b = document.createElement('button')
     b.className = h.dir ? 'pchip dir' : 'pchip'; b.type = 'button'; b.title = h.text
     b.dataset.rel = h.rel
-    const name = h.text.replace(/\/+$/, '').split('/').pop() || h.text
+    const full = h.text.replace(/\/+$/, '').split('/').pop() || h.text
     // 🔴 폴더 칩은 문서 탭이 아니라 **트리를 연다** — 폴더는 읽을 글이 없다 (2026-09-15)
-    if (h.dir) { b.innerHTML = `${FOLDER_SVG}<span></span>`; (b.lastChild as HTMLElement).textContent = name } else b.textContent = name
+    // P-1 · 칩은 글자처럼 — 확장자만 흐리게, 긴 이름은 가운데 생략, 안에서 줄 바꿈 없음(CSS)
+    const label = (name: string) => { const m = /^(.*)(\.[A-Za-z0-9]{1,8})$/.exec(name); const sp = document.createElement('span'); sp.className = 'nm'; if (m) { sp.textContent = m[1]; const ext = document.createElement('span'); ext.className = 'ext'; ext.textContent = m[2]; sp.appendChild(ext) } else sp.textContent = name; return sp }
+    if (h.dir) { b.innerHTML = FOLDER_SVG; b.appendChild(label(midEllipsis(full))) } else b.appendChild(label(midEllipsis(full)))
+    made.push([b, full, label])
     if (h.matches && h.matches.length > 1) b.title = `${h.text} — ${h.matches.length}곳에 있어요`; else if (!h.text.includes('/')) b.title = h.rel
     // 파일명만 적혀 여럿이 걸리면 고르게 한다 (G) — 화면(App)의 고르기 시트가 받는다
     b.addEventListener('click', (e) => { e.preventDefault(); if (h.dir) openDir?.(h.rel); else if (h.matches && h.matches.length > 1) window.dispatchEvent(new CustomEvent('fb:pickfile', { detail: { name: h.text, rels: h.matches } })); else open(h.rel) })
@@ -51,11 +57,12 @@ function decorate(root: HTMLElement, hits: PathHit[], open: (rel: string) => voi
    * ⚠ 통째로 경로인 코드 조각은 **요소째** 칩으로 바꾼다(코드 배경 안에 칩이 앉으면 두 겹으로 보인다).
    * ⛔ 펜스 코드(`pre`)는 그대로 둔다 — 예시 코드지 이 볼트의 파일이 아니고, 복사 단추도 거기 붙어 있다.
    */
+  // P-2 (2026-09-19, 09-15 규칙을 덮음) · 코드 조각은 **모양을 코드 그대로** 두고 통째로 경로일 때만 클릭할 수 있게 한다(hover 배경만). 칩으로 바꾸지 않는다
   for (const c of [...root.querySelectorAll('code')]) {
     if (c.closest('pre')) continue
     const t = (c.textContent ?? '').trim().replace(/\/+$/, '')
     const hit = hits.find((h) => h.text === t)
-    if (hit) c.replaceWith(chip(hit))
+    if (hit) { c.classList.add('code-path'); c.title = hit.matches && hit.matches.length > 1 ? `${hit.text} — ${hit.matches.length}곳에 있어요` : hit.rel; c.dataset.rel = hit.rel; c.addEventListener('click', (e) => { e.preventDefault(); if (hit.dir) openDir?.(hit.rel); else if (hit.matches && hit.matches.length > 1) window.dispatchEvent(new CustomEvent('fb:pickfile', { detail: { name: hit.text, rels: hit.matches } })); else open(hit.rel) }) }
   }
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     // K-2 · `code` 안은 걷지 않는다 — 통째로 경로인 코드 조각은 위에서 요소째 바꿨고, 나머지는 예시라 토막 내지 않는다(스크린샷 1236)
@@ -74,6 +81,9 @@ function decorate(root: HTMLElement, hits: PathHit[], open: (rel: string) => voi
       cur = rest
     }
   }
+  // P-1 · 가운데 생략은 **폭에 맞춰** 줄인다 — 글자 수 어림(28자)은 폰(줄 폭 60% ≈ 13자)에서 넘쳐 CSS 끝 생략(…)이 대신 붙었다.
+  //   붙은 뒤 한 프레임에 잰다: 넘치는 동안 두 글자씩 줄여 다시 만든다(확장자는 끝까지 남는다).
+  if (made.length) requestAnimationFrame(() => { for (const [b, full, label] of made) { let n = midEllipsis(full).length; let nm = b.querySelector('.nm'); for (let g = 0; g < 40 && nm && nm.scrollWidth > nm.clientWidth + 1 && n > 6; g++) { n -= 2; const next = label(midEllipsis(full, n)); nm.replaceWith(next); nm = next } } })
 }
 
 /**

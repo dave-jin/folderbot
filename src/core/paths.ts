@@ -64,6 +64,8 @@ export function candidatePaths(text: string, max = 20): string[] {
     core = core.replace(/[.,;:!?…]+$/, '')                      // 문장 끝 부호는 경로가 아니다
     if (core.endsWith('/')) core = core.slice(0, -1)             // «폴더/» 는 «폴더»
     if (!core || core === '/' || !/[^\s/]/.test(core)) continue
+    // P-2 · 경로처럼 안 생긴 것은 후보도 아니다 — «3/5»·«10개/50MB»(숫자 조각뿐) · «A/B»(한 글자 조각뿐). 확장자가 있거나 절대 경로면 그대로
+    if (!core.startsWith('/') && !/\.[A-Za-z0-9]{1,8}$/.test(core)) { const segs = core.split('/'); if (segs.every((g) => /^\d+[^\s/]{0,2}$/.test(g))) continue }
     // ⚠ 절대 경로는 왼쪽이 아니라 **오른쪽**으로 넓힌다 — 앞의 낱말은 문장이고, 뒤의 낱말이 «3. Area» 의 나머지다.
     //   `/Users/…/PARA/3. Area/x.md` 는 공백에서 끊기므로 다음 낱말을 최대 세 번 이어 붙인 변형을 **긴 것부터** 낸다.
     if (core.startsWith('/')) {
