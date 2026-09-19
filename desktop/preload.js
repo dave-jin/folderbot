@@ -21,6 +21,19 @@ contextBridge.exposeInMainWorld('folderbotDesktop', {
     relaunch: () => ipcRenderer.send('fb:perm-relaunch'),
     onChange: (cb) => { const f = (_e, items) => cb(items); ipcRenderer.on('fb:perms', f); return () => ipcRenderer.removeListener('fb:perms', f) }
   },
+  // 이 기기의 파일 (E) — 원격 화면이 «이 기기에서 열기» 를 할 때 쓴다. 판정은 셸, 그리기는 화면
+  local: {
+    settings: () => ipcRenderer.invoke('fb:local-settings'),
+    set: (p) => ipcRenderer.invoke('fb:local-set', p),
+    detect: (hostRoot) => ipcRenderer.invoke('fb:local-detect', hostRoot),
+    stat: (p) => ipcRenderer.invoke('fb:local-stat', p),
+    open: (p) => ipcRenderer.invoke('fb:local-open', p),
+    reveal: (p) => ipcRenderer.invoke('fb:local-reveal', p),
+    wait: (p, want, ms) => ipcRenderer.invoke('fb:local-wait', p, want, ms),
+    download: (url, hostName, rel) => ipcRenderer.invoke('fb:local-download', url, hostName, rel),
+    icloud: (p) => ipcRenderer.invoke('fb:local-icloud', p),
+    pick: () => ipcRenderer.invoke('fb:local-pick')
+  },
   // 자기 업데이트 — 화면의 버전 칩이 쓴다
   update: {
     state: () => ipcRenderer.invoke('fb:update-state'),

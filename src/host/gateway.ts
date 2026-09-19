@@ -54,7 +54,7 @@ function freeName(botAbs: string, dir: string, name: string): string {
 import { favicon } from './favicon'
 import { preview } from './preview'
 import { hookState, setBudget, setHook, usageReport } from './usage'
-import { allDirs, guard, kindOf, mime, readText, recent, resolveNF, resolveNFDeep, stream, tree, writeText, exists, listDir, renameEntry } from './files'
+import { allDirs, guard, headHash, kindOf, mime, readText, recent, resolveNF, resolveNFDeep, stream, tree, writeText, exists, listDir, renameEntry } from './files'
 import { readTodo, todoDelete, todoEdit, todoMove, todoToggle } from './todoStore'
 import { globParents, roleOf } from '../core/rules'
 import { createCommand, listCommandFiles, slashCommands } from './slash'
@@ -109,7 +109,8 @@ export class Gateway {
 
   /** 누가 보고 있나 — 호스트 맥 자체의 창(this-mac 토큰 · 인증 없는 로컬)은 «메인», 나머지는 «원격 · 기기이름» */
   private auth(req: IncomingMessage): Who {
-    if (process.env.FOLDERBOT_NO_AUTH) return { ok: true, device: 'local', id: 'local', main: true }
+    // ⚠ 검사 시임 — 인증을 끈 QA 에서 `x-fb-as: <기기이름>` 헤더를 붙이면 그 이름의 «원격 기기» 로 본다(원격 화면 계약을 스모크로 재려고)
+    if (process.env.FOLDERBOT_NO_AUTH) { const as = req.headers['x-fb-as']; return as ? { ok: true, device: String(as), id: 'as', main: false } : { ok: true, device: 'local', id: 'local', main: true } }
     const h = req.headers.authorization ?? ''
     const url = new URL(req.url ?? '/', 'http://x')
     const tok = h.startsWith('Bearer ') ? h.slice(7) : (url.searchParams.get('token') ?? '')
@@ -568,6 +569,8 @@ export class Gateway {
         h.broadcast({ ev: 'files', botId: bot.id })
         return json(200, { moved, failed })
       }
+      // 원격 기기가 «내 사본이 호스트와 같은가» 를 재는 자 — 크기 · 앞 64KB 해시 (E · desktop/localfs.js 와 같은 식)
+      if (sub === 'stat' && m === 'GET') { const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')).slice(1)); if (!exists(abs)) return json(404, { error: '없는 파일' }); const st = statSync(abs); return json(200, { size: st.size, mtime: st.mtimeMs, head: headHash(abs), vaultRel: relative(reg.root, abs) }) }
       if (sub === 'raw') { const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')).slice(1)); if (!exists(abs)) return json(404, { error: 'none' }); res.writeHead(200, { 'content-type': mime(abs), 'cache-control': 'no-store' }); stream(abs).pipe(res); return }
       if (sub === 'routines' && m === 'GET') return json(200, bot.routines)
       if (sub === 'routines' && m === 'PUT') { const b = await body(); const cfg = reg.botConfig(bot.abs); cfg.routines = b.routines as never; reg.saveBotConfig(bot.abs, cfg); h.afterBotsChanged(); return json(200, { ok: true }) }

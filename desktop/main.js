@@ -6,12 +6,14 @@ const { join } = require('node:path')
 const http = require('node:http'); const https = require('node:https')
 const updater = require('./updater')
 const perms = require('./perms')
+const localfs = require('./localfs')
 const { folderIcon } = require('./trayIcon')
 const { pickBounds } = require('./winBounds')
 const { navHash, withHash } = require('./nav')
 
 const SETTINGS = () => join(app.getPath('userData'), 'settings.json')
-let settings = { mode: '', hostUrl: '', token: '', loginItem: false, root: '', port: 7373 }
+// openMode · vaultLocal — 원격 기기에서 파일을 «어디서 여나»(E): 'sync' = 이 기기의 동기화 볼트(vaultLocal) · 'download' = 호스트에서 받아 캐시로. 빈 값 = 아직 안 정함(온보딩이 묻는다)
+let settings = { mode: '', hostUrl: '', token: '', loginItem: false, root: '', port: 7373, openMode: '', vaultLocal: '' }
 try { settings = { ...settings, ...JSON.parse(readFileSync(SETTINGS(), 'utf8')) } } catch {}
 const save = () => { try { mkdirSync(app.getPath('userData'), { recursive: true }); writeFileSync(SETTINGS(), JSON.stringify(settings, null, 2)) } catch {} }
 
@@ -64,7 +66,7 @@ function createWin() {
   win.on('resize', later); win.on('move', later)
   win.on('close', () => { clearTimeout(bt); remember() })
   win.on('closed', () => { win = null })
-  win.on('focus', () => { try { win.webContents.send('fb:perms', perms.list({ host: settings.mode === 'host' })) } catch {} })
+  win.on('focus', () => { try { win.webContents.send('fb:perms', perms.list({ host: settings.mode === 'host', openMode: settings.openMode })) } catch {} })
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' } })
   Menu.setApplicationMenu(appMenu())
   loadHome()
@@ -143,10 +145,10 @@ app.on('web-contents-created', (_e, wc) => {
   })
 })
 // 권한 — 목록 · 설정 창 · 사용자 대답 · 테스트 알림 · 다시 시작
-ipcMain.handle('fb:perm-list', () => perms.list({ host: settings.mode === 'host' }))
+ipcMain.handle('fb:perm-list', () => perms.list({ host: settings.mode === 'host', openMode: settings.openMode }))
 ipcMain.handle('fb:perm-open', (_e, id) => perms.openPane(id))
-ipcMain.handle('fb:perm-ack', (_e, id, ok) => { perms.setAck(id, !!ok); return perms.list({ host: settings.mode === 'host' }) })
-ipcMain.handle('fb:perm-reset', () => { perms.resetAcks(); return perms.list({ host: settings.mode === 'host' }) })
+ipcMain.handle('fb:perm-ack', (_e, id, ok) => { perms.setAck(id, !!ok); return perms.list({ host: settings.mode === 'host', openMode: settings.openMode }) })
+ipcMain.handle('fb:perm-reset', () => { perms.resetAcks(); return perms.list({ host: settings.mode === 'host', openMode: settings.openMode }) })
 ipcMain.handle('fb:perm-test', () => perms.sendTest())
 ipcMain.on('fb:perm-relaunch', () => perms.relaunch())
 /**
@@ -162,6 +164,21 @@ ipcMain.handle('fb:pdf', async (_e, name) => {
   writeFileSync(r.filePath, buf)
   return r.filePath
 })
+/**
+ * 이 기기의 파일 (E · 2026-09-19) — 원격 화면의 «Finder 에서 보기 · 열기» 가 **이 기기에서** 되게 한다.
+ * 판정은 desktop/localfs.js, 화면은 결과만. 여는 것은 shell 뿐이고 경로는 화면이 준 그대로다(볼트 안으로 좁히는 것은 화면 쪽 계약).
+ */
+const localSettings = () => ({ openMode: settings.openMode || '', vaultLocal: settings.vaultLocal || '' })
+ipcMain.handle('fb:local-settings', () => localSettings())
+ipcMain.handle('fb:local-set', (_e, p) => { if (p && typeof p.openMode === 'string') settings.openMode = p.openMode; if (p && typeof p.vaultLocal === 'string') settings.vaultLocal = p.vaultLocal; save(); try { win?.webContents.send('fb:perms', perms.list({ host: settings.mode === 'host', openMode: settings.openMode })) } catch {} return localSettings() })
+ipcMain.handle('fb:local-detect', (_e, hostRoot) => { try { return localfs.detect(String(hostRoot || '')) } catch { return [] } })
+ipcMain.handle('fb:local-stat', (_e, p) => localfs.stat(String(p)))
+ipcMain.handle('fb:local-open', (_e, p) => shell.openPath(String(p)))
+ipcMain.handle('fb:local-reveal', (_e, p) => { shell.showItemInFolder(String(p)); return '' })
+ipcMain.handle('fb:local-wait', (_e, p, want, ms) => localfs.waitFor(String(p), want || {}, Number(ms) || 60000))
+ipcMain.handle('fb:local-download', (_e, url, hostName, rel) => localfs.download(String(url), { authorization: `Bearer ${settings.token}` }, localfs.cachePath(app.getPath('userData'), String(hostName || 'host'), String(rel))))
+ipcMain.handle('fb:local-icloud', (_e, p) => localfs.icloudDownload(String(p)))
+ipcMain.handle('fb:local-pick', async () => { if (!win) return ''; const r = await dialog.showOpenDialog(win, { title: '이 기기의 볼트 폴더', properties: ['openDirectory'] }); return r.canceled ? '' : (r.filePaths[0] || '') })
 ipcMain.handle('fb:update-state', () => updater.state())
 ipcMain.handle('fb:update-check', async () => { await updater.check(true); return updater.state() })
 ipcMain.on('fb:update-apply', () => { updater.apply() })

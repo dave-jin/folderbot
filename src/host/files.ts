@@ -1,4 +1,5 @@
-import { existsSync, readdirSync, readFileSync, statSync, createReadStream, renameSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, readdirSync, readFileSync, statSync, createReadStream, renameSync , openSync, readSync, closeSync } from 'node:fs'
 import { dirname, basename } from 'node:path'
 import { join, extname, relative, resolve, sep } from 'node:path'
 import { atomicWrite } from './paths'
@@ -135,6 +136,11 @@ export function renameEntry(abs: string, newName: string): string {
   if (existsSync(to)) throw new Error('같은 이름이 이미 있어요')
   renameSync(abs, to)
   return to
+}
+/** 앞 64KB 의 sha256 — 원격 기기의 사본과 «같은 파일인가» 를 재는 자(desktop/localfs.js `headHash` 와 같은 식). mtime 은 동기화가 바꾼다 */
+export function headHash(abs: string): string {
+  const fd = openSync(abs, 'r')
+  try { const buf = Buffer.alloc(65536); const n = readSync(fd, buf, 0, 65536, 0); return createHash('sha256').update(buf.subarray(0, n)).digest('hex') } finally { closeSync(fd) }
 }
 export function stream(abs: string) { return createReadStream(abs) }
 export function exists(abs: string): boolean { return existsSync(abs) }
