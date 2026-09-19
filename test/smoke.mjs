@@ -300,7 +300,7 @@ try {
     const br = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] })
     globalThis.__br = br
     for (const [name, vp] of [['desktop', { width: 1440, height: 900 }], ['phone', { width: 390, height: 844 }]]) {
-      const pg = await br.newPage({ viewport: vp, deviceScaleFactor: 1 })
+      const pg = await br.newPage({ viewport: vp, deviceScaleFactor: 1, ...(name === 'phone' ? { hasTouch: true } : {}) })   // H · 쓸기는 터치 지점이 있는 기기에서만 켜진다 — 폰 판은 터치 기기다
       await pg.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
       if (name === 'phone') await pg.addInitScript(() => {
         // iOS 키보드 흉내 — 시각 뷰포트 높이만 줄어든다(레이아웃 뷰포트는 그대로: 홈화면 앱·iOS 26 의 동작)
@@ -1076,6 +1076,101 @@ try {
           // (새 볼트의 CLAUDE.md 생성부에 규칙이 드는 것은 유닛 test/unit/registry.test.ts 가 잰다 — 이 픽스처 볼트는 이미 CLAUDE.md 가 있어 머리말을 다시 만들지 않는다)
           await fetch(base + `/api/sessions/${sidJ}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(500)
           ok('J 발신 기기 — 호스트/원격/폰 블록 값 · 채팅 글 그대로 · 원격 메시지 표식 · rondo_open 은 요청 기기에만 · 폰 reveal 은 안내만 · CLAUDE.md 규칙')
+        }
+        /**
+         * 🔴 **H · 반응형 3단계 + 쓸기 내비게이션** (2026-09-19 Dave 시안 확정 · `test/tmp/responsive-mock.png`).
+         *    어느 단계인지는 창 폭으로만 — 1400 넓음(지금 그대로 세 칸) · 900 중간(아이콘 띠 52px + 알약 독 · 서랍은 채팅 위로 덮임 · 채팅 폭 불변) ·
+         *    500 좁음(☰ + 쓸기 · 독은 작게). 쓸기는 [레일 | 채팅 | 문서] 세 칸 띠를 한 칸씩 — 판정은 `core/drawer`(유닛), 여기서는 포인터 시뮬레이션.
+         */
+        {
+          const sidH = (await api(`/bots/${bot.id}/sessions`, { name: 'h-stage' })).id
+          await api(`/sessions/${sidH}/send`, { text: '되읊어: 코드 블록이 있는 답\n\n```\n' + 'x'.repeat(160) + '\n```\n\n' + '본문 줄 '.repeat(80) }); await wait(600)
+          const shots = {}
+          for (const [label, w, h] of [['wide', 1400, 900], ['mid', 900, 700], ['narrow', 500, 800]]) {
+            const hp = await br.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 1, hasTouch: true })
+            await hp.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
+            const herrs = []; hp.on('pageerror', (e) => herrs.push(e.message))
+            await hp.goto(base + `/#bot=${bot.id}&s=${sidH}`); await hp.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(600)
+            const st = await hp.evaluate(() => ({ cls: document.querySelector('.app').className, view: document.querySelector('.app').dataset.view, strip: document.querySelector('.cols > .strip.left')?.getBoundingClientRect().width ?? null, side: !!document.querySelector('.cols > .col.side'), rp: !!document.querySelector('.cols > .rpwrap'), dock: !!document.querySelector('.dock'), drawer: !!document.querySelector('.drawer'), menu: !!document.querySelector('.chat-hdr .hb-menu'), chatW: document.querySelector('.col.chat').getBoundingClientRect().width }))
+            await hp.screenshot({ path: `test/tmp/h-${label}.png` }); shots[label] = `h-${label}.png`
+            if (label === 'wide') {
+              if (!st.side || !st.rp || st.dock || st.drawer || /smid|phone/.test(st.cls)) fail('H 넓음: 지금처럼 세 칸이어야 한다 ' + JSON.stringify(st))
+            } else if (label === 'mid') {
+              if (!/smid/.test(st.cls) || st.strip !== 52 || st.side || st.rp || !st.dock || st.menu) fail('H 중간: 띠 52px · 독 · 흐름 안 레일/패널 없음 ' + JSON.stringify(st))
+              // 띠 탭 → 이름 있는 레일이 채팅 위로 덮여 나온다 · 채팅 폭 불변
+              await hp.click('.strip.left .ib'); await wait(400)
+              const l = await hp.evaluate(() => { const d = document.querySelector('.drawer.left'); return { open: d?.classList.contains('open'), rows: d?.querySelectorAll('.brow').length ?? 0, x: d?.getBoundingClientRect().left, chatW: document.querySelector('.col.chat').getBoundingClientRect().width, scrim: !!document.querySelector('.scrim') } })
+              if (!l.open || l.rows < 2 || l.x !== 52 || l.chatW !== st.chatW || !l.scrim) fail('H 중간: 띠 탭 → 레일 서랍 ' + JSON.stringify(l))
+              await hp.screenshot({ path: 'test/tmp/h-mid-rail.png' })
+              // 레일에서 봇 탭 → 레일 닫히며 그 봇
+              const other = await hp.evaluate((cur) => { const b = [...document.querySelectorAll('.drawer.left .brow')].find((x) => x.dataset.id && x.dataset.id !== cur); b?.click(); return b?.dataset.id ?? null }, bot.id); await wait(500)
+              const g = await hp.evaluate(() => ({ view: document.querySelector('.app').dataset.view, bot: new URLSearchParams(location.hash.slice(1)).get('bot'), drawer: !!document.querySelector('.drawer.left.open') }))
+              if (!other || g.view !== 'chat' || g.drawer || g.bot !== other) fail('H 중간: 레일에서 봇 탭 → 닫히며 그 봇 ' + JSON.stringify({ other, ...g }))
+              await hp.goto(base + `/#bot=${bot.id}&s=${sidH}`); await wait(600)
+              // 독 📁 → 파일 칸이 열린 패널이 덮여 나온다 · 채팅 폭 불변 · Esc 로 닫힘
+              await hp.click('.dock .db[title="파일"]'); await wait(500)
+              const r = await hp.evaluate(() => { const d = document.querySelector('.drawer.right'); return { open: d?.classList.contains('open'), panel: !!d?.querySelector('.rpwrap .panel'), chatW: document.querySelector('.col.chat').getBoundingClientRect().width, view: document.querySelector('.app').dataset.view } })
+              if (!r.open || !r.panel || r.chatW !== st.chatW || r.view !== 'panel') fail('H 중간: 독 → 패널 서랍 ' + JSON.stringify(r))
+              await hp.screenshot({ path: 'test/tmp/h-mid-panel.png' })
+              await hp.keyboard.press('Escape'); await wait(400); if ((await hp.evaluate(() => document.querySelector('.app').dataset.view)) !== 'chat') fail('H 중간: Esc 로 안 닫힌다')
+              // 독 📄 는 문서가 없으면 흐리고 눌리지 않는다 · 문서를 열면 켜진다
+              if (!(await hp.$('.dock .db[title="문서"].dim[disabled]'))) fail('H 중간: 문서 없을 때 📄 는 흐려야 한다')
+            } else {
+              if (!/phone/.test(st.cls) || st.strip !== null || st.side || st.rp || !st.dock || !st.menu || st.drawer) fail('H 좁음: 띠 없음 · ☰ · 작은 독 ' + JSON.stringify(st))
+              const view = () => hp.evaluate(() => document.querySelector('.app').dataset.view)
+              const drag = async (x0, y0, x1, y1, steps = 8, ms = 16) => { await hp.mouse.move(x0, y0); await hp.mouse.down(); for (let i = 1; i <= steps; i++) { await hp.mouse.move(x0 + ((x1 - x0) * i) / steps, y0 + ((y1 - y0) * i) / steps); await wait(ms) } await hp.mouse.up(); await wait(350) }
+              // 👉 → 레일 · 👈 → 닫힘 · 👈 → 문서(패널) · 👉 → 닫힘
+              await drag(120, 500, 320, 505); if ((await view()) !== 'list') fail('H 좁음: 👉 → 레일 ' + (await view()))
+              const dl = await hp.evaluate(() => { const d = document.querySelector('.drawer.left'); return { open: d?.classList.contains('open'), home: !!d?.querySelector('.mhome'), rows: d?.querySelectorAll('.mrow').length ?? 0, w: d?.getBoundingClientRect().width, scrim: !!document.querySelector('.scrim') } })
+              if (!dl.open || !dl.home || dl.rows < 2 || dl.w > 500 * 0.9 || !dl.scrim) fail('H 좁음: 왼쪽 서랍 = 봇 목록(홈) ' + JSON.stringify(dl))
+              await hp.screenshot({ path: 'test/tmp/h-narrow-left.png' })
+              await drag(470, 500, 250, 505); if ((await view()) !== 'chat') fail('H 좁음: 레일 열린 채 👈 → 닫힘 ' + (await view()))
+              await drag(380, 500, 150, 505); if ((await view()) !== 'panel') fail('H 좁음: 👈 → 오른쪽 서랍(패널) ' + (await view()))
+              await hp.screenshot({ path: 'test/tmp/h-narrow-right.png' })
+              // ⚠ 오른쪽 서랍 안의 할 일 행은 스스로 쓸린다(V16) — 그 위에서 시작한 끌기는 행이 먹는다(H-3 ①). 닫기는 머리말(제목 줄)에서 끈다
+              await drag(150, 30, 390, 35); if ((await view()) !== 'chat') fail('H 좁음: 패널 열린 채 👉 → 닫힘 ' + (await view()))
+              // 문서 열린 채 👉 두 번 → 레일 (한 번에 건너뛰지 않는다)
+              await hp.click('.dock .db[title="파일"]'); await wait(400); if ((await view()) !== 'panel') fail('H 좁음: 독 📁')
+              await drag(150, 30, 390, 35); if ((await view()) !== 'chat') fail('H 좁음: 👉 첫 번 → 채팅 ' + (await view()))
+              await drag(120, 500, 320, 505); if ((await view()) !== 'list') fail('H 좁음: 👉 두 번째 → 레일 ' + (await view()))
+              await hp.keyboard.press('Escape'); await wait(350); if ((await view()) !== 'chat') fail('H 좁음: Esc')
+              // 30% 미만(120px · 24%)으로 천천히 끌었다 놓으면 되돌아간다 · 빠르게 튕기면(70px · 3프레임) 30% 미만이어도 열린다
+              await drag(100, 500, 220, 503, 8, 60); if ((await view()) !== 'chat') fail('H 좁음: 30% 미만은 되돌아가야 한다 ' + (await view()))
+              await drag(100, 500, 170, 502, 3, 4); if ((await view()) !== 'list') fail('H 좁음: 빠른 튕김은 열려야 한다 ' + (await view()))
+              await hp.keyboard.press('Escape'); await wait(350)
+              // 세로 스크롤 중 옆으로 살짝 흘러도 · 코드 블록 위에서 시작한 가로 끌기는 그 요소가 먹는다 · 트랙패드 가로 휠은 아무것도 안 한다
+              await drag(200, 400, 260, 560); if ((await view()) !== 'chat') fail('H 좁음: 비스듬한 스크롤을 쓸기로 읽었다')
+              const pre = await hp.$('.amsg pre'); const pb = await pre.boundingBox(); await hp.evaluate(() => { document.querySelector('.chat-scroll').scrollTop = 0 })
+              const pre2 = await hp.$('.amsg pre'); const pb2 = await pre2.boundingBox()
+              await drag(pb2.x + pb2.width - 40, pb2.y + pb2.height / 2, pb2.x + 40, pb2.y + pb2.height / 2 + 2); if ((await view()) !== 'chat') fail('H 좁음: 코드 블록 위의 가로 끌기가 서랍을 열었다')
+              const preScrolled = await hp.$eval('.amsg pre', (e) => e.scrollLeft > 0 || e.scrollWidth <= e.clientWidth); if (!preScrolled) console.log('  (참고) 코드 블록 scrollLeft 0 — 브라우저가 터치 스크롤을 흉내 내지 않았을 뿐, 서랍은 안 열렸다')
+              await hp.mouse.move(250, 500); await hp.mouse.wheel(300, 0); await wait(300); if ((await view()) !== 'chat') fail('H 좁음: 트랙패드 가로 휠이 서랍을 열었다')
+              // ☰ 로도 레일 · 어두워진 채팅(스크림) 탭 → 닫힘
+              await hp.click('.chat-hdr .hb-menu'); await wait(400); if ((await view()) !== 'list') fail('H 좁음: ☰ → 레일')
+              await hp.evaluate(() => { document.querySelector('.scrim')?.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 480, clientY: 400 })) }); await wait(350); if ((await view()) !== 'chat') fail('H 좁음: 어두워진 채팅 탭 → 닫힘')
+              // 서랍 상태 기억 — 패널을 연 채 앱을 다시 켜면(해시 없이) 그 칸으로 돌아온다
+              await hp.click('.dock .db[title="파일"]'); await wait(500)
+              await hp.goto(base + '/'); await wait(1200)
+              const back = await hp.evaluate(() => ({ view: document.querySelector('.app').dataset.view, bot: new URLSearchParams(location.hash.slice(1)).get('bot') }))
+              if (back.view !== 'panel' || back.bot !== bot.id) fail('H 좁음: 서랍 상태가 재시작 후 기억돼야 한다 ' + JSON.stringify(back))
+              // A 의 순서 · F 의 표시 이름 · 확인 대기 점 — 세 단계가 같은 rows 를 쓴다: 넓음 레일 / 중간 띠 / 좁음 홈의 봇 순서가 같다
+              await hp.keyboard.press('Escape'); await wait(300); await hp.click('.chat-hdr .hb-menu'); await wait(400)
+              const homeOrder = await hp.$$eval('.drawer.left .mrow .bname', (r) => r.map((x) => x.textContent?.trim()))
+              await hp.setViewportSize({ width: 1400, height: 900 }); await wait(500)
+              const railOrder = await hp.$$eval('.cols > .col.side .brow .n', (r) => r.map((x) => (x.querySelector('.dn')?.textContent ?? x.textContent ?? '').trim()))
+              if (homeOrder.length < 2 || homeOrder.join('|') !== railOrder.slice(0, homeOrder.length).join('|')) fail('H: 세 단계의 봇 순서·표시 이름이 다르다 ' + JSON.stringify({ homeOrder, railOrder }))
+            }
+            if (herrs.length) fail(`H ${label}: 페이지 오류 ` + JSON.stringify(herrs))
+            await hp.close()
+          }
+          // 시안 PNG 와 나란히 — 한 장으로
+          // ⚠ setContent 의 about:blank 는 file:// 그림을 못 읽는다(빈 사각형만 남았다 · 실측) — data URL 로 박는다
+          const du = (f) => (existsSync(f) ? 'data:image/png;base64,' + readFileSync(f).toString('base64') : '')
+          const cmp = await br.newPage({ viewport: { width: 1800, height: 1000 } })
+          await cmp.setContent(`<body style="margin:0;background:#111;color:#ddd;font:13px sans-serif"><div style="padding:8px">시안</div><img src="${du('test/tmp/responsive-mock.png')}" style="width:1800px"><div style="display:flex;gap:12px;padding:8px;align-items:flex-start"><div>넓음 1400<br><img src="${du('test/tmp/h-wide.png')}" style="width:840px"></div><div>중간 900<br><img src="${du('test/tmp/h-mid.png')}" style="width:540px"></div><div>좁음 500<br><img src="${du('test/tmp/h-narrow.png')}" style="width:300px"></div></div></body>`)
+          await wait(800); await cmp.screenshot({ path: 'test/tmp/h-compare.png', fullPage: true }); await cmp.close()
+          await fetch(base + `/api/sessions/${sidH}`, { method: 'DELETE' })
+          ok('H 반응형 3단계 — 1400 세 칸 · 900 띠 52px+독+덮는 서랍(채팅 폭 불변) · 500 ☰+쓸기(👉 레일 · 👈 문서 · 반대로 닫힘 · 두 번 · 30%/튕김 · 비스듬·코드 블록·휠 무시 · 스크림·Esc · 기억) · 시안 비교 test/tmp/h-compare.png')
         }
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
         await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)

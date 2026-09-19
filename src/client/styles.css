@@ -55,7 +55,25 @@ b,strong { color:var(--w); font-weight:600 }
 .app { height:100%; display:flex; flex-direction:column; overflow:hidden }
 .app.dragx { user-select:none; cursor:col-resize } .app.dragy { user-select:none; cursor:row-resize }
 .banner { display:flex; align-items:center; gap:10px; padding:8px 16px; border-bottom:1px solid var(--line); color:var(--t2); font-size:12.5px; background:var(--sb) }
-.cols { flex:1; display:flex; min-height:0 }
+.cols { flex:1; display:flex; min-height:0; position:relative }
+/* ── H · 반응형 3단계 (2026-09-19 Dave 시안 확정) — 중간·좁음의 양쪽 패널은 채팅을 **밀지 않고 덮는다**. 채팅 폭은 안 변하고 어두워질 뿐 ── */
+.scrim { position:absolute; inset:0; z-index:30; background:rgba(0,0,0,.45); transition:opacity .22s ease-out; animation:fadein .18s ease-out }
+.drawer { position:absolute; top:0; bottom:0; z-index:31; display:flex; min-width:0; transition:transform .22s ease-out; box-shadow:0 12px 40px rgba(0,0,0,.5); background:var(--sb) }
+/* ⚠ will-change:transform 은 끌리는 동안만 — 열린 서랍에 남겨 두면 안의 position:fixed(시트·메뉴)가 서랍 기준이 돼 키보드 위 시트가 화면 밖으로 나간다(실측) */
+.cols.dragging .drawer { will-change:transform }
+.drawer > * { flex:1 !important; min-width:0; width:100% !important; max-width:none }
+.drawer.left { left:0; width:min(86%, 340px); transform:translateX(-100%) } .drawer.left.open { transform:none }
+.drawer.right { right:0; width:min(92%, 440px); transform:translateX(100%) } .drawer.right.open { transform:none }
+.app.smid .drawer.left { left:52px; width:280px } .app.smid .drawer.right { width:min(62%, 560px) }
+.app.smid .scrim { left:52px }
+.cols.dragging .drawer, .cols.dragging .scrim { transition:none } .cols.dragging { user-select:none; -webkit-user-select:none }
+.app.smid .strip.left { width:52px } .app.smid .strip.left .fly { left:46px }
+/* H-4 · 알약 독 — 채팅 오른쪽 가장자리에 세로로 떠 있는 아이콘 묶음 */
+.dock { position:absolute; right:10px; top:50%; translate:0 -50%; z-index:20; display:flex; flex-direction:column; gap:2px; padding:5px; border-radius:22px; border:1px solid var(--hair); background:var(--box); box-shadow:0 8px 24px rgba(0,0,0,.4) }
+.dock .db { position:relative; width:36px; height:36px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; color:var(--t2) } .dock .db:hover { background:var(--sel); color:var(--w) } .dock .db.dim { opacity:.35 } .dock .db:disabled { pointer-events:none }
+.dock .db .bd { position:absolute; right:-2px; top:-2px; min-width:16px; height:16px; padding:0 4px; border-radius:8px; background:var(--run); color:#fff; font-size:10px; line-height:16px; text-align:center }
+.dock.sm { right:6px; padding:3px; gap:0 } .dock.sm .db { width:32px; height:32px }
+.app.smid .cols > .col.chat { min-width:0 }
 .col { display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--bg) } .col.side { background:var(--sb); flex:none }
 .divx { width:1px; flex:none; background:var(--line); position:relative; cursor:col-resize; z-index:2 } .divx::before { content:''; position:absolute; left:-4px; right:-4px; top:0; bottom:0 } .divx:hover { background:var(--run); box-shadow:0 0 0 1px rgba(224,136,80,.3) }
 .divy { height:1px; flex:none; background:var(--line); position:relative; cursor:row-resize; z-index:2 } .divy::before { content:''; position:absolute; top:-4px; bottom:-4px; left:0; right:0 } .divy:hover { background:var(--run); box-shadow:0 0 0 1px rgba(224,136,80,.3) }
@@ -429,7 +447,7 @@ b,strong { color:var(--w); font-weight:600 }
 .pk .hitn { display:flex; flex-direction:column; gap:1px; min-width:0 } .pk .hitn .nm { white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .pk .hitn .pth { font-size:11px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .pk .hit { color:var(--run); font-weight:600 }
 /* 알림 — 데스크톱에서만 목록에 상한을 둔다. 폰은 `.modal-b { flex:1 }` 로 아래까지 채우고
    버튼 줄이 화면 맨 아래(안전 영역 위)에 붙는다. */
-@media (min-width: 761px) { .nmodal .modal-b { max-height:55vh } }
+@media (min-width: 768px) { .nmodal .modal-b { max-height:55vh } }
 .pk .fl { display:flex; gap:6px; padding:0 18px 8px; font-size:11.5px; color:var(--t3); align-items:center } .pk .fl button { padding:2px 8px; border-radius:10px; color:var(--t3) } .pk .fl button.on { background:var(--sel); color:var(--w) } .pk .fl .hint { margin-left:auto } .pk .modal-b { padding:0 10px 8px } .pk .trow.dir .n { color:var(--t) } .pk .crumb { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; text-align:right; font-size:12px; color:var(--t3); direction:rtl } .pk .crumb > span { direction:ltr; unicode-bidi:isolate } .pk .crumb b { color:var(--t) }
 .rbg { font-size:10.5px; border:1px solid var(--line2); border-radius:4px; padding:0 5px; white-space:nowrap }
 .field { display:flex; flex-direction:column; gap:5px } .field label { font-size:11px; color:var(--t3) } .field input,.field textarea,.field select { background:var(--bg); border:1px solid var(--line2); border-radius:6px; padding:8px 10px; outline:0; color:var(--t); width:100% }
@@ -477,15 +495,15 @@ b,strong { color:var(--w); font-weight:600 }
 
 /* ── 폰 — 탭바 없음. 홈 → 대화 → 폴더 → 문서를 밀어 넣는다. 큰 글자 · 둥근 44pt 버튼 · 떠 있는 알약 ── */
 .mhome, .mtop, .mfoot, .mpill, .mrow, .mcards, .cchips { display:none }
-@media (max-width: 760px) {
+@media (max-width: 767px) {
   html,body,#root { font-size:15px }
   input,textarea,select { font-size:16px }
   .divx, .strip, .cfoot { display:none !important }
-  .cols > * { display:none !important; width:100% !important; flex:1 !important }
-  .app[data-view="list"] .cols > .mhome { display:flex !important }
-  .app[data-view="chat"] .cols > .col.chat { display:flex !important }
-  .app[data-view="doc"] .cols > .docwrap { display:flex !important }
-  .app[data-view="panel"] .cols > .rpwrap { display:flex !important }
+  /* H · 좁음: 흐름 안에는 채팅 한 칸뿐. 홈(봇 목록)·문서·패널은 서랍(.drawer)으로 덮인다 — 밀지 않는다 */
+  .cols > .col.chat { width:100% !important; flex:1 !important }
+  .drawer > .mhome { display:flex !important }
+  .drawer.left { width:86% }
+  .drawer.right { width:100% }
   html,body,#root { background:var(--bg) }
   .app { background:var(--bg) } /* 그라디언트를 두면 헤더(단색)와 만나는 자리에 선이 생긴다 */
   /* 루트 = 키보드가 열렸으면 시각 뷰포트(--vvh), 아니면 100dvh. max-height 는 마지막 방어선 —
@@ -577,7 +595,7 @@ b,strong { color:var(--w); font-weight:600 }
 .ap-env .er .v { flex:1; min-width:0; color:var(--t2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11.5px }
 .ap-f { display:flex; align-items:center; gap:9px } .ap-f .sp { flex:1 }
 .ap-f .btn.on { background:var(--w); color:var(--bg); font-weight:600; display:inline-flex; align-items:center; gap:7px }
-@media (max-width:760px) {
+@media (max-width:767px) {
   .modal.apick { width:calc(100% - 16px); padding:14px; gap:12px }
   .ap-cards { flex-direction:column }
   .ap-c .ds { min-height:0 }
@@ -690,7 +708,7 @@ b,strong { color:var(--w); font-weight:600 }
 .sec-row .ic { width:34px; height:34px; border-radius:10px; background:var(--box); display:inline-flex; align-items:center; justify-content:center; flex:none }
 .sec-row .nm { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px } .sec-row .nm small { font-size:11.5px; color:var(--t3) }
 .sec-row .vl { font-size:12.5px; color:var(--t3); max-width:40%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-@media (max-width:760px) {
+@media (max-width:767px) {
   .setr { flex-direction:column; gap:8px; align-items:stretch }
   .setr .c { max-width:100%; flex-wrap:wrap }
   .sin { width:100% }
@@ -712,7 +730,7 @@ b,strong { color:var(--w); font-weight:600 }
 .hsec.cmds .hz .n b { font-family:var(--mono); font-weight:500; font-size:12px } .hsec.cmds .hz .n small { color:var(--t3); font-size:11.5px } .hsec.cmds .hz.ro { cursor:default; color:var(--t3) }
 .hz.more { color:var(--t3); font-size:11.5px; padding-left:38px }
 .hz.more:hover { color:var(--t2) }
-@media (max-width: 760px) { .hz { min-height:36px; font-size:14px; padding:6px 18px } .hz .sc { font-size:12px } }
+@media (max-width: 767px) { .hz { min-height:36px; font-size:14px; padding:6px 18px } .hz .sc { font-size:12px } }
 
 /* 접힌 기계 한 줄 (「A · 문서처럼」) — 대화에서 가장 조용해야 하는 줄 */
 .mach { display:flex; align-items:center; gap:8px; min-height:22px; font-size:11.5px; color:var(--t3); background:none; border:0; padding:2px 0; cursor:pointer; text-align:left }
