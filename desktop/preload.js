@@ -32,7 +32,16 @@ contextBridge.exposeInMainWorld('folderbotDesktop', {
     wait: (p, want, ms) => ipcRenderer.invoke('fb:local-wait', p, want, ms),
     download: (url, hostName, rel) => ipcRenderer.invoke('fb:local-download', url, hostName, rel),
     icloud: (p) => ipcRenderer.invoke('fb:local-icloud', p),
-    pick: () => ipcRenderer.invoke('fb:local-pick')
+    pick: () => ipcRenderer.invoke('fb:local-pick'),
+    // M · 복사 · 진행 있는 받기 · 캐시
+    copyImage: (a) => ipcRenderer.invoke('fb:local-copy-image', a),
+    copyFiles: (paths) => ipcRenderer.invoke('fb:local-copy-files', paths),
+    fetch: (id, url, hostName, rel) => ipcRenderer.invoke('fb:local-fetch', id, url, hostName, rel),
+    cancel: (id) => ipcRenderer.invoke('fb:local-cancel', id),
+    cachePath: (hostName, rel) => ipcRenderer.invoke('fb:local-cache-path', hostName, rel),
+    cacheInfo: () => ipcRenderer.invoke('fb:local-cache-info'),
+    cacheClear: () => ipcRenderer.invoke('fb:local-cache-clear'),
+    onProgress: (cb) => { const f = (_e, p) => cb(p); ipcRenderer.on('fb:local-progress', f); return () => ipcRenderer.removeListener('fb:local-progress', f) }
   },
   // 자기 업데이트 — 화면의 버전 칩이 쓴다
   update: {

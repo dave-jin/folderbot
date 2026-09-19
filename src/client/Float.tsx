@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 /**
@@ -43,14 +43,19 @@ export function Float({ at, onClose, children, className = 'menu', width = 200 }
       window.removeEventListener('keydown', key); window.removeEventListener('mousedown', off)
     }
   }, [onClose])
+  // 🔴 **긴 메뉴는 위로 밀어 올린다** (M-3 · 2026-09-19 — 트리 메뉴에 «파일 복사» 가 붙자 아래로 잘렸다). 그린 뒤 높이를 재서
+  //    바닥을 넘으면 그만큼 올리고, 그래도 화면보다 크면 안에서 스크롤한다. 좌표는 여는 순간 고정이므로 한 번만 잰다.
+  const box = useRef<HTMLDivElement>(null); const [lift, setLift] = useState(0)
+  // ⚠ useEffect 라야 한다 — 포털 그릇은 위의 useEffect 가 body 에 붙이므로, layout effect 시점엔 아직 문서 밖이라 크기가 0 이다
+  useEffect(() => { setLift(0); const b = box.current; if (!b) return; const r = b.getBoundingClientRect(); const over = r.bottom - (window.innerHeight - 8); if (over > 0) setLift(Math.min(over, Math.max(0, r.top - 8))) }, [at.x, at.y, at.up])
   if (!el) return null
-  const style: React.CSSProperties = { position: 'fixed', zIndex: 200, minWidth: width, maxWidth: 'min(320px, 92vw)' }
+  const style: React.CSSProperties = { position: 'fixed', zIndex: 200, minWidth: width, maxWidth: 'min(320px, 92vw)', maxHeight: 'calc(100vh - 16px)', overflowY: 'auto' }
   if (at.right) style.right = Math.max(8, window.innerWidth - at.x)
   else style.left = Math.min(at.x, Math.max(8, window.innerWidth - width - 8))
   if (at.up) style.bottom = Math.max(8, window.innerHeight - at.y)
-  else style.top = Math.min(at.y, Math.max(8, window.innerHeight - 80))
+  else style.top = Math.max(8, Math.min(at.y, Math.max(8, window.innerHeight - 80)) - lift)
   return createPortal(
-    <div className={className} style={style} onMouseDown={(e) => e.stopPropagation()}>{children}</div>,
+    <div ref={box} className={className} style={style} onMouseDown={(e) => e.stopPropagation()}>{children}</div>,
     el
   )
 }

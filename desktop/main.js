@@ -178,6 +178,42 @@ ipcMain.handle('fb:local-reveal', (_e, p) => { shell.showItemInFolder(String(p))
 ipcMain.handle('fb:local-wait', (_e, p, want, ms) => localfs.waitFor(String(p), want || {}, Number(ms) || 60000))
 ipcMain.handle('fb:local-download', (_e, url, hostName, rel) => localfs.download(String(url), { authorization: `Bearer ${settings.token}` }, localfs.cachePath(app.getPath('userData'), String(hostName || 'host'), String(rel))))
 ipcMain.handle('fb:local-icloud', (_e, p) => localfs.icloudDownload(String(p)))
+/* ── M · 복사 · 진행 있는 받기 · 캐시 ────────────────────────────────────────
+ * 이미지는 nativeImage 로 클립보드에(메모·슬랙에 ⌘V). 파일은 macOS 파일 클립보드(NSFilenamesPboardType plist) — Finder ⌘V 로 복사되고
+ * 카톡 입력창에 붙이면 첨부가 된다. 원격이면 먼저 캐시에 받은 사본의 경로를 넣는다. */
+const CACHE_DIR = () => join(app.getPath('userData'), 'remote-cache')
+const CACHE_LIMIT = 2 * 1024 * 1024 * 1024
+ipcMain.handle('fb:local-copy-image', async (_e, a) => {
+  try {
+    let img = null
+    if (a && a.path && existsSync(String(a.path))) img = nativeImage.createFromPath(String(a.path))
+    if ((!img || img.isEmpty()) && a && a.url) { const r = await fetch(String(a.url), { headers: { authorization: `Bearer ${settings.token}` } }); if (!r.ok) return false; img = nativeImage.createFromBuffer(Buffer.from(await r.arrayBuffer())) }
+    if (!img || img.isEmpty()) return false
+    clipboard.writeImage(img); return true
+  } catch { return false }
+})
+ipcMain.handle('fb:local-copy-files', (_e, paths) => {
+  const list = (Array.isArray(paths) ? paths : []).map(String).filter((p) => existsSync(p)); if (!list.length) return false
+  if (process.platform === 'darwin') {
+    const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    const plist = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><array>${list.map((p) => `<string>${esc(p)}</string>`).join('')}</array></plist>`
+    clipboard.writeBuffer('NSFilenamesPboardType', Buffer.from(plist, 'utf8'))
+    if (list.length === 1) { try { clipboard.write({ text: list[0] }); clipboard.writeBuffer('public.file-url', Buffer.from(`file://${encodeURI(list[0])}`, 'utf8')); clipboard.writeBuffer('NSFilenamesPboardType', Buffer.from(plist, 'utf8')) } catch {} }
+  } else clipboard.writeText(list.join('\n'))
+  return true
+})
+const fetches = new Map()
+ipcMain.handle('fb:local-fetch', async (e, id, url, hostName, rel) => {
+  const dest = localfs.cachePath(app.getPath('userData'), String(hostName || 'host'), String(rel))
+  const ac = new AbortController(); fetches.set(String(id), ac)
+  const send = (o) => { try { e.sender.send('fb:local-progress', { id: String(id), ...o }) } catch {} }
+  try { const p = await localfs.downloadStream(String(url), { authorization: `Bearer ${settings.token}` }, dest, (pr) => send(pr), ac.signal); localfs.cacheEvict(CACHE_DIR(), CACHE_LIMIT); return p }
+  finally { fetches.delete(String(id)) }
+})
+ipcMain.handle('fb:local-cancel', (_e, id) => { const ac = fetches.get(String(id)); if (ac) ac.abort(); return !!ac })
+ipcMain.handle('fb:local-cache-path', (_e, hostName, rel) => localfs.cachePath(app.getPath('userData'), String(hostName || 'host'), String(rel)))
+ipcMain.handle('fb:local-cache-info', () => ({ ...localfs.cacheInfo(CACHE_DIR()), limit: CACHE_LIMIT }))
+ipcMain.handle('fb:local-cache-clear', () => ({ ...localfs.cacheClear(CACHE_DIR()), limit: CACHE_LIMIT }))
 ipcMain.handle('fb:local-pick', async () => { if (!win) return ''; const r = await dialog.showOpenDialog(win, { title: '이 기기의 볼트 폴더', properties: ['openDirectory'] }); return r.canceled ? '' : (r.filePaths[0] || '') })
 ipcMain.handle('fb:update-state', () => updater.state())
 ipcMain.handle('fb:update-check', async () => { await updater.check(true); return updater.state() })

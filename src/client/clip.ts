@@ -34,3 +34,26 @@ export async function copyText(text: string): Promise<boolean> {
 export async function copySay(text: string, say: (m: string) => void, what = '복사했어요'): Promise<void> {
   say(await copyText(text) ? what : '복사를 못 했어요 — 길게 눌러 직접 복사해 주세요')
 }
+
+/**
+ * 이미지를 클립보드에 (M-2 · 2026-09-19). 세 길 —
+ * ① 맥 앱(호스트·원격 Electron): 셸의 `clipboard.writeImage`(nativeImage) — 호스트는 파일에서, 원격은 호스트 raw 를 받아서. 메모·슬랙에 ⌘V 로 그대로 붙는다.
+ * ② Safari: `ClipboardItem` 에 **Promise<Blob>** 을 넣어야 한다 — 사용자 제스처 안에서 write 를 먼저 부르고 그림은 뒤에 온다. PNG 로 굽는다(JPEG 도).
+ * ③ 그 밖 브라우저: 받아서 PNG 로 구운 뒤 `ClipboardItem`. 못 하는 환경이면 false — 부르는 쪽이 안내한다.
+ */
+export async function copyImage(url: string, abs?: string): Promise<boolean> {
+  const b = (window as unknown as { folderbotDesktop?: { local?: { copyImage?: (a: { url?: string; path?: string }) => Promise<boolean> } } }).folderbotDesktop?.local
+  if (b?.copyImage) { try { return await b.copyImage({ url: location.origin + url, path: abs }) } catch { return false } }
+  const toPng = async (): Promise<Blob> => {
+    const res = await fetch(url); const blob = await res.blob()
+    if (blob.type === 'image/png') return blob
+    const bmp = await createImageBitmap(blob); const cv = document.createElement('canvas'); cv.width = bmp.width; cv.height = bmp.height; cv.getContext('2d')?.drawImage(bmp, 0, 0)
+    return new Promise<Blob>((ok, no) => cv.toBlob((x) => (x ? ok(x) : no(new Error('png'))), 'image/png'))
+  }
+  try {
+    if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) return false
+    const safari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+    const item = safari ? new ClipboardItem({ 'image/png': toPng() }) : new ClipboardItem({ 'image/png': await toPng() })
+    await navigator.clipboard.write([item]); return true
+  } catch { return false }
+}

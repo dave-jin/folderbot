@@ -4,6 +4,9 @@ import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, extname, normalize, relative, resolve, sep } from 'node:path'
 import { homedir } from 'node:os'
+import { spawn } from 'node:child_process'
+/** zip 을 표준 출력으로 — 숨김 파일(.folderbot 등)은 뺀다 */
+function spawnZip(cwd: string, name: string) { return spawn('zip', ['-r', '-q', '-', name, '-x', '*/.*', '.*'], { cwd }) }
 import type { Frame } from '../core/types'
 import type { Host } from './host'
 import { bindAddresses, tailnetInfo } from './tailnet'
@@ -587,6 +590,28 @@ export class Gateway {
       // 참조 폴더 (D) — 폴더 밖 문서를 보다가 «이 Folderbot 에 참조 폴더로 추가». 빈 path 면 푼다
       if (sub === 'repo' && m === 'POST') { const b = await body(); try { const nb = reg.setRepo(bot.id, String(b.path ?? '')); h.afterBotsChanged(); return json(200, { ok: true, repo: nb.repo ?? null }) } catch (e) { return json(400, { error: (e as Error).message }) } }
       if (sub === 'stat' && m === 'GET') { const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')).slice(1)); if (!exists(abs)) return json(404, { error: '없는 파일' }); const st = statSync(abs); return json(200, { size: st.size, mtime: st.mtimeMs, head: headHash(abs), vaultRel: relative(reg.root, abs) }) }
+      /**
+       * M-3 · 파일 목록(재귀) — 원격 기기가 «폴더째 받기» 전에 개수·용량을 알고 확인창을 띄우고, 사본이 신선한지(size+head) 대조한다.
+       * 폴더가 아니면 그 파일 하나. 5000개에서 자른다(`truncated`) — 그보다 크면 폴더째 복사가 아니라 압축이 맞다.
+       */
+      if (sub === 'manifest' && m === 'GET') {
+        const relQ = url.searchParams.get('rel') ?? ''
+        const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, relQ)).slice(1)); if (!exists(abs)) return json(404, { error: '없는 파일' })
+        const out: { rel: string; size: number; mtime: number; head: string }[] = []; let truncated = false
+        const walk = (dir: string, r: string) => { for (const e of readdirSync(dir, { withFileTypes: true })) { if (out.length >= 5000) { truncated = true; return } if (e.name.startsWith('.')) continue; const a = join(dir, e.name); const rr = r ? `${r}/${e.name}` : e.name; if (e.isDirectory()) walk(a, rr); else { const st = statSync(a); out.push({ rel: rr, size: st.size, mtime: st.mtimeMs, head: headHash(a) }) } } }
+        const st = statSync(abs)
+        if (st.isDirectory()) walk(abs, ''); else out.push({ rel: '', size: st.size, mtime: st.mtimeMs, head: headHash(abs) })
+        return json(200, { dir: st.isDirectory(), name: basename(abs), files: out, total: out.reduce((a, f) => a + f.size, 0), truncated })
+      }
+      /** M-3 · 폴더를 zip 으로 — 폰의 «공유…» 와 브라우저 내려받기. macOS·Linux 의 /usr/bin/zip 을 스트리밍한다(디스크에 안 남긴다) */
+      if (sub === 'zip' && m === 'GET') {
+        const relQ = url.searchParams.get('rel') ?? ''
+        const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, relQ)).slice(1)); if (!exists(abs)) return json(404, { error: '없는 폴더' })
+        const name = basename(abs)
+        res.writeHead(200, { 'content-type': 'application/zip', 'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(name)}.zip`, 'cache-control': 'no-store' })
+        const z = spawnZip(dirname(abs), name); z.stdout.pipe(res); z.on('error', () => { try { res.end() } catch { /* */ } }); req.on('close', () => { try { z.kill() } catch { /* */ } })
+        return
+      }
       if (sub === 'raw') { const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')).slice(1)); if (!exists(abs)) return json(404, { error: 'none' }); res.writeHead(200, { 'content-type': mime(abs), 'cache-control': 'no-store' }); stream(abs).pipe(res); return }
       if (sub === 'routines' && m === 'GET') return json(200, bot.routines)
       if (sub === 'routines' && m === 'PUT') { const b = await body(); const cfg = reg.botConfig(bot.abs); cfg.routines = b.routines as never; reg.saveBotConfig(bot.abs, cfg); h.afterBotsChanged(); return json(200, { ok: true }) }

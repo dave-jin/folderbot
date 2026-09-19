@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Bot, HarnessDetail, HarnessItem, SessionInfo, TodoItem } from '../core/types'
-import { copySay } from './clip'
+import { copyImage as copyImageShared, copySay } from './clip'
+import { copyFiles } from './fileCopy'
 import { api } from './api'
 import { isDoneSection } from '../core/todo'
 import { ACT_COLOR, ACT_ICON, ACT_LABEL, LONG, actOf, buzz, slotOf, useSwipeCfg, type SwipeAct } from './swipe'
@@ -548,20 +549,7 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
    * 이미지 복사 — 🔴 **그림 그대로** 클립보드에. 경로를 복사해 봐야 붙여넣는 쪽은 글자를 받는다.
    * ⚠ 브라우저가 클립보드에 바로 받아 주는 것은 **PNG 뿐**이라, 다른 형식은 캔버스로 한 번 굽는다.
    */
-  const copyImage = async (rel: string) => {
-    try {
-      const res = await fetch(`/api/bots/${bot.id}/raw?rel=${encodeURIComponent(rel)}&token=${encodeURIComponent(localStorage.getItem('folderbot:token') ?? '')}`)
-      let blob = await res.blob()
-      if (blob.type !== 'image/png') {
-        const bmp = await createImageBitmap(blob)
-        const cv = document.createElement('canvas'); cv.width = bmp.width; cv.height = bmp.height
-        cv.getContext('2d')?.drawImage(bmp, 0, 0)
-        blob = await new Promise<Blob>((ok2, no) => cv.toBlob((b) => (b ? ok2(b) : no(new Error('못 구웠어요'))), 'image/png'))
-      }
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
-      say('이미지를 복사했어요')
-    } catch { say('이 브라우저에서는 이미지 복사를 못 해요') }
-  }
+  const copyImage = async (rel: string) => { const ok = await copyImageShared(`/api/bots/${bot.id}/raw?rel=${encodeURIComponent(rel)}&token=${encodeURIComponent(localStorage.getItem('folderbot:token') ?? '')}`, main ? `${bot.abs}/${rel}` : undefined); say(ok ? '이미지를 복사했어요' : '이 환경에서는 이미지 복사를 못 해요') }
   /** 지금 다루는 대상 — 우클릭한 줄이 **고른 것 안에 있으면** 고른 것 전부, 아니면 그 줄 하나 */
   const targets = (n: Node): string[] => (sel.has(n.rel) && sel.size > 1 ? [...sel] : [n.rel])
   /**
@@ -597,6 +585,22 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
    * ⛔ 글 쓰는 중(입력칸·편집기)에는 가로채지 않는다 — 맥 기본과 CodeMirror 의 것이 이긴다.
    * ⚠ 문서 열에 커서가 있으면 그쪽 편집기의 ⌘Z 다. 판정 순서는 ⌘F 와 같다.
    */
+  /** ⌘C = 파일 복사(고른 것) · ⌥⌘C = 경로 복사 (M-3). 트리에 초점이 있을 때만 — 글을 고른 채면 브라우저의 복사에 양보 */
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'c' || !(e.metaKey || e.ctrlKey) || e.shiftKey) return
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      if (!t?.closest?.('.trow')) return
+      if (window.getSelection()?.toString()) return
+      const rels = sel.size ? [...sel] : active ? [active] : []
+      if (!rels.length) return
+      e.preventDefault()
+      if (e.altKey) { void copySay(rels.map((r) => `${bot.abs}/${r}`).join('\n'), say, '경로를 복사했어요'); return }
+      void copyFiles(bot, rels, { main, hostName, phone: !!phone, say })
+    }
+    window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
+  }, [sel, active, bot, main, hostName, phone]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const k = async (e: KeyboardEvent) => {
       if (e.key.toLowerCase() !== 'z' || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return
@@ -695,7 +699,9 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
         : <>{ctx.n.botId ? <button className="on" onClick={() => onStartAt(vaultRel(ctx.n.rel), ctx.n.botId)}><Icon n="sub" size={12} /><span style={{ flex: 1 }}>봇 열기</span><span className="k">⏎</span></button> : <button className="on" onClick={() => onStartAt(vaultRel(ctx.n.rel))}><Icon n="sub" size={12} /><span style={{ flex: 1 }}>{bot.orchestrator ? '여기서 에이전트 시작' : '이 하위 폴더로 새 봇 시작'}</span><span className="k">⏎</span></button>}<button onClick={() => onNewFolderAt(vaultRel(ctx.n.rel))}><Icon n="fplus" size={12} /><span style={{ flex: 1 }}>새 폴더 만들기 → 시작</span></button><hr /><button onClick={() => toggleDir(ctx.n.rel)}><span style={{ flex: 1 }}>{exp.has(ctx.n.rel) ? '접기' : '펼치기'}</span></button><button onClick={() => onAttach(ctx.n.rel, true)}><span style={{ flex: 1 }}>폴더째 첨부</span></button></>}
       {/* 이미지는 **그림 그대로** 클립보드에 — 붙여넣기로 슬랙·문서에 바로 들어간다 */}
       {!ctx.n.dir && IMG_RE.test(ctx.n.rel) ? <button onClick={() => void copyImage(ctx.n.rel)}><span style={{ flex: 1 }}>이미지 복사</span></button> : null}
-      <button onClick={() => { void copySay(`${bot.abs}/${ctx.n.rel}`, say, '경로를 복사했어요') }}><span style={{ flex: 1 }}>경로 복사</span><span className="k">⌘C</span></button>
+      {/* M-3 · 파일 자체를 복사 — Finder ⌘V·카톡 첨부. 원격은 캐시로 받은 사본(진행·취소), 폰은 공유 시트 */}
+      <button onClick={() => { const rels = sel.has(ctx.n.rel) && sel.size > 1 ? [...sel] : [ctx.n.rel]; void copyFiles(bot, rels, { main, hostName, phone: !!phone, say }) }}><Icon n="copy" size={12} /><span style={{ flex: 1 }}>{phone ? '공유…' : `${ctx.n.dir ? '폴더' : '파일'} 복사${sel.has(ctx.n.rel) && sel.size > 1 ? ` (${sel.size}개)` : ''}`}</span><span className="k">{phone ? '' : '⌘C'}</span></button>
+      <button onClick={() => { void copySay(`${bot.abs}/${ctx.n.rel}`, say, '경로를 복사했어요') }}><span style={{ flex: 1 }}>경로 복사</span><span className="k">⌥⌘C</span></button>
       <button onClick={() => { void copySay(ctx.n.rel, say, '상대 경로를 복사했어요') }}><span style={{ flex: 1 }}>경로 복사 (폴더 기준)</span></button>
       {sel.has(ctx.n.rel) && sel.size > 1 ? null : <button onClick={() => rename(ctx.n)}><span style={{ flex: 1 }}>이름 바꾸기</span></button>}
       <button onClick={() => void dup(ctx.n)}><span style={{ flex: 1 }}>복제</span></button>
