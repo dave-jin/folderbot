@@ -54,7 +54,7 @@ try {
   if (st.candidates.filter((c) => c.harness).length !== 3) fail('harness count')
   // SSE
   const frames = []
-  const sse = fetch(base + '/api/events').then(async (r) => { const rd = r.body.getReader(); const dec = new TextDecoder(); let buf = ''; for (;;) { const { value, done } = await rd.read(); if (done) break; buf += dec.decode(value, { stream: true }); let i; while ((i = buf.indexOf('\n\n')) >= 0) { const c = buf.slice(0, i); buf = buf.slice(i + 2); for (const l of c.split('\n')) if (l.startsWith('data: ')) frames.push(JSON.parse(l.slice(6))) } } }).catch(() => {})
+  const sse = fetch(base + '/api/events').then(async (r) => { const rd = r.body.getReader(); const dec = new TextDecoder(); let buf = ''; for (;;) { const { value, done } = await rd.read(); if (done) break; buf += dec.decode(value, { stream: true }); let i; while ((i = buf.indexOf('\n\n')) >= 0) { const c = buf.slice(0, i); buf = buf.slice(i + 2); for (const l of c.split('\n')) if (l.startsWith('data: ')) { const f = JSON.parse(l.slice(6)); if (f.ev === 'files') f._out = existsSync(join(root, '3. Area/제품_Rondo/stub-output.md')); frames.push(f) } } } }).catch(() => {})
   await wait(300)
   // 폴더에서 시작
   const bot = await api('/bots/start', { rel: '3. Area/제품_Rondo' }); ok(`bot started ${bot.name} ${bot.color}`)
@@ -144,6 +144,7 @@ try {
   chat = await api(`/sessions/${s1.sessionId}/chat`)
   if (chat.info.cliSessionId !== idBefore || chat.info.model !== 'claude-sonnet-5' || !chat.info.alive) fail('settings resume: ' + JSON.stringify(chat.info)); ok('session settings → hibernate → resume with new model')
   // 승인 흐름
+  const fr0 = frames.length
   await api(`/sessions/${s1.sessionId}/send`, { text: '승인이 필요한 일 해 줘' })
   await wait(700)
   chat = await api(`/sessions/${s1.sessionId}/chat`)
@@ -156,6 +157,51 @@ try {
   if (chat.info.state !== 'done') fail(`after allow state ${chat.info.state}`)
   if (!chat.items.some((i) => i.kind === 'files' && i.paths.some((p) => p.endsWith('stub-output.md')))) fail('files chip missing'); ok('allow → Write → files chip → done')
   if (!existsSync(join(root, '3. Area/제품_Rondo/stub-output.md'))) fail('stub output file')
+  /**
+   * 🔴 **«파일 바뀜» 은 파일이 디스크에 있은 뒤에 알린다** (2026-09-18 Dave: «원격환경에서 생성된 파일이 폴더에
+   *    바로 반영이 안 되는 문제»). 종전엔 Write 도구를 *부르는* 줄에서 알려서 화면이 아직 없는 파일을 읽고 끝났다.
+   */
+  { const fs_ = frames.slice(fr0).filter((f) => f.ev === 'files' && f.botId === bot.id)
+    if (!fs_.length) fail('files frame: none after the Write turn')
+    if (!fs_.every((f) => f._out)) fail('🔴 files frame arrived before the file existed on disk ' + JSON.stringify(fs_.map((f) => f._out)))
+    ok('files frame only after the file exists on disk') }
+  // 🔴 **호스트가 폴더를 본다** — Bash·Codex·Dropbox·Finder 가 만든 파일도 트리에 온다(세션을 거치지 않은 쓰기)
+  { const n0 = frames.length
+    writeFileSync(join(root, '3. Area/제품_Rondo/watch-me.md'), '# 밖에서 만든 파일\n')
+    let seen = false; for (let i = 0; i < 40 && !seen; i++) { await wait(100); seen = frames.slice(n0).some((f) => f.ev === 'files' && f.botId === bot.id) }
+    if (!seen) fail('🔴 folder watch: a file written outside the session never produced a files frame')
+    ok('folder watch → files frame for a file written outside the session') }
+  /**
+   * 🔴 **모드를 턴 중간에 바꾸면 그 자리에서 먹는다** (2026-09-18 Dave: «중간에 권한을 바꿨는데 그 이후에도
+   *    계속 실행하기 전에 물어보네»). 모드는 스폰 인자라 워커는 옛 모드로 묻는다 — 호스트가 대신 답하고
+   *    (pending 이 비고 카드가 사라진다), 턴이 끝나면 새 모드로 재시작(절전 → 같은 id 로 이어짐).
+   */
+  await api(`/sessions/${s1.sessionId}/send`, { text: '승인이 필요한 일 해 줘' }); await wait(700)
+  chat = await api(`/sessions/${s1.sessionId}/chat`)
+  if (chat.info.state !== 'awaiting_input' || chat.info.pending.length !== 1) fail('mode-switch: awaiting expected ' + chat.info.state)
+  const sw = await api(`/sessions/${s1.sessionId}/settings`, { permissionMode: 'bypassPermissions' })
+  if (sw.pending.length !== 0 || sw.state === 'awaiting_input' || !sw.restartPending) fail('mode-switch: pending should be auto-allowed + restartPending ' + JSON.stringify({ p: sw.pending.length, st: sw.state, rp: sw.restartPending }))
+  await wait(700)
+  chat = await api(`/sessions/${s1.sessionId}/chat`)
+  if (chat.info.state !== 'done' || chat.info.alive || chat.info.restartPending) fail('mode-switch: turn should end and worker go down for the new mode ' + JSON.stringify({ st: chat.info.state, alive: chat.info.alive, rp: chat.info.restartPending }))
+  if (!chat.items.some((i) => i.kind === 'system' && /자동 허용 · Bash/.test(i.text))) fail('mode-switch: no «자동 허용» record')
+  ok('mode switch mid-turn → host auto-allows pending → worker restarts after the turn')
+  // 새 모드 아래에서 오는 물음도 호스트가 답한다 (스텁은 모드를 모르고 늘 묻는다 — 실 CLI 는 bypass 면 안 묻는다)
+  await api(`/sessions/${s1.sessionId}/send`, { text: '승인이 필요한 일 해 줘' }); await wait(900)
+  chat = await api(`/sessions/${s1.sessionId}/chat`)
+  if (chat.info.state !== 'done' || chat.info.cliSessionId !== idBefore) fail('bypass: should not wait for a human ' + JSON.stringify({ st: chat.info.state, id: chat.info.cliSessionId }))
+  ok('bypass mode → no prompt reaches the human (resumed same id)')
+  // 「이 세션에서 항상 허용」 — CLI 제안이 비어도 단추가 있고, 호스트가 만든 접두어 규칙이 CLI 로 간다
+  await api(`/sessions/${s1.sessionId}/settings`, { permissionMode: 'default' })
+  await api(`/sessions/${s1.sessionId}/send`, { text: '맨손 승인' }); await wait(700)
+  chat = await api(`/sessions/${s1.sessionId}/chat`)
+  const bare = chat.info.pending[0]; if (chat.info.state !== 'awaiting_input' || !bare) fail('bare: awaiting expected ' + chat.info.state)
+  const heads = bare.suggestions.flatMap((u) => u.rules.map((r) => r.ruleContent)); if (JSON.stringify(heads) !== JSON.stringify(['cd:*', 'npm:*', 'tee:*'])) fail('bare: fallback rules ' + JSON.stringify(bare.suggestions))
+  await api(`/sessions/${s1.sessionId}/permission`, { requestId: bare.requestId, allow: true, always: true }); await wait(700)
+  chat = await api(`/sessions/${s1.sessionId}/chat`)
+  const echo = chat.items.filter((i) => i.kind === 'assistant').pop(); if (!echo || !/규칙 .*npm:\*/.test(echo.text)) fail('bare: updatedPermissions not sent ' + JSON.stringify(echo?.text))
+  if (!chat.items.some((i) => i.kind === 'system' && /항상 허용 · Bash\(cd:\*\)/.test(i.text))) fail('bare: system record lacks rule label')
+  ok('empty CLI suggestions → host-made prefix rules → sent as updatedPermissions')
   // 파일 시트
   const f = await api(`/bots/${bot.id}/file?rel=stub-output.md`); if (!/스텁 산출물/.test(f.text)) fail('file read')
   await api(`/bots/${bot.id}/file`, { rel: 'stub-output.md', text: f.text + '\n추가\n' })
@@ -2300,6 +2346,9 @@ try {
             const r = { scW: sc.scrollWidth, cW: sc.clientWidth, preScroll: pre.scrollWidth > pre.clientWidth, ox: getComputedStyle(sc).overflowX, ta: getComputedStyle(sc).touchAction, bodyW: document.querySelector('.chat-body').scrollWidth }
             pre.remove(); return r
           })
+          // 긴 시스템 줄(«이 세션에서 항상 허용 · Bash(cd:*) · …»)도 줄임표로 접혀야 한다 — 2026-09-18 실측 409/390 으로 밀렸다
+          const over = await pg.evaluate(() => [...document.querySelectorAll('.chat-body .meta .tx')].filter((e) => e.getBoundingClientRect().right > innerWidth + 1).map((e) => (e.textContent || '').slice(0, 40)))
+          if (over.length) fail('🔴 좌우 고정: 긴 시스템 줄이 폰 폭을 민다 ' + JSON.stringify(over))
           if (!wide) fail('좌우 고정: 답이 없어 잴 수 없다')
           if (wide.scW > wide.cW + 1) fail('🔴 좌우 고정: 넓은 코드 블록에 채팅이 옆으로 밀린다 ' + JSON.stringify(wide))
           if (!wide.preScroll) fail('좌우 고정: 코드 블록이 제 안에서 스크롤되지 않는다(잘려 보인다) ' + JSON.stringify(wide))
@@ -2373,6 +2422,39 @@ try {
         await pg.evaluate(() => window.__kb(0)); await wait(200)
         await pg.click('.chat-hdr .rb'); await wait(300); if (!(await pg.$('.mhome .mcards')) || (await pg.$$eval('.mrow', (r) => r.length)) < 3) fail('phone: home cards/rows'); await pg.screenshot({ path: 'test/tmp/phone-home.png' })
         if (!(await pg.$('.mrow .l1 b .mid .mt'))) fail('phone: home row names should use middle ellipsis')
+        /**
+         * 🔴 **폰 홈 폴더 행 쓸기** (2026-09-18 Dave: «모바일 화면에서 todo 처럼 슬라이딩으로 기본값 고정해서 만들어줘»)
+         *    데스크톱 레일 우클릭의 세 가지(맨 위에 고정 · 지우기(연결 해지) · 은퇴)를 폰에서는 쓸어서 한다.
+         *    자리는 **고정**(설정 없음): →짧게·길게 = 고정 · ←짧게 = 메뉴 · ←길게 = 은퇴. 관제(오케스트레이터) 행은 안 쓸린다.
+         */
+        {
+          const rowSel = '.mhome .swwrap .swrow'
+          const n = (await pg.$$(rowSel)).length; if (n < 2) fail('phone home: folder rows should be swipeable (.swwrap) · ' + n)
+          if (await pg.$('.mhome .secl:has-text("관제") + .swwrap')) fail('phone home: orchestrator row must not be swipeable')
+          const sel = `${rowSel} >> nth=${n - 1}`
+          const name = await pg.$eval(sel + ' >> .l1 b', (e) => e.textContent)
+          const box = await pg.$eval(sel, (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height } }); const cy = box.y + box.h / 2
+          const swipe = async (dir, frac) => {
+            const x0 = dir > 0 ? box.x + 20 : box.x + box.w - 20
+            await pg.dispatchEvent(sel, 'pointerdown', { pointerId: 9, pointerType: 'touch', clientX: x0, clientY: cy, buttons: 1 })
+            for (const f of [0.08, 0.2, frac * 0.8, frac]) await pg.dispatchEvent(sel, 'pointermove', { pointerId: 9, pointerType: 'touch', clientX: x0 + dir * box.w * f, clientY: cy, buttons: 1 })
+            await wait(120); const hint = (await pg.textContent('.mhome .swhint').catch(() => '')) ?? ''
+            await pg.dispatchEvent(sel, 'pointerup', { pointerId: 9, pointerType: 'touch', clientX: x0 + dir * box.w * frac, clientY: cy })
+            return hint
+          }
+          await swipe(-1, 0.3); await wait(350)
+          const sheet = (await pg.textContent('.tsheet').catch(() => '')) ?? ''
+          for (const w of ['맨 위에 고정', '지우기', '은퇴']) if (!sheet.includes(w)) fail(`phone home: swipe left-short should open the menu sheet with «${w}» · ` + JSON.stringify(sheet))
+          if (await pg.$('.mhome .mrow.on, .chat-hdr')) { /* 시트가 떴다면 화면은 홈 그대로여야 한다 */ }
+          await pg.click('.backdrop'); await wait(250)
+          const h2 = await swipe(1, 0.6); if (!/고정/.test(h2)) fail('phone home: swipe right-long hint should say 고정 · ' + h2)
+          await wait(700)
+          if (!(await pg.$('.mhome'))) fail('phone home: a swipe must not open the folder (click leaked)')
+          const stP = await api('/state'); const bp = stP.bots.find((x) => x.name === name)
+          if (!bp?.pinned) fail('phone home: swipe right should pin the folder · ' + JSON.stringify({ name, pinned: bp?.pinned }))
+          await api('/bots/pin', { id: bp.id, on: false }); await wait(300)   // 되돌린다 — 뒤 검사가 순서를 믿는다
+          ok('폰 홈 폴더 행 쓸기 — ←짧게 메뉴(고정·지우기·은퇴) · →길게 고정 · 관제는 안 쓸림')
+        }
         const ov = await pg.evaluate(() => { const m = document.querySelector('.mscroll'); return { sw: m.scrollWidth, cw: m.clientWidth, dw: document.documentElement.scrollWidth, iw: innerWidth } }); if (ov.sw > ov.cw || ov.dw > ov.iw) fail('phone: horizontal overflow ' + JSON.stringify(ov))
         await pg.click('.mtop .rb'); await pg.waitForSelector('.setp', { timeout: 4000 }); await wait(300)
         {

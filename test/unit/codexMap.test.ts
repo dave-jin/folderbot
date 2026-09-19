@@ -111,3 +111,18 @@ describe('계정이 모델을 거절했나', () => {
     expect(isModelRejected('not supported')).toBe(false)   // «모델» 이라는 말이 없다
   })
 })
+
+describe('Codex 파일 고치기 — 경로가 실려야 파일 칩·트리 갱신이 탄다 (2026-09-18)', () => {
+  it('item.started file_change 의 changes[].path 가 file_path 로', () => {
+    const out = mapCodex({ type: 'item.started', item: { id: 'fc1', item_type: 'file_change', changes: [{ path: '/v/a.md', kind: 'add' }, { path: '/v/b.md', kind: 'update' }] } } as never, ctx())
+    const tu = out.find((l) => (l as { type: string }).type === 'assistant') as { message: { content: { name: string; input: Record<string, unknown> }[] } } | undefined
+    expect(tu?.message.content[0].name).toBe('Edit')
+    expect(tu?.message.content[0].input.file_path).toBe('/v/a.md')
+    expect(tu?.message.content[0].input.paths).toEqual(['/v/a.md', '/v/b.md'])
+  })
+  it('옛 판 patch_apply_begin 의 changes 는 경로가 키다', () => {
+    const out = mapCodex({ msg: { type: 'patch_apply_begin', call_id: 'c1', changes: { '/v/c.md': { add: { content: 'x' } } } } } as never, ctx())
+    const tu = out.find((l) => (l as { type: string }).type === 'assistant') as { message: { content: { input: Record<string, unknown> }[] } } | undefined
+    expect(tu?.message.content[0].input.file_path).toBe('/v/c.md')
+  })
+})

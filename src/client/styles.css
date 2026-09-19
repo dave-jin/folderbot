@@ -130,6 +130,8 @@ b,strong { color:var(--w); font-weight:600 }
 .md { word-break:break-word } .md p { margin:0 0 10px } .md p:last-child { margin:0 } .md h1,.md h2,.md h3 { color:var(--w); font-size:15px; margin:10px 0 4px } .md h1 { font-size:17px } .md ul,.md ol { padding-left:20px; margin:4px 0 } .md li { margin:2px 0 } .md hr { border:0; border-top:1px solid var(--line); margin:12px 0 } .md pre { background:var(--box); border-radius:8px; padding:10px 12px; overflow:auto; font-size:12px } .md code { font-family:var(--mono); font-size:12px; background:var(--box); padding:1px 5px; border-radius:4px } .md pre code { padding:0; background:none } .md table { border-collapse:collapse; font-size:12.5px } .md td,.md th { border-bottom:1px solid var(--line); padding:4px 8px; text-align:left } .md th { color:var(--t3); font-weight:500 } .md blockquote { margin:0; padding-left:12px; border-left:2px solid var(--line2); color:var(--t2) } .md img { max-width:100%; border-radius:6px }
 .md.streaming > :last-child::after { content:''; display:inline-block; width:2px; height:14px; background:var(--w); vertical-align:-2px; margin-left:2px; animation:caret 1s steps(1) infinite }
 .meta { display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--t3); width:100%; min-height:22px } .meta .lb, .meta > span:first-child { white-space:nowrap; flex:none } .ic { display:none; align-items:center; gap:3px; white-space:nowrap } .live .stop svg { display:none } .meta:hover { color:var(--t2) } .meta .tx { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 } .meta.open { color:var(--t2) }
+/* 🔴 시스템 줄은 .tx 가 첫 자식이라 위 `span:first-child { flex:none }` 에 걸려 줄임표 대신 폰 폭을 밀었다(«항상 허용 · Bash(cd:*) · …» 실측 409/390) — 첫 자식이어도 .tx 는 줄인다 */
+.meta > span.tx:first-child { flex:0 1 auto; min-width:0 }
 /* 답 아래 줄 — **아이콘만** (2026-09-13 Dave). ⚠ 글자를 뺐으니 간격도 좁힌다: 글자 기준의 14px 는
    아이콘만 남으면 허전하다. 시각은 아이콘들과 조금 떨어뜨려 «동작» 과 «정보» 를 가른다. */
 .acts-row { display:flex; align-items:center; gap:2px; font-size:12px; color:var(--t3); margin-top:2px }
@@ -201,6 +203,9 @@ b,strong { color:var(--w); font-weight:600 }
 .cbar .acount { font-size:11px; color:var(--t3); margin-left:8px; white-space:nowrap }
 .cbar { display:flex; align-items:center; gap:2px; font-size:12.5px; color:var(--t2) } .cbar .sp { flex:1 }
 .cbtn { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:6px; font-size:12.5px; color:var(--t2); white-space:nowrap; position:relative } .cbtn:hover { color:var(--w); background:var(--hover) } .cbtn.on { color:var(--w); background:var(--sel) } .cbtn .chev { color:var(--t3) }
+/* 모드 칩 «적용 중» — 옛 모드 워커가 턴을 끝낼 때까지 (host autoAllow 가 그 사이를 맡는다) */
+.cbtn .pend { font-size:10px; line-height:14px; padding:0 5px; border-radius:7px; border:1px solid var(--hair); color:var(--t3); margin-left:2px } .cpop .hint.pend { display:block; border-top:0; padding-top:2px; white-space:normal; line-height:1.4 }
+.card .meta.rule { font-family:var(--mono); font-size:11px; color:var(--t3); margin-top:6px; word-break:break-all }
 /* ⚠ 큰 링도 12시에서 시작하고, 빠듯하면 같은 색으로 경고한다 (작은 링 `.ring` 과 한 몸) */
 .ctxpop .big svg { transform:rotate(-90deg) } .ctxpop .big { color:var(--t2) } .ctxpop .big.hot { color:var(--run) }
 .ring { display:inline-flex; align-items:center; justify-content:center; padding:0 6px; color:var(--t2) } .ring svg { transform:rotate(-90deg) } .ring.hot { color:var(--run) }
@@ -267,6 +272,7 @@ b,strong { color:var(--w); font-weight:600 }
 .sech .tools:has(.ib.mdb) { opacity:1 } .sech .tools .ib:not(.mdb) { opacity:0 } .sech:hover .tools .ib { opacity:1 }
 /* 폰 — 쓸어서 처리 (V16). 행은 껍데기 안에서 좌우로 움직이고, 뒤에서 색·아이콘이 무엇이 일어날지 미리 말한다 */
 .swwrap { position:relative; overflow:hidden; background:var(--bg); touch-action:pan-y }
+.mhome .swwrap .mrow { background:var(--bg) }   /* 폰 홈 폴더 행 — 쓸리는 동안 뒤의 예고색 위를 미끄러진다 */
 .swrow { position:relative; transition:transform .18s cubic-bezier(.2,.8,.2,1); background:var(--bg); will-change:transform }
 .swwrap.armed .swrow { box-shadow:0 0 22px rgba(0,0,0,.5) }
 .swhint { position:absolute; top:0; bottom:0; display:flex; align-items:center; gap:10px; padding:0 18px; pointer-events:none; color:#fff }

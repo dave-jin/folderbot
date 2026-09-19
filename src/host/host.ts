@@ -6,6 +6,7 @@ import { TODO_RULES_PROMPT } from '../core/todo'
 import type { AuthState, Bot, Frame, PermissionMode, PermissionRequest, RoutineDef, SessionState } from '../core/types'
 import { STATE_LABEL } from '../core/types'
 import { checkAuth } from './auth'
+import { FolderWatch } from './watch'
 import { Notifier } from './notify'
 import { type HostConfig, absRoot, saveConfig } from './paths'
 import { ORCH_ID, Registry, canon } from './registry'
@@ -26,6 +27,7 @@ export class Host {
   auth: AuthState = { verdict: 'unknown', checkedAt: 0 }
   private queued: { botId: string; sessionId: string; text: string }[] = []
   broadcast: (f: Frame) => void = () => {}
+  watcher = new FolderWatch((botId) => this.broadcast({ ev: 'files', botId }))
   log: (s: string) => void = (s) => console.log(`[folderbot] ${s}`)
   /**
    * 🔴 **루트를 바꾸는 일은 «저장» 과 «다시 세우기» 둘로 갈린다.** 호스트는 저장만 하고, 다시 세우는
@@ -48,13 +50,16 @@ export class Host {
     this.routines = new Routines({ run: (b, r) => this.runRoutine(b, r), log: this.log })
     this.wire()
     this.routines.reschedule(this.registry.bots())
+    // 봇 폴더 감시 — 세션을 거치지 않은 쓰기(Bash·Codex·Dropbox·Finder)도 트리에 온다 (host/watch.ts 머리말)
+    this.watcher.log = (m) => this.log(m)
+    this.watcher.sync(this.registry.bots())
     void this.refreshAuth()
     setInterval(() => void this.refreshAuth(), 30 * 60 * 1000).unref()
     setInterval(() => this.watchInbox(), 60 * 1000).unref()
   }
 
   private wire(): void {
-    this.registry.on('bots', (bots: Bot[]) => { this.broadcast({ ev: 'bots', bots }); this.routines.reschedule(bots) })
+    this.registry.on('bots', (bots: Bot[]) => { this.broadcast({ ev: 'bots', bots }); this.routines.reschedule(bots); this.watcher.sync(bots) })
     this.sessions.on('sessions', (botId: string) => this.broadcast({ ev: 'sessions', botId, sessions: this.sessions.list(botId) }))
     this.sessions.on('chat', (sessionId: string, item, replace: boolean) => this.broadcast({ ev: 'chat', sessionId, item, replace }))
     this.sessions.on('files', (botId: string) => this.broadcast({ ev: 'files', botId }))
@@ -246,7 +251,7 @@ export class Host {
     return out.sort((a, b) => b.m - a.m).slice(0, limit).map((x) => x.rel)
   }
   recentFiles(bot: Bot, limit = 12) { return recentFiles(bot.abs, limit) }
-  shutdown(): void { this.sessions.stopAll() }
+  shutdown(): void { this.sessions.stopAll(); this.watcher.close() }
 }
 
 function summarize(req: PermissionRequest): string {

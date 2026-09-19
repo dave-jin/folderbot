@@ -23,6 +23,13 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '')
 /** 여러 자리 중 **처음 값이 있는 곳**을 쓴다 */
 function pick(...vs: unknown[]): string { for (const v of vs) { const s = str(v); if (s) return s } return '' }
 
+/** file_change 의 경로들 — 새 판 `[{ path }]` · 옛 판 `{ [path]: change }` */
+function changePaths(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map((c) => str((c as { path?: unknown }).path)).filter(Boolean)
+  if (v && typeof v === 'object') return Object.keys(v as Record<string, unknown>)
+  return []
+}
+
 /** 이 줄이 말하는 «종류» — 새 판은 `item.item_type`, 옛 판은 `msg.type` 이다 */
 function kindOf(m: Record<string, unknown>, item: Record<string, unknown>): string {
   return str(item.item_type) || str(item.type) || str(m.type)
@@ -69,7 +76,10 @@ export function mapCodex(e: CodexEvt, ctx: CodexCtx): StreamLine[] {
     const id = pick(m.call_id, item.id, m.id, e.id) || `c_${Date.now().toString(36)}`
     const name = /exec|command/.test(toolKind) ? 'Bash' : /patch|file/.test(toolKind) ? 'Edit' : pick(m.tool, item.tool) || 'Tool'
     const cmd = Array.isArray(m.command) ? (m.command as string[]).join(' ') : pick(m.command, item.command, m.description, item.description)
-    if (begin) out.push({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id, name, input: name === 'Bash' ? { command: cmd } : ((m.input ?? item.input ?? { description: cmd }) as Record<string, unknown>) }] } } as StreamLine)
+    // 파일 고치기 — 경로를 실어야 파일 칩·전후 diff·트리 갱신이 탄다. 새 판은 changes[].path, 옛 판은 changes 의 키
+    const paths = name === 'Edit' ? changePaths(m.changes ?? item.changes) : []
+    const editInput = paths.length ? { file_path: paths[0], paths, ...(cmd ? { description: cmd } : {}) } : ((m.input ?? item.input ?? { description: cmd }) as Record<string, unknown>)
+    if (begin) out.push({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id, name, input: name === 'Bash' ? { command: cmd } : editInput }] } } as StreamLine)
     else out.push({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: Number(m.exit_code ?? item.exit_code ?? 0) !== 0, content: pick(m.stdout, item.stdout, m.output, item.output, m.aggregated_output, item.aggregated_output) }] } } as StreamLine)
     return out
   }
