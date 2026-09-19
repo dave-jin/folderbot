@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, readdirSync, statSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { join, dirname, basename } from 'node:path'
 import { homedir } from 'node:os'
 import { DEFAULT_BUDGET, parseEvent, report, type Budget, type UsageEvent, type UsageReport } from '../core/usage'
 
@@ -20,6 +20,8 @@ const KEEP_MS = 7 * 24 * 3600_000
 export function budget(): Budget {
   try { return { ...DEFAULT_BUDGET, ...(JSON.parse(readFileSync(BUDGET_FILE, 'utf8')) as Partial<Budget>) } } catch { return DEFAULT_BUDGET }
 }
+/** 예산을 사람이 정했나(설정 파일) — 화면이 «내 예산(설정)» / «기본값» 을 구분해 적는다 (L) */
+export function budgetSource(): 'settings' | 'default' { return existsSync(BUDGET_FILE) ? 'settings' : 'default' }
 export function setBudget(b: Partial<Budget>): Budget {
   const next = { ...budget(), ...b }
   mkdirSync(DIR, { recursive: true }); writeFileSync(BUDGET_FILE, JSON.stringify(next, null, 2))
@@ -47,14 +49,21 @@ function scanTranscript(file: string, tool: 'claude' | 'codex', since: number): 
       out.push({
         t, tool, model: String(d.message?.model ?? ''),
         input: +(u.input_tokens ?? 0), output: +(u.output_tokens ?? 0),
-        cacheRead: +(u.cache_read_input_tokens ?? 0), cacheWrite: +(u.cache_creation_input_tokens ?? 0)
+        cacheRead: +(u.cache_read_input_tokens ?? 0), cacheWrite: +(u.cache_creation_input_tokens ?? 0),
+        sid: basename(file, '.jsonl')
       })
     } catch { /* 잘린 줄은 버린다 */ }
   }
   return out
 }
 
-function walkJsonl(dir: string, depth: number, out: string[], max = 400): void {
+/**
+ * 🔴 **최근 것만 센다 — 개수 상한은 없다** (L · 2026-09-19 실측 `test/unit/usageScan.test.ts`).
+ *    종전에는 «400개까지» 였는데, 기록이 많은 사람은 옛 파일 400개가 목록을 다 채워 **오늘 기록이 못 들어왔다** —
+ *    원격 패널이 «아직 쓴 게 없어요 · 쓴 0» 이었던 이유(스크린샷 1238). 파일은 mtime 이 7일 안인 것만 모으고,
+ *    그 안에서만 넉넉한 상한(2000)을 둔다. 폴더가 아무리 커도 stat 만 하므로 몇십 ms 다.
+ */
+function walkJsonl(dir: string, depth: number, out: string[], since: number, max = 2000): void {
   if (depth < 0 || out.length >= max) return
   let names: string[] = []
   try { names = readdirSync(dir) } catch { return }
@@ -62,8 +71,8 @@ function walkJsonl(dir: string, depth: number, out: string[], max = 400): void {
     if (out.length >= max) return
     const p = join(dir, n)
     let st; try { st = statSync(p) } catch { continue }
-    if (st.isDirectory()) walkJsonl(p, depth - 1, out, max)
-    else if (n.endsWith('.jsonl')) out.push(p)
+    if (st.isDirectory()) walkJsonl(p, depth - 1, out, since, max)
+    else if (n.endsWith('.jsonl') && st.mtimeMs >= since) out.push(p)
   }
 }
 
@@ -75,10 +84,10 @@ export function events(now = Date.now()): UsageEvent[] {
   if (!cache || now - cache.at > 30_000) {
     const scanned: UsageEvent[] = []
     const files: string[] = []
-    walkJsonl(join(CLAUDE_DIR, 'projects'), 2, files)
+    walkJsonl(join(CLAUDE_DIR, 'projects'), 2, files, since)
     for (const f of files) scanned.push(...scanTranscript(f, 'claude', since))
     const cfiles: string[] = []
-    walkJsonl(join(CODEX_DIR, 'sessions'), 3, cfiles)   // Codex 기록 — 없으면 아무것도 안 나온다
+    walkJsonl(join(CODEX_DIR, 'sessions'), 3, cfiles, since)   // Codex 기록 — 없으면 아무것도 안 나온다
     for (const f of cfiles) scanned.push(...scanTranscript(f, 'codex', since))
     cache = { at: now, events: scanned }
   }
@@ -92,7 +101,10 @@ export function events(now = Date.now()): UsageEvent[] {
   return all.sort((a, b) => a.t - b.t)
 }
 
-export function usageReport(now = Date.now()): UsageReport { return report(events(now), now, budget()) }
+/** `botOf` 는 CLI 세션 id → 봇 — 호스트가 세션 목록으로 넘긴다(봇별 내역 · L). 30초 캐시는 `events()` 안에 있다 */
+export function usageReport(now = Date.now(), botOf?: (sid: string) => { botId: string; name: string } | undefined): UsageReport { return report(events(now), now, budget(), { budgetSource: budgetSource(), botOf }) }
+/** 훅·기록이 새로 들어왔을 때 캐시를 비운다 — 턴이 끝나면 60초 안에 원격 패널이 바뀌어야 한다 (L) */
+export function invalidateUsage(): void { cache = null }
 
 /** 훅이 부른다 — 한 줄 덧붙이고 7일보다 오래된 앞부분을 버린다 */
 export function appendUsage(e: UsageEvent): void {
@@ -119,7 +131,7 @@ const HOOK_SRC = `#!/usr/bin/env node
 // Folder Bot 사용량 훅 — 턴이 끝날 때 이번 턴의 usage 를 ~/.folderbot/usage.jsonl 에 한 줄 남긴다.
 // 읽기만 하고, 무슨 일이 있어도 조용히 끝난다(0). Folder Bot 설정 › 사용량에서 설치·제거한다.
 import { readFileSync, appendFileSync, mkdirSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { join, dirname, basename } from 'node:path'
 import { homedir } from 'node:os'
 let raw = ''
 process.stdin.on('data', (c) => (raw += c))

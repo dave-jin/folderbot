@@ -32,7 +32,10 @@ export function useUsage(on = true): UsageReport & { hook?: boolean } | null {
     let dead = false
     const f = () => { void api<UsageReport & { hook?: boolean }>('/usage').then((r) => { if (!dead) setU(r) }).catch(() => {}) }
     f(); const id = window.setInterval(f, 30_000)
-    return () => { dead = true; window.clearInterval(id) }
+    // L · 턴이 끝났다는 신호(store 가 state 프레임에서 쏜다)에 바로 묻는다 — 호스트도 같은 순간 캐시를 비운다
+    let t: number | undefined; const bump = () => { window.clearTimeout(t); t = window.setTimeout(f, 800) }
+    window.addEventListener('fb:usage', bump)
+    return () => { dead = true; window.clearInterval(id); window.clearTimeout(t); window.removeEventListener('fb:usage', bump) }
   }, [on])
   return u
 }
@@ -59,11 +62,13 @@ export function UsageCard({ u, compact }: { u: UsageReport; compact?: boolean })
       {t.byModel.length ? <div className="by">{t.byModel.slice(0, 3).map((m) => `${m.model.replace(/^claude-/, '').replace(/-\d+$/, '')} ${tokens(m.tokens)}`).join(' · ')}</div> : null}
     </div>)}
     <div className="uf">
-      <span><i>오늘 남은</i><b>{money(u.day.left)}</b><small>쓴 {money(u.day.cost)}</small></span>
-      <span><i>이번 주 남은</i><b>{money(u.week.left)}</b><small>월 09:00 초기화</small></span>
+      {/* 예산이 없으면(0) «—» — 0 으로 그리면 «다 썼다» 처럼 읽힌다(스크린샷 1238 · L) */}
+      <span><i>오늘 남은</i><b>{u.day.left === null ? '—' : money(u.day.left)}</b><small>쓴 {money(u.day.cost)}</small></span>
+      <span><i>이번 주 남은</i><b>{u.week.left === null ? '—' : money(u.week.left)}</b><small>{u.week.left === null ? `쓴 ${money(u.week.cost)} · 예산 없음` : '월 09:00 초기화'}</small></span>
       <span><i>다시 채워짐</i><b style={{ color: c }}>{u.resetAt ? clock(u.resetAt) : '—'}</b><small>{u.resetAt ? `${until(u.resetAt, u.now)} 뒤` : '5시간 창'}</small></span>
     </div>
-    <div className="un"><Icon n="clock" size={10} />남은 양은 <b>내 예산</b> 기준 · 비용·시각 추정</div>
+    {u.byBot && u.byBot.length ? <div className="ubots">{u.byBot.slice(0, compact ? 3 : 6).map((b) => <div className="ub" key={b.botId}><span className="n">{b.name}</span><span className="c">{money(b.cost)}</span><span className="t">{tokens(b.tokens)} · {b.turns}턴</span></div>)}</div> : null}
+    <div className="un"><Icon n="clock" size={10} />남은 양은 <b>내 예산</b>{u.budgetSource === 'settings' ? '(설정)' : '(기본값)'} 기준 · 비용·시각 추정</div>
   </div>
 }
 

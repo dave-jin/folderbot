@@ -2987,6 +2987,23 @@ try {
         await pg.screenshot({ path: 'test/tmp/phone-usage-sheet.png' })
         await pg.evaluate(() => document.querySelector('.backdrop').click()); await wait(400)
         await pg.screenshot({ path: 'test/tmp/phone-usage.png' })
+        // L · 봇별 내역 — 세션의 CLI 세션 id 가 기록 파일 이름. 스텁 세션 하나에 기록을 써 두면 턴이 끝난 뒤 60초 안에 그 봇 줄이 뜬다
+        {
+          const sL = await api(`/bots/${bot.id}/sessions`, { name: 'l-usage' }); await api(`/sessions/${sL.id}/send`, { text: '되읊어: 사용량' })
+          let info = null; for (let i = 0; i < 40 && !(info && info.cliSessionId && info.state !== 'running'); i++) { await wait(200); info = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === sL.id) }
+          if (!info?.cliSessionId) fail('L: 스텁 세션에 cliSessionId 가 없다 ' + JSON.stringify(info))
+          const pdir = join(fbHome, '.claude', 'projects', '-fixture'); mkdirSync(pdir, { recursive: true })
+          writeFileSync(join(pdir, `${info.cliSessionId}.jsonl`), JSON.stringify({ timestamp: new Date().toISOString(), message: { model: 'claude-opus-5', usage: { input_tokens: 1000, output_tokens: 2000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } }) + '\n')
+          await api(`/sessions/${sL.id}/send`, { text: '되읊어: 한 번 더' })   // 턴이 끝나면 캐시가 비워진다
+          let ub = null; for (let i = 0; i < 60 && !ub; i++) { await wait(500); const uu = await api('/usage'); ub = (uu.byBot || []).find((b) => b.botId === bot.id) || null }
+          if (!ub || ub.tokens < 3000) fail('L: 턴이 끝났는데 봇별 내역에 이 봇이 없다 ' + JSON.stringify(ub))
+          let rows = []; for (let i = 0; i < 20 && !rows.some((n) => /제품_Rondo|Rondo/.test(n)); i++) { await wait(500); if (!(await pg.$('.tsheet.usheet'))) { await pg.click('.mhome .ustrip'); await wait(400) } rows = await pg.$$eval('.tsheet.usheet .ucard .ub .n', (r) => r.map((x) => x.textContent)) }
+          if (!rows.some((n) => /제품_Rondo|Rondo/.test(n))) fail('L: 카드에 봇별 줄이 없다(턴 끝 신호로 다시 물어야 한다) ' + JSON.stringify(rows))
+          if (!/내 예산\((설정|기본값)\)/.test((await pg.textContent('.tsheet.usheet .ucard .un')) ?? '')) fail('L: 예산 출처 표시가 없다')
+          await pg.screenshot({ path: 'test/tmp/phone-usage-bybot.png' })
+          await pg.evaluate(() => document.querySelector('.backdrop').click()); await wait(300)
+          await fetch(base + `/api/sessions/${sL.id}`, { method: 'DELETE' })
+        }
         // ── 빡센 폰 QA: 라이트 테마 · 좁은 폭 · 안전 영역 · 가로 넘침 ──
         const lum2 = (c) => { const [r, g, b] = c.match(/\d+/g).map(Number); return 0.299 * r + 0.587 * g + 0.114 * b }
         for (const th of ['light', 'dark']) {
@@ -3254,6 +3271,10 @@ try {
     if (!u.resetAt || u.resetAt <= u.now) fail('사용량: 다시 채워지는 시각이 과거다 ' + JSON.stringify({ resetAt: u.resetAt, now: u.now }))
     if (u.left !== Math.min(...u.tools.map((t) => t.left))) fail('사용량: 대표 숫자가 가장 빠듯한 도구가 아니다')
     // 예산을 바꾸면 남은 %도 함께 바뀐다 (뺄셈은 호스트 한 곳에서만)
+    // L · 봇별 내역 · 예산 출처 · 주간 예산 0 → null(«—») (2026-09-19)
+    if (!Array.isArray(u.byBot) || !['settings', 'default'].includes(u.budgetSource)) fail('L: byBot·budgetSource 가 없다 ' + JSON.stringify({ byBot: u.byBot, src: u.budgetSource }))
+    await api('/usage/budget', { week: 0 }); const u0 = await api('/usage'); if (u0.week.left !== null || u0.budgetSource !== 'settings') fail('L: 주간 예산 0 이면 left 는 null · 출처는 settings ' + JSON.stringify({ w: u0.week, src: u0.budgetSource }))
+    await api('/usage/budget', { week: 100 })
     await api('/usage/budget', { window: 1000 })
     const u2 = await api('/usage')
     if (u2.tools[0].left <= c.left) fail('사용량: 예산을 키웠는데 남은 %가 안 늘었다 ' + JSON.stringify({ a: c.left, b: u2.tools[0].left }))

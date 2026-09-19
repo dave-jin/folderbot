@@ -171,7 +171,12 @@ export class Gateway {
     if (p === '/api/agents' && m === 'GET') return json(200, providers())
     // 쓸 수 있는 모델 — **기계에서 주워 온다**(빌트인 목록은 화면이 빈 자리를 메울 때만 쓴다)
     if (p === '/api/agents/models' && m === 'GET') return json(200, agentModels())
-    if (p === '/api/usage' && m === 'GET') return json(200, { ...usageReport(), hook: hookState().installed })
+    if (p === '/api/usage' && m === 'GET') {
+      // 봇별 내역 — 세션의 CLI 세션 id 가 곧 기록 파일 이름이다 (L)
+      const bySid = new Map<string, { botId: string; name: string }>()
+      for (const r of h.sessions.all()) if (r.cliSessionId) { const b = reg.bot(r.botId); bySid.set(r.cliSessionId, { botId: r.botId, name: b?.displayName ?? b?.name ?? r.botId }) }
+      return json(200, { ...usageReport(Date.now(), (sid) => bySid.get(sid)), hook: hookState().installed })
+    }
     if (p === '/api/usage/hook' && m === 'POST') { const b = await body(); return json(200, setHook(!!b.on)) }
     if (p === '/api/usage/budget' && m === 'POST') { const b = await body(); return json(200, setBudget({ window: b.window === undefined ? undefined : Number(b.window), day: b.day === undefined ? undefined : Number(b.day), week: b.week === undefined ? undefined : Number(b.week) } as never)) }
     // 파비콘 — 화면 셋(채팅·문서·입력창)이 이 하나를 본다. 호스트가 받아 data URL 로 내준다

@@ -9,7 +9,7 @@
  *
  * ⛔ 뺄셈은 **여기 한 곳에서만** 한다. 메뉴 막대·앱·폰이 각자 계산하면 반올림이 갈려 다른 숫자를 보여 준다.
  */
-export interface UsageEvent { t: number; tool: 'claude' | 'codex'; model: string; input: number; output: number; cacheRead: number; cacheWrite: number }
+export interface UsageEvent { t: number; tool: 'claude' | 'codex'; model: string; input: number; output: number; cacheRead: number; cacheWrite: number; /** 기록 파일 이름(CLI 세션 id) — 봇에 귀속시킬 때 쓴다 (L) */ sid?: string }
 export interface Budget { window: number; day: number; week: number }
 /** 기본 예산(달러) — 설정에서 바꾼다. 한도가 아니라 «내가 정한 선» 이다 */
 export const DEFAULT_BUDGET: Budget = { window: 6.4, day: 19.3, week: 100 }
@@ -39,6 +39,8 @@ export function costOf(e: UsageEvent): number {
 }
 
 export interface ToolUsage { tool: 'claude' | 'codex'; tokens: number; cost: number; left: number; leftCost: number; budget: number; byModel: { model: string; tokens: number }[] }
+/** 봇별 내역(5시간 창) — 호스트가 CLI 세션 id 로 붙인다 (L) */
+export interface BotUsage { botId: string; name: string; tokens: number; cost: number; turns: number }
 export interface UsageReport {
   now: number
   /** 창이 다시 채워지는 시각 — 창 안 **첫 사용 + 5시간**. 우리가 계산하는 값이라 «추정» 이다 */
@@ -47,9 +49,13 @@ export interface UsageReport {
   tools: ToolUsage[]
   /** 가장 빠듯한 도구의 남은 % — 메뉴 막대 제목처럼 한 숫자만 쓰는 자리에 */
   left: number
-  day: { cost: number; left: number; tokens: number }
-  week: { cost: number; left: number }
+  /** `left` 는 예산이 없으면(0) **null** — 화면은 «—» 로 그린다. 0 으로 그리면 «다 썼다» 처럼 읽힌다(스크린샷 1238) */
+  day: { cost: number; left: number | null; tokens: number }
+  week: { cost: number; left: number | null }
   budget: Budget
+  /** 예산의 출처 — 설정 파일(사람이 정함) / 기본값 */
+  budgetSource: 'settings' | 'default'
+  byBot: BotUsage[]
 }
 
 const sumTokens = (e: UsageEvent) => e.input + e.output + e.cacheRead + e.cacheWrite
@@ -67,7 +73,7 @@ export function dayStart(now: number): number { const d = new Date(now); d.setHo
  * 창·오늘·이번 주를 한 번에 접는다. `tools` 는 **기록이 있는 도구만** 담는다 —
  * Codex 를 안 쓰면 그 줄은 화면에 아예 안 나온다 (2026-09-13 Dave: «Codex가 없으면 아예 안보여야 해»).
  */
-export function report(events: UsageEvent[], now: number, budget: Budget = DEFAULT_BUDGET): UsageReport {
+export function report(events: UsageEvent[], now: number, budget: Budget = DEFAULT_BUDGET, opts: { budgetSource?: 'settings' | 'default'; botOf?: (sid: string) => { botId: string; name: string } | undefined } = {}): UsageReport {
   const winFrom = now - WINDOW_MS
   const win = events.filter((e) => e.t >= winFrom)
   const day = events.filter((e) => e.t >= dayStart(now))
@@ -90,15 +96,24 @@ export function report(events: UsageEvent[], now: number, budget: Budget = DEFAU
   }
   const dayCost = day.reduce((a, e) => a + costOf(e), 0)
   const weekCost = week.reduce((a, e) => a + costOf(e), 0)
+  // 봇별 — 창 안 사건을 CLI 세션 id 로 봇에 붙인다. 모르는 기록(사람이 터미널에서 쓴 것)은 «그 밖» 으로 남긴다
+  const byBot = new Map<string, BotUsage>()
+  if (opts.botOf) for (const e of win) {
+    const b = e.sid ? opts.botOf(e.sid) : undefined
+    const key = b ? b.botId : '_other'; const cur = byBot.get(key) ?? { botId: key, name: b ? b.name : '그 밖 (터미널 등)', tokens: 0, cost: 0, turns: 0 }
+    cur.tokens += sumTokens(e); cur.cost += costOf(e); cur.turns += 1; byBot.set(key, cur)
+  }
   return {
     now,
     resetAt: win.length ? Math.min(...win.map((e) => e.t)) + WINDOW_MS : null,
     weekResetAt: weekStart(now) + 7 * 24 * 3600_000,
     tools,
     left: tools.length ? Math.min(...tools.map((t) => t.left)) : 100,
-    day: { cost: dayCost, left: Math.max(0, budget.day - dayCost), tokens: day.reduce((a, e) => a + sumTokens(e), 0) },
-    week: { cost: weekCost, left: Math.max(0, budget.week - weekCost) },
-    budget
+    day: { cost: dayCost, left: budget.day > 0 ? Math.max(0, budget.day - dayCost) : null, tokens: day.reduce((a, e) => a + sumTokens(e), 0) },
+    week: { cost: weekCost, left: budget.week > 0 ? Math.max(0, budget.week - weekCost) : null },
+    budget,
+    budgetSource: opts.budgetSource ?? 'default',
+    byBot: [...byBot.values()].sort((a, b) => b.cost - a.cost || b.tokens - a.tokens)
   }
 }
 
@@ -107,6 +122,6 @@ export function parseEvent(line: string): UsageEvent | null {
   try {
     const d = JSON.parse(line) as Partial<UsageEvent>
     if (typeof d.t !== 'number' || (d.tool !== 'claude' && d.tool !== 'codex')) return null
-    return { t: d.t, tool: d.tool, model: String(d.model ?? ''), input: +(d.input ?? 0), output: +(d.output ?? 0), cacheRead: +(d.cacheRead ?? 0), cacheWrite: +(d.cacheWrite ?? 0) }
+    return { t: d.t, tool: d.tool, model: String(d.model ?? ''), input: +(d.input ?? 0), output: +(d.output ?? 0), cacheRead: +(d.cacheRead ?? 0), cacheWrite: +(d.cacheWrite ?? 0), ...(d.sid ? { sid: String(d.sid) } : {}) }
   } catch { return null }
 }
