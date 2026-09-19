@@ -387,8 +387,8 @@ export class Gateway {
         const buf = Buffer.from(String(b.data ?? ''), 'base64')
         if (buf.length > 25 * 1024 * 1024) return json(413, { error: '너무 커요 (25MB 상한)' })
         const dir = join(bot.abs, '첨부'); if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-        let rel = `첨부/${name}`; let i = 1
-        while (existsSync(join(bot.abs, rel))) { const dot = name.lastIndexOf('.'); rel = `첨부/${dot > 0 ? name.slice(0, dot) : name}-${i++}${dot > 0 ? name.slice(dot) : ''}` }
+        let rel = `첨부/${name}`; let i = 2   // 같은 이름이면 `_2`, `_3` … — 덮어쓰지 않는다 (N-3)
+        while (existsSync(join(bot.abs, rel))) { const dot = name.lastIndexOf('.'); rel = `첨부/${dot > 0 ? name.slice(0, dot) : name}_${i++}${dot > 0 ? name.slice(dot) : ''}` }
         writeFileSync(join(bot.abs, rel), buf)
         h.broadcast({ ev: 'files', botId: bot.id })
         return json(200, { rel, abs: join(bot.abs, rel), size: buf.length })
