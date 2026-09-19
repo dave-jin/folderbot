@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
  * 폰 «쓸어서 처리» (V16, Dave 승인 2026-09-13) — 행에 붙어 있던 도구 아이콘 대신 좌·우 × 짧게·길게 네 동작.
  * 설정에서 각 자리에 무엇을 놓을지 고른다. 판정과 기본값은 여기 한 곳에만 있다(화면은 결과만 그린다).
  */
-export type SwipeAct = 'edit' | 'done' | 'menu' | 'delete' | 'delegate' | 'expand' | 'none' | 'pin' | 'unlink' | 'retire'
+export type SwipeAct = 'edit' | 'done' | 'menu' | 'delete' | 'delegate' | 'expand' | 'none' | 'pin' | 'unlink' | 'retire' | 'unfix'
 export type SwipeSlot = 'rightShort' | 'rightLong' | 'leftShort' | 'leftLong'
 export type SwipeCfg = Record<SwipeSlot, SwipeAct> & { haptics: boolean }
 
@@ -20,10 +20,10 @@ export const FOLDER_SWIPE: SwipeCfg = { rightShort: 'pin', rightLong: 'pin', lef
 /** 임계 — 행 너비의 몇 %를 넘어야 «짧게»·«길게» 가 예고되나 */
 export const SHORT = 0.25, LONG = 0.45
 
-export const ACT_LABEL: Record<SwipeAct, string> = { edit: '편집', done: '완료', menu: '메뉴', delete: '삭제', delegate: '맡기기', expand: '펼치기', none: '없음', pin: '고정', unlink: '지우기', retire: '은퇴' }
-export const ACT_ICON: Record<SwipeAct, string> = { edit: 'edit', done: 'check', menu: 'more', delete: 'x', delegate: 'sub', expand: 'chevd', none: 'x', pin: 'pin', unlink: 'x', retire: 'archive' }
+export const ACT_LABEL: Record<SwipeAct, string> = { edit: '편집', done: '완료', menu: '메뉴', delete: '삭제', delegate: '맡기기', expand: '펼치기', none: '없음', pin: '고정', unlink: '지우기', retire: '은퇴', unfix: '순서 고정 해제' }
+export const ACT_ICON: Record<SwipeAct, string> = { edit: 'edit', done: 'check', menu: 'more', delete: 'x', delegate: 'sub', expand: 'chevd', none: 'x', pin: 'pin', unlink: 'x', retire: 'archive', unfix: 'sort' }
 /** 예고 색 — 무엇이 일어날지 손을 떼기 전에 색으로 먼저 말한다 */
-export const ACT_COLOR: Record<SwipeAct, string> = { edit: '#4a90d9', done: 'var(--done)', menu: '#8b7fd4', delete: 'var(--err)', delegate: '#d9a13f', expand: 'var(--t3)', none: 'transparent', pin: '#4a90d9', unlink: 'var(--err)', retire: '#d9a13f' }
+export const ACT_COLOR: Record<SwipeAct, string> = { edit: '#4a90d9', done: 'var(--done)', menu: '#8b7fd4', delete: 'var(--err)', delegate: '#d9a13f', expand: 'var(--t3)', none: 'transparent', pin: '#4a90d9', unlink: 'var(--err)', retire: '#d9a13f', unfix: '#8b7fd4' }
 
 /** 지금 끌린 거리(px)와 행 너비로 어느 자리인지 — 넘지 못했으면 null(놓으면 제자리) */
 export function slotOf(dx: number, width: number): SwipeSlot | null {

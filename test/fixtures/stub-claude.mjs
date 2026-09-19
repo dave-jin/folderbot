@@ -63,10 +63,25 @@ rl.on('line', (raw) => {
   if (msg.type !== 'user') return
   const text = msg.message?.content?.map?.((b) => b.text ?? '').join('') ?? ''
   const u = randomUUID().slice(0, 6)
+  // 「채팅 칩」 검사용 — «되읊어:» 뒤를 답변으로 그대로 돌려준다(경로·파일명이 칩이 되는지 재려고)
+  if (/^되읊어:/.test(text)) {
+    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: text.slice('되읊어:'.length).trim() }], stop_reason: 'end_turn' } })
+    say({ type: 'result', subtype: 'success', duration_ms: 10, total_cost_usd: 0.001 })
+    return
+  }
   // 「봇 답의 첫 줄」 검사용 — 짧은 한 줄 + 빈 줄 + 본문
   if (/머리줄/.test(text)) {
     say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '정리했습니다\n\n**4건**을 옮겼고, 중복 2건은 합쳤습니다. 원본 문장은 지우지 않고 상세로 내렸어요.' }], stop_reason: 'end_turn' } })
     say({ type: 'result', subtype: 'success', duration_ms: 40, total_cost_usd: 0.001 })
+    return
+  }
+  // 「입력창 흔들림」 재현용 — 글자 조각을 3초 동안 40ms 마다 흘려 «답변 스트리밍 중 타이핑» 조건을 만든다
+  if (/긴스트리밍/.test(text)) {
+    let n = 0; const words = '스트리밍 중에 입력창이 흔들리는지 재는 긴 답변입니다 '.split(' ')
+    const tick = setInterval(() => {
+      if (n >= 60) { clearInterval(tick); say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '끝' }], stop_reason: 'end_turn' } }); say({ type: 'result', subtype: 'success', duration_ms: 3000, total_cost_usd: 0.001 }); return }
+      say({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: words[n % words.length] + ' ' } } }); n++
+    }, 50)
     return
   }
   // 「대기열」 검사용 — 한 턴이 **느리게** 돌아야 그 사이에 보낸 말이 대기열에 쌓인다

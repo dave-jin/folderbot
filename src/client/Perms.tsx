@@ -3,17 +3,19 @@ import { FolderBot, Icon } from './FolderBot'
 import { Mark } from './Brand'
 import { api } from './api'
 import { useStore } from './store'
+import { LocalOpenPicker } from './localOpen'
 import type { ProviderId } from '../core/agents'
 
 /** 데스크톱 셸이 재 주는 권한 한 줄 */
-export interface PermRow { id: 'full-disk' | 'notifications'; required: boolean; probeable: boolean; status: 'granted' | 'missing' | 'unknown' }
+export interface PermRow { id: 'full-disk' | 'notifications' | 'local-open'; required: boolean; probeable: boolean; status: 'granted' | 'missing' | 'unknown' }
 interface PermBridge { list: () => Promise<PermRow[]>; open: (id: PermRow['id']) => Promise<{ ok: boolean }>; ack: (id: PermRow['id'], ok: boolean) => Promise<PermRow[]>; reset: () => Promise<PermRow[]>; test: () => Promise<{ ok: boolean }>; relaunch: () => void; onChange: (cb: (items: PermRow[]) => void) => () => void }
 export const permBridge = (): PermBridge | undefined => (window as unknown as { folderbotDesktop?: { perms?: PermBridge } }).folderbotDesktop?.perms
 
 export const permsSatisfied = (items: PermRow[]): boolean => items.every((p) => !p.required || p.status === 'granted')
 
 /** 권한 문구 한 벌 — 관문과 설정이 같은 걸 읽는다 */
-const META: Record<PermRow['id'], { title: string; why: string; icon: 'folder' | 'bell'; how: string[] }> = {
+const META: Record<PermRow['id'], { title: string; why: string; icon: 'folder' | 'bell' | 'open'; how: string[] }> = {
+  'local-open': { title: '이 기기에서 파일 열기', icon: 'open', why: '«Finder 에서 보기»·«열기» 를 누르면 메인 맥이 아니라 지금 앉아 있는 이 기기에서 열려요. Dropbox·iCloud 로 같은 볼트가 이 기기에도 있으면 그 파일을, 없으면 호스트에서 받아서 엽니다.', how: ['아래에서 하나를 고르세요 — 나중에 설정 › 기기 에서 바꿀 수 있어요'] },
   'full-disk': { title: '전체 디스크 접근', icon: 'folder', why: '데스크탑·문서·iCloud·Dropbox·외장 폴더의 파일을 읽고 저장하려면 필요해요. 없으면 폴더가 열리기는 해도 저장·정리가 조용히 실패합니다.', how: ['아래 [시스템 설정 열기] 를 누르면 «개인정보 보호 › 전체 디스크 접근» 이 열립니다', '목록에서 Folder Bot 을 찾아 스위치를 켜세요 (없으면 + 로 응용 프로그램에서 추가)', '이 창으로 돌아오면 자동으로 확인합니다 — 켰는데도 꺼짐이면 [다시 시작]'] },
   notifications: { title: '알림', icon: 'bell', why: '봇이 확인을 기다리거나 일을 끝내면 알려 드려요. 없으면 다른 창에 있는 동안 아무 소식도 못 받습니다.', how: ['아래 [테스트 알림 보내기] 를 누르세요', '화면 오른쪽 위에 알림이 보이면 [보였어요]', '안 보이면 [시스템 설정 열기] → 알림 › Folder Bot 을 «허용» 으로'] }
 }
@@ -53,7 +55,7 @@ export function PermGate({ items, onDone, refresh }: { items: PermRow[]; onDone:
         {!done ? <>
           <p className="why">{m.why}</p>
           <ol className="how">{m.how.map((h, i) => <li key={i}>{h}</li>)}</ol>
-          <div className="acts">
+          {p.id === 'local-open' ? <LocalOpenPicker root={useStore().s.root} onDone={() => void refresh()} /> : <div className="acts">
             {p.probeable ? <>
               <button className="btn" onClick={() => void openPane(p.id)}>시스템 설정 열기 ↗</button>
               <button className="btn" onClick={() => void refresh()}>다시 확인</button>
@@ -63,7 +65,7 @@ export function PermGate({ items, onDone, refresh }: { items: PermRow[]; onDone:
               {tested || p.status === 'missing' ? <><button className="btn on" onClick={() => void ack(p.id, true)}>보였어요</button><button className="btn" onClick={() => void ack(p.id, false)}>안 보여요</button></> : null}
               <button className="btn" onClick={() => void openPane(p.id)}>시스템 설정 열기 ↗</button>
             </>}
-          </div>
+          </div>}
         </> : null}
       </div> })}
     </div>

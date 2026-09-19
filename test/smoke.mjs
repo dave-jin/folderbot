@@ -400,14 +400,234 @@ try {
         // 버전 칩을 누르면 확인 — 브라우저 화면에선 안내 토스트
         await pg.click('.sb-foot .bd.upd'); await wait(200); const vt = await pg.textContent('.toast'); if (!/업데이트/.test(vt ?? '')) fail('ui version chip toast: ' + vt)
         // 레일 순서 — 섹션은 관제 → 2 → 3 → 4, 행은 이름 내림차순(날짜 최신 먼저), 활동으로 자리가 안 바뀐다
-        const order = await pg.evaluate(() => Array.from(document.querySelectorAll('.sb-list > div')).map((sec) => ({ s: sec.querySelector('.secl')?.textContent, n: Array.from(sec.querySelectorAll('.brow .n .mid')).map((e) => e.textContent) })))
+        const order = await pg.evaluate(() => Array.from(document.querySelectorAll('.sb-list > div')).map((sec) => ({ s: sec.querySelector('.secl')?.textContent, n: Array.from(sec.querySelectorAll('.brow .n .bname')).map((e) => e.getAttribute('title')) })))
         const secNames = order.map((o) => o.s); const sorted = [...secNames].sort((a, b) => (a === '관제' ? -1 : b === '관제' ? 1 : a.localeCompare(b, 'ko', { numeric: true })))
         if (JSON.stringify(secNames) !== JSON.stringify(sorted)) fail('ui section order ' + secNames.join(' | '))
         for (const o of order) { const d = [...o.n].sort((a, b) => b.localeCompare(a, 'ko', { numeric: true, sensitivity: 'base' })); if (JSON.stringify(o.n) !== JSON.stringify(d)) fail(`ui row order in ${o.s}: ${o.n.join(' | ')}`) }
         // NFD 파일명이 자모 분리 없이 합쳐져 보인다
         const nfdName = await pg.$$eval('.panel .trow .n', (els) => els.map((e) => e.textContent).find((t) => t && t.includes('_MAP_'))); if (!nfdName || nfdName !== nfdName.normalize('NFC') || !/전체구조/.test(nfdName)) fail('ui NFD name: ' + JSON.stringify(nfdName))
-        // 이름은 가운데 말줄임 — 꼬리(.mt)가 남아 있다
-        if (!(await pg.$('.brow .n .mid .mt')) || !(await pg.$('.panel .trow .n .mid'))) fail('ui mid ellipsis')
+        // 트리 이름은 가운데 말줄임 — 꼬리(.mt)가 남아 있다 (레일은 F 로 «제목 끝 자르기» 가 됐다)
+        if (!(await pg.$('.brow .n .bname .dn')) || !(await pg.$('.panel .trow .n .mid'))) fail('ui mid ellipsis')
+        /**
+         * 🔴 **레일 이름 파생** (F · 2026-09-19 Dave 1안 확정) — 폴더명 `날짜_타입-이름` 을 파싱해 «제목 굵게 · 타입 태그 ·
+         *    오른쪽 날짜 칩». 정렬·rel 은 폴더명 그대로(위 정렬 검사가 title 속성 = 폴더명으로 재는 이유).
+         */
+        {
+          const rowOf = (folder) => pg.evaluate((f) => { const r = [...document.querySelectorAll('.sb-list .brow')].find((x) => x.querySelector('.bname')?.getAttribute('title') === f); if (!r) return null
+            const dn = r.querySelector('.dn'), due = r.querySelector('.due'); const rr = r.getBoundingClientRect(), dr = due?.getBoundingClientRect()
+            return { dn: dn?.textContent, tag: r.querySelector('.tag')?.textContent ?? null, due: due?.textContent ?? null, cls: due?.className ?? '', time: !!r.querySelector('time'), cut: dn ? dn.scrollWidth > dn.clientWidth + 1 : false, dueIn: dr ? dr.width > 0 && dr.right <= rr.right + 1 : null } }, folder)
+          const now = new Date(); const pad = (n) => String(n).padStart(2, '0'); const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+          const a = await rowOf('2026-09_예시고객-자문')
+          const sepTone = now.getFullYear() > 2026 || (now.getFullYear() === 2026 && now.getMonth() + 1 > 9) ? 'past' : 'normal'
+          if (!a || a.dn !== '예시고객 자문' || a.tag !== null || a.due !== '9월' || !a.cls.includes(sepTone) || a.time) fail('F 예시: 2026-09_예시고객-자문 ' + JSON.stringify(a))
+          await mcp('tools/call', { name: 'bot_start', arguments: { rel: '2. Projects/2026-10_해커톤-제안' } }); await wait(600)
+          const h = await rowOf('2026-10_해커톤-제안'); if (!h || h.dn !== '해커톤 제안' || h.tag !== null || h.due !== '10월') fail('F 예시: 2026-10_해커톤-제안 ' + JSON.stringify(h))
+          const r0 = await rowOf('제품_Rondo'); if (!r0 || r0.dn !== '제품_Rondo' || r0.due !== null || !r0.time) fail('F 규칙 밖: 제품_Rondo 는 그대로 + 활동 시각 ' + JSON.stringify(r0))
+          // D-2(강조) · 어제(지남 흐림) · 아주 긴 제목(잘림에도 칩이 남는다)
+          const d2 = new Date(now); d2.setDate(d2.getDate() + 2); const y1 = new Date(now); y1.setDate(y1.getDate() - 1)
+          const soonRel = `2. Projects/${ymd(d2)}_컨설팅-마감임박`, pastRel = `2. Projects/${ymd(y1)}_행사-지난-행사-아주-긴-이름-말줄임-검사용-폴더-이름-끝까지`
+          for (const rel of [soonRel, pastRel]) { mkdirSync(join(root, rel), { recursive: true }); await mcp('tools/call', { name: 'bot_start', arguments: { rel } }) }
+          await wait(900)
+          const so = await rowOf(soonRel.split('/')[1]); if (!so || so.dn !== '마감임박' || so.tag !== '컨설팅' || !/D-2$/.test(so.due ?? '') || !so.cls.includes('soon')) fail('F D-3 강조: ' + JSON.stringify(so))
+          const pa = await rowOf(pastRel.split('/')[1]); if (!pa || !/지남$/.test(pa.due ?? '') || !pa.cls.includes('past') || !pa.cut || pa.dueIn !== true) fail('F 지남·잘림: 제목이 잘려도 칩이 남아야 한다 ' + JSON.stringify(pa))
+          // display_name: — 봇 폴더 CLAUDE.md frontmatter 로 제목만 덮는다 · 날짜 칩은 그대로 · 파일이 바뀌면 레일도 바뀐다
+          const cm = join(root, soonRel, 'CLAUDE.md'); const body = existsSync(cm) ? readFileSync(cm, 'utf8') : ''
+          writeFileSync(cm, `---\ndisplay_name: 덮은 이름\n---\n${body}`)
+          let ov = null; for (let i = 0; i < 30 && !(ov && ov.dn === '덮은 이름'); i++) { await wait(150); ov = await rowOf(soonRel.split('/')[1]) }
+          if (!ov || ov.dn !== '덮은 이름' || !/D-2$/.test(ov.due ?? '')) fail('F display_name: ' + JSON.stringify(ov))
+          const bl = JSON.parse((await mcp('tools/call', { name: 'bots_list', arguments: {} })).result.content[0].text); const me = bl.find((b) => b.rel === soonRel)
+          if (!me || me.displayName !== '덮은 이름' || me.name !== soonRel.split('/')[1]) fail('F bots_list displayName: ' + JSON.stringify(me))
+          // 시안 「1안」 과 나란히 — 스크린샷으로 남긴다
+          await pg.$eval('.sb-list', (e) => e.scrollTo(0, 0)); await (await pg.$('.sb-list')).screenshot({ path: 'test/tmp/rail-f.png' })
+          const mp = await pg.context().browser().newPage(); await mp.setViewportSize({ width: 1400, height: 900 }); await mp.goto('file://' + join(process.cwd(), 'test/tmp/rail-name-mock.html')); await wait(300)
+          const cols = await mp.$$('.col'); if (cols[1]) await cols[1].screenshot({ path: 'test/tmp/rail-mock-1.png' }); await mp.close()
+          const cp = await pg.context().browser().newPage(); await cp.setViewportSize({ width: 900, height: 700 })
+          const b64 = (f) => 'data:image/png;base64,' + readFileSync(join(process.cwd(), f)).toString('base64')   // about:blank 은 file:// 을 못 읽는다
+          await cp.setContent(`<body style="margin:0;background:#111;display:flex;gap:24px;padding:20px;font:12px -apple-system,sans-serif;color:#aaa"><div><div>Folder Bot 레일 (F 구현)</div><img src="${b64('test/tmp/rail-f.png')}" style="max-width:400px"></div><div><div>시안 · 1안</div><img src="${b64('test/tmp/rail-mock-1.png')}" style="max-width:420px"></div></body>`); await wait(400)
+          await cp.screenshot({ path: 'test/tmp/rail-compare.png' }); await cp.close()
+          for (const rel of [soonRel, pastRel, '2. Projects/2026-10_해커톤-제안']) await mcp('tools/call', { name: 'bot_stop', arguments: { bot: rel } })
+          await wait(400)
+          ok('레일 이름 파생 — 예시 3 · D-2 강조 · 지남 흐림 · 잘려도 칩 · display_name · bots_list.displayName · 시안 비교 test/tmp/rail-compare.png')
+        }
+        /**
+         * 🔴 **원격에서 파일 열기 — 그 기기에서** (E · 2026-09-19 Dave 1안 확정). 원격 Electron 을 흉내 낸다:
+         *    `x-fb-as` 헤더(인증 없는 QA 의 시임)로 호스트가 이 화면을 «원격 · 맥북» 으로 보고, 가짜 `folderbotDesktop.local` 브리지가
+         *    셸 대신 답한다(호출 기록을 남긴다). 실제 파일 시스템 판정은 유닛(test/unit/localfs.test.ts)이 잰다.
+         */
+        {
+          const CANDS = [{ path: '/Users/dave/Library/CloudStorage/Dropbox/PARA', real: '/Users/dave/Library/CloudStorage/Dropbox/PARA', files: 1200, shell: false }, { path: '/Users/dave/Library/CloudStorage/Dropbox-Cbsjin/진대연 (Dave)/PARA', real: '/Users/dave/Library/CloudStorage/Dropbox-Cbsjin/진대연 (Dave)/PARA', files: 1, shell: true }]
+          const rp = await br.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
+          await rp.addInitScript((cands) => {
+            localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark'); localStorage.removeItem('fb:docopen')
+            const L = { settings: { openMode: '', vaultLocal: '' }, calls: [], stat: null, cands }; window.__local = L
+            window.folderbotDesktop = {
+              version: 'qa',
+              perms: { list: async () => [{ id: 'local-open', required: true, probeable: false, status: L.settings.openMode ? 'granted' : 'unknown' }], open: async () => ({ ok: true }), ack: async () => [], reset: async () => [], test: async () => ({ ok: true }), relaunch: () => {}, onChange: () => () => {} },
+              local: {
+                settings: async () => ({ ...L.settings }), set: async (p) => { Object.assign(L.settings, p); L.calls.push(['set', p]); return { ...L.settings } },
+                detect: async (r) => { L.calls.push(['detect', r]); return L.cands }, stat: async (p) => { L.calls.push(['stat', p]); return L.stat ? L.stat(p) : { exists: false } },
+                open: async (p) => { L.calls.push(['open', p]); return '' }, reveal: async (p) => { L.calls.push(['reveal', p]); return '' },
+                wait: async (p) => { L.calls.push(['wait', p]); await new Promise((r) => setTimeout(r, 120)); return true },
+                download: async (url, host, rel) => { L.calls.push(['download', url, host, rel]); return '/cache/' + rel }, icloud: async (p) => { L.calls.push(['icloud', p]); return true }, pick: async () => ''
+              }
+            }
+            const of = window.fetch.bind(window); window.fetch = (u, o = {}) => { const h = new Headers(o.headers || {}); h.set('x-fb-as', 'macbook'); return of(u, { ...o, headers: h }) }
+          }, CANDS)
+          await rp.goto(base + `/#bot=${bot.id}`); await rp.waitForSelector('.perm-gate', { timeout: 15000 }); await wait(600)
+          const calls = () => rp.evaluate(() => window.__local.calls)
+          // 온보딩 — 권한 관문 안의 한 단계 · 자동 탐색 · 정본이 맨 위 · 껍데기는 표시
+          const gate = await rp.textContent('.perm-gate'); if (!/이 기기에서 파일 열기/.test(gate ?? '')) fail('E 온보딩: 「이 기기에서 파일 열기」 단계가 관문에 없다')
+          if (!(await rp.$('.perm-gate .mr.remote, .perm-gate'))) fail('E: gate')
+          const cl = await rp.$$eval('.perm-gate .lpick .cand', (r) => r.map((x) => ({ p: x.querySelector('.p')?.textContent, cls: x.className })))
+          if (cl.length !== 2 || cl[0].p !== CANDS[0].path || !/best/.test(cl[0].cls) || !/shell/.test(cl[1].cls) || /best/.test(cl[1].cls)) fail('E 온보딩 후보: 정본이 1순위·껍데기 표시 ' + JSON.stringify(cl))
+          if (!(await calls()).some((c) => c[0] === 'detect' && c[1] === root)) fail('E 온보딩: 호스트 루트로 detect 를 부르지 않았다 ' + JSON.stringify(await calls()))
+          await rp.click('.perm-gate .lpick .cand.best'); await wait(400)
+          const st1 = await rp.evaluate(() => window.__local.settings); if (st1.openMode !== 'sync' || st1.vaultLocal !== CANDS[0].path) fail('E 온보딩: 고르면 sync + 경로 ' + JSON.stringify(st1))
+          await rp.click('.perm-gate button.btn.on:has-text("계속")'); await wait(500)
+          if (await rp.$('.perm-gate')) fail('E 온보딩: 고른 뒤 계속이 안 된다')
+          await rp.waitForSelector('.col.chat .hdr', { timeout: 10000 }); await wait(400)
+          if (!/원격 · macbook/.test((await rp.textContent('.mr.remote').catch(() => '')) ?? '')) fail('E: 이 화면은 «원격 · macbook» 이어야 한다')
+          // ① 같으면 바로 이 기기의 Finder — 호스트 stat 과 같은 값을 돌려주는 가짜 stat
+          const hs = await api(`/bots/${bot.id}/stat?rel=CLAUDE.md`); if (!hs.head || !hs.size) fail('E stat: ' + JSON.stringify(hs))
+          await rp.evaluate((h) => { window.__local.stat = () => ({ exists: true, size: h.size, head: h.head, mtime: Date.now() }) }, hs)
+          const revealClaude = async () => { await rp.evaluate(() => { const b = [...document.querySelectorAll('.panel .trow')].find((x) => /CLAUDE\.md/.test(x.textContent ?? '')); b?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 700, clientY: 300 })) }); await wait(250); const lab = await rp.textContent('.menu button:has-text("Finder 에서 보기")'); await rp.click('.menu button:has-text("Finder 에서 보기")'); await wait(500); return lab }
+          const lab = await revealClaude(); if (!/이 기기/.test(lab ?? '')) fail('E: 메뉴가 «이 기기» 를 말해야 한다 · ' + lab)
+          const localPath = `${CANDS[0].path}/3. Area/제품_Rondo/CLAUDE.md`
+          if (!(await calls()).some((c) => c[0] === 'reveal' && c[1] === localPath)) fail('E ① 같음: 이 기기의 Finder 로 reveal 해야 한다 ' + JSON.stringify(await calls()))
+          // ① 다르면 시트 — 기본 [기다렸다 열기] → 도착하면 자동으로 연다
+          await rp.evaluate((h) => { window.__local.stat = () => ({ exists: true, size: h.size, head: 'zzz', mtime: Date.now() - 86400000 }) }, hs)
+          await revealClaude(); await rp.waitForSelector('.modal.lopen', { timeout: 3000 })
+          const focused = await rp.evaluate(() => document.activeElement?.textContent); if (focused !== '기다렸다 열기') fail('E 신선도: 기본 단추가 [기다렸다 열기] 여야 한다 · ' + focused)
+          await rp.click('.modal.lopen button:has-text("기다렸다 열기")'); await wait(600)
+          { const c = await calls(); const wi = c.findIndex((x) => x[0] === 'wait' && x[1] === localPath); const ri = c.map((x, i) => (x[0] === 'reveal' ? i : -1)).filter((i) => i > wi)
+            if (wi < 0 || !ri.length) fail('E 신선도: wait → reveal 순서 ' + JSON.stringify(c)) }
+          // iCloud 자리표시자 → 내려받기 → 기다림 → 열기
+          await rp.evaluate(() => { window.__local.stat = () => ({ exists: false, placeholder: true }) })
+          await revealClaude(); await wait(500)
+          { const c = await calls(); const ii = c.findIndex((x) => x[0] === 'icloud' && x[1] === localPath); if (ii < 0 || !c.slice(ii).some((x) => x[0] === 'wait') || !c.slice(ii).some((x) => x[0] === 'reveal')) fail('E iCloud: icloud → wait → reveal ' + JSON.stringify(c.slice(-4))) }
+          // ② 호스트에서 받기 — 설정 › 기기 에서 바꾸면 즉시: 캐시로 내려받아 열고 탭에 「사본」
+          await rp.keyboard.press('Meta+,'); await rp.waitForSelector('.setw', { timeout: 4000 }); await rp.click('.snav .nv:has-text("기기")'); await wait(400)
+          const sp = await rp.textContent('.setw'); for (const w of ['이 기기에서 파일 열기', '동기화 볼트 위치']) if (!sp?.includes(w)) fail('E 설정 › 기기: «' + w + '» 줄이 없다')
+          await rp.click('.setw .seg button:has-text("호스트에서 받기")'); await wait(300)
+          if ((await rp.evaluate(() => window.__local.settings.openMode)) !== 'download') fail('E 설정: 모드 전환이 저장되지 않았다')
+          await rp.keyboard.press('Escape'); await wait(300)
+          await rp.evaluate(() => { const b = [...document.querySelectorAll('.panel .trow')].find((x) => /CLAUDE\.md/.test(x.textContent ?? '')); b?.click() }); await rp.waitForSelector('.docwrap .dtb', { timeout: 5000 }); await wait(300)
+          if (!(await rp.$('.docwrap .dtb .scp.copy'))) fail('E ②: 문서 탭에 「사본」 배지가 없다')
+          await rp.click('.docwrap .ib[title="이 기기에서 열기"]'); await wait(600)
+          { const c = await calls(); const d = c.find((x) => x[0] === 'download'); if (!d || !/\/api\/bots\/.*\/raw\?rel=CLAUDE\.md/.test(d[1]) || d[3] !== '3. Area/제품_Rondo/CLAUDE.md') fail('E ②: 캐시로 내려받기 호출 ' + JSON.stringify(d))
+            if (!c.some((x) => x[0] === 'open' && x[1] === '/cache/3. Area/제품_Rondo/CLAUDE.md')) fail('E ②: 받은 사본을 열어야 한다 ' + JSON.stringify(c.slice(-3))) }
+          // 다시 동기화 볼트로 — 배지가 바로 사라진다
+          await rp.keyboard.press('Meta+,'); await rp.waitForSelector('.setw', { timeout: 4000 }); await rp.click('.snav .nv:has-text("기기")'); await wait(300); await rp.click('.setw .seg button:has-text("동기화 볼트")'); await wait(300); await rp.keyboard.press('Escape'); await wait(300)
+          if (await rp.$('.docwrap .dtb .scp.copy')) fail('E: 동기화 볼트로 바꾸면 「사본」 배지가 사라져야 한다')
+          await rp.close()
+          // 메인(호스트 맥)에서는 설정 없이 종전대로 — 메뉴 이름에 «이 기기» 표식이 없고 호스트가 연다
+          await pg.evaluate(() => { const b = [...document.querySelectorAll('.panel .trow')].find((x) => /CLAUDE\.md/.test(x.textContent ?? '')); b?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 700, clientY: 300 })) }); await wait(250)
+          const mlab = await pg.textContent('.menu button:has-text("Finder 에서 보기")'); if (!mlab || /이 기기|내려받기|맥에서만/.test(mlab)) fail('E 메인: 종전 이름 그대로여야 한다 · ' + mlab)
+          await pg.keyboard.press('Escape'); await wait(200)
+          ok('원격에서 파일 열기 — 온보딩 단계·후보 순위 · ① 같음→이 기기 Finder · 다름→[기다렸다 열기] 기본→도착 후 열림 · iCloud 자리표시자 · ② 캐시+「사본」 · 설정 즉시 반영 · 메인은 그대로')
+        }
+        /**
+         * 🔴 **문서 창으로 가는 문은 하나** (C · 2026-09-19). 실측 원인: 답변 속 칩(.pchip)의 rel 이 `relOf()` 에서 버려져
+         *    창 열림/닫힘과 무관하게 클릭이 죽었다. 이제 `openInDocPane` 이 절대경로·rel 을 다 풀고 창이 닫혀 있으면 연다.
+         *    에이전트의 rondo_open 은 같은 세션·같은 턴에 한 번만.
+         */
+        {
+          mkdirSync(join(root, '3. Area/제품_Rondo/files'), { recursive: true }); writeFileSync(join(root, '3. Area/제품_Rondo/files/메모.md'), '# 메모\n')
+          const closeDoc = async () => { for (let i = 0; i < 3 && (await pg.$('.docwrap')); i++) { await pg.keyboard.press('Meta+Shift+D'); await wait(300) } }
+          await closeDoc(); if (await pg.$('.docwrap')) fail('C: 문서 창을 닫지 못했다')
+          // 전용 세션에서 — 이 블록의 칩이 같은 세션의 뒤 검사에 남지 않게. 끝나면 원래 세션으로 돌아간다
+          const hashBefore = await pg.evaluate(() => location.hash)
+          const sidC = (await api(`/bots/${bot.id}/sessions`, { name: 'c-doc' })).id; await pg.evaluate((h) => { location.hash = h }, `#bot=${bot.id}&s=${sidC}`); await wait(600)
+          await api(`/sessions/${sidC}/send`, { text: '되읊어: 메모는 `files/메모.md` 를 보세요' }); await wait(1000)
+          const chip = await pg.$('.amsg .pchip[data-rel="files/메모.md"]'); if (!chip) fail('C: 답변에 files/메모.md 칩이 없다')
+          await chip.click(); await wait(600)
+          if (!(await pg.$('.docwrap'))) fail('C: 창이 닫힌 상태에서 칩을 눌렀는데 창이 안 열렸다')
+          if ((await pg.textContent('.docwrap .dtb .nm')) !== '메모.md') fail('C: 열린 문서가 메모.md 가 아니다 · ' + (await pg.textContent('.docwrap .dtb .nm')))
+          // 에이전트 rondo_open — 창 닫힘 → 열림 · 같은 턴 두 번째는 무시 · 볼트 밖 거부
+          await closeDoc()
+          const mcpBot = async (name, args) => (await (await fetch(base + `/mcp/${bot.id}?sid=${sidC}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) })).json()).result
+          const r1 = await mcpBot('rondo_open', { path: 'CLAUDE.md' }); if (!/열었어요/.test(r1.content[0].text)) fail('C rondo_open: ' + JSON.stringify(r1))
+          await wait(600); if (!(await pg.$('.docwrap')) || (await pg.textContent('.docwrap .dtb .nm')) !== 'CLAUDE.md') fail('C rondo_open: 창이 열리고 CLAUDE.md 가 보여야 한다')
+          await mcpBot('rondo_open', { path: 'todo.md' }); await wait(600)
+          if ((await pg.textContent('.docwrap .dtb .nm')) !== 'CLAUDE.md') fail('C rondo_open: 같은 턴 두 번째 호출은 무시해야 한다')
+          const r3 = await mcpBot('rondo_open', { path: '/etc/hosts' }); if (!r3.isError || !/볼트 밖/.test(r3.content[0].text)) fail('C rondo_open: 볼트 밖은 거부 ' + JSON.stringify(r3))
+          // 창이 열려 있을 때의 규칙은 그대로 — 미리보기 탭은 교체된다(탭 수 불변)
+          const nTabs = await pg.$$eval('.docwrap .dtab, .docwrap .dtabs > *', (r) => r.length).catch(() => -1)
+          await pg.click('.amsg .pchip[data-rel="files/메모.md"]'); await wait(600)
+          if ((await pg.textContent('.docwrap .dtb .nm')) !== '메모.md') fail('C: 열려 있을 때 칩 클릭이 문서를 바꾸지 않았다')
+          const nTabs2 = await pg.$$eval('.docwrap .dtab, .docwrap .dtabs > *', (r) => r.length).catch(() => -1); if (nTabs >= 0 && nTabs2 !== nTabs) fail('C: 미리보기 탭 교체 규칙이 바뀌었다 ' + nTabs + '→' + nTabs2)
+          await closeDoc(); await fetch(base + `/api/sessions/${sidC}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(800)   // 전용 세션을 지워 «최근 세션» 이 원래 것으로 돌아간다
+          ok('문서 창 열기 — 닫힌 창 + 칩 → 열림 · rondo_open → 열림(같은 턴 두 번째 무시 · 볼트 밖 거부) · 열린 창의 탭 규칙 그대로')
+        }
+        /**
+         * 🔴 **폴더 밖 문서** (D · 2026-09-19) — 볼트 안·봇 폴더 밖 파일은 `../` rel 로 열리고 「폴더 외」 배지 + 볼트 기준 경로 띠 + 읽기만.
+         *    «참조 폴더로 추가» 는 봇당 하나라 비어 있을 때만. 볼트 밖은 거부(C 의 rondo_open 검사 + botRelOf 유닛).
+         */
+        {
+          const hashBefore = await pg.evaluate(() => location.hash)
+          const sidD = (await api(`/bots/${bot.id}/sessions`, { name: 'd-doc' })).id; await pg.evaluate((h) => { location.hash = h }, `#bot=${bot.id}&s=${sidD}`); await wait(600)
+          await api(`/sessions/${sidD}/send`, { text: '되읊어: 바깥 자료는 `1. Inbox/예시랩_자문자료.txt` 에 있습니다' }); await wait(1000)
+          const oc = await pg.$('.amsg .pchip[data-rel="../../1. Inbox/예시랩_자문자료.txt"]'); if (!oc) fail('D: 폴더 밖 파일 칩이 없다 ' + JSON.stringify(await pg.$$eval('.amsg .pchip', (r) => r.map((x) => x.dataset.rel))))
+          await oc.click(); await wait(800)
+          if (!(await pg.$('.docwrap'))) fail('D: 폴더 밖 파일을 눌렀는데 창이 안 열렸다')
+          if (!(await pg.$('.docwrap .dtb .scp.out'))) fail('D: 「폴더 외」 배지가 없다')
+          const band = (await pg.textContent('.docwrap .outband').catch(() => '')) ?? ''
+          if (!band.includes('1. Inbox/예시랩_자문자료.txt') || !/읽기만/.test(band) || !/참조 폴더로 추가/.test(band)) fail('D: 띠에 볼트 기준 경로·읽기만·추가 단추가 있어야 한다 · ' + band)
+          if (await pg.$('.docwrap .mded, .docwrap textarea')) fail('D: 폴더 밖 문서는 편집기가 아니라 읽기 전용이어야 한다')
+          await pg.click('.docwrap .outband button:has-text("참조 폴더로 추가")'); await wait(700)
+          const rb = (await api('/bots')).find((b) => b.id === bot.id); if (!rb.repo || !rb.repo.endsWith('/1. Inbox')) fail('D: 참조 폴더가 .bot.yml 에 안 들어갔다 ' + JSON.stringify(rb.repo))
+          const band2 = (await pg.textContent('.docwrap .outband')) ?? ''; if (!/추가했어요|하나뿐/.test(band2)) fail('D: 추가 뒤 띠 문구 · ' + band2)
+          const again = await api(`/bots/${bot.id}/repo`, { path: join(root, '2. Projects') }).catch((e) => ({ error: String(e.message) })); if (!again.error || !/하나뿐/.test(again.error)) fail('D: 참조 폴더가 있으면 두 번째는 거부해야 한다 ' + JSON.stringify(again))
+          await api(`/bots/${bot.id}/repo`, { path: '' })   // 되돌린다 — 뒤 검사가 봇 설정을 믿는다
+          if ((await api('/bots')).find((b) => b.id === bot.id).repo) fail('D: 참조 폴더 풀기')
+          // 폴더 안 문서는 그대로 — 배지·띠 없음 + 편집기
+          await pg.evaluate(() => { const b = [...document.querySelectorAll('.panel .trow')].find((x) => /CLAUDE\.md/.test(x.textContent ?? '')); b?.click() }); await wait(800)
+          if (await pg.$('.docwrap .scp.out, .docwrap .outband')) fail('D: 폴더 안 문서에 폴더 외 표시가 붙었다')
+          if (!(await pg.$('.docwrap .mded'))) fail('D: 폴더 안 문서의 편집기가 사라졌다')
+          for (let i = 0; i < 3 && (await pg.$('.docwrap')); i++) { await pg.keyboard.press('Meta+Shift+D'); await wait(300) }
+          await fetch(base + `/api/sessions/${sidD}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(800)
+          ok('폴더 밖 문서 — 칩 → 열림 · 「폴더 외」 배지 · 볼트 경로 띠 · 읽기만 · 참조 폴더 추가(하나뿐 · 두 번째 거부) · 폴더 안 문서 불변')
+        }
+        /**
+         * 🔴 **채팅의 PDF 칩** (G · 2026-09-19) — 원인 ⓑ(칩 클릭이 경로 해석에서 버려짐 · 파일명만이면 칩이 안 생김). 이제 칩은 전부
+         *    `openInDocPane` 으로 열리고, 파일명만 적혀도 호스트가 봇 폴더 → 참조 폴더 → 볼트 순으로 찾는다(여럿이면 고르기).
+         *    PDF 는 Chromium 뷰어(iframe) · 이미지는 img · 그 밖은 「미리보기 없음」 + «외부에서 열기 ↗»(E 의 openOnThisDevice).
+         */
+        {
+          const fdir = join(root, '3. Area/제품_Rondo/files'); mkdirSync(join(fdir, 'sub'), { recursive: true })
+          writeFileSync(join(fdir, '설명서.pdf'), '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000052 00000 n \n0000000101 00000 n \ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n160\n%%EOF\n')
+          writeFileSync(join(fdir, '그림.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'))
+          writeFileSync(join(fdir, '보고서.docx'), 'PK\u0003\u0004 not really'); writeFileSync(join(fdir, 'dup.md'), '# A\n'); writeFileSync(join(fdir, 'sub/dup.md'), '# B\n')
+          const hashBefore = await pg.evaluate(() => location.hash)
+          const sidG = (await api(`/bots/${bot.id}/sessions`, { name: 'g-doc' })).id; await pg.evaluate((h) => { location.hash = h }, `#bot=${bot.id}&s=${sidG}`); await wait(600)
+          const closeDoc = async () => { for (let i = 0; i < 3 && (await pg.$('.docwrap')); i++) { await pg.keyboard.press('Meta+Shift+D'); await wait(300) } }
+          await closeDoc()
+          await api(`/sessions/${sidG}/send`, { text: '되읊어: 설명서 PDF 가 나왔습니다 — `설명서.pdf` (A4 1쪽). 그림은 `files/그림.png`, 초안은 `files/보고서.docx`, 메모는 `dup.md` 입니다' })
+          let chips = []; for (let i = 0; i < 30 && chips.length < 4; i++) { await wait(250); chips = await pg.$$eval('.amsg .pchip', (r) => r.map((x) => [x.textContent, x.dataset.rel, x.title])) }
+          const want = { '설명서.pdf': 'files/설명서.pdf', '그림.png': 'files/그림.png', '보고서.docx': 'files/보고서.docx', 'dup.md': 'files/dup.md' }
+          for (const [n, rel] of Object.entries(want)) if (!chips.some((c) => c[0] === n && c[1] === rel)) fail(`G 칩: ${n} → ${rel} 이 없다 · ` + JSON.stringify(chips))
+          // pdf → iframe 뷰어
+          await pg.click('.amsg .pchip[data-rel="files/설명서.pdf"]'); await wait(900)
+          if (!(await pg.$('.docwrap iframe'))) fail('G: PDF 칩을 눌렀는데 뷰어(iframe)가 없다'); if ((await pg.textContent('.docwrap .dtb .nm')) !== '설명서.pdf') fail('G: PDF 탭 이름')
+          // png → img
+          await pg.click('.amsg .pchip[data-rel="files/그림.png"]'); await wait(900)
+          if (!(await pg.$('.docwrap .dbody img'))) fail('G: 이미지 칩을 눌렀는데 img 가 없다')
+          // docx → 미리보기 없음 + 외부에서 열기 ↗
+          await pg.click('.amsg .pchip[data-rel="files/보고서.docx"]'); await wait(900)
+          const np = (await pg.textContent('.docwrap .nopv').catch(() => '')) ?? ''; if (!/미리보기 없음/.test(np)) fail('G: docx 는 「미리보기 없음」 이어야 한다 · ' + np)
+          // «외부에서 열기 ↗» 는 툴바의 «열기» 와 같은 핸들러(openOnThisDevice) — 원격 계약은 E 블록이 잰다. 여기서는 단추가 있는지만(누르면 Linux 호스트가 400 을 내 콘솔 오류 검사에 걸린다)
+          if (!(await pg.$('.docwrap .nopv button:has-text("외부에서 열기")'))) fail('G: docx 화면에 «외부에서 열기 ↗» 단추가 없다')
+          // 파일명만 · 여러 곳 → 고르기 시트 → 두 번째 선택
+          const dchip = chips.find((c) => c[0] === 'dup.md'); if (!dchip || !/2곳/.test(dchip[2] ?? '')) fail('G: 여러 곳에 있는 이름은 툴팁에 곳 수 · ' + JSON.stringify(dchip))
+          await pg.click('.amsg .pchip[data-rel="files/dup.md"]'); await wait(500)
+          const opts = await pg.$$eval('.modal.pickfile .prow2 small', (r) => r.map((x) => x.textContent)); if (opts.length !== 2 || !opts.includes('files/sub/dup.md')) fail('G: 고르기 시트 ' + JSON.stringify(opts))
+          await pg.click('.modal.pickfile .prow2:has-text("files/sub/dup.md")'); await wait(800)
+          if ((await pg.textContent('.docwrap .dtb .nm')) !== 'dup.md' || !/sub/.test((await pg.textContent('.docwrap .dtb')) ?? '')) fail('G: 고른 파일(files/sub/dup.md)이 열려야 한다 · ' + (await pg.textContent('.docwrap .dtb')))
+          // 원격에서도 같은 길 — 호스트가 pdf 를 스트리밍한다(원격 기기 시임 헤더로 확인)
+          const rr = await fetch(base + `/api/bots/${bot.id}/raw?rel=${encodeURIComponent('files/설명서.pdf')}`, { headers: { 'x-fb-as': 'macbook' } }); if (rr.status !== 200 || !/pdf/.test(rr.headers.get('content-type') ?? '')) fail('G 원격: raw pdf ' + rr.status)
+          await closeDoc(); await fetch(base + `/api/sessions/${sidG}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(800)
+          ok('PDF 칩 — pdf→뷰어 · png→img · docx→미리보기 없음+외부에서 열기 ↗ · 파일명만(찾기 · 여럿이면 고르기) · 원격은 호스트 스트리밍')
+        }
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
         await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)
         await pg.mouse.move(700, 300); await wait(200); if (await pg.$('.hcard')) fail('ui hover card stuck')
@@ -1793,6 +2013,47 @@ try {
             const kept = (await api('/bots')).filter((b) => !b.orchestrator).map((b) => b.id)
             if (kept.length !== ids.length) fail('레일 차례: 낡은 목록을 보냈더니 봇이 사라졌다 ' + JSON.stringify(kept))
             if (kept[0] !== ids[0]) fail('레일 차례: 보낸 id 가 맨 앞으로 안 왔다 ' + JSON.stringify(kept))
+            /**
+             * A · **오케스트레이터가 순서를 정한다 — `bots_reorder`** (2026-09-19, 추천안 승인).
+             * ① 사람이 끌어 놓은 봇(`moved`)은 도구가 못 건드린다 ② 없는 rel 이 섞이면 실패·그대로
+             * ③ `bots_list` 에 order·orderedBy ④ 재정렬이 오면 이 기기의 정렬이 «직접» 으로 ⑤ 레일 메뉴 «순서 고정 해제»
+             * ⑥ restore 는 첫 재정렬 전으로. (재시작 후 유지는 test/unit/registry.test.ts — bots.yml 을 다시 읽는다)
+             */
+            {
+              await api('/bots/reorder', { ids, moved: ids[1] })                       // ids[1] 을 «끌어» 1번 칸에 — 사람이 정한 자리
+              const rels = (await api('/bots')).filter((b) => !b.orchestrator).map((b) => b.rel)
+              const call = async (args) => (await (await fetch(base + '/mcp/orch', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'bots_reorder', arguments: args } }) })).json()).result
+              const bad = await call({ order: [rels[0], '2. Projects/없는폴더'] })
+              if (!bad.isError || !/없는폴더/.test(bad.content[0].text)) fail('A: 없는 rel 이 섞였는데 실패하지 않았다 ' + JSON.stringify(bad))
+              if (JSON.stringify((await api('/bots')).filter((b) => !b.orchestrator).map((b) => b.id)) !== JSON.stringify(ids)) fail('A: 실패했는데 순서가 바뀌었다')
+              await pg.click('.sortbar button:has-text("이름")'); await wait(200)
+              const rev = [...rels].reverse()
+              const r1 = await call({ order: rev }); if (r1.isError) fail('A: bots_reorder ' + r1.content[0].text)
+              const got = (await api('/bots')).filter((b) => !b.orchestrator)
+              const free = rev.map((r) => ids[rels.indexOf(r)]).filter((id) => id !== ids[1]); const want = ids.map((_, i) => (i === 1 ? ids[1] : free.shift()))  // 1번 칸은 사람이 정한 자리
+              if (JSON.stringify(got.map((b) => b.id)) !== JSON.stringify(want)) fail('A: 끌어 놓은 봇이 자리를 안 지켰거나 차례가 틀리다 ' + JSON.stringify({ want, got: got.map((b) => b.id) }))
+              if (got[1].orderedBy !== 'user' || got[0].orderedBy !== 'orchestrator') fail('A: orderedBy ' + JSON.stringify(got.map((b) => b.orderedBy)))
+              const bl = JSON.parse((await mcp('tools/call', { name: 'bots_list', arguments: {} })).result.content[0].text).filter((b) => b.rel)
+              if (bl.some((b, i) => b.order !== i) || bl[1].orderedBy !== 'user' || bl[0].orderedBy !== 'orchestrator') fail('A: bots_list order/orderedBy ' + JSON.stringify(bl.map((b) => [b.order, b.orderedBy])))
+              await wait(600)
+              const sortOn = await pg.evaluate(() => document.querySelector('.sortbar button.on')?.textContent)
+              if (sortOn !== '직접') fail('A: 재정렬이 왔는데 정렬이 «직접» 으로 안 바뀌었다 · ' + sortOn)
+              const shown = await pg.evaluate(() => [...document.querySelectorAll('.sb-list .brow')].map((e) => e.dataset.id || e.getAttribute('data-id')).filter(Boolean))
+              // 레일은 섹션(PARA)을 지키므로 **섹션 안의 상대 차례**만 본다
+              for (const sec of new Set(got.map((b) => b.section))) { const inSec = (id) => got.find((b) => b.id === id)?.section === sec; if (JSON.stringify(shown.filter(inSec)) !== JSON.stringify(want.filter(inSec))) fail('A: 레일이 새 차례를 안 그린다 · ' + sec + ' ' + JSON.stringify({ shown: shown.filter(inSec), want: want.filter(inSec) })) }
+              // ⑤ 끌어 놓은 봇의 메뉴에만 «순서 고정 해제»
+              await pg.evaluate((id) => { const el = document.querySelector(`.sb-list .brow[data-id="${id}"]`); el?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 200 })) }, ids[1]); await wait(200)
+              if (!(await pg.$('.menu.ctx button.unfix'))) fail('A: 끌어 놓은 봇 메뉴에 «순서 고정 해제» 가 없다')
+              await pg.click('.menu.ctx button.unfix'); await wait(400)
+              if ((await api('/bots')).find((b) => b.id === ids[1]).orderedBy) fail('A: 고정 해제가 안 됐다')
+              await pg.evaluate((id) => { const el = document.querySelector(`.sb-list .brow[data-id="${id}"]`); el?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 200 })) }, ids[0]); await wait(200)
+              if (await pg.$('.menu.ctx button.unfix')) fail('A: 도구가 놓은 봇에 «순서 고정 해제» 가 떴다')
+              await pg.keyboard.press('Escape'); await wait(100)
+              const r2 = await call({ restore: true }); if (r2.isError) fail('A: restore ' + r2.content[0].text)
+              const back = (await api('/bots')).filter((b) => !b.orchestrator)
+              if (JSON.stringify(back.map((b) => b.id)) !== JSON.stringify(ids) || back.some((b) => b.orderedBy)) fail('A: restore 가 첫 재정렬 전으로 안 돌아갔다 ' + JSON.stringify(back.map((b) => [b.id, b.orderedBy])))
+              ok('A bots_reorder — 없는 rel 실패·그대로 · 끌어 놓은 자리 유지 · bots_list order/orderedBy · 정렬 «직접» 자동 · 순서 고정 해제 · restore')
+            }
           }
           await pg.click('.sortbar button:has-text("직접")'); await wait(400)
           if (!(await namesOf()).length) fail('직접 정렬: 목록이 비었다')
@@ -2421,7 +2682,7 @@ try {
         if (Math.abs(stuck.rootH - stuck.ih) > 2 || stuck.ih - stuck.compBottom > 24) fail('phone: stale visual viewport left a bottom gap ' + JSON.stringify(stuck))
         await pg.evaluate(() => window.__kb(0)); await wait(200)
         await pg.click('.chat-hdr .rb'); await wait(300); if (!(await pg.$('.mhome .mcards')) || (await pg.$$eval('.mrow', (r) => r.length)) < 3) fail('phone: home cards/rows'); await pg.screenshot({ path: 'test/tmp/phone-home.png' })
-        if (!(await pg.$('.mrow .l1 b .mid .mt'))) fail('phone: home row names should use middle ellipsis')
+        if (!(await pg.$('.mrow .l1 .bname .dn'))) fail('phone: home row names should use the derived display name')
         /**
          * 🔴 **폰 홈 폴더 행 쓸기** (2026-09-18 Dave: «모바일 화면에서 todo 처럼 슬라이딩으로 기본값 고정해서 만들어줘»)
          *    데스크톱 레일 우클릭의 세 가지(맨 위에 고정 · 지우기(연결 해지) · 은퇴)를 폰에서는 쓸어서 한다.

@@ -17,6 +17,7 @@ files:
   - trayIcon.js
   - winBounds.js
   - nav.js
+  - localfs.js
   - tray-preload.js
   - connect.html
   - package.json

@@ -49,10 +49,13 @@ async function openPane(id) { for (const u of PANE[id] || []) { try { await shel
  */
 function list(opts) {
   const gate = app.isPackaged; const ack = readAck(); const host = !!(opts && opts.host)
-  return [
+  const rows = [
     { id: 'full-disk', required: gate && host, probeable: true, status: fullDiskStatus() },
     { id: 'notifications', required: gate, probeable: false, status: ack.notifications === true ? 'granted' : ack.notifications === false ? 'missing' : 'unknown' }
   ]
+  // 원격 기기에만 — «이 기기에서 파일 열기» 를 어디서 할지(동기화 볼트 / 호스트에서 받기). 고르면 끝난 것이다(E)
+  if (!host) rows.push({ id: 'local-open', required: gate, probeable: false, status: opts && opts.openMode ? 'granted' : 'unknown' })
+  return rows
 }
 function satisfied(opts) { return permsSatisfied(list(opts)) }
 // macOS 는 이미 뜬 프로세스에 전체 디스크 접근을 소급 적용하지 않는다 — 켰는데도 꺼짐이면 다시 시작이 답이다

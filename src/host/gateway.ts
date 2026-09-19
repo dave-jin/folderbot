@@ -54,7 +54,7 @@ function freeName(botAbs: string, dir: string, name: string): string {
 import { favicon } from './favicon'
 import { preview } from './preview'
 import { hookState, setBudget, setHook, usageReport } from './usage'
-import { allDirs, guard, kindOf, mime, readText, recent, resolveNF, resolveNFDeep, stream, tree, writeText, exists, listDir, renameEntry } from './files'
+import { allDirs, findFiles, guard, headHash, kindOf, mime, readText, recent, resolveNF, resolveNFDeep, stream, tree, writeText, exists, listDir, renameEntry } from './files'
 import { readTodo, todoDelete, todoEdit, todoMove, todoToggle } from './todoStore'
 import { globParents, roleOf } from '../core/rules'
 import { createCommand, listCommandFiles, slashCommands } from './slash'
@@ -109,7 +109,8 @@ export class Gateway {
 
   /** 누가 보고 있나 — 호스트 맥 자체의 창(this-mac 토큰 · 인증 없는 로컬)은 «메인», 나머지는 «원격 · 기기이름» */
   private auth(req: IncomingMessage): Who {
-    if (process.env.FOLDERBOT_NO_AUTH) return { ok: true, device: 'local', id: 'local', main: true }
+    // ⚠ 검사 시임 — 인증을 끈 QA 에서 `x-fb-as: <기기이름>` 헤더를 붙이면 그 이름의 «원격 기기» 로 본다(원격 화면 계약을 스모크로 재려고)
+    if (process.env.FOLDERBOT_NO_AUTH) { const as = req.headers['x-fb-as']; return as ? { ok: true, device: String(as), id: 'as', main: false } : { ok: true, device: 'local', id: 'local', main: true } }
     const h = req.headers.authorization ?? ''
     const url = new URL(req.url ?? '/', 'http://x')
     const tok = h.startsWith('Bearer ') ? h.slice(7) : (url.searchParams.get('token') ?? '')
@@ -131,7 +132,7 @@ export class Gateway {
     if (p.startsWith('/mcp/')) {
       if (!this.isLoopback(req)) return json(403, { error: 'loopback only' })
       const chunks: Buffer[] = []; for await (const c of req) chunks.push(c as Buffer)
-      return handleMcp(this.host, decodeURIComponent(p.slice(5)), req, res, Buffer.concat(chunks).toString('utf8'))
+      return handleMcp(this.host, decodeURIComponent(p.slice(5)), req, res, Buffer.concat(chunks).toString('utf8'), new URL(req.url ?? '/', 'http://x').searchParams.get('sid') ?? '')
     }
     if (p === '/api/health') return json(200, { ok: true, name: 'folderbot', version: this.host.version })
     if (p === '/api/pair' && req.method === 'POST') {
@@ -326,7 +327,8 @@ export class Gateway {
     // 레일 순서 — 끌어다 놓은 차례를 볼트에 남긴다(기기마다 달라지지 않게)
     if (p === '/api/idle' && m === 'POST') { const b = await body(); h.setIdle(Number(b.minutes)); return json(200, { minutes: h.cfg.idleMinutes ?? 60 }) }
     if (p === '/api/bots/pin' && m === 'POST') { const b = await body(); try { reg.pin(String(b.id), !!b.on) } catch (e) { return json(400, { error: (e as Error).message }) } h.afterBotsChanged(); return json(200, { ok: true }) }
-    if (p === '/api/bots/reorder' && m === 'POST') { const b = await body(); reg.reorder((Array.isArray(b.ids) ? b.ids : []).map((x: unknown) => String(x))); h.afterBotsChanged(); return json(200, { ok: true }) }
+    if (p === '/api/bots/reorder' && m === 'POST') { const b = await body(); reg.reorder((Array.isArray(b.ids) ? b.ids : []).map((x: unknown) => String(x)), b.moved ? String(b.moved) : undefined); h.afterBotsChanged(); return json(200, { ok: true }) }
+    if (p === '/api/bots/unfix' && m === 'POST') { const b = await body(); try { reg.unfix(String(b.id)) } catch (e) { return json(400, { error: (e as Error).message }) } h.afterBotsChanged(); return json(200, { ok: true }) }
     if (seg[1] === 'bots' && seg[2]) {
       const bot = botOf(seg[2]); const sub = seg[3]
       if (sub === 'stop' && m === 'POST') { if (bot.orchestrator) throw new Error('오케스트레이터는 정지할 수 없어요'); reg.stop(bot.id); h.afterBotsChanged(); return json(200, { ok: true }) }
@@ -446,7 +448,7 @@ export class Gateway {
       if (sub === 'exists' && m === 'POST') {
         const b = await body()
         const rels = (Array.isArray(b.rels) ? b.rels : []).slice(0, 40).map(String)
-        const out: Record<string, { rel: string; dir: boolean } | false> = {}
+        const out: Record<string, { rel: string; dir: boolean; matches?: string[] } | false> = {}
         for (const c of rels) {
           const tries = c.startsWith('/') ? [c] : [join(bot.abs, c), join(reg.root, c)]
           out[c] = false
@@ -457,6 +459,12 @@ export class Gateway {
               out[c] = { rel: relative(bot.abs, abs), dir: statSync(abs).isDirectory() }
               break
             } catch { /* 루트 밖 — 다음 갈래 */ }
+          }
+          // 파일명만(«설명서.pdf») — 봇 폴더 → 참조 폴더 → 볼트 전체 순으로 찾는다. 여럿이면 목록을 돌려주고 화면이 고르게 한다 (G)
+          if (!out[c] && !c.includes('/')) {
+            const found: string[] = []
+            for (const base of [bot.abs, ...(bot.repo ? [bot.repo] : []), reg.root]) { for (const f of findFiles(base, c)) if (!found.includes(f)) found.push(f); if (found.length) break }
+            if (found.length) out[c] = { rel: relative(bot.abs, found[0]), dir: false, matches: found.map((f) => relative(bot.abs, f)) }
           }
         }
         return json(200, out)
@@ -568,6 +576,10 @@ export class Gateway {
         h.broadcast({ ev: 'files', botId: bot.id })
         return json(200, { moved, failed })
       }
+      // 원격 기기가 «내 사본이 호스트와 같은가» 를 재는 자 — 크기 · 앞 64KB 해시 (E · desktop/localfs.js 와 같은 식)
+      // 참조 폴더 (D) — 폴더 밖 문서를 보다가 «이 Folderbot 에 참조 폴더로 추가». 빈 path 면 푼다
+      if (sub === 'repo' && m === 'POST') { const b = await body(); try { const nb = reg.setRepo(bot.id, String(b.path ?? '')); h.afterBotsChanged(); return json(200, { ok: true, repo: nb.repo ?? null }) } catch (e) { return json(400, { error: (e as Error).message }) } }
+      if (sub === 'stat' && m === 'GET') { const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')).slice(1)); if (!exists(abs)) return json(404, { error: '없는 파일' }); const st = statSync(abs); return json(200, { size: st.size, mtime: st.mtimeMs, head: headHash(abs), vaultRel: relative(reg.root, abs) }) }
       if (sub === 'raw') { const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')).slice(1)); if (!exists(abs)) return json(404, { error: 'none' }); res.writeHead(200, { 'content-type': mime(abs), 'cache-control': 'no-store' }); stream(abs).pipe(res); return }
       if (sub === 'routines' && m === 'GET') return json(200, bot.routines)
       if (sub === 'routines' && m === 'PUT') { const b = await body(); const cfg = reg.botConfig(bot.abs); cfg.routines = b.routines as never; reg.saveBotConfig(bot.abs, cfg); h.afterBotsChanged(); return json(200, { ok: true }) }

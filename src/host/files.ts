@@ -1,4 +1,5 @@
-import { existsSync, readdirSync, readFileSync, statSync, createReadStream, renameSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, readdirSync, readFileSync, statSync, createReadStream, renameSync , openSync, readSync, closeSync } from 'node:fs'
 import { dirname, basename } from 'node:path'
 import { join, extname, relative, resolve, sep } from 'node:path'
 import { atomicWrite } from './paths'
@@ -135,6 +136,25 @@ export function renameEntry(abs: string, newName: string): string {
   if (existsSync(to)) throw new Error('같은 이름이 이미 있어요')
   renameSync(abs, to)
   return to
+}
+/** 앞 64KB 의 sha256 — 원격 기기의 사본과 «같은 파일인가» 를 재는 자(desktop/localfs.js `headHash` 와 같은 식). mtime 은 동기화가 바꾼다 */
+export function headHash(abs: string): string {
+  const fd = openSync(abs, 'r')
+  try { const buf = Buffer.alloc(65536); const n = readSync(fd, buf, 0, 65536, 0); return createHash('sha256').update(buf.subarray(0, n)).digest('hex') } finally { closeSync(fd) }
+}
+/** 이름으로 찾기 (G) — 파일명만 적힌 칩을 위해. SKIP 폴더는 안 들어가고 깊이 8 · limit 개에서 끊는다. 이름은 NFC 로 비교 */
+export function findFiles(base: string, name: string, limit = 5, depth = 8): string[] {
+  const want = name.normalize('NFC').toLowerCase(); const out: string[] = []
+  const walk = (dir: string, d: number) => {
+    if (d < 0 || out.length >= limit) return
+    let ents; try { ents = readdirSync(dir, { withFileTypes: true }) } catch { return }
+    for (const e of ents) {
+      if (out.length >= limit) return
+      if (e.isDirectory()) { if (!SKIP.has(e.name) && !e.name.startsWith('.')) walk(join(dir, e.name), d - 1) }
+      else if (e.name.normalize('NFC').toLowerCase() === want) out.push(join(dir, e.name))
+    }
+  }
+  walk(base, depth); return out
 }
 export function stream(abs: string) { return createReadStream(abs) }
 export function exists(abs: string): boolean { return existsSync(abs) }

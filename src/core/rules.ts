@@ -47,7 +47,8 @@ export function normalize(y: Partial<FolderRules> | null | undefined): FolderRul
       archive: list(r.archive, [])
     },
     naming: { project: y?.naming?.project },
-    harness: list(y?.harness, ['CLAUDE.md', '.claude/'])
+    harness: list(y?.harness, ['CLAUDE.md', '.claude/']),
+    ...(Array.isArray(y?.types) ? { types: (y!.types as unknown[]).map(String) } : {})
   }
 }
 

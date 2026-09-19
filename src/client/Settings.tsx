@@ -8,6 +8,7 @@ import { Mark } from './Brand'
 import { ICON_LABEL, ICON_PX, useIconSize, useTheme, type IconSize, type Theme } from './theme'
 import { ACT_ICON, ACT_LABEL, SWIPE_DEFAULT, useSwipeCfg, type SwipeAct, type SwipeSlot } from './swipe'
 import { fmtTime, useStore } from './store'
+import { LocalOpenPicker, localBridge, useLocalSettings } from './localOpen'
 import { EFFORTS, MODES, modelsFor, moreModelsFor, setFoundModels } from './consts'
 import { norm } from '../core/search'
 
@@ -137,6 +138,8 @@ export const INDEX: { sec: SecId; t: string; d: string }[] = [
   { sec: 'devices', t: '이 기기 이름', d: '기기마다 따로' },
   { sec: 'devices', t: '연결된 기기', d: '페어링 끊기 목록' },
   { sec: 'devices', t: '새 기기 연결', d: '페어링 코드 폰 맥북' },
+  { sec: 'devices', t: '이 기기에서 파일 열기', d: 'Finder 열기 동기화 볼트 Dropbox iCloud 호스트에서 받기 원격' },
+  { sec: 'devices', t: '동기화 볼트 위치', d: 'Dropbox iCloud 폴더 찾기 경로 원격' },
   { sec: 'devices', t: '이 기기 로그아웃', d: '연결 끊기 보안' },
   { sec: 'claude', t: 'Claude 로그인 상태', d: '키체인 인증 상태 다시 확인' },
   { sec: 'claude', t: '쓰는 인증', d: '키체인 장기 토큰 커넥터' },
@@ -294,6 +297,19 @@ function HostPane({ onClose, providers }: { onClose: () => void; providers: Prov
   </>
 }
 
+/** 원격 기기의 «파일을 어디서 여나» (E) — 메인에는 없다(그 맥이 곧 볼트다) */
+function LocalOpenRows() {
+  const { s } = useStore(); const [cfg, set] = useLocalSettings()
+  return <>
+    <Row t="이 기기에서 파일 열기" d="«Finder 에서 보기»·«열기» 가 이 기기에서 열립니다. 동기화 볼트가 있으면 그 파일을(신선도 확인 뒤), 없으면 호스트에서 받은 사본을 열어요." at="dev">
+      <span className="seg"><button className={cfg?.openMode === 'sync' ? 'on' : ''} onClick={() => void set({ openMode: 'sync' })}>동기화 볼트</button><button className={cfg?.openMode === 'download' || !cfg?.openMode ? 'on' : ''} onClick={() => void set({ openMode: 'download' })}>호스트에서 받기</button></span>
+    </Row>
+    <Row t="동기화 볼트 위치" d={cfg?.vaultLocal ? cfg.vaultLocal : '아직 안 정했어요 — 찾기를 누르면 Dropbox·iCloud 에서 같은 볼트를 찾아요.'} at="dev">
+      <LocalOpenPicker root={s.root} compact />
+    </Row>
+  </>
+}
+
 /** 기기 — 이 화면(기기)과 붙어 있는 기기들. 흩어져 있던 «이 기기 이름 · 기기 목록 · 페어링 · 로그아웃» 을 한 칸에 */
 function DevicesPane() {
   const { s, refresh } = useStore()
@@ -307,6 +323,7 @@ function DevicesPane() {
     {!s.device.main ? <Row t="이 기기 이름" d="기기마다 따로 정합니다. 기본값은 페어링할 때 고른 기기 종류." at="main">
       <input className="sin" value={dev} onChange={(e) => setDev(e.target.value)} onBlur={() => { if (dev.trim() && dev.trim() !== s.device.name) void save(dev) }} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} />
     </Row> : null}
+    {!s.device.main && localBridge() ? <LocalOpenRows /> : null}
     <Group t="연결된 기기" />
     {s.devices.map((d) => <Row key={d.id} t={d.name} d={`마지막 접속 ${fmtTime(d.lastSeen)}`}><button className="btn ghost" onClick={() => api('/devices/revoke', { body: { id: d.id } }).then(refresh)}>끊기</button></Row>)}
     {!s.devices.length ? <Row t="연결된 기기" d="아직 붙은 기기가 없어요." /> : null}

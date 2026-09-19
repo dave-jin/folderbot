@@ -20,6 +20,8 @@ export interface FolderRules {
   roles: { inbox: string[]; active: string[]; reference: string[]; archive: string[] }
   naming: { project?: string }
   harness: string[]
+  /** 폴더명 `날짜_타입-이름` 의 타입 목록 — 없으면 core/botName 의 기본 목록 */
+  types?: string[]
 }
 
 export interface Candidate {
@@ -57,6 +59,12 @@ export interface Bot {
   rel: string
   abs: string
   name: string
+  /** 레일 표시 이름 — 폴더명에서 파생(core/botName) · `display_name:` 으로 덮음. 정렬·검색·rel 은 여전히 `name` */
+  displayName: string
+  /** 폴더명의 타입 조각(강의·컨설팅…) — 목록에 있을 때만 */
+  kind?: string
+  /** 폴더명의 날짜 — 표시용 마감 칩 */
+  due?: { date: string; precision: 'day' | 'month' | 'year' }
   section: string
   color: string
   orchestrator: boolean
@@ -66,6 +74,8 @@ export interface Bot {
   routines: RoutineDef[]
   /** 레일 맨 위 「고정」 칸에 두는 봇 — 최대 3개 (루프 3/10) */
   pinned?: boolean
+  /** 레일 자리를 누가 정했나 (A) — `user` 는 끌어 놓은 자리라 `bots_reorder` 가 못 건드린다 · `orchestrator` 는 도구가 놓은 자리 */
+  orderedBy?: 'user' | 'orchestrator'
 }
 
 export interface SessionInfo {
@@ -196,7 +206,7 @@ export interface NotifyEvent {
 /** SSE 프레임 */
 export type Frame =
   | { ev: 'hello'; version: string; serverTime: number }
-  | { ev: 'bots'; bots: Bot[] }
+  | { ev: 'bots'; bots: Bot[]; /** A · 오케스트레이터가 순서를 바꿨다 → 그 기기의 레일 정렬을 «직접» 으로 */ reorderedBy?: 'orchestrator' }
   | { ev: 'sessions'; botId: string; sessions: SessionInfo[] }
   | { ev: 'chat'; sessionId: string; item: ChatItem; replace?: boolean }
   | { ev: 'state'; sessionId: string; botId: string; state: SessionState }
@@ -206,6 +216,8 @@ export type Frame =
   | { ev: 'auth'; auth: AuthState }
   | { ev: 'todo'; botId: string; items: TodoItem[] }
   | { ev: 'files'; botId: string }
+  /** 에이전트가 문서 창을 열거나(rondo_open) 그 기기의 Finder 로 보여 달라(rondo_reveal) — turn 은 그 세션의 턴 시각(한 턴에 한 번) */
+  | { ev: 'doc'; botId: string; sid: string; rel: string; action: 'open' | 'reveal'; turn: number }
   | { ev: 'inbox'; count: number }
 
 export const STATE_LABEL: Record<SessionState, string> = {

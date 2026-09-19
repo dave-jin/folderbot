@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { candidatePaths, relUnder } from '../../src/core/paths'
+import { bareFileNames, botRelOf, candidatePaths, relUnder } from '../../src/core/paths'
 
 describe('candidatePaths', () => {
   it('공백 있는 PARA 폴더까지 넓힌 변형을 함께 낸다 (긴 것 먼저)', () => {
@@ -57,5 +57,26 @@ describe('relUnder', () => {
   it('밖이면 null', () => { expect(relUnder('/v/bot', '/v/other/a.md')).toBeNull() })
   it('NFD 로 와도 맞춘다', () => {
     expect(relUnder('/v/제품'.normalize('NFC'), '/v/제품/a.md'.normalize('NFD'))).toBe('a.md')
+  })
+})
+
+describe('botRelOf — 절대 경로 → 봇 폴더 기준 rel (볼트 안·폴더 밖은 ../ · 볼트 밖은 null)', () => {
+  const root = '/v', bot = '/v/3. Area/제품_Rondo'
+  it('폴더 안 · 폴더 밖 · 볼트 밖 · 봇 폴더 자체', () => {
+    expect(botRelOf(bot, root, '/v/3. Area/제품_Rondo/files/a.pdf')).toBe('files/a.pdf')
+    expect(botRelOf(bot, root, '/v/1. Inbox/바깥.md')).toBe('../../1. Inbox/바깥.md')
+    expect(botRelOf(bot, root, '/v/x.md')).toBe('../../x.md')
+    expect(botRelOf(bot, root, '/Users/dave/etc')).toBeNull()
+    expect(botRelOf(bot, root, bot)).toBe('')
+    expect(botRelOf('/v', '/v', '/v/a.md')).toBe('a.md')   // 루트 봇(오케스트레이터)
+  })
+})
+
+describe('bareFileNames — 파일명만 적힌 것도 후보 (G)', () => {
+  it('백틱 안·문장 속 파일명 · URL 은 아님 · 경로가 있으면 경로도 함께', () => {
+    expect(bareFileNames('설명서 PDF 가 나왔습니다 — `이한율_준비할것_설명서_2026-09-19.pdf` (A4 13쪽)')).toEqual(['이한율_준비할것_설명서_2026-09-19.pdf'])
+    expect(bareFileNames('그림은 그림.png 이고 https://x.com/a.png 는 링크다')).toEqual(['그림.png'])
+    expect(candidatePaths('메모는 `files/메모.md` 를, 설명서는 `설명서.pdf` 를 보세요')).toEqual(expect.arrayContaining(['files/메모.md', '설명서.pdf']))
+    expect(candidatePaths('버전 v1.2.3 을 배포했다')).toEqual([])
   })
 })

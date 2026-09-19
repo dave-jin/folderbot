@@ -103,6 +103,13 @@ b,strong { color:var(--w); font-weight:600 }
 .brow { min-height:calc(var(--fbi, 24px) + 12px) } .brow .fb { transition:scale .14s cubic-bezier(.34,1.3,.64,1) }
 .brow:hover .fb { scale:1.45 }
 @media (prefers-reduced-motion: reduce) { .brow .fb { transition:none } .brow:hover .fb { scale:1.2 } }
+/* 봇 이름 (F) — 제목 굵게 · 타입 태그 · 날짜 칩. 태그가 먼저 접히고(flex-shrink 큼) 칩은 끝까지 남는다 */
+.bname { display:flex; align-items:center; gap:6px; min-width:0; flex:1 } .bname .dn { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600 }
+.bname .tag { flex:none; white-space:nowrap; font-size:10.5px; padding:1px 6px; border-radius:5px; background:var(--box); color:var(--t2); border:1px solid var(--hair) }
+.bname .due, .mrow .l1 .due { flex:none; margin-left:auto; font-size:11px; color:var(--t3); font-variant-numeric:tabular-nums; white-space:nowrap } .bname .due.soon, .mrow .l1 .due.soon { color:var(--err); font-weight:600 } .bname .due.past, .mrow .l1 .due.past { opacity:.55 }
+.brow.on .bname .dn, .brow:hover .bname .dn { color:var(--w) }
+/* 깊은 봇(경로 줄이 있는 행)은 제목 위 · 경로 아래 두 줄 — 한 줄 flex 에 두면 경로가 제목을 0 으로 밀어냈다(실측) */
+.brow .n { flex-direction:column; align-items:stretch; justify-content:center; gap:1px } .brow .n .bname { width:100% }
 .brow .n small { display:block; font-size:10.5px; color:var(--t3); line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .sb-foot .bd { margin-left:auto; font-size:11px; color:var(--t3) } .sb-foot .bd.upd { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border-radius:6px; cursor:pointer; max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:none } .sb-foot .bd.upd:hover { color:var(--t); background:var(--hover) } .sb-foot .bd + .bd { margin-left:8px }
 
 /* ── 채팅 — 스크롤 컨테이너 하나, 유리(헤더 · 고정 질문 · ↓ · 컴포저)는 그 형제 ── */
@@ -1012,3 +1019,15 @@ b,strong { color:var(--w); font-weight:600 }
   .printdoc table { border-collapse:collapse } .printdoc td, .printdoc th { border:1px solid #ccc; padding:3pt 6pt } .printdoc a { color:#111 } .printdoc img { max-width:100% }
   .printdoc blockquote { border-left:2pt solid #bbb; margin:0; padding-left:8pt; color:#444 }
 }
+
+/* 이 기기에서 파일 열기 (E) — 볼트 후보 고르기 · 사본 배지 */
+.lpick { display:flex; flex-direction:column; gap:6px; width:100%; min-width:0 } .lpick .hint { font-size:12px; color:var(--t3) }
+.lpick .cand { display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding:7px 10px; border-radius:8px; border:1px solid var(--hair); background:var(--box); text-align:left; width:100% }
+.lpick .cand.best { border-color:var(--acc, #e08850) } .lpick .cand.on { background:var(--sel) } .lpick .cand.shell { opacity:.7 }
+.lpick .cand .p { font-size:12px; color:var(--w); word-break:break-all; white-space:normal } .lpick .cand .n { font-size:11px; color:var(--t3) }
+.lpick .acts { display:flex; gap:6px; flex-wrap:wrap }
+.dtb .scp.copy { margin-left:6px; font-size:10px; padding:0 5px; border-radius:6px; border:1px solid var(--hair); color:var(--t3) }
+
+/* 폴더 외 문서 (D) — 띠 + 배지 */
+.outband { display:flex; align-items:center; gap:8px; padding:6px 12px; font-size:12px; color:var(--t2); border-bottom:1px solid var(--line); background:var(--box); flex:none; min-width:0 } .outband .p { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 } .outband .sp { flex:1 } .outband .h { color:var(--t3); white-space:nowrap }
+.dtb .scp.out { margin-left:6px; font-size:10px; padding:0 5px; border-radius:6px; border:1px solid var(--hair); color:var(--t3) }
