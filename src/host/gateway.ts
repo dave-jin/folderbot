@@ -54,7 +54,7 @@ function freeName(botAbs: string, dir: string, name: string): string {
 import { favicon } from './favicon'
 import { preview } from './preview'
 import { hookState, setBudget, setHook, usageReport } from './usage'
-import { allDirs, guard, headHash, kindOf, mime, readText, recent, resolveNF, resolveNFDeep, stream, tree, writeText, exists, listDir, renameEntry } from './files'
+import { allDirs, findFiles, guard, headHash, kindOf, mime, readText, recent, resolveNF, resolveNFDeep, stream, tree, writeText, exists, listDir, renameEntry } from './files'
 import { readTodo, todoDelete, todoEdit, todoMove, todoToggle } from './todoStore'
 import { globParents, roleOf } from '../core/rules'
 import { createCommand, listCommandFiles, slashCommands } from './slash'
@@ -447,7 +447,7 @@ export class Gateway {
       if (sub === 'exists' && m === 'POST') {
         const b = await body()
         const rels = (Array.isArray(b.rels) ? b.rels : []).slice(0, 40).map(String)
-        const out: Record<string, { rel: string; dir: boolean } | false> = {}
+        const out: Record<string, { rel: string; dir: boolean; matches?: string[] } | false> = {}
         for (const c of rels) {
           const tries = c.startsWith('/') ? [c] : [join(bot.abs, c), join(reg.root, c)]
           out[c] = false
@@ -458,6 +458,12 @@ export class Gateway {
               out[c] = { rel: relative(bot.abs, abs), dir: statSync(abs).isDirectory() }
               break
             } catch { /* 루트 밖 — 다음 갈래 */ }
+          }
+          // 파일명만(«설명서.pdf») — 봇 폴더 → 참조 폴더 → 볼트 전체 순으로 찾는다. 여럿이면 목록을 돌려주고 화면이 고르게 한다 (G)
+          if (!out[c] && !c.includes('/')) {
+            const found: string[] = []
+            for (const base of [bot.abs, ...(bot.repo ? [bot.repo] : []), reg.root]) { for (const f of findFiles(base, c)) if (!found.includes(f)) found.push(f); if (found.length) break }
+            if (found.length) out[c] = { rel: relative(bot.abs, found[0]), dir: false, matches: found.map((f) => relative(bot.abs, f)) }
           }
         }
         return json(200, out)

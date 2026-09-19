@@ -405,6 +405,9 @@ function Main() {
     if (o.source === 'agent' && o.turnKey) { if (agentOpenRef.current === o.turnKey) return; agentOpenRef.current = o.turnKey }
     openDoc(rel, o.pin)
   }
+  // 파일명만 적힌 칩이 여러 곳에 있을 때 — 고르기 (G)
+  const [pickFile, setPickFile] = useState<{ name: string; rels: string[] } | null>(null)
+  useEffect(() => { const f = (e: Event) => setPickFile((e as CustomEvent).detail as { name: string; rels: string[] }); window.addEventListener('fb:pickfile', f); return () => window.removeEventListener('fb:pickfile', f) }, [])
   // 에이전트의 rondo_open / rondo_reveal — 지금 보고 있는 봇의 것만 (J 에서 «보낸 기기» 로 좁힌다)
   useEffect(() => {
     const r = s.docReq; if (!r || !bot || r.botId !== bot.id) return
@@ -666,6 +669,11 @@ function Main() {
     <AskHost />
     <ConfirmHost />
     <LocalOpenHost />
+    {pickFile ? <><div className="backdrop" onClick={() => setPickFile(null)} /><div className="modal conf pickfile" style={{ width: 'min(520px,calc(100% - 24px))' }}>
+      <div className="modal-h"><div className="t"><b>{pickFile.name} — {pickFile.rels.length}곳에 있어요</b></div></div>
+      <div className="modal-b" style={{ padding: '2px 12px 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>{pickFile.rels.map((r) => <button key={r} className="prow2" onClick={() => { setPickFile(null); openInDocPane(r) }}><span className="t"><b>{r.split('/').pop()}</b><small>{r}</small></span></button>)}</div>
+      <div className="modal-f"><span className="sp" /><button className="btn" onClick={() => setPickFile(null)}>취소</button></div>
+    </div></> : null}
     <DiffHost />
     <AgentPickHost />
     {toast ? <div className="toast">{toast}</div> : null}

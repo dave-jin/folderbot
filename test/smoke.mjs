@@ -588,6 +588,46 @@ try {
           await fetch(base + `/api/sessions/${sidD}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(800)
           ok('폴더 밖 문서 — 칩 → 열림 · 「폴더 외」 배지 · 볼트 경로 띠 · 읽기만 · 참조 폴더 추가(하나뿐 · 두 번째 거부) · 폴더 안 문서 불변')
         }
+        /**
+         * 🔴 **채팅의 PDF 칩** (G · 2026-09-19) — 원인 ⓑ(칩 클릭이 경로 해석에서 버려짐 · 파일명만이면 칩이 안 생김). 이제 칩은 전부
+         *    `openInDocPane` 으로 열리고, 파일명만 적혀도 호스트가 봇 폴더 → 참조 폴더 → 볼트 순으로 찾는다(여럿이면 고르기).
+         *    PDF 는 Chromium 뷰어(iframe) · 이미지는 img · 그 밖은 「미리보기 없음」 + «외부에서 열기 ↗»(E 의 openOnThisDevice).
+         */
+        {
+          const fdir = join(root, '3. Area/제품_Rondo/files'); mkdirSync(join(fdir, 'sub'), { recursive: true })
+          writeFileSync(join(fdir, '설명서.pdf'), '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000052 00000 n \n0000000101 00000 n \ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n160\n%%EOF\n')
+          writeFileSync(join(fdir, '그림.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'))
+          writeFileSync(join(fdir, '보고서.docx'), 'PK\u0003\u0004 not really'); writeFileSync(join(fdir, 'dup.md'), '# A\n'); writeFileSync(join(fdir, 'sub/dup.md'), '# B\n')
+          const hashBefore = await pg.evaluate(() => location.hash)
+          const sidG = (await api(`/bots/${bot.id}/sessions`, { name: 'g-doc' })).id; await pg.evaluate((h) => { location.hash = h }, `#bot=${bot.id}&s=${sidG}`); await wait(600)
+          const closeDoc = async () => { for (let i = 0; i < 3 && (await pg.$('.docwrap')); i++) { await pg.keyboard.press('Meta+Shift+D'); await wait(300) } }
+          await closeDoc()
+          await api(`/sessions/${sidG}/send`, { text: '되읊어: 설명서 PDF 가 나왔습니다 — `설명서.pdf` (A4 1쪽). 그림은 `files/그림.png`, 초안은 `files/보고서.docx`, 메모는 `dup.md` 입니다' })
+          let chips = []; for (let i = 0; i < 30 && chips.length < 4; i++) { await wait(250); chips = await pg.$$eval('.amsg .pchip', (r) => r.map((x) => [x.textContent, x.dataset.rel, x.title])) }
+          const want = { '설명서.pdf': 'files/설명서.pdf', '그림.png': 'files/그림.png', '보고서.docx': 'files/보고서.docx', 'dup.md': 'files/dup.md' }
+          for (const [n, rel] of Object.entries(want)) if (!chips.some((c) => c[0] === n && c[1] === rel)) fail(`G 칩: ${n} → ${rel} 이 없다 · ` + JSON.stringify(chips))
+          // pdf → iframe 뷰어
+          await pg.click('.amsg .pchip[data-rel="files/설명서.pdf"]'); await wait(900)
+          if (!(await pg.$('.docwrap iframe'))) fail('G: PDF 칩을 눌렀는데 뷰어(iframe)가 없다'); if ((await pg.textContent('.docwrap .dtb .nm')) !== '설명서.pdf') fail('G: PDF 탭 이름')
+          // png → img
+          await pg.click('.amsg .pchip[data-rel="files/그림.png"]'); await wait(900)
+          if (!(await pg.$('.docwrap .dbody img'))) fail('G: 이미지 칩을 눌렀는데 img 가 없다')
+          // docx → 미리보기 없음 + 외부에서 열기 ↗
+          await pg.click('.amsg .pchip[data-rel="files/보고서.docx"]'); await wait(900)
+          const np = (await pg.textContent('.docwrap .nopv').catch(() => '')) ?? ''; if (!/미리보기 없음/.test(np)) fail('G: docx 는 「미리보기 없음」 이어야 한다 · ' + np)
+          // «외부에서 열기 ↗» 는 툴바의 «열기» 와 같은 핸들러(openOnThisDevice) — 원격 계약은 E 블록이 잰다. 여기서는 단추가 있는지만(누르면 Linux 호스트가 400 을 내 콘솔 오류 검사에 걸린다)
+          if (!(await pg.$('.docwrap .nopv button:has-text("외부에서 열기")'))) fail('G: docx 화면에 «외부에서 열기 ↗» 단추가 없다')
+          // 파일명만 · 여러 곳 → 고르기 시트 → 두 번째 선택
+          const dchip = chips.find((c) => c[0] === 'dup.md'); if (!dchip || !/2곳/.test(dchip[2] ?? '')) fail('G: 여러 곳에 있는 이름은 툴팁에 곳 수 · ' + JSON.stringify(dchip))
+          await pg.click('.amsg .pchip[data-rel="files/dup.md"]'); await wait(500)
+          const opts = await pg.$$eval('.modal.pickfile .prow2 small', (r) => r.map((x) => x.textContent)); if (opts.length !== 2 || !opts.includes('files/sub/dup.md')) fail('G: 고르기 시트 ' + JSON.stringify(opts))
+          await pg.click('.modal.pickfile .prow2:has-text("files/sub/dup.md")'); await wait(800)
+          if ((await pg.textContent('.docwrap .dtb .nm')) !== 'dup.md' || !/sub/.test((await pg.textContent('.docwrap .dtb')) ?? '')) fail('G: 고른 파일(files/sub/dup.md)이 열려야 한다 · ' + (await pg.textContent('.docwrap .dtb')))
+          // 원격에서도 같은 길 — 호스트가 pdf 를 스트리밍한다(원격 기기 시임 헤더로 확인)
+          const rr = await fetch(base + `/api/bots/${bot.id}/raw?rel=${encodeURIComponent('files/설명서.pdf')}`, { headers: { 'x-fb-as': 'macbook' } }); if (rr.status !== 200 || !/pdf/.test(rr.headers.get('content-type') ?? '')) fail('G 원격: raw pdf ' + rr.status)
+          await closeDoc(); await fetch(base + `/api/sessions/${sidG}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(800)
+          ok('PDF 칩 — pdf→뷰어 · png→img · docx→미리보기 없음+외부에서 열기 ↗ · 파일명만(찾기 · 여럿이면 고르기) · 원격은 호스트 스트리밍')
+        }
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
         await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)
         await pg.mouse.move(700, 300); await wait(200); if (await pg.$('.hcard')) fail('ui hover card stuck')

@@ -26,7 +26,7 @@ marked.setOptions({ gfm: true, breaks: true })
  * ⚠ 스트리밍 중에는 하지 않는다 — 글자가 계속 바뀌는 동안 DOM 을 갈아 대면 선택이 튄다.
  */
 /** 답 속에서 «있는 것» 으로 확인된 경로 하나 — `text` 는 답에 적힌 그대로, `rel` 은 봇 폴더 기준(`../` 가능) */
-export interface PathHit { text: string; rel: string; dir: boolean }
+export interface PathHit { text: string; rel: string; dir: boolean; matches?: string[] }
 const FOLDER_SVG = '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M2 4h4l1.5 1.5H14V13H2z"/></svg>'
 function decorate(root: HTMLElement, hits: PathHit[], open: (rel: string) => void, openDir: ((rel: string) => void) | undefined, botId?: string): void {
   if (!hits.length) return
@@ -37,7 +37,9 @@ function decorate(root: HTMLElement, hits: PathHit[], open: (rel: string) => voi
     const name = h.text.replace(/\/+$/, '').split('/').pop() || h.text
     // 🔴 폴더 칩은 문서 탭이 아니라 **트리를 연다** — 폴더는 읽을 글이 없다 (2026-09-15)
     if (h.dir) { b.innerHTML = `${FOLDER_SVG}<span></span>`; (b.lastChild as HTMLElement).textContent = name } else b.textContent = name
-    b.addEventListener('click', (e) => { e.preventDefault(); if (h.dir) openDir?.(h.rel); else open(h.rel) })
+    if (h.matches && h.matches.length > 1) b.title = `${h.text} — ${h.matches.length}곳에 있어요`; else if (!h.text.includes('/')) b.title = h.rel
+    // 파일명만 적혀 여럿이 걸리면 고르게 한다 (G) — 화면(App)의 고르기 시트가 받는다
+    b.addEventListener('click', (e) => { e.preventDefault(); if (h.dir) openDir?.(h.rel); else if (h.matches && h.matches.length > 1) window.dispatchEvent(new CustomEvent('fb:pickfile', { detail: { name: h.text, rels: h.matches } })); else open(h.rel) })
     // 첨부·문서 칩도 오버하면 미리보기 — 이미지는 그림을, 글은 앞 몇 줄을 (`previews.ts`) · 폴더는 볼 것이 없다
     if (botId && !h.dir) hoverable(b, { kind: 'file', botId, rel: h.rel })
     return b
@@ -115,11 +117,11 @@ export function Md({ text, streaming, botId, onPath, onDir }: { text: string; st
     const cands = candidatePaths(text)
     if (!cands.length) return
     let live = true
-    void api<Record<string, { rel: string; dir: boolean } | false>>(`/bots/${botId}/exists`, { body: { rels: cands } })
+    void api<Record<string, { rel: string; dir: boolean; matches?: string[] } | false>>(`/bots/${botId}/exists`, { body: { rels: cands } })
       .then((ok) => {
         if (!live || !ref.current) return
         // 한 자리에서 여러 후보가 걸리면 **긴 것**이 이긴다 — `3. Area/…` 가 `Area/…` 보다 맞다
-        const hits: PathHit[] = cands.filter((c) => ok[c]).sort((a, b) => b.length - a.length).map((c) => { const r = ok[c] as { rel: string; dir: boolean }; return { text: c, rel: r.rel, dir: r.dir } })
+        const hits: PathHit[] = cands.filter((c) => ok[c]).sort((a, b) => b.length - a.length).map((c) => { const r = ok[c] as { rel: string; dir: boolean; matches?: string[] }; return { text: c, rel: r.rel, dir: r.dir, matches: r.matches } })
         decorate(ref.current, hits, onPath, onDir, botId)
       })
       .catch(() => { /* 못 물어봤으면 그냥 글자로 둔다 */ })

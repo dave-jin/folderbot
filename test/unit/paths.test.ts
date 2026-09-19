@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { botRelOf, candidatePaths, relUnder } from '../../src/core/paths'
+import { bareFileNames, botRelOf, candidatePaths, relUnder } from '../../src/core/paths'
 
 describe('candidatePaths', () => {
   it('공백 있는 PARA 폴더까지 넓힌 변형을 함께 낸다 (긴 것 먼저)', () => {
@@ -69,5 +69,14 @@ describe('botRelOf — 절대 경로 → 봇 폴더 기준 rel (볼트 안·폴�
     expect(botRelOf(bot, root, '/Users/dave/etc')).toBeNull()
     expect(botRelOf(bot, root, bot)).toBe('')
     expect(botRelOf('/v', '/v', '/v/a.md')).toBe('a.md')   // 루트 봇(오케스트레이터)
+  })
+})
+
+describe('bareFileNames — 파일명만 적힌 것도 후보 (G)', () => {
+  it('백틱 안·문장 속 파일명 · URL 은 아님 · 경로가 있으면 경로도 함께', () => {
+    expect(bareFileNames('설명서 PDF 가 나왔습니다 — `이한율_준비할것_설명서_2026-09-19.pdf` (A4 13쪽)')).toEqual(['이한율_준비할것_설명서_2026-09-19.pdf'])
+    expect(bareFileNames('그림은 그림.png 이고 https://x.com/a.png 는 링크다')).toEqual(['그림.png'])
+    expect(candidatePaths('메모는 `files/메모.md` 를, 설명서는 `설명서.pdf` 를 보세요')).toEqual(expect.arrayContaining(['files/메모.md', '설명서.pdf']))
+    expect(candidatePaths('버전 v1.2.3 을 배포했다')).toEqual([])
   })
 })

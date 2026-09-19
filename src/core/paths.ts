@@ -39,13 +39,26 @@ const SKIP = [
  *    어느 쪽이 진짜인지는 여기서 정하지 않는다 — **호스트가 «있는 것» 을 골라 준다.**
  * @param max 한 답에서 만들 칩의 상한. 너무 많으면 그것대로 시끄럽다.
  */
+/** 파일명만 적힌 것(«설명서.pdf») — 알려진 확장자로 끝나는 낱말. 폴더는 호스트가 찾는다(봇 폴더 → 참조 폴더 → 볼트) (G · 2026-09-19) */
+const BARE_RE = /(?<![\/\w.\-@])[^\s/`"'()\[\]<>|:]{1,120}\.(?:pdf|png|jpe?g|gif|webp|svg|md|txt|docx?|pptx?|xlsx?|hwp|csv|json|zip|mp4|mov|key|numbers|pages|canvas)(?![\w.\-])/gi
+export function bareFileNames(text: string, max = 20): string[] {
+  if (!text) return []
+  let masked = text
+  for (const re of SKIP) masked = masked.replace(re, (m) => ' '.repeat(m.length))
+  const out: string[] = []
+  for (const m of masked.matchAll(BARE_RE)) { const v = m[0]; if (!out.includes(v)) out.push(v); if (out.length >= max) break }
+  return out
+}
+
 export function candidatePaths(text: string, max = 20): string[] {
-  if (!text || !text.includes('/')) return []
+  if (!text) return []
+  if (!text.includes('/')) return bareFileNames(text, max)
   let masked = text
   for (const re of SKIP) masked = masked.replace(re, (m) => ' '.repeat(m.length))
   const out: string[] = []
   const seen = new Set<string>()
   const push = (p: string) => { if (p && p.length <= 240 && !seen.has(p)) { seen.add(p); out.push(p) } }
+  for (const b of bareFileNames(masked, max)) push(b)
   for (const m of masked.matchAll(CORE_RE)) {
     let core = m[0]; const at = m.index ?? 0
     core = core.replace(/[.,;:!?…]+$/, '')                      // 문장 끝 부호는 경로가 아니다

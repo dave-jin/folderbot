@@ -263,7 +263,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
           <iframe className="hframe" sandbox="allow-scripts allow-popups" src={raw(rel)} title={rel} />
         </div>
       : doc.kind === 'pdf' ? <iframe className="dbody" style={{ padding: 0, border: 0, background: '#fff' }} src={raw(rel)} />
-      : <div className="empty">미리보기가 없는 형식이에요 · {doc.size} bytes<a href={raw(rel)} target="_blank" rel="noreferrer" className="btn">새 창에서 열기</a></div>}
+      : <div className="empty nopv">미리보기 없음 · {name} · {doc.size} bytes<button className="btn on" onClick={openHere}>외부에서 열기 ↗</button><a href={raw(rel)} target="_blank" rel="noreferrer" className="btn">새 창에서 열기</a></div>}
     {phone && rel ? <div className="dfoot">{sibs.length > 1 ? <><button className="rb" onClick={() => docs.open(sibs[(idx - 1 + sibs.length) % sibs.length])}><Icon n="up" size={18} /></button><button className="rb" onClick={() => docs.open(sibs[(idx + 1) % sibs.length])}><Icon n="chevd" size={18} /></button></> : null}<button className="talk" onClick={() => onAttach(rel)}>봇에게 이 문서로 말하기</button></div> : null}
   </div>
 }
