@@ -151,7 +151,7 @@ export interface PermissionRequest {
 
 /** 대화 항목 — 화면이 그리는 단위 */
 export type ChatItem =
-  | { id: string; t: number; kind: 'user'; text: string }
+  | { id: string; t: number; kind: 'user'; text: string; /** J-4 · 어느 기기에서 보냈나 */ from?: { device: string; main: boolean; tier: 'desktop' | 'phone' | 'browser' } }
   | { id: string; t: number; kind: 'assistant'; text: string; streaming?: boolean }
   | { id: string; t: number; kind: 'tool'; name: string; summary: string; input?: Record<string, unknown>; result?: string; isError?: boolean; parentId?: string }
   | { id: string; t: number; kind: 'thinking'; text: string; streaming?: boolean }
@@ -217,7 +217,7 @@ export type Frame =
   | { ev: 'todo'; botId: string; items: TodoItem[] }
   | { ev: 'files'; botId: string }
   /** 에이전트가 문서 창을 열거나(rondo_open) 그 기기의 Finder 로 보여 달라(rondo_reveal) — turn 은 그 세션의 턴 시각(한 턴에 한 번) */
-  | { ev: 'doc'; botId: string; sid: string; rel: string; action: 'open' | 'reveal'; turn: number }
+  | { ev: 'doc'; botId: string; sid: string; rel: string; action: 'open' | 'reveal'; turn: number; /** J-3 · 요청이 온 기기 — 그 기기만 연다 */ device?: string }
   | { ev: 'inbox'; count: number }
 
 export const STATE_LABEL: Record<SessionState, string> = {

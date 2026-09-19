@@ -61,8 +61,15 @@ rl.on('line', (raw) => {
     return
   }
   if (msg.type !== 'user') return
-  const text = msg.message?.content?.map?.((b) => b.text ?? '').join('') ?? ''
+  const rawText = msg.message?.content?.map?.((b) => b.text ?? '').join('') ?? ''
+  // J · 메시지 앞의 기기 블록은 떼고 본다(실제 CLI 는 그대로 읽는다). «기기확인» 이면 블록을 그대로 되읊어 검사가 값을 본다
+  const cm = /^<folderbot-client\s+[^>]*\/>\s*/.exec(rawText); const clientBlock = cm ? cm[0].trim() : ''; const text = cm ? rawText.slice(cm[0].length) : rawText
   const u = randomUUID().slice(0, 6)
+  if (/^기기확인/.test(text)) {
+    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: clientBlock ? '기기 블록: `' + clientBlock + '`' : '기기 블록 없음' }], stop_reason: 'end_turn' } })
+    say({ type: 'result', subtype: 'success', duration_ms: 10, total_cost_usd: 0.001 })
+    return
+  }
   // 「채팅 칩」 검사용 — «되읊어:» 뒤를 답변으로 그대로 돌려준다(경로·파일명이 칩이 되는지 재려고)
   if (/^되읊어:/.test(text)) {
     say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: text.slice('되읊어:'.length).trim() }], stop_reason: 'end_turn' } })

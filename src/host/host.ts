@@ -1,4 +1,5 @@
 import { invalidateUsage } from './usage'
+import { DEVICE_RULES_MD, type ClientCtx } from '../core/clientCtx'
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { hostname } from 'node:os'
@@ -100,6 +101,7 @@ export class Host {
     if (bot.orchestrator) parts.push(this.registry.orchestratorPrompt())
     else parts.push(`너는 Folder Bot 의 봇이다. 폴더 "${bot.rel}" 안에서 일한다. 산출물은 이 폴더에 둔다.`)
     parts.push(TODO_RULES_PROMPT)
+    parts.push(DEVICE_RULES_MD)   // J-2 · 볼트 CLAUDE.md 에도 같은 글이 있지만, 옛 볼트에는 없으므로 시스템 프롬프트로도 준다
     const ctx = todoContext(bot.abs)
     if (ctx) parts.push(ctx)
     return parts.join('\n\n')
@@ -111,7 +113,7 @@ export class Host {
   }
 
   /** 세션에 지시 — 없으면 만든다 */
-  sendToBot(bot: Bot, text: string, sessionId?: string, name?: string, from?: string, opts: { model?: string; effort?: string; permissionMode?: PermissionMode; vendor?: 'claude' | 'codex' } = {}): string {
+  sendToBot(bot: Bot, text: string, sessionId?: string, name?: string, from?: string, opts: { model?: string; effort?: string; permissionMode?: PermissionMode; vendor?: 'claude' | 'codex'; client?: ClientCtx } = {}): string {
     let r = sessionId ? this.sessions.get(sessionId) : undefined
     if (!r) {
       const list = this.sessions.list(bot.id)
@@ -128,7 +130,7 @@ export class Host {
       this.broadcast({ ev: 'chat', sessionId: r.id, item: r.items[r.items.length - 1] })
       return r.id
     }
-    this.sessions.send(r, bot, text)
+    this.sessions.send(r, bot, text, opts.client)
     return r.id
   }
 

@@ -17,6 +17,13 @@ import { agentModels, codexAuth, diagnose } from './auth'
 import { canon } from './registry'
 import { normalizeRootInput } from '../core/rootPath'
 import { searchConversations } from '../core/convSearch'
+import type { ClientCtx } from '../core/clientCtx'
+/** J-1 · 요청의 기기 컨텍스트 — 누가 보냈나(origin·device)는 호스트가 정하고, 화면 종류·손가락·열 수 있나·모드는 화면이 말한 대로 */
+function clientOf(who: { device: string; main: boolean }, c: unknown): ClientCtx {
+  const o = (c && typeof c === 'object' ? c : {}) as Record<string, unknown>
+  const tier = o.tier === 'phone' || o.tier === 'desktop' || o.tier === 'browser' ? o.tier : 'browser'
+  return { origin: who.main ? 'host' : 'remote', device: who.main ? 'host' : who.device, tier, touch: o.touch === true, canOpenOnDevice: who.main ? true : o.canOpenOnDevice === true, openMode: o.openMode === 'sync' || o.openMode === 'download' ? o.openMode : '' }
+}
 
 /**
  * 안 겹치는 이름 — `이름`, 없으면 `이름 2`, `이름 3` …
@@ -347,7 +354,7 @@ export class Gateway {
       if (sub === 'sessions' && m === 'GET') return json(200, h.sessions.list(bot.id))
       // ⚠ `vendor` 는 **세션마다** 고를 수 있다 — 한 폴더에 Claude 세션과 Codex 세션이 섞여 산다
       if (sub === 'sessions' && m === 'POST') { const b = await body(); const vd = b.vendor === 'codex' || b.vendor === 'claude' ? b.vendor : undefined; const s = h.sessions.create(bot, String(b.name ?? '새 세션'), { permissionMode: b.permissionMode as never, model: b.model ? String(b.model) : undefined, vendor: vd }); return json(200, h.sessions.info(s)) }
-      if (sub === 'send' && m === 'POST') { const b = await body(); const sid = h.sendToBot(bot, String(b.text), b.sessionId ? String(b.sessionId) : undefined, b.name ? String(b.name) : undefined, undefined, { model: b.model ? String(b.model) : undefined, effort: b.effort ? String(b.effort) : undefined, permissionMode: b.permissionMode ? (String(b.permissionMode) as never) : undefined, vendor: b.vendor === 'codex' || b.vendor === 'claude' ? b.vendor : undefined }); return json(200, { sessionId: sid }) }
+      if (sub === 'send' && m === 'POST') { const b = await body(); const sid = h.sendToBot(bot, String(b.text), b.sessionId ? String(b.sessionId) : undefined, b.name ? String(b.name) : undefined, undefined, { model: b.model ? String(b.model) : undefined, effort: b.effort ? String(b.effort) : undefined, permissionMode: b.permissionMode ? (String(b.permissionMode) as never) : undefined, vendor: b.vendor === 'codex' || b.vendor === 'claude' ? b.vendor : undefined, client: clientOf(who, b.client) }); return json(200, { sessionId: sid }) }
       // ⚠ 목록은 **그 세션의 벤더**로 정한다 — Claude 의 명령을 Codex 에 보여 주면 그 글자가 프롬프트로 들어간다
       /** 슬래시 명령 관리 (루프 8/10) — 목록은 파일 그대로, 만들기는 파일 하나. `rel` 은 봇 폴더 기준(루트 것은 `../`), 사용자 것은 문서 열 밖이라 rel 이 없다 */
       if (sub === 'commands' && m === 'GET') return json(200, listCommandFiles(bot.abs, reg.root).map((c) => ({ name: c.name, desc: c.desc, scope: c.scope, rel: c.scope === 'user' ? null : relative(bot.abs, c.abs) })))
@@ -622,7 +629,7 @@ export class Gateway {
       const bot = botOf(r.botId); const sub = seg[3]
       if (!sub && m === 'DELETE') { h.sessions.remove(r.id); return json(200, { ok: true }) }
       if (sub === 'chat') return json(200, { info: h.sessions.info(r), items: r.items.slice(-800) })
-      if (sub === 'send' && m === 'POST') { const b = await body(); h.sendToBot(bot, String(b.text), r.id); return json(200, { ok: true }) }
+      if (sub === 'send' && m === 'POST') { const b = await body(); h.sendToBot(bot, String(b.text), r.id, undefined, undefined, { client: clientOf(who, b.client) }); return json(200, { ok: true }) }
       if (sub === 'permission' && m === 'POST') { const b = await body(); h.sessions.respondPermission(r, String(b.requestId), !!b.allow, !!b.always); return json(200, { ok: true }) }
       if (sub === 'ask' && m === 'POST') { const b = await body(); h.sessions.respondAsk(r, String(b.requestId), (b.answers ?? {}) as Record<string, string>); return json(200, { ok: true }) }
       if (sub === 'interrupt' && m === 'POST') { h.sessions.interrupt(r); return json(200, { ok: true }) }

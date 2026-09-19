@@ -90,7 +90,7 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       if (!existsSync(abs)) throw new Error(`없는 파일: ${raw}`)
       const rel = relative(b.abs, abs)
       const turn = host.sessions.get(sid)?.turnStartedAt ?? 0
-      host.broadcast({ ev: 'doc', botId: b.id, sid, rel, action: name === 'rondo_open' ? 'open' : 'reveal', turn })
+      host.broadcast({ ev: 'doc', botId: b.id, sid, rel, action: name === 'rondo_open' ? 'open' : 'reveal', turn, device: host.sessions.get(sid)?.lastClient?.device })   // J-3 · 요청이 온 기기만 연다
       return name === 'rondo_open' ? `문서 창에 열었어요: ${rel}` : `기기의 Finder 로 보여 드렸어요: ${rel}`
     }
     case 'todo_add': { const b = reg.bot(botId); if (!b) throw new Error('봇을 못 찾았어요'); host.todoAdd(b, s('title'), s('desc'), 'bot', !!a.for_user); return '추가했어요' }

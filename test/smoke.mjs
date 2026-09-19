@@ -928,6 +928,58 @@ try {
           await op.screenshot({ path: `test/tmp/o-${label}-end.png` }); await op.close(); await fetch(base + `/api/sessions/${sidO}`, { method: 'DELETE' })
           ok(`O 스트리밍 안정 (${label}) — 프레임당 ≤10px(최대 ${maxStep}) · 클램프 점프 0 · 올려 보면 안 따라감+「↓ 새 내용」 · 렌더된 채 스트리밍 · 넘침 없음 · 상태 줄 24px/8px 고정`)
         }
+        /**
+         * 🔴 **J · 질문이 온 기기를 에이전트가 안다** (2026-09-19). 워커에게 가는 글 앞에 `<folderbot-client …/>`(호스트가 origin·device 를 붙인다),
+         *    채팅에는 안 보이고 사람 글 그대로 · 원격 메시지에는 기기 표시 · rondo_open 은 **요청한 기기**의 문서 창에만 · 볼트 CLAUDE.md 생성부 + 시스템 프롬프트에 규칙.
+         */
+        {
+          const hashBefore = await pg.evaluate(() => location.hash)
+          const sidJ = (await api(`/bots/${bot.id}/sessions`, { name: 'j-dev' })).id
+          // 호스트 화면(pg · main) — origin=host
+          await pg.evaluate((h) => { location.hash = h }, `#bot=${bot.id}&s=${sidJ}`); await wait(500)
+          await pg.click('.composer .cin'); await pg.keyboard.type('기기확인'); await pg.keyboard.press('Enter'); await wait(1200)
+          let chatJ = await api(`/sessions/${sidJ}/chat`)
+          const hostReply = chatJ.items.filter((i) => i.kind === 'assistant').pop()?.text ?? ''; if (!/origin="host"/.test(hostReply) || !/device="host"/.test(hostReply) || !/canOpenOnDevice="true"/.test(hostReply)) fail('J-1 호스트: ' + hostReply)
+          const hostUser = chatJ.items.filter((i) => i.kind === 'user').pop(); if (hostUser.text !== '기기확인' || (hostUser.from && !hostUser.from.main)) fail('J-1: 채팅의 사람 글은 그대로여야 하고 호스트 표식은 없다 ' + JSON.stringify(hostUser))
+          if (await pg.$('.umsg .dev')) fail('J-4: 호스트에서 보낸 메시지에 기기 표시가 붙었다')
+          // 원격 맥 앱(가짜 브리지 · x-fb-as macbook · sync) — origin=remote device=macbook tier=desktop canOpenOnDevice=true openMode=sync
+          const rj = await br.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
+          await rj.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark'); localStorage.removeItem('fb:docopen'); const L = { settings: { openMode: 'sync', vaultLocal: '/x' } }
+            window.folderbotDesktop = { version: 'qa', perms: { list: async () => [], open: async () => ({ ok: true }), ack: async () => [], reset: async () => [], test: async () => ({ ok: true }), relaunch: () => {}, onChange: () => () => {} }, local: { settings: async () => ({ ...L.settings }), set: async (p) => { Object.assign(L.settings, p); return { ...L.settings } }, detect: async () => [], stat: async () => ({ exists: false }), open: async () => '', reveal: async () => '', wait: async () => true, download: async (u, h, rel) => '/cache/' + rel, icloud: async () => true, pick: async () => '' } }
+            const of = window.fetch.bind(window); window.fetch = (u, o = {}) => { const h = new Headers(o.headers || {}); h.set('x-fb-as', 'macbook'); return of(u, { ...o, headers: h }) } })
+          await rj.goto(base + `/#bot=${bot.id}&s=${sidJ}`); await rj.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(600)
+          if (await rj.$('.perm-gate')) { await rj.click('.perm-gate button.btn.on:has-text("계속")').catch(() => {}); await wait(400) }
+          await rj.click('.composer .cin'); await rj.keyboard.type('기기확인'); await rj.keyboard.press('Enter'); await wait(1200)
+          chatJ = await api(`/sessions/${sidJ}/chat`); const remReply = chatJ.items.filter((i) => i.kind === 'assistant').pop()?.text ?? ''
+          for (const w of ['origin="remote"', 'device="macbook"', 'tier="desktop"', 'canOpenOnDevice="true"', 'openMode="sync"']) if (!remReply.includes(w)) fail('J-1 원격: ' + w + ' 가 없다 · ' + remReply)
+          const remUser = chatJ.items.filter((i) => i.kind === 'user').pop(); if (!remUser.from || remUser.from.main || remUser.from.device !== 'macbook') fail('J-4: 원격 메시지의 from ' + JSON.stringify(remUser.from))
+          await wait(400); const devTxt = await rj.textContent('.umsg.last .dev').catch(() => ''); if (!/원격 · macbook/.test(devTxt ?? '')) fail('J-4: 채팅에 기기 표시 «원격 · macbook» · ' + devTxt)
+          // J-3 · 원격 턴의 rondo_open → 원격 문서 창에만 열리고 호스트(pg)에는 안 뜬다
+          const closeDocP = async (p) => { for (let i = 0; i < 3 && (await p.$('.docwrap')); i++) { await p.keyboard.press('Meta+Shift+D'); await wait(300) } }
+          await closeDocP(pg); await closeDocP(rj)
+          const mcpJ = await (await fetch(base + `/mcp/${bot.id}?sid=${sidJ}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'rondo_open', arguments: { path: 'CLAUDE.md' } } }) })).json()
+          if (mcpJ.result?.isError) fail('J-3 rondo_open: ' + mcpJ.result.content[0].text)
+          await wait(900)
+          const onRemote = !!(await rj.$('.docwrap .dtb .nm:has-text("CLAUDE.md")')); const onHost = !!(await pg.$('.docwrap'))
+          if (!onRemote || onHost) fail('J-3: 원격 문서 창에만 열려야 한다 ' + JSON.stringify({ onRemote, onHost }))
+          await rj.screenshot({ path: 'test/tmp/j-remote.png' }); await closeDocP(rj)
+          // 폰 — tier=phone · canOpenOnDevice=false · rondo_reveal 은 그 폰에 안내만(호스트에는 아무것도)
+          const pj = await br.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+          await pj.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); const of = window.fetch.bind(window); window.fetch = (u, o = {}) => { const h = new Headers(o.headers || {}); h.set('x-fb-as', 'iphone'); return of(u, { ...o, headers: h }) } })
+          await pj.goto(base + `/#bot=${bot.id}&s=${sidJ}`); await pj.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(600)
+          await pj.click('.composer .cin'); await pj.keyboard.type('기기확인'); await pj.click('.cright .sendb'); await wait(1200)
+          chatJ = await api(`/sessions/${sidJ}/chat`); const phReply = chatJ.items.filter((i) => i.kind === 'assistant').pop()?.text ?? ''
+          for (const w of ['origin="remote"', 'device="iphone"', 'tier="phone"', 'touch="true"', 'canOpenOnDevice="false"']) if (!phReply.includes(w)) fail('J-1 폰: ' + w + ' 가 없다 · ' + phReply)
+          const mcpR = await (await fetch(base + `/mcp/${bot.id}?sid=${sidJ}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'rondo_reveal', arguments: { path: 'CLAUDE.md' } } }) })).json()
+          if (mcpR.result?.isError) fail('J-3 rondo_reveal: ' + mcpR.result.content[0].text)
+          await wait(800); const phToast = (await pj.textContent('.toast').catch(() => '')) ?? ''
+          if (!phToast || (await pg.$('.docwrap')) || (await rj.$('.docwrap'))) fail('J-3 폰: 폰에는 안내, 다른 기기에는 아무것도 ' + JSON.stringify({ phToast, host: !!(await pg.$('.docwrap')) }))
+          await pj.close(); await rj.close()
+          // J-2 · 규칙 — 볼트 CLAUDE.md 생성부(새 볼트) + 시스템 프롬프트
+          // (새 볼트의 CLAUDE.md 생성부에 규칙이 드는 것은 유닛 test/unit/registry.test.ts 가 잰다 — 이 픽스처 볼트는 이미 CLAUDE.md 가 있어 머리말을 다시 만들지 않는다)
+          await fetch(base + `/api/sessions/${sidJ}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(500)
+          ok('J 발신 기기 — 호스트/원격/폰 블록 값 · 채팅 글 그대로 · 원격 메시지 표식 · rondo_open 은 요청 기기에만 · 폰 reveal 은 안내만 · CLAUDE.md 규칙')
+        }
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
         await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)
         await pg.mouse.move(700, 300); await wait(200); if (await pg.$('.hcard')) fail('ui hover card stuck')

@@ -60,3 +60,16 @@ describe('registry.reorderByAgent (A)', () => {
     rmSync(root, { recursive: true, force: true })
   })
 })
+
+describe('installRules · J-2 기기 규칙', () => {
+  it('새 볼트의 CLAUDE.md 머리말에 규칙 절이 든다 · 이미 있는 CLAUDE.md 는 규칙 블록만 갈아 끼운다', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fb-reg-j-'))
+    const reg = new Registry(root); reg.installRules('para')
+    const md = readFileSync(join(root, 'CLAUDE.md'), 'utf8')
+    expect(md).toContain('## 발신 기기 (Folder Bot)'); expect(md).toContain('rondo_open')
+    const root2 = mkdtempSync(join(tmpdir(), 'fb-reg-j2-')); writeFileSync(join(root2, 'CLAUDE.md'), '# 내 볼트\n\n내 규칙\n')
+    new Registry(root2).installRules('para')
+    const md2 = readFileSync(join(root2, 'CLAUDE.md'), 'utf8'); expect(md2.startsWith('# 내 볼트')).toBe(true); expect(md2).not.toContain('## 발신 기기')   // 있는 글은 건드리지 않는다 — 규칙은 시스템 프롬프트로도 간다
+    rmSync(root, { recursive: true, force: true }); rmSync(root2, { recursive: true, force: true })
+  })
+})
