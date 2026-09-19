@@ -132,8 +132,8 @@ export const InlineInput = forwardRef<InlineInputHandle, Props>(function InlineI
   const latest = useRef({ value, chips, onChange, onCaret, onChipClick }); latest.current = { value, chips, onChange, onCaret, onChipClick }
 
   useImperativeHandle(ref, () => ({
-    focus: () => el.current?.focus(),
-    setSelection: (pos) => { const e = el.current; if (!e) return; e.focus(); placeCaret(e, pos) },
+    focus: () => el.current?.focus({ preventScroll: true }),   // P-4 · Safari 가 포커스 때 문서를 밀지 않게
+    setSelection: (pos) => { const e = el.current; if (!e) return; e.focus({ preventScroll: true }); placeCaret(e, pos) },
     el: () => el.current
   }), [])
 

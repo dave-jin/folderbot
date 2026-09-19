@@ -552,7 +552,9 @@ try {
           const hashBefore = await pg.evaluate(() => location.hash)
           const sidC = (await api(`/bots/${bot.id}/sessions`, { name: 'c-doc' })).id; await pg.evaluate((h) => { location.hash = h }, `#bot=${bot.id}&s=${sidC}`); await wait(600)
           await api(`/sessions/${sidC}/send`, { text: '되읊어: 메모는 `files/메모.md` 를 보세요' }); await wait(1000)
-          const chip = await pg.$('.amsg .pchip[data-rel="files/메모.md"]'); if (!chip) fail('C: 답변에 files/메모.md 칩이 없다')
+          // P-2 (09-19) · 백틱 경로는 칩이 아니라 **코드 모양 그대로**인 클릭 가능한 `code.code-path` 다 — 문은 여전히 하나(openInDocPane)
+          const chip = await pg.$('.amsg code.code-path[data-rel="files/메모.md"]'); if (!chip) fail('C: 답변에 files/메모.md 코드 경로가 없다')
+          if (await pg.$('.amsg .pchip[data-rel="files/메모.md"]')) fail('C/P-2: 코드 조각을 칩으로 바꾸면 안 된다')
           await chip.click(); await wait(600)
           if (!(await pg.$('.docwrap'))) fail('C: 창이 닫힌 상태에서 칩을 눌렀는데 창이 안 열렸다')
           if ((await pg.textContent('.docwrap .dtb .nm')) !== '메모.md') fail('C: 열린 문서가 메모.md 가 아니다 · ' + (await pg.textContent('.docwrap .dtb .nm')))
@@ -566,7 +568,7 @@ try {
           const r3 = await mcpBot('rondo_open', { path: '/etc/hosts' }); if (!r3.isError || !/볼트 밖/.test(r3.content[0].text)) fail('C rondo_open: 볼트 밖은 거부 ' + JSON.stringify(r3))
           // 창이 열려 있을 때의 규칙은 그대로 — 미리보기 탭은 교체된다(탭 수 불변)
           const nTabs = await pg.$$eval('.docwrap .dtab, .docwrap .dtabs > *', (r) => r.length).catch(() => -1)
-          await pg.click('.amsg .pchip[data-rel="files/메모.md"]'); await wait(600)
+          await pg.click('.amsg code.code-path[data-rel="files/메모.md"]'); await wait(600)
           if ((await pg.textContent('.docwrap .dtb .nm')) !== '메모.md') fail('C: 열려 있을 때 칩 클릭이 문서를 바꾸지 않았다')
           const nTabs2 = await pg.$$eval('.docwrap .dtab, .docwrap .dtabs > *', (r) => r.length).catch(() => -1); if (nTabs >= 0 && nTabs2 !== nTabs) fail('C: 미리보기 탭 교체 규칙이 바뀌었다 ' + nTabs + '→' + nTabs2)
           await closeDoc(); await fetch(base + `/api/sessions/${sidC}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(800)   // 전용 세션을 지워 «최근 세션» 이 원래 것으로 돌아간다
@@ -580,7 +582,8 @@ try {
           const hashBefore = await pg.evaluate(() => location.hash)
           const sidD = (await api(`/bots/${bot.id}/sessions`, { name: 'd-doc' })).id; await pg.evaluate((h) => { location.hash = h }, `#bot=${bot.id}&s=${sidD}`); await wait(600)
           await api(`/sessions/${sidD}/send`, { text: '되읊어: 바깥 자료는 `1. Inbox/예시랩_자문자료.txt` 에 있습니다' }); await wait(1000)
-          const oc = await pg.$('.amsg .pchip[data-rel="../../1. Inbox/예시랩_자문자료.txt"]'); if (!oc) fail('D: 폴더 밖 파일 칩이 없다 ' + JSON.stringify(await pg.$$eval('.amsg .pchip', (r) => r.map((x) => x.dataset.rel))))
+          // P-2 (09-19) · 백틱 경로는 칩이 아니라 `code.code-path` — 문은 같다
+          const oc = await pg.$('.amsg code.code-path[data-rel="../../1. Inbox/예시랩_자문자료.txt"]'); if (!oc) fail('D: 폴더 밖 파일 코드 경로가 없다 ' + JSON.stringify(await pg.$$eval('.amsg code', (r) => r.map((x) => [x.className, x.dataset.rel]))))
           await oc.click(); await wait(800)
           if (!(await pg.$('.docwrap'))) fail('D: 폴더 밖 파일을 눌렀는데 창이 안 열렸다')
           if (!(await pg.$('.docwrap .dtb .scp.out'))) fail('D: 「폴더 외」 배지가 없다')
@@ -616,23 +619,25 @@ try {
           const closeDoc = async () => { for (let i = 0; i < 3 && (await pg.$('.docwrap')); i++) { await pg.keyboard.press('Meta+Shift+D'); await wait(300) } }
           await closeDoc()
           await api(`/sessions/${sidG}/send`, { text: '되읊어: 설명서 PDF 가 나왔습니다 — `설명서.pdf` (A4 1쪽). 그림은 `files/그림.png`, 초안은 `files/보고서.docx`, 메모는 `dup.md` 입니다' })
-          let chips = []; for (let i = 0; i < 30 && chips.length < 4; i++) { await wait(250); chips = await pg.$$eval('.amsg .pchip', (r) => r.map((x) => [x.textContent, x.dataset.rel, x.title])) }
+          // P-2 (09-19) · 백틱 경로는 칩이 아니라 코드 모양 그대로인 `code.code-path` — 클릭·툴팁·고르기 시트 계약은 칩과 같다
+          let chips = []; for (let i = 0; i < 30 && chips.length < 4; i++) { await wait(250); chips = await pg.$$eval('.amsg code.code-path', (r) => r.map((x) => [x.textContent, x.dataset.rel, x.title])) }
+          if (await pg.$('.amsg .pchip')) fail('G/P-2: 코드 조각이 칩으로 바뀌었다 ' + JSON.stringify(await pg.$$eval('.amsg .pchip', (r) => r.map((x) => x.dataset.rel))))
           const want = { '설명서.pdf': 'files/설명서.pdf', '그림.png': 'files/그림.png', '보고서.docx': 'files/보고서.docx', 'dup.md': 'files/dup.md' }
-          for (const [n, rel] of Object.entries(want)) if (!chips.some((c) => c[0] === n && c[1] === rel)) fail(`G 칩: ${n} → ${rel} 이 없다 · ` + JSON.stringify(chips))
+          for (const [n, rel] of Object.entries(want)) if (!chips.some((c) => (c[0] === n || c[0].endsWith('/' + n)) && c[1] === rel)) fail(`G 칩: ${n} → ${rel} 이 없다 · ` + JSON.stringify(chips))   // 코드 조각은 쓴 글자 그대로 보인다(files/그림.png)
           // pdf → iframe 뷰어
-          await pg.click('.amsg .pchip[data-rel="files/설명서.pdf"]'); await wait(900)
+          await pg.click('.amsg code.code-path[data-rel="files/설명서.pdf"]'); await wait(900)
           if (!(await pg.$('.docwrap iframe'))) fail('G: PDF 칩을 눌렀는데 뷰어(iframe)가 없다'); if ((await pg.textContent('.docwrap .dtb .nm')) !== '설명서.pdf') fail('G: PDF 탭 이름')
           // png → img
-          await pg.click('.amsg .pchip[data-rel="files/그림.png"]'); await wait(900)
+          await pg.click('.amsg code.code-path[data-rel="files/그림.png"]'); await wait(900)
           if (!(await pg.$('.docwrap .dbody img'))) fail('G: 이미지 칩을 눌렀는데 img 가 없다')
           // docx → 미리보기 없음 + 외부에서 열기 ↗
-          await pg.click('.amsg .pchip[data-rel="files/보고서.docx"]'); await wait(900)
+          await pg.click('.amsg code.code-path[data-rel="files/보고서.docx"]'); await wait(900)
           const np = (await pg.textContent('.docwrap .nopv').catch(() => '')) ?? ''; if (!/미리보기 없음/.test(np)) fail('G: docx 는 「미리보기 없음」 이어야 한다 · ' + np)
           // «외부에서 열기 ↗» 는 툴바의 «열기» 와 같은 핸들러(openOnThisDevice) — 원격 계약은 E 블록이 잰다. 여기서는 단추가 있는지만(누르면 Linux 호스트가 400 을 내 콘솔 오류 검사에 걸린다)
           if (!(await pg.$('.docwrap .nopv button:has-text("외부에서 열기")'))) fail('G: docx 화면에 «외부에서 열기 ↗» 단추가 없다')
           // 파일명만 · 여러 곳 → 고르기 시트 → 두 번째 선택
           const dchip = chips.find((c) => c[0] === 'dup.md'); if (!dchip || !/2곳/.test(dchip[2] ?? '')) fail('G: 여러 곳에 있는 이름은 툴팁에 곳 수 · ' + JSON.stringify(dchip))
-          await pg.click('.amsg .pchip[data-rel="files/dup.md"]'); await wait(500)
+          await pg.click('.amsg code.code-path[data-rel="files/dup.md"]'); await wait(500)
           const opts = await pg.$$eval('.modal.pickfile .prow2 small', (r) => r.map((x) => x.textContent)); if (opts.length !== 2 || !opts.includes('files/sub/dup.md')) fail('G: 고르기 시트 ' + JSON.stringify(opts))
           await pg.click('.modal.pickfile .prow2:has-text("files/sub/dup.md")'); await wait(800)
           if ((await pg.textContent('.docwrap .dtb .nm')) !== 'dup.md' || !/sub/.test((await pg.textContent('.docwrap .dtb')) ?? '')) fail('G: 고른 파일(files/sub/dup.md)이 열려야 한다 · ' + (await pg.textContent('.docwrap .dtb')))
@@ -703,12 +708,12 @@ try {
           await pg.click('.amsg .md img.wimg[src]'); await wait(900)
           if ((await pg.textContent('.docwrap .dtb .nm').catch(() => '')) !== '시안.png' || !(await pg.$('.docwrap .dbody img'))) fail('K-1: 그림 탭 → 문서 창에 시안.png')
           // K-2 · 코드 안은 칩 없음 · 코드 밖 긴 경로는 통째 칩 하나
-          const k2 = await pg.evaluate(() => { const md = document.querySelector('.amsg .md'); return { chipInCode: md.querySelectorAll('code .pchip, pre .pchip').length, codeWiki: [...md.querySelectorAll('code')].some((c) => c.textContent === '[[기획노트]]'), preText: md.querySelector('pre')?.textContent.trim(), chips: [...md.querySelectorAll('.pchip')].map((c) => [c.textContent, c.dataset.rel]) } })
+          const k2 = await pg.evaluate(() => { const md = document.querySelector('.amsg .md'); return { chipInCode: md.querySelectorAll('code .pchip, pre .pchip').length, codeWiki: [...md.querySelectorAll('code')].some((c) => c.textContent === '[[기획노트]]'), preText: md.querySelector('pre')?.textContent.trim(), chips: [...md.querySelectorAll('.pchip')].map((c) => [c.textContent, c.dataset.rel]), paths: [...md.querySelectorAll('code.code-path')].map((c) => [c.textContent, c.dataset.rel]) } })
           if (k2.chipInCode) fail('K-2: 코드 안에 칩이 생겼다 ' + JSON.stringify(k2))
           if (!k2.codeWiki) fail('K-2: 코드 속 [[기획노트]] 가 그대로가 아니다 ' + JSON.stringify(k2))
           if (k2.preText !== '1. Inbox/첨부/시안2.png') fail('K-2: 펜스 코드가 토막 났다 ' + JSON.stringify(k2))
-          // 코드 조각 전체가 경로 → 요소째 칩 하나(«1. Inbox/» · «첨부» 조각 칩이 없어야 한다)
-          if (!k2.chips.some((c) => c[0] === '시안2.png' && c[1] === '../../1. Inbox/첨부/시안2.png') || k2.chips.length !== 1) fail('K-2: 통째 칩 하나가 아니다 ' + JSON.stringify(k2.chips))
+          // 코드 조각 전체가 경로 → 코드 그대로 두고 통째로 클릭(P-2) — «1. Inbox/» · «첨부» 조각 칩이 없어야 한다
+          if (k2.chips.length !== 0 || k2.paths.length !== 1 || k2.paths[0][1] !== '../../1. Inbox/첨부/시안2.png') fail('K-2: 통째 코드 경로 하나가 아니다 ' + JSON.stringify(k2))
           await pg.screenshot({ path: 'test/tmp/k-render.png' })
           // 스크린샷 1236 의 메시지를 그대로 — 그림 둘은 그림으로, 코드 속 경로는 토막 없이(볼트 이름이 PARA 가 아니라 칩이 안 되고 코드 그대로 남는다)
           writeFileSync(join(kdir, '첨부', 'folderbot-반응형-3단계-시안.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')); writeFileSync(join(kdir, '첨부', 'folderbot-레일-이름-시안.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'))
@@ -927,6 +932,86 @@ try {
           if (Math.abs(end.mdH - mid.mdH) > end.ih * 0.1 && false) fail('unused')
           await op.screenshot({ path: `test/tmp/o-${label}-end.png` }); await op.close(); await fetch(base + `/api/sessions/${sidO}`, { method: 'DELETE' })
           ok(`O 스트리밍 안정 (${label}) — 프레임당 ≤10px(최대 ${maxStep}) · 클램프 점프 0 · 올려 보면 안 따라감+「↓ 새 내용」 · 렌더된 채 스트리밍 · 넘침 없음 · 상태 줄 24px/8px 고정`)
+        }
+        /**
+         * 🔴 **P · 칩이 줄을 깨뜨린다 · 키보드 열린 채 당기면 화면이 밀린다** (2026-09-19, 근거 IMG_2012·2013·2014).
+         *    P-1 인라인 칩은 글자처럼 앉는다(같은 글꼴·크기 · 높이 = 글자+2px · 세로 패딩 0 · margin 0 · 칩 있는 줄 = 없는 줄 ±1px · 가운데 줄임).
+         *    P-2 `→ 처리`·`3/5`·`v0.2.113` 은 칩이 아니다 · 코드 조각은 코드 그대로(클릭만). P-3 첨부 칩은 글 위 28px 별도 행 · 6px · 빈 행 없음.
+         *    P-4 문서는 어떤 경우에도 안 구른다 — html/body overflow hidden · 채팅 목록만 구른다(overscroll contain) · 키보드 열린 채 당겨도 scrollY 0 · 키보드 내려가면 컴포저는 바닥.
+         */
+        for (const [label, vp, mobile] of [['phone', { width: 390, height: 844 }, true], ['desktop', { width: 1440, height: 900 }, false]]) {
+          const sidP = (await api(`/bots/${bot.id}/sessions`, { name: 'p-' + label })).id
+          const pp = await br.newPage({ viewport: vp, deviceScaleFactor: 1, ...(mobile ? { hasTouch: true, isMobile: true } : {}) })
+          await pp.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
+          if (mobile) await pp.addInitScript(() => {
+            // ⚠ isMobile 페이지는 init 시점의 innerHeight 가 최종 뷰포트가 아니다 — 높이는 부를 때 잰다
+            const t = new EventTarget(); let hOv = null, top = 0
+            const vv = { get width() { return window.innerWidth }, get height() { return hOv ?? window.innerHeight }, get offsetTop() { return top }, offsetLeft: 0, pageTop: 0, pageLeft: 0, scale: 1, addEventListener: t.addEventListener.bind(t), removeEventListener: t.removeEventListener.bind(t), dispatchEvent: t.dispatchEvent.bind(t) }
+            Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true })
+            window.__kb = (h, tp = 0) => { hOv = window.innerHeight - h; top = tp; vv.dispatchEvent(new Event('resize')) }
+            window.__kbScroll = (tp) => { top = tp; vv.dispatchEvent(new Event('scroll')) }
+            window.__kbReset = () => { hOv = null; top = 0; vv.dispatchEvent(new Event('resize')) }
+          })
+          await pp.goto(base + `/#bot=${bot.id}&s=${sidP}`); await pp.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(500)
+          // P-1 · 칩 한 줄 vs 없는 줄 — 같은 문단 두 줄로 재서 줄 높이·글꼴을 대조한다
+          await api(`/sessions/${sidP}/send`, { text: '되읊어: 첫 줄에는 칩이 없다 그냥 글자만\n\n둘째 줄에는 files/메모.md 칩이 있다 그리고 글자\n\n셋째 줄 3/5 → 처리 v0.2.113 은 칩이 아니다 `files/메모.md` 코드도 아니다' }); await wait(1200)
+          const p1 = await pp.evaluate(() => {
+            const md = [...document.querySelectorAll('.amsg .md')].pop(); const ps = [...md.querySelectorAll('p')]
+            const chip = md.querySelector('.pchip'); if (!chip) return { chip: null }
+            const cs = getComputedStyle(chip), ms = getComputedStyle(md)
+            const fs = parseFloat(ms.fontSize)
+            return { chip: true, pH: ps.map((p) => Math.round(p.getBoundingClientRect().height)), chipH: chip.getBoundingClientRect().height, fs, chipFs: parseFloat(cs.fontSize), fam: cs.fontFamily === ms.fontFamily, pt: cs.paddingTop, pb: cs.paddingBottom, m: cs.marginTop + cs.marginBottom + cs.marginLeft + cs.marginRight, bw: cs.borderTopWidth, br: cs.borderTopLeftRadius, nowrap: cs.whiteSpace, maxW: cs.maxWidth, ell: getComputedStyle(chip.querySelector('.nm')).textOverflow, svg: chip.querySelector('svg') ? chip.querySelector('svg').getBoundingClientRect().height : null, chips: md.querySelectorAll('.pchip').length, codePath: md.querySelectorAll('code.code-path').length, codes: [...md.querySelectorAll('code')].map((c) => c.textContent), text: ps[2]?.textContent }
+          })
+          if (!p1.chip) fail(`P ${label}: 칩이 없다`)
+          if (Math.abs(p1.pH[0] - p1.pH[1]) > 1) fail(`P-1 ${label}: 칩 있는 줄과 없는 줄의 높이가 다르다 ` + JSON.stringify(p1))
+          if (Math.abs(p1.chipH - (p1.fs + 2)) > 1.5) fail(`P-1 ${label}: 칩 높이 ≠ 글자 높이+2px ` + JSON.stringify(p1))
+          if (p1.chipFs !== p1.fs || !p1.fam) fail(`P-1 ${label}: 칩 글꼴·크기가 본문과 다르다 ` + JSON.stringify(p1))
+          if (p1.pt !== '0px' || p1.pb !== '0px' || p1.m !== '0px0px0px0px' || p1.bw !== '1px' || p1.br !== '4px' || p1.nowrap !== 'nowrap' || p1.maxW !== '60%' || p1.ell !== 'ellipsis') fail(`P-1 ${label}: 칩 박스 규격 ` + JSON.stringify(p1))
+          if (p1.svg !== null && Math.abs(p1.svg - p1.fs) > 1) fail(`P-1 ${label}: 칩 아이콘이 1em 이 아니다 ` + JSON.stringify(p1))
+          // P-2 · 오탐 없음 — 셋째 줄에서 칩은 0(코드 조각은 code-path 로만)
+          if (p1.chips !== 1) fail(`P-2 ${label}: → 처리 · 3/5 · v0.2.113 중 무언가가 칩이 됐다 ` + JSON.stringify(p1))
+          if (p1.codePath !== 1 || !p1.codes.includes('files/메모.md')) fail(`P-2 ${label}: 코드 조각이 코드로 남지 않았다 ` + JSON.stringify(p1))
+          const cp = await pp.evaluate(() => { const c = document.querySelector('.amsg code.code-path'); const s = getComputedStyle(c); return { under: s.textDecorationLine, bg: s.backgroundColor, font: s.fontFamily } })
+          if (/underline/.test(cp.under)) fail(`P-2 ${label}: 코드 경로에 밑줄이 생겼다 ` + JSON.stringify(cp))
+          // 긴 이름은 가운데 줄임 · 한 줄 (있는 파일만 칩이 되므로 먼저 만든다 · 이름 60자 ≈ 960px > 60% 폭)
+          const longNm = '아주'.repeat(28) + '긴이름.md'; writeFileSync(join(root, '3. Area/제품_Rondo/files', longNm), '# 긴\n')
+          await api(`/sessions/${sidP}/send`, { text: `되읊어: 긴 이름 files/${longNm} 끝` }); await wait(1200)
+          const p1b = await pp.evaluate(() => { const md = [...document.querySelectorAll('.amsg .md')].pop(); const c = md.querySelector('.pchip'); if (!c) return null; const p = c.closest('p'); const nm = c.querySelector('.nm'); return { w: c.getBoundingClientRect().width, mdW: md.getBoundingClientRect().width, h: c.getBoundingClientRect().height, pH: p.getBoundingClientRect().height, nm: nm?.textContent ?? '', mid: /^아주.*….*긴이름\.md$/.test(nm?.textContent ?? ''), cssCut: nm ? nm.scrollWidth > nm.clientWidth + 1 : null } })
+          if (!p1b || p1b.w > p1b.mdW * 0.6 + 1 || p1b.pH > p1b.h * 2.2) fail(`P-1 ${label}: 긴 칩이 60% 를 넘거나 여러 줄로 갔다 ` + JSON.stringify(p1b))
+          if (!p1b.mid || p1b.cssCut) fail(`P-1 ${label}: 긴 이름이 가운데 줄임(앞…뒤.md)이 아니거나 CSS 끝 생략이 붙었다 ` + JSON.stringify(p1b))
+          await pp.screenshot({ path: `test/tmp/p-chips-${label}.png` })
+          if (mobile) {
+            // P-3 · 첨부 칩은 글 위 28px 별도 행, 6px 간격 · 첨부 없으면 행 자체가 없다
+            if (await pp.$('.composer.ph .achips')) fail('P-3: 첨부가 없는데 빈 칩 행이 있다')
+            const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+            await pp.setInputFiles('input[accept="image/*"][multiple]', [{ name: '스크린샷.png', mimeType: 'image/png', buffer: Buffer.from(png.split(',')[1], 'base64') }]); await wait(1200)
+            await pp.click('.composer .cin'); await pp.keyboard.type('이 그림 보고'); await wait(200)
+            const p3 = await pp.evaluate(() => { const a = document.querySelector('.composer.ph .achips'); const t = document.querySelector('.composer.ph .ctext'); const c = a?.querySelector('.achip'); const cin = document.querySelector('.composer .cin'); return a && c ? { rowH: a.getBoundingClientRect().height, chipH: c.getBoundingClientRect().height, gap: t.getBoundingClientRect().top - a.getBoundingClientRect().bottom, above: a.getBoundingClientRect().bottom <= t.getBoundingClientRect().top + 1, inline: !!cin.querySelector('.ichip'), text: cin.dataset.value } : null })
+            if (!p3 || Math.abs(p3.rowH - 28) > 1 || Math.abs(p3.chipH - 28) > 1 || !p3.above || Math.abs(p3.gap - 6) > 1.5 || p3.inline || /@/.test(p3.text ?? '')) fail('P-3: 첨부 칩 행 ' + JSON.stringify(p3))
+            await pp.screenshot({ path: 'test/tmp/p-composer-phone.png' })
+            await pp.evaluate(() => { for (const b of document.querySelectorAll('.achips .achip .x')) b.click() }); await wait(200)
+            if (await pp.$('.composer.ph .achips')) fail('P-3: 첨부를 다 뺐는데 빈 행이 남았다')
+            // P-4 · 문서는 안 구른다 — html/body 규격 · 채팅 목록만 구른다
+            const p4 = await pp.evaluate(() => { const h = getComputedStyle(document.documentElement), b = getComputedStyle(document.body), sc = getComputedStyle(document.querySelector('.chat-scroll')); return { hOv: h.overflow, bOv: b.overflow, hOb: h.overscrollBehaviorY, bOb: b.overscrollBehaviorY, scOb: sc.overscrollBehaviorY, scOv: sc.overflowY, docSH: document.scrollingElement.scrollHeight, ih: innerHeight } })
+            if (p4.hOv !== 'hidden' || p4.bOv !== 'hidden' || p4.hOb !== 'none' || p4.bOb !== 'none' || p4.scOb !== 'contain' || p4.scOv !== 'auto') fail('P-4: 문서 스크롤 규격 ' + JSON.stringify(p4))
+            // 키보드 열림 → 문서를 당겨도(scrollTo 80 · 시각 뷰포트 scroll) scrollY 는 0 으로 돌아오고 루트는 시각 뷰포트에 닻을 내린다
+            await pp.evaluate(() => document.querySelector('.composer .cin').focus()); await pp.evaluate(() => window.__kb(336)); await wait(400)
+            const pulled = await pp.evaluate(async () => { window.scrollTo(0, 80); const y0 = scrollY; window.__kbScroll(80); await new Promise((r) => setTimeout(r, 300)); const r = document.querySelector('#root').getBoundingClientRect(); const c = document.querySelector('.composer').getBoundingClientRect(); return { y0, y: scrollY, docTop: document.scrollingElement.scrollTop, rootTop: r.top, rootH: r.height, vvTop: visualViewport.offsetTop, vvH: visualViewport.height, compBottom: c.bottom, hdr: getComputedStyle(document.querySelector('.chat-hdr')).display } })
+            if (pulled.y !== 0 || pulled.docTop !== 0) fail('P-4: 키보드 열린 채 당겼는데 문서가 굴렀다 ' + JSON.stringify(pulled))
+            if (Math.abs(pulled.rootTop - pulled.vvTop) > 2 || Math.abs(pulled.rootH - pulled.vvH) > 2) fail('P-4: 루트가 시각 뷰포트(top=offsetTop · height)에 안 붙어 있다 ' + JSON.stringify(pulled))
+            if (pulled.compBottom > pulled.vvTop + pulled.vvH + 1) fail('P-4: 컴포저가 보이는 영역 밖으로 밀렸다 ' + JSON.stringify(pulled))
+            await pp.screenshot({ path: 'test/tmp/p-keyboard-phone.png' })
+            // 키보드 내려감 → 컴포저는 다시 바닥, 헤더 복귀, scrollY 0
+            await pp.evaluate(() => window.__kbReset()); await pp.evaluate(() => document.activeElement.blur()); await wait(500)
+            const down = await pp.evaluate(() => { const c = document.querySelector('.composer').getBoundingClientRect(); const r = document.querySelector('#root').getBoundingClientRect(); return { y: scrollY, compBottom: c.bottom, ih: innerHeight, rootTop: r.top, rootH: r.height, hdr: getComputedStyle(document.querySelector('.chat-hdr')).display } })
+            if (down.y !== 0 || down.ih - down.compBottom > 24 || down.rootTop !== 0 || Math.abs(down.rootH - down.ih) > 2 || down.hdr === 'none') fail('P-4: 키보드 내려간 뒤 컴포저가 바닥으로 안 돌아왔다 ' + JSON.stringify(down))
+          } else {
+            // 데스크톱은 그대로 — 문서는 안 구르고(overflow hidden) 레이아웃은 100vh
+            const d = await pp.evaluate(() => ({ hOv: getComputedStyle(document.documentElement).overflow, rootH: document.querySelector('#root').getBoundingClientRect().height, ih: innerHeight, y: scrollY }))
+            if (d.hOv !== 'hidden' || Math.abs(d.rootH - d.ih) > 2 || d.y !== 0) fail('P-4 desktop: ' + JSON.stringify(d))
+          }
+          await pp.close(); await fetch(base + `/api/sessions/${sidP}`, { method: 'DELETE' })
+          ok(`P 칩·키보드 (${label}) — 칩 줄높이 ±1px · 글자+2px · 오탐 0 · 코드 그대로${mobile ? ' · 첨부 행 28px/6px · 문서 스크롤 0 · 키보드 닻' : ' · 데스크톱 그대로'}`)
         }
         /**
          * 🔴 **J · 질문이 온 기기를 에이전트가 안다** (2026-09-19). 워커에게 가는 글 앞에 `<folderbot-client …/>`(호스트가 origin·device 를 붙인다),
@@ -1643,9 +1728,10 @@ try {
           if (chip.titles.some((t) => t.includes('없는폴더'))) fail('경로 칩: 없는 파일이 칩이 됐다 — 죽은 링크가 쌓인다 ' + JSON.stringify(chip))
           await pg.fill('.composer .cin', ''); await wait(400)
           /**
-           * 🔴 **백틱에 싸인 경로도 칩이 된다** (2026-09-15 Dave: *«답변 내용안에는 바로 클릭가능한 칩이
+           * 🔴 **백틱에 싸인 경로도 클릭된다** (2026-09-15 Dave: *«답변 내용안에는 바로 클릭가능한 칩이
            *    없어»*). 에이전트는 파일 이름을 거의 언제나 `` `…` `` 로 감싼다 — 인라인 코드를 통째로
            *    건너뛰던 종전 규칙은 사실상 «칩을 만들지 않는다» 였다(실제 답변에서 칩이 거의 안 보인 이유).
+           * P-2 (09-19 Dave): 모양은 **코드 그대로**(칩으로 바꾸지 않는다) · 통째로 경로면 `code.code-path` 로 클릭만 된다.
            */
           {
             await pg.fill('.composer .cin', '정본은 `첨부/회의록.txt` 입니다')
@@ -1654,13 +1740,13 @@ try {
             for (let i = 0; i < 40; i++) {
               bt = await pg.evaluate(() => {
                 const md = [...document.querySelectorAll('.chat-body .md')].pop()
-                return md ? { chips: [...md.querySelectorAll('.pchip')].map((x) => x.title), code: [...md.querySelectorAll('code')].map((x) => x.textContent) } : null
+                return md ? { chips: [...md.querySelectorAll('code.code-path')].map((x) => x.dataset.rel), pchips: md.querySelectorAll('.pchip').length, code: [...md.querySelectorAll('code')].map((x) => x.textContent) } : null
               })
               if (bt && bt.chips.length) break
               await wait(300)
             }
-            if (!bt || !bt.chips.some((t) => t.endsWith('첨부/회의록.txt'))) fail('백틱 경로 칩: 코드로 싸인 경로가 칩이 안 됐다 ' + JSON.stringify(bt))
-            if (bt.code.some((c) => (c ?? '').includes('첨부/회의록.txt'))) fail('백틱 경로 칩: 코드 조각이 그대로 남아 두 겹이다 ' + JSON.stringify(bt))
+            if (!bt || !bt.chips.some((t) => t.endsWith('첨부/회의록.txt'))) fail('백틱 경로: 코드로 싸인 경로가 클릭 가능(code-path)하지 않다 ' + JSON.stringify(bt))
+            if (bt.pchips) fail('백틱 경로/P-2: 코드 조각이 칩으로 바뀌었다 ' + JSON.stringify(bt))
             await pg.fill('.composer .cin', ''); await wait(300)
             ok('백틱에 싸인 경로도 답 안에서 바로 누를 수 있다')
           }

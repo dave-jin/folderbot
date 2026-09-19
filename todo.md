@@ -51,7 +51,7 @@
 - [x] G-완료기준 · 원격 기기에서도 PDF 가 문서 창에 뜬다 → 뷰어 src = 호스트 `raw`(토큰 인증) · 스모크 원격 시임 헤더로 200 pdf 확인
 - [x] G-완료기준 · `.md` 열기의 기존 동작은 바뀌지 않았다 → C 스모크(md 칩 · 탭 규칙) + 기존 문서 스모크 전부 통과
 
-## 추가 요청 (A~G 목표달성 뒤 · 순서 I → K → L → M → N → O → J → H · 2026-09-19 N·O 추가)
+## 추가 요청 (A~G 목표달성 뒤 · 순서 I → K → L → M → N → O → J → P → H · 2026-09-19 N·O·P 추가 — P 는 K·N·I 가 끝났으므로 H 앞에)
 
 - [x] I. 채팅 입력창 줄내림 버그 2개 (I-1 Shift+Enter 두 번 · I-2 모바일 줄 늘어나면 화면이 안 따라옴) → 처방: I-1 `InlineInput.ensureTail()` — 끝 `\n` 에 자리표 `<br>` 을 두고(`insertText` 직후 + `render()` 의 «구조 같음» 경로), 글자 노드가 셋으로 쪼개지는 것은 `normalize()` 로 합친 뒤 캐럿을 글자 수로 다시 놓는다. 조합 중 ⇧⏎ 는 플래그로 기억해 `compositionend` 에서 줄을 넣는다(기본 삽입은 막음). I-2 컴포저 `ResizeObserver`(`--footh`)에서 맨 아래였으면 따라 붙는다
 - [x] I-1-완료기준 · 재현 조건이 문서로 남아 있다 → `node test/repro-enter.mjs`(2026-09-19, 헤드리스 Chromium · 결과 `test/tmp/repro-enter.json`): ① «abc»+⇧⏎ 1회 → 값은 `abc\n` 인데 입력창 높이 26→26(줄이 안 보임), 2회째에야 47 ② 빈 칸에서 ⇧⏎ 뒤 «x» → 줄바꿈이 사라지고 `x` 만 남음 ③ CDP 조합 중 ⇧⏎ → 브라우저 기본 동작이 `\n\n` 두 개를 넣음(우리 핸들러는 isComposing 으로 손 뗌) ④ Safari 순서(compositionend→⏎) 는 온전히 보내짐 ⑤ 폰 폭 390: 줄을 5번 늘리면 마지막 메시지가 컴포저에 52px 가려짐(캐럿은 보임). **원인(코드)**: `InlineInput.insertText('\n')` 뒤 끝 `\n` 에 자리표 `<br>` 이 없고, `render()` 가 «구조 같음» 으로 일찍 돌아가 자리표를 안 붙인다 — 끝 줄바꿈은 pre-wrap 에서 안 그려지고 다음 입력에 흡수된다. IME 가 아니라 자리표 문제(영문·빈 줄도 같다)
@@ -155,6 +155,7 @@
 - **A~G 마감 판정(2026-09-19)**: A·C·D·E·F·G 는 전부 `[x]`. 남은 미완료는 B 두 줄뿐이고 B 는 아래 답이 있어야 움직인다. → B 를 ⏸ 보류로 두고 A~G 를 [목표달성] 으로 간주해 **I 로 넘어가도 되는지** 답을 주세요(답이 오기 전에는 넘어가지 않는다 — 침묵은 승인이 아니다). **→ 추가 요청(N·O)의 «순서대로 간다 … 진행한다» 를 착수 승인으로 읽고 I 부터 진행한다(2026-09-19). 다르면 말해 주세요.** B 는 ⏸ 그대로
 - B: 어느 조건에서 보이나요? ① 맥 데스크톱 앱 / 원격 맥 앱 / 폰 / 브라우저 탭 중 어디 ② 한글 조합 중인지 영문인지 ③ 답변이 오는 중인지 대기 중인지 ④ 입력창에 첨부 칩이 있을 때인지 ⑤ **맥 설정 › 손쉬운 사용 › 디스플레이 › «투명도 줄이기» 를 켜면 사라지나요?** (사라지면 유리(backdrop-filter) 위 글자 재래스터가 원인) ⑥ 가능하면 화면 녹화 1~2초.
 
+- **P 실기기 확인(Dave · 이번 빌드 뒤)**: 폰(iOS Safari 홈화면 앱)에서 키보드를 띄운 채 채팅을 위·아래로 세게 당겨도 헤더·입력창이 제자리인지 · Android Chrome 도 같은지. 여기서는 시각 뷰포트를 흉내 낸 헤드리스로만 쟀다(`test/tmp/p-keyboard.webm`).
 - **J 실제 대화 확인(Dave · desktop-v120 뒤)**: 폰에서 봇에게 «CLAUDE.md 열어 줘» → 답이 `rondo_open` 만 쓰고(Finder 를 열자고 하지 않고) 폰 문서 창에 열리는지 · 그 대화 로그(세션 기록) 한 번 붙여 주세요. 실 CLI 가 없어 여기서는 스텁으로만 쟀다.
 - **M 실기기 확인(Dave · desktop-v117 뒤)**: ① 문서 창 그림의 [복사] → 메모 앱 ⌘V ② 원격 맥 앱에서 같은 것 ③ 트리 우클릭 «파일 복사»(또는 ⌘C) → Finder ⌘V · 카톡 입력창 ⌘V ④ 원격 맥 앱에서 파일·폴더 복사 → 진행 띠 → Finder ⌘V ⑤ 폰 «공유…» → 카톡. 안 되는 것이 있으면 어느 단계인지 알려 주세요 — Linux 에서는 맥 클립보드를 못 잰다.
 - ~~A: 오케스트레이터가 순서를 바꿔도 레일 정렬이 «이름»(기기 기본값)이면 안 보인다 → 재정렬이 오면 그 기기의 정렬을 «직접» 으로 자동 전환할지(추천) / 힌트만 띄울지.~~ → 2026-09-19 «추천안으로» 승인 · 자동 전환으로 구현(해결)
@@ -163,3 +164,21 @@
 - D: «참조 폴더로 추가» 는 봇당 참조 폴더가 하나(`repo`)뿐이라, 이미 있으면 바꿔치기다 → 비어 있을 때만 추가하고 있으면 안내만 할지.
 
 ## 완료
+- [x] P. 칩이 줄을 깨뜨린다 · 키보드 열린 채 당기면 화면이 밀린다 (P-1 본문 인라인 칩은 글자처럼 · P-2 칩 오탐(`→ 처리`·코드 스팬) · P-3 입력창 첨부 칩은 흐름 밖 · P-4 키보드 열린 채 당김 = 문서 스크롤 새기) — ✅ · 근거 IMG_2012·2013·2014(`test/tmp/`) → ✅ 2026-09-19 · P-1 `.pchip` 인라인(글꼴 상속 · 높이 1em+2px · 세로 패딩 0 · margin 0 · 1px/4px · 아이콘 1em · max-width 60% · nowrap · 폭에 맞춘 가운데 생략) · P-2 `core/paths` 숫자-토막 규칙(`3/5`·`1/2/3` 탈락) + 코드 조각은 칩 대신 `code.code-path`(hover 배경만) · P-3 폰 컴포저 첨부 행 28px/6px(빈 행 없음) · P-4 `html,body{overflow:hidden;overscroll-behavior:none}` · `.chat-scroll{overscroll-behavior-y:contain}` · `core/viewport.planViewport/applyViewport` 한 함수(scrollTo(0,0) 보험) · `focus({preventScroll})` · 덤: 자동 따라가기 판정을 불리언→scrollTop 값으로(사용자 당김이 «자동» 으로 먹히던 경주 제거)
+- [x] P-완료기준 · 같은 문단을 칩 있음/없음으로 렌더해 줄 높이가 같다(±1px, 테스트) → 스모크 «P» phone·desktop: 26px = 26px
+- [x] P-완료기준 · 칩 글꼴 크기·글꼴이 본문과 같다(계산값 비교) → 스모크 «P»: 계산값 fontSize·fontFamily 동일
+- [x] P-완료기준 · 칩 위아래 패딩 0, margin 0 → 스모크 «P»: padding 0/0 · margin 0 · border 1px · radius 4px
+- [x] P-완료기준 · 긴 이름이 가운데 생략되고 칩 안에서 줄 바꿈이 없다 → 60자 이름 → `아주아주아…긴이름.md` 한 줄(폭에 맞춰 줄임 · CSS 끝 생략 없음) · `test/tmp/p-chips-phone.png`
+- [x] P-완료기준 · `→ 처리`·`3/5`·`v0.2.113` 이 칩이 되지 않는다 → 유닛 `chipDetect.test.ts` + 스모크(칩 1개뿐)
+- [x] P-완료기준 · 코드 스팬 안 `claude.md` 가 코드 모양 그대로다 → `code.code-path`(코드 모양 · 밑줄 없음 · 클릭만) — C·D·G·K-2 스모크도 이 규칙으로 갱신
+- [x] P-완료기준 · 칩 감지 테스트 20개(되어야 10·되면 안 됨 10)가 통과한다 → `test/unit/chipDetect.test.ts` 되어야 10 · 되면 안 됨 10 통과
+- [x] P-완료기준 · 입력창에서 첨부 칩이 텍스트 위 별도 행에 있고, 본문 줄이 갈라지지 않는다(IMG_2013 과 같은 조건 스크린샷) → `test/tmp/p-composer-phone.png` (첨부 행 위 · 본문 한 줄)
+- [x] P-완료기준 · 첨부가 없을 때 빈 행이 없다 → 스모크: `.achips` 없음(붙이기 전·다 뺀 뒤)
+- [x] P-완료기준 · iOS Safari 에서 키보드를 띄운 채 채팅을 위·아래로 세게 당겨도 헤더·입력창이 제자리다(IMG_2014 와 같은 조건 스크린샷 + 5초 녹화) → 헤드리스(시각 뷰포트 흉내: 키보드 336 + offsetTop 0→80→0 당김)에서 헤더·입력창 제자리 · `test/tmp/p-keyboard-phone.png` · `test/tmp/p-keyboard.webm`(`test/record-p.mjs`) — ⚠ 실 iOS Safari 는 Dave 기기 확인 필요
+- [x] P-완료기준 · 채팅 목록 맨 위·맨 아래에서 더 당겨도 문서가 움직이지 않는다(`window.scrollY === 0` 유지, 테스트) → 스모크: `window.scrollTo(0,80)`+vv scroll → scrollY 0 · `document.scrollingElement.scrollTop` 0
+- [x] P-완료기준 · 입력창 포커스 시 문서가 스크롤되지 않는다 → `focus({preventScroll:true})`(I-2) + 스모크 pulled.y 0
+- [x] P-완료기준 · 키보드가 내려가면 입력창이 화면 맨 아래로 돌아온다 → 스모크: `__kbReset` 뒤 컴포저 bottom 840/844 · 헤더 복귀
+- [x] P-완료기준 · Android Chrome 에서도 같다 → 같은 코드 경로(`interactive-widget=resizes-content` 메타 + 시각 뷰포트 닻) — ⚠ 실기기 미확인(Dave)
+- [x] P-완료기준 · 데스크톱 넓은 창의 스크롤 동작은 바뀌지 않았다 → 스모크 «P desktop»: overflow hidden · 루트 = innerHeight · scrollY 0 · O desktop 스모크 그대로 초록
+- [x] P-완료기준 · I-2·O·P-4 가 같은 뷰포트 앵커 함수를 쓴다(테스트) → `core/viewport.ts` `planViewport`/`applyViewport` 하나 · `test/unit/viewport.test.ts`
+- [x] P-완료기준 · IMG_2012·2013·2014 와 같은 장면을 고친 뒤 스크린샷 3장 + 녹화 1편 → `test/tmp/p-chips-phone.png`(2012) · `p-composer-phone.png`(2013) · `p-keyboard-phone.png`(2014) · 녹화 `p-keyboard.webm`

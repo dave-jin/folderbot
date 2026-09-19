@@ -11,7 +11,7 @@
   --glassA:rgba(255,255,255,.72); --glassB:rgba(255,255,255,.80); --hair:rgba(0,0,0,.10);
   --fade0:rgba(255,255,255,0); --fadeA:rgba(255,255,255,.88); --fadeB:rgba(244,244,245,.96); --solid:#efeff1; --hover0:rgba(241,241,243,0); --shadow:rgba(0,0,0,.14); --onAccent:#ffffff }
 * { box-sizing:border-box; touch-action:manipulation }
-html,body { height:100%; margin:0; background:var(--bg); overscroll-behavior-x:none }
+html,body { height:100%; margin:0; background:var(--bg); overflow:hidden; overscroll-behavior:none }   /* P-4 · 문서는 절대 스크롤되지 않는다 — 스크롤되는 것은 채팅 목록 하나뿐 */
 #root { position:fixed; inset:0; margin:0; background:var(--bg); color:var(--t); font-family:var(--ui); font-size:13.5px; line-height:1.65; -webkit-font-smoothing:antialiased; overflow-x:hidden; overscroll-behavior:none; -webkit-text-size-adjust:100% }
 button { font:inherit; color:inherit; background:none; border:0; cursor:pointer; padding:0; text-align:left }
 /* ⛔ **시스템 강조색 초점 테두리를 쓰지 않는다** (2026-09-13 Dave: *«선택시 생기는 오렌지 박스는
@@ -117,7 +117,7 @@ b,strong { color:var(--w); font-weight:600 }
 .chat-hdr { position:absolute; left:0; right:0; top:0; z-index:4; border-bottom:1px solid var(--hair) } .chat-hdr.glass { background:var(--bg); backdrop-filter:none; -webkit-backdrop-filter:none } .chat-hdr::after { content:''; position:absolute; left:0; right:0; top:100%; height:28px; background:linear-gradient(180deg, var(--bg), var(--fade0)); pointer-events:none }
 /* 🔴 좌우는 고정이다 (2026-09-17 Dave: «모바일에서 화면이 좌우로 드래그 되면 안돼»). 넓은 코드 블록이 있으면 스크롤 상자가 통째로
    옆으로 밀렸다 — 옆으로 흐르는 것은 그 블록 **안**에서만(.md pre 는 제 안에서 스크롤한다). 세로만 판다. */
-.chat-scroll { position:absolute; inset:0; overflow-x:hidden; overflow-y:auto; display:flex; flex-direction:column; overscroll-behavior:contain; touch-action:pan-y }
+.chat-scroll { position:absolute; inset:0; overflow-x:hidden; overflow-y:auto; display:flex; flex-direction:column; overscroll-behavior:contain; overscroll-behavior-y:contain; -webkit-overflow-scrolling:touch; touch-action:pan-y }
 .chat-body > *, .amsg, .amsg .md { min-width:0 } .md pre { max-width:100% }   /* ⚠ .md 에 max-width 를 두지 않는다 — «읽기 폭 제한 없음» 이 cursor 스타일 계약이다 */
 /* 채팅 외양은 **cursor 스타일**로 되돌렸다 (2026-09-13 Dave: «이전 스타일이 더 나»).
    ⛔ 「A · 문서처럼」의 26px 리듬 · 오른쪽 정렬 · 58ch · 머리줄 · 턴 경계선은 전부 되돌렸다.
@@ -180,7 +180,7 @@ b,strong { color:var(--w); font-weight:600 }
 .modal.dif .ln.del { background:color-mix(in srgb, var(--err) 14%, transparent) } .modal.dif .ln.del .g { color:var(--err) }
 .modal.dif .fold { display:block; width:100%; text-align:left; padding:3px 18px 3px 26px; font-size:12px; color:var(--t3); background:var(--box); cursor:pointer } .modal.dif .fold:hover { color:var(--w) }
 /* 내 말풍선 아래 첨부 칩 — 지시문과 한 몸이지만 글자가 아니다 */
-.umsg .files.uatt { margin-top:8px } .umsg .pchip { vertical-align:-3px }
+.umsg .files.uatt { margin-top:8px }
 .card { display:flex; flex-direction:column; gap:6px; max-width:600px } .card .lab { font-size:12px; color:var(--t3) } .card .q { font-size:14px; color:var(--w) } .card .cmd { font-family:var(--mono); font-size:11.5px; color:var(--t3); padding-left:10px; border-left:1px solid var(--line2); white-space:pre-wrap; word-break:break-all; max-height:120px; overflow:auto } .card .btns { display:flex; gap:8px; align-items:center; margin-top:4px; flex-wrap:wrap }
 .opt { display:flex; gap:10px; align-items:flex-start; padding:8px 2px; border-top:1px solid var(--line); width:100%; color:var(--t) } .opt:hover { background:var(--hover) } .opt .r { width:12px; height:12px; border-radius:50%; border:1.5px solid var(--line2); flex:none; margin-top:5px } .opt.on .r { border-color:var(--w); background:var(--w) } .opt .d { font-size:12px; color:var(--t3) } .opt input { background:none; border:0; outline:0; width:100%; color:var(--w) }
 .todow { display:flex; flex-direction:column; gap:6px } .todow .h { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--t3); min-height:22px; width:100% } .todow .h .bar { width:100px; height:1.5px; background:var(--line2); position:relative; flex:none } .todow .h .bar i { position:absolute; left:0; top:0; bottom:0; background:var(--t2) } .todow .h .bar.st i { background:var(--wait) } .todow .rows { display:flex; flex-direction:column; gap:4px; padding-left:18px; font-size:12.5px } .todow .rows .r { display:flex; align-items:center; gap:8px } .todow .rows .r.done { color:var(--t3); text-decoration:line-through } .todow .rows .r.wait { color:var(--t2) } .todow .rows .r.run { color:var(--t) } .todow .empty { width:10px; height:10px; border-radius:50%; border:1.5px solid var(--line2); display:inline-block; flex:none; padding:0 } .todow .ft { display:flex; align-items:center; gap:10px; font-size:12px; padding-left:18px; color:var(--t3) }
@@ -799,9 +799,13 @@ b,strong { color:var(--w); font-weight:600 }
 .vmk { display:inline-flex; align-items:center; justify-content:center; flex:none; opacity:.9 }
 
 /* 답변 속 경로 칩 — 눌러서 문서로 (A 안: 색이 아니라 아주 옅은 바탕 하나로만 가른다) */
-.pchip { display:inline-flex; align-items:center; height:22px; padding:0 8px; margin:0 1px; border-radius:6px; background:var(--box); color:var(--t); font-size:12.5px; font-family:inherit; vertical-align:-4px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+/* P-1 · 칩은 글자처럼 앉는다 — 본문과 같은 글꼴·크기, 높이 = 글자 높이 + 2px, 위아래 패딩 0 · margin 0, 기준선에 걸림. 칩이 있는 줄과 없는 줄의 높이가 같다 */
+.pchip { display:inline-flex; align-items:center; gap:.3em; height:calc(1em + 2px); line-height:1; padding:0 .4em; margin:0; border:1px solid var(--hair); border-radius:4px; background:var(--box); color:var(--t); font-size:inherit; font-family:inherit; vertical-align:-0.12em; max-width:60%; white-space:nowrap; overflow:hidden }
+.pchip .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0 } .pchip .ext { color:var(--t3) } .pchip svg, .pchip .ic { width:1em; height:1em; flex:none }
+/* P-2 · 코드 조각이 통째로 경로면 모양은 코드 그대로, hover 때만 배경 */
+code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .pchip:hover { background:var(--sel); color:var(--w) }
-.pchip.dir { gap:5px } .pchip.dir svg { flex:none; opacity:.8 }
+.pchip.dir svg { opacity:.8 }
 
 /* 라이브 프리뷰 마크다운 편집기 — 읽을 때와 **같은 활자**여야 «모드가 없다» 는 말이 성립한다 */
 /* 목차(B4) · 글자 크기·폭(B9) — 값은 `--docfs`·`--docw` 로 내려온다(Doc 이 정한다).
@@ -1051,14 +1055,14 @@ b,strong { color:var(--w); font-weight:600 }
 /* ── N · 폰 입력창 (칩 행 · 글 전폭 · 버튼 하단) · H-5 헤더 · N-2 질문 헤더 ── */
 .app.phone .composer.ph { display:grid; grid-template-columns:auto 1fr auto; grid-template-areas:"chips chips chips" "left text right"; align-items:end; gap:2px 6px; padding:6px 8px; min-height:0; justify-content:stretch; border-radius:24px; margin:0 12px; width:calc(100% - 24px) }
 .app.phone .composer.ph.multi { grid-template-areas:"chips chips chips" "text text text" "left gap right"; border-radius:22px }
-.app.phone .composer.ph .achips { grid-area:chips; display:flex; gap:8px; overflow-x:auto; padding:4px 2px 6px; scrollbar-width:none } .composer.ph .achips::-webkit-scrollbar { display:none }
+.app.phone .composer.ph .achips { grid-area:chips; display:flex; gap:8px; overflow-x:auto; height:28px; padding:0 2px; margin-bottom:4px; scrollbar-width:none }   /* P-3 · 28px 고정 · 글 위 6px(margin 4 + 그리드 행 간격 2) · 첨부 없으면 행 자체가 없다 */ .composer.ph .achips::-webkit-scrollbar { display:none }
 .app.phone .composer.ph .ctext { grid-area:text; min-width:0; align-self:stretch; display:flex; flex-direction:column; justify-content:center }
 .app.phone .composer.ph .cin { font-size:16px; line-height:1.6; max-height:40dvh; max-height:calc(var(--vvh, 100dvh) * .4); padding:8px 6px; min-height:40px; width:100% }
 .app.phone .composer.ph .cleft { grid-area:left; display:flex; gap:2px; align-items:center } .app.phone .composer.ph .cright { grid-area:right; display:flex; gap:4px; align-items:center; height:40px } .cright.dis .sendb { opacity:.4; pointer-events:none }
 .app.phone .composer.ph .plusb.photo { background:transparent } .ic-cam { width:20px; height:20px; display:inline-block; background:currentColor; -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round'%3E%3Cpath d='M4 8h3l2-3h6l2 3h3v11H4z'/%3E%3Ccircle cx='12' cy='13' r='3.5'/%3E%3C/svg%3E") center/contain no-repeat; mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round'%3E%3Cpath d='M4 8h3l2-3h6l2 3h3v11H4z'/%3E%3Ccircle cx='12' cy='13' r='3.5'/%3E%3C/svg%3E") center/contain no-repeat }
 .cpop .prow2 .ic-cam { width:14px; height:14px; color:var(--t3) }
-.achip { position:relative; flex:none; display:inline-flex; align-items:center; gap:7px; height:46px; padding:0 6px 0 5px; border-radius:12px; background:var(--box); border:1px solid var(--hair); font-size:12.5px; color:var(--t); max-width:200px } .achip img, .achip .ai { width:36px; height:36px; border-radius:8px; object-fit:cover; flex:none; display:inline-flex; align-items:center; justify-content:center; background:var(--sel) } .achip .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0 } .achip .x { width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; color:var(--t3); flex:none } .achip .x:active { background:var(--sel) }
-.achip .ring { position:absolute; left:5px; top:5px; width:36px; height:36px; border-radius:8px; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; color:var(--w) }
+.achip { position:relative; flex:none; display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 4px 0 4px; border-radius:8px; background:var(--box); border:1px solid var(--hair); font-size:12.5px; color:var(--t); max-width:200px } .achip img, .achip .ai { width:20px; height:20px; border-radius:5px; object-fit:cover; flex:none; display:inline-flex; align-items:center; justify-content:center; background:var(--sel) } .achip .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0 } .achip .x { width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; color:var(--t3); flex:none } .achip .x:active { background:var(--sel) }
+.achip .ring { position:absolute; left:4px; top:4px; width:20px; height:20px; border-radius:5px; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; color:var(--w) }
 .app.phone .chat-hdr.hdr { position:relative; height:calc(44px + var(--sat)); min-height:calc(44px + var(--sat)); padding:var(--sat) 6px 0; gap:4px; border-bottom:0; background:var(--bg) }
 .app.phone .chat-hdr .hb-menu { flex:none } .app.phone .chat-hdr .hname { flex:1; min-width:0; display:flex; align-items:center } .app.phone .chat-hdr .hnb { display:flex; align-items:center; gap:8px; min-width:0; max-width:100%; height:40px; padding:0 6px; border-radius:10px; font-size:16px; color:var(--w) } .app.phone .chat-hdr .hnb .bname { min-width:0 } .app.phone .chat-hdr .hnb .dn { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .app.phone .chat-hdr .hnb .dot { flex:none }
 .app.phone .chat-body { padding-top:12px }

@@ -19,6 +19,7 @@ import { fmtTime, useStore } from './store'
 import { ACT_ICON, FOLDER_SWIPE, navOf, type SwipeAct } from './swipe'
 import { CopyProgressHost } from './fileCopy'
 import { attachRoom } from '../core/attach'
+import { applyViewport, planViewport } from '../core/viewport'
 import { SwipeRow } from './SwipeRow'
 import { dueChip } from '../core/botName'
 import { LocalOpenHost, localBridge, openOnThisDevice, useLocalSettings } from './localOpen'
@@ -84,17 +85,14 @@ function useKeyboard(): boolean {
        * 키보드가 닫혀 있었다면 vv.height 가 곧 화면 높이라 100dvh 와 같은 값이 된다 — 해가 없다.
        * 입력 중이 아닐 때만 값을 지워 `100dvh` 로 돌아간다(iOS 가 높이를 덜 돌려줘도 아래 띠가 안 생긴다).
        */
-      const open = editing
-      const st = document.documentElement.style
-      if (open) {
-        st.setProperty('--vvh', `${Math.round(vv.height)}px`); st.setProperty('--vvt', `${Math.round(vv.offsetTop)}px`)
-        /**
-         * 🔴 `position:fixed` 인 것들(시트·백드롭)은 **레이아웃 뷰포트** 바닥에 붙는다 — 루트를 줄여도
-         *    그것들은 키보드 밑에 깔린다(스모크가 «저장 버튼이 키보드 밑에 묻힌다» 로 잡았다).
-         *    키보드가 먹은 높이를 `--kbh` 로 내보내 `bottom:var(--kbh)` 로 띄운다.
-         */
-        st.setProperty('--kbh', `${Math.max(0, Math.round(window.innerHeight - vv.offsetTop - vv.height))}px`)
-      } else { st.removeProperty('--vvh'); st.removeProperty('--vvt'); st.removeProperty('--kbh') }
+      /**
+       * 🔴 계산은 core/viewport.planViewport **한 함수** (I-2 · O · P-4). `position:fixed` 인 것들(시트·백드롭)은 레이아웃 뷰포트
+       *    바닥에 붙으므로 키보드가 먹은 높이를 `--kbh` 로 내보낸다(스모크가 «저장 버튼이 키보드 밑에 묻힌다» 로 잡았다).
+       * P-4 · 키보드가 열린 채 당겨 문서가 밀렸으면(scrollY > 0) 되돌린다 — 주 대책은 html/body overflow:hidden 이고 이건 보험
+       */
+      const plan = planViewport(editing, vv, window.innerHeight, window.scrollY)
+      const open = plan.open
+      applyViewport(plan, document.documentElement.style, (x, y) => window.scrollTo(x, y))
       /**
        * 🔴 **화장에도 문턱을 쓰지 않는다** (2026-09-13 Dave 4차 스크린샷 — 이 문턱의 네 번째 사고).
        * 종전엔 «키보드가 140px 이상 먹었을 때만» 머리·모델 칩을 접었다. 그런데 레이아웃 뷰포트까지 함께
@@ -104,7 +102,6 @@ function useKeyboard(): boolean {
        * 판정은 레이아웃 때와 같은 하나뿐이다 — **입력 중이냐.**
        */
       setKb(open)
-      if (!open) window.scrollTo(0, 0)
     }
     // 키보드가 내려가는 동안 값이 흔들린다 — 포커스가 빠진 뒤 세 번 다시 잰다
     const later = () => { setTimeout(f, 50); setTimeout(f, 300); setTimeout(f, 700) }
@@ -961,7 +958,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
    *    rAF 로 프레임당 최대 10px 씩 옮긴다(120ms 안에 한 줄). 사용자가 60px 이상 올려 봤으면 따라가지 않고 「↓ 새 내용」 만 켠다 — 다시 맨 아래로 오면 재개.
    *    ⚠ 자동 따라가기가 만든 스크롤은 «사용자가 올렸다» 로 세지 않는다(`autoScrollRef`).
    */
-  const followRaf = useRef(0); const autoScrollRef = useRef(false); const streamingRef = useRef(false); streamingRef.current = streaming
+  const followRaf = useRef(0); const autoScrollRef = useRef<number | null>(null); const streamingRef = useRef(false); streamingRef.current = streaming
   // O · 상태 줄이 사라지는 순간의 «툭» — 사라진 높이만큼 아래 여백(--settle)을 남겨 scrollHeight 가 줄지 않게 한다(클램프 점프 없음). 다음 내용이 자라면 0 으로
   const liveWas = useRef(false)
   useEffect(() => {
@@ -977,21 +974,23 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
       const target = el2.scrollHeight - el2.clientHeight; const d = target - el2.scrollTop
       if (d <= 1) return
       // 몇 줄이 아니라 화면 하나가 넘게 벌어졌으면(처음 열기 · 한꺼번에 온 메시지) 기어가지 않고 한 번에 — 10px/프레임은 «토큰이 자라는 한 줄» 을 위한 값이다
-      if (d > 160 && !streamingRef.current) { autoScrollRef.current = true; el2.scrollTop = target; return }
-      const before = el2.scrollTop; autoScrollRef.current = true; el2.scrollTop = before + Math.min(10, d)
+      if (d > 160 && !streamingRef.current) { el2.scrollTop = target; autoScrollRef.current = el2.scrollTop; return }
+      const before = el2.scrollTop; el2.scrollTop = before + Math.min(10, d); autoScrollRef.current = el2.scrollTop
       // ⚠ 더 못 내려가면(소수점 끝) 멈춘다 — 안 그러면 rAF 가 매 프레임 scrollTop 을 건드려 열린 메뉴(Float 는 scroll 에 닫힌다)가 바로 닫힌다(스모크 E 실측)
-      if (Math.abs(el2.scrollTop - before) < 0.25) { autoScrollRef.current = false; return }
+      if (Math.abs(el2.scrollTop - before) < 0.25) { autoScrollRef.current = null; return }
       followRaf.current = requestAnimationFrame(step)
     }
     followRaf.current = requestAnimationFrame(step)
   }
   useEffect(() => () => cancelAnimationFrame(followRaf.current), [])
-  const measure = (keepBottom = false) => { const el = scRef.current; if (!el) return; const d = el.scrollHeight - el.scrollTop - el.clientHeight; if (autoScrollRef.current || keepBottom) { autoScrollRef.current = false; setAtBottom(true) } else setAtBottom(d < 60);   /* 우리가 옮긴 스크롤은 «맨 아래를 보는 중» 을 유지한다 */ setShowJump((was) => (was ? d > 40 : d > 240)); const u = lastUserRef.current; setPinned(!!u && u.getBoundingClientRect().bottom < el.getBoundingClientRect().top + (phone ? 60 : 44)) }
+  // 🔴 «우리가 옮긴 스크롤» 은 불리언이 아니라 **우리가 놓은 scrollTop 값**으로 알아본다 (P 라운드 실측) — 불리언이면 따라가기 프레임과
+  //    사용자의 위로 당기기 사이에서 사용자 scroll 이벤트가 «자동» 으로 먹혀 다시 끌려 내려갔다(O 스모크 간헐 빨강). 값이 다르면 사람이 움직인 것이다.
+  const measure = (keepBottom = false) => { const el = scRef.current; if (!el) return; const d = el.scrollHeight - el.scrollTop - el.clientHeight; const ours = autoScrollRef.current != null && Math.abs(el.scrollTop - autoScrollRef.current) < 1.5; if (ours || keepBottom) { autoScrollRef.current = null; setAtBottom(true) } else setAtBottom(d < 60);   /* 우리가 옮긴 스크롤은 «맨 아래를 보는 중» 을 유지한다 */ setShowJump((was) => (was ? d > 40 : d > 240)); const u = lastUserRef.current; setPinned(!!u && u.getBoundingClientRect().bottom < el.getBoundingClientRect().top + (phone ? 60 : 44)) }
   useEffect(() => { const el = scRef.current; if (!el) return; measure(); const onScroll = () => measure(); el.addEventListener('scroll', onScroll, { passive: true }); return () => el.removeEventListener('scroll', onScroll) }, [collapsed, cur?.id, phone]) // eslint-disable-line react-hooks/exhaustive-deps
   // ⚠ 내용이 자란 직후의 거리(d)는 «사용자가 올렸다» 가 아니다 — 따라가는 중이면 맨 아래 상태를 지킨 채 잰다(keepBottom)
   useEffect(() => { const el = scRef.current; if (!el) return; if (atBottom) { followBottom(); measure(true) } else measure() }, [items.length, last && (last.kind === 'assistant' || last.kind === 'thinking') ? last.text.length : 0, pending.length, cur?.activity, lastUser?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   // 세션을 바꿨을 때만 **즉시** 맨 아래 — 그 밖의 모든 따라가기는 부드럽게(followBottom)
-  useEffect(() => { const el = scRef.current; if (el) { autoScrollRef.current = true; el.scrollTop = el.scrollHeight } }, [cur?.id])
+  useEffect(() => { const el = scRef.current; if (el) { el.scrollTop = el.scrollHeight; autoScrollRef.current = el.scrollTop } }, [cur?.id])
   useEffect(() => { if (!pop) return; const off = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest('.cpop, .cbtn, .ring, .plusb')) setPop('') }; const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setPop(''); if (pop === 'mode' && /^[1-4]$/.test(e.key) && !(e.target as HTMLElement).matches('textarea,input')) { e.preventDefault(); void applyCfg({ permissionMode: MODES[Number(e.key) - 1].v }) } }; window.addEventListener('mousedown', off); window.addEventListener('keydown', key); return () => { window.removeEventListener('mousedown', off); window.removeEventListener('keydown', key) } }, [pop])
   /**
    * 🔴 **돌던 대화의 모델을 바꾸는 건 공짜가 아니다** (2026-09-15 Dave 지정 — Claude Code 와 같은 확인창).
@@ -1328,7 +1327,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
       <div className={`composer glassb ${text.includes('\n') || text.length > (phone ? 24 : 40) ? 'multi' : ''} ${phone ? 'ph' : ''}`}
         onPaste={(e) => { const fromItems = Array.from(e.clipboardData.items).filter((i) => i.type.startsWith('image/')).map((i) => i.getAsFile()).filter((f): f is File => !!f); const imgs = fromItems.length ? fromItems : Array.from(e.clipboardData.files ?? []).filter((f) => f.type.startsWith('image/'));   /* N-4 · 폰 클립보드는 files 로 온다 */ if (imgs.length) { e.preventDefault(); const d = new Date(); void upload(imgs.map((f, i) => new File([f], `스크린샷_${d.getHours()}${String(d.getMinutes()).padStart(2, '0')}${i ? `-${i + 1}` : ''}.${(f.type.split('/')[1] ?? 'png').replace('jpeg', 'jpg')}`, { type: f.type }))) } }}>
         {popEl}
-        {phone && attach.length ? <div className="achips">{attach.map((a) => <span key={a.rel} className={`achip ${a.uploading ? 'up' : ''}`} title={a.abs || a.name}>{a.thumb ? <img src={a.thumb} alt="" /> : <span className="ai"><Icon n={a.dir ? 'folder' : 'doc'} size={14} /></span>}{a.uploading ? <span className="ring"><Ring pct={a.pct ?? 0} size={22} stroke={2.5} /></span> : null}<span className="nm">{attName(a)}</span><button className="x" onClick={() => { if (a.thumb) URL.revokeObjectURL(a.thumb); setAttach((l) => l.filter((x) => x.rel !== a.rel)) }} title="빼기"><Icon n="x" size={11} /></button></span>)}</div> : null}
+        {phone && attach.length ? <div className="achips">{attach.map((a) => <span key={a.rel} className={`achip ${a.uploading ? 'up' : ''}`} title={a.abs || a.name}>{a.thumb ? <img src={a.thumb} alt="" /> : <span className="ai"><Icon n={a.dir ? 'folder' : 'doc'} size={14} /></span>}{a.uploading ? <span className="ring"><Ring pct={a.pct ?? 0} size={16} stroke={2} /></span> : null}<span className="nm">{attName(a)}</span><button className="x" onClick={() => { if (a.thumb) URL.revokeObjectURL(a.thumb); setAttach((l) => l.filter((x) => x.rel !== a.rel)) }} title="빼기"><Icon n="x" size={11} /></button></span>)}</div> : null}
         {phone ? <div className="cleft">{photoBtn}{plusBtn}</div> : null}
         <div className={phone ? 'ctext' : 'crow'}>
           <InlineInput ref={taRef} placeholder={drill ? '메인 대화로 보냅니다 — 이 안에는 직접 말을 걸 수 없어요' : running ? `보내면 대기열에 들어갑니다 (${sendKey})` : state === 'awaiting_input' ? '답을 기다리는 중 — 보내면 대기열에' : enterSends ? '메시지…  ⏎ 보내기 · ⇧⏎ 줄 바꿈 · / 스킬 · @ 파일' : '메시지…  / 스킬 · @ 파일'} value={text} chips={chipsByName} onChange={(t, c) => { setText(t); setCaret(c) }} onCaret={setCaret} onKeyDown={onKey} onFocus={() => { if (phone) stickBottom() }} onChipClick={(name) => { const a = attach.find((x) => attName(x) === name); if (a && !a.uploading && !a.dir) onFile(a.rel) }} />
