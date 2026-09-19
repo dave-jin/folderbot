@@ -449,6 +449,83 @@ try {
           await wait(400)
           ok('레일 이름 파생 — 예시 3 · D-2 강조 · 지남 흐림 · 잘려도 칩 · display_name · bots_list.displayName · 시안 비교 test/tmp/rail-compare.png')
         }
+        /**
+         * 🔴 **원격에서 파일 열기 — 그 기기에서** (E · 2026-09-19 Dave 1안 확정). 원격 Electron 을 흉내 낸다:
+         *    `x-fb-as` 헤더(인증 없는 QA 의 시임)로 호스트가 이 화면을 «원격 · 맥북» 으로 보고, 가짜 `folderbotDesktop.local` 브리지가
+         *    셸 대신 답한다(호출 기록을 남긴다). 실제 파일 시스템 판정은 유닛(test/unit/localfs.test.ts)이 잰다.
+         */
+        {
+          const CANDS = [{ path: '/Users/dave/Library/CloudStorage/Dropbox/PARA', real: '/Users/dave/Library/CloudStorage/Dropbox/PARA', files: 1200, shell: false }, { path: '/Users/dave/Library/CloudStorage/Dropbox-Cbsjin/진대연 (Dave)/PARA', real: '/Users/dave/Library/CloudStorage/Dropbox-Cbsjin/진대연 (Dave)/PARA', files: 1, shell: true }]
+          const rp = await br.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
+          await rp.addInitScript((cands) => {
+            localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark'); localStorage.removeItem('fb:docopen')
+            const L = { settings: { openMode: '', vaultLocal: '' }, calls: [], stat: null, cands }; window.__local = L
+            window.folderbotDesktop = {
+              version: 'qa',
+              perms: { list: async () => [{ id: 'local-open', required: true, probeable: false, status: L.settings.openMode ? 'granted' : 'unknown' }], open: async () => ({ ok: true }), ack: async () => [], reset: async () => [], test: async () => ({ ok: true }), relaunch: () => {}, onChange: () => () => {} },
+              local: {
+                settings: async () => ({ ...L.settings }), set: async (p) => { Object.assign(L.settings, p); L.calls.push(['set', p]); return { ...L.settings } },
+                detect: async (r) => { L.calls.push(['detect', r]); return L.cands }, stat: async (p) => { L.calls.push(['stat', p]); return L.stat ? L.stat(p) : { exists: false } },
+                open: async (p) => { L.calls.push(['open', p]); return '' }, reveal: async (p) => { L.calls.push(['reveal', p]); return '' },
+                wait: async (p) => { L.calls.push(['wait', p]); await new Promise((r) => setTimeout(r, 120)); return true },
+                download: async (url, host, rel) => { L.calls.push(['download', url, host, rel]); return '/cache/' + rel }, icloud: async (p) => { L.calls.push(['icloud', p]); return true }, pick: async () => ''
+              }
+            }
+            const of = window.fetch.bind(window); window.fetch = (u, o = {}) => { const h = new Headers(o.headers || {}); h.set('x-fb-as', 'macbook'); return of(u, { ...o, headers: h }) }
+          }, CANDS)
+          await rp.goto(base + `/#bot=${bot.id}`); await rp.waitForSelector('.perm-gate', { timeout: 15000 }); await wait(600)
+          const calls = () => rp.evaluate(() => window.__local.calls)
+          // 온보딩 — 권한 관문 안의 한 단계 · 자동 탐색 · 정본이 맨 위 · 껍데기는 표시
+          const gate = await rp.textContent('.perm-gate'); if (!/이 기기에서 파일 열기/.test(gate ?? '')) fail('E 온보딩: 「이 기기에서 파일 열기」 단계가 관문에 없다')
+          if (!(await rp.$('.perm-gate .mr.remote, .perm-gate'))) fail('E: gate')
+          const cl = await rp.$$eval('.perm-gate .lpick .cand', (r) => r.map((x) => ({ p: x.querySelector('.p')?.textContent, cls: x.className })))
+          if (cl.length !== 2 || cl[0].p !== CANDS[0].path || !/best/.test(cl[0].cls) || !/shell/.test(cl[1].cls) || /best/.test(cl[1].cls)) fail('E 온보딩 후보: 정본이 1순위·껍데기 표시 ' + JSON.stringify(cl))
+          if (!(await calls()).some((c) => c[0] === 'detect' && c[1] === root)) fail('E 온보딩: 호스트 루트로 detect 를 부르지 않았다 ' + JSON.stringify(await calls()))
+          await rp.click('.perm-gate .lpick .cand.best'); await wait(400)
+          const st1 = await rp.evaluate(() => window.__local.settings); if (st1.openMode !== 'sync' || st1.vaultLocal !== CANDS[0].path) fail('E 온보딩: 고르면 sync + 경로 ' + JSON.stringify(st1))
+          await rp.click('.perm-gate button.btn.on:has-text("계속")'); await wait(500)
+          if (await rp.$('.perm-gate')) fail('E 온보딩: 고른 뒤 계속이 안 된다')
+          await rp.waitForSelector('.col.chat .hdr', { timeout: 10000 }); await wait(400)
+          if (!/원격 · macbook/.test((await rp.textContent('.mr.remote').catch(() => '')) ?? '')) fail('E: 이 화면은 «원격 · macbook» 이어야 한다')
+          // ① 같으면 바로 이 기기의 Finder — 호스트 stat 과 같은 값을 돌려주는 가짜 stat
+          const hs = await api(`/bots/${bot.id}/stat?rel=CLAUDE.md`); if (!hs.head || !hs.size) fail('E stat: ' + JSON.stringify(hs))
+          await rp.evaluate((h) => { window.__local.stat = () => ({ exists: true, size: h.size, head: h.head, mtime: Date.now() }) }, hs)
+          const revealClaude = async () => { await rp.evaluate(() => { const b = [...document.querySelectorAll('.panel .trow')].find((x) => /CLAUDE\.md/.test(x.textContent ?? '')); b?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 700, clientY: 300 })) }); await wait(250); const lab = await rp.textContent('.menu button:has-text("Finder 에서 보기")'); await rp.click('.menu button:has-text("Finder 에서 보기")'); await wait(500); return lab }
+          const lab = await revealClaude(); if (!/이 기기/.test(lab ?? '')) fail('E: 메뉴가 «이 기기» 를 말해야 한다 · ' + lab)
+          const localPath = `${CANDS[0].path}/3. Area/제품_Rondo/CLAUDE.md`
+          if (!(await calls()).some((c) => c[0] === 'reveal' && c[1] === localPath)) fail('E ① 같음: 이 기기의 Finder 로 reveal 해야 한다 ' + JSON.stringify(await calls()))
+          // ① 다르면 시트 — 기본 [기다렸다 열기] → 도착하면 자동으로 연다
+          await rp.evaluate((h) => { window.__local.stat = () => ({ exists: true, size: h.size, head: 'zzz', mtime: Date.now() - 86400000 }) }, hs)
+          await revealClaude(); await rp.waitForSelector('.modal.lopen', { timeout: 3000 })
+          const focused = await rp.evaluate(() => document.activeElement?.textContent); if (focused !== '기다렸다 열기') fail('E 신선도: 기본 단추가 [기다렸다 열기] 여야 한다 · ' + focused)
+          await rp.click('.modal.lopen button:has-text("기다렸다 열기")'); await wait(600)
+          { const c = await calls(); const wi = c.findIndex((x) => x[0] === 'wait' && x[1] === localPath); const ri = c.map((x, i) => (x[0] === 'reveal' ? i : -1)).filter((i) => i > wi)
+            if (wi < 0 || !ri.length) fail('E 신선도: wait → reveal 순서 ' + JSON.stringify(c)) }
+          // iCloud 자리표시자 → 내려받기 → 기다림 → 열기
+          await rp.evaluate(() => { window.__local.stat = () => ({ exists: false, placeholder: true }) })
+          await revealClaude(); await wait(500)
+          { const c = await calls(); const ii = c.findIndex((x) => x[0] === 'icloud' && x[1] === localPath); if (ii < 0 || !c.slice(ii).some((x) => x[0] === 'wait') || !c.slice(ii).some((x) => x[0] === 'reveal')) fail('E iCloud: icloud → wait → reveal ' + JSON.stringify(c.slice(-4))) }
+          // ② 호스트에서 받기 — 설정 › 기기 에서 바꾸면 즉시: 캐시로 내려받아 열고 탭에 「사본」
+          await rp.keyboard.press('Meta+,'); await rp.waitForSelector('.setw', { timeout: 4000 }); await rp.click('.snav .nv:has-text("기기")'); await wait(400)
+          const sp = await rp.textContent('.setw'); for (const w of ['이 기기에서 파일 열기', '동기화 볼트 위치']) if (!sp?.includes(w)) fail('E 설정 › 기기: «' + w + '» 줄이 없다')
+          await rp.click('.setw .seg button:has-text("호스트에서 받기")'); await wait(300)
+          if ((await rp.evaluate(() => window.__local.settings.openMode)) !== 'download') fail('E 설정: 모드 전환이 저장되지 않았다')
+          await rp.keyboard.press('Escape'); await wait(300)
+          await rp.evaluate(() => { const b = [...document.querySelectorAll('.panel .trow')].find((x) => /CLAUDE\.md/.test(x.textContent ?? '')); b?.click() }); await rp.waitForSelector('.docwrap .dtb', { timeout: 5000 }); await wait(300)
+          if (!(await rp.$('.docwrap .dtb .scp.copy'))) fail('E ②: 문서 탭에 「사본」 배지가 없다')
+          await rp.click('.docwrap .ib[title="이 기기에서 열기"]'); await wait(600)
+          { const c = await calls(); const d = c.find((x) => x[0] === 'download'); if (!d || !/\/api\/bots\/.*\/raw\?rel=CLAUDE\.md/.test(d[1]) || d[3] !== '3. Area/제품_Rondo/CLAUDE.md') fail('E ②: 캐시로 내려받기 호출 ' + JSON.stringify(d))
+            if (!c.some((x) => x[0] === 'open' && x[1] === '/cache/3. Area/제품_Rondo/CLAUDE.md')) fail('E ②: 받은 사본을 열어야 한다 ' + JSON.stringify(c.slice(-3))) }
+          // 다시 동기화 볼트로 — 배지가 바로 사라진다
+          await rp.keyboard.press('Meta+,'); await rp.waitForSelector('.setw', { timeout: 4000 }); await rp.click('.snav .nv:has-text("기기")'); await wait(300); await rp.click('.setw .seg button:has-text("동기화 볼트")'); await wait(300); await rp.keyboard.press('Escape'); await wait(300)
+          if (await rp.$('.docwrap .dtb .scp.copy')) fail('E: 동기화 볼트로 바꾸면 「사본」 배지가 사라져야 한다')
+          await rp.close()
+          // 메인(호스트 맥)에서는 설정 없이 종전대로 — 메뉴 이름에 «이 기기» 표식이 없고 호스트가 연다
+          await pg.evaluate(() => { const b = [...document.querySelectorAll('.panel .trow')].find((x) => /CLAUDE\.md/.test(x.textContent ?? '')); b?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 700, clientY: 300 })) }); await wait(250)
+          const mlab = await pg.textContent('.menu button:has-text("Finder 에서 보기")'); if (!mlab || /이 기기|내려받기|맥에서만/.test(mlab)) fail('E 메인: 종전 이름 그대로여야 한다 · ' + mlab)
+          await pg.keyboard.press('Escape'); await wait(200)
+          ok('원격에서 파일 열기 — 온보딩 단계·후보 순위 · ① 같음→이 기기 Finder · 다름→[기다렸다 열기] 기본→도착 후 열림 · iCloud 자리표시자 · ② 캐시+「사본」 · 설정 즉시 반영 · 메인은 그대로')
+        }
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
         await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)
         await pg.mouse.move(700, 300); await wait(200); if (await pg.$('.hcard')) fail('ui hover card stuck')

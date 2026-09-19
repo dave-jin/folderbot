@@ -16,6 +16,7 @@ import { PROVIDER_LABEL, type ProviderId } from '../core/agents'
 const IMG_RE = /\.(png|jpe?g|gif|webp|bmp|avif)$/i
 import { scoreName } from '../core/search'
 import { fmtElapsed, fmtTime, useStore } from './store'
+import { localBridge, openOnThisDevice } from './localOpen'
 
 export interface SecH { sessions: number; todo: number }
 interface Node { name: string; rel: string; dir: boolean; mtime: number; size?: number; harness?: boolean; botId?: string }
@@ -101,7 +102,7 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
     <div className="divy" onPointerDown={dragY('todo')} onDoubleClick={() => onSecH({ ...secH, todo: 84 })} />
     {/* 파일 */}
     <div className="sec grow">
-      <Tree bot={bot} open={!!open.files} tog={() => tog('files')} onOpen={onOpenFile} onAttach={onAttach} onMention={onMention} onStartAt={onStartAt} onNewFolderAt={onNewFolderAt} touched={touched} tick={filesTick} say={say} active={activeDoc} />
+      <Tree bot={bot} phone={phone} open={!!open.files} tog={() => tog('files')} onOpen={onOpenFile} onAttach={onAttach} onMention={onMention} onStartAt={onStartAt} onNewFolderAt={onNewFolderAt} touched={touched} tick={filesTick} say={say} active={activeDoc} />
     </div>
     <div className="divy" style={{ cursor: 'default' }} />
     {/* 지침 · 하네스 — 폴더에 딸린 것의 집 (V25). 설정의 «하네스» 칸은 훑는 표일 뿐이다 */}
@@ -458,7 +459,7 @@ function InboxSec({ open, tog, onSend }: { open: boolean; tog: () => void; onSen
 }
 
 /* ── 파일 트리 (게으른 로드) ── */
-function Tree({ bot, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFolderAt, touched, tick, say, active }: { bot: Bot; open: boolean; tog: () => void; onOpen: (rel: string, pin?: boolean) => void; onAttach: (rel: string, dir?: boolean) => void; onMention: (rel: string) => void; onStartAt: (vaultRel: string, botId?: string) => void; onNewFolderAt: (vaultRel: string) => void; touched: string[]; tick?: number; say: (m: string) => void; active: string | null }) {
+function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFolderAt, touched, tick, say, active }: { bot: Bot; phone?: boolean; open: boolean; tog: () => void; onOpen: (rel: string, pin?: boolean) => void; onAttach: (rel: string, dir?: boolean) => void; onMention: (rel: string) => void; onStartAt: (vaultRel: string, botId?: string) => void; onNewFolderAt: (vaultRel: string) => void; touched: string[]; tick?: number; say: (m: string) => void; active: string | null }) {
   const [dirs, setDirs] = useState<Record<string, Node[]>>({})
   const [exp, setExp] = useState<Set<string>>(() => { try { return new Set(JSON.parse(localStorage.getItem(`fb:tree:${bot.id}`) ?? '[""]')) } catch { return new Set(['']) } })
   const [sort, setSort] = useState<'name' | 'mtime'>(() => (localStorage.getItem('fb:tsort') as 'name' | 'mtime') || 'name')
@@ -541,7 +542,7 @@ function Tree({ bot, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFol
   }
   const reveal = async (n: Node) => {
     // ⛔ 훅을 콜백 안에서 부르지 않는다 — 호스트 이름은 컴포넌트에서 미리 받아 둔다
-    try { await api(`/bots/${bot.id}/reveal`, { body: { rel: n.rel } }); if (!main) say(`${hostName} 의 Finder 에서 열었어요`) } catch (e) { say((e as Error).message) }
+    await openOnThisDevice(bot, n.rel, 'reveal', { main, hostName, phone: !!phone, say })   // 원격이면 이 기기의 Finder (E)
   }
   /**
    * 이미지 복사 — 🔴 **그림 그대로** 클립보드에. 경로를 복사해 봐야 붙여넣는 쪽은 글자를 받는다.
@@ -708,7 +709,7 @@ function Tree({ bot, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFol
         *    **어디서 열리는지**를 먼저 말한다(문서 도구줄의 「메인 맥에서 열기」와 같은 규칙).
         * ⛔ 숨기지 마라 — 안 보이면 «이 앱엔 없는 기능» 이 되고, 그건 있는 기능을 잃는 것이다.
         */}
-      <button onClick={() => void reveal(ctx.n)}><span style={{ flex: 1 }}>{main ? 'Finder 에서 보기' : '메인 맥에서 Finder 로 보기'}</span>{main ? null : <span className="k">메인에서</span>}</button>
+      <button onClick={() => void reveal(ctx.n)}><span style={{ flex: 1 }}>Finder 에서 보기</span>{main ? null : <span className="k">{localBridge() ? '이 기기' : phone ? '맥에서만' : '내려받기'}</span>}</button>
       <hr />
       <button onClick={() => void makeNew(ctx.n, 'note')}><Icon n="doc" size={12} /><span style={{ flex: 1 }}>새 노트</span></button>
       <button onClick={() => void makeNew(ctx.n, 'folder')}><Icon n="folder" size={12} /><span style={{ flex: 1 }}>새 폴더</span></button>

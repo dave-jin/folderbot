@@ -24,16 +24,16 @@
 - [ ] D-완료기준 · 표시에 그 파일의 볼트 기준 경로가 보인다
 - [ ] D-완료기준 · 볼트 밖 경로는 거부 메시지가 뜬다
 - [ ] D-완료기준 · 폴더 안 파일의 기존 동작은 바뀌지 않았다
-- [ ] E. 원격에서 파일 열기 — 그 기기에서 동작 (1안 확정) — 🔄 구현 착수 (요청서의 1안 확정을 승인으로 봄 · 세부 결정 2개는 보고에 명시)
-- [ ] E-완료기준 · 호스트에서는 세 버튼이 지금처럼 그 맥에서 바로 열린다(설정 화면 없음)
-- [ ] E-완료기준 · 원격 최초 실행 온보딩에 「이 기기에서 파일 열기」 단계가 있고 동기화 볼트가 자동 탐색된다
-- [ ] E-완료기준 · ① 모드: Finder·외부에서 열기·앱으로 열기가 그 기기에서 연다
-- [ ] E-완료기준 · ① 모드: 호스트와 다르면 신선도 안내, 기본 [기다렸다 열기], 도착하면 자동으로 열린다
-- [ ] E-완료기준 · ② 모드: 캐시로 내려받아 열리고 탭에 「사본」 배지, 캐시는 Dropbox 폴더 밖
-- [ ] E-완료기준 · 설정 › 이 기기 에서 모드를 바꾸면 즉시 반영된다
-- [ ] E-완료기준 · iCloud `.icloud` 자리표시자를 내려받은 뒤 연다
-- [ ] E-완료기준 · 껍데기 폴더(`Dropbox-Cbsjin/…/PARA`)를 후보 1순위로 올리지 않는다
-- [ ] E-완료기준 · 위 여덟에 테스트가 있다(임시 디렉터리)
+- [x] E. 원격에서 파일 열기 — 그 기기에서 동작 (1안 확정) → 처방: 한 함수 `client/localOpen.openOnThisDevice(bot, rel, 'open'|'reveal')` — 메인은 종전대로 호스트가, 원격 Electron 은 기기 설정대로 ①동기화 볼트(신선도 = 크기+앞 64KB 해시 · 다르면 시트 기본 [기다렸다 열기] · iCloud 자리표시자는 `brctl download` 뒤 대기) ②호스트에서 받아 `<userData>/remote-cache/<호스트>/<rel>` 로. 셸 `desktop/localfs.js`(탐색·순위·stat·기다림·캐시) + IPC/preload `local.*` + `settings.json openMode/vaultLocal` · 호스트 `GET /bots/:id/stat` · 온보딩 관문 「이 기기에서 파일 열기」 단계(원격만) · 설정 › 기기 두 줄. ⚠ 요청서의 «앱으로 열기» 는 이 앱에 없는 버튼이라(«기본 앱으로 열기» 하나) 트리 «Finder 에서 보기» 와 문서 «열기» 둘을 연결했고, «외부에서 열기 ↗» 는 G 의 미리보기 없음 화면에서 같은 함수로 연결한다
+- [x] E-완료기준 · 호스트에서는 세 버튼이 지금처럼 그 맥에서 바로 열린다(설정 화면 없음) → 메인이면 `openOnThisDevice` 가 종전 `/open`·`/reveal` 로 · 설정 줄은 원격에만 · 스모크 «메인은 그대로»
+- [x] E-완료기준 · 원격 최초 실행 온보딩에 「이 기기에서 파일 열기」 단계가 있고 동기화 볼트가 자동 탐색된다 → `perms.list` 가 원격일 때 `local-open` 줄을 넣고 관문 안에서 `LocalOpenPicker` 가 `detect(호스트 루트)` · 스모크
+- [x] E-완료기준 · ① 모드: Finder·외부에서 열기·앱으로 열기가 그 기기에서 연다 → 트리 «Finder 에서 보기» → `shell.showItemInFolder` · 문서 «열기» → `shell.openPath` (가짜 브리지 호출 기록으로 검증)
+- [x] E-완료기준 · ① 모드: 호스트와 다르면 신선도 안내, 기본 [기다렸다 열기], 도착하면 자동으로 열린다 → `LocalOpenHost` 시트(autoFocus 기다렸다 열기) → `local.wait`(폴더 감시+폴링) → 열기 · 스모크 wait→reveal 순서
+- [x] E-완료기준 · ② 모드: 캐시로 내려받아 열리고 탭에 「사본」 배지, 캐시는 Dropbox 폴더 밖 → `local.download` → `cachePath(userData…)`(유닛: `..` 못 올라감) · 문서 탭 `.scp.copy` · 스모크
+- [x] E-완료기준 · 설정 › 이 기기 에서 모드를 바꾸면 즉시 반영된다 → `useLocalSettings` + `fb:localcfg` 이벤트 · 스모크(배지 즉시 사라짐)
+- [x] E-완료기준 · iCloud `.icloud` 자리표시자를 내려받은 뒤 연다 → `localfs.stat` 이 `.<이름>.icloud` 를 보고 placeholder → `icloud`(brctl) → wait → 열기 · 유닛+스모크
+- [x] E-완료기준 · 껍데기 폴더(`Dropbox-Cbsjin/…/PARA`)를 후보 1순위로 올리지 않는다 → `localfs.rank`: realpath 로 합치고 파일 수 내림차순, 적으면 `shell` 표시 · 유닛(임시 홈 재현)+스모크 후보 순서
+- [x] E-완료기준 · 위 여덟에 테스트가 있다(임시 디렉터리) → `test/unit/localfs.test.ts` 5 · `test/unit/localOpen.test.ts` 3 · 스모크 «원격에서 파일 열기» 블록
 - [x] F. 레일의 봇 이름을 폴더명에서 파생 (1안 확정) → 처방: `core/botName.ts` 파서(`parseFolderName`·`dueChip`) · `Registry.toBot` 이 `displayName·kind·due` 를 싣고 봇 폴더 CLAUDE.md frontmatter `display_name:` 으로 덮음(mtime 캐시 · 파일이 바뀌면 레일도 갱신) · 레일 `BotName`(제목 굵게 · 태그 · 날짜 칩, 안 들어가면 태그부터 접음) · 헤더·폰 홈·호버 카드 동일 · `bots_list.displayName`
 - [x] F-완료기준 · 예시 6개가 파서 테스트로 통과한다 → `test/unit/botName.test.ts` 11건
 - [x] F-완료기준 · 규칙 밖 폴더명이 빈 이름이나 오류 없이 그대로 보인다 → 파서가 title 로 통째 반환 · 스모크 `제품_Rondo` 검사

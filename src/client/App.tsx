@@ -19,6 +19,7 @@ import { fmtTime, useStore } from './store'
 import { ACT_ICON, FOLDER_SWIPE, navOf, type SwipeAct } from './swipe'
 import { SwipeRow } from './SwipeRow'
 import { dueChip } from '../core/botName'
+import { LocalOpenHost } from './localOpen'
 import { ICON_PX, useIconSize, useTheme } from './theme'
 import { UsageCard, UsageStrip, useUsage } from './Usage'
 import { PermGate, usePerms } from './Perms'
@@ -636,6 +637,7 @@ function Main() {
       toggle={(w) => { if (w === 'sb') setLay((l) => ({ ...l, sbOpen: !l.sbOpen })); else if (w === 'rp') setLay((l) => ({ ...l, rpOpen: !l.rpOpen })); else setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] })) }} /> : null}
     <AskHost />
     <ConfirmHost />
+    <LocalOpenHost />
     <DiffHost />
     <AgentPickHost />
     {toast ? <div className="toast">{toast}</div> : null}

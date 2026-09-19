@@ -3,6 +3,7 @@ import { FolderBot, Icon } from './FolderBot'
 import { Mark } from './Brand'
 import { api } from './api'
 import { useStore } from './store'
+import { LocalOpenPicker } from './localOpen'
 import type { ProviderId } from '../core/agents'
 
 /** 데스크톱 셸이 재 주는 권한 한 줄 */
@@ -54,7 +55,7 @@ export function PermGate({ items, onDone, refresh }: { items: PermRow[]; onDone:
         {!done ? <>
           <p className="why">{m.why}</p>
           <ol className="how">{m.how.map((h, i) => <li key={i}>{h}</li>)}</ol>
-          <div className="acts">
+          {p.id === 'local-open' ? <LocalOpenPicker root={useStore().s.root} onDone={() => void refresh()} /> : <div className="acts">
             {p.probeable ? <>
               <button className="btn" onClick={() => void openPane(p.id)}>시스템 설정 열기 ↗</button>
               <button className="btn" onClick={() => void refresh()}>다시 확인</button>
@@ -64,7 +65,7 @@ export function PermGate({ items, onDone, refresh }: { items: PermRow[]; onDone:
               {tested || p.status === 'missing' ? <><button className="btn on" onClick={() => void ack(p.id, true)}>보였어요</button><button className="btn" onClick={() => void ack(p.id, false)}>안 보여요</button></> : null}
               <button className="btn" onClick={() => void openPane(p.id)}>시스템 설정 열기 ↗</button>
             </>}
-          </div>
+          </div>}
         </> : null}
       </div> })}
     </div>

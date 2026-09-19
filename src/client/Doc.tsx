@@ -14,6 +14,7 @@ import { Icon, Mid } from './FolderBot'
 import { Md } from './Sheets'
 import { Float, anchorOf, type Anchor } from './Float'
 import { fmtTime, useStore } from './store'
+import { openOnThisDevice, useLocalSettings } from './localOpen'
 
 /** 문서 탭 — 봇별로 기억. 미리보기 탭(pinned=false)은 다음 클릭에 바뀐다 */
 export interface DocTab { rel: string; pinned: boolean }
@@ -43,7 +44,9 @@ interface DocData { kind: string; text?: string; size?: number; mtime?: number; 
 
 /** 문서 열 — 헤더(탭) · 툴바(폴더/파일 · 위치 · ⋯) · 본문. 편집은 자동 저장, 봇이 고치면 한 줄 배너 */
 export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, onAttach, say, phone, onBack }: { bot: Bot; docs: DocsApi; filesTick?: number; onTalk: (rel: string) => void; onHide: () => void; wide: boolean; onWide: () => void; onAttach: (rel: string) => void; say: (m: string) => void; phone?: boolean; onBack?: () => void }) {
-  const main = useStore().s.device.main   // ⚠ «외부 앱» 은 언제나 호스트에서 열린다 — 원격이면 이름을 바꾼다
+  const { device, hostName } = useStore().s; const main = device.main   // 원격이면 «이 기기에서» 연다(localOpen.openOnThisDevice) — E
+  const [lcfg] = useLocalSettings()
+  const openHere = () => void openOnThisDevice(bot, rel!, 'open', { main, hostName, phone: !!phone, say })
   const rel = docs.active
   const [doc, setDoc] = useState<DocData | null>(null)
   const [err, setErr] = useState('')
@@ -187,7 +190,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
       <div className="tabs">{docs.tabs.slice(0, 6).map((t) => <button key={t.rel} className={`tab ${t.rel === docs.active ? 'on' : ''} ${t.pinned ? '' : 'pv'}`} onClick={() => docs.setActive(t.rel)} onDoubleClick={() => docs.pin(t.rel)} title={t.rel}>{t.rel.split('/').pop()}<span className="x" onClick={(e) => { e.stopPropagation(); docs.close(t.rel) }}><Icon n="x" size={9} /></span></button>)}{docs.tabs.length > 6 ? <span className="more">+{docs.tabs.length - 6}</span> : null}</div>
       <div className="acts"><button className={`ib ${wide ? 'on' : ''}`} onClick={onWide} title="넓게"><Icon n="expand" size={13} /></button><button className="ib" onClick={onHide} title="문서 열 접기 (⌘⇧D)"><Icon n="x" size={13} /></button></div>
     </div>
-    {rel ? <div className="dtb"><span>{dir}</span><span>/</span><span className="nm">{name}</span>
+    {rel ? <div className="dtb"><span>{dir}</span><span>/</span><span className="nm">{name}</span>{!main && lcfg && lcfg.openMode !== 'sync' ? <span className="scp copy" title="이 기기에서 «열기» 를 누르면 호스트에서 받은 사본을 열어요 — 고쳐도 되돌아가지 않아요">사본</span> : null}
       <span className="r">
         {sibs.length > 1 ? <><button className="nb" onClick={() => docs.open(sibs[(idx - 1 + sibs.length) % sibs.length])}><Icon n="back" size={10} /></button><span className="pos">{idx + 1} / {sibs.length}</span><button className="nb" style={{ transform: 'scaleX(-1)' }} onClick={() => docs.open(sibs[(idx + 1) % sibs.length])}><Icon n="back" size={10} /></button></> : null}
         {/* 모드가 없으니 알릴 상태도 없다 — 저장 중·실패일 때만 한 마디. ⛔ 「편집 중」 배지를 다시 만들지 마라 */}
@@ -197,9 +200,9 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
             원격이면 이름이 「메인 맥에서」 로 바뀐다. */}
         {/* 목차 (B4) — 제목이 둘 이상일 때만 나온다. 하나짜리 문서에 목차는 자리만 먹는다 */}
         {heads.length > 1 ? <button className={`ib ${toc ? 'on' : ''}`} title="목차" onClick={() => setToc(!toc)}><Icon n="list" size={13} /></button> : null}
-        <button className="ib" title={main ? '기본 앱으로 열기' : '메인 맥에서 열기'} onClick={async () => { try { await api(`/bots/${bot.id}/open`, { body: { rel } }); say(main ? '기본 앱으로 열었어요' : '메인 맥에서 열었어요') } catch (e) { say((e as Error).message) } }}><Icon n="open" size={13} /></button>
+        <button className="ib" title={main ? '기본 앱으로 열기' : '이 기기에서 열기'} onClick={openHere}><Icon n="open" size={13} /></button>
         <span style={{ position: 'relative' }}><button className="ib" title="더 보기" onClick={(e) => setMenu(menu ? null : anchorOf(e.currentTarget, { right: true }))}><Icon n="more" size={13} /></button>
-            {menu ? <Float at={menu} onClose={() => setMenu(null)}><div style={{ display: 'contents' }} onClick={() => setMenu(null)}><button onClick={() => onTalk(rel)}><Icon n="sub" size={13} /><span>봇에게 이 파일 말하기</span></button><button onClick={() => onAttach(rel)}><Icon n="plus" size={13} /><span>첨부로 보내기</span></button><button onClick={() => { void copySay(`${bot.abs}/${rel}`, say, '경로를 복사했어요') }}><Icon n="file" size={13} /><span>경로 복사</span></button><button onClick={async () => { try { await api(`/bots/${bot.id}/open`, { body: { rel } }); say(main ? '기본 앱으로 열었어요' : '메인 맥에서 열었어요') } catch (e) { say((e as Error).message) } }}><Icon n="open" size={13} /><span>{main ? '기본 앱으로 열기' : '메인 맥에서 열기'}</span>{main ? null : <span className="k">메인에서</span>}</button>
+            {menu ? <Float at={menu} onClose={() => setMenu(null)}><div style={{ display: 'contents' }} onClick={() => setMenu(null)}><button onClick={() => onTalk(rel)}><Icon n="sub" size={13} /><span>봇에게 이 파일 말하기</span></button><button onClick={() => onAttach(rel)}><Icon n="plus" size={13} /><span>첨부로 보내기</span></button><button onClick={() => { void copySay(`${bot.abs}/${rel}`, say, '경로를 복사했어요') }}><Icon n="file" size={13} /><span>경로 복사</span></button><button onClick={openHere}><Icon n="open" size={13} /><span>{main ? '기본 앱으로 열기' : '이 기기에서 열기'}</span></button>
               {main ? null : <a className="menu-a" href={raw(rel)} download style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="doc" size={13} /><span>이 기기로 내려받기</span></a>}
               <a className="menu-a" href={raw(rel)} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="open" size={13} /><span>새 창에서 열기</span></a><hr /><button onClick={() => docs.pin(rel)}><Icon n="doc" size={13} /><span>탭 고정</span><span className="k">더블클릭</span></button>
               {doc?.kind === 'text' ? <button onClick={() => setPrintHtml(marked.parse(draft || doc.text || '') as string)}><Icon n="file" size={13} /><span>PDF 로 저장</span></button> : null}
