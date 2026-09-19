@@ -74,6 +74,8 @@ export interface Bot {
   routines: RoutineDef[]
   /** 레일 맨 위 「고정」 칸에 두는 봇 — 최대 3개 (루프 3/10) */
   pinned?: boolean
+  /** 레일 자리를 누가 정했나 (A) — `user` 는 끌어 놓은 자리라 `bots_reorder` 가 못 건드린다 · `orchestrator` 는 도구가 놓은 자리 */
+  orderedBy?: 'user' | 'orchestrator'
 }
 
 export interface SessionInfo {
@@ -204,7 +206,7 @@ export interface NotifyEvent {
 /** SSE 프레임 */
 export type Frame =
   | { ev: 'hello'; version: string; serverTime: number }
-  | { ev: 'bots'; bots: Bot[] }
+  | { ev: 'bots'; bots: Bot[]; /** A · 오케스트레이터가 순서를 바꿨다 → 그 기기의 레일 정렬을 «직접» 으로 */ reorderedBy?: 'orchestrator' }
   | { ev: 'sessions'; botId: string; sessions: SessionInfo[] }
   | { ev: 'chat'; sessionId: string; item: ChatItem; replace?: boolean }
   | { ev: 'state'; sessionId: string; botId: string; state: SessionState }

@@ -34,8 +34,10 @@ export interface StateShape {
   online: 'on' | 'off'
   loaded: boolean
   filesTick: Record<string, number>
+  /** A · 오케스트레이터가 레일 순서를 바꾼 횟수 — 오를 때마다 이 기기의 정렬을 «직접» 으로 */
+  railReorder: number
 }
-const init: StateShape = { version: '', root: '', rules: null, rulesInstalled: false, bots: [], candidates: [], sessionsByBot: {}, chats: {}, pending: {}, todos: {}, auth: { verdict: 'unknown', checkedAt: 0 }, inbox: 0, notifications: [], vapidPublic: '', tailnet: null, addrs: [], port: 7373, devices: [], defaults: { model: 'claude-fable-5-1', effort: 'high' }, hostName: '', device: { id: '', name: '', main: false }, online: 'off', loaded: false, filesTick: {} }
+const init: StateShape = { version: '', root: '', rules: null, rulesInstalled: false, bots: [], candidates: [], sessionsByBot: {}, chats: {}, pending: {}, todos: {}, auth: { verdict: 'unknown', checkedAt: 0 }, inbox: 0, notifications: [], vapidPublic: '', tailnet: null, addrs: [], port: 7373, devices: [], defaults: { model: 'claude-fable-5-1', effort: 'high' }, hostName: '', device: { id: '', name: '', main: false }, online: 'off', loaded: false, filesTick: {}, railReorder: 0 }
 
 type Action = { type: 'state'; s: Partial<StateShape> } | { type: 'frame'; f: Frame } | { type: 'chat'; sessionId: string; items: ChatItem[]; pending: PermissionRequest[] } | { type: 'online'; v: 'on' | 'off' } | { type: 'todos'; botId: string; items: TodoItem[] } | { type: 'refiles' }
 
@@ -50,7 +52,7 @@ function reducer(s: StateShape, a: Action): StateShape {
     case 'frame': {
       const f = a.f
       switch (f.ev) {
-        case 'bots': return { ...s, bots: f.bots }
+        case 'bots': return { ...s, bots: f.bots, railReorder: f.reorderedBy ? s.railReorder + 1 : s.railReorder }
         case 'sessions': return { ...s, sessionsByBot: { ...s.sessionsByBot, [f.botId]: f.sessions }, pending: { ...s.pending, ...Object.fromEntries(f.sessions.map((x) => [x.id, x.pending])) } }
         case 'chat': {
           const cur = s.chats[f.sessionId]; if (!cur) return s

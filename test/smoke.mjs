@@ -2013,6 +2013,47 @@ try {
             const kept = (await api('/bots')).filter((b) => !b.orchestrator).map((b) => b.id)
             if (kept.length !== ids.length) fail('레일 차례: 낡은 목록을 보냈더니 봇이 사라졌다 ' + JSON.stringify(kept))
             if (kept[0] !== ids[0]) fail('레일 차례: 보낸 id 가 맨 앞으로 안 왔다 ' + JSON.stringify(kept))
+            /**
+             * A · **오케스트레이터가 순서를 정한다 — `bots_reorder`** (2026-09-19, 추천안 승인).
+             * ① 사람이 끌어 놓은 봇(`moved`)은 도구가 못 건드린다 ② 없는 rel 이 섞이면 실패·그대로
+             * ③ `bots_list` 에 order·orderedBy ④ 재정렬이 오면 이 기기의 정렬이 «직접» 으로 ⑤ 레일 메뉴 «순서 고정 해제»
+             * ⑥ restore 는 첫 재정렬 전으로. (재시작 후 유지는 test/unit/registry.test.ts — bots.yml 을 다시 읽는다)
+             */
+            {
+              await api('/bots/reorder', { ids, moved: ids[1] })                       // ids[1] 을 «끌어» 1번 칸에 — 사람이 정한 자리
+              const rels = (await api('/bots')).filter((b) => !b.orchestrator).map((b) => b.rel)
+              const call = async (args) => (await (await fetch(base + '/mcp/orch', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'bots_reorder', arguments: args } }) })).json()).result
+              const bad = await call({ order: [rels[0], '2. Projects/없는폴더'] })
+              if (!bad.isError || !/없는폴더/.test(bad.content[0].text)) fail('A: 없는 rel 이 섞였는데 실패하지 않았다 ' + JSON.stringify(bad))
+              if (JSON.stringify((await api('/bots')).filter((b) => !b.orchestrator).map((b) => b.id)) !== JSON.stringify(ids)) fail('A: 실패했는데 순서가 바뀌었다')
+              await pg.click('.sortbar button:has-text("이름")'); await wait(200)
+              const rev = [...rels].reverse()
+              const r1 = await call({ order: rev }); if (r1.isError) fail('A: bots_reorder ' + r1.content[0].text)
+              const got = (await api('/bots')).filter((b) => !b.orchestrator)
+              const free = rev.map((r) => ids[rels.indexOf(r)]).filter((id) => id !== ids[1]); const want = ids.map((_, i) => (i === 1 ? ids[1] : free.shift()))  // 1번 칸은 사람이 정한 자리
+              if (JSON.stringify(got.map((b) => b.id)) !== JSON.stringify(want)) fail('A: 끌어 놓은 봇이 자리를 안 지켰거나 차례가 틀리다 ' + JSON.stringify({ want, got: got.map((b) => b.id) }))
+              if (got[1].orderedBy !== 'user' || got[0].orderedBy !== 'orchestrator') fail('A: orderedBy ' + JSON.stringify(got.map((b) => b.orderedBy)))
+              const bl = JSON.parse((await mcp('tools/call', { name: 'bots_list', arguments: {} })).result.content[0].text).filter((b) => b.rel)
+              if (bl.some((b, i) => b.order !== i) || bl[1].orderedBy !== 'user' || bl[0].orderedBy !== 'orchestrator') fail('A: bots_list order/orderedBy ' + JSON.stringify(bl.map((b) => [b.order, b.orderedBy])))
+              await wait(600)
+              const sortOn = await pg.evaluate(() => document.querySelector('.sortbar button.on')?.textContent)
+              if (sortOn !== '직접') fail('A: 재정렬이 왔는데 정렬이 «직접» 으로 안 바뀌었다 · ' + sortOn)
+              const shown = await pg.evaluate(() => [...document.querySelectorAll('.sb-list .brow')].map((e) => e.dataset.id || e.getAttribute('data-id')).filter(Boolean))
+              // 레일은 섹션(PARA)을 지키므로 **섹션 안의 상대 차례**만 본다
+              for (const sec of new Set(got.map((b) => b.section))) { const inSec = (id) => got.find((b) => b.id === id)?.section === sec; if (JSON.stringify(shown.filter(inSec)) !== JSON.stringify(want.filter(inSec))) fail('A: 레일이 새 차례를 안 그린다 · ' + sec + ' ' + JSON.stringify({ shown: shown.filter(inSec), want: want.filter(inSec) })) }
+              // ⑤ 끌어 놓은 봇의 메뉴에만 «순서 고정 해제»
+              await pg.evaluate((id) => { const el = document.querySelector(`.sb-list .brow[data-id="${id}"]`); el?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 200 })) }, ids[1]); await wait(200)
+              if (!(await pg.$('.menu.ctx button.unfix'))) fail('A: 끌어 놓은 봇 메뉴에 «순서 고정 해제» 가 없다')
+              await pg.click('.menu.ctx button.unfix'); await wait(400)
+              if ((await api('/bots')).find((b) => b.id === ids[1]).orderedBy) fail('A: 고정 해제가 안 됐다')
+              await pg.evaluate((id) => { const el = document.querySelector(`.sb-list .brow[data-id="${id}"]`); el?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 200 })) }, ids[0]); await wait(200)
+              if (await pg.$('.menu.ctx button.unfix')) fail('A: 도구가 놓은 봇에 «순서 고정 해제» 가 떴다')
+              await pg.keyboard.press('Escape'); await wait(100)
+              const r2 = await call({ restore: true }); if (r2.isError) fail('A: restore ' + r2.content[0].text)
+              const back = (await api('/bots')).filter((b) => !b.orchestrator)
+              if (JSON.stringify(back.map((b) => b.id)) !== JSON.stringify(ids) || back.some((b) => b.orderedBy)) fail('A: restore 가 첫 재정렬 전으로 안 돌아갔다 ' + JSON.stringify(back.map((b) => [b.id, b.orderedBy])))
+              ok('A bots_reorder — 없는 rel 실패·그대로 · 끌어 놓은 자리 유지 · bots_list order/orderedBy · 정렬 «직접» 자동 · 순서 고정 해제 · restore')
+            }
           }
           await pg.click('.sortbar button:has-text("직접")'); await wait(400)
           if (!(await namesOf()).length) fail('직접 정렬: 목록이 비었다')

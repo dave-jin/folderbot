@@ -26,6 +26,7 @@ const ORCH: Tool[] = [
   { name: 'bots_candidates', description: '봇 후보 폴더(규칙의 active 글롭에 맞는 폴더)를 최근 수정순으로. 하네스 유무·활성 여부 포함.', inputSchema: obj({}) },
   { name: 'bot_start', description: '폴더에서 봇을 시작한다. 하네스가 없으면 깔아 준다. rel 은 루트 기준 상대 경로.', inputSchema: obj({ rel: { type: 'string' } }, ['rel']) },
   { name: 'bot_stop', description: '봇을 정지(휴면)한다. 기록은 남는다.', inputSchema: obj({ bot: { type: 'string' } }, ['bot']) },
+  { name: 'bots_reorder', description: '레일(폴더 목록)의 봇 순서를 정한다. order 는 위에서부터 놓을 rel 목록 — 안 준 봇은 기존 차례로 뒤에 붙는다. 모르는 rel 이 하나라도 있으면 실패하고 순서는 그대로다. 사람이 끌어 놓은 봇(bots_list 의 orderedBy=user)은 자리를 지킨다. restore:true 는 처음 순서로 되돌린다.', inputSchema: obj({ order: { type: 'array', items: { type: 'string' }, description: '루트 기준 상대 경로(rel) 목록, 위에서부터' }, restore: { type: 'boolean', description: '처음 순서로 되돌리기' } }) },
   { name: 'bot_retire', description: '봇 폴더를 archive 로 옮기고 은퇴시킨다. ⚠ 사람의 승인 뒤에만.', inputSchema: obj({ bot: { type: 'string' } }, ['bot']) },
   { name: 'folder_create', description: '활성 범주(section)에 새 폴더를 만들고 하네스를 깐다. naming 규칙 적용. ⚠ 사람의 승인 뒤에만.', inputSchema: obj({ section: { type: 'string', description: '예: "2. Projects"' }, name: { type: 'string' }, start: { type: 'boolean', description: '만든 뒤 봇도 시작' } }, ['section', 'name']) },
   { name: 'bot_send', description: '봇에게 지시를 보낸다 — 새 세션을 만들거나(session 생략) 기존 세션에 이어 보낸다. 결과는 bot_sessions 로 본다.', inputSchema: obj({ bot: { type: 'string' }, text: { type: 'string' }, session: { type: 'string' }, name: { type: 'string', description: '새 세션 이름' } }, ['bot', 'text']) },
@@ -59,11 +60,19 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
   const s = (k: string) => (typeof a[k] === 'string' ? (a[k] as string) : '')
   const findBot = (q: string) => reg.bots().find((b) => b.id === q || b.name === q || b.rel === q || b.name.toLowerCase() === q.toLowerCase())
   switch (name) {
-    case 'bots_list': return reg.bots().map((b) => { const ss = host.sessions.list(b.id); return { id: b.id, name: b.name, displayName: b.displayName, rel: b.rel, sessions: ss.length, awaiting: ss.filter((x) => x.state === 'awaiting_input').length, running: ss.filter((x) => x.state === 'running').length, lastActivity: ss[0]?.lastActivity ?? null } })
+    case 'bots_list': return reg.bots().map((b, i) => { const ss = host.sessions.list(b.id); return { id: b.id, name: b.name, displayName: b.displayName, rel: b.rel, ...(b.orchestrator ? {} : { order: i - 1, orderedBy: b.orderedBy ?? null }), sessions: ss.length, awaiting: ss.filter((x) => x.state === 'awaiting_input').length, running: ss.filter((x) => x.state === 'running').length, lastActivity: ss[0]?.lastActivity ?? null } })
     case 'bots_candidates': return reg.candidates().map((c) => ({ rel: c.rel, section: c.section, harness: c.harness, active: c.active, modified: new Date(c.mtime).toISOString() }))
     case 'bot_status': { const b = findBot(s('bot')); if (!b) throw new Error('그런 봇이 없어요'); return host.sessions.list(b.id).map((x) => ({ id: x.id, name: x.name, state: x.state, lastActivity: new Date(x.lastActivity).toISOString(), pending: x.pending.map((p) => p.displayName) })) }
     case 'bot_sessions': { const b = findBot(s('bot')); if (!b) throw new Error('그런 봇이 없어요'); const list = host.sessions.list(b.id); const sess = s('session') ? list.find((x) => x.id === s('session') || x.name === s('session')) : list[0]; if (!sess) return '세션이 없어요'; const items = host.sessions.items(sess.id).slice(-(Number(a.limit) || 30)); return items.map((it) => it.kind === 'user' ? `[사용자] ${it.text}` : it.kind === 'assistant' ? `[봇] ${it.text}` : it.kind === 'tool' ? `[도구] ${it.name} ${it.summary}` : it.kind === 'result' ? `[턴 끝] ${it.ok ? 'ok' : '오류 ' + (it.error ?? '')}` : it.kind === 'system' ? `[시스템] ${it.text}` : '').filter(Boolean).join('\n') }
     case 'bot_start': { const b = reg.start(s('rel')); host.afterBotsChanged(); return `시작했어요: ${b.name} (${b.rel})` }
+    case 'bots_reorder': {
+      const order = Array.isArray(a.order) ? (a.order as unknown[]).map(String) : []
+      const restore = a.restore === true
+      if (!restore && !order.length) throw new Error('order 에 rel 을 하나 이상 주거나 restore:true 로 부르세요')
+      reg.reorderByAgent(order, restore)
+      const now = reg.bots().filter((b) => !b.orchestrator)
+      return `${restore ? '처음 순서로 되돌림' : '순서 바꿈'}: ${now.map((b, i) => `${i + 1}. ${b.rel}${b.orderedBy === 'user' ? ' (사람이 정한 자리)' : ''}`).join(' · ')}`
+    }
     case 'bot_stop': { const b = findBot(s('bot')); if (!b || b.orchestrator) throw new Error('정지할 수 없는 봇'); reg.stop(b.id); host.afterBotsChanged(); return `정지: ${b.name}` }
     case 'bot_retire': { const b = findBot(s('bot')); if (!b) throw new Error('그런 봇이 없어요'); const to = reg.retire(b.id); host.afterBotsChanged(); return `은퇴 · ${to} 로 옮겼어요` }
     case 'folder_create': { const rel = reg.createFolder(s('section'), s('name')); let msg = `만들었어요: ${rel} (하네스 설치됨)`; if (a.start) { const b = reg.start(rel); host.afterBotsChanged(); msg += ` · 봇 시작: ${b.name}` } return msg }

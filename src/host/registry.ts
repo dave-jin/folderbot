@@ -16,7 +16,9 @@ export function migrateStateDir(root: string): void {
   try { const oldDir = join(root, LEGACY_STATE_DIR), newDir = join(root, STATE_DIR); if (existsSync(oldDir) && !existsSync(newDir)) renameSync(oldDir, newDir) } catch { /* 다음 부팅에 다시 */ }
 }
 
-interface ActiveRec { id: string; rel: string; color: string; startedAt: number; vendor?: 'claude' | 'codex'; pinned?: boolean }
+interface ActiveRec { id: string; rel: string; color: string; startedAt: number; vendor?: 'claude' | 'codex'; pinned?: boolean; orderedBy?: 'user' | 'orchestrator' }
+/** 활성 목록 파일(`.folderbot/bots.yml`) — 줄 순서가 곧 레일 순서다 */
+interface ActiveFile { bots?: ActiveRec[]; orderBackup?: string[] }
 
 /** NFC 정규화 + realpath — 한글 경로(NFD) 사고 방지 */
 export function canon(p: string): string {
@@ -28,6 +30,8 @@ export class Registry extends EventEmitter {
   readonly root: string
   rules: FolderRules = PARA_PRESET
   private active: ActiveRec[] = []
+  /** 오케스트레이터가 처음 순서를 바꾸기 **전** 의 차례(rel) — `bots_reorder {restore:true}` 가 돌아갈 자리 (A) */
+  private orderBackup?: string[]
 
   constructor(root: string) {
     super()
@@ -164,15 +168,18 @@ export class Registry extends EventEmitter {
   private activeFile(): string { return join(this.root, STATE_DIR, 'bots.yml') }
   private loadActive(): void {
     try {
-      const y = parseYaml(readFileSync(this.activeFile(), 'utf8')) as { bots?: ActiveRec[] }
+      const y = parseYaml(readFileSync(this.activeFile(), 'utf8')) as ActiveFile
       this.active = (y?.bots ?? []).filter((b) => b && b.rel)
-    } catch { this.active = [] }
+      this.orderBackup = Array.isArray(y?.orderBackup) && y.orderBackup.length ? y.orderBackup.map(String) : undefined
+    } catch { this.active = []; this.orderBackup = undefined }
   }
-  private saveActive(): void {
+  /** `meta` 는 방송 프레임에 그대로 실린다 — 재정렬의 주체(`reorderedBy`)처럼 «왜 바뀌었나» 를 화면이 알아야 할 때 */
+  private saveActive(meta?: Record<string, unknown>): void {
     const dir = join(this.root, STATE_DIR)
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-    atomicWrite(this.activeFile(), stringify({ bots: this.active }))
-    this.emit('bots', this.bots())
+    const file: ActiveFile = { bots: this.active, ...(this.orderBackup ? { orderBackup: this.orderBackup } : {}) }
+    atomicWrite(this.activeFile(), stringify(file))
+    this.emit('bots', this.bots(), meta)
   }
   bots(): Bot[] {
     const orch: Bot = { id: ORCH_ID, rel: '', abs: this.root, name: '오케스트레이터', displayName: '오케스트레이터', section: '관제', color: ORCH_COLOR, orchestrator: true, startedAt: 0, vendor: 'claude', routines: this.orchRoutines() }
@@ -215,7 +222,7 @@ export class Registry extends EventEmitter {
     const abs = join(this.root, a.rel)
     if (!existsSync(abs)) return null
     const cfg = this.botConfig(abs)
-    return { id: a.id, rel: a.rel, abs, name: this.botName(a), ...this.display(a, abs), section: a.rel.split('/')[0] === a.rel ? '' : a.rel.split('/')[0], color: cfg.color ?? a.color, orchestrator: false, startedAt: a.startedAt, vendor: a.vendor ?? cfg.vendor ?? 'claude', repo: cfg.repo ? resolve(abs, cfg.repo.replace(/^~/, process.env.HOME ?? '')) : undefined, routines: cfg.routines ?? [] , pinned: a.pinned}
+    return { id: a.id, rel: a.rel, abs, name: this.botName(a), ...this.display(a, abs), section: a.rel.split('/')[0] === a.rel ? '' : a.rel.split('/')[0], color: cfg.color ?? a.color, orchestrator: false, startedAt: a.startedAt, vendor: a.vendor ?? cfg.vendor ?? 'claude', repo: cfg.repo ? resolve(abs, cfg.repo.replace(/^~/, process.env.HOME ?? '')) : undefined, routines: cfg.routines ?? [], pinned: a.pinned, orderedBy: a.orderedBy }
   }
   bot(id: string): Bot | undefined { return this.bots().find((b) => b.id === id) }
   botByRel(rel: string): Bot | undefined { return this.bots().find((b) => b.rel === rel) }
@@ -259,13 +266,65 @@ export class Registry extends EventEmitter {
    * ⚠ **모르는 id 는 무시하고, 빠진 것은 뒤에 붙인다.** 화면이 낡은 목록을 보냈을 때 봇이 사라지면 안 된다.
    * ⚠ 오케스트레이터는 이 목록에 없다 — 레일에서 늘 맨 위이고 끌 수 없다.
    */
-  reorder(ids: string[]): void {
+  reorder(ids: string[], movedId?: string): void {
     const want = ids.filter((id, i) => ids.indexOf(id) === i)
     const by = new Map(this.active.map((a) => [a.id, a]))
     const next = want.map((id) => by.get(id)).filter((a): a is ActiveRec => !!a)
     const seen = new Set(next.map((a) => a.id))
     for (const a of this.active) if (!seen.has(a.id)) next.push(a)
     this.active = next
+    // A · 사람이 **끌어 놓은** 봇은 «사람이 정한 자리» — 오케스트레이터의 bots_reorder 가 그 칸을 건드리지 않는다
+    const moved = movedId ? by.get(movedId) : undefined
+    if (moved) moved.orderedBy = 'user'
+    this.saveActive()
+  }
+  /**
+   * A · **오케스트레이터가 레일 순서를 정한다** (`bots_reorder` · 2026-09-19).
+   *
+   * 🔴 **모르는 rel 이 하나라도 섞이면 통째로 실패한다** — 사람의 드래그(`reorder`)는 낡은 화면을 봐주지만,
+   *    도구는 잘못 부른 것이라 반쯤 적용하면 «왜 이렇게 됐지» 가 된다. 실패하면 순서는 그대로다.
+   * 🔴 **사람이 끌어 놓은 봇(`orderedBy:'user'`)은 자리를 지킨다** — 그 칸(index)은 비워 두고 나머지 칸에
+   *    도구가 준 차례 → 안 준 것(기존 차례) 순으로 채운다. 풀려면 레일 메뉴 «순서 고정 해제»(`unfix`).
+   * ⚠ 첫 재정렬 전의 차례를 `orderBackup` 으로 남긴다 — `restore` 가 거기로 돌리고 표식을 전부 지운다.
+   */
+  reorderByAgent(order: string[], restore = false): void {
+    if (restore) {
+      if (this.orderBackup) {
+        const by = new Map(this.active.map((a) => [a.rel, a]))
+        const next = this.orderBackup.map((r) => by.get(r)).filter((a): a is ActiveRec => !!a)
+        const seen = new Set(next.map((a) => a.rel))
+        for (const a of this.active) if (!seen.has(a.rel)) next.push(a)
+        this.active = next
+      }
+      for (const a of this.active) delete a.orderedBy
+      this.orderBackup = undefined
+      this.saveActive({ reorderedBy: 'orchestrator' })
+      return
+    }
+    const byRel = new Map(this.active.map((a) => [a.rel, a]))
+    const byId = new Map(this.active.map((a) => [a.id, a]))
+    const picked: ActiveRec[] = []
+    for (const raw of order) {
+      const q = String(raw).replace(/^\/+|\/+$/g, '').normalize('NFC')
+      const a = byRel.get(q) ?? byId.get(q) ?? this.active.find((x) => basename(x.rel) === q)
+      if (!a) throw new Error(`그런 봇이 없어요: ${raw}`)
+      if (!picked.includes(a)) picked.push(a)
+    }
+    if (!this.orderBackup) this.orderBackup = this.active.map((a) => a.rel)
+    const fixed = new Map<number, ActiveRec>()
+    this.active.forEach((a, i) => { if (a.orderedBy === 'user') fixed.set(i, a) })
+    const free = [...picked.filter((a) => a.orderedBy !== 'user'), ...this.active.filter((a) => a.orderedBy !== 'user' && !picked.includes(a))]
+    const next: ActiveRec[] = []
+    for (let i = 0; i < this.active.length; i++) { const f = fixed.get(i); next.push(f ?? free.shift()!) }
+    for (const a of next) if (a.orderedBy !== 'user') a.orderedBy = picked.includes(a) ? 'orchestrator' : undefined
+    this.active = next
+    this.saveActive({ reorderedBy: 'orchestrator' })
+  }
+  /** 사람이 정한 자리 풀기 — 다음 bots_reorder 부터 도구가 옮길 수 있다 */
+  unfix(id: string): void {
+    const a = this.active.find((x) => x.id === id)
+    if (!a) throw new Error('그런 봇이 없어요')
+    delete a.orderedBy
     this.saveActive()
   }
   /**
@@ -439,6 +498,7 @@ export const ORCHESTRATOR_MD = `# 오케스트레이터
 4. Inbox 를 정리한다 — inbox_list 로 보고, 규칙(역할·naming)대로 어디로 옮길지 제안한다. 옮기는 것(folder_move)은 사람이 승인한 뒤에만.
 5. 봇에게 일을 시킨다 — bot_send 로 그 봇에 세션을 만들어 지시한다. 결과는 bot_sessions 로 본다.
 6. 완료된 프로젝트는 은퇴(bot_retire)를 제안한다. 실행은 승인 뒤에.
+7. 레일(폴더 목록) 순서를 정한다 — bots_reorder {order:[rel…]} 로 위에서부터 배치한다(안 준 것은 뒤에 기존 차례로). bots_list 의 order·orderedBy 로 현재 차례를 본다. 사람이 끌어 놓은 봇(orderedBy=user)은 자리를 지키고, {restore:true} 는 처음 차례로 돌린다.
 
 ## 자율 범위
 - 읽기·조사·분류 제안·봇 시작/정지는 알아서 한다.

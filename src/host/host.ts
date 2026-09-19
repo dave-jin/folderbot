@@ -65,7 +65,7 @@ export class Host {
   }
 
   private wire(): void {
-    this.registry.on('bots', (bots: Bot[]) => { this.broadcast({ ev: 'bots', bots }); this.routines.reschedule(bots); this.watcher.sync(bots) })
+    this.registry.on('bots', (bots: Bot[], meta?: { reorderedBy?: 'orchestrator' }) => { this.broadcast({ ev: 'bots', bots, ...(meta ?? {}) }); this.routines.reschedule(bots); this.watcher.sync(bots) })
     this.sessions.on('sessions', (botId: string) => this.broadcast({ ev: 'sessions', botId, sessions: this.sessions.list(botId) }))
     this.sessions.on('chat', (sessionId: string, item, replace: boolean) => this.broadcast({ ev: 'chat', sessionId, item, replace }))
     this.sessions.on('files', (botId: string) => this.broadcast({ ev: 'files', botId }))

@@ -4,13 +4,13 @@
 
 ## 요청 · 할 일
 
-- [ ] A. 오케스트레이터가 레일의 봇 순서를 정하는 도구 (`bots_reorder`) — 🔄 승인됨(추천안: 재정렬 오면 «직접» 자동 전환 · 안내는 orchestrator.md 만) · C→D→G 뒤에
-- [ ] A-완료기준 · 오케스트레이터 세션에서 `bots_reorder` 호출 → 레일이 즉시 바뀐다
-- [ ] A-완료기준 · 없는 rel 이 섞이면 실패하고 순서는 그대로다
-- [ ] A-완료기준 · 드래그로 고정한 봇은 `bots_reorder` 뒤에도 자리를 지킨다
-- [ ] A-완료기준 · 재시작 후 순서 유지
-- [ ] A-완료기준 · `bots_list` 에 `order`·`orderedBy` 가 나온다
-- [ ] A-완료기준 · 위 다섯에 테스트가 있다
+- [x] A. 오케스트레이터가 레일의 봇 순서를 정하는 도구 (`bots_reorder`) → 처방: `registry.reorderByAgent(order, restore)` — order 는 rel 목록(id·폴더명도 받음), 안 준 봇은 기존 차례로 뒤에. 사람이 끌어 놓은 봇은 `orderedBy:'user'`(드래그가 `moved` 를 보냄)로 칸을 지키고, 레일 우클릭·폰 시트의 「순서 고정 해제」(`POST /bots/unfix`)로 푼다. 첫 재정렬 전 차례는 `bots.yml` 의 `orderBackup` 에 남아 `{restore:true}` 가 돌린다. 재정렬 프레임(`bots.reorderedBy`)이 오면 그 기기의 레일 정렬이 «직접» 으로 자동 전환(추천안). 도구 안내는 `ORCHESTRATOR_MD` 「하는 일」 7번
+- [x] A-완료기준 · 오케스트레이터 세션에서 `bots_reorder` 호출 → 레일이 즉시 바뀐다 → `/mcp/orch` 도구 호출 → `saveActive` 가 `bots` 프레임을 방송 · 스모크가 레일의 섹션 안 차례로 확인
+- [x] A-완료기준 · 없는 rel 이 섞이면 실패하고 순서는 그대로다 → 반쯤 적용 없음 — 전부 풀어 본 뒤에 바꾼다(유닛·스모크)
+- [x] A-완료기준 · 드래그로 고정한 봇은 `bots_reorder` 뒤에도 자리를 지킨다 → 그 index 를 비워 두고 나머지 칸만 채운다(유닛·스모크)
+- [x] A-완료기준 · 재시작 후 순서 유지 → `bots.yml` 줄 순서 + `orderedBy`·`orderBackup` 이 파일에 남고 `new Registry(root)` 가 그대로 읽는다(유닛)
+- [x] A-완료기준 · `bots_list` 에 `order`·`orderedBy` 가 나온다 → 오케스트레이터를 뺀 0부터의 index · `user`/`orchestrator`/`null`(스모크)
+- [x] A-완료기준 · 위 다섯에 테스트가 있다 → `test/unit/registry.test.ts`(4) + `test/smoke.mjs` 「A bots_reorder」 블록
 - [ ] B. 채팅 입력창에서 글씨가 흔들린다 — ⏸ 재현 실패 · 사용자 답 대기 (2026-09-19 · `node test/repro-composer.mjs`) — 코드는 바꾸지 않았다
 - [x] B-완료기준 · 재현 조건이 문서로 남아 있다(재현 실패면 시도한 조건 목록) → 재현 실패. 헤드리스 Chromium(Linux) 에서 8조건 × (첫 5글자 사각형 이동 px · 이미 친 영역 100px 픽셀 변화 · 최종 글 일치) 전부 0/일치: ①영문 천천히(80ms)·넓게 1440 ②영문 빠르게(0ms) ③영문 좁게 700 ④한국어 IME 조합(CDP imeSetComposition, compositionstart/end) ⑤여러 줄로 넘어가는 순간(153키, 줄 늘어난 키는 제외) ⑥답변 스트리밍 중 영문 ⑦스트리밍 중 IME ⑧스트리밍 중 유리(backdrop-filter) 끔. 한계: 맥의 글꼴 안티앨리어싱(LCD↔그레이스케일 전환)·GPU 합성은 Linux 헤드리스로 재현 불가
 - [ ] B-완료기준 · 재현됐다면 같은 조건에서 흔들림이 사라진 것을 확인했다
@@ -124,8 +124,8 @@
 
 - B: 어느 조건에서 보이나요? ① 맥 데스크톱 앱 / 원격 맥 앱 / 폰 / 브라우저 탭 중 어디 ② 한글 조합 중인지 영문인지 ③ 답변이 오는 중인지 대기 중인지 ④ 입력창에 첨부 칩이 있을 때인지 ⑤ **맥 설정 › 손쉬운 사용 › 디스플레이 › «투명도 줄이기» 를 켜면 사라지나요?** (사라지면 유리(backdrop-filter) 위 글자 재래스터가 원인) ⑥ 가능하면 화면 녹화 1~2초.
 
-- A: 오케스트레이터가 순서를 바꿔도 레일 정렬이 «이름»(기기 기본값)이면 안 보인다 → 재정렬이 오면 그 기기의 정렬을 «직접» 으로 자동 전환할지(추천) / 힌트만 띄울지.
-- A-5: `refreshVaultGuide()` 는 존재하지 않는다(볼트 CLAUDE.md 에는 폴더 규칙 절만 자동 생성). 도구 한 줄은 `.claude/orchestrator.md`(ORCHESTRATOR_MD) 「하는 일」 에만 넣을지, 볼트 CLAUDE.md 에 도구표를 새로 만들지.
+- ~~A: 오케스트레이터가 순서를 바꿔도 레일 정렬이 «이름»(기기 기본값)이면 안 보인다 → 재정렬이 오면 그 기기의 정렬을 «직접» 으로 자동 전환할지(추천) / 힌트만 띄울지.~~ → 2026-09-19 «추천안으로» 승인 · 자동 전환으로 구현(해결)
+- ~~A-5: `refreshVaultGuide()` 는 존재하지 않는다 … 도구 한 줄은 `.claude/orchestrator.md`(ORCHESTRATOR_MD) 「하는 일」 에만 넣을지, 볼트 CLAUDE.md 에 도구표를 새로 만들지.~~ → 승인 · orchestrator.md 만(해결). ⚠ 이미 만들어진 볼트의 `.claude/orchestrator.md` 는 첫 생성 뒤 안 덮으므로 7번 줄이 자동으로 안 붙는다 — 도구 자체는 스키마 설명으로 보인다
 - C: ~~`rondo_open` 이름~~ → 추가 요청 J-3 이 `rondo_open`·`rondo_reveal` 로 명시했으므로 그 이름으로 만든다(해결). 남은 것: C 진입 함수·한 턴 한 번 규칙 자체의 승인.
 - D: «참조 폴더로 추가» 는 봇당 참조 폴더가 하나(`repo`)뿐이라, 이미 있으면 바꿔치기다 → 비어 있을 때만 추가하고 있으면 안내만 할지.
 

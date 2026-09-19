@@ -429,6 +429,10 @@ function Main() {
    */
   const [railSort, setRailSort] = useState<RailSort>(() => { try { return (localStorage.getItem(RAIL_SORT_KEY) as RailSort) || 'name' } catch { return 'name' } })
   useEffect(() => { try { localStorage.setItem(RAIL_SORT_KEY, railSort) } catch { /* */ } }, [railSort])
+  // A · 오케스트레이터가 `bots_reorder` 로 순서를 바꾸면 **이 기기의 정렬을 «직접» 으로 자동 전환**한다 (2026-09-19 Dave 추천안 승인).
+  //   안 그러면 기본값 «이름» 인 기기에서는 도구가 바꾼 차례가 **아예 안 보인다** — 도구는 성공했다는데 화면은 그대로.
+  const railReorderSeen = useRef(0)
+  useEffect(() => { if (s.railReorder > railReorderSeen.current) { const first = railReorderSeen.current === 0; railReorderSeen.current = s.railReorder; if (!first || railSort !== 'manual') { setRailSort('manual'); say('오케스트레이터가 레일 순서를 바꿨어요 — 정렬을 «직접» 으로 두었어요') } } }, [s.railReorder]) // eslint-disable-line react-hooks/exhaustive-deps
   const [dragBot, setDragBot] = useState<string | null>(null)
   const [overBot, setOverBot] = useState<string | null>(null)
   /**
@@ -447,7 +451,7 @@ function Main() {
     flat.splice(i, 1)
     flat.splice(flat.indexOf(targetId) + (j > i ? 1 : 0), 0, from)
     setRailSort('manual')
-    try { await api('/bots/reorder', { body: { ids: flat } }); await refresh() } catch (e) { say((e as Error).message) }
+    try { await api('/bots/reorder', { body: { ids: flat, moved: from } }); await refresh() } catch (e) { say((e as Error).message) }
   }
   /**
    * 레일 차례 — **섹션(PARA)은 그대로 두고 그 안에서만** 정한다 (2026-09-13 Dave:
@@ -603,7 +607,7 @@ function Main() {
         <div className="sb-list">
           {rows.map(([sec, list]) => <div key={sec}>
             <div className="secl">{sec === '관제' ? '관제' : sec}</div>
-            {list.map(({ b, sum }) => <button key={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''} ${overBot === b.id ? 'dover' : ''} ${dragBot === b.id ? 'dsrc' : ''}`}
+            {list.map(({ b, sum }) => <button key={b.id} data-id={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''} ${overBot === b.id ? 'dover' : ''} ${dragBot === b.id ? 'dsrc' : ''}`}
               draggable={!b.orchestrator}
               onDragStart={(e) => { setDragBot(b.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/x-fb-bot', b.id) }}
               onDragEnd={() => { setDragBot(null); setOverBot(null) }}
@@ -624,6 +628,7 @@ function Main() {
         {railCtx ? <Float at={{ x: railCtx.x, y: railCtx.y }} onClose={() => setRailCtx(null)} className="menu ctx"><div style={{ display: 'contents' }} onClick={() => setRailCtx(null)}>
           <div className="h">{railCtx.name}</div>
           <button onClick={async () => { const b = s.bots.find((x) => x.id === railCtx.id); try { await api('/bots/pin', { body: { id: railCtx.id, on: !b?.pinned } }); say(b?.pinned ? '고정을 풀었어요' : '맨 위에 고정했어요'); await refresh() } catch (e) { say((e as Error).message) } }}><Icon n="pin" size={13} /><span style={{ flex: 1 }}>{s.bots.find((x) => x.id === railCtx.id)?.pinned ? '고정 풀기' : '맨 위에 고정'}</span><span className="k">3개까지</span></button>
+          {s.bots.find((x) => x.id === railCtx.id)?.orderedBy === 'user' ? <button className="unfix" onClick={async () => { try { await api('/bots/unfix', { body: { id: railCtx.id } }); say('순서 고정을 풀었어요 — 오케스트레이터가 옮길 수 있어요'); await refresh() } catch (e) { say((e as Error).message) } }}><Icon n="sort" size={13} /><span style={{ flex: 1 }}>순서 고정 해제</span><span className="k">끌어 놓은 자리</span></button> : null}
           <button onClick={async () => { try { await api(`/bots/${railCtx.id}/stop`, { body: {} }); say(`${railCtx.name} 을 레일에서 덜어냈어요 — 폴더는 그대로예요`); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="x" size={13} /><span style={{ flex: 1 }}>지우기 (연결 해지)</span><span className="k">폴더 유지</span></button>
           <button onClick={async () => { if (!confirm(`${railCtx.name} 을 Archive 로 옮기고 은퇴시킬까요? 세션 기록은 보관돼요.`)) return; try { const r = await api<{ to: string }>(`/bots/${railCtx.id}/retire`, { body: {} }); say(`${r.to} 로 은퇴`); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="archive" size={13} /><span style={{ flex: 1 }}>은퇴 (Archive 로)</span></button>
         </div></Float> : null}
@@ -828,6 +833,7 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say }: 
   const folderAct = async (b: Bot, a: SwipeAct) => {
     try {
       if (a === 'pin') { await api('/bots/pin', { body: { id: b.id, on: !b.pinned } }); say(b.pinned ? '고정을 풀었어요' : '맨 위에 고정했어요'); await refresh() }
+      else if (a === 'unfix') { await api('/bots/unfix', { body: { id: b.id } }); say('순서 고정을 풀었어요 — 오케스트레이터가 옮길 수 있어요'); await refresh() }
       else if (a === 'unlink') { await api(`/bots/${b.id}/stop`, { body: {} }); say(`${b.name} 을 레일에서 덜어냈어요 — 폴더는 그대로예요`); await refresh() }
       else if (a === 'retire') {
         if (!(await askConfirm({ title: `${b.name} 을 은퇴시킬까요?`, body: 'Archive 로 옮기고 레일에서 내려요. 세션 기록은 보관돼요.', ok: '은퇴' }))) return
@@ -858,7 +864,7 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say }: 
     {fsheet ? <><div className="backdrop" onClick={() => setFsheet(null)} /><div className="tsheet">
       <div className="grip" />
       <div className="ti">{fsheet.name}</div>
-      {([['pin', fsheet.pinned ? '고정 풀기' : '맨 위에 고정'], ['unlink', '지우기 (연결 해지) — 폴더는 그대로'], ['retire', '은퇴 (Archive 로)']] as [SwipeAct, string][]).map(([a, l]) => <button key={a} onClick={() => { const b = fsheet; setFsheet(null); void folderAct(b, a) }}><Icon n={ACT_ICON[a] as 'edit'} size={16} />{l}</button>)}
+      {([['pin', fsheet.pinned ? '고정 풀기' : '맨 위에 고정'], ...(fsheet.orderedBy === 'user' ? [['unfix', '순서 고정 해제 — 끌어 놓은 자리']] : []), ['unlink', '지우기 (연결 해지) — 폴더는 그대로'], ['retire', '은퇴 (Archive 로)']] as [SwipeAct, string][]).map(([a, l]) => <button key={a} onClick={() => { const b = fsheet; setFsheet(null); void folderAct(b, a) }}><Icon n={ACT_ICON[a] as 'edit'} size={16} />{l}</button>)}
     </div></> : null}
     <button className="mpill glassb" onClick={onAsk}><span className="pl"><Icon n="plus" size={20} /></span><span className="tx">폴더에 시키기…</span><Icon n="sub" size={20} color="var(--t2)" /></button>
   {uSheet && usage ? <><div className="backdrop" onClick={() => setUSheet(false)} /><div className="tsheet usheet"><div className="grip" /><UsageCard u={usage} /></div></> : null}</div>
