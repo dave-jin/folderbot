@@ -78,7 +78,14 @@ export async function subscribePush(vapidPublic: string, device: string): Promis
   } catch { return false }
 }
 
-export async function uploadFile(botId: string, file: File): Promise<{ rel: string; abs: string; size: number }> {
+export async function uploadFile(botId: string, file: File, onProgress?: (pct: number) => void): Promise<{ rel: string; abs: string; size: number }> {
   const data = await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] ?? ''); r.onerror = rej; r.readAsDataURL(file) })
-  return api(`/bots/${botId}/upload`, { body: { name: file.name, data } })
+  // N-3 · 진행 링 — fetch 는 올리는 진행을 못 주므로 XHR. 같은 JSON 몸통·같은 헤더
+  return new Promise((res, rej) => {
+    const x = new XMLHttpRequest(); x.open('POST', `/api/bots/${botId}/upload`)
+    x.setRequestHeader('content-type', 'application/json'); const t = token(); if (t) x.setRequestHeader('authorization', `Bearer ${t}`)
+    x.upload.onprogress = (e) => { if (onProgress && e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)) }
+    x.onload = () => { try { const j = JSON.parse(x.responseText || '{}'); if (x.status >= 200 && x.status < 300) res(j); else rej(new Error(j.error || `upload ${x.status}`)) } catch (e) { rej(e as Error) } }
+    x.onerror = () => rej(new Error('올리기 실패')); x.send(JSON.stringify({ name: file.name, data }))
+  })
 }

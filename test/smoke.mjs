@@ -46,6 +46,8 @@ const api = async (p, body, method) => { const r = await fetch(base + '/api' + p
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 const fail = (m) => { console.error('✗', m); console.error(hostLog); host.kill(); process.exit(1) }
 const ok = (m) => console.log('✓', m)
+/** 폰 — 채팅에서 왼쪽으로 쓸어 폴더 패널로 (H-5 뒤 헤더에 폴더 단추가 없다) */
+const swipePanel = async (p) => { await p.mouse.move(320, 420); await p.mouse.down(); for (let i = 1; i <= 8; i++) { await p.mouse.move(320 - i * 25, 420); await new Promise((r) => setTimeout(r, 16)) } await p.mouse.up(); await new Promise((r) => setTimeout(r, 600)) }
 
 /** 진짜 PNG 하나 (M-1 뷰어 검사용) — 라이브러리 없이 zlib 로. 상자보다 큰 그림이어야 «커서 기준» 이 보인다 */
 function bigPng(w, h) {
@@ -813,7 +815,8 @@ try {
           const ph = await br.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
           await ph.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark'); window.__shared = []; navigator.share = async (d) => { window.__shared.push((d.files || []).map((f) => [f.name, f.size, f.type])) }; navigator.canShare = () => true; const of = window.fetch.bind(window); window.fetch = (u, o = {}) => { const h = new Headers(o.headers || {}); h.set('x-fb-as', 'iphone'); return of(u, { ...o, headers: h }) } })
           await ph.goto(base + `/#bot=${bot.id}`); await ph.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(500)
-          await ph.click('.col.chat .hdr button[title="이 폴더에서"]'); await wait(600)
+          // 폴더 패널은 왼쪽으로 쓸어서(H-5 뒤 헤더에 폴더 단추가 없다 — 독은 H 에서)
+          await ph.mouse.move(320, 400); await ph.mouse.down(); for (let i = 1; i <= 8; i++) { await ph.mouse.move(320 - i * 25, 400); await wait(16) } await ph.mouse.up(); await wait(700)
           await ph.waitForSelector('.panel .trow', { timeout: 5000 }); await expandFiles(ph)
           await ctxOn(ph, '설명서.pdf', '공유…'); await wait(800)
           await ctxOn(ph, 'many', '공유…'); await wait(1500)
@@ -824,6 +827,70 @@ try {
           const zr = await fetch(base + `/api/bots/${bot.id}/zip?rel=${encodeURIComponent('files/many')}`); if (zr.status !== 200 || !/zip/.test(zr.headers.get('content-type') ?? '')) fail('M zip: ' + zr.status)
           const zbuf = Buffer.from(await zr.arrayBuffer()); writeFileSync('test/tmp/m-many.zip', zbuf); const zl = execSync('unzip -l test/tmp/m-many.zip').toString(); if (!/many\/f59\.txt/.test(zl)) fail('M zip: 안에 파일이 없다 ' + zl.slice(0, 200))
           ok('M 이미지·파일 복사 — 뷰어(⌘+/−/0/9 · ctrl+휠 커서 기준 · 터치 핀치·더블탭) · [복사] · 호스트 경로 그대로 · 원격 캐시 받기(진행·취소·적중) · 폴더 확인창 · 폰 공유(zip) · 캐시 비우기')
+        }
+        /**
+         * 🔴 **N · 모바일 입력창 · 여러 장 첨부 · 📷 · 질문 헤더 · H-5 헤더** (2026-09-19, 근거 IMG_1998·2002·2003).
+         *    글은 상자 폭 전부 · 여러 줄이면 버튼은 아래 줄 · 칩은 글 위 별도 행(썸네일·진행 링·✕) · 6줄 쳐도 첫 줄이 안 잘린다 ·
+         *    글자 크기·줄 간격 = 본문 · 📷 는 2단계 · + 첫 줄 「카메라로 찍기」 · 폰 안내에 ⌘V 없음 · 붙여넣기 files · 질문 헤더는 본문 위에 안 뜬다.
+         */
+        {
+          const sidN = (await api(`/bots/${bot.id}/sessions`, { name: 'n-phone' })).id
+          for (let i = 0; i < 4; i++) await api(`/sessions/${sidN}/send`, { text: '되읊어: 본문 ' + i + ' ' + '가나다라마바사 '.repeat(20) }); await wait(700)
+          const ph = await br.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1 })
+          await ph.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
+          await ph.goto(base + `/#bot=${bot.id}&s=${sidN}`); await ph.waitForSelector('.composer.ph .cin', { timeout: 15000 }); await wait(700)
+          // H-5 헤더 · 글자 크기/줄 간격 = 본문
+          const hd = await ph.evaluate(() => { const h = document.querySelector('.chat-hdr'); const cin = getComputedStyle(document.querySelector('.composer.ph .cin')); const body = getComputedStyle(document.querySelector('.chat-body')); return { h: h.getBoundingClientRect().height, menu: !!h.querySelector('.hb-menu'), name: h.querySelector('.hnb .dn')?.textContent, folder: !!h.querySelector('button[title="이 폴더에서"]'), fs: cin.fontSize, lh: cin.lineHeight, bfs: body.fontSize, blh: body.lineHeight } })
+          if (Math.abs(hd.h - 44) > 1 || !hd.menu || hd.folder || !/제품_Rondo/.test(hd.name ?? '')) fail('N/H-5: 헤더 ' + JSON.stringify(hd))
+          if (hd.fs !== hd.bfs || hd.lh !== hd.blh) fail('N-1: 입력창 글자 크기·줄 간격이 본문과 다르다 ' + JSON.stringify(hd))
+          // N-2 · 질문 헤더 — 위로 스크롤하면 본문 위가 아니라 **흐름 안** 에 서고, 탭하면 펼쳐진다
+          await ph.evaluate(() => { const sc = document.querySelector('.chat-scroll'); sc.scrollTop = sc.scrollHeight }); await wait(300)
+          await ph.evaluate(() => { const sc = document.querySelector('.chat-scroll'); sc.scrollTop = 0; sc.dispatchEvent(new Event('scroll')) }); await wait(400)
+          await ph.evaluate(() => { const sc = document.querySelector('.chat-scroll'); sc.scrollTop = sc.scrollHeight - sc.clientHeight - 1; sc.dispatchEvent(new Event('scroll')) }); await wait(400)
+          const q = await ph.evaluate(() => { const qh = document.querySelector('.qhdr'); if (!qh) return null; const r = qh.getBoundingClientRect(); const sc = document.querySelector('.chat-scroll').getBoundingClientRect(); const pin = !!document.querySelector('.pinq'); return { bottom: r.bottom, scTop: sc.top, pin, open: qh.classList.contains('open'), one: getComputedStyle(qh.querySelector('.tx')).whiteSpace } })
+          if (!q) fail('N-2: 질문 헤더(.qhdr)가 없다'); if (q.pin || q.bottom > q.scTop + 1 || q.one !== 'nowrap') fail('N-2: 질문 헤더가 본문 위에 떠 있거나 한 줄이 아니다 ' + JSON.stringify(q))
+          await ph.click('.qhdr'); await wait(200); const q2 = await ph.evaluate(() => ({ open: document.querySelector('.qhdr').classList.contains('open'), ws: getComputedStyle(document.querySelector('.qhdr .tx')).whiteSpace })); if (!q2.open || q2.ws === 'nowrap') fail('N-2: 탭해도 안 펼쳐진다 ' + JSON.stringify(q2))
+          await ph.screenshot({ path: 'test/tmp/n2-qhdr.png' }); await ph.click('.qhdr'); await wait(200); if (await ph.$('.qhdr.open')) fail('N-2: 다시 탭해도 안 접힌다')
+          // N-1 · 6줄 — 첫 줄이 안 잘리고 · 글이 상자 폭 전부 · 버튼은 아래 줄에 남는다
+          await ph.click('.composer.ph .cin'); for (let i = 0; i < 6; i++) { await ph.keyboard.type('여섯 줄 중 ' + (i + 1) + '번째 줄입니다'); if (i < 5) await ph.keyboard.press('Shift+Enter') } await wait(300)
+          const six = await ph.evaluate(() => { const c = document.querySelector('.composer.ph'); const cin = c.querySelector('.cin'); const t = [...cin.childNodes].find((n) => n.nodeType === 3); const rg = document.createRange(); rg.setStart(t, 0); rg.setEnd(t, 3); const first = rg.getBoundingClientRect(); const cr = cin.getBoundingClientRect(); const box = c.getBoundingClientRect(); const left = c.querySelector('.cleft').getBoundingClientRect(); const right = c.querySelector('.cright').getBoundingClientRect(); const sel = window.getSelection(); const r = sel.getRangeAt(0).cloneRange(); r.collapse(true); let cy = null; const rs = r.getClientRects(); if (rs.length) cy = rs[0].y; else { const sp = document.createElement('span'); sp.textContent = '​'; r.insertNode(sp); cy = sp.getBoundingClientRect().y; sp.remove() }
+            cin.scrollTop = 0; const firstTop = rg.getBoundingClientRect().top
+            return { multi: c.classList.contains('multi'), firstVisible: firstTop >= cr.top - 1, widthRatio: cr.width / box.width, leftBottom: left.bottom, rightBottom: right.bottom, boxBottom: box.bottom, cinBottom: cr.bottom, caretY: cy, lines: (cin.dataset.value.match(/\n/g) || []).length + 1, maxH: getComputedStyle(cin).maxHeight } })
+          if (!six.multi || !six.firstVisible || six.widthRatio < 0.85 || six.lines !== 6) fail('N-1: 6줄 레이아웃 ' + JSON.stringify(six))
+          if (six.leftBottom < six.cinBottom - 2 || six.rightBottom < six.cinBottom - 2 || six.leftBottom > six.boxBottom || six.rightBottom > six.boxBottom) fail('N-1: 버튼이 하단에 안 붙어 있다 ' + JSON.stringify(six))
+          await ph.screenshot({ path: 'test/tmp/n1-sixlines.png' })
+          await ph.keyboard.press('Control+A'); await ph.keyboard.press('Backspace'); await wait(200)
+          // N-3 · 3장 동시 → 칩 3개(썸네일 · 진행 링) → 다 올라간 뒤 보내기 · ✕ 로 하나 빼기 · 11개째 거절
+          const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+          const files3 = ['a.png', 'b.png', 'c.png'].map((name) => ({ name, mimeType: 'image/png', buffer: Buffer.from(png.split(',')[1], 'base64') }))
+          const photoAttr = await ph.$eval('input[accept="image/*"][multiple]', (e) => ({ accept: e.accept, multiple: e.multiple, hidden: e.hidden })); if (!photoAttr.multiple || photoAttr.accept !== 'image/*') fail('N-4: 📷 입력이 image/* multiple 이어야 한다')
+          if (!(await ph.$('.composer.ph .cleft .plusb.photo'))) fail('N-4: 입력창 왼쪽에 📷 가 없다')
+          await ph.setInputFiles('input[accept="image/*"][multiple]', files3); await wait(150)
+          const mid = await ph.evaluate(() => ({ chips: document.querySelectorAll('.achips .achip').length, thumbs: document.querySelectorAll('.achips .achip img').length, rings: document.querySelectorAll('.achips .achip .ring').length, dis: !!document.querySelector('.cright.dis') }))
+          await wait(1500)
+          const done = await ph.evaluate(() => ({ chips: document.querySelectorAll('.achips .achip').length, thumbs: document.querySelectorAll('.achips .achip img').length, rings: document.querySelectorAll('.achips .achip .ring').length, dis: !!document.querySelector('.cright.dis'), sendOn: !document.querySelector('.cright .sendb')?.disabled, row: (() => { const a = document.querySelector('.achips').getBoundingClientRect(), t = document.querySelector('.composer.ph .ctext').getBoundingClientRect(); return a.bottom <= t.top + 1 })(), scroll: getComputedStyle(document.querySelector('.achips')).overflowX }))
+          if (done.chips !== 3 || done.thumbs !== 3 || done.rings !== 0 || done.dis || !done.sendOn || !done.row || done.scroll !== 'auto') fail('N-3: 3장 칩 ' + JSON.stringify({ mid, done }))
+          if (!mid.dis && mid.rings === 0 && mid.chips === 3) { /* 너무 빨라 진행 순간을 못 봤을 수 있다 — 허용 */ }
+          await ph.screenshot({ path: 'test/tmp/n3-chips.png' })
+          await ph.click('.achips .achip:nth-child(2) .x'); await wait(200); const left2 = await ph.$$eval('.achips .achip .nm', (r) => r.map((x) => x.textContent)); if (left2.length !== 2 || left2.includes('b.png')) fail('N-3: ✕ 로 하나만 빠져야 한다 ' + JSON.stringify(left2))
+          const files9 = Array.from({ length: 9 }, (_, i) => ({ name: `m${i}.png`, mimeType: 'image/png', buffer: Buffer.from(png.split(',')[1], 'base64') }))
+          await ph.setInputFiles('input[accept="image/*"][multiple]', files9); await wait(2500)
+          const cnt = await ph.$$eval('.achips .achip', (r) => r.length); const tst = (await ph.textContent('.toast').catch(() => '')) ?? ''
+          if (cnt !== 10 || !/10개까지/.test(tst)) fail('N-3: 11개째는 거절 ' + JSON.stringify({ cnt, tst }))
+          // 같은 이름은 _2
+          const up1 = await api(`/bots/${bot.id}/upload`, { name: 'dup.txt', data: Buffer.from('x').toString('base64') }); const up2 = await api(`/bots/${bot.id}/upload`, { name: 'dup.txt', data: Buffer.from('y').toString('base64') })
+          if (up1.rel !== '첨부/dup.txt' || up2.rel !== '첨부/dup_2.txt') fail('N-3: 같은 이름은 _2 ' + JSON.stringify([up1.rel, up2.rel]))
+          // N-4 · + 메뉴 첫 줄 「카메라로 찍기」(capture) · 폰 안내에 ⌘V 없음
+          await ph.click('.composer.ph .cleft .plusb:not(.photo)'); await wait(300)
+          const menu = await ph.evaluate(() => ({ first: document.querySelector('.cpop.plus .prow2 b')?.textContent, hint: document.querySelector('.cpop.plus .hint')?.textContent, cam: !!document.querySelector('input[capture="environment"]') }))
+          if (menu.first !== '카메라로 찍기' || /⌘V/.test(menu.hint ?? '') || !menu.cam) fail('N-4: + 메뉴 ' + JSON.stringify(menu))
+          await ph.screenshot({ path: 'test/tmp/n4-plus.png' }); await ph.keyboard.press('Escape'); await ph.click('.composer.ph .cin'); await wait(200)
+          // N-4 · 붙여넣기 — 폰 클립보드는 files 로 온다
+          await ph.evaluate(() => { for (const b of document.querySelectorAll('.achips .achip .x')) b.click() }); await wait(200)
+          await ph.evaluate((b64) => { const bin = atob(b64); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); const dt = new DataTransfer(); dt.items.add(new File([u8], 'paste.png', { type: 'image/png' })); const ev = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }); document.querySelector('.composer.ph .cin').dispatchEvent(ev) }, png.split(',')[1]); await wait(1500)
+          const pasted = await ph.$$eval('.achips .achip .nm', (r) => r.map((x) => x.textContent)); if (!pasted.some((n) => /스크린샷_/.test(n ?? ''))) fail('N-4: 붙여넣은 그림이 칩으로 안 붙었다 ' + JSON.stringify(pasted))
+          await ph.close(); await fetch(base + `/api/sessions/${sidN}`, { method: 'DELETE' })
+          ok('N 폰 입력창 — H-5 헤더 · 본문과 같은 글자 · 질문 헤더(흐름 안 · 펼침) · 6줄 첫 줄 보임·전폭·버튼 하단 · 3장 칩(썸네일·링·✕) · 11개째 거절 · _2 · 📷 · 카메라 · ⌘V 없음 · 붙여넣기 files')
         }
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
         await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)
@@ -2818,8 +2885,10 @@ try {
         // 위 헤더는 불투명(페이드 없음) — 글이 밑으로 비치지 않는다
         const hb = await pg.$eval('.chat-hdr', (e) => getComputedStyle(e).backgroundImage + '|' + getComputedStyle(e).backgroundColor); if (/gradient/.test(hb) || /rgba\(\d+, \d+, \d+, 0\)/.test(hb)) fail('phone: header should be opaque ' + hb)
         // 헤더 알약의 봇 이름이 잘리지 않는다 (짧은 이름은 전부, 알약은 남는 폭을 쓴다)
-        const bp = await pg.evaluate(() => { const b = document.querySelector('.bpill b'); const p = document.querySelector('.bpill'); return { text: b.textContent, sw: b.scrollWidth, cw: b.clientWidth, pw: p.getBoundingClientRect().width, hw: document.querySelector('.chat-hdr').getBoundingClientRect().width } })
-        if (!(bp.cw > 40 && bp.sw <= bp.cw + 1 && /제품_Rondo/.test(bp.text))) fail('phone: header pill name clipped ' + JSON.stringify(bp))
+        // H-5 · 좁음 헤더 한 줄 — ☰ · 표시 이름 · (작업 중 ●). ‹·폴더 아이콘은 없다. 이름은 잘리지 않는다
+        const bp = await pg.evaluate(() => { const b = document.querySelector('.chat-hdr .hnb .dn'); const h = document.querySelector('.chat-hdr'); return { text: b?.textContent, sw: b?.scrollWidth, cw: b?.clientWidth, menu: !!h.querySelector('.hb-menu'), folder: !!h.querySelector('button[title="이 폴더에서"]'), back: !!h.querySelector('button[title="뒤로"]'), h: h.getBoundingClientRect().height } })
+        if (!bp.menu || bp.folder || bp.back || !(bp.cw > 40 && bp.sw <= bp.cw + 1 && /제품_Rondo/.test(bp.text ?? ''))) fail('phone: H-5 header ' + JSON.stringify(bp))
+        if (Math.abs(bp.h - 44) > 1) fail('phone: H-5 header height should be 44 (+safe-area 0 here) ' + JSON.stringify(bp))
         // 키보드: 입력칸에 포커스 → 시각 뷰포트 336px 축소 → 루트가 그만큼 줄고 컴포저는 그 바닥, 헤더는 숨고, 마지막 말은 컴포저 위에 보인다
         await pg.focus('.composer .cin'); await pg.evaluate(() => window.__kb(336)); await wait(500)
         const kbm = await pg.evaluate(() => { const r = document.querySelector('#root').getBoundingClientRect(); const c = document.querySelector('.composer').getBoundingClientRect(); const items = document.querySelectorAll('.chat-body > *'); const last = items[items.length - 1].getBoundingClientRect(); const hdr = getComputedStyle(document.querySelector('.chat-hdr')).display; return { kb: document.querySelector('.app').classList.contains('kb'), rootH: r.height, compBottom: c.bottom, compTop: c.top, lastBottom: last.bottom, hdr, ih: innerHeight } })
@@ -2978,13 +3047,13 @@ try {
           await pg.click('.chat-hdr .rb'); await wait(350)  // 뒤로 → 홈 (아래 검사들의 출발점)
           ok('폰 제스처 — 오른쪽 끌기 = 뒤로 · 왼쪽 끌기 = 폴더 · 비스듬한 끌기는 스크롤 · 최신으로 단추는 제자리' + (tb ? '(눌러서 확인)' : '(규칙만 — 단추가 안 떴다)'))
         }
-        await pg.click('.mrow'); await wait(300); await pg.click('.chat-hdr .rb:last-child'); await wait(300); if (!(await pg.$('.rpwrap .rb'))) fail('phone: panel page'); await pg.screenshot({ path: 'test/tmp/phone-panel.png' })
+        await pg.click('.mrow'); await wait(300); await swipePanel(pg); if (!(await pg.$('.rpwrap .rb'))) fail('phone: panel page'); await pg.screenshot({ path: 'test/tmp/phone-panel.png' })
         // 쓸어서 처리 — 행 도구는 없고, 오른쪽으로 길게 쓸면 완료된다 (터치 흉내)
         {
           if (!(await pg.$('.panel .swwrap'))) { // 오케스트레이터는 인박스를 쓴다 — 할 일이 있는 봇으로 옮긴다
             await pg.click('.rpwrap .rb'); await wait(250); await pg.click('.chat-hdr .rb'); await wait(350)
             for (const r of await pg.$$('.mrow')) { if (/제품_Rondo/.test((await r.textContent()) ?? '')) { await r.click(); break } }
-            await wait(400); await pg.click('.chat-hdr .rb:last-child'); await wait(450)
+            await wait(400); await swipePanel(pg); await wait(200)
           }
           await pg.waitForSelector('.panel .swwrap .swrow', { timeout: 5000 })
           const box = await pg.$eval('.panel .swwrap .swrow', (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height } })

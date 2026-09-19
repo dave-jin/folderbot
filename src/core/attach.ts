@@ -27,3 +27,17 @@ export function splitAttach(text: string): { body: string; files: AttachRef[] } 
   }
   return { body, files }
 }
+
+/** N-3 · 첨부 상한 — 10개 · 합계 50MB. 넘치면 «왜» 를 돌려준다(화면이 그대로 말한다) */
+export const ATTACH_MAX = 10
+export const ATTACH_BYTES = 50 * 1024 * 1024
+export function attachRoom(existing: { size?: number }[], incoming: { size: number }[]): { ok: { size: number }[]; reason: string } {
+  const room = ATTACH_MAX - existing.length
+  const ok: { size: number }[] = []; let bytes = existing.reduce((a, e) => a + (e.size ?? 0), 0); let reason = ''
+  for (const f of incoming) {
+    if (ok.length >= room) { reason = `첨부는 ${ATTACH_MAX}개까지예요 — ${incoming.length - ok.length}개는 못 넣었어요`; break }
+    if (bytes + f.size > ATTACH_BYTES) { reason = `첨부 합계는 ${ATTACH_BYTES / 1024 / 1024}MB 까지예요 — 넘는 파일은 못 넣었어요`; continue }
+    ok.push(f); bytes += f.size
+  }
+  return { ok, reason }
+}

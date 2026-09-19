@@ -18,6 +18,7 @@ import { norm, scoreName } from '../core/search'
 import { fmtTime, useStore } from './store'
 import { ACT_ICON, FOLDER_SWIPE, navOf, type SwipeAct } from './swipe'
 import { CopyProgressHost } from './fileCopy'
+import { attachRoom } from '../core/attach'
 import { SwipeRow } from './SwipeRow'
 import { dueChip } from '../core/botName'
 import { LocalOpenHost, openOnThisDevice } from './localOpen'
@@ -38,7 +39,7 @@ import { copySay } from './clip'
 
 type Tool = Extract<ChatItem, { kind: 'tool' }>
 type Sub = Extract<ChatItem, { kind: 'subagent' }>
-type Att = { rel: string; abs: string; dir?: boolean; uploaded?: boolean; name?: string; uploading?: boolean }
+type Att = { rel: string; abs: string; dir?: boolean; uploaded?: boolean; name?: string; uploading?: boolean; /** N-3 · 올리는 진행(%) · 미리보기 · 크기 */ pct?: number; thumb?: string; size?: number }
 /** 이 기기가 마지막에 보던 폴더·세션 — 앱을 다시 켤 때 그 자리로 돌아간다 */
 const LAST_KEY = 'fb:last'
 const stateDot = (st?: string) => (st === 'running' ? 'run' : st === 'awaiting_input' ? 'wait' : st === 'error' ? 'err' : 'none')
@@ -930,7 +931,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
    */
   const stickBottom = () => { const el = scRef.current; if (!el) return; const go = () => { el.scrollTop = el.scrollHeight }; go(); setTimeout(go, 120); setTimeout(go, 400); setTimeout(go, 800) }
   const [draft, setDraft] = useState<{ model?: string; effort?: string; permissionMode?: PermissionMode }>({})
-  const fileRef = useRef<HTMLInputElement>(null); const endRef = useRef<HTMLDivElement>(null); const taRef = useRef<InlineInputHandle>(null); const scRef = useRef<HTMLDivElement>(null); const footRef = useRef<HTMLDivElement>(null); const colRef = useRef<HTMLDivElement>(null); const lastUserRef = useRef<HTMLDivElement | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null); const photoRef = useRef<HTMLInputElement>(null); const camRef = useRef<HTMLInputElement>(null); const [qOpen, setQOpen] = useState(false); const endRef = useRef<HTMLDivElement>(null); const taRef = useRef<InlineInputHandle>(null); const scRef = useRef<HTMLDivElement>(null); const footRef = useRef<HTMLDivElement>(null); const colRef = useRef<HTMLDivElement>(null); const lastUserRef = useRef<HTMLDivElement | null>(null)
   const state = cur?.state ?? 'idle'; const running = state === 'running'
   /** ⚠ 기본값도 벤더마다 다르다 — Codex 세션에 Claude 기본 모델이 박히면 첫 턴에 죽는다 */
   const vendOf = () => cur?.vendor ?? bot.vendor
@@ -1002,7 +1003,10 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
    * ⚠ 복사 중인 파일도 **칩으로 먼저 선다**(회전 표시) — 25MB 를 올리는 몇 초 동안 «놓았는데 아무 일도 없다» 로
    *    보이면 안 된다. 실패하면 그 칩만 빠지고 이유를 말한다.
    */
-  const upload = async (list: File[]) => {
+  const upload = async (raw: File[]) => {
+    if (!raw.length) return
+    // N-3 · 10개 · 합계 50MB — 넘치면 이유와 함께 거절(들어갈 수 있는 것만 넣는다)
+    const room = attachRoom(attach, raw); const list = room.ok as File[]; if (room.reason) say(room.reason)
     if (!list.length) return; setUploading(true); let copied = 0
     try {
       for (const f of list) {
@@ -1011,11 +1015,12 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
           try { const ex = await api<Record<string, { rel: string; dir: boolean } | false>>(`/bots/${bot.id}/exists`, { body: { rels: [p] } }); const hit = ex[p]; if (hit) { addAtt({ rel: hit.rel, abs: p, dir: hit.dir }); continue } } catch { /* 호스트가 모르는 경로 — 복사로 */ }
         }
         const key = `pending:${f.name}:${Date.now()}:${Math.random()}`
-        addAtt({ rel: key, abs: '', name: f.name, uploading: true })
-        try { const r = await uploadFile(bot.id, f); const nn = r.rel.split('/').pop() ?? f.name; setAttach((a) => a.map((x) => (x.rel === key ? { rel: r.rel, abs: r.abs, uploaded: true } : x))); if (nn !== f.name) setText((t) => t.replace(`@${f.name}`, `@${nn}`)); copied++ }
+        const thumb = f.type.startsWith('image/') ? URL.createObjectURL(f) : undefined
+        addAtt({ rel: key, abs: '', name: f.name, uploading: true, pct: 0, thumb, size: f.size })
+        try { const r = await uploadFile(bot.id, f, (pct) => setAttach((a) => a.map((x) => (x.rel === key ? { ...x, pct } : x)))); const nn = r.rel.split('/').pop() ?? f.name; setAttach((a) => a.map((x) => (x.rel === key ? { rel: r.rel, abs: r.abs, uploaded: true, thumb, size: f.size } : x))); if (nn !== f.name) setText((t) => t.replace(`@${f.name}`, `@${nn}`)); copied++ }
         catch (e) { setAttach((a) => a.filter((x) => x.rel !== key)); setText((t) => t.replace(`@${f.name} `, '').replace(`@${f.name}`, '')); throw e }
       }
-      if (copied) say(`${copied}개 복사했어요 → 첨부/`)
+      if (copied) say(`${copied}개 복사했어요 → 첨부/${room.reason ? ' · ' + room.reason : ''}`)   // 거절 이유가 복사 안내에 덮이지 않게 한 줄로
     } catch (e) { say((e as Error).message) } finally { setUploading(false); if (fileRef.current) fileRef.current.value = '' }
   }
   /**
@@ -1029,14 +1034,16 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const addAtt = (a: Att) => {
     setAttach((l) => (l.some((x) => x.rel === a.rel) ? l : [...l, a]))
     const name = attName(a)
+    if (phone) return   // N-1 · 폰은 칩이 글 위 별도 행이라 글에 토큰을 안 넣는다(보낼 때 목록이 그대로 붙는다)
     setText((t) => { if (hasTok(t, name)) return t; caretEnd.current = true; return `${t}${t && !/\s$/.test(t) ? ' ' : ''}@${name} ` })
   }
   // 토큰을 끝에 붙였으면 캐럿도 끝으로 — 안 옮기면 옛 캐럿 자리에서 «@…» 를 읽어 @ 목록이 엉뚱하게 뜬다(실측 스크린샷)
   useEffect(() => { if (!caretEnd.current) return; caretEnd.current = false; setCaret(text.length); if (document.activeElement === taRef.current?.el()) taRef.current?.setSelection(text.length) }, [text])
   useEffect(() => {
+    if (phone) return   // 폰은 토큰이 없다 — 칩의 ✕ 가 목록을 뺀다 (N-1)
     const names = new Set(Array.from(text.matchAll(/@([^\s@]+)/g)).map((m) => m[1]))
     setAttach((l) => (l.every((a) => names.has(attName(a))) ? l : l.filter((a) => names.has(attName(a)))))
-  }, [text])
+  }, [text]) // eslint-disable-line react-hooks/exhaustive-deps
   const chipsByName = useMemo(() => Object.fromEntries(attach.map((a) => { const abs = a.abs || `${bot.abs}/첨부/${a.name ?? ''}`; return [attName(a), { abs, dir: a.dir, folder: chipParts(abs, bot.abs, !!a.dir).folder, busy: a.uploading, icon: <Icon n={a.dir ? 'folder' : 'doc'} size={11} color="var(--t3)" /> }] })), [attach, bot.abs])
   const relOf = (p: string) => (p.startsWith(bot.abs + '/') ? p.slice(bot.abs.length + 1) : null)
   const rows = useMemo(() => buildRows(items, drill), [items, drill])
@@ -1155,6 +1162,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const modelBtn = <button className={`cbtn ${pop === 'model' ? 'on' : ''}`} onClick={() => { if (pop !== 'model') void refreshModels(); setPop(pop === 'model' ? '' : 'model') }} title="모델">{modelLabel(cfg.model, vend)}{phone ? <span className="chev">▾</span> : null}</button>
   const effortBtn = <button className={`cbtn ${pop === 'effort' ? 'on' : ''}`} onClick={() => setPop(pop === 'effort' ? '' : 'effort')} title="노력">{effortLabel(cfg.effort, vend)}{phone ? <span className="chev">▾</span> : null}</button>
   const ringBtn = <button className={`ring ${pct >= 80 ? 'hot' : ''}`} onClick={() => setPop(pop === 'ctx' ? '' : 'ctx')} title={ctx ? `컨텍스트 ${pct}%` : '컨텍스트'}><Ring pct={pct} size={phone ? 20 : 18} />{pct >= 80 && !phone ? <span style={{ fontSize: 11.5, marginLeft: 4 }}>압축</span> : null}</button>
+  const photoBtn = <button className="plusb photo" title="사진" onClick={() => photoRef.current?.click()} disabled={uploading}><span className="ic-cam" /></button>
   const plusBtn = <button className={phone ? 'plusb' : `cbtn ${pop === 'plus' ? 'on' : ''}`} style={phone ? undefined : { padding: '3px 6px' }} title="첨부" onClick={() => setPop(pop === 'plus' ? '' : 'plus')} disabled={uploading}><Icon n="plus" size={phone ? 20 : 14} /></button>
   const sendBtn = mode === 'stop' ? <button className="sendb" onClick={() => cur && api(`/sessions/${cur.id}/interrupt`, { body: {} })} title="중단"><Icon n="stop" size={phone ? 14 : 11} /></button>
     : mode === 'off' && phone ? <span className="sendb mic"><Icon n="mic" size={20} /></span>
@@ -1173,7 +1181,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
       <div className="hint"><span>바꾸면 이 세션을 이어서 재시작해요 (대화 유지)</span></div></div>
     : pop === 'effort' ? <div className="cpop r"><div className="effort"><div className="top"><span style={{ color: 'var(--t3)', fontSize: 12.5 }}>노력</span><b>{effortLabel(cfg.effort, vend)}</b></div><div className="lbl"><span>더 빠르게</span><span>더 스마트하게</span></div><input type="range" min={0} max={effortList.length - 1} step={1} value={Math.max(0, effortList.findIndex((e) => e.v === cfg.effort))} onChange={(e) => { const v = effortList[Number(e.target.value)].v; if (v !== cfg.effort) void (async () => { if (cur) { try { await api(`/sessions/${cur.id}/settings`, { body: { effort: v } }) } catch (er) { say((er as Error).message) } } else setDraft((d) => ({ ...d, effort: v })) })() }} /><div className="steps">{effortList.map((e) => <span key={e.v}>{e.t}</span>)}</div></div><div className="hint"><span>다음 턴부터 적용 · 기본값은 설정에서</span></div></div>
     : pop === 'ctx' ? <div className="cpop r ctxpop"><div className={`big ${pct >= 80 ? 'hot' : ''}`}><Ring pct={pct} size={40} stroke={3} /><div><b>컨텍스트 {ctx ? `${pct}%` : '—'}</b><small>{ctx ? `${fmtK(ctx.used)} / ${fmtK(ctx.window)} 토큰 · 이 세션` : '첫 답이 오면 잽니다'}</small></div></div><hr /><button className="prow2" onClick={() => { setPop(''); void sendText('/compact') }}><div className="t"><b>/compact 압축</b><small>대화를 요약해 컨텍스트를 줄여요</small></div></button><div className="hint"><span>80% 를 넘으면 링이 주황</span></div></div>
-    : pop === 'plus' ? <div className="cpop plus">{bot.orchestrator ? null : <button className="prow2" onClick={() => { setPop(''); openRoutine() }}><Icon n="clock" size={14} color="var(--t3)" /><div className="t"><b>루틴으로 만들기</b><small>{routinePeek()}</small></div></button>}<button className="prow2" onClick={() => { setPop(''); fileRef.current?.click() }}><Icon n="phone" size={14} color="var(--t3)" /><div className="t"><b>이 기기에서 파일 올리기</b></div><span className="k">→ 첨부/</span></button><button className="prow2" onClick={() => { setPop(''); setPickOpen(true) }}><Icon n="folder" size={14} color="var(--t3)" /><div className="t"><b>{bot.orchestrator ? '볼트' : '이 폴더'}에서 고르기</b></div></button>{docTabs.length ? <button className="prow2" onClick={() => { setPop(''); for (const rel of docTabs) addAtt({ rel, abs: `${bot.abs}/${rel}` }) }}><Icon n="doc" size={14} color="var(--t3)" /><div className="t"><b>열린 문서 첨부 ({docTabs.length})</b></div></button> : null}<hr /><button className="prow2" onClick={() => { setPop(''); setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}@`); setCaret(text.length + 1); taRef.current?.focus() }}><span className="mono" style={{ width: 14, textAlign: 'center', color: 'var(--t3)' }}>@</span><div className="t"><b>@ 로 이름 쳐서 넣기</b></div></button><div className="hint"><span>스크린샷은 ⌘V 로 붙여 넣으면 첨부/ 에 저장</span></div></div>
+    : pop === 'plus' ? <div className="cpop plus">{phone ? <button className="prow2" onClick={() => { setPop(''); camRef.current?.click() }}><span className="ic-cam" /><div className="t"><b>카메라로 찍기</b></div></button> : null}{bot.orchestrator ? null : <button className="prow2" onClick={() => { setPop(''); openRoutine() }}><Icon n="clock" size={14} color="var(--t3)" /><div className="t"><b>루틴으로 만들기</b><small>{routinePeek()}</small></div></button>}<button className="prow2" onClick={() => { setPop(''); fileRef.current?.click() }}><Icon n="phone" size={14} color="var(--t3)" /><div className="t"><b>이 기기에서 파일 올리기</b></div><span className="k">→ 첨부/</span></button><button className="prow2" onClick={() => { setPop(''); setPickOpen(true) }}><Icon n="folder" size={14} color="var(--t3)" /><div className="t"><b>{bot.orchestrator ? '볼트' : '이 폴더'}에서 고르기</b></div></button>{docTabs.length ? <button className="prow2" onClick={() => { setPop(''); for (const rel of docTabs) addAtt({ rel, abs: `${bot.abs}/${rel}` }) }}><Icon n="doc" size={14} color="var(--t3)" /><div className="t"><b>열린 문서 첨부 ({docTabs.length})</b></div></button> : null}<hr /><button className="prow2" onClick={() => { setPop(''); setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}@`); setCaret(text.length + 1); taRef.current?.focus() }}><span className="mono" style={{ width: 14, textAlign: 'center', color: 'var(--t3)' }}>@</span><div className="t"><b>@ 로 이름 쳐서 넣기</b></div></button><div className="hint"><span>{phone ? '사진 앱에서 복사한 이미지는 길게 눌러 붙여넣기' : '스크린샷은 ⌘V 로 붙여 넣으면 첨부/ 에 저장'}</span></div></div>
     : slashQ !== null && slashList.length ? <div className="cpop">{(['skill', 'cli'] as const).map((grp) => { const l = slashList.filter((c) => (grp === 'skill' ? c.kind !== 'cli' : c.kind === 'cli')); return l.length ? <div key={grp}><div className="h">{grp === 'skill' ? '스킬 · 이 폴더' : '명령'}</div>{l.map((c) => { const i = slashList.indexOf(c); return <button key={c.name} className={`prow2 ${i === sel ? 'on' : ''}`} onMouseEnter={() => setSel(i)} onClick={() => pickSlash(c)}><div className="t"><b>/{c.name}</b>{c.desc ? <small>{c.desc}</small> : null}</div>{i === sel ? <span className="k">⏎</span> : c.scope !== 'cli' && c.scope !== 'folder' ? <span className="k">{c.scope}</span> : null}</button> })}</div> : null })}<div className="hint"><span>↑↓ 이동</span><span>Tab · ⏎ 선택</span><span>⎋ 닫기</span><span className="sp" /><span>{slashList.length}개</span></div></div>
     : atQ !== null && atList.length ? <div className="cpop"><div className="h">{docTabs.length ? '열린 문서 먼저 · ' : ''}이 폴더{atQ ? ` · «${atQ}»` : ''}</div>{atList.map((f, i) => { const name = f.rel.split('/').pop() ?? f.rel; const dir = f.rel.includes('/') ? f.rel.slice(0, f.rel.lastIndexOf('/')) + '/' : ''; return <button key={f.rel} className={`prow2 ${i === sel ? 'on' : ''}`} onMouseEnter={() => setSel(i)} onClick={() => pickAt(f)}><Icon n={f.dir ? 'folder' : 'doc'} size={14} color="var(--t3)" /><div className="t"><b>{name}</b><small>{f.dir ? `폴더째${dir ? ` · ${dir}` : ''}` : dir || (docTabs.includes(f.rel) ? '열림' : '')}</small></div>{i === sel ? <span className="k">⏎</span> : null}</button> })}<div className="hint"><span>↑↓ 이동</span><span>⏎ 넣기</span><span className="sp" /><span>이름 · 경로로 찾음</span></div></div>
     : null
@@ -1233,10 +1241,11 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
     onDrop={dropHere}>
     {drop ? <div className="dropzone"><div className="card"><FolderBot color={bot.color} size={40} mood="idle" /><b>{bot.name}에게 첨부</b><small>{drop === 'tree' ? '놓으면 이 대화에 첨부해요' : <>볼트 안 파일은 그대로 첨부 · 밖의 파일은 <span className="mono">첨부/</span> 에 복사한 뒤 첨부</>}</small>{drop === 'files' && dropN ? <span className="n">파일 {dropN}개</span> : null}</div></div> : null}
     <div className={`hdr chat-hdr ${phone ? '' : 'glass'}`}>
-      {phone ? <><button className="rb glassb" onClick={drillSub ? () => setDrill(null) : onBack} title="뒤로"><Icon n="back" size={20} /></button>
+      {/* H-5 · 좁음 헤더 한 줄 — ☰(레일 서랍 · H 전까지는 봇 목록으로) · 표시 이름 · 작업 중 ●. ‹·폴더 아이콘은 없다(폴더는 독의 📄 · 쓸기) */}
+      {phone ? <><button className="rb glassb hb-menu" onClick={drillSub ? () => setDrill(null) : onBack} title={drillSub ? '메인 대화로' : '봇 목록'}><Icon n={drillSub ? 'back' : 'list'} size={20} /></button>
         {/* 감싸는 span 은 헤더의 flex 아이템 — 폭이 내용에 의존하는데 알약이 그 100% − 118px 을 최대폭으로 삼아 스스로를 눌러 이름이 «2026-…» 로 잘렸다(2026-09-13 Dave). 알약 최대폭은 감싸는 칸의 100%, 칸이 남는 공간을 받는다 */}
-        <span style={{ position: 'relative', minWidth: 0, flex: '0 1 auto', display: 'flex' }}><button className="bpill glassb" onClick={() => setSessMenu(!sessMenu)}><FolderBot color={bot.color} size={26} mood={moodOf(state, !!cur?.hibernated)} mono /><b><Mid s={drillSub ? drillSub.name : bot.name} /></b><VendorMark vendor={cur?.vendor} size={12} />{stateDot(state) !== 'none' ? <span className={`dot ${stateDot(state)}`} style={{ width: 7, height: 7 }} /> : null}</button>{sessMenuEl}</span>
-        <span className="sp" /><button className="rb glassb" onClick={onPanel} title="이 폴더에서"><Icon n="folder" size={20} /></button></>
+        <span className="hname" style={{ position: 'relative' }}><button className="hnb" onClick={() => setSessMenu(!sessMenu)} title={cur?.name ?? '세션'}>{drillSub ? <b className="dn">{drillSub.name}</b> : <BotName b={bot} chip={false} />}{running ? <span className="dot run" title="작업 중" /> : state === 'awaiting_input' ? <span className="dot wait" /> : null}</button>{sessMenuEl}</span>
+        <span className="sp" /></>
         : drillSub ? <><button className="ib" onClick={() => setDrill(null)} title="메인 대화로"><Icon n="back" size={14} /></button><span style={{ color: 'var(--t3)' }}>/</span><span className="ttl">{drillSub.name}</span>{drillSub.status === 'run' ? <span className="spin run" /> : <Icon n={drillSub.status === 'error' ? 'x' : 'check'} size={11} color={drillSub.status === 'error' ? 'var(--err)' : 'var(--done)'} />}<span style={{ color: 'var(--t3)', fontSize: 12, whiteSpace: 'nowrap' }}>도구 {drillSub.tools}</span><span className="sp" /></>
           : <><FolderBot color={bot.color} size={16} mood={moodOf(state, !!cur?.hibernated)} mono /><span className="ttl" title={bot.name}><Mid s={bot.displayName} /></span><VendorMark vendor={cur?.vendor} size={12} />
             <span style={{ position: 'relative', flex: 'none' }}><button onClick={() => setSessMenu(!sessMenu)} style={{ color: 'var(--t3)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}>{cur?.name ?? '새 대화'} <Icon n="chevd" size={10} /></button>{sessMenuEl}</span>
@@ -1244,7 +1253,10 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
             <div className="acts"><button className={`ib ${docOn ? 'on' : ''}`} onClick={onDocToggle} title="문서 열 (⌘⇧D)"><Icon n="doc" size={14} />{!docOn && docBadge ? <span className="bd">{docBadge}</span> : null}</button></div></>}
     </div>
     {routineDraft ? <RoutineSheet bot={bot} draft={routineDraft} onClose={() => setRoutineDraft(null)} /> : null}
-    {pinned && lastUser && !drill ? <button className="pinq glassb" onClick={() => lastUserRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })} title="직전 질문으로">{lastUser.text}</button> : null}
+    {/* N-2 · 폰은 알약이 아니라 **흐름 안의 고정 헤더** — 본문 위에 뜨지 않고 본문이 그 아래로 스크롤한다. 탭하면 펼침(3줄까지, 그 위는 안에서 스크롤) */}
+    {pinned && lastUser && !drill ? (phone
+      ? <button className={`qhdr ${qOpen ? 'open' : ''}`} onClick={() => setQOpen((o) => !o)} title={qOpen ? '접기' : '전체 질문 보기'}>{streaming ? <span className="dot run" /> : null}<span className="tx">{lastUser.text}</span></button>
+      : <button className="pinq glassb" onClick={() => lastUserRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })} title="직전 질문으로">{lastUser.text}</button>) : null}
     <div className="chat-scroll" ref={scRef}>
       <div className="chat-body">
         {!cur && !drill ? <div className="empty" style={{ flex: 1 }}><FolderBot color={bot.color} size={40} mood="idle" /><div><b>{bot.name}</b>{bot.orchestrator ? ' — 볼트 전체를 보는 관제 봇이에요. "지금 뭐 돌고 있어?", "Inbox 정리해 줘", "X 폴더에서 시작해".' : ' 봇이에요. 이 폴더의 지침·기억·자료를 들고 일해요.'}</div></div> : null}
@@ -1271,15 +1283,19 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
           그리고 «이 주소가 맞나» 를 보내기 전에 확인할 수 있다. */}
       {draftLinks.length ? <div className="files lchips">{draftLinks.map((u) => <LinkChip key={u} url={u} />)}</div> : null}
       <input ref={fileRef} type="file" multiple hidden onChange={(e) => void upload(Array.from(e.target.files ?? []))} />
+      {/* N-4 · 📷 사진(여러 장) · 카메라로 찍기 — 둘 다 폰만. 사진은 2단계로 끝난다 */}
+      <input ref={photoRef} type="file" accept="image/*" multiple hidden onChange={(e) => { void upload(Array.from(e.target.files ?? [])); e.target.value = '' }} />
+      <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { void upload(Array.from(e.target.files ?? [])); e.target.value = '' }} />
       {phone ? <div className="cchips">{modeBtn}{modelBtn}{effortBtn}</div> : null}
-      <div className={`composer glassb ${text.includes('\n') || text.length > 40 ? 'multi' : ''}`}
-        onPaste={(e) => { const imgs = Array.from(e.clipboardData.items).filter((i) => i.type.startsWith('image/')).map((i) => i.getAsFile()).filter((f): f is File => !!f); if (imgs.length) { e.preventDefault(); const d = new Date(); void upload(imgs.map((f, i) => new File([f], `스크린샷_${d.getHours()}${String(d.getMinutes()).padStart(2, '0')}${i ? `-${i + 1}` : ''}.${(f.type.split('/')[1] ?? 'png').replace('jpeg', 'jpg')}`, { type: f.type }))) } }}>
+      <div className={`composer glassb ${text.includes('\n') || text.length > (phone ? 24 : 40) ? 'multi' : ''} ${phone ? 'ph' : ''}`}
+        onPaste={(e) => { const fromItems = Array.from(e.clipboardData.items).filter((i) => i.type.startsWith('image/')).map((i) => i.getAsFile()).filter((f): f is File => !!f); const imgs = fromItems.length ? fromItems : Array.from(e.clipboardData.files ?? []).filter((f) => f.type.startsWith('image/'));   /* N-4 · 폰 클립보드는 files 로 온다 */ if (imgs.length) { e.preventDefault(); const d = new Date(); void upload(imgs.map((f, i) => new File([f], `스크린샷_${d.getHours()}${String(d.getMinutes()).padStart(2, '0')}${i ? `-${i + 1}` : ''}.${(f.type.split('/')[1] ?? 'png').replace('jpeg', 'jpg')}`, { type: f.type }))) } }}>
         {popEl}
-        <div className="crow">
-          {phone ? plusBtn : null}
+        {phone && attach.length ? <div className="achips">{attach.map((a) => <span key={a.rel} className={`achip ${a.uploading ? 'up' : ''}`} title={a.abs || a.name}>{a.thumb ? <img src={a.thumb} alt="" /> : <span className="ai"><Icon n={a.dir ? 'folder' : 'doc'} size={14} /></span>}{a.uploading ? <span className="ring"><Ring pct={a.pct ?? 0} size={22} stroke={2.5} /></span> : null}<span className="nm">{attName(a)}</span><button className="x" onClick={() => { if (a.thumb) URL.revokeObjectURL(a.thumb); setAttach((l) => l.filter((x) => x.rel !== a.rel)) }} title="빼기"><Icon n="x" size={11} /></button></span>)}</div> : null}
+        {phone ? <div className="cleft">{photoBtn}{plusBtn}</div> : null}
+        <div className={phone ? 'ctext' : 'crow'}>
           <InlineInput ref={taRef} placeholder={drill ? '메인 대화로 보냅니다 — 이 안에는 직접 말을 걸 수 없어요' : running ? `보내면 대기열에 들어갑니다 (${sendKey})` : state === 'awaiting_input' ? '답을 기다리는 중 — 보내면 대기열에' : enterSends ? '메시지…  ⏎ 보내기 · ⇧⏎ 줄 바꿈 · / 스킬 · @ 파일' : '메시지…  / 스킬 · @ 파일'} value={text} chips={chipsByName} onChange={(t, c) => { setText(t); setCaret(c) }} onCaret={setCaret} onKeyDown={onKey} onFocus={() => { if (phone) stickBottom() }} onChipClick={(name) => { const a = attach.find((x) => attName(x) === name); if (a && !a.uploading && !a.dir) onFile(a.rel) }} />
-          {phone ? <>{ringBtn}{sendBtn}</> : null}
         </div>
+        {phone ? <div className={`cright ${uploading ? 'dis' : ''}`}>{ringBtn}{sendBtn}</div> : null}
         {!phone ? <div className="cbar">{modeBtn}{plusBtn}{attach.length ? <span className="acount">첨부 {attach.length}개 · 봇이 읽어서 참고</span> : null}<span className="sp" />{modelBtn}{effortBtn}{ringBtn}{sendBtn}</div> : null}
       </div>
       {!phone ? <div className="cfoot"><span className={`dot ${cur?.alive || running ? 'done' : 'none'}`} style={{ width: 5, height: 5 }} /><span>{cur?.hibernated && !running ? `${s.hostName} · 절전 (첫 답이 몇 초 늦어요)` : s.hostName}</span>{cur?.restartPending ? <span>· 턴이 끝나면 새 설정으로 재시작</span> : null}<span className="sp" />{uploading ? <span>올리는 중…</span> : null}</div> : null}
