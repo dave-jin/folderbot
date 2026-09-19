@@ -526,6 +526,39 @@ try {
           await pg.keyboard.press('Escape'); await wait(200)
           ok('원격에서 파일 열기 — 온보딩 단계·후보 순위 · ① 같음→이 기기 Finder · 다름→[기다렸다 열기] 기본→도착 후 열림 · iCloud 자리표시자 · ② 캐시+「사본」 · 설정 즉시 반영 · 메인은 그대로')
         }
+        /**
+         * 🔴 **문서 창으로 가는 문은 하나** (C · 2026-09-19). 실측 원인: 답변 속 칩(.pchip)의 rel 이 `relOf()` 에서 버려져
+         *    창 열림/닫힘과 무관하게 클릭이 죽었다. 이제 `openInDocPane` 이 절대경로·rel 을 다 풀고 창이 닫혀 있으면 연다.
+         *    에이전트의 rondo_open 은 같은 세션·같은 턴에 한 번만.
+         */
+        {
+          mkdirSync(join(root, '3. Area/제품_Rondo/files'), { recursive: true }); writeFileSync(join(root, '3. Area/제품_Rondo/files/메모.md'), '# 메모\n')
+          const closeDoc = async () => { for (let i = 0; i < 3 && (await pg.$('.docwrap')); i++) { await pg.keyboard.press('Meta+Shift+D'); await wait(300) } }
+          await closeDoc(); if (await pg.$('.docwrap')) fail('C: 문서 창을 닫지 못했다')
+          // 전용 세션에서 — 이 블록의 칩이 같은 세션의 뒤 검사에 남지 않게. 끝나면 원래 세션으로 돌아간다
+          const hashBefore = await pg.evaluate(() => location.hash)
+          const sidC = (await api(`/bots/${bot.id}/sessions`, { name: 'c-doc' })).id; await pg.evaluate((h) => { location.hash = h }, `#bot=${bot.id}&s=${sidC}`); await wait(600)
+          await api(`/sessions/${sidC}/send`, { text: '되읊어: 메모는 `files/메모.md` 를 보세요' }); await wait(1000)
+          const chip = await pg.$('.amsg .pchip[data-rel="files/메모.md"]'); if (!chip) fail('C: 답변에 files/메모.md 칩이 없다')
+          await chip.click(); await wait(600)
+          if (!(await pg.$('.docwrap'))) fail('C: 창이 닫힌 상태에서 칩을 눌렀는데 창이 안 열렸다')
+          if ((await pg.textContent('.docwrap .dtb .nm')) !== '메모.md') fail('C: 열린 문서가 메모.md 가 아니다 · ' + (await pg.textContent('.docwrap .dtb .nm')))
+          // 에이전트 rondo_open — 창 닫힘 → 열림 · 같은 턴 두 번째는 무시 · 볼트 밖 거부
+          await closeDoc()
+          const mcpBot = async (name, args) => (await (await fetch(base + `/mcp/${bot.id}?sid=${sidC}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) })).json()).result
+          const r1 = await mcpBot('rondo_open', { path: 'CLAUDE.md' }); if (!/열었어요/.test(r1.content[0].text)) fail('C rondo_open: ' + JSON.stringify(r1))
+          await wait(600); if (!(await pg.$('.docwrap')) || (await pg.textContent('.docwrap .dtb .nm')) !== 'CLAUDE.md') fail('C rondo_open: 창이 열리고 CLAUDE.md 가 보여야 한다')
+          await mcpBot('rondo_open', { path: 'todo.md' }); await wait(600)
+          if ((await pg.textContent('.docwrap .dtb .nm')) !== 'CLAUDE.md') fail('C rondo_open: 같은 턴 두 번째 호출은 무시해야 한다')
+          const r3 = await mcpBot('rondo_open', { path: '/etc/hosts' }); if (!r3.isError || !/볼트 밖/.test(r3.content[0].text)) fail('C rondo_open: 볼트 밖은 거부 ' + JSON.stringify(r3))
+          // 창이 열려 있을 때의 규칙은 그대로 — 미리보기 탭은 교체된다(탭 수 불변)
+          const nTabs = await pg.$$eval('.docwrap .dtab, .docwrap .dtabs > *', (r) => r.length).catch(() => -1)
+          await pg.click('.amsg .pchip[data-rel="files/메모.md"]'); await wait(600)
+          if ((await pg.textContent('.docwrap .dtb .nm')) !== '메모.md') fail('C: 열려 있을 때 칩 클릭이 문서를 바꾸지 않았다')
+          const nTabs2 = await pg.$$eval('.docwrap .dtab, .docwrap .dtabs > *', (r) => r.length).catch(() => -1); if (nTabs >= 0 && nTabs2 !== nTabs) fail('C: 미리보기 탭 교체 규칙이 바뀌었다 ' + nTabs + '→' + nTabs2)
+          await closeDoc(); await fetch(base + `/api/sessions/${sidC}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(800)   // 전용 세션을 지워 «최근 세션» 이 원래 것으로 돌아간다
+          ok('문서 창 열기 — 닫힌 창 + 칩 → 열림 · rondo_open → 열림(같은 턴 두 번째 무시 · 볼트 밖 거부) · 열린 창의 탭 규칙 그대로')
+        }
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
         await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)
         await pg.mouse.move(700, 300); await wait(200); if (await pg.$('.hcard')) fail('ui hover card stuck')

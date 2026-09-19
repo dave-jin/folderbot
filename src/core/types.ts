@@ -214,6 +214,8 @@ export type Frame =
   | { ev: 'auth'; auth: AuthState }
   | { ev: 'todo'; botId: string; items: TodoItem[] }
   | { ev: 'files'; botId: string }
+  /** 에이전트가 문서 창을 열거나(rondo_open) 그 기기의 Finder 로 보여 달라(rondo_reveal) — turn 은 그 세션의 턴 시각(한 턴에 한 번) */
+  | { ev: 'doc'; botId: string; sid: string; rel: string; action: 'open' | 'reveal'; turn: number }
   | { ev: 'inbox'; count: number }
 
 export const STATE_LABEL: Record<SessionState, string> = {

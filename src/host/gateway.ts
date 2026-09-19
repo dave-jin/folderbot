@@ -132,7 +132,7 @@ export class Gateway {
     if (p.startsWith('/mcp/')) {
       if (!this.isLoopback(req)) return json(403, { error: 'loopback only' })
       const chunks: Buffer[] = []; for await (const c of req) chunks.push(c as Buffer)
-      return handleMcp(this.host, decodeURIComponent(p.slice(5)), req, res, Buffer.concat(chunks).toString('utf8'))
+      return handleMcp(this.host, decodeURIComponent(p.slice(5)), req, res, Buffer.concat(chunks).toString('utf8'), new URL(req.url ?? '/', 'http://x').searchParams.get('sid') ?? '')
     }
     if (p === '/api/health') return json(200, { ok: true, name: 'folderbot', version: this.host.version })
     if (p === '/api/pair' && req.method === 'POST') {

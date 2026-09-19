@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { candidatePaths, relUnder } from '../../src/core/paths'
+import { botRelOf, candidatePaths, relUnder } from '../../src/core/paths'
 
 describe('candidatePaths', () => {
   it('공백 있는 PARA 폴더까지 넓힌 변형을 함께 낸다 (긴 것 먼저)', () => {
@@ -57,5 +57,17 @@ describe('relUnder', () => {
   it('밖이면 null', () => { expect(relUnder('/v/bot', '/v/other/a.md')).toBeNull() })
   it('NFD 로 와도 맞춘다', () => {
     expect(relUnder('/v/제품'.normalize('NFC'), '/v/제품/a.md'.normalize('NFD'))).toBe('a.md')
+  })
+})
+
+describe('botRelOf — 절대 경로 → 봇 폴더 기준 rel (볼트 안·폴더 밖은 ../ · 볼트 밖은 null)', () => {
+  const root = '/v', bot = '/v/3. Area/제품_Rondo'
+  it('폴더 안 · 폴더 밖 · 볼트 밖 · 봇 폴더 자체', () => {
+    expect(botRelOf(bot, root, '/v/3. Area/제품_Rondo/files/a.pdf')).toBe('files/a.pdf')
+    expect(botRelOf(bot, root, '/v/1. Inbox/바깥.md')).toBe('../../1. Inbox/바깥.md')
+    expect(botRelOf(bot, root, '/v/x.md')).toBe('../../x.md')
+    expect(botRelOf(bot, root, '/Users/dave/etc')).toBeNull()
+    expect(botRelOf(bot, root, bot)).toBe('')
+    expect(botRelOf('/v', '/v', '/v/a.md')).toBe('a.md')   // 루트 봇(오케스트레이터)
   })
 })

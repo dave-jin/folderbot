@@ -88,3 +88,15 @@ export function relUnder(base: string, p: string): string | null {
   if (q.startsWith(b + '/')) return q.slice(b.length + 1)
   return null
 }
+
+/**
+ * 절대 경로 → **봇 폴더 기준** 상대 경로 (C·D · 2026-09-19). 봇 폴더 안이면 그대로, 볼트 안·폴더 밖이면 `../` 로,
+ * 볼트 밖이면 null(문서 창은 볼트 안만 연다). 호스트의 문서 API 는 `../` 섞인 rel 을 그대로 받는다.
+ */
+export function botRelOf(botAbs: string, root: string, abs: string): string | null {
+  const inBot = relUnder(botAbs, abs); if (inBot !== null) return inBot
+  const inVault = relUnder(root, abs); if (inVault === null) return null
+  const fromBot = relUnder(root, botAbs); if (fromBot === null) return null
+  const ups = fromBot ? fromBot.split('/').length : 0
+  return `${'../'.repeat(ups)}${inVault}`
+}

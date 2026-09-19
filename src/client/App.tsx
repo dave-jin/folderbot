@@ -19,7 +19,8 @@ import { fmtTime, useStore } from './store'
 import { ACT_ICON, FOLDER_SWIPE, navOf, type SwipeAct } from './swipe'
 import { SwipeRow } from './SwipeRow'
 import { dueChip } from '../core/botName'
-import { LocalOpenHost } from './localOpen'
+import { LocalOpenHost, openOnThisDevice } from './localOpen'
+import { botRelOf } from '../core/paths'
 import { ICON_PX, useIconSize, useTheme } from './theme'
 import { UsageCard, UsageStrip, useUsage } from './Usage'
 import { PermGate, usePerms } from './Perms'
@@ -383,6 +384,33 @@ function Main() {
   const waiting = s.notifications.filter((n) => n.kind === 'awaiting' && !n.read).length
   const showDoc = !!bot && (phone || !!docOpen[bot.id]) && docs.tabs.length > 0
   const openDoc = (rel: string, pin = false) => { if (!bot) return; docs.open(rel, pin); setDocOpen((d) => ({ ...d, [bot.id]: true })); if (phone) setView('doc') }
+  /**
+   * 🔴 **문서 창으로 가는 문은 하나다** — `openInDocPane` (C · 2026-09-19 Dave: «채팅에서 문서를 클릭했는데 문서 창이 닫혀 있으면
+   *    열리지 않는다»). 실측 원인은 창이 아니라 **경로**였다: 답변 속 칩은 봇 기준 rel 을 주는데 받는 쪽이 절대경로만 받아
+   *    `relOf()` 가 null 을 돌려주고 클릭이 조용히 죽었다(pdf·md·png·폴더 밖 전부, 창 열림/닫힘 무관). 그래서 절대경로든
+   *    rel 이든 여기서 한 번 풀고(볼트 안·폴더 밖은 `../` 로 — D), 창이 닫혀 있으면 연다. 볼트 밖은 거부한다.
+   *  - 사용자 클릭은 언제나 연다. 에이전트(rondo_open)는 **한 턴에 한 번**만 — 방금 손으로 닫은 창을 연달아 다시 여는
+   *    짜증을 막는다(같은 세션·같은 턴이면 두 번째부터 무시).
+   */
+  const agentOpenRef = useRef<string | null>(null)
+  const openInDocPane = (p: string, o: { pin?: boolean; source?: 'user' | 'agent'; turnKey?: string } = {}) => {
+    if (!bot) return
+    let rel = p
+    if (p.startsWith('/')) {
+      const r = botRelOf(bot.abs, s.root, p)
+      if (r === null) { say('볼트 밖 경로예요 — 문서 창에서는 볼트 안 파일만 열어요'); return }
+      if (r === '') return
+      rel = r
+    }
+    if (o.source === 'agent' && o.turnKey) { if (agentOpenRef.current === o.turnKey) return; agentOpenRef.current = o.turnKey }
+    openDoc(rel, o.pin)
+  }
+  // 에이전트의 rondo_open / rondo_reveal — 지금 보고 있는 봇의 것만 (J 에서 «보낸 기기» 로 좁힌다)
+  useEffect(() => {
+    const r = s.docReq; if (!r || !bot || r.botId !== bot.id) return
+    if (r.action === 'open') openInDocPane(r.rel, { source: 'agent', turnKey: `${r.sid}:${r.turn}` })
+    else void openOnThisDevice(bot, r.rel, 'reveal', { main: s.device.main, hostName: s.hostName, phone, say })
+  }, [s.docReq?.n])
   const addAttach = (a: Att) => { setAttachReq((q) => [...q, { ...a, abs: a.abs || `${bot?.abs}/${a.rel}` }]); if (phone) setView('chat') }
   // 열 드래그 — 선이 핸들. 더블클릭은 기본값
   const dragX = (k: 'sb' | 'rp' | 'doc', dir: 1 | -1) => (e: React.PointerEvent) => {
@@ -610,14 +638,14 @@ function Main() {
       <div className="divx" onPointerDown={sbOpen ? dragX('sb', 1) : undefined} onDoubleClick={() => setLay({ ...lay, sb: DEF.sb, sbOpen: true, sbPin: true })} />
 
       {/* ── 채팅 ── */}
-      <Chat bot={bot} sessions={sessions} cur={cur} items={items} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openDoc(rel, pin)} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={() => setView('list')} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} queue={queueFor(sessionId)} onQueue={(f) => { if (sessionId) onQueue(sessionId, f) }} onReveal={reveal} />
+      <Chat bot={bot} sessions={sessions} cur={cur} items={items} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openInDocPane(rel, { pin })} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={() => setView('list')} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} queue={queueFor(sessionId)} onQueue={(f) => { if (sessionId) onQueue(sessionId, f) }} onReveal={reveal} />
 
       {/* ── 문서 열 ── */}
       {showDoc ? <>{!phone ? <div className="divx" onPointerDown={dragX('doc', -1)} onDoubleClick={() => setLay({ ...lay, doc: DEF.doc })} /> : null}<div className="docwrap" style={{ width: wide || phone ? undefined : fit.doc, flex: wide ? 3 : 'none', display: 'flex', minWidth: 0 }}><DocPane bot={bot} docs={docs} filesTick={s.filesTick[bot.id]} onTalk={(rel) => { setPrefill(`${rel} 파일 봐 줘: `); if (phone) setView('chat') }} onHide={() => setDocOpen((d) => ({ ...d, [bot.id]: false }))} wide={wide} onWide={() => setWide(!wide)} onAttach={(rel) => addAttach({ rel, abs: `${bot.abs}/${rel}` })} say={say} phone={phone} onBack={() => setView('panel')} /></div></> : null}
 
       {/* ── 오른쪽 ── */}
       {!phone ? <div className="divx" onPointerDown={rpOpen ? dragX('rp', -1) : undefined} onDoubleClick={() => setLay({ ...lay, rp: DEF.rp, rpOpen: true, rpPin: true })} /> : null}
-      {rpOpen || phone ? <div className="rpwrap" style={{ width: phone ? '100%' : fit.rp, flex: 'none', display: 'flex', minWidth: 0 }}><Panel bot={bot} sessions={sessions} sessionId={sessionId} go={go} onOpenFile={openDoc} onTalk={(t) => { setPrefill(t); if (phone) setView('chat') }} onAttach={(rel, dir) => addAttach({ rel, abs: `${bot.abs}/${rel}`, dir })} onMention={(rel) => { setMentionReq((m) => [...m, rel]); if (phone) setView('chat') }} onStartAt={startAt} onNewFolderAt={newFolderAt} touched={touched} filesTick={s.filesTick[bot.id]} secH={lay.secH} onSecH={(h) => setLay({ ...lay, secH: h })} onCollapse={closeRp} focusSec={focusSec} say={say} refresh={refresh} activeDoc={showDoc ? docs.active : null} onDragY={(on) => setDrag(on ? 'y' : '')} phone={phone} onBack={() => setView('chat')} /></div>
+      {rpOpen || phone ? <div className="rpwrap" style={{ width: phone ? '100%' : fit.rp, flex: 'none', display: 'flex', minWidth: 0 }}><Panel bot={bot} sessions={sessions} sessionId={sessionId} go={go} onOpenFile={(rel, pin) => openInDocPane(rel, { pin })} onTalk={(t) => { setPrefill(t); if (phone) setView('chat') }} onAttach={(rel, dir) => addAttach({ rel, abs: `${bot.abs}/${rel}`, dir })} onMention={(rel) => { setMentionReq((m) => [...m, rel]); if (phone) setView('chat') }} onStartAt={startAt} onNewFolderAt={newFolderAt} touched={touched} filesTick={s.filesTick[bot.id]} secH={lay.secH} onSecH={(h) => setLay({ ...lay, secH: h })} onCollapse={closeRp} focusSec={focusSec} say={say} refresh={refresh} activeDoc={showDoc ? docs.active : null} onDragY={(on) => setDrag(on ? 'y' : '')} phone={phone} onBack={() => setView('chat')} /></div>
         : <div className="strip right"><button className="ib" onClick={() => openRp()} title="패널 펼치기 (⌘⇧B)"><Icon n="panelr" size={14} /></button><div className="gap" />
         <button className="ib" onClick={() => openRp('sessions')}><Icon n="clock" size={14} />{sessions.some((x) => x.state === 'running') ? <span className="dot run" style={{ position: 'absolute', right: 2, top: 2 }} /> : null}<span className="fly"><b>세션</b><span>{sessions.length}개</span></span></button>
         <button className="ib" onClick={() => openRp('todo')}><Icon n="list" size={14} />{(s.todos[bot.id] ?? []).filter((t) => !t.done).length ? <span className="bd">{(s.todos[bot.id] ?? []).filter((t) => !t.done).length}</span> : null}<span className="fly"><b>{bot.orchestrator ? 'Inbox' : '할 일'}</b><span>{bot.orchestrator ? `${s.inbox}개` : `미완료 ${(s.todos[bot.id] ?? []).filter((t) => !t.done).length}`}</span></span></button>
@@ -1205,7 +1233,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
         {drillSub ? <div className="drill-p"><div className="meta" style={{ cursor: 'default' }}>무엇을 시켰나</div><div className="tx">{drillSub.prompt || drillSub.name}</div><hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '4px 0', width: '100%' }} /></div> : null}
         <SidCtx.Provider value={{ sid: cur?.id ?? '', botId: bot.id }}>{rows.map((r) => r.k === 'group'
           ? <ToolGroup key={r.items[0].id} items={r.items} endT={r.endT} base={bot.abs} onFile={(p) => { const rel = relOf(p); if (rel) onFile(rel) }} />
-          : <Item key={r.it.id} it={r.it} bot={bot} items={items} onFile={(p) => { const rel = relOf(p); if (rel) onFile(rel) }} onReveal={onReveal} onDrill={(id) => setDrill(id)} state={state} say={say} isLastAssistant={r.it.id === lastAssistant} isLastUser={r.it.id === lastUser?.id} userRef={lastUserRef} onRetry={lastUser ? () => void sendText(lastUser.text) : undefined} />)}</SidCtx.Provider>
+          : <Item key={r.it.id} it={r.it} bot={bot} items={items} onFile={(p) => onFile(p)} onReveal={onReveal} onDrill={(id) => setDrill(id)} state={state} say={say} isLastAssistant={r.it.id === lastAssistant} isLastUser={r.it.id === lastUser?.id} userRef={lastUserRef} onRetry={lastUser ? () => void sendText(lastUser.text) : undefined} />)}</SidCtx.Provider>
         {cur && !drill ? pending.map((p) => <PermCard key={p.requestId} p={p} sid={cur.id} />) : null}
         <div style={{ flex: 1 }} />
         {cur && (running || state === 'awaiting_input') ? <Live cur={cur} state={state} color={bot.color} /> : null}
