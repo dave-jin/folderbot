@@ -840,7 +840,7 @@ try {
          */
         {
           const sidN = (await api(`/bots/${bot.id}/sessions`, { name: 'n-phone' })).id
-          for (let i = 0; i < 4; i++) await api(`/sessions/${sidN}/send`, { text: '되읊어: 본문 ' + i + ' ' + '가나다라마바사 '.repeat(20) }); await wait(700)
+          for (let i = 0; i < 4; i++) await api(`/sessions/${sidN}/send`, { text: '되읊어: 본문 ' + i + ' ' + '가나다라마바사 '.repeat(60) }); await wait(700)   /* Q-2 가 질문을 지나쳐 스크롤할 만큼 길게 */
           const ph = await br.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1 })
           await ph.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
           await ph.goto(base + `/#bot=${bot.id}&s=${sidN}`); await ph.waitForSelector('.composer.ph .cin', { timeout: 15000 }); await wait(700)
@@ -848,14 +848,24 @@ try {
           const hd = await ph.evaluate(() => { const h = document.querySelector('.chat-hdr'); const cin = getComputedStyle(document.querySelector('.composer.ph .cin')); const body = getComputedStyle(document.querySelector('.chat-body')); return { h: h.getBoundingClientRect().height, menu: !!h.querySelector('.hb-menu'), name: h.querySelector('.hnb .dn')?.textContent, folder: !!h.querySelector('button[title="이 폴더에서"]'), fs: cin.fontSize, lh: cin.lineHeight, bfs: body.fontSize, blh: body.lineHeight } })
           if (Math.abs(hd.h - 44) > 1 || !hd.menu || hd.folder || !/제품_Rondo/.test(hd.name ?? '')) fail('N/H-5: 헤더 ' + JSON.stringify(hd))
           if (hd.fs !== hd.bfs || hd.lh !== hd.blh) fail('N-1: 입력창 글자 크기·줄 간격이 본문과 다르다 ' + JSON.stringify(hd))
-          // N-2 · 질문 헤더 — 위로 스크롤하면 본문 위가 아니라 **흐름 안** 에 서고, 탭하면 펼쳐진다
+          // Q-2 (09-19 Dave, N-2 를 덮음) · 고정 질문은 **라운드 유리 알약(.pinq)** 하나 — «화면 바로 위로 지나간 질문» 이 붙고, 더 올리면 그 앞 질문으로 바뀌고, 맨 위에서는 없다
+          //   세션에는 본문 0~3 네 질문이 있다(위에서 보냈다). 헤더 페이드는 10px 이하 — 글을 가리지 않는다
           await ph.evaluate(() => { const sc = document.querySelector('.chat-scroll'); sc.scrollTop = sc.scrollHeight }); await wait(300)
-          await ph.evaluate(() => { const sc = document.querySelector('.chat-scroll'); sc.scrollTop = 0; sc.dispatchEvent(new Event('scroll')) }); await wait(400)
-          await ph.evaluate(() => { const sc = document.querySelector('.chat-scroll'); sc.scrollTop = sc.scrollHeight - sc.clientHeight - 1; sc.dispatchEvent(new Event('scroll')) }); await wait(400)
-          const q = await ph.evaluate(() => { const qh = document.querySelector('.qhdr'); if (!qh) return null; const r = qh.getBoundingClientRect(); const sc = document.querySelector('.chat-scroll').getBoundingClientRect(); const pin = !!document.querySelector('.pinq'); return { bottom: r.bottom, scTop: sc.top, pin, open: qh.classList.contains('open'), one: getComputedStyle(qh.querySelector('.tx')).whiteSpace } })
-          if (!q) fail('N-2: 질문 헤더(.qhdr)가 없다'); if (q.pin || q.bottom > q.scTop + 1 || q.one !== 'nowrap') fail('N-2: 질문 헤더가 본문 위에 떠 있거나 한 줄이 아니다 ' + JSON.stringify(q))
-          await ph.click('.qhdr'); await wait(200); const q2 = await ph.evaluate(() => ({ open: document.querySelector('.qhdr').classList.contains('open'), ws: getComputedStyle(document.querySelector('.qhdr .tx')).whiteSpace })); if (!q2.open || q2.ws === 'nowrap') fail('N-2: 탭해도 안 펼쳐진다 ' + JSON.stringify(q2))
-          await ph.screenshot({ path: 'test/tmp/n2-qhdr.png' }); await ph.click('.qhdr'); await wait(200); if (await ph.$('.qhdr.open')) fail('N-2: 다시 탭해도 안 접힌다')
+          const qAt = async (fn) => { await ph.evaluate(fn); await wait(400); return ph.evaluate(() => { const p = document.querySelector('.pinq'); if (!p) return null; const r = p.getBoundingClientRect(); const h = document.querySelector('.chat-hdr').getBoundingClientRect(); return { text: p.textContent, top: r.top, hdrBottom: h.bottom, radius: getComputedStyle(p).borderTopLeftRadius, inFlow: !!document.querySelector('.qhdr'), pos: getComputedStyle(p).position } }) }
+          const qTop = await qAt(() => { const sc = document.querySelector('.chat-scroll'); sc.scrollTop = 0; sc.dispatchEvent(new Event('scroll')) })
+          if (qTop) fail('Q-2: 맨 위에서는 고정 질문이 없어야 한다 ' + JSON.stringify(qTop))
+          // 본문 1 질문의 답 중간까지 내린다 → 본문 1 이 고정 · 본문 2 는 아직 아래
+          const qMid = await qAt(() => { const sc = document.querySelector('.chat-scroll'); const us = [...document.querySelectorAll('.umsg[data-id]')]; const u1 = us[1]; sc.scrollTop = u1.offsetTop + u1.offsetHeight + 40; sc.dispatchEvent(new Event('scroll')) })
+          if (!qMid || !/본문 1/.test(qMid.text ?? '') || qMid.inFlow || qMid.pos !== 'absolute' || parseFloat(qMid.radius) < 12 || qMid.top < qMid.hdrBottom) fail('Q-2: 화면 바로 위 질문(본문 1)이 라운드 알약으로 헤더 아래 붙어야 한다 ' + JSON.stringify(qMid))
+          const fade = await ph.$eval('.chat-hdr', (h) => parseFloat(getComputedStyle(h, '::after').height)); if (fade > 10) fail('Q-2: 헤더 페이드가 글을 가린다(' + fade + 'px)')
+          await ph.screenshot({ path: 'test/tmp/q2-pinq.png' })
+          // 더 내리면(본문 2 지나침) 본문 2 로 바뀐다 · 탭하면 그 질문이 보이고 알약은 사라진다
+          const qNext = await qAt(() => { const sc = document.querySelector('.chat-scroll'); const us = [...document.querySelectorAll('.umsg[data-id]')]; const u2 = us[2]; sc.scrollTop = u2.offsetTop + u2.offsetHeight + 40; sc.dispatchEvent(new Event('scroll')) })
+          if (!qNext || !/본문 2/.test(qNext.text ?? '')) fail('Q-2: 더 올리면 그 앞 질문(본문 2)으로 바뀌어야 한다 ' + JSON.stringify(qNext))
+          await ph.click('.pinq'); await wait(900)
+          // 탭 → 본문 2 질문이 알약 바로 아래(가려지지 않게) · 알약은 이제 그 앞 질문(본문 1) — «바로 위 질문이 항상 고정»
+          const qTap = await ph.evaluate(() => { const us = [...document.querySelectorAll('.umsg[data-id]')]; const r = us[2].getBoundingClientRect(); const sc = document.querySelector('.chat-scroll').getBoundingClientRect(); const p = document.querySelector('.pinq'); return { top: r.top - sc.top, below: p ? r.top >= p.getBoundingClientRect().bottom - 1 : null, pin: p?.textContent ?? null } })
+          if (qTap.top < 40 || qTap.top > 120 || !qTap.below || !/본문 1/.test(qTap.pin ?? '')) fail('Q-2: 알약을 탭하면 그 질문이 알약 아래 보이고 알약은 그 앞 질문이어야 한다 ' + JSON.stringify(qTap))
           // N-1 · 6줄 — 첫 줄이 안 잘리고 · 글이 상자 폭 전부 · 버튼은 아래 줄에 남는다
           await ph.click('.composer.ph .cin'); for (let i = 0; i < 6; i++) { await ph.keyboard.type('여섯 줄 중 ' + (i + 1) + '번째 줄입니다'); if (i < 5) await ph.keyboard.press('Shift+Enter') } await wait(300)
           const six = await ph.evaluate(() => { const c = document.querySelector('.composer.ph'); const cin = c.querySelector('.cin'); const t = [...cin.childNodes].find((n) => n.nodeType === 3); const rg = document.createRange(); rg.setStart(t, 0); rg.setEnd(t, 3); const first = rg.getBoundingClientRect(); const cr = cin.getBoundingClientRect(); const box = c.getBoundingClientRect(); const left = c.querySelector('.cleft').getBoundingClientRect(); const right = c.querySelector('.cright').getBoundingClientRect(); const sel = window.getSelection(); const r = sel.getRangeAt(0).cloneRange(); r.collapse(true); let cy = null; const rs = r.getClientRects(); if (rs.length) cy = rs[0].y; else { const sp = document.createElement('span'); sp.textContent = '​'; r.insertNode(sp); cy = sp.getBoundingClientRect().y; sp.remove() }
@@ -869,7 +879,7 @@ try {
           const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
           const files3 = ['a.png', 'b.png', 'c.png'].map((name) => ({ name, mimeType: 'image/png', buffer: Buffer.from(png.split(',')[1], 'base64') }))
           const photoAttr = await ph.$eval('input[accept="image/*"][multiple]', (e) => ({ accept: e.accept, multiple: e.multiple, hidden: e.hidden })); if (!photoAttr.multiple || photoAttr.accept !== 'image/*') fail('N-4: 📷 입력이 image/* multiple 이어야 한다')
-          if (!(await ph.$('.composer.ph .cleft .plusb.photo'))) fail('N-4: 입력창 왼쪽에 📷 가 없다')
+          if (await ph.$('.composer.ph .cleft .plusb.photo')) fail('Q-1: 입력창 왼쪽의 📷 는 뺐다 — + 하나뿐이어야 한다'); if ((await ph.$$eval('.composer.ph .cleft .plusb', (r) => r.length)) !== 1) fail('Q-1: 왼쪽 단추는 + 하나')
           await ph.setInputFiles('input[accept="image/*"][multiple]', files3); await wait(150)
           const mid = await ph.evaluate(() => ({ chips: document.querySelectorAll('.achips .achip').length, thumbs: document.querySelectorAll('.achips .achip img').length, rings: document.querySelectorAll('.achips .achip .ring').length, dis: !!document.querySelector('.cright.dis') }))
           await wait(1500)
@@ -885,10 +895,12 @@ try {
           // 같은 이름은 _2
           const up1 = await api(`/bots/${bot.id}/upload`, { name: 'dup.txt', data: Buffer.from('x').toString('base64') }); const up2 = await api(`/bots/${bot.id}/upload`, { name: 'dup.txt', data: Buffer.from('y').toString('base64') })
           if (up1.rel !== '첨부/dup.txt' || up2.rel !== '첨부/dup_2.txt') fail('N-3: 같은 이름은 _2 ' + JSON.stringify([up1.rel, up2.rel]))
-          // N-4 · + 메뉴 첫 줄 「카메라로 찍기」(capture) · 폰 안내에 ⌘V 없음
-          await ph.click('.composer.ph .cleft .plusb:not(.photo)'); await wait(300)
-          const menu = await ph.evaluate(() => ({ first: document.querySelector('.cpop.plus .prow2 b')?.textContent, hint: document.querySelector('.cpop.plus .hint')?.textContent, cam: !!document.querySelector('input[capture="environment"]') }))
-          if (menu.first !== '카메라로 찍기' || /⌘V/.test(menu.hint ?? '') || !menu.cam) fail('N-4: + 메뉴 ' + JSON.stringify(menu))
+          // N-4 → Q-1 · + 메뉴 첫 두 줄 「카메라로 찍기」(capture) · 「사진에서 고르기」(image/* multiple) — 둘 다 + → 줄 = 2스텝 · 폰 안내에 ⌘V 없음
+          await ph.click('.composer.ph .cleft .plusb'); await wait(300)
+          const menu = await ph.evaluate(() => ({ rows: [...document.querySelectorAll('.cpop.plus .prow2 b')].map((b) => b.textContent), hint: document.querySelector('.cpop.plus .hint')?.textContent, cam: !!document.querySelector('input[capture="environment"]'), photo: !!document.querySelector('input[accept="image/*"][multiple]:not([capture])') }))
+          if (menu.rows[0] !== '카메라로 찍기' || menu.rows[1] !== '사진에서 고르기' || /⌘V/.test(menu.hint ?? '') || !menu.cam || !menu.photo) fail('Q-1: + 메뉴 ' + JSON.stringify(menu))
+          // 「사진에서 고르기」 → 사진 입력이 바로 열린다(2스텝)
+          const [chooser] = await Promise.all([ph.waitForEvent('filechooser', { timeout: 3000 }), ph.click('.cpop.plus .prow2:has-text("사진에서 고르기")')]); if (!chooser.isMultiple()) fail('Q-1: 사진 고르기는 여러 장'); await ph.click('.composer.ph .cleft .plusb'); await wait(300)
           await ph.screenshot({ path: 'test/tmp/n4-plus.png' }); await ph.keyboard.press('Escape'); await ph.click('.composer.ph .cin'); await wait(200)
           // N-4 · 붙여넣기 — 폰 클립보드는 files 로 온다
           await ph.evaluate(() => { for (const b of document.querySelectorAll('.achips .achip .x')) b.click() }); await wait(200)
