@@ -63,6 +63,12 @@ rl.on('line', (raw) => {
   if (msg.type !== 'user') return
   const text = msg.message?.content?.map?.((b) => b.text ?? '').join('') ?? ''
   const u = randomUUID().slice(0, 6)
+  // 「채팅 칩」 검사용 — «되읊어:» 뒤를 답변으로 그대로 돌려준다(경로·파일명이 칩이 되는지 재려고)
+  if (/^되읊어:/.test(text)) {
+    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: text.slice('되읊어:'.length).trim() }], stop_reason: 'end_turn' } })
+    say({ type: 'result', subtype: 'success', duration_ms: 10, total_cost_usd: 0.001 })
+    return
+  }
   // 「봇 답의 첫 줄」 검사용 — 짧은 한 줄 + 빈 줄 + 본문
   if (/머리줄/.test(text)) {
     say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '정리했습니다\n\n**4건**을 옮겼고, 중복 2건은 합쳤습니다. 원본 문장은 지우지 않고 상세로 내렸어요.' }], stop_reason: 'end_turn' } })
