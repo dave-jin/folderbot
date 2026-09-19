@@ -1,20 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { marked } from 'marked'
 import type { Bot, NotifyEvent, RoutineDef } from '../core/types'
 import { api, setToken, subscribePush } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { hitRange, rank } from '../core/search'
 import { candidatePaths } from '../core/paths'
 import { diffLines, diffStat, foldSame } from '../core/diff'
-import { extractMath, fillMath } from '../core/math'
+import { extractMath } from '../core/math'
+import { renderMarkdown } from './render'
+import { wikiNames } from '../core/wikilinks'
+import { token } from './api'
 import { loadKatex, renderMath, renderMermaid } from './mathmaid'
 import { decorateLinks } from './favicons'
 import { boxifyLinks, decorateCode, hoverLinks, hoverable } from './previews'
 import { copyText } from './clip'
 import { pickAgent } from './AgentPick'
 import { fmtTime, useStore } from './store'
-
-marked.setOptions({ gfm: true, breaks: true })
 
 /**
  * 답변 속 «경로처럼 보이는 글자» 를 눌러서 여는 칩으로 (2026-09-13 Dave).
@@ -58,7 +58,8 @@ function decorate(root: HTMLElement, hits: PathHit[], open: (rel: string) => voi
     if (hit) c.replaceWith(chip(hit))
   }
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode: (n) => (n.parentElement?.closest('pre,a,.pchip') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT)
+    // K-2 · `code` 안은 걷지 않는다 — 통째로 경로인 코드 조각은 위에서 요소째 바꿨고, 나머지는 예시라 토막 내지 않는다(스크린샷 1236)
+    acceptNode: (n) => (n.parentElement?.closest('pre,code,a,.pchip,.wlink') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT)
   })
   const texts: Text[] = []
   for (let n = walker.nextNode(); n; n = walker.nextNode()) texts.push(n as Text)
@@ -75,17 +76,30 @@ function decorate(root: HTMLElement, hits: PathHit[], open: (rel: string) => voi
   }
 }
 
+/**
+ * K-1 · 위키링크 채우기 — 렌더러(core/wikilinks)는 이름만 달아 두고, 어디 있는지는 호스트가 답한다(`/exists`, 파일명만이라
+ * 봇 폴더 → 참조 → 볼트 순으로 찾는다 · G). 그림은 `raw` 로 src 를 채우고(원격도 호스트 스트리밍), 노트는 눌러서 문서 창.
+ * 없는 것은 「찾을 수 없음」 — 깨진 그림 아이콘이나 죽은 링크를 두지 않는다.
+ */
+function resolveWiki(root: HTMLElement, names: string[], ok: Record<string, { rel: string; dir: boolean; matches?: string[] } | false>, botId: string, open: (rel: string) => void): void {
+  if (!names.length) return
+  for (const el of [...root.querySelectorAll<HTMLElement>('[data-wiki]')]) {
+    const name = el.dataset.wiki ?? ''; const r = ok[name]
+    if (!r) { const m = document.createElement('span'); m.className = 'wmiss'; m.textContent = `찾을 수 없음 · ${name}`; m.title = name; el.replaceWith(m); continue }
+    if (el instanceof HTMLImageElement) { el.src = `/api/bots/${botId}/raw?rel=${encodeURIComponent(r.rel)}&token=${encodeURIComponent(token())}`; el.title = name; el.addEventListener('click', () => open(r.rel)); el.addEventListener('error', () => { const m = document.createElement('span'); m.className = 'wmiss'; m.textContent = `찾을 수 없음 · ${name}`; el.replaceWith(m) }); continue }
+    el.dataset.rel = r.rel; el.title = r.rel
+    el.addEventListener('click', (e) => { e.preventDefault(); if (r.matches && r.matches.length > 1) window.dispatchEvent(new CustomEvent('fb:pickfile', { detail: { name, rels: r.matches } })); else open(r.rel) })
+    if (!r.dir) hoverable(el, { kind: 'file', botId, rel: r.rel })
+  }
+}
+
 export function Md({ text, streaming, botId, onPath, onDir }: { text: string; streaming?: boolean; botId?: string; onPath?: (rel: string) => void; onDir?: (rel: string) => void }) {
   /**
    * 수식 (루프 10/10) — `$…$` 를 marked 보다 먼저 걷어 내고(core/math), KaTeX 가 오면 끼워 넣는다.
    * ⚠ KaTeX 가 아직 안 왔으면 원문 `$…$` 이 그대로 보인다 — 빈칸보다 낫다. 오면 다시 그린다.
    */
   const [katex, setKatex] = useState<Parameters<typeof renderMath>[0] | null>(null)
-  const html = useMemo(() => {
-    const m = extractMath(text)
-    const h = marked.parse(m.text) as string
-    return fillMath(h, m.chunks, katex ? renderMath(katex) : null)
-  }, [text, katex])
+  const html = useMemo(() => renderMarkdown(text, katex ? renderMath(katex) : null), [text, katex])
   useEffect(() => { if (!katex && extractMath(text).chunks.length) void loadKatex().then(setKatex).catch(() => {}) }, [text, katex])
   const ref = useRef<HTMLDivElement>(null)
   /**
@@ -114,15 +128,20 @@ export function Md({ text, streaming, botId, onPath, onDir }: { text: string; st
   useEffect(() => {
     const el = ref.current
     if (!el || !botId || !onPath || streaming) return
-    const cands = candidatePaths(text)
+    const wiki = wikiNames(text)
+    const cands = [...new Set([...candidatePaths(text), ...wiki])]
     if (!cands.length) return
     let live = true
     void api<Record<string, { rel: string; dir: boolean; matches?: string[] } | false>>(`/bots/${botId}/exists`, { body: { rels: cands } })
       .then((ok) => {
         if (!live || !ref.current) return
         // 한 자리에서 여러 후보가 걸리면 **긴 것**이 이긴다 — `3. Area/…` 가 `Area/…` 보다 맞다
-        const hits: PathHit[] = cands.filter((c) => ok[c]).sort((a, b) => b.length - a.length).map((c) => { const r = ok[c] as { rel: string; dir: boolean; matches?: string[] }; return { text: c, rel: r.rel, dir: r.dir, matches: r.matches } })
+        const found = cands.filter((c) => !wiki.includes(c) && ok[c]).sort((a, b) => b.length - a.length)
+        // K-2 · 긴 경로의 **조각**은 칩이 되지 않는다 — «PARA/첨부/x.png» 가 있으면 «PARA/»·«첨부» 는 버린다(통째 칩 하나)
+        const whole = found.filter((c, i) => !found.slice(0, i).some((longer) => longer.includes(c)))
+        const hits: PathHit[] = whole.map((c) => { const r = ok[c] as { rel: string; dir: boolean; matches?: string[] }; return { text: c, rel: r.rel, dir: r.dir, matches: r.matches } })
         decorate(ref.current, hits, onPath, onDir, botId)
+        resolveWiki(ref.current, wiki, ok, botId, onPath)
       })
       .catch(() => { /* 못 물어봤으면 그냥 글자로 둔다 */ })
     return () => { live = false }

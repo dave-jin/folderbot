@@ -947,7 +947,9 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const lastAssistant = useMemo(() => { for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === 'assistant') return items[i].id; return null }, [items])
   const streaming = !!(last && (last.kind === 'assistant' || last.kind === 'thinking') && last.streaming)
   // 컴포저 높이 → 본문 아래 여백 (유리 뒤로 글이 지나가되 가려지진 않게)
-  useEffect(() => { const el = footRef.current, col = colRef.current; if (!el || !col) return; const ro = new ResizeObserver(() => col.style.setProperty('--footh', `${el.offsetHeight}px`)); ro.observe(el); return () => ro.disconnect() }, [collapsed])
+  // I-2 · 컴포저가 자라면(줄이 늘면) 본문 아래 여백(--footh)이 커진다 — 맨 아래를 보고 있었으면 **그 자리에서 따라 붙는다.**
+  //   위의 스크롤 컨테이너 ResizeObserver 는 «상자 크기» 만 보므로 패딩만 커지는 이 경우를 못 본다(실측: 마지막 메시지가 52px 가려짐).
+  useEffect(() => { const el = footRef.current, col = colRef.current; if (!el || !col) return; const ro = new ResizeObserver(() => { col.style.setProperty('--footh', `${el.offsetHeight}px`); const sc = scRef.current; if (sc && atBottomRef.current) requestAnimationFrame(() => { sc.scrollTop = sc.scrollHeight }) }); ro.observe(el); return () => ro.disconnect() }, [collapsed])
   // 스크롤 위치 → ↓ 버튼(맨 아래가 아닐 때) · 직전 질문 고정(원래 메시지가 헤더 위로 사라졌을 때)
   const measure = () => { const el = scRef.current; if (!el) return; const d = el.scrollHeight - el.scrollTop - el.clientHeight; setAtBottom(d < 80); setShowJump((was) => (was ? d > 40 : d > 240)); const u = lastUserRef.current; setPinned(!!u && u.getBoundingClientRect().bottom < el.getBoundingClientRect().top + (phone ? 60 : 44)) }
   useEffect(() => { const el = scRef.current; if (!el) return; measure(); el.addEventListener('scroll', measure, { passive: true }); return () => el.removeEventListener('scroll', measure) }, [collapsed, cur?.id, phone])

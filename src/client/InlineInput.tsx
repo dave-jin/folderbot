@@ -107,6 +107,22 @@ function structure(el: HTMLElement): { t: 'text' | 'chip'; s: string }[] {
   return out.filter((x) => x.s.length)
 }
 function serializeEndsNL(el: HTMLElement): boolean { return serialize(el).endsWith('\n') }
+/**
+ * 🔴 **끝 줄바꿈에는 자리표 `<br>` 이 있어야 보인다** (I-1 · 2026-09-19 실측 `test/repro-enter.mjs`).
+ *    pre-wrap 에서 텍스트 끝의 `\n` 은 **줄로 그려지지 않는다** — 그래서 ⇧⏎ 한 번은 값에만 남고 화면은 그대로였고,
+ *    이어서 글자를 치면 크롬이 그 `\n` 을 흡수해 **줄바꿈이 사라졌다**(«두 번 눌러야 줄이 바뀐다» 의 실체 — IME 가 아니다).
+ *    `render()` 는 «구조가 같으면 손대지 않는다» 라 자리표를 못 붙였다. 그래서 자리표는 **여기 한 곳**에서 맞춘다 —
+ *    끝이 `\n` 이면 `<br>` 을 두고, 아니면 남은 자리표를 뗀다(크롬이 스스로 둔 자리표는 serialize 가 이미 셈하지 않는다).
+ */
+export function ensureTail(el: HTMLElement): void {
+  const kids = Array.from(el.childNodes)
+  const last = kids[kids.length - 1]
+  const lastIsBr = !!last && last.nodeName === 'BR'
+  const body = lastIsBr ? kids[kids.length - 2] : last
+  const endsNL = !!body && body.nodeType === Node.TEXT_NODE && (body.textContent ?? '').endsWith('\n')
+  if (endsNL && !lastIsBr) el.appendChild(document.createElement('br'))
+  else if (!endsNL && lastIsBr && kids.length > 1 && body && body.nodeType === Node.TEXT_NODE) last.remove()
+}
 const same = (a: { t: string; s: string }[], b: { t: string; s: string }[]) => a.length === b.length && a.every((x, i) => x.t === b[i].t && x.s === b[i].s)
 
 export const InlineInput = forwardRef<InlineInputHandle, Props>(function InlineInput({ value, chips, placeholder, className, onChange, onCaret, onKeyDown, onFocus, onChipClick }, ref) {
@@ -126,7 +142,7 @@ export const InlineInput = forwardRef<InlineInputHandle, Props>(function InlineI
     const e = el.current; if (!e || composing.current) return
     const want = tokens(latest.current.value, latest.current.chips)
     const chipsChanged = Array.from(e.querySelectorAll<HTMLElement>('[data-chip]')).some((c) => { const info = latest.current.chips[c.dataset.chip ?? '']; return !info || c.dataset.busy !== (info.busy ? '1' : '') })
-    if (!chipsChanged && same(structure(e), want)) { e.dataset.value = latest.current.value; return }
+    if (!chipsChanged && same(structure(e), want)) { e.dataset.value = latest.current.value; ensureTail(e); return }
     const pos = document.activeElement === e ? caretOf(e) : -1
     for (const r of roots.current.values()) r.unmount(); roots.current.clear()
     e.replaceChildren()
@@ -155,21 +171,34 @@ export const InlineInput = forwardRef<InlineInputHandle, Props>(function InlineI
     const e = el.current; if (!e) return
     const sel = window.getSelection(); if (!sel || !sel.rangeCount || !e.contains(sel.getRangeAt(0).startContainer)) { e.focus(); placeCaret(e, serialize(e).length) }
     const r = window.getSelection()!.getRangeAt(0); r.deleteContents()
-    const node = document.createTextNode(s); r.insertNode(node); r.setStartAfter(node); r.collapse(true)
-    const sel2 = window.getSelection()!; sel2.removeAllRanges(); sel2.addRange(r)
+    const pos = caretOf(e)
+    const node = document.createTextNode(s); r.insertNode(node)
+    // ⚠ 글자 노드 한가운데 넣으면 크롬이 노드를 **셋으로 쪼갠다**(«abc» · «\n» · «») — 빈 꼬리가 남아 끝 판정이 틀렸다(실측).
+    //   합친 뒤 자리표를 맞추고 캐럿은 글자 수로 다시 놓는다 (I-1)
+    e.normalize()
+    ensureTail(e)   // ⇧⏎ 로 끝에 넣은 줄바꿈이 **그 자리에서** 보이게
+    placeCaret(e, pos + s.length)
     emit()
   }
+  /**
+   * 조합 중의 ⇧⏎ (I-1) — 크롬은 keydown 을 `isComposing` 으로 IME 에 넘기고 조합만 확정한다(줄은 안 넣는다).
+   * 그래서 «한 번 더» 눌러야 했다. 키를 기억해 두었다가 `compositionend` 에서 줄을 넣는다 — 한 번에 «확정 + 줄».
+   * ⚠ Safari 는 순서가 반대다(compositionend → keydown, isComposing=false) — 그쪽은 아래 onKeyDown 이 그대로 처리한다.
+   */
+  const nlAfterCompose = useRef(false)
 
   return <div ref={el} className={`cin ${className ?? ''}`} contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" data-placeholder={placeholder ?? ''} data-value={value}
     onInput={emit}
     onCompositionStart={() => { composing.current = true }}
-    onCompositionEnd={() => { composing.current = false; emit(); requestAnimationFrame(render) }}
+    onCompositionEnd={() => { composing.current = false; emit(); if (nlAfterCompose.current) { nlAfterCompose.current = false; insertText('\n') } requestAnimationFrame(render) }}
     onKeyUp={() => { const e = el.current; if (e) latest.current.onCaret(caretOf(e)) }}
     onClick={() => { const e = el.current; if (e) latest.current.onCaret(caretOf(e)) }}
     onFocus={onFocus}
     onKeyDown={(e) => {
       onKeyDown?.(e)
-      if (e.defaultPrevented || e.nativeEvent.isComposing) return
+      // 조합 중의 ⇧⏎ — IME 가 키를 먹고 조합만 확정한다. 줄은 compositionend 에서 우리가 넣는다(브라우저 기본 삽입은 막는다 — 두 번 들어간다)
+      if (e.nativeEvent.isComposing) { if (e.key === 'Enter' && e.shiftKey) { nlAfterCompose.current = true; e.preventDefault() } return }
+      if (e.defaultPrevented) return
       // 줄 바꿈은 우리가 넣는다 — 크롬의 <div> 쪼개기를 막아 구조를 평평하게 지킨다
       if (e.key === 'Enter') { e.preventDefault(); insertText('\n') }
     }}
