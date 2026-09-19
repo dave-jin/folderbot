@@ -69,6 +69,15 @@ rl.on('line', (raw) => {
     say({ type: 'result', subtype: 'success', duration_ms: 40, total_cost_usd: 0.001 })
     return
   }
+  // 「입력창 흔들림」 재현용 — 글자 조각을 3초 동안 40ms 마다 흘려 «답변 스트리밍 중 타이핑» 조건을 만든다
+  if (/긴스트리밍/.test(text)) {
+    let n = 0; const words = '스트리밍 중에 입력창이 흔들리는지 재는 긴 답변입니다 '.split(' ')
+    const tick = setInterval(() => {
+      if (n >= 60) { clearInterval(tick); say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '끝' }], stop_reason: 'end_turn' } }); say({ type: 'result', subtype: 'success', duration_ms: 3000, total_cost_usd: 0.001 }); return }
+      say({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: words[n % words.length] + ' ' } } }); n++
+    }, 50)
+    return
+  }
   // 「대기열」 검사용 — 한 턴이 **느리게** 돌아야 그 사이에 보낸 말이 대기열에 쌓인다
   if (/느린일/.test(text)) {
     setTimeout(() => {
