@@ -1577,17 +1577,25 @@ function PermCard({ p, sid }: { p: PermissionRequest; sid: string }) {
    *    글 상자가 하나뿐이었다. 게다가 보낼 때도 그 글을 **첫 질문의 답**으로 넣어서, 세 번째 질문에
    *    쓴 말이 첫 질문의 답으로 갔다(조용히 틀리는 쪽이라 더 나쁘다).
    */
-  const [pick, setPick] = useState<Record<string, string>>({}); const [other, setOther] = useState<Record<string, string>>({})
+  /**
+   * 🔴 **여러 개 고르는 질문(`multiSelect`)은 여러 개가 켜진다** (2026-09-20 Dave: *«AskUserQuestion 에서 중복 선택이 안되네»*).
+   *    종전에는 답이 질문당 **글자 하나**라 새로 고르면 앞의 것이 꺼졌다 — `multiSelect: true` 인 질문도 하나만 갔다.
+   *    이제 답은 질문당 **목록**이고, 여럿 질문은 토글(다시 누르면 꺼짐) · 하나 질문은 라디오처럼 갈아탄다.
+   *    ⚠ 「기타」 도 갈린다 — 여럿이면 고른 것들 **뒤에 덧붙고**, 하나면 종전처럼 고른 것을 **대신한다**.
+   */
+  const [pick, setPick] = useState<Record<string, string[]>>({}); const [other, setOther] = useState<Record<string, string>>({})
   const act = async (body: Record<string, unknown>, path: 'permission' | 'ask') => { setBusy(true); try { await api(`/sessions/${sid}/${path}`, { body: { requestId: p.requestId, ...body } }); setSent(true) } finally { setBusy(false) } }
   if (sent) return <div className="meta"><Icon n="check" size={11} color="var(--done)" /><span>보냈어요</span></div>
   if (p.ask) {
     const qs = (p.input.questions as { question?: string; header?: string; options?: { label?: string; description?: string }[]; multiSelect?: boolean }[] | undefined) ?? []
     const keyOf = (q: { question?: string }, i: number) => q.question ?? String(i)
-    const answerOf = (q: { question?: string }, i: number) => (other[keyOf(q, i)] ?? '').trim() || pick[keyOf(q, i)] || ''
+    const picksOf = (key: string) => pick[key] ?? []
+    const toggle = (key: string, label: string, multi: boolean) => setPick((prev) => { const cur = prev[key] ?? []; if (!multi) return { ...prev, [key]: cur[0] === label ? [] : [label] }; return { ...prev, [key]: cur.includes(label) ? cur.filter((x) => x !== label) : [...cur, label] } })
+    const answerOf = (q: { question?: string; multiSelect?: boolean }, i: number) => { const key = keyOf(q, i); const free = (other[key] ?? '').trim(); const ps = picksOf(key); return q.multiSelect ? [...ps, ...(free ? [free] : [])].join(', ') : free || ps[0] || '' }
     const answers = () => Object.fromEntries(qs.map((q, i) => [keyOf(q, i), answerOf(q, i)]).filter(([, v]) => v))
     const ready = qs.every((q, i) => !!answerOf(q, i))
     return <div className="card"><div className="lab">에이전트의 질문{qs[0]?.header ? ` · ${qs[0].header}` : ''}</div>
-      {qs.map((q, i) => { const key = q.question ?? String(i); return <div key={i} style={{ display: 'flex', flexDirection: 'column' }}><div className="q">{q.question}</div>{(q.options ?? []).map((o) => <button key={o.label} className={`opt ${pick[key] === o.label ? 'on' : ''}`} onClick={() => setPick({ ...pick, [key]: o.label ?? '' })}><span className="r" /><div><div>{o.label}</div>{o.description ? <div className="d">{o.description}</div> : null}</div></button>)}<div className={`opt ${(other[key] ?? '').trim() ? 'on' : ''}`}><span className="r" style={{ marginTop: 7 }} /><input placeholder="기타 — 직접 입력…" value={other[key] ?? ''} onChange={(e) => setOther({ ...other, [key]: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter' && ready) void act({ answers: answers() }, 'ask') }} /></div></div> })}
+      {qs.map((q, i) => { const key = keyOf(q, i); const multi = !!q.multiSelect; const on = (label: string) => picksOf(key).includes(label); return <div key={i} style={{ display: 'flex', flexDirection: 'column' }}><div className="q">{q.question}{multi ? <span className="mhint">여러 개 고를 수 있어요</span> : null}</div>{(q.options ?? []).map((o) => <button key={o.label} className={`opt ${on(o.label ?? '') ? 'on' : ''}`} onClick={() => toggle(key, o.label ?? '', multi)}><span className={`r ${multi ? 'sq' : ''}`}>{multi && on(o.label ?? '') ? <Icon n="check" size={9} color="var(--bg)" /> : null}</span><div><div>{o.label}</div>{o.description ? <div className="d">{o.description}</div> : null}</div></button>)}<div className={`opt ${(other[key] ?? '').trim() ? 'on' : ''}`}><span className={`r ${multi ? 'sq' : ''}`} style={{ marginTop: 7 }}>{multi && (other[key] ?? '').trim() ? <Icon n="check" size={9} color="var(--bg)" /> : null}</span><input placeholder={multi ? '기타 — 직접 입력해 덧붙이기…' : '기타 — 직접 입력…'} value={other[key] ?? ''} onChange={(e) => setOther({ ...other, [key]: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter' && ready) void act({ answers: answers() }, 'ask') }} /></div></div> })}
       <div className="btns"><button className="btn ghost" disabled={busy} onClick={() => act({ allow: false }, 'permission')}>취소 ⎋</button><span style={{ flex: 1 }} /><button className="btn primary" disabled={busy || !ready} onClick={() => act({ answers: answers() }, 'ask')}>보내기</button></div></div>
   }
   const i = p.input; const cmd = typeof i.command === 'string' ? i.command : typeof i.file_path === 'string' ? i.file_path : typeof i.url === 'string' ? i.url : JSON.stringify(i).slice(0, 400)

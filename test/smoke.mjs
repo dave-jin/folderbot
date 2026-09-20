@@ -1172,6 +1172,15 @@ try {
           await fetch(base + `/api/sessions/${sidH}`, { method: 'DELETE' })
           ok('H 반응형 3단계 — 1400 세 칸 · 900 띠 52px+독+덮는 서랍(채팅 폭 불변) · 500 ☰+쓸기(👉 레일 · 👈 문서 · 반대로 닫힘 · 두 번 · 30%/튕김 · 비스듬·코드 블록·휠 무시 · 스크림·Esc · 기억) · 시안 비교 test/tmp/h-compare.png')
         }
+        // 🔴 **새 세션 + 는 마우스를 올리지 않아도 보인다** (2026-09-20 Dave) — 가장 자주 누르는 단추가 숨어 있을 이유가 없다
+        {
+          await pg.mouse.move(700, 700)   // 어디에도 안 올려 둔 상태
+          await wait(200)
+          const ns = await pg.evaluate(() => { const b = [...document.querySelectorAll('.rpwrap .sech')].find((x) => /세션/.test(x.textContent ?? ''))?.querySelector('.ib[title="새 세션"]'); if (!b) return null; const st = getComputedStyle(b); const r = b.getBoundingClientRect(); return { op: Number(st.opacity), vis: st.visibility, w: r.width, h: r.height } })
+          if (!ns) fail('새 세션 +: 단추가 없다')
+          if (ns.op < 1 || ns.vis !== 'visible' || ns.w < 8 || ns.h < 8) fail('🔴 새 세션 +: 마우스를 안 올리면 안 보인다 ' + JSON.stringify(ns))
+          ok('새 세션 + 는 상시 노출')
+        }
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
         await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)
         await pg.mouse.move(700, 300); await wait(200); if (await pg.$('.hcard')) fail('ui hover card stuck')
@@ -2090,6 +2099,25 @@ try {
             // 첫 질문은 고르고, 둘째는 직접 쓴 글로 — 둘이 안 섞여야 한다
             await pg.evaluate(() => { const b = [...document.querySelectorAll('.card .opt')].find((x) => x.textContent?.includes('가 안')); b?.click() })
             await wait(200)
+            /**
+             * 🔴 **여러 개 고르는 질문은 여러 개가 켜진다** (2026-09-20 Dave: *«AskUserQuestion 에서 중복 선택이 안되네»*).
+             *    종전 답은 질문당 글자 하나라 새로 고르면 앞의 것이 꺼졌다. 이제 토글이고(다시 누르면 꺼짐), 답은 «, » 로 이어 간다.
+             *    ⚠ 하나만 고르는 질문은 **그대로 라디오**여야 한다 — 그것까지 토글이 되면 답이 두 개로 가 버린다.
+             */
+            const clickOpt = async (t) => { await pg.evaluate((tx) => { const b = [...document.querySelectorAll('.card .opt')].find((x) => x.textContent?.includes(tx)); b?.click() }, t); await wait(150) }
+            const onOf = () => pg.$$eval('.card .opt.on', (r) => r.map((x) => x.textContent?.trim().slice(0, 4)))
+            await clickOpt('마 안'); await clickOpt('사 안')
+            const multiOn = await onOf()
+            if (!multiOn.some((t) => /마 안/.test(t ?? '')) || !multiOn.some((t) => /사 안/.test(t ?? ''))) fail('🔴 질문 카드: 여러 개 고르기가 안 된다 · ' + JSON.stringify(multiOn))
+            const sq = await pg.$$eval('.card .opt .r.sq', (r) => r.length); if (sq < 3) fail('질문 카드: 여럿 질문은 네모(체크)여야 한다 · ' + sq)
+            await clickOpt('사 안')   // 다시 누르면 꺼진다
+            if ((await onOf()).some((t) => /사 안/.test(t ?? ''))) fail('질문 카드: 여럿 질문에서 다시 눌러도 안 꺼진다')
+            await clickOpt('바 안')
+            // 하나만 고르는 질문은 갈아탄다 — 「가 안」 → 「나 안」 이면 켜진 것은 하나
+            await clickOpt('나 안'); const one = await onOf()
+            if (one.some((t) => /가 안/.test(t ?? ''))) fail('🔴 질문 카드: 하나만 고르는 질문이 토글이 됐다 · ' + JSON.stringify(one))
+            await clickOpt('가 안')
+            await pg.screenshot({ path: 'test/tmp/ask-multi.png' })
             await pg.click('.card .btns .btn.primary')
             let echo = ''
             for (let i = 0; i < 60; i++) { echo = (await pg.textContent('.chat-body')) ?? ''; if (/답변 받음/.test(echo)) break; await wait(250) }
@@ -2098,8 +2126,9 @@ try {
             const got = JSON.parse(m[1])
             if (got['둘째 질문은 무엇으로 할까요?'] !== '직접 쓴 둘째 답') fail('🔴 질문 카드: 직접 쓴 글이 엉뚱한 질문의 답으로 갔다 · ' + m[1])
             if (got['첫 질문은 무엇으로 할까요?'] !== '가 안') fail('질문 카드: 고른 답이 안 갔다 · ' + m[1])
+            if (got['함께 켤 것을 모두 고르세요'] !== '마 안, 바 안') fail('🔴 질문 카드: 여러 개 고른 답이 그대로 안 갔다 · ' + m[1])
             await wait(300)
-            ok('질문 카드 — 「기타」는 질문마다 따로, 답도 제 질문에 붙어 간다')
+            ok('질문 카드 — 「기타」는 질문마다 따로 · 답도 제 질문에 붙어 간다 · 여럿 질문은 중복 선택(토글·네모)이고 하나 질문은 라디오 그대로')
           }
           // 🔴 **링크 앞에 파비콘** (2026-09-13 Dave) — 자리표시자를 먼저 놓으므로 인터넷이 없어도 자리는 있다.
           //    ⛔ 비워 두고 도착할 때 넣으면 글줄이 그때마다 옆으로 밀린다.
