@@ -200,7 +200,9 @@ b,strong { color:var(--w); font-weight:600 }
 /* 내 말풍선 아래 첨부 칩 — 지시문과 한 몸이지만 글자가 아니다 */
 .umsg .files.uatt { margin-top:8px }
 .card { display:flex; flex-direction:column; gap:6px; max-width:600px } .card .lab { font-size:12px; color:var(--t3) } .card .q { font-size:14px; color:var(--w) } .card .cmd { font-family:var(--mono); font-size:11.5px; color:var(--t3); padding-left:10px; border-left:1px solid var(--line2); white-space:pre-wrap; word-break:break-all; max-height:120px; overflow:auto } .card .btns { display:flex; gap:8px; align-items:center; margin-top:4px; flex-wrap:wrap }
-.opt { display:flex; gap:10px; align-items:flex-start; padding:8px 2px; border-top:1px solid var(--line); width:100%; color:var(--t) } .opt:hover { background:var(--hover) } .opt .r { width:12px; height:12px; border-radius:50%; border:1.5px solid var(--line2); flex:none; margin-top:5px } .opt.on .r { border-color:var(--w); background:var(--w) } .opt .d { font-size:12px; color:var(--t3) } .opt input { background:none; border:0; outline:0; width:100%; color:var(--w) }
+.opt { display:flex; gap:10px; align-items:flex-start; padding:8px 2px; border-top:1px solid var(--line); width:100%; color:var(--t) } .opt:hover { background:var(--hover) } .opt .r { width:12px; height:12px; border-radius:50%; border:1.5px solid var(--line2); flex:none; margin-top:5px } .opt.on .r { border-color:var(--w); background:var(--w) } .opt .r.sq { border-radius:3px; display:inline-flex; align-items:center; justify-content:center }   /* 여러 개 고르는 질문은 네모 + 체크 (2026-09-20) */
+.q .mhint { margin-left:6px; font-size:12px; font-weight:400; color:var(--t3) }
+.opt .d { font-size:12px; color:var(--t3) } .opt input { background:none; border:0; outline:0; width:100%; color:var(--w) }
 .todow { display:flex; flex-direction:column; gap:6px } .todow .h { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--t3); min-height:22px; width:100% } .todow .h .bar { width:100px; height:1.5px; background:var(--line2); position:relative; flex:none } .todow .h .bar i { position:absolute; left:0; top:0; bottom:0; background:var(--t2) } .todow .h .bar.st i { background:var(--wait) } .todow .rows { display:flex; flex-direction:column; gap:4px; padding-left:18px; font-size:12.5px } .todow .rows .r { display:flex; align-items:center; gap:8px } .todow .rows .r.done { color:var(--t3); text-decoration:line-through } .todow .rows .r.wait { color:var(--t2) } .todow .rows .r.run { color:var(--t) } .todow .empty { width:10px; height:10px; border-radius:50%; border:1.5px solid var(--line2); display:inline-block; flex:none; padding:0 } .todow .ft { display:flex; align-items:center; gap:10px; font-size:12px; padding-left:18px; color:var(--t3) }
 /* 컴포저 — 위 글 · 아래 한 줄(모드 · + | 모델 · 노력 · 링 · 보내기) */
 .composer { width:100%; max-width:712px; display:flex; flex-direction:column; gap:6px; border:1px solid var(--hair); border-radius:12px; padding:10px 12px 8px; position:relative; box-shadow:0 10px 30px rgba(0,0,0,.35) } .composer:focus-within { border-color:rgba(255,255,255,.14) }
@@ -294,7 +296,9 @@ b,strong { color:var(--w); font-weight:600 }
 .todo.addbtn { color:var(--t3); font-size:12.5px; align-items:center; cursor:pointer } .todo.addbtn:hover { color:var(--t2) }
 .todo .ein { width:100%; background:var(--bg); border:1px solid var(--t3); border-radius:6px; padding:6px 9px; font-size:13px; color:var(--w); outline:0; line-height:1.4 }
 .todo.edit { background:var(--hover); padding-bottom:8px } .todo .eh { display:flex; gap:10px; font-size:11px; color:var(--t3); margin-top:5px } .todo .eh .sp { flex:1 }
-.sech .tools:has(.ib.mdb) { opacity:1 } .sech .tools .ib:not(.mdb) { opacity:0 } .sech:hover .tools .ib { opacity:1 }
+.sech .tools:has(.ib.mdb) { opacity:1 } .sech .tools .ib:not(.mdb):not(.nsb) { opacity:0 } .sech:hover .tools .ib { opacity:1 }
+/* 🔴 **새 세션 + 는 늘 보인다** (2026-09-20 Dave: «마우스 오버 하지 않아도 상시 노출») — 가장 자주 누르는 단추가 숨어 있을 이유가 없다 */
+.sech .tools .ib.nsb { opacity:1 }
 /* 폰 — 쓸어서 처리 (V16). 행은 껍데기 안에서 좌우로 움직이고, 뒤에서 색·아이콘이 무엇이 일어날지 미리 말한다 */
 .swwrap { position:relative; overflow:hidden; background:var(--bg); touch-action:pan-y }
 .mhome .swwrap .mrow { background:var(--bg) }   /* 폰 홈 폴더 행 — 쓸리는 동안 뒤의 예고색 위를 미끄러진다 */

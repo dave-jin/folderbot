@@ -161,7 +161,9 @@ rl.on('line', (raw) => {
     pendingAsk = true
     process.stdout.write(JSON.stringify({ type: 'control_request', request_id: `req-${randomUUID()}`, request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', display_name: 'AskUserQuestion', description: '', input: { questions: [
       { question: '첫 질문은 무엇으로 할까요?', header: '하나', options: [{ label: '가 안', description: '첫째' }, { label: '나 안' }] },
-      { question: '둘째 질문은 무엇으로 할까요?', header: '둘', options: [{ label: '다 안' }, { label: '라 안' }] }
+      { question: '둘째 질문은 무엇으로 할까요?', header: '둘', options: [{ label: '다 안' }, { label: '라 안' }] },
+      // 여러 개 고르는 질문 (2026-09-20 Dave: «중복 선택이 안되네») — 화면이 토글로 그리는지 재려고 스텁에 둔다
+      { question: '함께 켤 것을 모두 고르세요', header: '여럿', multiSelect: true, options: [{ label: '마 안' }, { label: '바 안' }, { label: '사 안' }] }
     ] }, permission_suggestions: [] } }) + '\n')
     return
   }
