@@ -20,7 +20,12 @@ export function moodOf(state?: SessionState | null, hibernated = false): Mood {
  *  · `type`  타이핑 — 눈이 글을 훑고 입이 점 셋으로 깜빡인다(답 쓰는 중)
  * ⚠ 셋 다 CSS 키프레임뿐이다 — JS 타이머 없음. `prefers-reduced-motion` 에서 멈춘다.
  */
-export function FolderBot({ color, size = 36, mood = 'idle', mono = false, work }: { color: string; size?: number; mood?: Mood; mono?: boolean; work?: 'think' | 'file' | 'type' }) {
+/**
+ * S · `unread` — **아직 내가 안 본 답**이 있으면 상태 배지에 얇은 링을 두른다 (2026-09-21 Dave).
+ * ⛔ 깜빡이지 않는다 — 맥동은 이미 «일하는 중»(주황)의 언어라, 안 읽음까지 깜빡이면 색만 다른 같은 움직임이 둘이 된다.
+ *    안 읽음은 **행 강조(굵은 제목 · 밝은 미리보기)** 와 이 링으로 말한다.
+ */
+export function FolderBot({ color, size = 36, mood = 'idle', mono = false, work, unread = false }: { color: string; size?: number; mood?: Mood; mono?: boolean; work?: 'think' | 'file' | 'type'; unread?: boolean }) {
   const d = mono ? '#000' : 'rgba(0,0,0,.6)'
   const eyes: Record<Mood, React.ReactNode> = {
     idle: <g className="eyes"><rect x="20" y="30" width="6" height="10" rx="3" fill={d} /><rect x="38" y="30" width="6" height="10" rx="3" fill={d} /></g>,
@@ -32,7 +37,7 @@ export function FolderBot({ color, size = 36, mood = 'idle', mono = false, work 
   }
   const badge: Partial<Record<Mood, string>> = { work: 'var(--run)', wait: 'var(--wait)', done: 'var(--done)', error: 'var(--err)' }
   return (
-    <svg viewBox="0 0 64 64" width={size} height={size} style={{ flex: 'none', display: 'block', overflow: 'visible' }} className={`fb fb-${mood} ${work ? `fbw fbw-${work}` : ''} ${size <= 20 ? 'sm' : ''}`}>
+    <svg viewBox="0 0 64 64" width={size} height={size} style={{ flex: 'none', display: 'block', overflow: 'visible' }} className={`fb fb-${mood} ${work ? `fbw fbw-${work}` : ''} ${size <= 20 ? 'sm' : ''} ${unread ? 'unread' : ''}`}>
       {/* 서류 — `file` 일 때만 보인다(그 외에는 CSS 가 감춘다). 탭 위로 올라와 사라진다 */}
       <rect className="pg p1" x="24" y="6" width="16" height="12" rx="2" fill={mono ? '#ededed' : 'var(--w)'} opacity="0" />
       <rect className="pg p2" x="28" y="6" width="13" height="10" rx="2" fill={mono ? '#9a9a9a' : 'var(--t2)'} opacity="0" />
@@ -41,7 +46,8 @@ export function FolderBot({ color, size = 36, mood = 'idle', mono = false, work 
         <path d="M6 24a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill={color} />
         {eyes[mood]}
       </g>
-      {badge[mood] ? <circle className="badge" cx="56" cy="56" r="7" fill={badge[mood]} stroke="var(--bg)" strokeWidth="3" /> : null}
+      {unread ? <circle className="uring" cx="56" cy="56" r="11.5" fill="none" stroke={badge[mood] ?? 'var(--done)'} strokeWidth="3" opacity=".75" /> : null}
+      {badge[mood] ?? unread ? <circle className="badge" cx="56" cy="56" r="7" fill={badge[mood] ?? 'var(--done)'} stroke="var(--bg)" strokeWidth="3" /> : null}
     </svg>
   )
 }

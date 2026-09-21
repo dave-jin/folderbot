@@ -200,6 +200,10 @@ export interface SessionRec {
   slash?: string[]
   /** 사람이 직접 지은 이름인가 — 그렇다면 자동 제목이 덮지 않는다 */
   named?: boolean
+  /** S · 마지막으로 봇이 낸 말의 시각 (`core/unread`) */
+  lastReplyAt?: number
+  /** S · 사람이 맨 아래까지 봤다고 적은 시각 — 볼트에 남아 폰·맥이 같은 값을 본다 */
+  readAt?: number
 }
 
 export interface ManagerEvents {
@@ -267,7 +271,7 @@ export class SessionManager extends EventEmitter {
   }
   info(r: SessionRec): SessionInfo {
     const w = this.workers.get(r.id)
-    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
+    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
   }
   get(id: string): SessionRec | undefined { return this.recs.get(id) }
   /** 볼트 전체의 세션 기록 — 「지난 대화 찾기」 가 훑는다(읽기만) */
@@ -305,6 +309,18 @@ export class SessionManager extends EventEmitter {
     if (r) this.emit('sessions', r.botId)
   }
   /** ⚠ 사람이 지은 이름은 **표시를 남긴다** — 그래야 첫 말 자동 제목이 이걸 안 덮는다 */
+  /**
+   * S · 여기까지 읽었다 — 화면이 **맨 아래에 닿고 턴이 끝났을 때** 부른다(`core/unread.shouldMarkRead`).
+   * ⚠ 읽은 지점은 «지금» 이 아니라 **그 세션의 마지막 답 시각**으로 적는다. «지금» 으로 적으면 읽는 사이에 온 답까지
+   *   읽은 것이 돼 버린다(시계가 아니라 내용을 가리켜야 한다).
+   */
+  markRead(id: string, at?: number): SessionRec | undefined {
+    const r = this.recs.get(id); if (!r) return undefined
+    const next = at ?? r.lastReplyAt ?? Date.now()
+    if ((r.readAt ?? 0) >= next) return r
+    r.readAt = next; this.persist(r); this.emit('sessions', r.botId)
+    return r
+  }
   rename(id: string, name: string): void { const r = this.recs.get(id); if (!r) return; r.name = name; r.named = true; this.persist(r); this.emit('sessions', r.botId) }
   /**
    * 🔴 **첫 말이 제목이 된다** (2026-09-15 Dave: «첫 채팅이 진행되면 그에 맞는 채팅 제목을 자동으로»).
@@ -359,6 +375,8 @@ export class SessionManager extends EventEmitter {
       const i = r.items.findIndex((x) => x.id === item.id)
       if (i >= 0) r.items[i] = item; else r.items.push(item)
     } else r.items.push(item)
+    // S · «봇이 낸 말» 만 안 읽음을 만든다 — 내 말·도구 줄은 아니다(내가 친 것을 내가 안 읽었을 리 없다)
+    if (item.kind === 'assistant') r.lastReplyAt = Date.now()
     r.lastActivity = Date.now()
     this.emit('chat', r.id, item, replace)
   }
