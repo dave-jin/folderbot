@@ -11,6 +11,17 @@
  * ⚠ 붙여넣는 곳이 글자를 받으므로 **되돌아오는 값으로 성공을 판정**한다 — «복사했어요» 를 먼저
  *    띄우고 실패하면 사람이 빈 클립보드를 붙여넣는다.
  */
+/**
+ * 🔴 **http 로 연 화면에는 클립보드·공유 시트가 아예 없다** (2026-09-21 · Dave 의 «폰 공유가 안 된다» 보고에서 다시 확인).
+ *    `navigator.clipboard`·`ClipboardItem`·`navigator.share` 는 **보안 컨텍스트**(https·localhost)에서만 산다.
+ *    폰은 Tailscale 의 `http://100.x.x.x:7373` 로 열기 때문에 그 객체들이 없고, 종전에는 그저 «못 해요» 라고만 했다 —
+ *    무엇을 해야 되는지가 빠져 있었다. 이제 **이유와 다음 걸음**을 같이 말한다.
+ */
+export function insecureWhy(): string | null {
+  if (typeof window === 'undefined' || window.isSecureContext) return null
+  return 'http 주소로 열어서(폰·다른 맥) 브라우저가 클립보드·공유를 막아요'
+}
+
 export async function copyText(text: string): Promise<boolean> {
   if (!text) return false
   try {
@@ -41,9 +52,11 @@ export async function copySay(text: string, say: (m: string) => void, what = '�
  * ② Safari: `ClipboardItem` 에 **Promise<Blob>** 을 넣어야 한다 — 사용자 제스처 안에서 write 를 먼저 부르고 그림은 뒤에 온다. PNG 로 굽는다(JPEG 도).
  * ③ 그 밖 브라우저: 받아서 PNG 로 구운 뒤 `ClipboardItem`. 못 하는 환경이면 false — 부르는 쪽이 안내한다.
  */
-export async function copyImage(url: string, abs?: string): Promise<boolean> {
-  const b = (window as unknown as { folderbotDesktop?: { local?: { copyImage?: (a: { url?: string; path?: string }) => Promise<boolean> } } }).folderbotDesktop?.local
-  if (b?.copyImage) { try { return await b.copyImage({ url: location.origin + url, path: abs }) } catch { return false } }
+export async function copyImage(url: string, abs?: string): Promise<boolean> { return (await copyImageWhy(url, abs)).ok }
+/** 왜 못 했는지까지 — 맥 앱은 클립보드를 **되읽어** 판정한다(2026-09-21 Dave: «다 안되는거 같아») */
+export async function copyImageWhy(url: string, abs?: string): Promise<{ ok: boolean; why?: string }> {
+  const b = (window as unknown as { folderbotDesktop?: { local?: { copyImage?: (a: { url?: string; path?: string }) => Promise<{ ok: boolean; why?: string } | boolean> } } }).folderbotDesktop?.local
+  if (b?.copyImage) { try { const r = await b.copyImage({ url: location.origin + url, path: abs }); return typeof r === 'boolean' ? { ok: r, why: r ? undefined : '맥 앱이 복사를 못 했어요' } : r } catch (e) { return { ok: false, why: `맥 앱 오류 — ${(e as Error).message}` } } }
   const toPng = async (): Promise<Blob> => {
     const res = await fetch(url); const blob = await res.blob()
     if (blob.type === 'image/png') return blob
@@ -51,9 +64,9 @@ export async function copyImage(url: string, abs?: string): Promise<boolean> {
     return new Promise<Blob>((ok, no) => cv.toBlob((x) => (x ? ok(x) : no(new Error('png'))), 'image/png'))
   }
   try {
-    if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) return false
+    if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) return { ok: false, why: insecureWhy() ? `${insecureWhy()} — 그림을 길게 눌러 복사해 주세요` : '이 브라우저는 그림 복사를 못 해요 — 길게 눌러 복사해 주세요' }
     const safari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
     const item = safari ? new ClipboardItem({ 'image/png': toPng() }) : new ClipboardItem({ 'image/png': await toPng() })
-    await navigator.clipboard.write([item]); return true
-  } catch { return false }
+    await navigator.clipboard.write([item]); return { ok: true }
+  } catch (e) { return { ok: false, why: `그림 복사 실패 — ${(e as Error).message}` } }
 }

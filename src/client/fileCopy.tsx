@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { Bot } from '../core/types'
 import { api, token } from './api'
+import { insecureWhy } from './clip'
 import { askConfirm } from './Sheets'
-import { localBridge, vaultRelOf } from './localOpen'
+import { copyResult, localBridge, vaultRelOf } from './localOpen'
 import { eta, fmtBytes } from '../core/cache'
 import { Icon } from './FolderBot'
 
@@ -27,7 +28,8 @@ const joinRel = (a: string, b: string) => (b ? (a ? `${a}/${b}` : b) : a)
 export async function copyFiles(bot: Bot, rels: string[], ctx: { main: boolean; hostName: string; phone: boolean; say: (m: string) => void }): Promise<void> {
   const b = localBridge()
   // ① 호스트 맥 앱 — 경로 그대로
-  if (ctx.main && b?.copyFiles) { const ok = await b.copyFiles(rels.map((r) => `${bot.abs}/${r}`)); ctx.say(ok ? `${rels.length > 1 ? rels.length + '개를 ' : ''}복사했어요 — Finder·카톡에 ⌘V` : '복사하지 못했어요'); return }
+  // ⚠ 결과는 셸이 **되읽어 확인한** 값이다 — 못 했으면 이유를 그대로 보여 준다(«복사했어요» 가 거짓이면 다음 보고가 «그냥 안 돼» 가 된다)
+  if (ctx.main && b?.copyFiles) { const r = copyResult(await b.copyFiles(rels.map((c) => `${bot.abs}/${c}`)).catch((e: Error) => ({ ok: false, why: `맥 앱 오류 — ${e.message}` }))); ctx.say(r.ok ? `${rels.length > 1 ? rels.length + '개를 ' : ''}복사했어요 — Finder·카톡에 ⌘V` : r.why ?? '복사하지 못했어요'); return }
   // ② 원격 맥 앱 — 캐시에 받아서 그 경로를
   if (b?.copyFiles && b.fetch && b.cachePath && b.stat) {
     const mans = await Promise.all(rels.map(async (r) => ({ rel: r, m: await api<Manifest>(`/bots/${bot.id}/manifest?rel=${encodeURIComponent(r)}`) })))
@@ -54,8 +56,8 @@ export async function copyFiles(bot: Bot, rels: string[], ctx: { main: boolean; 
     if (cancelled) { ctx.say('취소했어요 — 받던 파일은 지웠어요'); return }
     // 폴더는 폴더째 — 캐시 안의 그 폴더 경로를 넣는다(안의 파일은 방금 다 받았다)
     const paths = await Promise.all(rels.map(async (r, i) => (mans[i].m.dir ? b.cachePath!(ctx.hostName, vaultRelOf(bot.rel, r)) : out.find((p) => p.endsWith(r.split('/').pop() ?? r)) ?? out[0])))
-    const ok = await b.copyFiles(paths.filter(Boolean))
-    ctx.say(ok ? `복사했어요 — Finder·카톡에 ⌘V${hits === files.length ? ' (캐시)' : ''}` : '복사하지 못했어요')
+    const r = copyResult(await b.copyFiles(paths.filter(Boolean)).catch((e: Error) => ({ ok: false, why: `맥 앱 오류 — ${e.message}` })))
+    ctx.say(r.ok ? `복사했어요 — Finder·카톡에 ⌘V${hits === files.length ? ' (캐시)' : ''}` : r.why ?? '복사하지 못했어요')
     return
   }
   // ③ 폰 — 공유 시트 (폴더는 zip)
@@ -74,7 +76,8 @@ export async function copyFiles(bot: Bot, rels: string[], ctx: { main: boolean; 
   }
   // ④ 브라우저 탭 — 내려받기
   for (const r of rels) { const m = await api<Manifest>(`/bots/${bot.id}/manifest?rel=${encodeURIComponent(r)}`); const a = document.createElement('a'); a.href = m.dir ? zipUrl(bot, r) : rawUrl(bot, r); a.download = m.dir ? `${m.name}.zip` : m.name; document.body.appendChild(a); a.click(); a.remove() }
-  ctx.say('내려받아요 — 이 브라우저는 파일 클립보드가 없어요')
+  // ⚠ 폰에서 공유 시트가 없는 진짜 이유는 «http 로 열어서» 인 때가 많다 — 그냥 «없어요» 로 끝내면 사람은 앱이 고장 난 줄 안다
+  ctx.say(insecureWhy() ? `내려받았어요 — ${insecureWhy()}. 공유 시트를 쓰려면 https 주소로 열어 주세요` : '내려받아요 — 이 브라우저는 파일 클립보드가 없어요')
 }
 
 /** 진행 띠 (M-4) — 용량 · 속도 · 남은 시간 · [취소]. 화면 어디서나 하나 */

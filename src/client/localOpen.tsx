@@ -17,13 +17,20 @@ import type { Bot } from '../core/types'
  */
 export interface LocalCand { path: string; real: string; files: number; shell: boolean }
 export interface LocalSettings { openMode: '' | 'sync' | 'download'; vaultLocal: string }
+/** 셸이 돌려주는 복사 결과 — `why` 는 사람에게 그대로 보여 준다(«복사했어요» 가 거짓이면 안 된다) */
+export interface CopyResult { ok: boolean; why?: string; formats?: string[] }
+/** 옛 셸(boolean)과 새 셸(CopyResult) 을 한 모양으로 */
+export function copyResult(r: CopyResult | boolean | undefined): CopyResult { return typeof r === 'boolean' ? { ok: r } : r ?? { ok: false, why: '셸이 답을 안 줬어요' } }
 export interface LocalBridge {
   settings: () => Promise<LocalSettings>; set: (p: Partial<LocalSettings>) => Promise<LocalSettings>; detect: (hostRoot: string) => Promise<LocalCand[]>
   stat: (p: string) => Promise<LocalStat & { mtime?: number }>; open: (p: string) => Promise<string>; reveal: (p: string) => Promise<string>
   wait: (p: string, want: HostStat, ms: number) => Promise<boolean>; download: (url: string, hostName: string, rel: string) => Promise<string>; icloud: (p: string) => Promise<boolean>; pick: () => Promise<string>
   // M · 복사 · 진행 있는 받기 · 캐시 (옛 셸에는 없다 — 전부 선택)
-  copyImage?: (a: { url?: string; path?: string }) => Promise<boolean>
-  copyFiles?: (paths: string[]) => Promise<boolean>
+  /** 🔴 복사 결과는 **되읽어 확인한** 값이다 — 옛 셸은 `boolean` 을 주므로 둘 다 받는다 (2026-09-21) */
+  copyImage?: (a: { url?: string; path?: string }) => Promise<CopyResult | boolean>
+  copyFiles?: (paths: string[]) => Promise<CopyResult | boolean>
+  /** 복사 진단 — 한 파일로 두 길을 밟아 보고 결과를 글로 (설정 › 기기) */
+  copyDiag?: (p: string) => Promise<string>
   fetch?: (id: string, url: string, hostName: string, rel: string) => Promise<string>
   cancel?: (id: string) => Promise<boolean>
   cachePath?: (hostName: string, rel: string) => Promise<string>

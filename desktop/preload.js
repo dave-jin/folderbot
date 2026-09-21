@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('folderbotDesktop', {
     pick: () => ipcRenderer.invoke('fb:local-pick'),
     // M · 복사 · 진행 있는 받기 · 캐시
     copyImage: (a) => ipcRenderer.invoke('fb:local-copy-image', a),
+    copyDiag: (p) => ipcRenderer.invoke('fb:copy-diag', p),   /* 복사 진단 — 어디서 죽는지 글로 (2026-09-21) */
     copyFiles: (paths) => ipcRenderer.invoke('fb:local-copy-files', paths),
     fetch: (id, url, hostName, rel) => ipcRenderer.invoke('fb:local-fetch', id, url, hostName, rel),
     cancel: (id) => ipcRenderer.invoke('fb:local-cancel', id),

@@ -2,7 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { createPortal } from 'react-dom'
 import { renderMarkdown } from './render'
 import { ImageView } from './ImageView'
-import { copyImage } from './clip'
+import { copyImageWhy } from './clip'
 
 /** ⚠ 지연 로드 — CodeMirror 와 마크다운 파서는 문서를 열 때만 받는다 (번들 계약) */
 const MdEditor = lazy(() => import('./MdEditor'))
@@ -256,7 +256,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
             <Canvas key={rel} text={doc.text ?? ''} onCommit={(t) => { onDraft(t); void save(t) }} onOpenFile={(f) => docs.open(f)} raw={(f) => raw(f.replace(/^\.\//, ''))} readOnly={!!doc.truncated} />
           </Suspense>
         </div>
-      : doc.kind === 'image' ? <div className="dbody imgbody"><ImageView src={raw(rel)} alt={name} onCopy={() => void copyImage(raw(rel), main ? `${bot.abs}/${rel}` : undefined).then((ok) => say(ok ? '이미지를 복사했어요 — 메모·슬랙에 ⌘V' : '이 환경에서는 이미지 복사를 못 해요 — «이 기기에서 열기» 로 여세요'))} /></div>
+      : doc.kind === 'image' ? <div className="dbody imgbody"><ImageView src={raw(rel)} alt={name} onCopy={() => void copyImageWhy(raw(rel), main ? `${bot.abs}/${rel}` : undefined).then((r) => say(r.ok ? '이미지를 복사했어요 — 메모·슬랙에 ⌘V' : r.why ?? '이 환경에서는 이미지 복사를 못 해요 — «이 기기에서 열기» 로 여세요'))} /></div>
       : doc.kind === 'html' ? <div className="dbody htmlv">
           {/* 🔴 **샌드박스 안에서 그린다.** 에이전트가 만든 리포트를 앱 안에서 그대로 보되,
               그 안의 스크립트가 볼트를 읽거나 우리 화면을 만지지 못하게 가둔다.

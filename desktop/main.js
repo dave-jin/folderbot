@@ -4,6 +4,7 @@ const { pathToFileURL } = require('node:url')
 const { existsSync, readFileSync, writeFileSync, mkdirSync } = require('node:fs')
 const { join } = require('node:path')
 const http = require('node:http'); const https = require('node:https')
+const { execFile } = require('node:child_process')
 const updater = require('./updater')
 const perms = require('./perms')
 const localfs = require('./localfs')
@@ -183,24 +184,84 @@ ipcMain.handle('fb:local-icloud', (_e, p) => localfs.icloudDownload(String(p)))
  * 카톡 입력창에 붙이면 첨부가 된다. 원격이면 먼저 캐시에 받은 사본의 경로를 넣는다. */
 const CACHE_DIR = () => join(app.getPath('userData'), 'remote-cache')
 const CACHE_LIMIT = 2 * 1024 * 1024 * 1024
+/**
+ * 🔴 **복사는 «썼다» 가 아니라 «읽힌다» 로 판정한다** (2026-09-21 Dave 실기기 보고: *«다 안되는거 같아»*).
+ *    종전에는 `clipboard.writeImage`/`writeBuffer` 를 부르고 **무조건 true** 를 돌려줬다 — 화면은 «복사했어요» 라고 말하고
+ *    붙여넣기는 아무것도 안 나왔다. 조용히 틀리는 쪽이라 무엇이 고장인지도 알 수 없었다.
+ * 🔴 **macOS 파일 복사는 `writeBuffer` 로 안 된다.** Electron 의 clipboard 는 형식마다 새로 쓰면서 **앞서 쓴 것을 지우고**,
+ *    `NSFilenamesPboardType` 같은 옛 이름은 커스텀 형식으로 들어가 Finder 가 파일로 못 읽는다. 그래서 되읽어 확인하고,
+ *    비면 `osascript` 로 진짜 파일 참조를 올린다(`set the clipboard to {POSIX file "…"}`) — 이게 Finder·카톡이 받는 모양이다.
+ * ⚠ 돌려주는 값은 `{ ok, why, formats }` 다 — 부르는 쪽이 **어디서 죽었는지**를 사람에게 그대로 보여 준다.
+ */
+function osa(script, ms = 6000) {
+  return new Promise((res) => { try { execFile('/usr/bin/osascript', ['-e', script], { timeout: ms }, (err) => res(!err)) } catch { res(false) } })
+}
+const qq = (p) => String(p).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
 ipcMain.handle('fb:local-copy-image', async (_e, a) => {
+  const mac = process.platform === 'darwin'
   try {
-    let img = null
-    if (a && a.path && existsSync(String(a.path))) img = nativeImage.createFromPath(String(a.path))
-    if ((!img || img.isEmpty()) && a && a.url) { const r = await fetch(String(a.url), { headers: { authorization: `Bearer ${settings.token}` } }); if (!r.ok) return false; img = nativeImage.createFromBuffer(Buffer.from(await r.arrayBuffer())) }
-    if (!img || img.isEmpty()) return false
-    clipboard.writeImage(img); return true
-  } catch { return false }
+    let img = null, from = ''
+    if (a && a.path && existsSync(String(a.path))) { img = nativeImage.createFromPath(String(a.path)); from = 'path' }
+    if ((!img || img.isEmpty()) && a && a.url) {
+      const r = await fetch(String(a.url), { headers: { authorization: `Bearer ${settings.token}` } })
+      if (!r.ok) return { ok: false, why: `호스트에서 그림을 못 받았어요 (HTTP ${r.status})` }
+      img = nativeImage.createFromBuffer(Buffer.from(await r.arrayBuffer())); from = 'url'
+    }
+    if (!img || img.isEmpty()) return { ok: false, why: `그림을 못 읽었어요 (${from || '경로 없음'}) — HEIC·SVG 는 아직 못 붙여요` }
+    clipboard.writeImage(img)
+    if (!clipboard.readImage().isEmpty()) return { ok: true }
+    // 되읽으니 비었다 — 맥이면 파일을 거쳐 한 번 더
+    if (mac && a && a.path && existsSync(String(a.path)) && /\.png$/i.test(String(a.path))) {
+      if (await osa(`set the clipboard to (read (POSIX file "${qq(a.path)}") as «class PNGf»)`) && !clipboard.readImage().isEmpty()) return { ok: true }
+    }
+    if (mac) {
+      const tmp = join(app.getPath('temp'), `fb-copy-${Date.now()}.png`)
+      try { writeFileSync(tmp, img.toPNG()) } catch { /* 임시 폴더에 못 쓴다 */ }
+      if (existsSync(tmp) && await osa(`set the clipboard to (read (POSIX file "${qq(tmp)}") as «class PNGf»)`) && !clipboard.readImage().isEmpty()) return { ok: true }
+    }
+    return { ok: false, why: '클립보드에 썼는데 되읽으니 비어 있어요 — 맥 클립보드가 막혔어요' }
+  } catch (e) { return { ok: false, why: `복사 중 오류 — ${e && e.message ? e.message : e}` } }
 })
-ipcMain.handle('fb:local-copy-files', (_e, paths) => {
-  const list = (Array.isArray(paths) ? paths : []).map(String).filter((p) => existsSync(p)); if (!list.length) return false
-  if (process.platform === 'darwin') {
+ipcMain.handle('fb:local-copy-files', async (_e, paths) => {
+  const all = (Array.isArray(paths) ? paths : []).map(String)
+  const list = all.filter((p) => existsSync(p))
+  if (!list.length) return { ok: false, why: all.length ? `파일이 그 자리에 없어요 — ${all[0]}` : '복사할 파일이 없어요' }
+  if (process.platform !== 'darwin') { clipboard.writeText(list.join('\n')); return { ok: true, why: '맥이 아니라 경로 글자로 복사했어요' } }
+  // ① 진짜 파일 참조 — Finder·카톡이 받는 모양. 여러 개면 목록으로
+  const refs = list.map((p) => `POSIX file "${qq(p)}"`).join(', ')
+  if (await osa(`set the clipboard to {${refs}}`)) {
+    const f = clipboard.availableFormats()
+    if (f.some((x) => /file|NSFilenames/i.test(x))) return { ok: true, formats: f }
+  }
+  // ② 옛 길(형식 버퍼) — 되읽어 확인한다
+  try {
     const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     const plist = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><array>${list.map((p) => `<string>${esc(p)}</string>`).join('')}</array></plist>`
     clipboard.writeBuffer('NSFilenamesPboardType', Buffer.from(plist, 'utf8'))
-    if (list.length === 1) { try { clipboard.write({ text: list[0] }); clipboard.writeBuffer('public.file-url', Buffer.from(`file://${encodeURI(list[0])}`, 'utf8')); clipboard.writeBuffer('NSFilenamesPboardType', Buffer.from(plist, 'utf8')) } catch {} }
-  } else clipboard.writeText(list.join('\n'))
-  return true
+    const f = clipboard.availableFormats()
+    if (f.some((x) => /file|NSFilenames/i.test(x))) return { ok: true, formats: f }
+    clipboard.writeText(list.join('\n'))
+    return { ok: false, why: `파일로는 못 올렸어요 — 경로 글자만 복사했어요 (형식: ${f.join(', ') || '없음'})`, formats: f }
+  } catch (e) { return { ok: false, why: `복사 중 오류 — ${e && e.message ? e.message : e}` } }
+})
+/** 복사 진단 — 한 파일로 두 길(그림·파일)을 실제로 밟아 보고 결과를 글로 돌려준다 (설정 › 기기) */
+ipcMain.handle('fb:copy-diag', async (_e, p) => {
+  const out = []
+  const path = String(p || '')
+  out.push(`플랫폼 ${process.platform} · 앱 ${app.getVersion()}`)
+  out.push(`대상 ${path || '(없음)'} · 있음 ${path ? existsSync(path) : false}`)
+  try { const before = clipboard.availableFormats(); out.push(`복사 전 형식 [${before.join(', ') || '없음'}]`) } catch (e) { out.push(`형식 읽기 실패 ${e.message}`) }
+  if (path && existsSync(path)) {
+    const refs = `POSIX file "${qq(path)}"`
+    out.push(`osascript 파일 올리기 → ${await osa(`set the clipboard to {${refs}}`)}`)
+    out.push(`그 뒤 형식 [${clipboard.availableFormats().join(', ') || '없음'}]`)
+    if (/\.(png|jpe?g|gif|webp)$/i.test(path)) {
+      const img = nativeImage.createFromPath(path)
+      out.push(`그림 읽기 ${img.isEmpty() ? '비었음' : `${img.getSize().width}x${img.getSize().height}`}`)
+      if (!img.isEmpty()) { clipboard.writeImage(img); out.push(`writeImage 뒤 되읽기 ${clipboard.readImage().isEmpty() ? '비었음 ❌' : '있음 ✅'}`) }
+    }
+  }
+  return out.join('\n')
 })
 const fetches = new Map()
 ipcMain.handle('fb:local-fetch', async (e, id, url, hostName, rel) => {

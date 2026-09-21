@@ -1116,3 +1116,6 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 
 /* J-4 · 발신 기기 표시 */
 .umsg .dev { display:flex; align-items:center; gap:4px; font-size:10.5px; color:var(--t3); margin-bottom:4px; font-family:var(--mono) }
+
+/* 복사 진단 결과 — 그대로 보내 주면 되는 글 (2026-09-21) */
+.diagout { max-width:min(420px, 60vw); max-height:180px; overflow:auto; white-space:pre-wrap; word-break:break-all; font-size:11.5px; line-height:1.5; color:var(--t2); background:var(--box); border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin:0 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Bot, HarnessDetail, HarnessItem, SessionInfo, TodoItem } from '../core/types'
-import { copyImage as copyImageShared, copySay } from './clip'
+import { copyImageWhy, copySay } from './clip'
 import { copyFiles } from './fileCopy'
 import { api } from './api'
 import { isDoneSection } from '../core/todo'
@@ -549,7 +549,7 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
    * 이미지 복사 — 🔴 **그림 그대로** 클립보드에. 경로를 복사해 봐야 붙여넣는 쪽은 글자를 받는다.
    * ⚠ 브라우저가 클립보드에 바로 받아 주는 것은 **PNG 뿐**이라, 다른 형식은 캔버스로 한 번 굽는다.
    */
-  const copyImage = async (rel: string) => { const ok = await copyImageShared(`/api/bots/${bot.id}/raw?rel=${encodeURIComponent(rel)}&token=${encodeURIComponent(localStorage.getItem('folderbot:token') ?? '')}`, main ? `${bot.abs}/${rel}` : undefined); say(ok ? '이미지를 복사했어요' : '이 환경에서는 이미지 복사를 못 해요') }
+  const copyImage = async (rel: string) => { const r = await copyImageWhy(`/api/bots/${bot.id}/raw?rel=${encodeURIComponent(rel)}&token=${encodeURIComponent(localStorage.getItem('folderbot:token') ?? '')}`, main ? `${bot.abs}/${rel}` : undefined); say(r.ok ? '이미지를 복사했어요' : r.why ?? '이 환경에서는 이미지 복사를 못 해요') }
   /** 지금 다루는 대상 — 우클릭한 줄이 **고른 것 안에 있으면** 고른 것 전부, 아니면 그 줄 하나 */
   const targets = (n: Node): string[] => (sel.has(n.rel) && sel.size > 1 ? [...sel] : [n.rel])
   /**
