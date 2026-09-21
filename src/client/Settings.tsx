@@ -142,6 +142,7 @@ export const INDEX: { sec: SecId; t: string; d: string }[] = [
   { sec: 'devices', t: '이 기기에서 파일 열기', d: 'Finder 열기 동기화 볼트 Dropbox iCloud 호스트에서 받기 원격' },
   { sec: 'devices', t: '동기화 볼트 위치', d: 'Dropbox iCloud 폴더 찾기 경로 원격' },
   { sec: 'devices', t: '받은 사본 캐시', d: '호스트에서 받아 연 파일·복사한 파일의 사본 · 상한 2GB · 비우기' },
+  { sec: 'devices', t: '복사 진단', d: '복사가 안 될 때 — 파일 하나로 밟아 보고 결과를 글로' },
   { sec: 'devices', t: '이 기기 로그아웃', d: '연결 끊기 보안' },
   { sec: 'claude', t: 'Claude 로그인 상태', d: '키체인 인증 상태 다시 확인' },
   { sec: 'claude', t: '쓰는 인증', d: '키체인 장기 토큰 커넥터' },
@@ -312,7 +313,29 @@ function LocalOpenRows() {
     <Row t="받은 사본 캐시" d="호스트에서 받아 연 파일·복사한 파일의 사본. 상한(2GB)을 넘으면 오래 안 쓴 것부터 지워요." at="dev">
       <CacheRow />
     </Row>
+    <Row t="복사 진단" d="파일 하나를 골라 클립보드에 올려 보고, 맥이 그걸 파일로 받았는지 되읽어 알려줘요. 복사가 안 될 때 이 글을 그대로 보내 주세요." at="dev">
+      <CopyDiagRow />
+    </Row>
   </>
+}
+
+/**
+ * 복사 진단 (2026-09-21 Dave 실기기 보고: «다 안되는거 같아») — 맥 클립보드는 여기서 못 잰다.
+ * 그래서 **앱이 스스로 밟아 보고 글로 남기게** 한다: 파일을 골라 올려 보고, `availableFormats()` 를 되읽어 붙인다.
+ * ⚠ 맥 앱이 아니면 이 줄은 «맥 앱에서만» 이라고만 말한다 — 브라우저에는 셸 통로가 없다.
+ */
+function CopyDiagRow() {
+  const [out, setOut] = useState(''); const [busy, setBusy] = useState(false)
+  const b = localBridge()
+  if (!b?.copyDiag) return <span className="hint">맥 앱에서만 돼요 (앱을 최신으로 올려 주세요)</span>
+  const run = async () => {
+    setBusy(true)
+    try { const p = await b.pick(); if (!p) { setBusy(false); return } setOut(await b.copyDiag!(p)) } catch (e) { setOut(`진단 실패 — ${(e as Error).message}`) } finally { setBusy(false) }
+  }
+  return <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+    <button className="btn" disabled={busy} onClick={() => void run()}>{busy ? '해 보는 중…' : '파일 골라 진단'}</button>
+    {out ? <><pre className="diagout">{out}</pre><button className="btn ghost" onClick={() => void copySay(out, () => {})}>진단 글 복사</button></> : null}
+  </div>
 }
 
 /** 기기 — 이 화면(기기)과 붙어 있는 기기들. 흩어져 있던 «이 기기 이름 · 기기 목록 · 페어링 · 로그아웃» 을 한 칸에 */
