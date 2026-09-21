@@ -100,6 +100,10 @@ export interface SessionInfo {
   routine?: string
   /** 지금 하는 일 한 줄 (도구명 · 요약 / 생각 중 / 답 쓰는 중) */
   activity?: string
+  /** S · 마지막으로 **봇이 낸 말**의 시각 — 이것과 `readAt` 의 크기 비교 하나가 «안 읽음» 이다 (`core/unread`) */
+  lastReplyAt?: number
+  /** S · 내가 **맨 아래까지 봤다**고 적은 시각. 볼트에 남아 기기를 가로질러 같다 */
+  readAt?: number
   /** 턴이 끝난 뒤에도 돌고 있는 백그라운드 서브에이전트 수 — 회수·업데이트 적용은 이게 0 일 때만 */
   bg?: number
   /** 이번 턴 시작 시각 — 경과 시간은 이걸로 잰다 */

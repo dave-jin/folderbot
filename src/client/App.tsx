@@ -21,6 +21,7 @@ import { CopyProgressHost } from './fileCopy'
 import { attachRoom } from '../core/attach'
 import { applyViewport, planViewport } from '../core/viewport'
 import { canStartSwipe, dragProgress, lockOf, scrollableEats, stageOf, swipeTarget, swipeVerdict, type Cell } from '../core/drawer'
+import { botUnread, shouldMarkRead } from '../core/unread'
 import { SwipeRow } from './SwipeRow'
 import { dueChip } from '../core/botName'
 import { LocalOpenHost, localBridge, openOnThisDevice, useLocalSettings } from './localOpen'
@@ -287,7 +288,10 @@ function Main() {
   const docs = useDocs(bot?.id ?? '')
   useEffect(() => { if (sessionId && !s.chats[sessionId]) void loadChat(sessionId) }, [sessionId])
   useEffect(() => { if (bot) void loadTodo(bot.id) }, [bot?.id, s.filesTick[bot?.id ?? '']])
-  const go = (b: string, sid?: string) => { setHash(sid ? { bot: b, s: sid } : { bot: b }); setView('chat') }
+  /** 내가 놓은 해시인가 — 밖(셸의 알림 배너)에서 온 해시와 가르는 표식 (S-2). 내 걸음은 화면(칸)을 이미 스스로 챙긴다 */
+  const navSelf = useRef(false)
+  const setHashSelf = (p: Record<string, string>) => { navSelf.current = true; setHash(p) }
+  const go = (b: string, sid?: string) => { setHashSelf(sid ? { bot: b, s: sid } : { bot: b }); setView('chat') }
   /**
    * 🔴 **대기 메시지는 «그 세션의 것»이다** (2026-09-15 Dave: *«que 메시지를 보내놓은 상태에서 다른
    *    폴더를 띄우면 거기에 큐 메시지가 전달되는 버그»*).
@@ -341,7 +345,7 @@ function Main() {
     setModal('notify')
     let back: Record<string, string> = {}
     try { const l = JSON.parse(localStorage.getItem(LAST_KEY) ?? '') as { bot?: string; s?: string }; if (l?.bot) back = l.s ? { bot: l.bot, s: l.s } : { bot: l.bot } } catch { /* 처음 켠 기기 */ }
-    setHash(back)
+    setHashSelf(back)
   }, [hash.notify])
   /**
    * 🔴 **뒤로/앞으로 = 방문 히스토리** (루프 2/10 · 2026-09-15). 종전의 `⌘[ ⌘]` 는 «레일의 이전·다음 폴더»
@@ -359,12 +363,27 @@ function Main() {
     if (h.list[h.i] === key) return
     h.list = h.list.slice(0, h.i + 1); h.list.push(key); if (h.list.length > 100) h.list.shift(); h.i = h.list.length - 1
   }, [hash.bot, hash.s])
+  /**
+   * S-2 · **밖에서 해시만 갈아끼워도 화면이 따라간다** (2026-09-21 Dave: «알림 버튼을 클릭했을 때 해당 세션으로 이동하는 문제»).
+   * 🔴 실측 원인: 앱 **안**의 벨은 `go()` 라 보이는 칸까지 바꾸지만, **맥 알림 배너**는 셸이 `location.hash` 만 놓는다
+   *    (`desktop/main.js` 의 `navigate`). 좁음·중간에서는 서랍·홈이 덮인 채라 **뒤에서 폴더만 바뀌고 화면은 그대로** —
+   *    누른 사람 눈에는 «아무 일도 안 일어남» 이다. H 의 서랍이 생기면서 더 잘 드러났다.
+   * ⚠ 내가 옮긴 걸음(`go`)은 이미 `setView('chat')` 을 한다 — 여기서는 **값이 실제로 바뀐 해시**만 받는다(첫 렌더 포함).
+   */
+  const seenHash = useRef('')
+  useEffect(() => {
+    const key = `${hash.bot ?? ''}|${hash.s ?? ''}`
+    if (seenHash.current === key) return
+    const first = !seenHash.current, self = navSelf.current
+    seenHash.current = key; navSelf.current = false
+    if (!first && !self && hash.bot && narrow) setView('chat')
+  }, [hash.bot, hash.s, narrow])
   const histGo = (dir: -1 | 1) => {
     const h = hist.current; const j = h.i + dir
     if (j < 0 || j >= h.list.length) return
     h.i = j; h.nav = true
     const [b, sid] = h.list[j].split('|')
-    setHash(sid ? { bot: b, s: sid } : { bot: b }); setView('chat')
+    setHashSelf(sid ? { bot: b, s: sid } : { bot: b }); setView('chat')
   }
   const restored = useRef(false)
   useEffect(() => {
@@ -374,7 +393,7 @@ function Main() {
     try {
       const l = JSON.parse(localStorage.getItem(LAST_KEY) ?? '') as { bot?: string; s?: string; view?: string }
       if (l?.bot && (l.bot === 'orch' || s.bots.some((b) => b.id === l.bot))) {
-        setHash(l.s ? { bot: l.bot, s: l.s } : { bot: l.bot })
+        setHashSelf(l.s ? { bot: l.bot, s: l.s } : { bot: l.bot })
         /**
          * 🔴 **폰은 화면도 되돌린다** (2026-09-17 Dave: «모바일에서 화면으로 들어가면 마지막 화면이 저장이 안되네»).
          *    `view` 의 초기값은 첫 렌더의 해시로 정해지는데, 해시는 **이 효과가 뒤늦게** 넣는다 — 그래서 폴더는 돌아와도
@@ -664,14 +683,14 @@ function Main() {
         <div className="sb-list">
           {rows.map(([sec, list]) => <div key={sec}>
             <div className="secl">{sec === '관제' ? '관제' : sec}</div>
-            {list.map(({ b, sum }) => <button key={b.id} data-id={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''} ${overBot === b.id ? 'dover' : ''} ${dragBot === b.id ? 'dsrc' : ''}`}
+            {list.map(({ b, sum }) => <button key={b.id} data-id={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''} ${sum.unread ? 'unread' : ''} ${overBot === b.id ? 'dover' : ''} ${dragBot === b.id ? 'dsrc' : ''}`}
               draggable={!b.orchestrator}
               onDragStart={(e) => { setDragBot(b.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/x-fb-bot', b.id) }}
               onDragEnd={() => { setDragBot(null); setOverBot(null) }}
               onDragOver={(e) => { if (!dragBot || b.orchestrator || dragBot === b.id) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOverBot(b.id) }}
               onDragLeave={() => setOverBot((x) => (x === b.id ? null : x))}
               onDrop={(e) => { e.preventDefault(); void dropBot(b.id) }}
-              onContextMenu={(e) => { e.preventDefault(); hovOut(); if (!b.orchestrator) setRailCtx({ x: e.clientX, y: e.clientY, id: b.id, name: b.name }) }} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={ICON_PX[iconSz]} mood={sum.mood} mono /><span className="n"><BotName b={b} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span>{b.due ? null : <time>{fmtTime(sum.t)}</time>}</button>)}
+              onContextMenu={(e) => { e.preventDefault(); hovOut(); if (!b.orchestrator) setRailCtx({ x: e.clientX, y: e.clientY, id: b.id, name: b.name }) }} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={ICON_PX[iconSz]} mood={sum.mood} unread={sum.unread} mono /><span className="n"><BotName b={b} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span>{b.due ? null : <time>{fmtTime(sum.t)}</time>}</button>)}
           </div>)}
         </div>
         {hovRow ? <HoverCard b={hovRow.b} sum={hovRow.sum} top={hov!.top} left={fit.sb + 6} /> : null}
@@ -699,11 +718,13 @@ function Main() {
         <button className="ib" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span className="fly"><b>폴더 선택 · 시작</b><span>후보 {s.candidates.filter((c) => !c.active).length}</span></span></button>
         <button className="ib" onClick={() => setModal('notify')}><Icon n="bell" size={14} />{unread ? <span className="bd">{unread}</span> : null}<span className="fly"><b>알림</b><span>{unread ? `읽지 않음 ${unread}` : '없음'}</span></span></button>
         <div className="gap" />
-        {stripBots.map(({ b, sum }) => <button key={b.id} className={`bot ${b.id === bot.id ? 'on' : ''}`} onClick={() => go(b.id)}><FolderBot color={b.color} size={17} mood={sum.mood} mono /><span className="fly"><b><Mid s={b.displayName} /></b><span><span className={`dot ${stateDot(sum.state ?? undefined)}`} style={{ marginRight: 5 }} />{sum.text}</span><span className="t3">{b.section} · {fmtTime(sum.t)}</span></span></button>)}
+        {stripBots.map(({ b, sum }) => <button key={b.id} className={`bot ${b.id === bot.id ? 'on' : ''} ${sum.unread ? 'unread' : ''}`} onClick={() => go(b.id)}><FolderBot color={b.color} size={17} mood={sum.mood} unread={sum.unread} mono /><span className="fly"><b><Mid s={b.displayName} /></b><span><span className={`dot ${stateDot(sum.state ?? undefined)}`} style={{ marginRight: 5 }} />{sum.text}</span><span className="t3">{b.section} · {fmtTime(sum.t)}</span></span></button>)}
       </div>
   const docwrapEl = showDoc ? <div className="docwrap" style={{ width: wide || narrow ? undefined : fit.doc, flex: wide ? 3 : 'none', display: 'flex', minWidth: 0 }}><DocPane bot={bot} docs={docs} filesTick={s.filesTick[bot.id]} onTalk={(rel) => { setPrefill(`${rel} 파일 봐 줘: `); if (phone) setView('chat') }} onHide={() => setDocOpen((d) => ({ ...d, [bot.id]: false }))} wide={wide} onWide={() => setWide(!wide)} onAttach={(rel) => addAttach({ rel, abs: `${bot.abs}/${rel}` })} say={say} phone={phone} onBack={() => setView('panel')} /></div> : null
   const rpwrapEl = <div className="rpwrap" style={{ width: narrow ? '100%' : fit.rp, flex: 'none', display: 'flex', minWidth: 0 }}><Panel bot={bot} sessions={sessions} sessionId={sessionId} go={go} onOpenFile={(rel, pin) => openInDocPane(rel, { pin })} onTalk={(t) => { setPrefill(t); if (phone) setView('chat') }} onAttach={(rel, dir) => addAttach({ rel, abs: `${bot.abs}/${rel}`, dir })} onMention={(rel) => { setMentionReq((m) => [...m, rel]); if (phone) setView('chat') }} onStartAt={startAt} onNewFolderAt={newFolderAt} touched={touched} filesTick={s.filesTick[bot.id]} secH={lay.secH} onSecH={(h) => setLay({ ...lay, secH: h })} onCollapse={closeRp} focusSec={focusSec} say={say} refresh={refresh} activeDoc={showDoc ? docs.active : null} onDragY={(on) => setDrag(on ? 'y' : '')} phone={phone} onBack={() => setView('chat')} /></div>
-  const stripRightEl = <div className="strip right"><button className="ib" onClick={() => openRp()} title="패널 펼치기 (⌘⇧B)"><Icon n="panelr" size={14} /></button><div className="gap" />
+  const stripRightEl = <div className="strip right"><button className="ib" onClick={() => openRp()} title="패널 펼치기 (⌘⇧B)"><Icon n="panelr" size={14} /></button>
+    {/* S-3 · 패널을 접어 둬도 **새 세션 +** 는 우측 상단에 남는다 (2026-09-21 Dave: «상시 노출») — 펼친 패널 「세션」 줄의 + 와 같은 일 */}
+    <button className="ib nsb" onClick={() => { void newSession(); openRp('sessions') }} title="새 세션 (⌘N)"><Icon n="plus" size={14} /><span className="fly"><b>새 세션</b><span>이 폴더에서</span></span></button><div className="gap" />
         <button className="ib" onClick={() => openRp('sessions')}><Icon n="clock" size={14} />{sessions.some((x) => x.state === 'running') ? <span className="dot run" style={{ position: 'absolute', right: 2, top: 2 }} /> : null}<span className="fly"><b>세션</b><span>{sessions.length}개</span></span></button>
         <button className="ib" onClick={() => openRp('todo')}><Icon n="list" size={14} />{(s.todos[bot.id] ?? []).filter((t) => !t.done).length ? <span className="bd">{(s.todos[bot.id] ?? []).filter((t) => !t.done).length}</span> : null}<span className="fly"><b>{bot.orchestrator ? 'Inbox' : '할 일'}</b><span>{bot.orchestrator ? `${s.inbox}개` : `미완료 ${(s.todos[bot.id] ?? []).filter((t) => !t.done).length}`}</span></span></button>
         <button className="ib" onClick={() => openRp('files')}><Icon n="folder" size={14} /><span className="fly"><b>파일</b><span>{bot.rel || '볼트'}</span></span></button>
@@ -805,8 +826,9 @@ function botSummary(bot: Bot, sessions: SessionInfo[], notif: NotifyEvent[]) {
   const wait = sessions.find((x) => x.state === 'awaiting_input'); const run = sessions.find((x) => x.state === 'running')
   const top = wait ?? run ?? sessions[0]; const last = notif.find((n) => n.botId === bot.id)
   const state = top?.state ?? null
+  const unread = botUnread(sessions)   // S · 안 읽은 답이 하나라도 있나 (`core/unread`)
   const text = wait ? `확인해 주세요 · ${wait.pending[0]?.displayName ?? wait.name}` : run ? `일하는 중 · ${run.activity || run.name}` : last ? last.body : top ? `${top.name}${top.hibernated ? ' · 절전' : ''}` : '메시지를 보내 보세요'
-  return { state, text, t: Math.max(top?.lastActivity ?? bot.startedAt, last?.t ?? 0), mood: moodOf(state, !!top?.hibernated && !run && !wait) }
+  return { state, text, unread, t: Math.max(top?.lastActivity ?? bot.startedAt, last?.t ?? 0), mood: moodOf(state, !!top?.hibernated && !run && !wait) }
 }
 
 /**
@@ -935,7 +957,7 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say }: 
       {rows.map(([sec, list]) => <div key={sec}>
         <div className="secl">{sec}</div>
         {list.map(({ b, sum }) => {
-          const row = <button key={b.id} className="mrow" onClick={() => go(b.id)}><span className="av"><FolderBot color={b.color} size={46} mood={sum.mood} mono /></span><span className="t"><span className="l1"><BotName b={b} chip={false} />{b.due ? (() => { const d = dueChip(b.due.date, b.due.precision); return d ? <span className={`due ${d.tone}`}>{d.text}</span> : null })() : <time>{fmtTime(sum.t)}</time>}</span><span className="l2">{sum.text}</span></span></button>
+          const row = <button key={b.id} className={`mrow ${sum.unread ? 'unread' : ''}`} onClick={() => go(b.id)}><span className="av"><FolderBot color={b.color} size={46} mood={sum.mood} unread={sum.unread} mono /></span><span className="t"><span className="l1"><BotName b={b} chip={false} />{b.due ? (() => { const d = dueChip(b.due.date, b.due.precision); return d ? <span className={`due ${d.tone}`}>{d.text}</span> : null })() : <time>{fmtTime(sum.t)}</time>}</span><span className="l2">{sum.text}</span></span></button>
           // 관제(오케스트레이터)는 고정·지우기·은퇴의 대상이 아니다 — 쓸리지 않는다
           return b.orchestrator ? row : <SwipeRow key={b.id} cfg={FOLDER_SWIPE} labelFor={(a) => (a === 'pin' && b.pinned ? '고정 풀기' : undefined)} onAct={(a) => void folderAct(b, a)}>{row}</SwipeRow>
         })}
@@ -1027,6 +1049,16 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const pinnedItem = useMemo(() => (pinnedId ? (items.find((x) => x.id === pinnedId && x.kind === 'user') as Extract<ChatItem, { kind: 'user' }> | undefined) ?? null : null), [items, pinnedId])
   const lastAssistant = useMemo(() => { for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === 'assistant') return items[i].id; return null }, [items])
   const streaming = !!(last && (last.kind === 'assistant' || last.kind === 'thinking') && last.streaming)
+  /**
+   * S · **맨 아래까지 봤으면 읽음** (2026-09-21 Dave 확정). 판정은 `core/unread.shouldMarkRead` 한 곳 —
+   * 화면은 «맨 아래인가 · 아직 자라는가» 만 알려 주고, 적을지 말지는 순수 함수가 정한다.
+   * ⚠ 볼트에 적으므로(폰·맥 공유) 한 번 적은 것은 다시 안 적는다 — `readAt` 이 이미 앞서 있으면 함수가 false 를 낸다.
+   */
+  useEffect(() => {
+    if (!cur || !shouldMarkRead({ atBottom, streaming, lastReplyAt: cur.lastReplyAt, readAt: cur.readAt })) return
+    const t = window.setTimeout(() => { void api(`/sessions/${cur.id}/read`, { body: { at: cur.lastReplyAt } }).catch(() => {}) }, 400)
+    return () => window.clearTimeout(t)
+  }, [cur?.id, cur?.lastReplyAt, cur?.readAt, atBottom, streaming])
   // 컴포저 높이 → 본문 아래 여백 (유리 뒤로 글이 지나가되 가려지진 않게)
   // I-2 · 컴포저가 자라면(줄이 늘면) 본문 아래 여백(--footh)이 커진다 — 맨 아래를 보고 있었으면 **그 자리에서 따라 붙는다.**
   //   위의 스크롤 컨테이너 ResizeObserver 는 «상자 크기» 만 보므로 패딩만 커지는 이 경우를 못 본다(실측: 마지막 메시지가 52px 가려짐).

@@ -631,6 +631,11 @@ export class Gateway {
       if (sub === 'chat') return json(200, { info: h.sessions.info(r), items: r.items.slice(-800) })
       if (sub === 'send' && m === 'POST') { const b = await body(); h.sendToBot(bot, String(b.text), r.id, undefined, undefined, { client: clientOf(who, b.client) }); return json(200, { ok: true }) }
       if (sub === 'permission' && m === 'POST') { const b = await body(); h.sessions.respondPermission(r, String(b.requestId), !!b.allow, !!b.always); return json(200, { ok: true }) }
+      /**
+       * S · 여기까지 읽었다 (2026-09-21 Dave) — 화면이 맨 아래에 닿고 턴이 끝나면 한 번 부른다.
+       * ⚠ 같이 그 세션의 **알림도 읽음**으로 넘긴다 — 대화를 다 읽었는데 🔔 에 같은 건이 남아 있으면 배지가 거짓말을 한다(실제로 50 이 쌓였다).
+       */
+      if (sub === 'read' && m === 'POST') { const b = await body(); h.sessions.markRead(r.id, typeof b.at === 'number' ? b.at : undefined); h.notifier.markReadBySession(r.id); return json(200, { ok: true }) }
       if (sub === 'ask' && m === 'POST') { const b = await body(); h.sessions.respondAsk(r, String(b.requestId), (b.answers ?? {}) as Record<string, string>); return json(200, { ok: true }) }
       if (sub === 'interrupt' && m === 'POST') { h.sessions.interrupt(r); return json(200, { ok: true }) }
       if (sub === 'ack' && m === 'POST') { h.sessions.acknowledge(r); return json(200, { ok: true }) }

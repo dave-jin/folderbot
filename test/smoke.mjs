@@ -1148,6 +1148,17 @@ try {
               // ☰ 로도 레일 · 어두워진 채팅(스크림) 탭 → 닫힘
               await hp.click('.chat-hdr .hb-menu'); await wait(400); if ((await view()) !== 'list') fail('H 좁음: ☰ → 레일')
               await hp.evaluate(() => { document.querySelector('.scrim')?.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 480, clientY: 400 })) }); await wait(350); if ((await view()) !== 'chat') fail('H 좁음: 어두워진 채팅 탭 → 닫힘')
+              /**
+               * 🔴 **S-2 · 맥 알림 배너를 눌렀을 때** (2026-09-21 Dave: «알림 버튼을 클릭했을 때 해당 세션으로 이동하는 문제»).
+               *    셸(`desktop/main.js` 의 `navigate`)은 `location.hash` 만 놓는다 — 앱 안의 벨처럼 화면을 바꿔 주지 않는다.
+               *    서랍이 덮여 있으면 뒤에서 폴더만 바뀌고 화면은 그대로였다(= 아무 일도 안 일어난 것처럼 보인다).
+               */
+              await hp.click('.chat-hdr .hb-menu'); await wait(400); if ((await view()) !== 'list') fail('S-2: 서랍을 먼저 열어야 한다')
+              const sidB = (await api(`/bots/${bot.id}/sessions`, { name: 's2-banner' })).id
+              await hp.evaluate((h) => { location.hash = h }, `bot=${bot.id}&s=${sidB}`); await wait(700)
+              const land = await hp.evaluate(() => ({ view: document.querySelector('.app').dataset.view, s: new URLSearchParams(location.hash.slice(1)).get('s'), drawer: !!document.querySelector('.drawer.left.open') }))
+              if (land.view !== 'chat' || land.s !== sidB || land.drawer) fail('🔴 S-2: 배너처럼 해시만 놓았는데 화면이 그 대화로 안 갔다 ' + JSON.stringify(land))
+              await fetch(base + `/api/sessions/${sidB}`, { method: 'DELETE' })
               // 서랍 상태 기억 — 패널을 연 채 앱을 다시 켜면(해시 없이) 그 칸으로 돌아온다
               await hp.click('.dock .db[title="파일"]'); await wait(500)
               await hp.goto(base + '/'); await wait(1200)
@@ -1179,7 +1190,51 @@ try {
           const ns = await pg.evaluate(() => { const b = [...document.querySelectorAll('.rpwrap .sech')].find((x) => /세션/.test(x.textContent ?? ''))?.querySelector('.ib[title="새 세션"]'); if (!b) return null; const st = getComputedStyle(b); const r = b.getBoundingClientRect(); return { op: Number(st.opacity), vis: st.visibility, w: r.width, h: r.height } })
           if (!ns) fail('새 세션 +: 단추가 없다')
           if (ns.op < 1 || ns.vis !== 'visible' || ns.w < 8 || ns.h < 8) fail('🔴 새 세션 +: 마우스를 안 올리면 안 보인다 ' + JSON.stringify(ns))
-          ok('새 세션 + 는 상시 노출')
+          // S-3 · 패널을 **접어 둬도** 우측 띠에 + 가 남는다 — 눌러서 세션이 늘어나는지까지
+          // ⚠ 새 세션을 만들면 화면이 **그 빈 세션**으로 옮겨 간다 — 뒤 검사들이 보던 대화를 잃지 않게 있던 자리를 적어 두고 되돌린다
+          const hashBeforeNs = await pg.evaluate(() => location.hash)
+          await pg.keyboard.press('Meta+Shift+B'); await wait(400)
+          const strip = await pg.evaluate(() => { const b = document.querySelector('.strip.right .ib.nsb'); if (!b) return null; const st = getComputedStyle(b); return { op: Number(st.opacity), w: Math.round(b.getBoundingClientRect().width) } })
+          if (!strip || strip.op < 1 || strip.w < 8) fail('S-3: 접힌 오른쪽 띠에 새 세션 + 가 없다 ' + JSON.stringify(strip))
+          const nBefore = (await api(`/bots/${bot.id}/sessions`)).length
+          await pg.click('.strip.right .ib.nsb'); await wait(900)
+          const nAfter = (await api(`/bots/${bot.id}/sessions`)).length
+          if (nAfter !== nBefore + 1) fail('S-3: 띠의 + 를 눌렀는데 세션이 안 늘었다 ' + nBefore + '→' + nAfter)
+          const made = (await api(`/bots/${bot.id}/sessions`)).find((x) => !x.lastReplyAt && x.id !== (new URLSearchParams(hashBeforeNs.slice(1)).get('s')))
+          if (made) await fetch(base + `/api/sessions/${made.id}`, { method: 'DELETE' })
+          await pg.evaluate((h) => { location.hash = h }, hashBeforeNs); await wait(700)
+          ok('새 세션 + 는 상시 노출 — 펼친 패널의 「세션」 줄 · 접힌 오른쪽 띠 둘 다')
+        }
+        /**
+         * 🔴 **S · 읽은 답과 안 읽은 답을 가른다** (2026-09-21 Dave: *«답변이 완료된 것 중에 내가 읽은 것과 읽지 않은
+         *    것을 구분하는 게 안 되네»*). 판정은 `core/unread`(유닛) — 여기서는 **화면과 볼트가 실제로 갈리는지** 잰다:
+         *    ① 안 본 답이 오면 그 폴더 행이 `.unread` ② 그 세션을 열어 맨 아래에 닿으면 볼트에 `readAt` 이 적히고 행이 풀린다
+         *    ③ 그 세션의 **알림도 읽음**이 된다(🔔 가 거짓말하지 않게).
+         */
+        {
+          const backHash = await pg.evaluate(() => location.hash)
+          const sidU = (await api(`/bots/${bot.id}/sessions`, { name: 's-unread' })).id
+          await api(`/sessions/${sidU}/send`, { text: '되읊어: 안 읽은 답' })
+          let row = null
+          for (let i = 0; i < 40; i++) { await wait(250); row = await pg.evaluate((id) => { const b = document.querySelector(`.brow[data-id="${id}"]`); return b ? { unread: b.classList.contains('unread'), ring: !!b.querySelector('.fb .uring') } : null }, bot.id); if (row?.unread) break }
+          if (!row?.unread || !row.ring) fail('S-1: 안 본 답이 왔는데 폴더 행이 안 읽음으로 안 바뀐다 ' + JSON.stringify(row))
+          const before = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === sidU)
+          if (!before?.lastReplyAt || before.readAt) fail('S-1: 볼트 값 — lastReplyAt 만 있어야 한다 ' + JSON.stringify({ lastReplyAt: before?.lastReplyAt, readAt: before?.readAt }))
+          await pg.screenshot({ path: 'test/tmp/s-unread-rail.png' })
+          // 그 세션을 열어 맨 아래까지 본다 → 읽음
+          await pg.evaluate((h) => { location.hash = h }, `bot=${bot.id}&s=${sidU}`); await wait(1500)
+          let after = null
+          for (let i = 0; i < 40; i++) { after = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === sidU); if (after?.readAt) break; await wait(250) }
+          if (!after?.readAt || after.readAt < after.lastReplyAt) fail('S-1: 맨 아래까지 봤는데 읽음이 안 적혔다 ' + JSON.stringify({ readAt: after?.readAt, lastReplyAt: after?.lastReplyAt }))
+          let cleared = false
+          for (let i = 0; i < 30; i++) { cleared = await pg.evaluate((id) => !document.querySelector(`.brow[data-id="${id}"]`)?.classList.contains('unread'), bot.id); if (cleared) break; await wait(250) }
+          if (!cleared) fail('S-1: 읽었는데 행이 안 읽음으로 남아 있다')
+          // 그 세션의 알림도 읽음 — 안 그러면 🔔 배지가 거짓말을 한다
+          const notes = (await api('/notifications')).filter((n) => n.sessionId === sidU)
+          if (notes.some((n) => !n.read)) fail('S-1: 대화를 다 읽었는데 그 세션 알림이 안 읽음으로 남았다 ' + JSON.stringify(notes.map((n) => [n.kind, n.read])))
+          await fetch(base + `/api/sessions/${sidU}`, { method: 'DELETE' })
+          await pg.evaluate((h) => { location.hash = h }, backHash); await wait(700)
+          ok('S 읽음/안 읽음 — 안 본 답은 행 강조+배지 링 · 맨 아래까지 보면 볼트에 읽음 · 그 세션 알림도 함께 읽음')
         }
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
         await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)

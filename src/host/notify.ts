@@ -37,6 +37,12 @@ export class Notifier {
     for (const e of this.events) if (!ids || ids.includes(e.id)) e.read = true
     atomicWrite(this.file, JSON.stringify(this.events))
   }
+  /** S · 그 세션의 대화를 다 읽었으면 그 세션 알림도 읽음이다 — 두 표면이 어긋나면 배지를 못 믿는다 */
+  markReadBySession(sessionId: string): void {
+    let hit = false
+    for (const e of this.events) if (e.sessionId === sessionId && !e.read) { e.read = true; hit = true }
+    if (hit) atomicWrite(this.file, JSON.stringify(this.events))
+  }
   /**
    * macOS 알림 센터 — terminal-notifier 가 있으면 클릭 시 **그 대화**(`#bot=…&s=…`)를 열고, 없으면 osascript(클릭 없음).
    * ⚠ 데스크톱 앱이 호스트를 안에서 돌릴 때는 `FOLDERBOT_NO_MAC_NOTIFY` 로 꺼진다 — 배너는 앱이 띄우고 앱이 연다.
