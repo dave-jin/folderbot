@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { parse as parseYaml, stringify } from 'yaml'
 import { EventEmitter } from 'node:events'
-import { applyNaming, globMatch, globParents, PARA_PRESET, JD_PRESET, parseRules, rulesSection, roleOf } from '../core/rules'
+import { applyNaming, globMatch, globParents, isSectionRoot, PARA_PRESET, JD_PRESET, parseRules, rulesSection, roleOf } from '../core/rules'
 import type { Bot, BotConfig, Candidate, FolderRules, RoutineDef } from '../core/types'
 import { BOT_COLORS, ORCH_COLOR } from '../core/types'
 import { atomicWrite } from './paths'
@@ -94,6 +94,12 @@ export class Registry extends EventEmitter {
   }
 
   // ── 후보 ────────────────────────────────────────────────────────────────
+  /** 칸 안의 폴더 이름들 — 「그 안의 폴더를 고르세요」 안내에 예시로 쓴다 (AC) */
+  sectionChildren(rel: string): string[] {
+    const dir = join(this.root, rel)
+    try { return readdirSync(dir).filter((n) => !n.startsWith('.') && !n.startsWith('_') && statSync(join(dir, n)).isDirectory()).sort() } catch { return [] }
+  }
+
   candidates(): Candidate[] {
     const out: Candidate[] = []
     const seen = new Set<string>()
@@ -251,6 +257,15 @@ export class Registry extends EventEmitter {
     const abs = join(this.root, rel)
     if (!existsSync(abs) || !statSync(abs).isDirectory()) throw new Error(`폴더가 없어요: ${rel}`)
     if (!abs.startsWith(this.root + sep)) throw new Error('루트 밖 폴더는 시작할 수 없어요')
+    /**
+     * 🔴 **칸(섹션) 자체에는 봇을 붙이지 않는다** (AC · 2026-09-23 Dave 스크린샷 056 — `4. Resources` 가 통째로 봇이 됐다).
+     *    `2. Projects`·`3. Area` 는 글롭의 부모라 자연히 막혀 있었지만 `4. Resources`·`5. Archive`·`1. Inbox` 는 통과했다.
+     *    봇은 **일 하나**에 붙는다 — 칸에 붙이면 트리에 수십 개가 딸려 들어오고 레일에서는 「관제」 자리로 떠 버린다.
+     */
+    if (isSectionRoot(this.rules, rel)) {
+      const kids = this.sectionChildren(rel)
+      throw new Error(`${rel} 는 칸이에요 — 그 안의 폴더에 봇을 만들어요${kids.length ? ` (예: ${kids.slice(0, 3).map((k) => `${rel}/${k}`).join(' · ')})` : ''}`)
+    }
     // 🔴 **폴더 하나 = 줄 하나.** 종전에는 «이미 있나» 를 rel + vendor 로 봐서 같은 폴더가 Claude/Codex
     //    **두 줄**로 섰다(V24 의 «형제»). 2026-09-13 Dave 재정의로 벤더는 세션의 성질이 됐다 —
     //    시작할 때 고르는 것은 **첫 세션을 누가 맡나** 일 뿐이고, 그 뒤는 세션 목록의 + 에서 고른다.
