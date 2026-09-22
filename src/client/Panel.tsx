@@ -107,12 +107,10 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
     </div>
     <div className="divy" style={{ cursor: 'default' }} />
     {/* 지침 · 하네스 — 폴더에 딸린 것의 집 (V25). 설정의 «하네스» 칸은 훑는 표일 뿐이다 */}
+    {/* V (2026-09-22 Dave: «커맨드랑 스킬을 따로 구분하지 말고 한 공간에서 한 번에») — 지침·스킬·커넥터·슬래시 명령이 한 칸이다 */}
     {!bot.orchestrator ? <div className="sec fix">
-      <HarnessSec bot={bot} open={!!open.harness} tog={() => tog('harness')} onOpenFile={onOpenFile} />
+      <HarnessSec bot={bot} open={!!open.harness} tog={() => tog('harness')} onOpenFile={onOpenFile} say={say} filesTick={filesTick} />
     </div> : null}
-    {!bot.orchestrator ? <><div className="divy" style={{ cursor: 'default' }} /><div className="sec fix">
-      <CmdSec bot={bot} open={!!open.cmds} tog={() => tog('cmds')} onOpenFile={onOpenFile} say={say} filesTick={filesTick} />
-    </div></> : null}
     <div className="divy" style={{ cursor: 'default' }} />
     {/* 루틴 */}
     <div className="sec fix">
@@ -134,49 +132,42 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
  *    «지금 어느 폴더 이야기인가» 가 붙어 있는 자리는 이 패널뿐이다 (Dave: «이건 어떻게 보여져야 할지 고민»).
  * 🔴 **범위 칩이 출처다** — 사용자(모든 폴더) · 볼트 · 폴더 · 내장. 같은 이름이 겹치면 **폴더가 이긴다**.
  */
-const SCOPE_T: Record<HarnessItem['scope'], string> = { folder: '폴더', root: '볼트', user: '사용자', builtin: '내장' }
-function HarnessSec({ bot, open, tog, onOpenFile }: { bot: Bot; open: boolean; tog: () => void; onOpenFile: (rel: string) => void }) {
+const SCOPE_T: Record<HarnessItem['scope'], string> = { folder: '이 폴더', root: '볼트', user: '사용자', builtin: '내장' }
+interface CmdRow { name: string; desc: string; scope: 'folder' | 'root' | 'user'; rel: string | null }
+function HarnessSec({ bot, open, tog, onOpenFile, say, filesTick }: { bot: Bot; open: boolean; tog: () => void; onOpenFile: (rel: string) => void; say: (m: string) => void; filesTick?: number }) {
   const [hz, setHz] = useState<HarnessDetail | null>(null)
+  const [cmds, setCmds] = useState<CmdRow[] | null>(null)
   const [all, setAll] = useState(false)
   useEffect(() => { if (!open) return; void api<HarnessDetail>(`/harness?rel=${encodeURIComponent(bot.rel)}`).then(setHz).catch(() => setHz(null)) }, [open, bot.rel])
+  useEffect(() => { if (!open) return; void api<CmdRow[]>(`/bots/${bot.id}/commands`).then(setCmds).catch(() => setCmds([])) }, [open, bot.id, filesTick])
   const guides = hz ? [hz.claudeMd ? 'CLAUDE.md' : null, hz.agentsMd ? 'AGENTS.md' : null].filter(Boolean) as string[] : []
-  const items = hz ? [...hz.skillList, ...hz.mcpList] : []
-  const shown = all ? items : items.slice(0, 4)
-  return <>
-    <button className="sech" onClick={tog}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>지침 · 하네스</span><span className="c">{hz ? guides.length + items.length : ''}</span></button>
-    {open ? <div className="secb hsec">
-      {guides.map((g) => <button className="hz" key={g} onClick={() => onOpenFile(g)}><Mark id={g === 'AGENTS.md' ? 'codex' : 'claude'} size={13} /><span className="n">{g}</span><span className="sc">지침 · 폴더</span></button>)}
-      {!guides.length && hz ? <div className="kv" style={{ color: 'var(--t3)' }}>지침 파일이 없어요 — CLAUDE.md 를 만들면 봇이 읽어요</div> : null}
-      {shown.map((i) => <div className="hz" key={`${i.kind}:${i.name}`}><Icon n={i.kind === 'mcp' ? 'plug' : 'run'} size={13} color={i.scope === 'folder' ? 'var(--run)' : 'var(--t3)'} /><span className="n">{i.name}</span><span className="sc">{i.kind === 'mcp' ? '커넥터' : '스킬'} · {SCOPE_T[i.scope]}</span></div>)}
-      {items.length > 4 ? <button className="hz more" onClick={() => setAll(!all)}>{all ? '접기' : `+ 스킬 ${hz!.skillList.length} · 커넥터 ${hz!.mcpList.length} 모두 보기`}</button> : null}
-    </div> : null}
-  </>
-}
-
-/**
- * 슬래시 명령 (루프 8/10) — 🔴 **명령은 파일이다**(`.claude/commands/<이름>.md`). 여기서는 목록·만들기·열기만 하고,
- * 고치는 것은 문서 열이, 지우는 것은 파일 트리(휴지통)가 한다 — 같은 일을 두 곳에서 하지 않는다.
- * ⚠ 사용자 것(`~/.claude`)은 문서 열 밖이라 보여 주기만 한다.
- */
-interface CmdRow { name: string; desc: string; scope: 'folder' | 'root' | 'user'; rel: string | null }
-function CmdSec({ bot, open, tog, onOpenFile, say, filesTick }: { bot: Bot; open: boolean; tog: () => void; onOpenFile: (rel: string) => void; say: (m: string) => void; filesTick?: number }) {
-  const [rows, setRows] = useState<CmdRow[] | null>(null)
-  useEffect(() => { if (!open) return; void api<CmdRow[]>(`/bots/${bot.id}/commands`).then(setRows).catch(() => setRows([])) }, [open, bot.id, filesTick])
-  const SC = { folder: '이 폴더', root: '볼트', user: '사용자' }
+  /**
+   * V · **한 목록에 명령·스킬·커넥터를 함께** (2026-09-22 Dave: «커맨드랑 스킬을 따로 구분하지 말고 한 공간에서 한 번에 볼 수는 없을까»).
+   * 차례는 «내가 부르는 것 → 봇이 쓰는 것» — 슬래시 명령(`/이름`)이 먼저, 그다음 스킬, 그다음 커넥터.
+   * ⚠ 종류는 왼쪽 아이콘과 오른쪽 범위 칩이 말한다 — 섹션을 둘로 가르면 같은 것을 두 군데서 찾게 된다.
+   */
+  const rows = [
+    ...(cmds ?? []).map((c) => ({ key: `cmd:${c.scope}:${c.name}`, icon: 'run' as const, name: `/${c.name}`, desc: c.desc, kind: '명령', scope: SCOPE_T[c.scope === 'root' ? 'root' : c.scope === 'user' ? 'user' : 'folder'], rel: c.rel ?? '', folder: c.scope === 'folder' })),
+    ...(hz?.skillList ?? []).map((i) => ({ key: `skill:${i.name}`, icon: 'run' as const, name: i.name, desc: '', kind: '스킬', scope: SCOPE_T[i.scope], rel: '', folder: i.scope === 'folder' })),
+    ...(hz?.mcpList ?? []).map((i) => ({ key: `mcp:${i.name}`, icon: 'plug' as const, name: i.name, desc: '', kind: '커넥터', scope: SCOPE_T[i.scope], rel: '', folder: i.scope === 'folder' }))
+  ]
+  const shown = all ? rows : rows.slice(0, 6)
   const create = async () => {
     const name = await askName('새 슬래시 명령 이름 (영문·숫자·-)', 'my-command')
     if (!name) return
     try { const r = await api<{ rel: string }>(`/bots/${bot.id}/commands`, { body: { name: name.trim().replace(/\.md$/, ''), scope: 'folder' } }); onOpenFile(r.rel) } catch (e) { say((e as Error).message) }
   }
   return <>
-    <button className="sech" onClick={tog}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>슬래시 명령</span><span className="c">{rows ? rows.length : ''}</span><span className="sp" /><span className="ib mdb" title="새 명령" onClick={(e) => { e.stopPropagation(); void create() }}><Icon n="plus" size={11} /><span>새 명령</span></span></button>
+    <button className="sech" onClick={tog}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>명령 · 스킬</span><span className="c">{hz || cmds ? guides.length + rows.length : ''}</span><span className="sp" /><span className="ib nsb" title="새 슬래시 명령" onClick={(e) => { e.stopPropagation(); void create() }}><Icon n="plus" size={12} /></span></button>
     {open ? <div className="secb hsec cmds">
-      {rows?.map((c) => <button className={`hz ${c.rel ? '' : 'ro'}`} key={`${c.scope}:${c.name}`} title={c.rel ? '열어서 고치기' : '사용자 폴더의 명령 — 여기서는 못 고쳐요'} onClick={() => { if (c.rel) onOpenFile(c.rel) }}><Icon n="run" size={13} color={c.scope === 'folder' ? 'var(--run)' : 'var(--t3)'} /><span className="n"><b>/{c.name}</b>{c.desc ? <small> — {c.desc}</small> : null}</span><span className="sc">{SC[c.scope]}</span></button>)}
-      {rows && !rows.length ? <div className="kv" style={{ color: 'var(--t3)' }}>아직 없어요 — + 로 만들면 `/이름` 으로 부를 수 있어요</div> : null}
-      <button className="hz more" onClick={() => void create()}>+ 새 명령</button>
+      {guides.map((g) => <button className="hz" key={g} onClick={() => onOpenFile(g)}><Mark id={g === 'AGENTS.md' ? 'codex' : 'claude'} size={13} /><span className="n">{g}</span><span className="sc">지침 · 폴더</span></button>)}
+      {shown.map((r) => <button className={`hz ${r.rel ? '' : 'ro'}`} key={r.key} title={r.rel ? '열어서 고치기' : `${r.kind} — 여기서는 못 고쳐요`} onClick={() => { if (r.rel) onOpenFile(r.rel) }}><Icon n={r.icon} size={13} color={r.folder ? 'var(--run)' : 'var(--t3)'} /><span className="n"><b>{r.name}</b>{r.desc ? <small> — {r.desc}</small> : null}</span><span className="sc">{r.kind} · {r.scope}</span></button>)}
+      {(hz || cmds) && !rows.length ? <div className="kv" style={{ color: 'var(--t3)' }}>아직 없어요 — + 로 만들면 `/이름` 으로 부를 수 있어요</div> : null}
+      {rows.length > 6 ? <button className="hz more" onClick={() => setAll(!all)}>{all ? '접기' : `+ ${rows.length - 6}개 더 보기`}</button> : null}
     </div> : null}
   </>
 }
+
 
 export function Elapsed({ from }: { from?: number }) {
   const [, tick] = useState(0)
