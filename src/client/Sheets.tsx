@@ -3,6 +3,7 @@ import type { Bot, NotifyEvent, RoutineDef } from '../core/types'
 import { api, setToken, subscribePush } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { hitRange, rank } from '../core/search'
+import { WHEN_EXAMPLES, describeCron, formatNext, nextRunOf, parseWhen } from '../core/when'
 import { candidatePaths } from '../core/paths'
 import { diffLines, diffStat, foldSame } from '../core/diff'
 import { extractMath } from '../core/math'
@@ -380,31 +381,88 @@ export function NotifyCenter({ onClose, onJump }: { onClose: () => void; onJump:
  */
 export function RoutineSheet({ bot, onClose, draft }: { bot: Bot; onClose: () => void; draft?: RoutineDef }) {
   const { refresh } = useStore()
-  const [list, setList] = useState<RoutineDef[]>(draft ? [...bot.routines, draft] : bot.routines)
-  const [i, setI] = useState(draft ? bot.routines.length : 0); const [busy, setBusy] = useState(false)
+  /** 화면은 **사람 말**(`when`)을 들고 있고, cron 은 저장할 때 한 번 만들어진다 — 사람에게 cron 을 보여 주지 않는다 */
+  type Row = RoutineDef & { when: string }
+  const toRow = (r: RoutineDef): Row => ({ ...r, when: describeCron(r.cron) })
+  const [list, setList] = useState<Row[]>(draft ? [...bot.routines.map(toRow), toRow(draft)] : bot.routines.map(toRow))
+  const [i, setI] = useState(draft ? bot.routines.length : 0)
+  const [busy, setBusy] = useState(false); const [ran, setRan] = useState('')
   const cur = list[i]
-  const upd = (p: Partial<RoutineDef>) => setList(list.map((r, k) => (k === i ? { ...r, ...p } : r)))
-  const save = async () => { setBusy(true); try { await api(`/bots/${bot.id}/routines`, { method: 'PUT', body: { routines: list } }); await refresh(); onClose() } finally { setBusy(false) } }
+  const upd = (p: Partial<Row>) => setList(list.map((r, k) => (k === i ? { ...r, ...p } : r)))
+
+  /** 🔴 미리보기와 스케줄러가 **같은 파서**를 쓴다 — 갈리면 «미리보기는 맞는데 안 도는» 새 사고가 난다 */
+  const read = (w: string) => parseWhen(w)
+  const curRead = cur ? read(cur.when) : null
+  const bad = list.map((r) => read(r.when)).filter((v) => !v.ok).length
+
+  const payload = () => list.map((r) => { const { when, lastError: _e, nextRun: _n, ...rest } = r; return { ...rest, cron: when } })
+  const save = async () => {
+    setBusy(true)
+    try { await api(`/bots/${bot.id}/routines`, { method: 'PUT', body: { routines: payload() } }); await refresh(); return true }
+    finally { setBusy(false) }
+  }
+  const saveClose = async () => { if (await save()) onClose() }
+  /** AA-4 · 「지금 한 번 돌려보기」 — 저장 직후 동작을 사람이 확인할 수 있어야 한다(이번 사고는 그게 없어서 이틀을 몰랐다) */
+  const runNow = async (name: string) => {
+    setBusy(true)
+    try {
+      await api(`/bots/${bot.id}/routines`, { method: 'PUT', body: { routines: payload() } })
+      const r = await api<{ ran: string; warn?: string | null }>(`/bots/${bot.id}/routines/run`, { method: 'POST', body: { name } })
+      await refresh(); setRan(r.warn ? `${name} 을 돌렸어요 — ${r.warn}` : `${name} 을 지금 한 번 돌렸어요 · 채팅에서 결과를 보세요`)
+    } catch (e) { setRan(`못 돌렸어요 — ${(e as Error).message}`) } finally { setBusy(false) }
+  }
+
+  const PRESETS = ['매일 아침 9시', '매일 저녁 8시', '평일 오전', '매주 월요일']
   return <>
     <div className="backdrop" onClick={onClose} />
     <div className="sheet" style={{ ['--sheet-w' as string]: '52%' }}>
-      <div className="sheet-h"><span className="tab"><Icon n="clock" size={13} color="var(--accent)" />루틴 편집 · {bot.name}</span><span className="acts"><button className="btn" onClick={onClose}>취소</button><button className="btn primary" disabled={busy} onClick={save}>저장 → .bot.yml</button></span></div>
+      <div className="sheet-h"><span className="tab"><Icon n="clock" size={13} color="var(--accent)" />루틴 · {bot.name}</span><span className="acts"><button className="btn" onClick={onClose}>취소</button><button className="btn primary" disabled={busy || bad > 0} title={bad ? '주기를 못 읽는 줄이 있어요' : ''} onClick={saveClose}>저장</button></span></div>
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        <div style={{ width: 200, borderRight: '1px solid var(--border)', padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {list.map((r, k) => <button key={k} className={`srow ${k === i ? 'on' : ''}`} onClick={() => setI(k)}><Icon n="clock" size={13} color={k === i ? 'var(--accent)' : undefined} /><span className="n">{r.name || '(이름 없음)'}</span></button>)}
-          <button className="srow" onClick={() => { setList([...list, { name: '새 루틴', cron: '0 7 * * *', prompt: '', approve: 'readonly', push: true }]); setI(list.length) }}><Icon n="plus" size={12} />새 루틴</button>
+        <div className="rtlist" style={{ width: 240, borderRight: '1px solid var(--border)', padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 2, overflow: 'auto' }}>
+          {list.map((r, k) => {
+            const v = read(r.when); const next = v.ok ? nextRunOf(v.cron) : null
+            const off = r.enabled === false
+            return <div key={k} className={`rtrow ${k === i ? 'on' : ''} ${off ? 'off' : ''}`}>
+              <button className="pick" onClick={() => setI(k)}>
+                <span className="n">{r.name || '(이름 없음)'}{r.lastError ? <span className="rtwarn" title={r.lastError}><Icon n="warn" size={11} />안 걸림</span> : null}</span>
+                {/* 🔴 목록에는 **원시 cron 대신 사람 말과 다음 실행**이 뜬다 — 「20」 이라고만 떠서 사고를 못 봤다 */}
+                <span className="sub">{v.ok ? v.text : <span className="err">주기를 못 읽어요</span>}{next && !off ? ` · 다음 ${formatNext(next)}` : off ? ' · 꺼짐' : ''}</span>
+              </button>
+              <span className="rtacts">
+                <button className="ib" title={off ? '켜기' : '끄기'} onClick={() => setList(list.map((x, q) => (q === k ? { ...x, enabled: off } : x)))}><Icon n={off ? 'run' : 'pause'} size={12} /></button>
+                <button className="ib" title="지금 한 번 돌려보기" disabled={busy || !r.name} onClick={() => void runNow(r.name)}><Icon n="run" size={12} /></button>
+              </span>
+            </div>
+          })}
+          <button className="srow" onClick={() => { setList([...list, { name: '새 루틴', cron: '0 9 * * *', when: '매일 아침 9시', prompt: '', approve: 'readonly', push: true }]); setI(list.length) }}><Icon n="plus" size={12} />새 루틴</button>
           {cur ? <button className="srow" style={{ color: 'var(--error)', marginTop: 'auto' }} onClick={() => { setList(list.filter((_, k) => k !== i)); setI(0) }}><Icon n="x" size={12} />이 루틴 삭제</button> : null}
         </div>
         <div className="sheet-b" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           {cur ? <>
             <div className="field"><label>이름</label><input value={cur.name} onChange={(e) => upd({ name: e.target.value })} /></div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}><div className="field"><label>주기 (cron)</label><input className="mono" value={cur.cron} onChange={(e) => upd({ cron: e.target.value })} /><small style={{ color: 'var(--faint)' }}>예: 0 7 * * * = 매일 07:00 · 0 20 * * 0 = 일요일 20:00</small></div><div className="field"><label>끝나면 폰으로 한 줄 푸시</label><select value={cur.push === false ? 'off' : 'on'} onChange={(e) => upd({ push: e.target.value === 'on' })}><option value="on">켬</option><option value="off">끔</option></select></div></div>
-            <div className="field"><label>프롬프트</label><textarea rows={5} value={cur.prompt} onChange={(e) => upd({ prompt: e.target.value })} /></div>
-            <div className="field"><label>승인 정책 · 사람이 없을 때</label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{([['readonly', '읽기 전용 · 제안만', '파일을 쓰지 않아요. 기본값'], ['folder', '이 폴더 안 쓰기 허용', 'todo.md·노트 갱신까지'], ['always', '항상 허용', '루틴이 다 해요 (위험)']] as const).map(([v, t, sub]) => <button key={v} className={`preset ${(cur.approve ?? 'readonly') === v ? 'on' : ''}`} style={{ padding: '10px 12px', minWidth: 140 }} onClick={() => upd({ approve: v })}><b style={{ fontSize: 12 }}>{t}</b><small>{sub}</small></button>)}</div></div>
+            {/* AA-3 · 언제 — 사람 말로 넣는다. cron 식은 아래 상세에만 작게 */}
+            <div className="field"><label>언제</label>
+              <input value={cur.when} placeholder="매일 저녁 8시" onChange={(e) => upd({ when: e.target.value })} />
+              <div className="rtpre">{PRESETS.map((p) => <button key={p} className="preset sm" onClick={() => upd({ when: p })}>{p}</button>)}</div>
+              {curRead?.ok
+                ? <small className="rtnext">다음 실행: <b>{formatNext(nextRunOf(curRead.cron))}</b> <span className="mono dim">{curRead.cron}</span></small>
+                : curRead && 'ask' in curRead
+                  ? <small className="rterr">{curRead.ask.q} <span className="rtpre">{curRead.ask.options.map((o) => <button key={o.cron} className="preset sm" onClick={() => upd({ when: o.text })}>{o.label}</button>)}</span></small>
+                  : <small className="rterr">{curRead?.error} · 예: {WHEN_EXAMPLES.slice(0, 3).join(' · ')}</small>}
+            </div>
+            <div className="field"><label>무엇을</label>
+              <textarea rows={5} value={cur.prompt} placeholder="무엇을 확인하고, 변화가 없으면 어떻게 할지까지 적어 주세요" onChange={(e) => upd({ prompt: e.target.value })} />
+              <small style={{ color: 'var(--faint)' }}>힌트 — 「어제 이후 바뀐 파일을 훑고 todo.md 에 남은 일을 정리해 줘. 바뀐 게 없으면 «변화 없음» 한 줄만.」</small>
+            </div>
+            <div className="field"><label>끝나면 폰으로 한 줄 푸시</label><select value={cur.push === false ? 'off' : 'on'} onChange={(e) => upd({ push: e.target.value === 'on' })}><option value="on">켬</option><option value="off">끔</option></select></div>
+            {/* 🔴 always 가 bypassPermissions 라는 사실을 모르고 고르면 안 된다 (AA-4) */}
+            <div className="field"><label>승인 수준 · 사람이 없을 때</label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{([['readonly', '계획만 세운다', '파일을 쓰지 않아요. 기본값'], ['folder', '이 폴더 안에서는 쓴다', 'todo.md·노트 갱신까지 스스로'], ['always', '무엇이든 한다', '⚠ 모든 확인을 건너뜁니다(bypassPermissions)']] as const).map(([v, t, sub]) => <button key={v} className={`preset ${(cur.approve ?? 'readonly') === v ? 'on' : ''}`} style={{ padding: '10px 12px', minWidth: 150 }} onClick={() => upd({ approve: v })}><b style={{ fontSize: 12 }}>{t}</b><small>{sub}</small></button>)}</div></div>
+            {cur.lastError ? <div className="rterr" style={{ border: '1px solid var(--error)', borderRadius: 8, padding: '8px 10px' }}><b>이 루틴은 지금 안 걸려 있어요</b><br />{cur.lastError}</div> : null}
+            {ran ? <div className="rtnext" style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>{ran}</div> : null}
           </> : <div className="empty">루틴이 없어요. 왼쪽에서 추가하세요.</div>}
         </div>
       </div>
-      <div className="sheet-f"><span>정본은 <span className="mono">{bot.rel || '.claude/routines.yml'}/.bot.yml</span></span><span style={{ marginLeft: 'auto', color: 'var(--faint)' }}>루틴 세션은 봇당 동시 상한(4)에 포함돼요</span></div>
+      <div className="sheet-f"><span>정본은 <span className="mono">{bot.rel || '.claude/routines.yml'}/.bot.yml</span> — 에디터로 고쳐도 몇 초 안에 따라와요</span><span style={{ marginLeft: 'auto', color: 'var(--faint)' }}>루틴 세션은 봇당 동시 상한(4)에 포함돼요</span></div>
     </div>
   </>
 }

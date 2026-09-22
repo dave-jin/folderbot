@@ -139,10 +139,24 @@ export class Registry extends EventEmitter {
   hasHarness(abs: string): boolean {
     return this.rules.harness.some((h) => existsSync(join(abs, h.replace(/\/$/, ''))))
   }
+  /** 마지막으로 **제대로 읽힌** `.bot.yml` — 반쯤 쓰인 파일을 읽었을 때 돌아갈 자리 (AA-2) */
+  private lastGoodCfg = new Map<string, BotConfig>()
+  /**
+   * 🔴 **파싱에 실패한 YAML 로 기존 설정을 날리지 않는다** (AA-2 · 2026-09-22 Dave). 볼트가 Dropbox 로
+   *    동기화되므로 **반쯤 쓰인 파일**을 읽는 순간이 실제로 있고, 그때 `{}` 를 돌려주면 그 한 번의 읽기로
+   *    **루틴이 통째로 사라진 것처럼** 보인다(그리고 그 상태로 스케줄이 다시 걸린다).
+   *    읽기·파싱이 실패하면 **직전에 성공한 값**을 그대로 쓴다. 파일이 정말로 지워졌을 때만 빈 설정이다.
+   */
   botConfig(abs: string): BotConfig {
     const f = join(abs, '.bot.yml')
-    if (!existsSync(f)) return {}
-    try { return (parseYaml(readFileSync(f, 'utf8')) as BotConfig) ?? {} } catch { return {} }
+    if (!existsSync(f)) { this.lastGoodCfg.delete(f); return {} }
+    try {
+      const cfg = (parseYaml(readFileSync(f, 'utf8')) as BotConfig) ?? {}
+      this.lastGoodCfg.set(f, cfg)
+      return cfg
+    } catch {
+      return this.lastGoodCfg.get(f) ?? {}
+    }
   }
   /**
    * 참조 폴더 지정 (D · 2026-09-19) — 봇당 하나(`.bot.yml repo` = `--add-dir`). 🔴 **비어 있을 때만** 넣는다 — 있으면 바꿔치기가

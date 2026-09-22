@@ -7,7 +7,9 @@ import { homedir } from 'node:os'
 import { spawn } from 'node:child_process'
 /** zip 을 표준 출력으로 — 숨김 파일(.folderbot 등)은 뺀다 */
 function spawnZip(cwd: string, name: string) { return spawn('zip', ['-r', '-q', '-', name, '-x', '*/.*', '.*'], { cwd }) }
-import type { Frame } from '../core/types'
+import type { Frame, RoutineDef } from '../core/types'
+import { stripRuntime } from '../core/types'
+import { WHEN_EXAMPLES, confirmLine, cronOk, describeCron, parseWhen } from '../core/when'
 import type { Host } from './host'
 import { bindAddresses, tailnetInfo } from './tailnet'
 import { saveConfig } from './paths'
@@ -620,8 +622,41 @@ export class Gateway {
         return
       }
       if (sub === 'raw') { const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')).slice(1)); if (!exists(abs)) return json(404, { error: 'none' }); res.writeHead(200, { 'content-type': mime(abs), 'cache-control': 'no-store' }); stream(abs).pipe(res); return }
-      if (sub === 'routines' && m === 'GET') return json(200, bot.routines)
-      if (sub === 'routines' && m === 'PUT') { const b = await body(); const cfg = reg.botConfig(bot.abs); cfg.routines = b.routines as never; reg.saveBotConfig(bot.abs, cfg); h.afterBotsChanged(); return json(200, { ok: true }) }
+      // AA-1 · 목록에는 **사람 말 · 다음 실행 · 오류**가 함께 간다 — 원시 cron 만 보여 주던 것이 사고를 못 보게 했다
+      if (sub === 'routines' && !seg[4] && m === 'GET') return json(200, h.routines.decorate(bot.id, bot.routines).map((r) => ({ ...r, when: describeCron(r.cron) })))
+      /**
+       * 🔴 **저장 시점에도 같은 검증을 한다** (AA-1). 종전에는 검증 없이 통째로 덮어써서 `cron: "20"` 이 그대로
+       *    파일에 들어갔고, 스케줄러가 그 예외를 삼켜 **한 번도 안 도는 루틴**이 화면에 멀쩡히 살아 있었다.
+       *    파싱이 안 되면 **400 으로 막고 무엇이 잘못됐는지와 고친 예를 함께** 돌려준다.
+       */
+      if (sub === 'routines' && !seg[4] && m === 'PUT') {
+        const b = await body()
+        const list = Array.isArray(b.routines) ? (b.routines as RoutineDef[]) : []
+        const bad: { name: string; cron: string; error: string }[] = []
+        const clean = list.map((r) => {
+          const name = String(r?.name ?? '').trim()
+          const when = String(r?.cron ?? '').trim()
+          const v = parseWhen(when)                    // 사람 말도 여기서 cron 이 된다 — 화면과 봇이 같은 문을 쓴다
+          if (!v.ok) { bad.push({ name, cron: when, error: 'ask' in v ? v.ask.q : v.error }); return null }
+          return stripRuntime({ ...r, name, cron: v.cron })
+        })
+        if (bad.length) return json(400, { error: '주기를 못 읽었어요', bad, examples: WHEN_EXAMPLES })
+        const cfg = reg.botConfig(bot.abs); cfg.routines = clean.filter(Boolean) as never
+        reg.saveBotConfig(bot.abs, cfg); h.afterBotsChanged()
+        const saved = reg.bot(bot.id)?.routines ?? []
+        return json(200, { ok: true, routines: h.routines.decorate(bot.id, saved).map((r) => ({ ...r, when: describeCron(r.cron), confirm: confirmLine(r.cron) })) })
+      }
+      /** AA-3 · 「언제」 한 줄을 미리 읽어 본다 — 화면이 타이핑하는 동안 「다음 실행」을 보여 주는 문 */
+      if (sub === 'routines' && seg[4] === 'when' && m === 'POST') { const b = await body(); const v = parseWhen(String(b.when ?? '')); return json(200, v.ok ? { ok: true, cron: v.cron, text: v.text, confirm: confirmLine(v.cron) } : 'ask' in v ? { ok: false, ask: v.ask } : { ok: false, error: v.error, examples: v.examples }) }
+      /** AA-4 · 「지금 한 번 돌려보기」 — 저장 직후 동작을 사람이 확인할 수 있어야 한다(이번 사고는 그게 없어서 이틀을 몰랐다) */
+      if (sub === 'routines' && seg[4] === 'run' && m === 'POST') {
+        const b = await body(); const name = String(b.name ?? '')
+        const r = (reg.bot(bot.id)?.routines ?? []).find((x) => x.name === name)
+        if (!r) return json(404, { error: '그 이름의 루틴이 없어요' })
+        const v = cronOk(r.cron)
+        h.runRoutine(reg.bot(bot.id)!, r)
+        return json(200, { ok: true, ran: name, warn: v.ok ? null : `주기는 아직 안 서요 — ${v.error}` })
+      }
       if (sub === 'config' && m === 'PUT') { const b = await body(); const cfg = reg.botConfig(bot.abs); Object.assign(cfg, b); reg.saveBotConfig(bot.abs, cfg); h.afterBotsChanged(); return json(200, { ok: true }) }
     }
     if (seg[1] === 'sessions' && seg[2]) {

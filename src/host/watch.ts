@@ -1,5 +1,5 @@
 import { watch, type FSWatcher } from 'node:fs'
-import { ignoredChange, WATCH_DEBOUNCE_MS } from '../core/fileWatch'
+import { CONFIG_DEBOUNCE_MS, ignoredChange, isBotConfigChange, WATCH_DEBOUNCE_MS } from '../core/fileWatch'
 
 /**
  * 봇 폴더 감시자 (2026-09-18) — 호스트가 봇 폴더를 직접 보고 «파일 바뀜»(`files` 프레임)을 알린다.
@@ -16,8 +16,10 @@ import { ignoredChange, WATCH_DEBOUNCE_MS } from '../core/fileWatch'
 export class FolderWatch {
   private ws = new Map<string, { abs: string; w: FSWatcher }>()
   private timers = new Map<string, NodeJS.Timeout>()
+  private cfgTimers = new Map<string, NodeJS.Timeout>()
   log: (s: string) => void = () => {}
-  constructor(private onChange: (botId: string) => void) {}
+  /** `onConfig` — 봇 폴더의 `.bot.yml` 이 바뀌었다(AA-2). 파일 신호와 **따로** 알린다: 하는 일이 다르다(스케줄 다시 걸기) */
+  constructor(private onChange: (botId: string) => void, private onConfig: (botId: string) => void = () => {}) {}
 
   /** 현재 봇 목록에 맞춘다 — 새 봇은 걸고, 사라진 봇은 풀고, 폴더가 바뀐 봇은 다시 건다 */
   sync(bots: { id: string; abs: string }[]): void {
@@ -30,6 +32,7 @@ export class FolderWatch {
       const w = watch(abs, { recursive: true, persistent: false }, (_ev, name) => {
         const rel = name == null ? '' : String(name)
         if (ignoredChange(rel)) return
+        if (isBotConfigChange(rel)) this.bumpCfg(id)
         this.bump(id)
       })
       w.on('error', (e: Error) => { this.log(`폴더 감시 오류 · ${abs} · ${e.message}`); this.drop(id) })
@@ -41,10 +44,15 @@ export class FolderWatch {
     try { cur.w.close() } catch { /* */ }
     this.ws.delete(id)
     const t = this.timers.get(id); if (t) { clearTimeout(t); this.timers.delete(id) }
+    const ct = this.cfgTimers.get(id); if (ct) { clearTimeout(ct); this.cfgTimers.delete(id) }
   }
   private bump(id: string): void {
     const t = this.timers.get(id); if (t) clearTimeout(t)
     this.timers.set(id, setTimeout(() => { this.timers.delete(id); if (this.ws.has(id)) this.onChange(id) }, WATCH_DEBOUNCE_MS))
+  }
+  private bumpCfg(id: string): void {
+    const t = this.cfgTimers.get(id); if (t) clearTimeout(t)
+    this.cfgTimers.set(id, setTimeout(() => { this.cfgTimers.delete(id); if (this.ws.has(id)) this.onConfig(id) }, CONFIG_DEBOUNCE_MS))
   }
   close(): void { for (const id of [...this.ws.keys()]) this.drop(id) }
 }
