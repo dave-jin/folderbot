@@ -800,6 +800,21 @@ try {
           // ⌘C — 트리 줄에 초점이 있으면 파일 복사, ⌥⌘C 는 경로 복사
           await hp.focus('.panel .trow:has-text("설명서.pdf")'); await hp.keyboard.press('ControlOrMeta+C'); await wait(300)
           c = await calls(hp); if (c.filter((x) => x[0] === 'copyFiles').length < 2) fail('M-3: 트리에서 ⌘C 가 파일 복사여야 한다 ' + JSON.stringify(c))
+          // Y · md 한 개 — 누르면 편집기가 초점을 가져가지만, 문서 창을 안 만졌으면 ⌘C 는 여전히 파일 복사(Dave: «md 한 개만 안 된다»)
+          await clickRow(hp, '메모.md'); await hp.waitForSelector('.col.doc .cm-content', { timeout: 5000 }); await wait(300)
+          if (!(await hp.evaluate(() => document.activeElement?.closest('.col.doc .cm-content')))) fail('Y: md 를 누르면 편집기가 초점을 가져간다는 전제가 깨졌다 — 검사 자체를 다시 봐야 한다')
+          let n0 = (await calls(hp)).filter((x) => x[0] === 'copyFiles').length
+          await hp.keyboard.press('ControlOrMeta+C'); await wait(300)
+          c = await calls(hp); if (!c.slice(-1).some((x) => x[0] === 'copyFiles' && x[1][0] === `${bot.abs}/files/메모.md`) || c.filter((x) => x[0] === 'copyFiles').length !== n0 + 1) fail('Y: md 를 누른 직후 ⌘C 가 그 md 를 파일로 복사해야 한다 ' + JSON.stringify(c.slice(-2)))
+          // 문서 창을 클릭한 뒤엔 편집기의 ⌘C — 파일 복사가 아니다
+          await hp.click('.col.doc .cm-content'); await wait(150); n0 = (await calls(hp)).filter((x) => x[0] === 'copyFiles').length
+          await hp.keyboard.press('ControlOrMeta+C'); await wait(300)
+          if ((await calls(hp)).filter((x) => x[0] === 'copyFiles').length !== n0) fail('Y: 편집기를 클릭한 뒤의 ⌘C 는 파일 복사가 아니어야 한다')
+          // 다시 트리 행을 누르면 무장된다
+          await clickRow(hp, '메모.md'); await wait(300); n0 = (await calls(hp)).filter((x) => x[0] === 'copyFiles').length
+          await hp.keyboard.press('ControlOrMeta+C'); await wait(300)
+          if ((await calls(hp)).filter((x) => x[0] === 'copyFiles').length !== n0 + 1) fail('Y: 트리 행을 다시 누르면 ⌘C 가 다시 파일 복사여야 한다')
+          ok('Y md 한 개 ⌘C — 편집기가 초점을 가져가도 문서 창을 안 만졌으면 파일 복사 · 만지면 양보')
           await hp.close()
           // 원격 맥 앱 — 캐시로 받기(진행 띠: 용량·속도·남은·취소) → 사본 경로로 copyFiles → 같은 사본이면 즉시 → 취소하면 부분 없음 → 폴더 50개 초과는 확인창
           const rp2 = await mkBridge(true); await expandFiles(rp2)

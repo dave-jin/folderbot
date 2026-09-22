@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Bot, HarnessDetail, HarnessItem, SessionInfo, TodoItem } from '../core/types'
 import { copyImageWhy, copySay } from './clip'
 import { copyFiles } from './fileCopy'
+import { copyIntent } from '../core/copyIntent'
 import { api } from './api'
 import { isDoneSection } from '../core/todo'
 import { ACT_COLOR, ACT_ICON, ACT_LABEL, LONG, actOf, buzz, slotOf, useSwipeCfg, type SwipeAct } from './swipe'
@@ -576,16 +577,26 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
    * ⛔ 글 쓰는 중(입력칸·편집기)에는 가로채지 않는다 — 맥 기본과 CodeMirror 의 것이 이긴다.
    * ⚠ 문서 열에 커서가 있으면 그쪽 편집기의 ⌘Z 다. 판정 순서는 ⌘F 와 같다.
    */
-  /** ⌘C = 파일 복사(고른 것) · ⌥⌘C = 경로 복사 (M-3). 트리에 초점이 있을 때만 — 글을 고른 채면 브라우저의 복사에 양보 */
+  /**
+   * ⌘C = 파일 복사(고른 것) · ⌥⌘C = 경로 복사 (M-3). 판정은 `core/copyIntent` —
+   * 🔴 md 를 누르면 편집기가 초점을 **가져가므로**(Y · Dave: «md 한 개만 안 된다») 「트리 행을 누른 뒤 문서 창을 안 만졌다」(`armed`)면
+   *    편집기에 초점이 있어도 파일 복사다. 문서 창을 클릭·타이핑하면 풀린다. 글을 고른 채면 언제나 브라우저·편집기에 양보.
+   */
+  const armed = useRef(false)
+  useEffect(() => {
+    // ⚠ ⌘C 자체는 «만진 것» 이 아니다 — 수식키 조합(⌘·⌃)과 수식키 단독은 무장을 안 푼다(안 그러면 이 감시자가 ⌘C 를 먼저 받아 늘 풀어 버린다)
+    const disarm = (e: Event) => { const ke = e as KeyboardEvent; if (e.type === 'keydown' && (ke.metaKey || ke.ctrlKey || ['Meta', 'Control', 'Alt', 'Shift'].includes(ke.key))) return; const t = e.target as HTMLElement | null; if (t?.closest?.('.col.doc')) armed.current = false }
+    window.addEventListener('pointerdown', disarm, true); window.addEventListener('keydown', disarm, true)
+    return () => { window.removeEventListener('pointerdown', disarm, true); window.removeEventListener('keydown', disarm, true) }
+  }, [])
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() !== 'c' || !(e.metaKey || e.ctrlKey) || e.shiftKey) return
       const t = e.target as HTMLElement | null
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
-      if (!t?.closest?.('.trow')) return
-      if (window.getSelection()?.toString()) return
       const rels = sel.size ? [...sel] : active ? [active] : []
-      if (!rels.length) return
+      const editable = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+      const verdict = copyIntent({ picked: rels.length, hasSelection: !!window.getSelection()?.toString(), inTree: !!t?.closest?.('.trow'), editable, inDoc: !!t?.closest?.('.col.doc'), armed: armed.current })
+      if (verdict !== 'files') return
       e.preventDefault()
       if (e.altKey) { void copySay(rels.map((r) => `${bot.abs}/${r}`).join('\n'), say, '경로를 복사했어요'); return }
       void copyFiles(bot, rels, { main, hostName, phone: !!phone, say })
@@ -644,6 +655,7 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
            * ⚠ 「고르기」와 「열기」를 같은 클릭에 태우면 파일을 고를 때마다 문서가 열려 탭이 쌓인다.
            */
           onClick={(e) => {
+            armed.current = true   // 트리를 만졌다 — 문서 창이 초점을 가져가도 다음 ⌘C 는 파일 복사(copyIntent)
             if (e.metaKey || e.ctrlKey) { setSel((p2) => { const x = new Set(p2); if (x.has(n.rel)) x.delete(n.rel); else x.add(n.rel); return x }); lastSel.current = n.rel; return }
             if (e.shiftKey && lastSel.current) {
               const a = rows.findIndex((r) => r.n.rel === lastSel.current)
