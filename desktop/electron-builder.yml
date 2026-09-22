@@ -18,6 +18,7 @@ files:
   - winBounds.js
   - nav.js
   - localfs.js
+  - clip-core.js
   - tray-preload.js
   - connect.html
   - package.json
