@@ -29,7 +29,11 @@ export class Host {
   auth: AuthState = { verdict: 'unknown', checkedAt: 0 }
   private queued: { botId: string; sessionId: string; text: string }[] = []
   broadcast: (f: Frame) => void = () => {}
-  watcher = new FolderWatch((botId) => { this.broadcast({ ev: 'files', botId }); this.refreshNames() })
+  /** 🔴 `.bot.yml` 이 밖에서 바뀌면 **UI 로 저장한 것과 같은 길**을 탄다(AA-2) — 화면 갱신 + 스케줄 다시 걸기 */
+  watcher = new FolderWatch(
+    (botId) => { this.broadcast({ ev: 'files', botId }); this.refreshNames() },
+    (botId) => { this.log(`.bot.yml 이 바뀌어 루틴을 다시 걸어요 · ${this.registry.bot(botId)?.name ?? botId}`); this.afterBotsChanged() },
+  )
   private lastNames = ''
   /** 봇 폴더의 CLAUDE.md `display_name:` 이 바뀌면 레일도 바뀌어야 한다 — 파일 신호 뒤에 표시 이름을 다시 재 본다 */
   private refreshNames(): void {
@@ -67,7 +71,9 @@ export class Host {
   }
 
   private wire(): void {
-    this.registry.on('bots', (bots: Bot[], meta?: { reorderedBy?: 'orchestrator' }) => { this.broadcast({ ev: 'bots', bots, ...(meta ?? {}) }); this.routines.reschedule(bots); this.watcher.sync(bots) })
+    // 🔴 **다시 짜고 나서 보낸다** (AA-1) — `reschedule` 이 각 루틴에 `lastError`·`nextRun` 을 적어 넣으므로,
+    //    먼저 보내면 화면은 늘 «오류도 없고 다음 실행도 모르는» 낡은 판을 받는다.
+    this.registry.on('bots', (bots: Bot[], meta?: { reorderedBy?: 'orchestrator' }) => { this.routines.reschedule(bots); this.broadcast({ ev: 'bots', bots, ...(meta ?? {}) }); this.watcher.sync(bots) })
     this.sessions.on('sessions', (botId: string) => this.broadcast({ ev: 'sessions', botId, sessions: this.sessions.list(botId) }))
     this.sessions.on('chat', (sessionId: string, item, replace: boolean) => this.broadcast({ ev: 'chat', sessionId, item, replace }))
     this.sessions.on('files', (botId: string) => this.broadcast({ ev: 'files', botId }))
@@ -108,8 +114,10 @@ export class Host {
   }
 
   afterBotsChanged(): void {
-    this.broadcast({ ev: 'bots', bots: this.registry.bots() })
-    this.routines.reschedule(this.registry.bots())
+    // 🔴 다시 짜고 나서 보낸다 (AA-1) — 스케줄 결과(lastError·nextRun)가 같은 판에 실려 나가야 화면이 사실을 본다
+    const bots = this.registry.bots()
+    this.routines.reschedule(bots)
+    this.broadcast({ ev: 'bots', bots })
   }
 
   /** 세션에 지시 — 없으면 만든다 */

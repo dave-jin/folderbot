@@ -51,6 +51,20 @@ export interface RoutineDef {
   /** 사람이 없을 때 승인 정책: readonly(기본) · folder(폴더 안 쓰기 허용) · always */
   approve?: 'readonly' | 'folder' | 'always'
   push?: boolean
+  /** 꺼 두면 스케줄에 안 건다 — 지우지 않고 잠시 멈추는 길 (AA-4). 없으면 켜진 것으로 본다 */
+  enabled?: boolean
+  /**
+   * 🔴 아래 둘은 **저장하지 않는다** — 스케줄러가 매번 새로 채워 화면으로 보내는 값이다(AA-1).
+   * `.bot.yml` 에 새면 다음에 읽을 때 «지난 오류» 가 살아 있는 것처럼 보인다. 저장 직전에 `stripRuntime()` 로 턴다.
+   */
+  lastError?: string
+  nextRun?: number
+}
+
+/** 화면용 값(lastError·nextRun)을 턴다 — `.bot.yml` 에는 사람이 적은 것만 남는다 */
+export function stripRuntime(r: RoutineDef): RoutineDef {
+  const { lastError: _e, nextRun: _n, ...rest } = r
+  return rest
 }
 
 export interface Bot {

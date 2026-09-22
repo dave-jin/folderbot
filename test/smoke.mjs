@@ -283,6 +283,95 @@ try {
   // MCP (오케스트레이터 도구)
   const mcp = async (method, params, id = 1) => (await (await fetch(base + '/mcp/orch', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }) })).json())
   const tl = await mcp('tools/list'); if (!tl.result.tools.some((t) => t.name === 'bot_send')) fail('mcp tools'); ok(`mcp tools ${tl.result.tools.length}`)
+  /**
+   * ═══ AA · 루틴 (2026-09-22 Dave, 실제 사고 뒤) ═══════════════════════════════════════
+   * 사고: UI 에 「20」(저녁 8시)을 넣었더니 `.bot.yml` 에 `cron: "20"` 으로 저장됐고, croner 가 던진 예외를
+   * 스케줄러가 삼켜 **루틴이 화면에 멀쩡히 살아 있는데 한 번도 안 돌았다.** 이틀을 몰랐다.
+   */
+  {
+    const mcpB = async (name, args) => { const r = await (await fetch(base + `/mcp/${bot.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name, arguments: args } }) })).json(); return r.result }
+    const yml = join(root, '3. Area/제품_Rondo/.bot.yml')
+    const ymlWas = existsSync(yml) ? readFileSync(yml, 'utf8') : null      // 이 블록이 끝나면 그대로 되돌린다 — 뒤 검사가 흔들리면 안 된다
+    const sessWas = new Set((await api(`/bots/${bot.id}/sessions`)).map((x) => x.id))
+    const putR = async (routines) => { const r = await fetch(base + `/api/bots/${bot.id}/routines`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ routines }) }); return { status: r.status, body: await r.json() } }
+
+    // 🔴 ① 「20」 은 400 과 되묻기로 끝난다 — 조용히 저장되지 않는다
+    const bad = await putR([{ name: '아침 브리핑', cron: '20', prompt: '훑어 줘' }])
+    if (bad.status !== 400) fail('🔴 AA-1: 「20」 이 400 으로 안 막혔다 · ' + JSON.stringify(bad))
+    if (!/20시/.test(JSON.stringify(bad.body)) || !/매시 20분/.test(JSON.stringify(bad.body))) fail('AA-1: 무엇이 갈리는지 안 알려 준다 · ' + JSON.stringify(bad.body))
+    if (!bad.body.examples?.length) fail('AA-1: 고친 예를 안 준다')
+    if (existsSync(yml) && /cron/.test(readFileSync(yml, 'utf8'))) fail('🔴 AA-1: 막았는데 파일에 저장됐다 · ' + readFileSync(yml, 'utf8'))
+
+    // ② 「매일 저녁 8시」 → `.bot.yml` 에 "0 20 * * *" · 목록은 사람 말 + 다음 실행
+    const good = await putR([{ name: '저녁 정리', cron: '매일 저녁 8시', prompt: '오늘 바뀐 것 정리해 줘' }])
+    if (good.status !== 200) fail('AA-3: 사람 말이 안 들어갔다 · ' + JSON.stringify(good))
+    const saved = readFileSync(yml, 'utf8')
+    if (!/0 20 \* \* \*/.test(saved)) fail('🔴 AA-3: .bot.yml 에 "0 20 * * *" 로 저장돼야 한다 · ' + saved)
+    if (/lastError|nextRun/.test(saved)) fail('AA-1: 화면용 값이 파일로 샜다 · ' + saved)
+    const list1 = await api(`/bots/${bot.id}/routines`)
+    if (list1[0].when !== '매일 저녁 8시') fail('AA-4: 목록이 사람 말이어야 한다 · ' + JSON.stringify(list1[0]))
+    if (!list1[0].nextRun) fail('AA-1: 「다음 실행」이 없다 · ' + JSON.stringify(list1[0]))
+    if (list1[0].lastError) fail('AA-1: 멀쩡한 루틴에 오류가 붙었다 · ' + list1[0].lastError)
+
+    // 🔴 ③ `.bot.yml` 을 에디터로 고치면 몇 초 안에 화면과 스케줄이 따라온다
+    writeFileSync(yml, saved.replace('0 20 * * *', '0 21 * * *'))
+    let followed = null
+    for (let i = 0; i < 60 && !followed; i++) { await wait(100); const l = await api(`/bots/${bot.id}/routines`); if (l[0]?.cron === '0 21 * * *') followed = l[0] }
+    if (!followed) fail('🔴 AA-2: .bot.yml 을 밖에서 고쳤는데 안 따라온다')
+    if (followed.when !== '매일 밤 9시' || !followed.nextRun) fail('AA-2: 따라왔는데 사람 말·다음 실행이 안 맞는다 · ' + JSON.stringify(followed))
+
+    // 🔴 깨진 YAML 로 기존 루틴을 날리지 않는다(Dropbox 가 반쯤 쓴 파일을 읽는 순간이 실제로 있다)
+    const goodYml = readFileSync(yml, 'utf8')
+    writeFileSync(yml, 'routines: [ {name: 저녁 정리, cron: "0 21')
+    await wait(700)
+    const stillThere = await api(`/bots/${bot.id}/routines`)
+    if (!stillThere.length) fail('🔴 AA-2: 반쯤 쓰인 YAML 한 번에 루틴이 통째로 사라졌다')
+    writeFileSync(yml, goodYml); await wait(700)
+
+    // ④ 「지금 한 번 돌려보기」 — 저장 직후 동작을 확인할 수 있다
+    const before = (await api(`/bots/${bot.id}/sessions`)).length
+    const runR = await api(`/bots/${bot.id}/routines/run`, { name: '저녁 정리' })
+    if (!runR.ok) fail('AA-4: 지금 한 번 돌려보기가 안 된다 · ' + JSON.stringify(runR))
+    let grew = false
+    for (let i = 0; i < 40 && !grew; i++) { await wait(100); grew = (await api(`/bots/${bot.id}/sessions`)).length > before }
+    if (!grew) fail('AA-4: 돌렸다는데 세션이 안 생겼다')
+
+    // ⑤ 봇이 채팅에서 루틴을 고친다 — 「저녁 9시로 바꿔줘」
+    const listed = JSON.parse((await mcpB('routine_list', {})).content[0].text)
+    if (listed[0].when !== '매일 밤 9시' || !listed[0].next) fail('AA-5 routine_list · ' + JSON.stringify(listed))
+    const updated = JSON.parse((await mcpB('routine_update', { name: '저녁 정리', when: '저녁 9시' })).content[0].text)
+    if (!updated.ok || !/9시/.test(updated.when)) fail('AA-5 routine_update · ' + JSON.stringify(updated))
+    if (!updated.before || updated.before.cron !== '0 21 * * *') fail('🔴 AA-5: 되돌릴 수 있게 직전 값을 안 줬다 · ' + JSON.stringify(updated))
+    // 🔴 봇이 cron 을 지어내거나 뜻이 갈리는 값을 넣으면 저장되지 않고 되묻는 답이 온다
+    const ambiguous = JSON.parse((await mcpB('routine_update', { name: '저녁 정리', when: '20' })).content[0].text)
+    if (ambiguous.ok !== false || !ambiguous.ask) fail('🔴 AA-5: 「20」 을 봇이 넣었는데 그냥 저장됐다 · ' + JSON.stringify(ambiguous))
+    // 🔴 approve 는 도구에 아예 없다 — 봇이 스스로 bypassPermissions 로 올리는 길을 열지 않는다
+    const tools = (await (await fetch(base + `/mcp/${bot.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'tools/list' }) })).json()).result.tools
+    for (const t of tools.filter((x) => /^routine_/.test(x.name))) if (JSON.stringify(t.inputSchema).includes('approve')) fail('🔴 AA-5: 루틴 도구에 approve 가 있다 — 봇이 스스로 권한을 올릴 수 있다 · ' + t.name)
+    const tryApprove = await mcpB('routine_update', { name: '저녁 정리', approve: 'always' })
+    const afterTry = await api(`/bots/${bot.id}/routines`)
+    if ((afterTry[0]?.approve ?? 'readonly') === 'always') fail('🔴 AA-5: 봇이 승인 수준을 always 로 올렸다 · ' + JSON.stringify(tryApprove))
+    // routine_add · routine_remove 는 직전 값을 담아 되돌릴 수 있게
+    const added = JSON.parse((await mcpB('routine_add', { name: '아침 점검', when: '평일 아침 9시 반', prompt: '밤새 온 것 훑어 줘' })).content[0].text)
+    if (!added.ok || !/9시 30분/.test(added.when)) fail('AA-5 routine_add · ' + JSON.stringify(added))
+    if (!/0 20 \* \* \*|30 9 \* \* 1-5/.test(readFileSync(yml, 'utf8'))) fail('AA-5: .bot.yml 에 안 들어갔다')
+    const removed = JSON.parse((await mcpB('routine_remove', { name: '아침 점검' })).content[0].text)
+    if (!removed.before || removed.before.cron !== '30 9 * * 1-5') fail('🔴 AA-5: 지운 뒤 되돌릴 값을 안 줬다 · ' + JSON.stringify(removed))
+
+    // ⑥ 안 서는 주기가 파일에 이미 있던 봇 — 조용히 넘기지 않고 화면에 오류가 붙는다
+    writeFileSync(yml, 'routines:\n  - name: 낡은 루틴\n    cron: "20"\n    prompt: 훑어 줘\n')
+    let flagged = null
+    for (let i = 0; i < 60 && !flagged; i++) { await wait(100); const l = await api(`/bots/${bot.id}/routines`); if (l[0]?.lastError) flagged = l[0] }
+    if (!flagged) fail('🔴 AA-1: 안 서는 주기인데 화면에 오류가 안 붙었다 — 사고가 그대로 되풀이된다')
+    if (flagged.nextRun) fail('AA-1: 안 걸렸는데 다음 실행이 있다 · ' + JSON.stringify(flagged))
+    writeFileSync(yml, goodYml); await wait(700)
+    // 치우기 — 루틴이 만든 세션과 `.bot.yml` 을 원래대로 (이 블록 때문에 뒤 검사가 달라지면 안 된다)
+    for (const x of await api(`/bots/${bot.id}/sessions`)) if (!sessWas.has(x.id)) await fetch(base + `/api/sessions/${x.id}`, { method: 'DELETE' })
+    if (ymlWas === null) { try { rmSync(yml) } catch { /* */ } } else writeFileSync(yml, ymlWas)
+    await wait(700)
+    if ((await api(`/bots/${bot.id}/routines`)).length && ymlWas === null) fail('AA: 치우기가 안 됐다')
+    ok('AA 루틴 — 「20」은 400+되묻기 · 사람 말 → cron · .bot.yml 을 밖에서 고쳐도 따라옴 · 깨진 YAML 로 안 날림 · 지금 한 번 · 봇 도구 4개(approve 없음)')
+  }
   const cands = await mcp('tools/call', { name: 'bots_candidates', arguments: {} }); if (!/제품_Rondo/.test(cands.result.content[0].text)) fail('mcp candidates')
   const sent = await mcp('tools/call', { name: 'bot_send', arguments: { bot: '재무_CFO', text: '숫자 검토' } })
   if (!/그런 봇이 없어요/.test(sent.result.content[0].text)) fail('expected not-started bot error: ' + sent.result.content[0].text)
@@ -2525,13 +2614,16 @@ try {
           await pg.fill('.composer .cin', '매주 월요일 아침 8시에 지난주 한 일 정리해 줘')
           await pg.click('.cbar button[title="첨부"]'); await wait(200)
           await pg.click('.cpop.plus .prow2:has-text("루틴으로 만들기")'); await wait(500)
+          // AA-4(2026-09-22) 뒤로 폼은 **사람 말**을 들고 있고 cron 은 「다음 실행」 옆에 작게만 뜬다
           const sheet = await pg.evaluate(() => {
             const s = document.querySelector('.sheet'); if (!s) return null
-            const v = [...s.querySelectorAll('input, textarea')].map((x) => x.value)
-            return { name: v[0] ?? '', cron: v.find((x) => /^\d+ \d+ /.test(x)) ?? '', prompt: [...s.querySelectorAll('textarea')].map((x) => x.value).join(' ') }
+            const v = [...s.querySelectorAll('input')].map((x) => x.value)
+            return { name: v[0] ?? '', when: v[1] ?? '', cron: s.querySelector('.rtnext .mono')?.textContent?.trim() ?? '', next: s.querySelector('.rtnext b')?.textContent ?? '', prompt: [...s.querySelectorAll('textarea')].map((x) => x.value).join(' ') }
           })
           if (!sheet) fail('루틴: 편집 화면이 안 떴다')
           if (sheet.cron !== '0 8 * * 1') fail('루틴: 「매주 월요일 아침 8시」 를 못 읽었다 ' + JSON.stringify(sheet))
+          if (sheet.when !== '월요일 아침 8시') fail('🔴 AA-4: 「언제」 칸이 사람 말이어야 한다(cron 을 사람에게 보여 주지 않는다) ' + JSON.stringify(sheet))
+          if (!/\d+\/\d+\(.\) \d\d:\d\d/.test(sheet.next)) fail('🔴 AA-4: 입력하는 동안 「다음 실행」이 보여야 한다 ' + JSON.stringify(sheet))
           if (!/지난주 한 일 정리/.test(sheet.prompt)) fail('루틴: 시킬 일이 안 담겼다 ' + JSON.stringify(sheet))
           if (!/지난주/.test(sheet.name)) fail('루틴: 이름이 비었다 ' + JSON.stringify(sheet))
           // 저장하지 않고 닫으면 아무 일도 없어야 한다
