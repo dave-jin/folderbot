@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { Bot, ChatItem, NotifyEvent, PermissionMode, PermissionRequest, RoutineDef, SessionInfo, SlashCmd } from '../core/types'
+import type { Bot, ChatItem, NotifyEvent, PermissionMode, PermissionRequest, RoutineDef, SessionInfo, SessionState, SlashCmd } from '../core/types'
 import { api, setToken, token, uploadFile } from './api'
 import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
+import { holdHeader, holdLine, holderOf, type Holder } from '../core/waiting'
 import { AskHost, ConfirmHost, DiffHost, FolderPicker, Md, NotifyCenter, Onboarding, Pairing, RoutineSheet, Settings, askConfirm, askName, showDiff, useToast } from './Sheets'
 import { AgentPickHost, pickAgent } from './AgentPick'
 import type { SecId } from './Settings'
@@ -916,11 +917,20 @@ const MOOD_RANK: Record<string, number> = { wait: 0, work: 1, error: 2, done: 3,
 
 function botSummary(bot: Bot, sessions: SessionInfo[], notif: NotifyEvent[]) {
   const wait = sessions.find((x) => x.state === 'awaiting_input'); const run = sessions.find((x) => x.state === 'running')
-  const top = wait ?? run ?? sessions[0]; const last = notif.find((n) => n.botId === bot.id)
+  /** AB · 턴이 끝나도 백그라운드 에이전트가 남아 있으면 그 세션이 «기다리는 중» 이다 — 레일에서도 사라지면 안 된다 */
+  const held = sessions.find((x) => (x.bg ?? 0) > 0)
+  const top = wait ?? run ?? held ?? sessions[0]; const last = notif.find((n) => n.botId === bot.id)
   const state = top?.state ?? null
   const unread = botUnread(sessions)   // S · 안 읽은 답이 하나라도 있나 (`core/unread`)
-  const text = wait ? `확인해 주세요 · ${wait.pending[0]?.displayName ?? wait.name}` : run ? `일하는 중 · ${run.activity || run.name}` : last ? last.body : top ? `${top.name}${top.hibernated ? ' · 절전' : ''}` : '메시지를 보내 보세요'
-  return { state, text, unread, t: Math.max(top?.lastActivity ?? bot.startedAt, last?.t ?? 0), mood: moodOf(state, !!top?.hibernated && !run && !wait) }
+  /**
+   * 🔴 **레일·헤더·대기 줄이 같은 값에서 나온다** (AB · 2026-09-23). 셋이 다른 말을 하면 어느 쪽도 못 믿는다 —
+   *    종전에는 레일만 「일하는 중 · 생각 중」이라 말하고 채팅은 아무 말이 없었다.
+   */
+  const holder: Holder = top ? holderOf(top.state, top.inflight, Date.now(), top.bg ?? 0) : 'none'
+  const text = wait ? `확인해 주세요 · ${wait.pending[0]?.displayName ?? wait.name}`
+    : holder === 'other' ? `${holdHeader(holder, top?.inflight, top?.bg ?? 0)} · ${top?.inflight?.summary || top?.name || ''}`
+      : run ? `일하는 중 · ${run.activity || run.name}` : last ? last.body : top ? `${top.name}${top.hibernated ? ' · 절전' : ''}` : '메시지를 보내 보세요'
+  return { state, text, unread, holder, t: Math.max(top?.lastActivity ?? bot.startedAt, last?.t ?? 0), mood: moodOf(state, !!top?.hibernated && !run && !wait, holder) }
 }
 
 /**
@@ -1124,6 +1134,8 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const [draft, setDraft] = useState<{ model?: string; effort?: string; permissionMode?: PermissionMode }>({})
   const fileRef = useRef<HTMLInputElement>(null); const photoRef = useRef<HTMLInputElement>(null); const camRef = useRef<HTMLInputElement>(null); const endRef = useRef<HTMLDivElement>(null); const taRef = useRef<InlineInputHandle>(null); const scRef = useRef<HTMLDivElement>(null); const footRef = useRef<HTMLDivElement>(null); const colRef = useRef<HTMLDivElement>(null); const lastUserRef = useRef<HTMLDivElement | null>(null)
   const state = cur?.state ?? 'idle'; const running = state === 'running'
+  /** AB · 지금 대화에서 **누가 공을 들고 있나** — 헤더·얼굴·대기 줄이 이 값 하나를 같이 쓴다 */
+  const chatHolder: Holder = holderOf(state, cur?.inflight, Date.now(), cur?.bg ?? 0)
   /** ⚠ 기본값도 벤더마다 다르다 — Codex 세션에 Claude 기본 모델이 박히면 첫 턴에 죽는다 */
   const vendOf = () => cur?.vendor ?? bot.vendor
   const cfg = { model: cur?.model || draft.model || (vendOf() === 'codex' ? (s.defaults.codex?.model || DEFAULT_MODEL.codex) : (s.defaults.model || DEFAULT_MODEL.claude)), effort: cur?.effort || draft.effort || (vendOf() === 'codex' ? (s.defaults.codex?.effort || DEFAULT_EFFORT.codex) : (s.defaults.effort || DEFAULT_EFFORT.claude)), mode: (cur?.permissionMode || draft.permissionMode || 'default') as PermissionMode }
@@ -1461,10 +1473,12 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
       {/* H-5 · 좁음 헤더 한 줄 — ☰(레일 서랍 · H 전까지는 봇 목록으로) · 표시 이름 · 작업 중 ●. ‹·폴더 아이콘은 없다(폴더는 독의 📄 · 쓸기) */}
       {phone ? <><button className="rb glassb hb-menu" onClick={drillSub ? () => setDrill(null) : onBack} title={drillSub ? '메인 대화로' : '봇 목록'}><Icon n={drillSub ? 'back' : 'list'} size={20} /></button>
         {/* 감싸는 span 은 헤더의 flex 아이템 — 폭이 내용에 의존하는데 알약이 그 100% − 118px 을 최대폭으로 삼아 스스로를 눌러 이름이 «2026-…» 로 잘렸다(2026-09-13 Dave). 알약 최대폭은 감싸는 칸의 100%, 칸이 남는 공간을 받는다 */}
-        <span className="hname" style={{ position: 'relative' }}><button className="hnb" onClick={() => setSessMenu(!sessMenu)} title={cur?.name ?? '세션'}>{drillSub ? <b className="dn">{drillSub.name}</b> : <BotName b={bot} chip={false} />}{running ? <span className="dot run" title="작업 중" /> : state === 'awaiting_input' ? <span className="dot wait" /> : null}</button>{sessMenuEl}</span>
+        <span className="hname" style={{ position: 'relative' }}><button className="hnb" onClick={() => setSessMenu(!sessMenu)} title={cur?.name ?? '세션'}>{drillSub ? <b className="dn">{drillSub.name}</b> : <BotName b={bot} chip={false} />}{chatHolder === 'other' ? <span className="dot hold" title="남을 기다리는 중" /> : running ? <span className="dot run" title="작업 중" /> : state === 'awaiting_input' ? <span className="dot wait" /> : null}</button>{sessMenuEl}</span>
         <span className="sp" /></>
         : drillSub ? <><button className="ib" onClick={() => setDrill(null)} title="메인 대화로"><Icon n="back" size={14} /></button><span style={{ color: 'var(--t3)' }}>/</span><span className="ttl">{drillSub.name}</span>{drillSub.status === 'run' ? <span className="spin run" /> : <Icon n={drillSub.status === 'error' ? 'x' : 'check'} size={11} color={drillSub.status === 'error' ? 'var(--err)' : 'var(--done)'} />}<span style={{ color: 'var(--t3)', fontSize: 12, whiteSpace: 'nowrap' }}>도구 {drillSub.tools}</span><span className="sp" /></>
-          : <><FolderBot color={bot.color} size={16} mood={moodOf(state, !!cur?.hibernated)} mono /><span className="ttl" title={bot.name}><Mid s={bot.displayName} /></span><VendorMark vendor={cur?.vendor} size={12} />
+          : <><FolderBot color={bot.color} size={16} mood={moodOf(state, !!cur?.hibernated, chatHolder)} mono /><span className="ttl" title={bot.name}><Mid s={bot.displayName} /></span><VendorMark vendor={cur?.vendor} size={12} />
+            {/* AB · 헤더 한 줄 — 레일·대기 줄과 **같은 값**에서 나온다 */}
+            {chatHolder === 'other' ? <span className="hstate"><i />{holdHeader(chatHolder, cur?.inflight, cur?.bg ?? 0)}</span> : null}
             <span style={{ position: 'relative', flex: 'none' }}><button onClick={() => setSessMenu(!sessMenu)} style={{ color: 'var(--t3)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}>{cur?.name ?? '새 대화'} <Icon n="chevd" size={10} /></button>{sessMenuEl}</span>
             <span className={`dot ${stateDot(state)}`} /><span className="sp" />
             <div className="acts"><button className={`ib ${docOn ? 'on' : ''}`} onClick={onDocToggle} title="문서 열 (⌘⇧D)"><Icon n="doc" size={14} />{!docOn && docBadge ? <span className="bd">{docBadge}</span> : null}</button></div></>}
@@ -1481,7 +1495,8 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
           : <Item key={r.it.id} it={r.it} bot={bot} items={items} onFile={(p) => onFile(p)} onReveal={onReveal} onDrill={(id) => setDrill(id)} state={state} say={say} isLastAssistant={r.it.id === lastAssistant} isLastUser={r.it.id === lastUser?.id} userRef={lastUserRef} onRetry={lastUser ? () => void sendText(lastUser.text) : undefined} />)}</SidCtx.Provider>
         {cur && !drill ? pending.map((p) => <PermCard key={p.requestId} p={p} sid={cur.id} />) : null}
         {/* O · 본문과 상태 줄 사이는 8px 고정 — 남는 공간은 상태 줄 **뒤**로 보낸다(종전엔 스페이서가 앞에 있어 큰 빈 공간이 생겼다) */}
-        {cur && (running || state === 'awaiting_input') ? <Live cur={cur} state={state} color={bot.color} /> : null}
+        {/* AB · 🔴 턴이 끝나도 `bg` 가 남아 있으면 대기 줄은 남는다 — 사라지는 순간이 「끝났나?」의 정체였다 */}
+        {cur && (running || state === 'awaiting_input' || (cur.bg ?? 0) > 0) ? <Live cur={cur} state={state} color={bot.color} /> : null}
         <div style={{ flex: 1 }} />
         <div ref={endRef} />
       </div>
@@ -1570,18 +1585,40 @@ function QueueRow({ n, text, onSave, onDrop }: { n: number; text: string; onSave
   </div>
 }
 
-function Live({ cur, state, color }: { cur: SessionInfo; state: string; color: string }) {
-  if (state === 'awaiting_input') return <div className="live"><span className="glow" /><span className="tx">확인 대기 — 위 요청에 응답해 주세요</span><span className="el"><Elapsed from={cur.turnStartedAt} /></span></div>
+/**
+ * AB · **대기 줄** (2026-09-23 Dave 「B안」) — 마지막 말 **뒤**에 붙는 한 줄. 말풍선이 아니고 복사·되돌리기가 없어
+ * **«아직 안 끝났다» 가 생김새로** 보인다. 누가 · 무엇을 · **얼마나 됐나** 를 적는다.
+ * 🔴 **턴이 끝나도 남이 일하면 남아 있는다**(`bg`) — 종전에는 그 순간 이 줄이 통째로 사라져 「끝났나?」가 됐다.
+ * 🔴 **2분이 넘으면 화면이 먼저 «가도 된다» 고 말한다** — 기다림에서 가장 필요한 한 마디다.
+ */
+function Live({ cur, state, color, onOpenBg }: { cur: SessionInfo; state: string; color: string; onOpenBg?: () => void }) {
+  const [, tick] = useState(0)
+  const from = cur.turnStartedAt ?? cur.inflight?.since ?? cur.lastActivity ?? Date.now()
+  const holder = holderOf(state as SessionState, cur.inflight, Date.now(), cur.bg ?? 0)
+  // 1초마다 다시 그린다 — 경과와 «30초 · 2분» 단계가 시간으로 바뀐다
+  useEffect(() => { if (holder === 'none') return; const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t) }, [holder])
+  if (holder === 'none') return null
+  if (holder === 'you') return <div className="live"><span className="glow" /><span className="tx">확인 대기 — 위 요청에 응답해 주세요</span><span className="el"><Elapsed from={cur.turnStartedAt} /></span></div>
+  const ms = Math.max(0, Date.now() - from)
   const a = cur.activity ?? ''
-  return <div className="live run work">
+  if (holder === 'me') return <div className="live run work">
     <FolderBot color={color} size={22} mood="work" work={workMood(a)} mono />
     <span className="el mono"><Elapsed from={cur.turnStartedAt} /></span>
     <span className="sl">·</span>
     <span className="tx">{workLabel(a)}</span>
     <span className="sp" />
-    {/* ⛔ **여기에 중단 단추를 다시 두지 마라** (2026-09-14 Dave: «에이전트가 생각하는 폴더 옆에
-        중단 버튼은 없어도 될것 같아. 어차피 채팅 입력부에 중복으로 있어»). 같은 일을 하는 단추가
-        한 화면에 둘이면, 둘 다 «진짜 그건가» 를 한 번씩 생각하게 만든다. 중단은 입력줄의 것 하나다. */}
+    {/* ⛔ **여기에 중단 단추를 다시 두지 마라** (2026-09-14 Dave). 중단은 입력줄의 것 하나다. */}
+  </div>
+  const L = holdLine(holder, cur.inflight, ms, cur.bg ?? 0)
+  return <div className="live hold">
+    <FolderBot color={color} size={22} mood="hold" mono />
+    <span className="bounce"><i /><i /><i /></span>
+    <span className="tx">{L.text}</span>
+    {L.elapsed ? <span className="el mono">{L.elapsed}</span> : null}
+    <span className="sp" />
+    {L.action === 'open' && onOpenBg ? <button className="hact" onClick={onOpenBg}>{L.actionLabel}</button> : null}
+    {/* 「알림 켜기」 — 끝났을 때 폰으로 알리도록 설정의 알림 칸을 연다(자리를 떠도 되게 하는 것이 이 단추의 일이다) */}
+    {L.action === 'notify' ? <button className="hact" onClick={() => window.dispatchEvent(new CustomEvent('fb:settings', { detail: 'notify' }))}>{L.actionLabel}</button> : null}
   </div>
 }
 

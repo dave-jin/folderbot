@@ -2633,6 +2633,70 @@ try {
           await pg.fill('.composer .cin', ''); await wait(200)
           ok('채팅 한 줄 → 루틴 (주기까지 읽어서 채워 준다 · 저장은 사람이)')
         }
+        /**
+         * ═══ AB · 기다림을 보이게 (2026-09-23 Dave 「B안」) ═════════════════════════════════
+         * 🔴 **구멍**: 백그라운드 에이전트를 띄우면 **턴은 끝나고**(state 가 running 을 벗어난다) 일은 계속된다.
+         *    그 순간 화면의 상태 줄이 **통째로 사라져** 「끝났나?」가 됐다(Dave 스크린샷 2319).
+         */
+        {
+          const view = () => pg.evaluate(() => {
+            const live = document.querySelector('.live')
+            return {
+              hold: !!document.querySelector('.live.hold'),
+              run: !!document.querySelector('.live.run'),
+              txt: live?.querySelector('.tx')?.textContent ?? null,
+              el: live?.querySelector('.el')?.textContent ?? null,
+              act: live?.querySelector('.hact')?.textContent ?? null,
+              face: [...document.querySelectorAll('.chat-hdr .fb')].map((e) => [...e.classList].find((c) => /^fb-/.test(c)))[0] ?? null,
+              hstate: document.querySelector('.chat-hdr .hstate')?.textContent ?? null,
+              // 레일은 **글이 아니라 얼굴·색**으로 말한다(멀리서 보는 자리라서) — 그 봇 줄의 얼굴이 기다리는 얼굴인가
+              rail: [...document.querySelectorAll('.brow')].map((e) => [...(e.querySelector('.fb')?.classList ?? [])].find((c) => /^fb-/.test(c))).filter(Boolean),
+              // 올려 보면 글로도 같은 말을 한다(hover 카드)
+              railText: document.querySelector('.hcard .hs')?.textContent ?? null,
+            }
+          })
+          /**
+           * ⚠ 스텁의 백그라운드 에이전트는 **1초 남짓에 끝난다** — 「뜬 다음에 천천히 확인」 하면 경주가 된다.
+           *    그래서 ① 뜨는 것만 UI 로 잡고 ② 시각을 그 자리에서 밀어 «2분 뒤» 문구를 확인하고
+           *    ③ «턴이 끝나도 남는다» 는 계약은 **얼어붙지 않는 쪽**(순수 판정 · 유닛)과 API 로 잰다.
+           */
+          await pg.fill('.composer .cin', '백그라운드 조사'); await pg.keyboard.press('Enter')
+          let v = null
+          for (let i = 0; i < 80; i++) { await wait(60); v = await view(); if (v.hold) break }
+          if (!v.hold) fail('🔴 AB: 남을 기다리는데 대기 줄이 없다 ' + JSON.stringify(v))
+          if (!/기다리는 중/.test(v.txt ?? '')) fail('AB-2: 대기 줄이 무엇을 기다리는지 안 말한다 ' + JSON.stringify(v))
+          if (v.face !== 'fb-hold') fail('🔴 AB-1: 헤더 얼굴이 «기다리는 얼굴»이 아니다 ' + JSON.stringify(v))
+          if (!/기다리는 중/.test(v.hstate ?? '')) fail('🔴 AB-5: 헤더 한 줄이 없다 ' + JSON.stringify(v))
+          if (!v.rail.includes('fb-hold')) fail('🔴 AB-5: 레일 얼굴이 대기 줄과 다른 말을 한다 ' + JSON.stringify(v))
+
+          /**
+           * 🔴 **턴이 끝나도 남이 일하면 화면은 안 조용해진다** — 이것이 2319 의 정체다.
+           *    화면이 아니라 **값**으로 잰다(스텁이 너무 빨리 끝나 화면으로는 못 잡는다): 세션이 running 이 아닌데
+           *    `bg > 0` 인 순간이 실제로 있고, 그 순간의 판정이 «남이 들고 있다» 여야 한다.
+           */
+          let sawEndedWithBg = false
+          for (let i = 0; i < 120 && !sawEndedWithBg; i++) {
+            const ss = await api(`/bots/${bot.id}/sessions`)
+            if (ss.some((x) => x.state !== 'running' && (x.bg ?? 0) > 0)) sawEndedWithBg = true
+            else await wait(40)
+          }
+          if (!sawEndedWithBg) console.log('  (참고) 스텁이 너무 빨라 «턴 끝 + bg 남음» 순간을 못 잡았다 — 판정 자체는 유닛이 잰다')
+
+          // 🔴 2분이 넘으면 화면이 먼저 «가도 된다» 고 말한다 — 시각을 밀어 확인한다(멈춰 있는 대기 줄로)
+          await pg.evaluate(() => {
+            const D = Date, SHIFT = 130000
+            class F extends D { constructor(...a) { super(...(a.length ? a : [D.now() + SHIFT])) } static now() { return D.now() + SHIFT } }
+            window.Date = F
+          })
+          let late = null
+          for (let i = 0; i < 40; i++) { await wait(100); late = await view(); if (/다른 일 보셔도/.test(late.txt ?? '')) break }
+          if (!/다른 일 보셔도 됩니다/.test(late.txt ?? '')) fail('🔴 AB-3: 2분이 넘었는데 «가도 된다» 고 말하지 않는다 ' + JSON.stringify(late))
+          if (late.act !== '알림 켜기') fail('AB-3: [알림 켜기] 가 없다 ' + JSON.stringify(late))
+          if (!/분/.test(late.el ?? '')) fail('AB-2: 얼마나 됐는지 안 보인다 ' + JSON.stringify(late))
+          await pg.screenshot({ path: 'test/tmp/ab-hold.png' })
+          await pg.reload(); await pg.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(600)
+          ok('AB 기다림 — 턴이 끝나도 대기 줄이 남고 · 얼굴·헤더·레일이 같은 말 · 2분 넘으면 «가도 된다»')
+        }
         // 🔴 **맥 기본 단축키** (2026-09-13 Dave: «키보드 단축키를 전 영역에 적용해줘. 맥 기본 단축키로»)
         //    ⛔ 맨 글자 단축키는 두지 않는다 — 글 쓰는 화면이 대부분이라 치는 순간 명령이 돈다.
         {
