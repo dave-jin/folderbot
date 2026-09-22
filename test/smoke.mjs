@@ -58,7 +58,27 @@ const fail = (m) => { console.error('✗', m); console.error(hostLog); host.kill
 const ok = (m) => console.log('✓', m)
 /** 폰 — 채팅에서 왼쪽으로 쓸어 폴더 패널로 (H-5 뒤 헤더에 폴더 단추가 없다) */
 /** Z-2(2026-09-22) · 폴더로 **들어가는** 문은 독이다 — 쓸기는 «뒤로/앞으로» 뿐이라 👈 로는 폴더가 안 열린다 */
-const swipePanel = async (p) => { await p.click('.dock .db[title="파일"]'); await new Promise((r) => setTimeout(r, 600)) }
+/**
+ * 「앞으로 가는 문」을 누른다 — **좁음(폰)은 하단 탭, 중간은 알약 독**이다(Z · 2026-09-22 Dave 「B」).
+ * 한 헬퍼로 묶어 두지 않으면 검사가 단계마다 갈려 어느 쪽이 깨졌는지 헷갈린다.
+ */
+const DOCK_TITLE = { files: '파일', doc: '문서', todo: '할 일' }
+const tapNav = async (p, id) => {
+  if (await p.$('.tabbar')) { await p.click(`.tabbar [data-tab="${id}"]`); return 'tab' }
+  const title = DOCK_TITLE[id]
+  if (title && (await p.$(`.dock .db[title="${title}"]`))) {
+    // ⚠ 실패하면 «왜» 를 남긴다 — 30초 기다렸다 «타임아웃» 만 나오면 어느 단계가 깨졌는지 알 수 없다
+    try { await p.click(`.dock .db[title="${title}"]`, { timeout: 8000 }) }
+    catch (e) {
+      const st = await p.evaluate((sel) => { const b = document.querySelector(sel); const r = b?.getBoundingClientRect(); const top = r ? document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) : null
+        return { cls: document.querySelector('.app')?.className ?? null, view: document.querySelector('.app')?.dataset.view ?? null, w: innerWidth, dock: !!document.querySelector('.dock'), btn: !!b, rect: r ? { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) } : null, top: top ? (top.className || top.tagName) : null } }, `.dock .db[title="${title}"]`)
+      fail(`독 «${title}» 을 못 눌렀다 · ` + JSON.stringify(st) + ' · ' + String(e).slice(0, 120))
+    }
+    return 'dock'
+  }
+  fail(`앞으로 가는 문이 없다(${id}) · ` + JSON.stringify(await p.evaluate(() => ({ cls: document.querySelector('.app')?.className ?? null, view: document.querySelector('.app')?.dataset.view ?? null, w: innerWidth }))))
+}
+const swipePanel = async (p) => { await tapNav(p, 'files'); await new Promise((r) => setTimeout(r, 600)) }
 
 /** 진짜 PNG 하나 (M-1 뷰어 검사용) — 라이브러리 없이 zlib 로. 상자보다 큰 그림이어야 «커서 기준» 이 보인다 */
 function bigPng(w, h) {
@@ -157,7 +177,15 @@ try {
   if (cfg1.model !== 'claude-sonnet-5' || cfg1.permissionMode !== 'plan' || !cfg1.hibernated) fail('settings: ' + JSON.stringify(cfg1))
   const idBefore = cfg1.cliSessionId
   // 백그라운드 서브에이전트: 턴이 끝나도(LAUNCHED) «실행 중» 이고 세션은 bg=1 → 알림이 오면 끝남 + 결과, 이어서 새 턴이 스스로 열린다
-  await api(`/sessions/${s1.sessionId}/send`, { text: '백그라운드 조사' }); await wait(350)
+  /**
+   * ⚠ 고정 대기(350ms)로 재면 **부하가 걸린 맥에서 직전 턴의 서브에이전트를 집는다** — 새 항목이 아직 안 붙었는데
+   *    `pop()` 이 돌아 이미 끝난 「하위 조사」를 보고 «실행 중이어야 한다» 로 빨개졌다(2026-09-22 실측 · load 140).
+   *    **새 항목이 붙을 때까지** 기다린다(X 라운드의 「될 때까지」와 같은 처방).
+   */
+  const saCount = async () => (await api(`/sessions/${s1.sessionId}/chat`)).items.filter((x) => x.kind === 'subagent').length
+  const saBefore = await saCount()
+  await api(`/sessions/${s1.sessionId}/send`, { text: '백그라운드 조사' })
+  for (let i = 0; i < 100 && (await saCount()) === saBefore; i++) await wait(30)
   { const its = (await api(`/sessions/${s1.sessionId}/chat`)).items; const sa = its.filter((x) => x.kind === 'subagent').pop(); if (!sa || !sa.bg || sa.status !== 'run') fail('bg agent should stay running after launch: ' + JSON.stringify(sa))
     const si = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === s1.sessionId); if (!si || si.bg !== 1) fail('session bg count ' + JSON.stringify(si)) }
   await wait(1200)
@@ -850,7 +878,7 @@ try {
           await ph.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark'); window.__shared = []; navigator.share = async (d) => { window.__shared.push((d.files || []).map((f) => [f.name, f.size, f.type])) }; navigator.canShare = () => true; const of = window.fetch.bind(window); window.fetch = (u, o = {}) => { const h = new Headers(o.headers || {}); h.set('x-fb-as', 'iphone'); return of(u, { ...o, headers: h }) } })
           await ph.goto(base + `/#bot=${bot.id}`); await ph.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(500)
           // 폴더 패널은 독의 📁 로 연다 (Z-2 뒤 👈 는 «앞으로» 라 폴더를 열지 않는다)
-          await ph.click('.dock .db[title="파일"]'); await wait(700)
+          await tapNav(ph, 'files'); await wait(700)
           await ph.waitForSelector('.panel .trow', { timeout: 5000 }); await expandFiles(ph)
           await ctxOn(ph, '설명서.pdf', '공유…'); await wait(800)
           await ctxOn(ph, 'many', '공유…'); await wait(1500)
@@ -1045,7 +1073,8 @@ try {
             // 키보드 내려감 → 컴포저는 다시 바닥, 헤더 복귀, scrollY 0
             await pp.evaluate(() => window.__kbReset()); await pp.evaluate(() => document.activeElement.blur()); await wait(500)
             const down = await pp.evaluate(() => { const c = document.querySelector('.composer').getBoundingClientRect(); const r = document.querySelector('#root').getBoundingClientRect(); return { y: scrollY, compBottom: c.bottom, ih: innerHeight, rootTop: r.top, rootH: r.height, hdr: getComputedStyle(document.querySelector('.chat-hdr')).display } })
-            if (down.y !== 0 || down.ih - down.compBottom > 24 || down.rootTop !== 0 || Math.abs(down.rootH - down.ih) > 2 || down.hdr === 'none') fail('P-4: 키보드 내려간 뒤 컴포저가 바닥으로 안 돌아왔다 ' + JSON.stringify(down))
+            // Z(2026-09-22 「B · 하단 탭」) 뒤로 컴포저는 **탭 위**에 앉는다 — 바닥까지 56px(탭) + 여백이 남는 것이 제자리다
+            if (down.y !== 0 || down.ih - down.compBottom > 24 + 56 || down.rootTop !== 0 || Math.abs(down.rootH - down.ih) > 2 || down.hdr === 'none') fail('P-4: 키보드 내려간 뒤 컴포저가 바닥으로 안 돌아왔다 ' + JSON.stringify(down))
           } else {
             // 데스크톱은 그대로 — 문서는 안 구르고(overflow hidden) 레이아웃은 100vh
             const d = await pp.evaluate(() => ({ hOv: getComputedStyle(document.documentElement).overflow, rootH: document.querySelector('#root').getBoundingClientRect().height, ih: innerHeight, y: scrollY }))
@@ -1093,7 +1122,9 @@ try {
           const pj = await br.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
           await pj.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); const of = window.fetch.bind(window); window.fetch = (u, o = {}) => { const h = new Headers(o.headers || {}); h.set('x-fb-as', 'iphone'); return of(u, { ...o, headers: h }) } })
           await pj.goto(base + `/#bot=${bot.id}&s=${sidJ}`); await pj.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(600)
-          await pj.click('.composer .cin'); await pj.keyboard.type('기기확인'); await pj.click('.cright .sendb'); await wait(1200)
+          // ⚠ 키보드가 올라오면 입력칸이 제자리를 잡는다(Z 의 하단 탭이 그만큼 비킨다) — 자리 잡기 전에 누르면 클릭이 스친다(실측 · 부하 걸린 맥)
+          await pj.click('.composer .cin'); await pj.keyboard.type('기기확인'); await wait(400)
+          await pj.click('.cright .sendb'); await wait(1200)
           chatJ = await api(`/sessions/${sidJ}/chat`); const phReply = chatJ.items.filter((i) => i.kind === 'assistant').pop()?.text ?? ''
           for (const w of ['origin="remote"', 'device="iphone"', 'tier="phone"', 'touch="true"', 'canOpenOnDevice="false"']) if (!phReply.includes(w)) fail('J-1 폰: ' + w + ' 가 없다 · ' + phReply)
           const mcpR = await (await fetch(base + `/mcp/${bot.id}?sid=${sidJ}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'rondo_reveal', arguments: { path: 'CLAUDE.md' } } }) })).json()
@@ -1120,12 +1151,12 @@ try {
             await hp.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
             const herrs = []; hp.on('pageerror', (e) => herrs.push(e.message))
             await hp.goto(base + `/#bot=${bot.id}&s=${sidH}`); await hp.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(600)
-            const st = await hp.evaluate(() => ({ cls: document.querySelector('.app').className, view: document.querySelector('.app').dataset.view, strip: document.querySelector('.cols > .strip.left')?.getBoundingClientRect().width ?? null, side: !!document.querySelector('.cols > .col.side'), rp: !!document.querySelector('.cols > .rpwrap'), dock: !!document.querySelector('.dock'), drawer: !!document.querySelector('.drawer'), menu: !!document.querySelector('.chat-hdr .hb-menu'), chatW: document.querySelector('.col.chat').getBoundingClientRect().width }))
+            const st = await hp.evaluate(() => ({ cls: document.querySelector('.app').className, view: document.querySelector('.app').dataset.view, strip: document.querySelector('.cols > .strip.left')?.getBoundingClientRect().width ?? null, side: !!document.querySelector('.cols > .col.side'), rp: !!document.querySelector('.cols > .rpwrap'), dock: !!document.querySelector('.dock'), tabs: !!document.querySelector('.tabbar'), drawer: !!document.querySelector('.drawer'), menu: !!document.querySelector('.chat-hdr .hb-menu'), chatW: document.querySelector('.col.chat').getBoundingClientRect().width }))
             await hp.screenshot({ path: `test/tmp/h-${label}.png` }); shots[label] = `h-${label}.png`
             if (label === 'wide') {
-              if (!st.side || !st.rp || st.dock || st.drawer || /smid|phone/.test(st.cls)) fail('H 넓음: 지금처럼 세 칸이어야 한다 ' + JSON.stringify(st))
+              if (!st.side || !st.rp || st.dock || st.tabs || st.drawer || /smid|phone/.test(st.cls)) fail('H 넓음: 지금처럼 세 칸이어야 한다 ' + JSON.stringify(st))
             } else if (label === 'mid') {
-              if (!/smid/.test(st.cls) || st.strip !== 52 || st.side || st.rp || !st.dock || st.menu) fail('H 중간: 띠 52px · 독 · 흐름 안 레일/패널 없음 ' + JSON.stringify(st))
+              if (!/smid/.test(st.cls) || st.strip !== 52 || st.side || st.rp || !st.dock || st.tabs || st.menu) fail('H 중간: 띠 52px · 알약 독(탭 아님) · 흐름 안 레일/패널 없음 ' + JSON.stringify(st))
               // 띠 탭 → 이름 있는 레일이 채팅 위로 덮여 나온다 · 채팅 폭 불변
               await hp.click('.strip.left .ib'); await wait(400)
               const l = await hp.evaluate(() => { const d = document.querySelector('.drawer.left'); return { open: d?.classList.contains('open'), rows: d?.querySelectorAll('.brow').length ?? 0, x: d?.getBoundingClientRect().left, chatW: document.querySelector('.col.chat').getBoundingClientRect().width, scrim: !!document.querySelector('.scrim') } })
@@ -1137,7 +1168,7 @@ try {
               if (!other || g.view !== 'chat' || g.drawer || g.bot !== other) fail('H 중간: 레일에서 봇 탭 → 닫히며 그 봇 ' + JSON.stringify({ other, ...g }))
               await hp.goto(base + `/#bot=${bot.id}&s=${sidH}`); await wait(600)
               // 독 📁 → 파일 칸이 열린 패널이 덮여 나온다 · 채팅 폭 불변 · Esc 로 닫힘
-              await hp.click('.dock .db[title="파일"]'); await wait(500)
+              await tapNav(hp, 'files'); await wait(500)
               const r = await hp.evaluate(() => { const d = document.querySelector('.drawer.right'); return { open: d?.classList.contains('open'), panel: !!d?.querySelector('.rpwrap .panel'), chatW: document.querySelector('.col.chat').getBoundingClientRect().width, view: document.querySelector('.app').dataset.view } })
               if (!r.open || !r.panel || r.chatW !== st.chatW || r.view !== 'panel') fail('H 중간: 독 → 패널 서랍 ' + JSON.stringify(r))
               await hp.screenshot({ path: 'test/tmp/h-mid-panel.png' })
@@ -1145,7 +1176,7 @@ try {
               // 독 📄 는 문서가 없으면 흐리고 눌리지 않는다 · 문서를 열면 켜진다
               if (!(await hp.$('.dock .db[title="문서"].dim[disabled]'))) fail('H 중간: 문서 없을 때 📄 는 흐려야 한다')
             } else {
-              if (!/phone/.test(st.cls) || st.strip !== null || st.side || st.rp || !st.dock || !st.menu || st.drawer) fail('H 좁음: 띠 없음 · ☰ · 작은 독 ' + JSON.stringify(st))
+              if (!/phone/.test(st.cls) || st.strip !== null || st.side || st.rp || st.dock || !st.tabs || !st.menu || st.drawer) fail('🔴 Z: 좁음은 띠 없음 · ☰ · **하단 탭**(떠 있는 독이 아니다) ' + JSON.stringify(st))
               const view = () => hp.evaluate(() => document.querySelector('.app').dataset.view)
               const drag = async (x0, y0, x1, y1, steps = 8, ms = 16) => { await hp.mouse.move(x0, y0); await hp.mouse.down(); for (let i = 1; i <= steps; i++) { await hp.mouse.move(x0 + ((x1 - x0) * i) / steps, y0 + ((y1 - y0) * i) / steps); await wait(ms) } await hp.mouse.up(); await wait(350) }
               // 👉 → 레일 · 👈 → 닫힘 · 👈 → 문서(패널) · 👉 → 닫힘
@@ -1158,12 +1189,12 @@ try {
               await drag(380, 500, 150, 505); if ((await view()) !== 'chat') fail('🔴 Z-2: 앞으로 갈 데가 없는 👈 가 폴더를 열었다 ' + (await view()))
               // 🔴 갈 데가 없던 쓸기도 **글 선택을 남기면 안 된다** — 남으면 다음 쓸기가 «글 고르는 중» 으로 막힌다(실측)
               if (await hp.evaluate(() => !(window.getSelection()?.isCollapsed ?? true))) fail('🔴 Z-2: 갈 데 없는 👈 가 글 선택을 남겼다 — 다음 쓸기가 막힌다')
-              await hp.click('.dock .db[title="파일"]'); await wait(400); if ((await view()) !== 'panel') fail('H 좁음: 독 📁 → 폴더')
+              await tapNav(hp, 'files'); await wait(400); if ((await view()) !== 'panel') fail('Z: 하단 탭 «폴더»')
               await hp.screenshot({ path: 'test/tmp/h-narrow-right.png' })
               // ⚠ 오른쪽 서랍 안의 할 일 행은 스스로 쓸린다(V16) — 그 위에서 시작한 끌기는 행이 먹는다(H-3 ①). 닫기는 머리말(제목 줄)에서 끈다
               await drag(150, 30, 390, 35); if ((await view()) !== 'chat') fail('H 좁음: 패널 열린 채 👉 → 닫힘 ' + (await view()))
               // 문서 열린 채 👉 두 번 → 레일 (한 번에 건너뛰지 않는다)
-              await hp.click('.dock .db[title="파일"]'); await wait(400); if ((await view()) !== 'panel') fail('H 좁음: 독 📁')
+              await tapNav(hp, 'files'); await wait(400); if ((await view()) !== 'panel') fail('Z: 하단 탭 «폴더»')
               await drag(150, 30, 390, 35); if ((await view()) !== 'chat') fail('H 좁음: 👉 첫 번 → 채팅 ' + (await view()))
               await drag(120, 500, 320, 505); if ((await view()) !== 'list') fail('H 좁음: 👉 두 번째 → 레일 ' + (await view()))
               await hp.keyboard.press('Escape'); await wait(350); if ((await view()) !== 'chat') fail('H 좁음: Esc')
@@ -1182,7 +1213,7 @@ try {
                * 🔴 **Z (2026-09-22 Dave 확정 · A Safari 모델) — 쓸기는 «고정 기능» 이 아니라 «온 길» 이다.**
                *    종전 band 에서는 문서에서 👉 하면 폴더를 건너뛰고 채팅으로 갔고, [뒤로] 버튼은 폴더로 가서 두 모델이 공존했다.
                */
-              const openDocFromPanel = async () => { await hp.click('.dock .db[title="파일"]'); await wait(450); const hit = await hp.evaluate(() => { const b = [...document.querySelectorAll('.panel .trow')].find((x) => /CLAUDE\.md/.test(x.textContent ?? '')); b?.click(); return !!b }); if (!hit) fail('Z: 폴더 트리에 CLAUDE.md 가 없다'); await wait(700) }
+              const openDocFromPanel = async () => { await tapNav(hp, 'files'); await wait(450); const hit = await hp.evaluate(() => { const b = [...document.querySelectorAll('.panel .trow')].find((x) => /CLAUDE\.md/.test(x.textContent ?? '')); b?.click(); return !!b }); if (!hit) fail('Z: 폴더 트리에 CLAUDE.md 가 없다'); await wait(700) }
               await openDocFromPanel(); if ((await view()) !== 'doc') fail('Z: 폴더에서 문서를 못 열었다 ' + (await view()))
               // ① 폴더를 거쳐 왔으면 👉 는 폴더로 (건너뛰지 않는다)
               await drag(150, 30, 390, 35); if ((await view()) !== 'panel') fail('🔴 Z-2: 폴더에서 연 문서인데 👉 가 폴더를 건너뛰었다 ' + (await view()))
@@ -1195,9 +1226,35 @@ try {
               if ((await view()) !== 'panel') fail('🔴 Z-2: 문서의 [뒤로] 버튼이 쓸기와 다른 데로 갔다 ' + (await view()))
               // ④ 채팅에서 바로 연 문서는 온 길이 채팅이라 👉 가 채팅으로 (같은 문서라도 길이 다르면 뒤가 다르다)
               await drag(150, 30, 390, 35); await wait(200); if ((await view()) !== 'chat') fail('Z-2: 폴더 → 채팅 ' + (await view()))
-              await hp.click('.dock .db[title="문서"]'); await wait(500); if ((await view()) !== 'doc') fail('Z: 독 📄 → 문서 ' + (await view()))
+              await tapNav(hp, 'doc'); await wait(500); if ((await view()) !== 'doc') fail('Z: 하단 탭 «문서» ' + (await view()))
               await drag(150, 30, 390, 35); if ((await view()) !== 'chat') fail('🔴 Z-2: 채팅에서 연 문서인데 👉 가 채팅으로 안 갔다 ' + (await view()))
               await hp.screenshot({ path: 'test/tmp/z-narrow-stack.png' })
+              /**
+               * 🔴 **Z · 하단 탭** (2026-09-22 Dave 확정 「B · 하단 탭(내리면 숨음)」) — 떠 있던 독을 폰에서 대신한다.
+               *    자리는 늘 비워 두고 **탭만 미끄러진다** — 숨을 때 채팅 높이까지 바뀌면 «스크롤 → 숨음 → 높이 변함 → 스크롤 튐» 이 되돌이가 된다.
+               */
+              const tabState = () => hp.evaluate(() => ({
+                bar: !!document.querySelector('.tabbar'), hide: !!document.querySelector('.tabbar.hide'),
+                on: document.querySelector('.tabbar .tb.on')?.dataset.tab ?? null,
+                lift: getComputedStyle(document.querySelector('.app')).getPropertyValue('--tablift').trim(),
+                labels: [...document.querySelectorAll('.tabbar .tb span:not(.bd)')].map((x) => x.textContent),
+              }))
+              let ts = await tabState()
+              if (!ts.bar || ts.hide || ts.on !== 'chat' || ts.labels.length !== 4) fail('Z: 폰 채팅에 하단 탭 4칸이 보여야 한다 ' + JSON.stringify(ts))
+              const lift0 = ts.lift
+              // 읽어 내려가면 비킨다 · 올라오면 돌아온다 — 그동안 자리(--tablift)는 그대로다
+              await hp.evaluate(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop = 0; el.dispatchEvent(new Event('scroll')); el.scrollTop = 400; el.dispatchEvent(new Event('scroll')) }); await wait(320)
+              ts = await tabState(); if (!ts.hide) fail('Z: 내려가는데 탭이 안 비켰다 ' + JSON.stringify(ts))
+              if (ts.lift !== lift0) fail('🔴 Z: 탭이 숨으면서 채팅 자리(--tablift)가 바뀌었다 — 스크롤이 자기를 흔든다 ' + JSON.stringify({ lift0, now: ts.lift }))
+              await hp.evaluate(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop = 200; el.dispatchEvent(new Event('scroll')) }); await wait(320)
+              ts = await tabState(); if (ts.hide) fail('Z: 올라오는데 탭이 안 돌아왔다 ' + JSON.stringify(ts))
+              await hp.screenshot({ path: 'test/tmp/z-tabbar.png' })
+              // 봇 목록에는 탭이 없다(갈 곳이 목록 자체라서) · 탭으로 옮기면 그 칸이 켜진다
+              await tapNav(hp, 'todo'); await wait(450); ts = await tabState(); if (ts.on !== 'todo') fail('Z: 탭 «할 일» 이 안 켜졌다 ' + JSON.stringify(ts))
+              await drag(150, 30, 390, 35); await wait(200)
+              await drag(120, 500, 320, 505); if ((await view()) !== 'list') fail('Z: 봇 목록으로 못 갔다 ' + (await view()))
+              if ((await tabState()).bar) fail('Z: 봇 목록에는 하단 탭이 없어야 한다')
+              await hp.keyboard.press('Escape'); await wait(350)
               // ☰ 로도 레일 · 어두워진 채팅(스크림) 탭 → 닫힘
               await hp.click('.chat-hdr .hb-menu'); await wait(400); if ((await view()) !== 'list') fail('H 좁음: ☰ → 레일')
               await hp.evaluate(() => { document.querySelector('.scrim')?.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 480, clientY: 400 })) }); await wait(350); if ((await view()) !== 'chat') fail('H 좁음: 어두워진 채팅 탭 → 닫힘')
@@ -1213,7 +1270,7 @@ try {
               if (land.view !== 'chat' || land.s !== sidB || land.drawer) fail('🔴 S-2: 배너처럼 해시만 놓았는데 화면이 그 대화로 안 갔다 ' + JSON.stringify(land))
               await fetch(base + `/api/sessions/${sidB}`, { method: 'DELETE' })
               // 서랍 상태 기억 — 패널을 연 채 앱을 다시 켜면(해시 없이) 그 칸으로 돌아온다
-              await hp.click('.dock .db[title="파일"]'); await wait(500)
+              await tapNav(hp, 'files'); await wait(500)
               await hp.goto(base + '/'); await wait(1200)
               const back = await hp.evaluate(() => ({ view: document.querySelector('.app').dataset.view, bot: new URLSearchParams(location.hash.slice(1)).get('bot') }))
               if (back.view !== 'panel' || back.bot !== bot.id) fail('H 좁음: 서랍 상태가 재시작 후 기억돼야 한다 ' + JSON.stringify(back))
@@ -3052,30 +3109,41 @@ try {
           await vpg.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
           await vpg.goto(base + `/#bot=${bot.id}`); await vpg.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(900)
 
-          // V-2 · 오른쪽 독 — 살짝 비치고(backdrop-filter), 잡아서 위아래로 옮길 수 있고, 그 자리를 기억한다
-          const dk = await vpg.evaluate(() => { const d = document.querySelector('.dock'); if (!d) return null; const c = getComputedStyle(d); return { blur: [c.backdropFilter, c.webkitBackdropFilter].join(' '), bg: c.backgroundColor, grip: !!d.querySelector('.grip'), y: d.getBoundingClientRect().top, h: d.getBoundingClientRect().height, db: d.querySelector('.db')?.getBoundingClientRect().height ?? 0 } })
-          if (!dk) fail('V-2: 폰에 독이 없다')
+          /**
+           * V-2 · 떠 있는 독 — 살짝 비치고(backdrop-filter), 잡아서 위아래로 옮길 수 있고, 그 자리를 기억한다.
+           * 🔴 **재는 자리가 폰에서 중간(900px)으로 옮겨 갔다** — Z(2026-09-22 Dave 확정 「B · 하단 탭」)로 **폰의 독은 하단 탭이 대신**한다.
+           *    독 자체는 중간 단계에 그대로 살아 있으므로 계약도 거기서 지킨다(폰의 탭 계약은 「Z」 블록이 잰다).
+           */
+          const vmid = await br.newPage({ viewport: { width: 900, height: 800 }, deviceScaleFactor: 1 })
+          await vmid.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
+          await vmid.goto(base + `/#bot=${bot.id}`); await vmid.waitForSelector('.dock', { timeout: 15000 }); await wait(700)
+          const dk = await vmid.evaluate(() => { const d = document.querySelector('.dock'); if (!d) return null; const c = getComputedStyle(d); return { blur: [c.backdropFilter, c.webkitBackdropFilter].join(' '), bg: c.backgroundColor, grip: !!d.querySelector('.grip'), db: d.querySelector('.db')?.getBoundingClientRect().height ?? 0, y: d.getBoundingClientRect().top } })
+          if (!dk) fail('V-2: 중간 단계에 독이 없다')
           if (!/blur/.test(dk.blur)) fail('V-2: 독이 불투명하다(backdrop-filter 없음) ' + JSON.stringify(dk))
           // ⚠ color-mix 의 계산값은 크롬이 `color(srgb … / .62)` 로 돌려준다 — 「rgba 로 시작하나」 로 재면 안 된다
           const alpha = (c) => { const m = /\/\s*([0-9.]+)\s*\)/.exec(c) ?? /rgba?\([^)]*,\s*([0-9.]+)\)/.exec(c); return m ? +m[1] : 1 }
           if (alpha(dk.bg) >= 0.95) fail('V-2: 독 배경이 반투명이 아니다 ' + dk.bg)
           if (!dk.grip) fail('V-2: 잡는 손잡이(.grip)가 없다')
           if (dk.db < 40) fail('V-3: 독 버튼이 손가락에 안 닿는다 ' + dk.db)
-          const gb = await vpg.locator('.dock .grip').boundingBox()
+          const gb = await vmid.locator('.dock .grip').boundingBox()
           // ⚠ 한 번의 move(steps) 는 합쳐져 버린다 — H 의 쓸기처럼 한 걸음씩 쉬며 끈다
           const gx = gb.x + gb.width / 2, gy = gb.y + gb.height / 2
-          await vpg.mouse.move(gx, gy); await vpg.mouse.down()
-          for (let i = 1; i <= 8; i++) { await vpg.mouse.move(gx, gy - (120 * i) / 8); await wait(16) }
-          await vpg.mouse.up(); await wait(450)
-          const moved = await vpg.evaluate(() => ({ y: document.querySelector('.dock').getBoundingClientRect().top, saved: localStorage.getItem('fb:docky') }))
+          await vmid.mouse.move(gx, gy); await vmid.mouse.down()
+          for (let i = 1; i <= 8; i++) { await vmid.mouse.move(gx, gy - (120 * i) / 8); await wait(16) }
+          await vmid.mouse.up(); await wait(450)
+          const moved = await vmid.evaluate(() => ({ y: document.querySelector('.dock').getBoundingClientRect().top, saved: localStorage.getItem('fb:docky') }))
           if (dk.y - moved.y < 60) fail('V-2: 독을 끌었는데 안 올라갔다 ' + JSON.stringify({ before: dk.y, after: moved.y }))
           if (!moved.saved || Math.abs(+moved.saved) < 60) fail('V-2: 옮긴 자리를 안 기억한다 ' + moved.saved)
-          await vpg.reload(); await vpg.waitForSelector('.dock', { timeout: 10000 }); await wait(700)
-          const kept = await vpg.evaluate(() => document.querySelector('.dock').getBoundingClientRect().top)
+          await vmid.reload(); await vmid.waitForSelector('.dock', { timeout: 10000 }); await wait(700)
+          const kept = await vmid.evaluate(() => document.querySelector('.dock').getBoundingClientRect().top)
           if (Math.abs(kept - moved.y) > 4) fail('V-2: 다시 열었더니 자리가 돌아갔다 ' + JSON.stringify({ moved: moved.y, kept }))
+          await vmid.close()
+          // 🔴 폰에는 떠 있는 독이 없다 — 하단 탭이 그 자리다(Z · 2026-09-22 Dave 「B」)
+          if (await vpg.$('.dock')) fail('🔴 Z: 폰에 아직 떠 있는 독이 있다 — 하단 탭이어야 한다')
+          if (!(await vpg.$('.tabbar [data-tab="files"]'))) fail('🔴 Z: 폰에 하단 탭이 없다')
 
           // 폴더 패널을 연다 — 절 머리(명령 · 스킬)와 목록 줄이 여기 있다
-          await vpg.click('.dock .db[title="파일"]'); await wait(800)
+          await tapNav(vpg, 'files'); await wait(800)
           const vSech = vpg.locator('.sech', { hasText: '명령 · 스킬' })
           if (!(await vSech.count())) fail('V: 폰 패널에 「명령 · 스킬」 절이 없다')
           if (!(await vpg.$('.hsec.cmds'))) { await vSech.click(); await wait(600) }
@@ -3406,7 +3474,12 @@ try {
         // 위 헤더는 불투명(페이드 없음) — 글이 밑으로 비치지 않는다
         const hb = await pg.$eval('.chat-hdr', (e) => getComputedStyle(e).backgroundImage + '|' + getComputedStyle(e).backgroundColor); if (/gradient/.test(hb) || /rgba\(\d+, \d+, \d+, 0\)/.test(hb)) fail('phone: header should be opaque ' + hb)
         // 헤더 알약의 봇 이름이 잘리지 않는다 (짧은 이름은 전부, 알약은 남는 폭을 쓴다)
-        // H-5 · 좁음 헤더 한 줄 — ☰ · 표시 이름 · (작업 중 ●). ‹·폴더 아이콘은 없다. 이름은 잘리지 않는다
+        /**
+         * H-5 · 좁음 헤더 한 줄 — ☰ · 표시 이름 · (작업 중 ●). ‹·폴더 아이콘은 없다. 이름은 잘리지 않는다.
+         * ⚠ **키보드가 열려 있으면 헤더는 일부러 숨는다** — 재기 전에 내린다. Z(2026-09-22) 뒤로 보내기 단추가
+         *    초점을 안 뺏으므로(폰에서 보내기가 안 먹던 원인) 보낸 뒤에도 키보드가 남아 있다.
+         */
+        await pg.evaluate(() => { document.activeElement?.blur?.(); window.visualViewport?.dispatchEvent(new Event('resize')) }); await wait(300)
         const bp = await pg.evaluate(() => { const b = document.querySelector('.chat-hdr .hnb .dn'); const h = document.querySelector('.chat-hdr'); return { text: b?.textContent, sw: b?.scrollWidth, cw: b?.clientWidth, menu: !!h.querySelector('.hb-menu'), folder: !!h.querySelector('button[title="이 폴더에서"]'), back: !!h.querySelector('button[title="뒤로"]'), h: h.getBoundingClientRect().height } })
         if (!bp.menu || bp.folder || bp.back || !(bp.cw > 40 && bp.sw <= bp.cw + 1 && /제품_Rondo/.test(bp.text ?? ''))) fail('phone: H-5 header ' + JSON.stringify(bp))
         if (Math.abs(bp.h - 44) > 1) fail('phone: H-5 header height should be 44 (+safe-area 0 here) ' + JSON.stringify(bp))
@@ -3466,7 +3539,8 @@ try {
         // iOS 26 이 키보드를 내린 뒤 시각 뷰포트를 60px 덜 돌려줘도(입력 중 아님) 루트는 전체 높이를 유지한다 — 아래 빈 띠 없음
         await pg.evaluate(() => window.__kb(60)); await wait(300)
         const stuck = await pg.evaluate(() => ({ rootH: document.querySelector('#root').getBoundingClientRect().height, ih: innerHeight, compBottom: document.querySelector('.composer').getBoundingClientRect().bottom }))
-        if (Math.abs(stuck.rootH - stuck.ih) > 2 || stuck.ih - stuck.compBottom > 24) fail('phone: stale visual viewport left a bottom gap ' + JSON.stringify(stuck))
+        // Z(2026-09-22 「B · 하단 탭」) 뒤로 입력칸은 **탭 위**에 앉는다 — 바닥까지 56px(탭) + 여백이 남는 것이 제자리다
+        if (Math.abs(stuck.rootH - stuck.ih) > 2 || stuck.ih - stuck.compBottom > 24 + 56) fail('phone: stale visual viewport left a bottom gap ' + JSON.stringify(stuck))
         await pg.evaluate(() => window.__kb(0)); await wait(200)
         await pg.click('.chat-hdr .rb'); await wait(300); if (!(await pg.$('.mhome .mcards')) || (await pg.$$eval('.mrow', (r) => r.length)) < 3) fail('phone: home cards/rows'); await pg.screenshot({ path: 'test/tmp/phone-home.png' })
         if (!(await pg.$('.mrow .l1 .bname .dn'))) fail('phone: home row names should use the derived display name')
@@ -3551,8 +3625,8 @@ try {
           // Z-2(2026-09-22) · 👈 는 «앞으로(방금 한 뒤로를 무르기)» 다 — 폴더로 **들어가는** 문이 아니다
           await drag(300, 420, 110, 426)
           if ((await view()) !== 'chat') fail('🔴 Z-2: 앞으로 갈 데가 없는 👈 가 폴더를 열었다 ' + (await view()))
-          await pg.click('.dock .db[title="파일"]'); await wait(400)   // 폴더는 독으로 연다
-          if ((await view()) !== 'panel') fail('폰 제스처: 독 📁 로 폴더가 안 열린다 ' + (await view()))
+          await tapNav(pg, 'files'); await wait(400)   // 폴더는 하단 탭으로 연다
+          if ((await view()) !== 'panel') fail('폰 제스처: 하단 탭 «폴더» 로 폴더가 안 열린다 ' + (await view()))
           await pg.click('.rpwrap .rb'); await wait(300)  // 패널의 [뒤로]
           if ((await view()) !== 'chat') fail('폰 제스처: 패널에서 [뒤로] 로 대화에 못 돌아왔다')
           // «최신으로» — 규칙 자체를 잰다(transform 으로 가운데를 맞추면 :active 에 진다) + 보이면 눌러서 제자리인지

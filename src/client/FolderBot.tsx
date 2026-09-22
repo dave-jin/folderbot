@@ -85,6 +85,8 @@ export const I = {
   inbox: <><path d="M2 9l2-6h8l2 6v4H2z" /><path d="M2 9h4l1 2h2l1-2h4" /></>,
   phone: <><rect x="4.5" y="1.5" width="7" height="13" rx="1.5" /><path d="M7 12.5h2" /></>,
   doc: <><path d="M4 2h5l3 3v9H4z" /><path d="M6 8h4M6 10.5h4" /></>,
+  // 말풍선 — 하단 탭의 «채팅». doc·folder 와 나란히 서므로 한눈에 갈려야 한다
+  chat: <path d="M2.5 3.5h11v8h-6l-3.5 3v-3h-1.5z" />,
   // 겹친 종이 두 장 — «복사» 는 문서 아이콘(doc)과 뜻이 달라야 한다(그 자리에 doc 을 쓰면 «파일 열기» 로 읽힌다)
   copy: <><rect x="5.5" y="2.5" width="8" height="9" rx="1.5" /><path d="M10.5 13.5h-6a1.5 1.5 0 0 1-1.5-1.5v-7" /></>,
   panel: <><rect x="2" y="3" width="12" height="10" rx="1.5" /><path d="M6 3v10" /></>,
