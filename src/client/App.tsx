@@ -24,6 +24,7 @@ import { canStartSwipe, dragProgress, lockOf, scrollableEats, stageOf, swipeVerd
 import { back as navBackOf, curOf, dismiss, goTo, navInit, swipeMove, type Nav, type Page } from '../core/navstack'
 import { botUnread, shouldMarkRead } from '../core/unread'
 import { clampDockOffset, isDockDrag, readDockOffset } from '../core/dock'
+import { tabActive, tabVisible } from '../core/tabbar'
 import { SwipeRow } from './SwipeRow'
 import { dueChip } from '../core/botName'
 import { LocalOpenHost, localBridge, openOnThisDevice, useLocalSettings } from './localOpen'
@@ -571,6 +572,25 @@ function Main() {
    * ⚠ 탭과 갈라야 한다 — 6px 를 안 넘긴 끌기는 «누른 것» 이라 단추가 제 일을 한다(`isDockDrag`).
    * ⚠ 독의 포인터는 서랍 쓸기로 새면 안 된다(`stopPropagation`) — 독을 잡고 세로로 끄는 동안 채팅이 넘어가면 안 된다.
    */
+  /**
+   * Z · 폰 **하단 탭** (2026-09-22 Dave 확정 「B · 하단 탭(내리면 숨음)」). 읽어 내려가면 비키고 올라오면 돌아온다.
+   * 🔴 스크롤은 **창에서 캡처로** 듣는다 — 채팅·폴더·문서가 저마다 다른 스크롤러라 하나씩 붙이면 한 군데는 꼭 빠진다.
+   */
+  const [tabsOn, setTabsOn] = useState(true)
+  const tabTops = useRef(new WeakMap<EventTarget, number>())
+  useEffect(() => {
+    if (!phone) return
+    const f = (e: Event) => {
+      const t = e.target as HTMLElement | null; if (!t || !(t instanceof HTMLElement)) return
+      const to = t.scrollTop; const from = tabTops.current.get(t) ?? to
+      tabTops.current.set(t, to)
+      setTabsOn((v) => tabVisible(v, from, to))
+    }
+    window.addEventListener('scroll', f, true)
+    return () => window.removeEventListener('scroll', f, true)
+  }, [phone])
+  useEffect(() => { setTabsOn(true) }, [view])   // 화면을 옮기면 탭은 늘 보이는 데서 시작한다
+  const tabsHere = phone && view !== 'list' && !kb   // 봇 목록과 키보드 위에서는 탭 자체가 없다
   const dockRef = useRef<HTMLDivElement>(null)
   const [dockY, setDockY] = useState(() => { try { return readDockOffset(localStorage.getItem('fb:docky')) } catch { return 0 } })
   const [dockDrag, setDockDrag] = useState(false)
@@ -788,7 +808,7 @@ function Main() {
         <button className="ib" onClick={() => openRp('files')}><Icon n="folder" size={14} /><span className="fly"><b>파일</b><span>{bot.rel || '볼트'}</span></span></button>
         <button className="ib" onClick={() => openRp('routines')}><Icon n="cal" size={14} /><span className="fly"><b>루틴</b><span>{bot.routines.length}개</span></span></button>
       </div>
-  return <div className={`app ${isDesktop ? 'desktop' : ''} ${phone ? 'phone' : ''} ${mid ? 'smid' : ''} ${kb ? 'kb' : ''} ${drag === 'x' ? 'dragx' : drag === 'y' ? 'dragy' : ''}`} data-view={view === 'doc' && !showDoc ? 'panel' : view} data-nav={`${nav.stack.join('>')}${nav.fwd.length ? ' |' + [...nav.fwd].reverse().join('>') : ''}`}>
+  return <div className={`app ${isDesktop ? 'desktop' : ''} ${phone ? 'phone' : ''} ${mid ? 'smid' : ''} ${kb ? 'kb' : ''} ${drag === 'x' ? 'dragx' : drag === 'y' ? 'dragy' : ''} ${phone && !tabsHere ? 'notabs' : ''}`} data-view={view === 'doc' && !showDoc ? 'panel' : view} data-nav={`${nav.stack.join('>')}${nav.fwd.length ? ' |' + [...nav.fwd].reverse().join('>') : ''}`}>
     {s.online === 'off' ? <div className="offline">{s.hostName || '호스트'} 와 다시 연결하는 중…</div> : null}
     {s.auth.verdict === 'unreadable' || s.auth.verdict === 'loggedout' ? <div className="banner"><span className="dot wait" /><span><b>{s.hostName} 에서 Claude 로그인이 필요해요.</b> 호스트 맥에서 <span className="mono">claude</span> → <span className="mono">/login</span>, 또는 설정 › Claude 토큰. 보낸 지시는 대기열에 두었다가 복구되면 이어서 해요.</span><span style={{ marginLeft: 'auto' }} /><button className="btn" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button></div> : null}
     <div className={`cols ${dragSide ? 'dragging' : ''}`} ref={colsRef} onPointerDown={swDown} onPointerMove={swMove} onPointerUp={swUp} onPointerCancel={swCancel}>
@@ -812,7 +832,7 @@ function Main() {
       {narrow && (view === 'list' || dragSide === 'left') ? <div className={`drawer left ${view === 'list' ? 'open' : ''}`} ref={leftRef}>{phone ? homeEl : sidebarEl}</div> : null}
       {narrow && (view === 'panel' || view === 'doc' || dragSide === 'right') ? <div className={`drawer right ${view === 'panel' || view === 'doc' ? 'open' : ''}`} ref={rightRef}>{view === 'doc' && showDoc ? docwrapEl : rpwrapEl}</div> : null}
       {/* H-4 · 알약 독 — 채팅 오른쪽 가장자리에 세로로. 📄 문서(없으면 흐리게) · ☑ 할 일 · 📁 파일 · ↗ 외부에서 열기(문서가 열려 있을 때). 이모지 대신 앱 아이콘 */}
-      {narrow && view === 'chat' && !kb ? <div className={`dock ${phone ? 'sm' : ''} ${dockDrag ? 'dragging' : ''}`} ref={dockRef} style={{ translate: `0 ${dockY}px` }}
+      {mid && view === 'chat' && !kb ? <div className={`dock ${dockDrag ? 'dragging' : ''}`} ref={dockRef} style={{ translate: `0 ${dockY}px` }}
         onPointerDown={dockDown}>
         <span className="grip" title="잡아서 위아래로 옮기기"><i /></span>
         <button className={`db ${docs.tabs.length ? '' : 'dim'}`} title="문서" disabled={!docs.tabs.length} onClick={() => setView('doc')}><Icon n="doc" size={16} />{docs.tabs.length ? <span className="bd">{docs.tabs.length}</span> : null}</button>
@@ -820,6 +840,18 @@ function Main() {
         <button className="db" title="파일" onClick={() => { setFocusSec({ sec: 'files', n: Date.now() }); setView('panel') }}><Icon n="folder" size={16} /></button>
         <button className={`db ${docs.active ? '' : 'dim'}`} title="외부에서 열기" disabled={!docs.active} onClick={() => { if (docs.active) void openOnThisDevice(bot, docs.active, 'open', { main: s.device.main, hostName: s.hostName, phone, say }) }}><Icon n="open" size={16} /></button>
       </div> : null}
+
+      {/* ── Z · 폰 하단 탭 (2026-09-22 Dave 확정 「B」) — 봇 목록만 빼고 늘 있고, 읽어 내려가면 비킨다 ── */}
+      {tabsHere ? (() => {
+        const on = tabActive(view, focusSec?.sec)
+        const todoN = (s.todos[bot.id] ?? []).filter((t) => !t.done).length
+        return <nav className={`tabbar ${tabsOn ? '' : 'hide'}`}>
+          <button className={`tb ${on === 'chat' ? 'on' : ''}`} data-tab="chat" onClick={() => setView('chat')}><Icon n="chat" size={19} /><span>채팅</span></button>
+          <button className={`tb ${on === 'doc' ? 'on' : ''} ${docs.tabs.length ? '' : 'dim'}`} data-tab="doc" disabled={!docs.tabs.length} onClick={() => setView('doc')}><Icon n="doc" size={19} />{docs.tabs.length ? <span className="bd">{docs.tabs.length}</span> : null}<span>문서</span></button>
+          <button className={`tb ${on === 'todo' ? 'on' : ''}`} data-tab="todo" onClick={() => { setFocusSec({ sec: 'todo', n: Date.now() }); setView('panel') }}><Icon n="check" size={19} />{todoN ? <span className="bd">{todoN}</span> : null}<span>{bot.orchestrator ? 'Inbox' : '할 일'}</span></button>
+          <button className={`tb ${on === 'files' ? 'on' : ''}`} data-tab="files" onClick={() => { setFocusSec({ sec: 'files', n: Date.now() }); setView('panel') }}><Icon n="folder" size={19} /><span>폴더</span></button>
+        </nav>
+      })() : null}
     </div>
     {modal === 'picker' ? <FolderPicker onClose={() => setModal(null)} onStarted={(b) => { setModal(null); go(b.id); say(`${b.name} 에서 시작했어요`) }} /> : null}
     {modal === 'notify' ? <NotifyCenter onClose={() => setModal(null)} onJump={(n) => { setModal(null); api('/notifications/read', { body: { ids: [n.id] } }).then(refresh); go(n.botId, n.sessionId) }} /> : null}
@@ -1372,7 +1404,13 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const plusBtn = <button className={phone ? 'plusb' : `cbtn ${pop === 'plus' ? 'on' : ''}`} style={phone ? undefined : { padding: '3px 6px' }} title="첨부" onClick={() => setPop(pop === 'plus' ? '' : 'plus')} disabled={uploading}><Icon n="plus" size={phone ? 20 : 14} /></button>
   const sendBtn = mode === 'stop' ? <button className="sendb" onClick={() => cur && api(`/sessions/${cur.id}/interrupt`, { body: {} })} title="중단"><Icon n="stop" size={phone ? 14 : 11} /></button>
     : mode === 'off' && phone ? <span className="sendb mic"><Icon n="mic" size={20} /></span>
-      : <button className={`sendb ${mode === 'off' ? 'off' : ''}`} onClick={send} disabled={mode === 'off' || busy || uploading} title={mode === 'queue' ? `대기열에 넣기 (${sendKey})` : `보내기 (${sendKey})`}><Icon n="up" size={phone ? 16 : 12} />{mode === 'queue' ? <span className="bd">+{queue.length + 1}</span> : null}</button>
+      /**
+       * 🔴 **보내기 단추는 초점을 뺏지 않는다** (2026-09-22 실측). 누르는 순간 입력칸에서 초점이 빠지면 키보드가 닫히고,
+       *    그 바람에 입력칸이 제자리를 다시 잡느라 **mousedown 과 mouseup 사이에 단추가 움직여 click 이 아예 안 난다** —
+       *    폰에서 보내기가 «눌리지도 않고 아무 일도 안 일어나는» 정체가 이것이었다(Z 의 하단 탭이 들어오며 드러났다).
+       *    보낸 뒤에도 키보드가 남아 있는 것이 사람이 바라는 동작이기도 하다.
+       */
+      : <button className={`sendb ${mode === 'off' ? 'off' : ''}`} onMouseDown={(e) => e.preventDefault()} onClick={send} disabled={mode === 'off' || busy || uploading} title={mode === 'queue' ? `대기열에 넣기 (${sendKey})` : `보내기 (${sendKey})`}><Icon n="up" size={phone ? 16 : 12} />{mode === 'queue' ? <span className="bd">+{queue.length + 1}</span> : null}</button>
   const popEl = pop === 'mode' ? <div className="cpop"><div className="h">모드 · 이 세션</div>{MODES.map((m, i) => <button key={m.v} className={`prow2 ${cfg.mode === m.v ? 'on' : ''}`} onClick={() => void applyCfg({ permissionMode: m.v })}><div className="t"><b>{m.t}</b><small>{m.d}</small></div>{cfg.mode === m.v ? <Icon n="check" size={13} /> : <span className="k">{i + 1}</span>}</button>)}<div className="hint"><span>1~4</span><span className="sp" /><span>새 세션은 설정의 기본값으로</span></div>{cur?.restartPending ? <div className="hint pend">{modePendTitle}</div> : null}</div>
     /**
      * 🔴 **종류별 최신 하나씩만 보인다** (2026-09-14 Dave: «다른 모델은 안쓰고 최신 버전만 종류별로만
