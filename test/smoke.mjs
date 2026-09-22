@@ -2342,10 +2342,11 @@ try {
           const left = await pg.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('fb:draft:')).length)
           if (left) fail('초안: 비웠는데 키가 남아 있다 ' + left)
         }
-        // 지침 · 하네스 — 한 줄에 «아이콘 · 이름 · 범위» (2026-09-13 Dave: «지침과 하네스쪽 디자인도 깨져 있어»)
+        // 명령 · 스킬 — 한 줄에 «아이콘 · 이름 · 범위» (2026-09-13 Dave: «지침과 하네스쪽 디자인도 깨져 있어»)
         //    클래스만 붙이고 CSS 를 안 써서 아이콘이 한 줄, 이름·범위가 붙어 흘렀다
+        //    ⚠ V(09-22) 에서 「지침 · 하네스」와 「슬래시 명령」이 한 칸(명령 · 스킬)으로 합쳐졌다
         {
-          await pg.click('.panel .sech:has-text("지침 · 하네스")'); await wait(900)
+          await pg.click('.panel .sech:has-text("명령 · 스킬")'); await wait(900)
           const hz = await pg.evaluate(() => {
             const rows = [...document.querySelectorAll('.panel .hz')]
             if (!rows.length) return null
@@ -2357,10 +2358,10 @@ try {
               return { h: rb.height, sameLine: !ic || !n || Math.abs((ic.top + ic.height / 2) - (n.top + n.height / 2)) < 6, gap: n && sc ? sc.left - n.right : 99, right: sc ? rb.right - sc.right : 99 }
             })
           })
-          if (!hz) fail('지침 · 하네스: 줄이 하나도 없다')
+          if (!hz) fail('명령 · 스킬: 줄이 하나도 없다')
           const bad = hz.filter((r) => r.h > 44 || !r.sameLine || r.gap < 2)
-          if (bad.length) fail('지침 · 하네스: 줄이 깨졌다(아이콘·이름·범위가 한 줄이 아니거나 붙어 있다) ' + JSON.stringify(bad))
-          await pg.click('.panel .sech:has-text("지침 · 하네스")'); await wait(300)
+          if (bad.length) fail('명령 · 스킬: 줄이 깨졌다(아이콘·이름·범위가 한 줄이 아니거나 붙어 있다) ' + JSON.stringify(bad))
+          await pg.click('.panel .sech:has-text("명령 · 스킬")'); await wait(300)
         }
         // 세션 삭제 버튼 — 행에 있고, 누르면 한 번 묻고, 목록에서 사라진다. 원래 보던 세션은 건드리지 않는다
         const keep = (await pg.textContent('.panel .srow.on .n')).trim()
@@ -2957,12 +2958,15 @@ try {
          */
         {
           await pg.fill('.composer .cin', ''); await wait(200)
-          const hdr = pg.locator('.sech', { hasText: '슬래시 명령' })
-          if (!(await hdr.count())) fail('슬래시 명령: 패널에 절이 없다')
+          // V (09-22 Dave) · 「지침·하네스」와 「슬래시 명령」이 **한 칸**(명령 · 스킬)으로 합쳐졌다 — 명령·스킬·커넥터를 한 목록에서 본다
+          const hdr = pg.locator('.sech', { hasText: '명령 · 스킬' })
+          if (!(await hdr.count())) fail('명령·스킬: 패널에 절이 없다')
           if (!(await pg.$('.hsec.cmds'))) { await hdr.click(); await wait(500) }
           const list = await pg.evaluate(() => [...document.querySelectorAll('.hsec.cmds .hz')].map((r) => r.textContent ?? ''))
           if (!list.some((r) => /\/status/.test(r) && /볼트/.test(r))) fail('슬래시 명령: 루트의 /status 가 «볼트» 로 안 보인다 ' + JSON.stringify(list))
-          await hdr.locator('.mdb').click(); await pg.waitForSelector('.modal.ask input', { timeout: 3000 })
+          // 같은 목록에 스킬·커넥터도 함께 선다 (한 공간에서 본다)
+          if (!list.some((r) => /스킬 ·/.test(r))) fail('V: 같은 목록에 스킬이 안 보인다 ' + JSON.stringify(list))
+          await hdr.locator('.nsb').click(); await pg.waitForSelector('.modal.ask input', { timeout: 3000 })
           await pg.fill('.modal.ask input', 'hello-bot'); await pg.keyboard.press('Enter'); await wait(900)
           const cmdAbs = join(root, '3. Area/제품_Rondo/.claude/commands/hello-bot.md')
           if (!existsSync(cmdAbs)) fail('슬래시 명령: 파일이 안 생겼다 ' + cmdAbs)
@@ -2980,7 +2984,103 @@ try {
           const sp2 = await pg.textContent('.cpop').catch(() => null)
           if (!sp2 || !/hello-bot/.test(sp2)) fail('슬래시 명령: 만든 명령이 `/` 메뉴에 안 나온다 ' + sp2)
           await pg.fill('.composer .cin', ''); await wait(200)
-          ok('슬래시 명령 관리 — 목록(파일 그대로) · + 로 만들면 문서 열과 `/` 메뉴에 바로')
+          ok('명령 · 스킬 한 칸 — 명령·스킬·커넥터가 한 목록 · + 로 만들면 문서 열과 `/` 메뉴에 바로')
+        }
+        /**
+         * 🔴 **V · 모바일 디자인 3종** (2026-09-22 Dave) — 세로로 눕는 버튼 글씨 · 손가락에 안 닿는 버튼 · 문서 화면의 버튼 과밀.
+         *    ⚠ 데스크톱 판으로는 못 잡는다 — 세 가지 다 **좁은 폭에서만** 난다. 그래서 폰 판을 따로 띄워 잰다.
+         */
+        if (name === 'desktop') {
+          // ⚠ `isMobile` 은 켜지 않는다 — 크롬 기기 흉내가 마우스를 터치로 바꿔 **누른 뒤의 끌기가 사라진다**(실측).
+          //    단계는 창 폭으로만 정해지므로(core/drawer) 폭 390 + hasTouch 면 폰 판이다 — H 의 좁음 판과 같은 방식.
+          const vpg = await br.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, deviceScaleFactor: 1 })
+          await vpg.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
+          await vpg.goto(base + `/#bot=${bot.id}`); await vpg.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(900)
+
+          // V-2 · 오른쪽 독 — 살짝 비치고(backdrop-filter), 잡아서 위아래로 옮길 수 있고, 그 자리를 기억한다
+          const dk = await vpg.evaluate(() => { const d = document.querySelector('.dock'); if (!d) return null; const c = getComputedStyle(d); return { blur: [c.backdropFilter, c.webkitBackdropFilter].join(' '), bg: c.backgroundColor, grip: !!d.querySelector('.grip'), y: d.getBoundingClientRect().top, h: d.getBoundingClientRect().height, db: d.querySelector('.db')?.getBoundingClientRect().height ?? 0 } })
+          if (!dk) fail('V-2: 폰에 독이 없다')
+          if (!/blur/.test(dk.blur)) fail('V-2: 독이 불투명하다(backdrop-filter 없음) ' + JSON.stringify(dk))
+          // ⚠ color-mix 의 계산값은 크롬이 `color(srgb … / .62)` 로 돌려준다 — 「rgba 로 시작하나」 로 재면 안 된다
+          const alpha = (c) => { const m = /\/\s*([0-9.]+)\s*\)/.exec(c) ?? /rgba?\([^)]*,\s*([0-9.]+)\)/.exec(c); return m ? +m[1] : 1 }
+          if (alpha(dk.bg) >= 0.95) fail('V-2: 독 배경이 반투명이 아니다 ' + dk.bg)
+          if (!dk.grip) fail('V-2: 잡는 손잡이(.grip)가 없다')
+          if (dk.db < 40) fail('V-3: 독 버튼이 손가락에 안 닿는다 ' + dk.db)
+          const gb = await vpg.locator('.dock .grip').boundingBox()
+          // ⚠ 한 번의 move(steps) 는 합쳐져 버린다 — H 의 쓸기처럼 한 걸음씩 쉬며 끈다
+          const gx = gb.x + gb.width / 2, gy = gb.y + gb.height / 2
+          await vpg.mouse.move(gx, gy); await vpg.mouse.down()
+          for (let i = 1; i <= 8; i++) { await vpg.mouse.move(gx, gy - (120 * i) / 8); await wait(16) }
+          await vpg.mouse.up(); await wait(450)
+          const moved = await vpg.evaluate(() => ({ y: document.querySelector('.dock').getBoundingClientRect().top, saved: localStorage.getItem('fb:docky') }))
+          if (dk.y - moved.y < 60) fail('V-2: 독을 끌었는데 안 올라갔다 ' + JSON.stringify({ before: dk.y, after: moved.y }))
+          if (!moved.saved || Math.abs(+moved.saved) < 60) fail('V-2: 옮긴 자리를 안 기억한다 ' + moved.saved)
+          await vpg.reload(); await vpg.waitForSelector('.dock', { timeout: 10000 }); await wait(700)
+          const kept = await vpg.evaluate(() => document.querySelector('.dock').getBoundingClientRect().top)
+          if (Math.abs(kept - moved.y) > 4) fail('V-2: 다시 열었더니 자리가 돌아갔다 ' + JSON.stringify({ moved: moved.y, kept }))
+
+          // 폴더 패널을 연다 — 절 머리(명령 · 스킬)와 목록 줄이 여기 있다
+          await vpg.click('.dock .db[title="파일"]'); await wait(800)
+          const vSech = vpg.locator('.sech', { hasText: '명령 · 스킬' })
+          if (!(await vSech.count())) fail('V: 폰 패널에 「명령 · 스킬」 절이 없다')
+          if (!(await vpg.$('.hsec.cmds'))) { await vSech.click(); await wait(600) }
+
+          /* V-1 · 🔴 **글씨는 가로로만 눕는다.** 칸이 좁으면 한글은 글자 단위로 감겨 「명/령」 처럼 **세로 기둥**이 된다.
+             판정은 «글씨가 있는 버튼의 높이가 두 줄을 넘지 않는가» — 세로로 서면 글자 수만큼 높아진다. */
+          const tall = await vpg.evaluate(() => {
+            const sel = '.ib, .btn, .nb, .rb, .cbtn, .tab, .hz.more, .dock .db, .dfoot .talk, .sech, .seg button, .snav .nv'
+            const bad = []
+            for (const el of document.querySelectorAll(sel)) {
+              if (!el.getBoundingClientRect().width) continue
+              // 🔴 글씨 **마디 하나**를 자로 잰다 — 한 마디의 줄 상자가 둘 이상이면 그 글씨는 감긴 것이다.
+              //    (요소째로 재면 아이콘·배지의 상자까지 세어 «여러 줄» 로 오판한다)
+              const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+              for (let n = w.nextNode(); n; n = w.nextNode()) {
+                const t = (n.nodeValue ?? '').trim(); if (t.length < 2 || t.length > 24) continue
+                const rg = document.createRange(); rg.selectNodeContents(n)
+                const lines = [...rg.getClientRects()].filter((x) => x.width > 0.5 && x.height > 0.5).length
+                if (lines > 1) bad.push({ cls: el.className, t: t.slice(0, 16), lines })
+              }
+            }
+            return bad
+          })
+          if (tall.length) fail('V-1: 버튼 글씨가 세로로 눕는다 ' + JSON.stringify(tall))
+
+          // V-3 · 손가락 — 목록 줄과 절 머리의 버튼
+          const taps = await vpg.evaluate(() => {
+            const h = (q) => [...document.querySelectorAll(q)].map((e) => Math.round(e.getBoundingClientRect().height)).filter((x) => x > 0)
+            return { hz: h('.hsec .hz'), tools: h('.sech .tools .ib'), ib: h('.rpwrap .sec .ib') }
+          })
+          if (taps.hz.some((x) => x < 42)) fail('V-3: 목록 줄이 손가락에 안 닿는다 ' + JSON.stringify(taps.hz))
+          if (taps.tools.some((x) => x < 34)) fail('V-3: 절 머리 버튼이 너무 작다 ' + JSON.stringify(taps.tools))
+          await vpg.screenshot({ path: 'test/tmp/v-phone-panel.png' })
+
+          /* V-5 · 문서 화면 — 경로 줄에는 ⋯ 하나만 남는다(목차·외부에서 열기는 그 안으로).
+             앞뒤로 넘기기는 아래 줄에 «몇 번째인지» 와 함께 있다 — 같은 조작을 위아래에 두 벌 두지 않는다. */
+          // ⚠ 줄 글에는 시각이 붙는다(«readme.md오전 2:38») — 이름 칸(.n)만 본다
+          const opened = await vpg.evaluate(() => { const r = [...document.querySelectorAll('.rpwrap .trow:not(.dir)')].find((e) => /\.md$/.test((e.querySelector('.n')?.textContent ?? '').trim())); r?.click(); return r?.querySelector('.n')?.textContent ?? null })
+          if (!opened) fail('V-5: 폰 패널에서 열 .md 파일을 못 찾았다 ')
+          await vpg.waitForSelector('.docwrap .dtb', { timeout: 8000 }); await wait(700)
+          const dv = await vpg.evaluate(() => {
+            const vis = (e) => e.getBoundingClientRect().width > 0
+            const r = document.querySelector('.docwrap .dtb .r')
+            const foot = document.querySelector('.docwrap .dfoot')
+            return {
+              btns: [...(r?.querySelectorAll('button') ?? [])].filter(vis).length,
+              more: !!r?.querySelector('.ib:not(.tocb):not(.openb)'),
+              footRb: [...(foot?.querySelectorAll('.rb') ?? [])].map((e) => Math.round(e.getBoundingClientRect().height)),
+              pos: foot?.querySelector('.pos')?.textContent ?? '',
+              talkH: Math.round(foot?.querySelector('.talk')?.getBoundingClientRect().height ?? 0)
+            }
+          })
+          if (dv.btns > 1) fail('V-5: 문서 경로 줄에 버튼이 아직 많다 ' + JSON.stringify(dv))
+          if (dv.footRb.some((x) => x < 44)) fail('V-3: 문서 앞뒤 버튼이 손가락에 안 닿는다 ' + JSON.stringify(dv))
+          if (dv.footRb.length && !/\d+ \/ \d+/.test(dv.pos)) fail('V-5: 아래 줄에 몇 번째인지가 없다 ' + JSON.stringify(dv))
+          if (dv.talkH && dv.talkH < 44) fail('V-3: 「봇에게 말하기」 가 너무 작다 ' + JSON.stringify(dv))
+          // 목차는 ⋯ 안으로 들어갔다 (제목이 둘 이상인 문서일 때)
+          await vpg.screenshot({ path: 'test/tmp/v-phone-doc.png' })
+          await vpg.close()
+          ok('V 모바일 — 독 반투명·끌어 옮기기(기억) · 버튼 글씨 가로 · 손가락 크기 · 문서 줄은 ⋯ 하나 → test/tmp/v-phone-*.png')
         }
         // 🔴 문장 중간의 / 도 자동완성이 떠야 한다 (2026-09-13 Dave: «입력 중간에 / 를 입력해도»)
         await pg.fill('.composer .cin', '안녕 /st'); await wait(400)

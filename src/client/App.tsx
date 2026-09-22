@@ -22,6 +22,7 @@ import { attachRoom } from '../core/attach'
 import { applyViewport, planViewport } from '../core/viewport'
 import { canStartSwipe, dragProgress, lockOf, scrollableEats, stageOf, swipeTarget, swipeVerdict, type Cell } from '../core/drawer'
 import { botUnread, shouldMarkRead } from '../core/unread'
+import { clampDockOffset, isDockDrag, readDockOffset } from '../core/dock'
 import { SwipeRow } from './SwipeRow'
 import { dueChip } from '../core/botName'
 import { LocalOpenHost, localBridge, openOnThisDevice, useLocalSettings } from './localOpen'
@@ -556,6 +557,46 @@ function Main() {
    */
   const coarse = useMedia('(pointer: coarse)') || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) || isDesktop
   const cell: Cell = view === 'list' ? 'left' : view === 'panel' || view === 'doc' ? 'right' : 'chat'
+  /**
+   * V · **독을 잡아 위아래로 옮긴다** (2026-09-22 Dave). 자리는 «가운데에서 얼마나» 로 기기에 남고, 그릴 때마다 화면 안으로 가둔다(`core/dock`).
+   * ⚠ 탭과 갈라야 한다 — 6px 를 안 넘긴 끌기는 «누른 것» 이라 단추가 제 일을 한다(`isDockDrag`).
+   * ⚠ 독의 포인터는 서랍 쓸기로 새면 안 된다(`stopPropagation`) — 독을 잡고 세로로 끄는 동안 채팅이 넘어가면 안 된다.
+   */
+  const dockRef = useRef<HTMLDivElement>(null)
+  const [dockY, setDockY] = useState(() => { try { return readDockOffset(localStorage.getItem('fb:docky')) } catch { return 0 } })
+  const [dockDrag, setDockDrag] = useState(false)
+  const dockG = useRef<{ id: number; y0: number; base: number; moved: boolean } | null>(null)
+  const dockFit = (v: number) => clampDockOffset(v, window.innerHeight, dockRef.current?.getBoundingClientRect().height ?? 160)
+  useEffect(() => { const f = () => setDockY((v) => dockFit(v)); window.addEventListener('resize', f); return () => window.removeEventListener('resize', f) }, [])
+  /* 🔴 **끌기는 창에서 듣는다.** 손잡이는 독의 **맨 위**라 위로 조금만 끌면 손가락이 곧바로 독 밖으로 나간다 —
+     요소에 건 `onPointerMove` 는 그 순간 끊겨 **독이 아예 안 움직인다**(실측).
+     ⛔ 대신 `setPointerCapture` 를 누르자마자 걸지 마라 — 그러면 독 **단추의 클릭이 사라진다**(실측: H 중간 판 «독 📁» 가 안 열렸다).
+     그래서 창(window)에 듣고, 6px 문턱을 넘은 뒤에만 자리를 옮긴다. */
+  const dockOff = useRef<(() => void) | null>(null)
+  useEffect(() => () => dockOff.current?.(), [])
+  const dockDown = (e: React.PointerEvent) => {
+    if (e.button !== 0 || dockG.current) return
+    e.stopPropagation()
+    const g = { id: e.pointerId, y0: e.clientY, base: dockY, moved: false }
+    dockG.current = g
+    const move = (ev: PointerEvent) => {
+      if (ev.pointerId !== g.id) return
+      const dy = ev.clientY - g.y0
+      if (!g.moved && !isDockDrag(dy)) return
+      if (!g.moved) { g.moved = true; setDockDrag(true) }
+      ev.preventDefault(); setDockY(dockFit(g.base + dy))
+    }
+    const up = (ev: PointerEvent) => {
+      if (ev.pointerId !== g.id) return
+      dockOff.current?.(); dockG.current = null
+      if (!g.moved) return
+      setDockDrag(false)
+      setDockY((v) => { const f = dockFit(v); try { localStorage.setItem('fb:docky', String(Math.round(f))) } catch { /* */ } return f })
+    }
+    const off = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); dockOff.current = null }
+    dockOff.current = off
+    window.addEventListener('pointermove', move, { passive: false }); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up)
+  }
   const gref = useRef<{ id: number; x0: number; y0: number; t0: number; lock: '' | 'h' | 'v'; side: 'left' | 'right' | null; next: Cell; target: HTMLElement; dead: boolean } | null>(null)
   const [dragSide, setDragSide] = useState<'' | 'left' | 'right'>('')
   const leftRef = useRef<HTMLDivElement>(null); const rightRef = useRef<HTMLDivElement>(null); const scrimRef = useRef<HTMLDivElement>(null); const colsRef = useRef<HTMLDivElement>(null)
@@ -754,7 +795,9 @@ function Main() {
       {narrow && (view === 'list' || dragSide === 'left') ? <div className={`drawer left ${view === 'list' ? 'open' : ''}`} ref={leftRef}>{phone ? homeEl : sidebarEl}</div> : null}
       {narrow && (view === 'panel' || view === 'doc' || dragSide === 'right') ? <div className={`drawer right ${view === 'panel' || view === 'doc' ? 'open' : ''}`} ref={rightRef}>{view === 'doc' && showDoc ? docwrapEl : rpwrapEl}</div> : null}
       {/* H-4 · 알약 독 — 채팅 오른쪽 가장자리에 세로로. 📄 문서(없으면 흐리게) · ☑ 할 일 · 📁 파일 · ↗ 외부에서 열기(문서가 열려 있을 때). 이모지 대신 앱 아이콘 */}
-      {narrow && view === 'chat' && !kb ? <div className={`dock ${phone ? 'sm' : ''}`}>
+      {narrow && view === 'chat' && !kb ? <div className={`dock ${phone ? 'sm' : ''} ${dockDrag ? 'dragging' : ''}`} ref={dockRef} style={{ translate: `0 ${dockY}px` }}
+        onPointerDown={dockDown}>
+        <span className="grip" title="잡아서 위아래로 옮기기"><i /></span>
         <button className={`db ${docs.tabs.length ? '' : 'dim'}`} title="문서" disabled={!docs.tabs.length} onClick={() => setView('doc')}><Icon n="doc" size={16} />{docs.tabs.length ? <span className="bd">{docs.tabs.length}</span> : null}</button>
         <button className="db" title={bot.orchestrator ? 'Inbox' : '할 일'} onClick={() => { setFocusSec({ sec: 'todo', n: Date.now() }); setView('panel') }}><Icon n="check" size={16} />{(s.todos[bot.id] ?? []).filter((t) => !t.done).length ? <span className="bd">{(s.todos[bot.id] ?? []).filter((t) => !t.done).length}</span> : null}</button>
         <button className="db" title="파일" onClick={() => { setFocusSec({ sec: 'files', n: Date.now() }); setView('panel') }}><Icon n="folder" size={16} /></button>

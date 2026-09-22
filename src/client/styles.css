@@ -44,12 +44,12 @@ b,strong { color:var(--w); font-weight:600 }
 .menu { position:absolute; background:var(--box); border:1px solid var(--line2); border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,.5); padding:5px; display:flex; flex-direction:column; gap:1px; z-index:30; font-size:12.5px; min-width:190px }
 .menu button { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:5px; width:100%; min-height:30px; color:var(--t) } .menu button:hover { background:var(--sel) } .menu button.on { color:var(--w) } .menu button.warn { color:var(--wait) } .menu .k { margin-left:auto; font-family:var(--mono); font-size:10.5px; color:var(--t3) } .menu .h { font-size:10.5px; color:var(--t3); padding:4px 8px 2px } .menu hr { border:0; border-top:1px solid var(--line); margin:4px 0 }
 /* 유리 — 떠 있는 것만 */
-.glass { background:var(--glassA); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur) }
-.glassb { background:var(--glassB); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur) }
-@media (prefers-reduced-transparency: reduce) { .glass, .glassb { background:var(--solid); backdrop-filter:none; -webkit-backdrop-filter:none } }
-.app.noglass .glass, .app.noglass .glassb { background:var(--solid); backdrop-filter:none; -webkit-backdrop-filter:none }
+.glass { background:var(--glassA); backdrop-filter:var(--blur)}
+.glassb { background:var(--glassB); backdrop-filter:var(--blur)}
+@media (prefers-reduced-transparency: reduce) { .glass, .glassb { background:var(--solid); backdrop-filter:none} }
+.app.noglass .glass, .app.noglass .glassb { background:var(--solid); backdrop-filter:none}
 /* 둥근 버튼 (모바일 · ↓ 최근으로) */
-.rb { position:relative; width:44px; height:44px; border-radius:50%; border:1px solid var(--hair); background:var(--glassB); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); display:inline-flex; align-items:center; justify-content:center; color:var(--w); flex:none; box-shadow:0 6px 20px rgba(0,0,0,.35) } .rb:active { transform:scale(.96) }
+.rb { position:relative; width:44px; height:44px; border-radius:50%; border:1px solid var(--hair); background:var(--glassB); backdrop-filter:var(--blur); display:inline-flex; align-items:center; justify-content:center; color:var(--w); flex:none; box-shadow:0 6px 20px rgba(0,0,0,.35) } .rb:active { transform:scale(.96) }
 
 /* ── 앱 뼈대 ── */
 .app { height:100%; display:flex; flex-direction:column; overflow:hidden }
@@ -69,10 +69,18 @@ b,strong { color:var(--w); font-weight:600 }
 .cols.dragging .drawer, .cols.dragging .scrim { transition:none } .cols.dragging { user-select:none; -webkit-user-select:none }
 .app.smid .strip.left { width:52px } .app.smid .strip.left .fly { left:46px }
 /* H-4 · 알약 독 — 채팅 오른쪽 가장자리에 세로로 떠 있는 아이콘 묶음 */
-.dock { position:absolute; right:10px; top:50%; translate:0 -50%; z-index:20; display:flex; flex-direction:column; gap:2px; padding:5px; border-radius:22px; border:1px solid var(--hair); background:var(--box); box-shadow:0 8px 24px rgba(0,0,0,.4) }
-.dock .db { position:relative; width:36px; height:36px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; color:var(--t2) } .dock .db:hover { background:var(--sel); color:var(--w) } .dock .db.dim { opacity:.35 } .dock .db:disabled { pointer-events:none }
-.dock .db .bd { position:absolute; right:-2px; top:-2px; min-width:16px; height:16px; padding:0 4px; border-radius:8px; background:var(--run); color:#fff; font-size:10px; line-height:16px; text-align:center }
-.dock.sm { right:6px; padding:3px; gap:0 } .dock.sm .db { width:32px; height:32px }
+/* V (2026-09-22 Dave) · 독은 **반투명 유리**라 뒤 글이 비쳐 자리를 덜 먹고, 잡아서 위아래로 옮길 수 있다(자리는 기기에 남는다).
+   ⚠ `translate` 는 JS 가 세로 오프셋을 넣는 자리다 — 가운데 맞춤은 `top:50%` + `margin-top` 으로 해서 서로 안 싸운다. */
+.dock { position:absolute; right:10px; top:50%; margin-top:-80px; z-index:20; display:flex; flex-direction:column; gap:2px; padding:5px; border-radius:24px; border:1px solid rgba(255,255,255,.10);
+  background:color-mix(in srgb, var(--box) 62%, transparent); backdrop-filter:blur(14px) saturate(1.2);
+  box-shadow:0 8px 24px rgba(0,0,0,.4); touch-action:none; transition:translate .16s ease-out, opacity .16s }
+.dock.dragging { transition:none; cursor:grabbing; opacity:.92; box-shadow:0 14px 36px rgba(0,0,0,.55) }
+.dock .db { position:relative; width:40px; height:40px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; color:var(--t2) } .dock .db:hover { background:var(--sel); color:var(--w) } .dock .db.dim { opacity:.35 } .dock .db:disabled { pointer-events:none }
+.dock .db .bd { position:absolute; right:-1px; top:-1px; min-width:16px; height:16px; padding:0 4px; border-radius:8px; background:var(--run); color:#fff; font-size:10px; line-height:16px; text-align:center }
+/* 잡는 곳 — 맨 위 손잡이. 여기서 시작한 끌기가 가장 자연스럽다(단추 위에서 끌어도 된다) */
+.dock .grip { height:14px; display:flex; align-items:center; justify-content:center; cursor:grab } .dock .grip i { width:18px; height:3px; border-radius:2px; background:var(--t3); display:block }
+.dock.sm { right:8px; padding:4px; gap:2px } .dock.sm .db { width:44px; height:44px }   /* 폰은 손가락 크기 44px */
+@media (prefers-reduced-transparency: reduce) { .dock { background:var(--box); backdrop-filter:none} }
 .app.smid .cols > .col.chat { min-width:0 }
 .col { display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--bg) } .col.side { background:var(--sb); flex:none }
 .divx { width:1px; flex:none; background:var(--line); position:relative; cursor:col-resize; z-index:2 } .divx::before { content:''; position:absolute; left:-4px; right:-4px; top:0; bottom:0 } .divx:hover { background:var(--run); box-shadow:0 0 0 1px rgba(224,136,80,.3) }
@@ -140,7 +148,7 @@ b,strong { color:var(--w); font-weight:600 }
 
 /* ── 채팅 — 스크롤 컨테이너 하나, 유리(헤더 · 고정 질문 · ↓ · 컴포저)는 그 형제 ── */
 .col.chat { position:relative; --footh:132px; min-width:360px } /* CHAT_MIN — 열 계산이 틀려도 CSS 가 마지막 방어선 */
-.chat-hdr { position:absolute; left:0; right:0; top:0; z-index:4; border-bottom:1px solid var(--hair) } .chat-hdr.glass { background:var(--bg); backdrop-filter:none; -webkit-backdrop-filter:none } .chat-hdr::after { content:''; position:absolute; left:0; right:0; top:100%; height:28px; background:linear-gradient(180deg, var(--bg), var(--fade0)); pointer-events:none }
+.chat-hdr { position:absolute; left:0; right:0; top:0; z-index:4; border-bottom:1px solid var(--hair) } .chat-hdr.glass { background:var(--bg); backdrop-filter:none} .chat-hdr::after { content:''; position:absolute; left:0; right:0; top:100%; height:28px; background:linear-gradient(180deg, var(--bg), var(--fade0)); pointer-events:none }
 /* 🔴 좌우는 고정이다 (2026-09-17 Dave: «모바일에서 화면이 좌우로 드래그 되면 안돼»). 넓은 코드 블록이 있으면 스크롤 상자가 통째로
    옆으로 밀렸다 — 옆으로 흐르는 것은 그 블록 **안**에서만(.md pre 는 제 안에서 스크롤한다). 세로만 판다. */
 .chat-scroll { position:absolute; inset:0; overflow-x:hidden; overflow-y:auto; display:flex; flex-direction:column; overscroll-behavior:contain; overscroll-behavior-y:contain; -webkit-overflow-scrolling:touch; touch-action:pan-y }
@@ -537,7 +545,7 @@ b,strong { color:var(--w); font-weight:600 }
   /* 대화 — 위 페이드 + 둥근 버튼 · 봇 알약 · 아래 알약 컴포저 */
   .col.chat { --footh:150px; min-width:0 }
   /* 위는 페이드 없이 불투명 — 글이 헤더 밑으로 비쳐 보이지 않는다 (Dave 2026-09-13: «상단도 fade 안되게, 채팅만 fade»). 페이드는 아래(컴포저 위)에만 */
-  .chat-hdr.hdr { height:auto; padding:calc(var(--sat) + 10px) 16px 10px; border-bottom:0; background:var(--bg); backdrop-filter:none; -webkit-backdrop-filter:none; gap:10px }
+  .chat-hdr.hdr { height:auto; padding:calc(var(--sat) + 10px) 16px 10px; border-bottom:0; background:var(--bg); backdrop-filter:none; gap:10px }
   .bpill { display:inline-flex; align-items:center; gap:8px; height:44px; padding:0 14px 0 8px; border-radius:22px; border:1px solid var(--hair); max-width:100%; min-width:0 } .bpill b { font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 }
   .chat-body { padding:calc(var(--sat) + 72px) 18px calc(var(--footh) + 10px + var(--settle, 0px)); gap:14px; font-size:16px; line-height:1.6 }
   .pinq { top:calc(var(--sat) + 62px); width:calc(100% - 36px); border-radius:14px; padding:10px 14px; font-size:15px }
@@ -564,7 +572,7 @@ b,strong { color:var(--w); font-weight:600 }
   /* 폴더(패널) · 문서 — 밀어 넣는 화면 */
   .rpwrap .hdr, .docwrap .hdr { height:auto; padding:calc(var(--sat) + 12px) 16px 10px; border-bottom:0; gap:10px } .rpwrap .hdr .ttl, .docwrap .hdr .ttl { font-size:22px }
   .rpwrap .hdr .ib.on, .docwrap .hdr .ib { display:none }
-  .sech { font-size:13px; padding:12px 18px 6px; min-height:36px } .sech .tools { opacity:1 } .sech .tools .ib.mdb { width:auto; padding:0 8px; height:24px } .sech .tools .ib.mdb span { display:inline }
+  .sech { font-size:13px; padding:12px 18px 6px; min-height:36px } .sech .tools { opacity:1 } .sech .tools .ib.mdb { width:auto; padding:0 10px; height:34px } .sech .tools .ib.mdb span { display:inline }
   .trow { min-height:46px; font-size:16px; gap:12px; padding-left:calc(var(--pad,14px) + 6px) } .trow time { visibility:visible; font-size:13px } .trow .cv { width:13px }
   .srow { min-height:44px; font-size:15px; margin:0 10px } .srow .del, .srow .ren { opacity:1; width:30px; height:30px } .srow.edit .rin { height:30px; font-size:15px } .kv { font-size:14px; min-height:36px }
   .sec.fix[style] { height:auto !important; max-height:240px }
@@ -1119,3 +1127,38 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 
 /* 복사 진단 결과 — 그대로 보내 주면 되는 글 (2026-09-21) */
 .diagout { max-width:min(420px, 60vw); max-height:180px; overflow:auto; white-space:pre-wrap; word-break:break-all; font-size:11.5px; line-height:1.5; color:var(--t2); background:var(--box); border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin:0 }
+
+/* ══ V (2026-09-22) — 모바일 손가락 · 버튼 글씨 · 문서 화면 ══════════════════
+   Dave: «버튼에 글씨가 세로로 표시되는 곳들이 있어» · «모바일에서 버튼들이 너무 작아»
+        · «문서 쪽에도 버튼이 너무 많거나» */
+
+/* V-1 ─ 🔴 **버튼 글씨는 절대 세로로 눕지 않는다.**
+   칸이 좁아지면 브라우저는 한글을 **글자 단위로 감는다** — 「명령」 이 「명/령」 으로 서서
+   버튼이 세로 글씨 기둥이 된다. 글씨를 담는 버튼은 전부 한 줄로 못 박고, 넘치면 … 로 자른다.
+   ⛔ 폭을 줄여 해결하려 들지 마라 — 좁아지는 순간 같은 모양이 다시 난다. */
+.ib, .btn, .nb, .rb, .cbtn, .tab, .dtb, .hz.more, .dock .db, .dfoot .talk, .sech, .seg button, .snav .nv, .menu.ctx button { white-space:nowrap }
+.sech > span:not(.tools):not(.sp) { min-width:0; overflow:hidden; text-overflow:ellipsis }
+.sech .c, .sech .tools { flex:none }
+.ib > span, .btn > span, .nb > span, .rb > span { white-space:nowrap }
+
+@media (max-width:767px) {
+  /* V-3 ─ 손가락이 닿는 넓이. 아이콘은 그대로 두고 **누를 수 있는 칸**만 키운다
+     (애플 HIG 44pt · 안드로이드 48dp — 둘 사이인 40~44px 로 맞춘다). */
+  .ib { width:40px; height:40px; border-radius:11px }
+  .sech .tools .ib { width:36px; height:36px }
+  .hz { min-height:44px } .hz.more { min-height:40px }
+  .kv { min-height:44px }
+  .srow .del, .srow .ren { width:38px; height:38px }
+  .seg button { min-height:38px; padding:0 14px; font-size:13px }
+  .menu button, .menu .menu-a { min-height:44px }
+  .dtb .nb { width:34px; height:34px }
+
+  /* V-5 ─ 문서 화면은 **경로 한 줄 + ⋯** 만 남긴다.
+     앞뒤로 넘기기는 이미 아래 줄(.dfoot)에 있고, 목차·외부에서 열기는 ⋯ 안으로 들어갔다
+     (Doc.tsx 의 메뉴). 같은 조작을 위아래에 두 벌 두지 않는다. */
+  .dtb .r .nb, .dtb .r .pos, .dtb .r .tocb, .dtb .r .openb { display:none }
+  .dtb { min-height:40px }
+  .dfoot .rb { width:46px; height:46px }
+  .dfoot .pos { font-size:13px; color:var(--t3); font-variant-numeric:tabular-nums }
+  .dfoot .talk { height:46px; border-radius:23px; font-size:15px }
+}
