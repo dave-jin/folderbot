@@ -1,9 +1,16 @@
 import type React from "react"
+import type { Holder } from '../core/waiting'
 import type { SessionState } from '../core/types'
 
-export type Mood = 'idle' | 'work' | 'wait' | 'done' | 'sleep' | 'error'
-export function moodOf(state?: SessionState | null, hibernated = false): Mood {
+/**
+ * AB(2026-09-23 · Dave 「B안」) — `hold` 가 새로 들어왔다. **«남이 공을 들고 있다»** 는 뜻이고
+ * `work`(내가 들고 있다)와 **눈·색·맥동 속도**로 갈린다. 입은 안 건드린다 — 28px 레일에서 뭉개진다.
+ */
+export type Mood = 'idle' | 'work' | 'hold' | 'wait' | 'done' | 'sleep' | 'error'
+export function moodOf(state?: SessionState | null, hibernated = false, holder?: Holder): Mood {
   if (hibernated && (!state || state === 'idle')) return 'sleep'
+  // AB · 「내가 일하는 중」과 「남을 기다리는 중」은 다른 얼굴이다. 🔴 **턴이 끝나도(bg) 남이 들고 있으면 기다리는 얼굴**이다
+  if (holder === 'other') return 'hold'
   switch (state) { case 'running': return 'work'; case 'awaiting_input': return 'wait'; case 'done': return 'done'; case 'error': return 'error'; default: return 'idle' }
 }
 
@@ -30,12 +37,15 @@ export function FolderBot({ color, size = 36, mood = 'idle', mono = false, work,
   const eyes: Record<Mood, React.ReactNode> = {
     idle: <g className="eyes"><rect x="20" y="30" width="6" height="10" rx="3" fill={d} /><rect x="38" y="30" width="6" height="10" rx="3" fill={d} /></g>,
     work: <><g className="eyes"><rect x="20" y="33" width="6" height="8" rx="3" fill={d} /><rect x="38" y="33" width="6" height="8" rx="3" fill={d} /></g><path className="mouth" d="M27 46h10" stroke={d} strokeWidth="3" strokeLinecap="round" /></>,
+    // AB · 남을 기다리는 중 — **반쯤 감은 눈**(내 차례가 아니다) + 일자 입. 눈만 바꾸므로 작은 크기에서도 읽힌다
+    hold: <><g className="eyes"><rect x="20" y="34" width="6" height="3" rx="1.5" fill={d} /><rect x="38" y="34" width="6" height="3" rx="1.5" fill={d} /></g><path className="mouth" d="M27 46h10" stroke={d} strokeWidth="3" strokeLinecap="round" fill="none" /></>,
     wait: <><g className="eyes"><rect x="20" y="30" width="6" height="10" rx="3" fill={d} /><rect x="38" y="30" width="6" height="10" rx="3" fill={d} /></g><circle className="mouth" cx="32" cy="47" r="3" fill={d} /><path className="mark" d="M50 14v10M50 28v2" stroke="#fff" strokeWidth="4" strokeLinecap="round" style={{ filter: 'drop-shadow(0 0 1px rgba(0,0,0,.6))' }} /></>,
     done: <><g className="eyes"><path d="M19 34c2-3 6-3 8 0M37 34c2-3 6-3 8 0" stroke={d} strokeWidth="3" fill="none" strokeLinecap="round" /></g><path className="mouth" d="M26 44c3 4 9 4 12 0" stroke={d} strokeWidth="3" fill="none" strokeLinecap="round" /></>,
     sleep: <><g className="eyes"><path d="M19 36h8M37 36h8" stroke={d} strokeWidth="3" strokeLinecap="round" /></g><text className="mark" x="46" y="20" fontSize="12" fontWeight="700" fill={d} fontFamily="system-ui">z</text></>,
     error: <><g className="eyes"><path d="M19 30l7 7M26 30l-7 7M37 30l7 7M44 30l-7 7" stroke={d} strokeWidth="3" strokeLinecap="round" /></g><path className="mouth" d="M27 47c3-3 9-3 12 0" stroke={d} strokeWidth="3" fill="none" strokeLinecap="round" /></>
   }
-  const badge: Partial<Record<Mood, string>> = { work: 'var(--run)', wait: 'var(--wait)', done: 'var(--done)', error: 'var(--err)' }
+  // 🔴 색은 「누가 공을 들고 있나」 하나로 읽힌다 — 주황=내가 · 청록=남이 · 노랑=네가 · 초록=아무도 (AB)
+  const badge: Partial<Record<Mood, string>> = { work: 'var(--run)', hold: 'var(--hold)', wait: 'var(--wait)', done: 'var(--done)', error: 'var(--err)' }
   return (
     <svg viewBox="0 0 64 64" width={size} height={size} style={{ flex: 'none', display: 'block', overflow: 'visible' }} className={`fb fb-${mood} ${work ? `fbw fbw-${work}` : ''} ${size <= 20 ? 'sm' : ''} ${unread ? 'unread' : ''}`}>
       {/* 서류 — `file` 일 때만 보인다(그 외에는 CSS 가 감춘다). 탭 위로 올라와 사라진다 */}

@@ -189,6 +189,8 @@ export interface SessionRec {
   model?: string
   effort?: string
   activity?: string
+  /** AB · 지금 돌고 있는 도구 한 개 — 「남을 기다리는 중」 판정의 단서 (판정은 `core/waiting`) */
+  inflight?: { name: string; summary?: string; since: number }
   turnStartedAt?: number
   ctx?: { used: number; window: number }
   restartPending?: boolean
@@ -271,7 +273,7 @@ export class SessionManager extends EventEmitter {
   }
   info(r: SessionRec): SessionInfo {
     const w = this.workers.get(r.id)
-    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
+    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, inflight: r.inflight, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
   }
   get(id: string): SessionRec | undefined { return this.recs.get(id) }
   /** 볼트 전체의 세션 기록 — 「지난 대화 찾기」 가 훑는다(읽기만) */
@@ -531,6 +533,7 @@ export class SessionManager extends EventEmitter {
         if (!cur) { cur = { id: itemId('a'), t: Date.now(), kind: 'assistant', text: '', streaming: true }; this.streaming.set(r.id, cur); r.items.push(cur) }
         cur.text += ev.delta.text ?? ''
         this.emit('chat', r.id, cur, true)
+        r.inflight = undefined                      // 답이 오기 시작하면 공은 다시 우리 손에 있다 (AB)
         this.setActivity(r, '답 쓰는 중')
       } else if (ev?.type === 'content_block_delta' && ev.delta?.type === 'thinking_delta' && !parent) {
         let th = this.thinking.get(r.id)
@@ -538,6 +541,7 @@ export class SessionManager extends EventEmitter {
         th.text += ev.delta.thinking ?? ''
         if (th.text.trim() && !this.thinkShown.has(r.id)) { this.thinkShown.add(r.id); r.items.push(th) }
         const now = Date.now(); if (this.thinkShown.has(r.id) && now - (this.thinkSent.get(r.id) ?? 0) > 150) { this.thinkSent.set(r.id, now); this.emit('chat', r.id, th, true) }
+        r.inflight = undefined                      // 생각하고 있다 = 내가 들고 있다 (AB)
         this.setActivity(r, th.text.trim() ? `생각 중 · ${th.text.slice(-90).replace(/\s+/g, ' ')}` : '생각 중')
       }
       this.setState(r, { kind: 'stream_activity' })
@@ -568,11 +572,13 @@ export class SessionManager extends EventEmitter {
         }
         if ((name === 'Task' || name === 'Agent') && !parent) {
           this.push(r, { id, t: Date.now(), kind: 'subagent', name: toolSummary(name, input) || '서브에이전트', prompt: typeof input.prompt === 'string' ? input.prompt : '', tools: 0, last: '', status: 'run' })
+          r.inflight = { name, summary: toolSummary(name, input) || '서브에이전트', since: Date.now() }
           this.setActivity(r, `에이전트 · ${toolSummary(name, input)}`, true)
           continue
         }
         this.push(r, { id, t: Date.now(), kind: 'tool', name, summary: toolSummary(name, input), input, parentId: sub ? sub.id : undefined })
         if (sub) { sub.tools += 1; sub.last = `${name} ${toolSummary(name, input)}`.slice(0, 80); this.push(r, sub, true) }
+        r.inflight = { name, summary: toolSummary(name, input), since: Date.now() }
         this.setActivity(r, `${sub ? `${sub.name} › ` : ''}${name} · ${toolSummary(name, input)}`.slice(0, 120), true)
         const tp = touchedPath(name, input); if (tp) { touched.push(tp); this.captureBefore(r, tp, name) }
         else if (name === 'Read' && typeof input.file_path === 'string') this.seenOf(r).set(input.file_path, this.diskText(input.file_path))
@@ -607,6 +613,7 @@ export class SessionManager extends EventEmitter {
       for (const it of closeOpenItems(r.items, 'result')) this.push(r, it, true)
       this.push(r, { id: itemId('r'), t: Date.now(), kind: 'result', ok: !line.is_error, durationMs: line.duration_ms ?? 0, costUsd: line.total_cost_usd, error: line.is_error ? String(line.error ?? line.result ?? '') : undefined })
       const ctx = contextOf(line, r.ctx, r.model); if (ctx) r.ctx = ctx
+      r.inflight = undefined                        // 턴이 끝났으면 아무도 안 들고 있다 (AB)
       this.setActivity(r, '', true)
       this.setState(r, { kind: 'result_received', isError: !!line.is_error })
       // 안전망 — 이 턴에 파일을 썼으면 턴이 끝날 때 한 번 더 알린다(중간 신호를 놓친 화면도 여기서 따라잡는다)

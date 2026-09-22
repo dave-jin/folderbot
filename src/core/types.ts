@@ -114,6 +114,11 @@ export interface SessionInfo {
   routine?: string
   /** 지금 하는 일 한 줄 (도구명 · 요약 / 생각 중 / 답 쓰는 중) */
   activity?: string
+  /**
+   * AB · **지금 돌고 있는 도구 한 개** (2026-09-23). 「생각 중」과 「남을 기다리는 중」을 가르는 유일한 단서다 —
+   * 판정은 `core/waiting.holderOf()` 가 하고(순수), 여기서는 **사실만** 적어 보낸다. 턴이 끝나거나 답이 오면 지운다.
+   */
+  inflight?: { name: string; summary?: string; since: number }
   /** S · 마지막으로 **봇이 낸 말**의 시각 — 이것과 `readAt` 의 크기 비교 하나가 «안 읽음» 이다 (`core/unread`) */
   lastReplyAt?: number
   /** S · 내가 **맨 아래까지 봤다**고 적은 시각. 볼트에 남아 기기를 가로질러 같다 */

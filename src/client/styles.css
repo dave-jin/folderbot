@@ -1,5 +1,5 @@
 /* Folder Bot — V4 컴포저 · V7 모바일 · V9 유리. 바탕 #141414 사다리(커서 실측) · 색은 상태 점 4개와 흰 버튼뿐 · 떠 있는 것만 유리 */
-:root { --bg:#141414; --bg2:#181818; --sb:#111111; --line:#232323; --line2:#2c2c2c; --box:#1c1c1c; --sel:#222222; --hover:#1a1a1a; --w:#ededed; --t:#d6d6d6; --t2:#9a9a9a; --t3:#666666; --run:#e08850; --wait:#e2a33b; --done:#4fbf87; --err:#e5534b; --ui:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',system-ui,sans-serif; --mono:'JetBrains Mono','SF Mono',Menlo,monospace; --hh:44px;
+:root { --bg:#141414; --bg2:#181818; --sb:#111111; --line:#232323; --line2:#2c2c2c; --box:#1c1c1c; --sel:#222222; --hover:#1a1a1a; --w:#ededed; --t:#d6d6d6; --t2:#9a9a9a; --t3:#666666; --run:#e08850; --hold:#4aa8c7; --wait:#e2a33b; --done:#4fbf87; --err:#e5534b; --ui:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',system-ui,sans-serif; --mono:'JetBrains Mono','SF Mono',Menlo,monospace; --hh:44px;
   --glassA:rgba(20,20,20,.70); --glassB:rgba(28,28,28,.68); --hair:rgba(255,255,255,.07); --blur:blur(22px) saturate(1.4); --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
   /* 페이드·단색 유리 — 라이트 테마에서 통째로 갈린다 */
   --fade0:rgba(20,20,20,0); --fadeA:rgba(20,20,20,.88); --fadeB:rgba(24,24,24,.96); --solid:#1a1a1a; --hover0:rgba(26,26,26,0); --shadow:rgba(0,0,0,.45); --onAccent:#111 }
@@ -7,7 +7,7 @@
 :root[data-theme="light"] {
   --bg:#ffffff; --bg2:#f4f4f5; --sb:#f6f6f7; --line:#e4e4e6; --line2:#d6d6d9; --box:#efeff1; --sel:#e6e6e9; --hover:#f1f1f3;
   --w:#111111; --t:#2e2e2e; --t2:#5f5f5f; --t3:#8a8a8a;
-  --run:#c2662f; --wait:#a07208; --done:#2f9e6b; --err:#c93b2e;
+  --run:#c2662f; --hold:#2b7f9c; --wait:#a07208; --done:#2f9e6b; --err:#c93b2e;
   --glassA:rgba(255,255,255,.72); --glassB:rgba(255,255,255,.80); --hair:rgba(0,0,0,.10);
   --fade0:rgba(255,255,255,0); --fadeA:rgba(255,255,255,.88); --fadeB:rgba(244,244,245,.96); --solid:#efeff1; --hover0:rgba(241,241,243,0); --shadow:rgba(0,0,0,.14); --onAccent:#ffffff }
 * { box-sizing:border-box; touch-action:manipulation }
@@ -518,11 +518,13 @@ b,strong { color:var(--w); font-weight:600 }
 @keyframes fbSmile { 0%,100% { transform:scaleX(1) } 50% { transform:scaleX(1.18) } }
 .fb-idle .eyes { animation:fbBlink 4.2s infinite }
 .fb-work .eyes { animation:fbLook 2.6s ease-in-out infinite } .fb-work .mouth { animation:fbTyping .5s ease-in-out infinite }
+/* AB · 남을 기다리는 중 — 주황은 **빠르게**(바쁘다), 청록은 **느리게**(기다린다). 맥동 속도도 뜻이다 */
+.fb-hold .eyes { animation:fbLook 5.2s ease-in-out infinite }
 .fb-wait .eyes { animation:fbBrow 2s infinite } .fb-wait .mark { animation:fbBounce .9s ease-in-out infinite }
 .fb-sleep .mark { animation:fbZ 2.2s ease-out infinite }
 .fb-done .mouth { animation:fbSmile 2.4s ease-in-out 2 } /* 두 번 웃고 멈춘다 — 끝난 봇이 영원히 웃지 않게 */
 .fb-error .eyes { animation:fbShake 2.4s infinite }
-.fb .badge { transform-box:view-box; transform-origin:56px 56px } .fb-work .badge { animation:fbBreathe 1.2s ease-in-out infinite } .fb-wait .badge { animation:fbBounce 1s ease-in-out infinite }
+.fb .badge { transform-box:view-box; transform-origin:56px 56px } .fb-work .badge { animation:fbBreathe 1.2s ease-in-out infinite } .fb-hold .badge { animation:fbBreathe 2.6s ease-in-out infinite } .fb-wait .badge { animation:fbBounce 1s ease-in-out infinite }
 .fb.sm .mouth { animation:none }
 @keyframes glow { 0%,100% { opacity:.35 } 50% { opacity:.9 } }
 @keyframes spin { to { transform:rotate(360deg) } }
@@ -1205,3 +1207,25 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .rtnext { color:var(--t2); font-size:11.5px; margin-top:6px; display:block } .rtnext .dim { color:var(--faint); margin-left:6px }
 .rterr { color:var(--error); font-size:11.5px; margin-top:6px; display:block }
 .rtrow .pick .sub .err { color:var(--error) }
+
+/* ── AB · 기다림을 보이게 (2026-09-23 Dave 「B안」) ─────────────────────────────────────────
+   🔴 **대기 줄은 말풍선이 아니다.** 점선 테두리 · 옅은 청록 · 복사/되돌리기 없음 —
+   «아직 안 끝났다» 가 **생김새로** 읽혀야 마지막 말과 안 헷갈린다(그 헷갈림이 이 라운드의 출발이었다). */
+.live.hold { display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:12px;
+  border:1px dashed color-mix(in srgb, var(--hold) 45%, var(--line)); background:linear-gradient(90deg, color-mix(in srgb, var(--hold) 10%, transparent), transparent) }
+.live.hold .tx { color:color-mix(in srgb, var(--hold) 62%, var(--w)); font-size:12.5px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.live.hold .el { color:color-mix(in srgb, var(--hold) 78%, var(--t3)); font-size:11.5px; flex:none; font-variant-numeric:tabular-nums }
+.live.hold .hact { flex:none; border:1px solid color-mix(in srgb, var(--hold) 45%, var(--line)); border-radius:8px; padding:3px 9px; font-size:11.5px;
+  color:color-mix(in srgb, var(--hold) 62%, var(--w)); white-space:nowrap }
+.live.hold .hact:hover { background:color-mix(in srgb, var(--hold) 18%, transparent) }
+/* 점 셋 — 「살아 있다」를 글자 없이 말한다. 느리게 튄다(청록의 속도) */
+.live.hold .bounce { display:inline-flex; gap:3px; flex:none }
+.live.hold .bounce i { width:4px; height:4px; border-radius:50%; background:var(--hold); animation:fbBounceDot 1.4s ease-in-out infinite }
+.live.hold .bounce i:nth-child(2) { animation-delay:.18s } .live.hold .bounce i:nth-child(3) { animation-delay:.36s }
+@keyframes fbBounceDot { 0%,60%,100% { opacity:.25; transform:translateY(0) } 30% { opacity:1; transform:translateY(-3px) } }
+/* 헤더 한 줄 — 레일·대기 줄과 같은 값에서 나온다 */
+.hstate { display:inline-flex; align-items:center; gap:5px; flex:none; font-size:11.5px; white-space:nowrap;
+  color:color-mix(in srgb, var(--hold) 62%, var(--t2)) }
+.hstate i { width:6px; height:6px; border-radius:50%; background:var(--hold); animation:fbBreathe 2.6s ease-in-out infinite }
+.dot.hold { background:var(--hold); animation:fbBreathe 2.6s ease-in-out infinite }
+@media (prefers-reduced-motion: reduce) { .live.hold .bounce i, .hstate i, .dot.hold { animation:none } }
