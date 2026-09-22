@@ -19,11 +19,21 @@ describe('셸 통로 — preload ↔ main 이름이 같다', () => {
     const pre = read('preload.js')
     for (const k of ['fb:local-copy-image', 'fb:local-copy-files', 'fb:copy-diag']) expect(pre).toContain(k)
   })
-  it('맥 파일 복사는 osascript 길을 갖고 있고, 쓴 뒤 되읽어 판정한다', () => {
+  /**
+   * 🔴 Electron 44 의 clipboard 는 W3C 식 비동기 API 다 — 옛 함수를 하나라도 부르면 그 핸들러는 TypeError 로 죽는다
+   *    (2026-09-22 맥미니 실측 · M «다 안 된다» 의 뿌리). 이 검사는 «옛 함수 0건 + 새 길 + 되읽기» 를 못 박는다.
+   */
+  it('맥 복사는 Electron 44 의 새 clipboard API 만 쓰고, 쓴 뒤 되읽어 판정한다', () => {
     const main = read('main.js')
-    expect(main).toMatch(/osascript/)
-    expect(main).toMatch(/set the clipboard to \{\$\{refs\}\}/)
-    expect(main).toMatch(/availableFormats\(\)/)          // 파일이 올라갔는지 되읽기
-    expect(main).toMatch(/readImage\(\)\.isEmpty\(\)/)     // 그림이 올라갔는지 되읽기
+    // 코드 줄에서만 센다(머리말 주석은 옛 이름을 설명하느라 적는다)
+    const code = main.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n')
+    expect(code).not.toMatch(/clipboard\.(writeImage|readImage|writeBuffer|readBuffer|availableFormats)\(/)
+    expect(code).toMatch(/new ClipboardItem\(\{ 'image\/png':/)          // 그림 — image/png 로
+    expect(code).toMatch(/new ClipboardItem\(\{ 'text\/uri-list':/)      // 파일 — 파일 URL 목록으로(Finder 가 읽는 형식)
+    expect(code).not.toMatch(/'text\/uri-list': [^}]*'text\/plain'/)     // ⛔ 파일 URL 과 글자를 한 항목에 같이 싣지 않는다
+    expect(code).toMatch(/clipTypes\(\)/)                               // 되읽기
+    expect(code).toMatch(/clipCore\.hasFile\(/); expect(code).toMatch(/clipCore\.hasImage\(/)
+    expect(code).toMatch(/set the clipboard to POSIX file/)              // 폴백 — 파일 하나(괄호 없이)
+    expect(code).not.toMatch(/set the clipboard to \{/)                 // ⛔ {목록} 은 'list' 형식만 올라가 Finder 가 못 읽는다
   })
 })

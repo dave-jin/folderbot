@@ -2,6 +2,7 @@
 
 **Folder Bot** = 내 Mac mini 위에서 사는, 폴더마다 하나씩 붙는 AI 동료들.
 기획 정본은 `docs/PRD.md` — 설계가 바뀌면 **PRD 에 먼저** 적고 코드를 고친다.
+**할 일 정본은 볼트 `PARA/3. Area/제품_FolderBot/todo.md`** — 리포 안 `todo.md` 는 스텁이다(2026-09-22 Dave 지시). 세션마다 먼저 읽고, 끝낸 줄은 `- [x]` + `→ 처방`.
 
 ---
 
@@ -38,7 +39,10 @@ Dave 가 «이대로 해» 라고 지정한 변경.
 
 ```sh
 npm run qa      # tsc + vitest + build + 스모크(헤드리스 UI 포함). 배포 전 필수
+npm run qa:mac  # 맥에서만 — 호스트 번들 → 클립보드 → 실제 Electron 앱(유리·nowrap·독·IPC 복사·창 자리·딥링크). test/mac-qa.mjs 머리말
 ```
+
+- 🍎 **맥이 아니면 못 재는 것은 `qa:mac` 이 잰다** — 픽스처 볼트·스텁 CLI·`FOLDERBOT_QA=1`(프로토콜·로그인 항목·업데이터 끔)·`FOLDERBOT_USER_DATA`(userData 격리)로 Dave 의 실 앱·실 볼트를 안 건드린다. `qa` 가 도는 동안 따로 돌리지 않는다(둘 다 `dist/` 를 쓴다).
 
 - main 에 푸시하면 CI(`.github/workflows/desktop.yml`)가 **자동으로** `desktop-v<run_number>` 를 낸다.
   앱은 그 릴리스를 스스로 받아 재시작한다. 사람이 DMG 를 나르지 않는다.

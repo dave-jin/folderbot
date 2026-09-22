@@ -26,7 +26,9 @@ function countFiles(dir, depth = 3, budget = { n: 0 }) {
  */
 function rank(found) {
   const byReal = new Map()
-  for (const f of found) { const cur = byReal.get(f.real); if (!cur || (f.path === f.real && cur.path !== cur.real) || (cur.path !== cur.real && f.path.length < cur.path.length)) byReal.set(f.real, f) }
+  // «정본 자리» = 자기 자신이 실체인 후보. `canon` 이 있으면 그것을(홈이 심링크 아래일 때 — 아래 detect), 없으면 path===real 로
+  const isCanon = (f) => (typeof f.canon === 'boolean' ? f.canon : f.path === f.real)
+  for (const f of found) { const cur = byReal.get(f.real); if (!cur || (isCanon(f) && !isCanon(cur)) || (!isCanon(cur) && f.path.length < cur.path.length)) byReal.set(f.real, f) }
   const max = Math.max(0, ...[...byReal.values()].map((f) => f.files))
   return [...byReal.values()].sort((a, b) => b.files - a.files || a.path.length - b.path.length).map((f) => ({ ...f, shell: f.files === 0 || (max > 0 && f.files * 10 < max) }))
 }
@@ -34,7 +36,13 @@ function rank(found) {
 function detect(hostRoot, home = homedir()) {
   let entries = []; try { entries = readdirSync(join(home, 'Library/CloudStorage')) } catch {}
   const found = []
-  const tryDir = (p) => { try { if (!statSync(p).isDirectory()) return } catch { return } let real = p; try { real = realpathSync(p) } catch {} found.push({ path: p, real, files: countFiles(p) }) }
+  /**
+   * 🔴 홈 자체가 심링크 아래면(맥의 `tmpdir()` = `/var/…` → `/private/var/…`) **어느 후보도 `path === real` 이 아니다** —
+   *    그러면 «짧은 경로» 규칙이 `~/Dropbox/PARA`(별칭)를 정본으로 올린다(2026-09-22 맥에서 유닛이 거짓 빨강). 그래서
+   *    홈만 실체로 바꾼 경로(`canon`)와 실체를 비교한다 — 홈 아래 심링크만 «별칭» 이다.
+   */
+  let realHome = home; try { realHome = realpathSync(home) } catch {}
+  const tryDir = (p) => { try { if (!statSync(p).isDirectory()) return } catch { return } let real = p; try { real = realpathSync(p) } catch {} const canon = real === (p.startsWith(home) ? join(realHome, p.slice(home.length)) : p); found.push({ path: p, real, canon, files: countFiles(p) }) }
   for (const root of syncRoots(home, entries)) {
     // 팀 Dropbox 는 한 단계 아래(`Dropbox-회사/이름/PARA`)에 있기도 하다 — 직계 자식 폴더까지만 본다
     let kids = []; try { kids = readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => join(root, e.name)) } catch {}

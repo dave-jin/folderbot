@@ -1,8 +1,11 @@
 // G · 채팅 파일 칩 → 문서 창 실측 — ⓐ 형식 거름 / ⓑ 칩·경로 해석 / ⓒ 창 닫힘 중 무엇인가
+import { existsSync as __ex } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+// 브라우저 — 컨테이너(/opt/pw-browsers)면 그것, 맥이면 Playwright 캐시(~/Library/Caches/ms-playwright · `node node_modules/playwright-core/cli.js install chromium-headless-shell`). PW_CHROMIUM 으로 덮는다
+const PW_CHROMIUM = process.env.PW_CHROMIUM || (__ex('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined)
 const root = mkdtempSync(join(tmpdir(), 'fb-vault-')), data = mkdtempSync(join(tmpdir(), 'fb-data-')), fbHome = mkdtempSync(join(tmpdir(), 'fb-home-')), claudeCfg = mkdtempSync(join(tmpdir(), 'fb-claude-'))
 for (const d of ['1. Inbox', '2. Projects', '3. Area/제품_Rondo/files', '4. Resources', '5. Archive']) mkdirSync(join(root, d), { recursive: true })
 writeFileSync(join(root, '3. Area/제품_Rondo/CLAUDE.md'), '# x\n')
@@ -21,7 +24,7 @@ for (let i = 0; i < 40; i++) { try { await fetch(base + '/api/health'); break } 
 const bot = await api('/bots/start', { rel: '3. Area/제품_Rondo' })
 const sess = await api(`/bots/${bot.id}/sessions`, { name: 'g' })
 const { chromium } = await import('playwright-core')
-const br = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] })
+const br = await chromium.launch({ executablePath: PW_CHROMIUM, args: ['--no-sandbox'] })
 const pg = await br.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
 await pg.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark'); localStorage.removeItem('fb:docopen') })
 await pg.goto(base + `/#bot=${bot.id}&s=${sess.id}`); await pg.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(400)

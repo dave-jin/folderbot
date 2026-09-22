@@ -1,10 +1,13 @@
 // P · 키보드 열린 채 당기기 녹화 — 폰 뷰포트에서 (1) 칩 답 (2) 첨부 칩 행 (3) 키보드 열림 + 시각 뷰포트 밀림(당기기) (4) 키보드 내림. 5초 안팎 webm 하나.
 //   실행: node test/record-p.mjs  → test/tmp/p-keyboard.webm · p-rec-*.png
+import { existsSync as __ex } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, renameSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+// 브라우저 — 컨테이너(/opt/pw-browsers)면 그것, 맥이면 Playwright 캐시(~/Library/Caches/ms-playwright · `node node_modules/playwright-core/cli.js install chromium-headless-shell`). PW_CHROMIUM 으로 덮는다
+const PW_CHROMIUM = process.env.PW_CHROMIUM || (__ex('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined)
 const root = mkdtempSync(join(tmpdir(), 'fb-vault-')), data = mkdtempSync(join(tmpdir(), 'fb-data-')), fbHome = mkdtempSync(join(tmpdir(), 'fb-home-')), claudeCfg = mkdtempSync(join(tmpdir(), 'fb-claude-'))
 for (const d of ['1. Inbox', '2. Projects', '3. Area/제품_Rondo/files', '4. Resources', '5. Archive']) mkdirSync(join(root, d), { recursive: true })
 writeFileSync(join(root, '3. Area/제품_Rondo/CLAUDE.md'), '# x\n'); writeFileSync(join(root, '3. Area/제품_Rondo/files/메모.md'), '# 메모\n')
@@ -17,7 +20,7 @@ const api = async (p, body) => (await fetch(base + '/api' + p, { method: body ? 
 for (let i = 0; i < 40; i++) { try { await fetch(base + '/api/health'); break } catch { await wait(250) } }
 const bot = await api('/bots/start', { rel: '3. Area/제품_Rondo' })
 const { chromium } = await import('playwright-core')
-const br = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] })
+const br = await chromium.launch({ executablePath: PW_CHROMIUM, args: ['--no-sandbox'] })
 const vp = { width: 390, height: 844 }
 const ctx = await br.newContext({ viewport: vp, deviceScaleFactor: 1, hasTouch: true, isMobile: true, recordVideo: { dir: 'test/tmp/p-video', size: vp } }); const pg = await ctx.newPage()
 await pg.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })

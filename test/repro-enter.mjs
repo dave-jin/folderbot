@@ -1,9 +1,12 @@
 // I · 입력창 줄내림 재현 — ⇧⏎ 한 번에 줄이 바뀌나(영문 · 빈 줄 · 한글 조합 중) · 컴포저가 자라면 채팅이 따라오나
+import { existsSync as __ex } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+// 브라우저 — 컨테이너(/opt/pw-browsers)면 그것, 맥이면 Playwright 캐시(~/Library/Caches/ms-playwright · `node node_modules/playwright-core/cli.js install chromium-headless-shell`). PW_CHROMIUM 으로 덮는다
+const PW_CHROMIUM = process.env.PW_CHROMIUM || (__ex('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined)
 const root = mkdtempSync(join(tmpdir(), 'fb-vault-')), data = mkdtempSync(join(tmpdir(), 'fb-data-')), fbHome = mkdtempSync(join(tmpdir(), 'fb-home-')), claudeCfg = mkdtempSync(join(tmpdir(), 'fb-claude-'))
 for (const d of ['1. Inbox', '2. Projects', '3. Area/제품_Rondo', '4. Resources', '5. Archive']) mkdirSync(join(root, d), { recursive: true })
 writeFileSync(join(root, '3. Area/제품_Rondo/CLAUDE.md'), '# x\n')
@@ -16,7 +19,7 @@ const api = async (p, body) => { const r = await fetch(base + '/api' + p, { meth
 for (let i = 0; i < 40; i++) { try { await fetch(base + '/api/health'); break } catch { await wait(250) } }
 const bot = await api('/bots/start', { rel: '3. Area/제품_Rondo' })
 const { chromium } = await import('playwright-core')
-const br = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] })
+const br = await chromium.launch({ executablePath: PW_CHROMIUM, args: ['--no-sandbox'] })
 const out = []
 const log = (o) => { out.push(o); console.log(JSON.stringify(o)) }
 

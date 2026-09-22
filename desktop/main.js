@@ -1,5 +1,5 @@
 // Folder Bot — macOS 셸. 미니의 호스트(웹 클라이언트)를 창에 띄우고, 메뉴바·알림·Dock 배지를 맡는다.
-const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, ipcMain, shell, session, dialog, clipboard } = require('electron')
+const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, ipcMain, shell, session, dialog, clipboard, ClipboardItem } = require('electron')
 const { pathToFileURL } = require('node:url')
 const { existsSync, readFileSync, writeFileSync, mkdirSync } = require('node:fs')
 const { join } = require('node:path')
@@ -11,7 +11,11 @@ const localfs = require('./localfs')
 const { folderIcon } = require('./trayIcon')
 const { pickBounds } = require('./winBounds')
 const { navHash, withHash } = require('./nav')
+const clipCore = require('./clip-core')
 
+// 🔴 QA 격리 — macOS 의 userData 는 `$HOME` 을 **무시한다**(NSSearchPath 가 passwd 의 홈을 쓴다 · 2026-09-22 실측). 그래서 임시 HOME 만으로는
+//    `~/Library/Application Support/Electron` 의 실 설정을 읽는다. 검사(`test/mac-qa.mjs`)는 이 변수로 userData 를 통째로 옮긴다.
+if (process.env.FOLDERBOT_USER_DATA) app.setPath('userData', process.env.FOLDERBOT_USER_DATA)
 const SETTINGS = () => join(app.getPath('userData'), 'settings.json')
 // openMode · vaultLocal — 원격 기기에서 파일을 «어디서 여나»(E): 'sync' = 이 기기의 동기화 볼트(vaultLocal) · 'download' = 호스트에서 받아 캐시로. 빈 값 = 아직 안 정함(온보딩이 묻는다)
 let settings = { mode: '', hostUrl: '', token: '', loginItem: false, root: '', port: 7373, openMode: '', vaultLocal: '' }
@@ -22,8 +26,14 @@ let win = null, tray = null, sse = null, waiting = 0, mood = 'idle', pendingNav 
 let hostRun = null, pairing = null
 const moodTitle = { idle: '', work: '', wait: '', done: '', error: '', sleep: '' }
 
+/**
+ * 🔴 **QA 로 띄운 앱은 이 맥에 흔적을 남기지 않는다** (`FOLDERBOT_QA=1` · `test/mac-qa.mjs`, 2026-09-22).
+ *    개발 Electron 이 ① `folderbot://` 기본 앱을 가로채고 ② 로그인 항목에 스스로를 넣고 ③ 15초 뒤 릴리스를 내려받아
+ *    «업데이트» 를 권하는 세 가지를 막는다 — 전부 Dave 가 실제로 쓰는 `/Applications/Folder Bot.app` 을 건드리는 일이다.
+ */
+const QA = process.env.FOLDERBOT_QA === '1'
 if (!app.requestSingleInstanceLock()) app.quit()
-app.setAsDefaultProtocolClient('folderbot')
+if (!QA) app.setAsDefaultProtocolClient('folderbot')
 app.on('second-instance', (_e, argv) => { const u = argv.find((a) => a.startsWith('folderbot://')); if (u) openDeepLink(u); showWin() })
 app.on('open-url', (e, url) => { e.preventDefault(); openDeepLink(url) })
 
@@ -188,15 +198,26 @@ const CACHE_LIMIT = 2 * 1024 * 1024 * 1024
  * 🔴 **복사는 «썼다» 가 아니라 «읽힌다» 로 판정한다** (2026-09-21 Dave 실기기 보고: *«다 안되는거 같아»*).
  *    종전에는 `clipboard.writeImage`/`writeBuffer` 를 부르고 **무조건 true** 를 돌려줬다 — 화면은 «복사했어요» 라고 말하고
  *    붙여넣기는 아무것도 안 나왔다. 조용히 틀리는 쪽이라 무엇이 고장인지도 알 수 없었다.
- * 🔴 **macOS 파일 복사는 `writeBuffer` 로 안 된다.** Electron 의 clipboard 는 형식마다 새로 쓰면서 **앞서 쓴 것을 지우고**,
- *    `NSFilenamesPboardType` 같은 옛 이름은 커스텀 형식으로 들어가 Finder 가 파일로 못 읽는다. 그래서 되읽어 확인하고,
- *    비면 `osascript` 로 진짜 파일 참조를 올린다(`set the clipboard to {POSIX file "…"}`) — 이게 Finder·카톡이 받는 모양이다.
+ *    (v126 의 그 «되읽기» 도 없어진 `readImage`·`availableFormats` 를 불러 실은 한 번도 안 돌았다 — 아래 머리말과 `clip-core.js`.)
  * ⚠ 돌려주는 값은 `{ ok, why, formats }` 다 — 부르는 쪽이 **어디서 죽었는지**를 사람에게 그대로 보여 준다.
  */
 function osa(script, ms = 6000) {
   return new Promise((res) => { try { execFile('/usr/bin/osascript', ['-e', script], { timeout: ms }, (err) => res(!err)) } catch { res(false) } })
 }
 const qq = (p) => String(p).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+/**
+ * 🔴 **Electron 44 의 clipboard 는 W3C 식 비동기 API 다** — `writeImage`·`readImage`·`writeBuffer`·`availableFormats` 가 **없다**
+ *    (2026-09-22 맥미니 실측 · M «다 안 된다» 의 뿌리 — v126 까지의 핸들러는 없어진 함수를 불러 `TypeError` 로 죽었다).
+ *    되읽기는 `clipboard.read()` 의 `types` 로 하고, 판정은 `desktop/clip-core.js`(순수 · 유닛) 가 한다.
+ */
+/** 되읽기 — 바깥 프로세스(osascript)가 방금 쓴 직후엔 빈 목록이 올 때가 있다(실측 2회 중 1회). 비면 100ms 쉬고 최대 3번 */
+async function clipTypes() {
+  for (let i = 0; i < 3; i++) {
+    try { const t = (await clipboard.read()).flatMap((x) => x.types); if (t.length) return t } catch { /* 다시 */ }
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  return []
+}
 ipcMain.handle('fb:local-copy-image', async (_e, a) => {
   const mac = process.platform === 'darwin'
   try {
@@ -208,57 +229,50 @@ ipcMain.handle('fb:local-copy-image', async (_e, a) => {
       img = nativeImage.createFromBuffer(Buffer.from(await r.arrayBuffer())); from = 'url'
     }
     if (!img || img.isEmpty()) return { ok: false, why: `그림을 못 읽었어요 (${from || '경로 없음'}) — HEIC·SVG 는 아직 못 붙여요` }
-    clipboard.writeImage(img)
-    if (!clipboard.readImage().isEmpty()) return { ok: true }
-    // 되읽으니 비었다 — 맥이면 파일을 거쳐 한 번 더
-    if (mac && a && a.path && existsSync(String(a.path)) && /\.png$/i.test(String(a.path))) {
-      if (await osa(`set the clipboard to (read (POSIX file "${qq(a.path)}") as «class PNGf»)`) && !clipboard.readImage().isEmpty()) return { ok: true }
-    }
+    // ① PNG 로 올린다 — 실측: image/png + Apple PNG + TIFF 세 형식이 함께 올라가 메모·카톡이 받는다
+    await clipboard.write([new ClipboardItem({ 'image/png': new Blob([img.toPNG()], { type: 'image/png' }) })])
+    let types = await clipTypes()
+    if (clipCore.hasImage(types)) return { ok: true, formats: clipCore.shortTypes(types) }
+    // ② 되읽으니 그림이 없다 — 맥이면 파일을 거쳐 osascript 로 한 번 더
     if (mac) {
       const tmp = join(app.getPath('temp'), `fb-copy-${Date.now()}.png`)
       try { writeFileSync(tmp, img.toPNG()) } catch { /* 임시 폴더에 못 쓴다 */ }
-      if (existsSync(tmp) && await osa(`set the clipboard to (read (POSIX file "${qq(tmp)}") as «class PNGf»)`) && !clipboard.readImage().isEmpty()) return { ok: true }
+      if (existsSync(tmp) && await osa(`set the clipboard to (read (POSIX file "${qq(tmp)}") as «class PNGf»)`)) { types = await clipTypes(); if (clipCore.hasImage(types)) return { ok: true, formats: clipCore.shortTypes(types) } }
     }
-    return { ok: false, why: '클립보드에 썼는데 되읽으니 비어 있어요 — 맥 클립보드가 막혔어요' }
+    return { ok: false, why: `클립보드에 썼는데 되읽으니 그림이 없어요 (형식: ${clipCore.shortTypes(types).join(', ') || '없음'})`, formats: clipCore.shortTypes(types) }
   } catch (e) { return { ok: false, why: `복사 중 오류 — ${e && e.message ? e.message : e}` } }
 })
 ipcMain.handle('fb:local-copy-files', async (_e, paths) => {
   const all = (Array.isArray(paths) ? paths : []).map(String)
   const list = all.filter((p) => existsSync(p))
   if (!list.length) return { ok: false, why: all.length ? `파일이 그 자리에 없어요 — ${all[0]}` : '복사할 파일이 없어요' }
-  if (process.platform !== 'darwin') { clipboard.writeText(list.join('\n')); return { ok: true, why: '맥이 아니라 경로 글자로 복사했어요' } }
-  // ① 진짜 파일 참조 — Finder·카톡이 받는 모양. 여러 개면 목록으로
-  const refs = list.map((p) => `POSIX file "${qq(p)}"`).join(', ')
-  if (await osa(`set the clipboard to {${refs}}`)) {
-    const f = clipboard.availableFormats()
-    if (f.some((x) => /file|NSFilenames/i.test(x))) return { ok: true, formats: f }
-  }
-  // ② 옛 길(형식 버퍼) — 되읽어 확인한다
   try {
-    const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    const plist = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><array>${list.map((p) => `<string>${esc(p)}</string>`).join('')}</array></plist>`
-    clipboard.writeBuffer('NSFilenamesPboardType', Buffer.from(plist, 'utf8'))
-    const f = clipboard.availableFormats()
-    if (f.some((x) => /file|NSFilenames/i.test(x))) return { ok: true, formats: f }
-    clipboard.writeText(list.join('\n'))
-    return { ok: false, why: `파일로는 못 올렸어요 — 경로 글자만 복사했어요 (형식: ${f.join(', ') || '없음'})`, formats: f }
+    if (process.platform !== 'darwin') { await clipboard.writeText(list.join('\n')); return { ok: true, why: '맥이 아니라 경로 글자로 복사했어요' } }
+    // ① 파일 URL 목록 — 실측: public.file-url + NSFilenamesPboardType 이 함께 올라간다(Finder ⌘V·카톡 첨부가 읽는 형식).
+    //    ⛔ text/plain 을 같이 싣지 않는다 — 같이 실으면 파일 URL 이 폴더까지만 남는다(실측)
+    await clipboard.write([new ClipboardItem({ 'text/uri-list': clipCore.uriList(list) })])
+    let types = await clipTypes()
+    if (clipCore.hasFile(types)) return { ok: true, formats: clipCore.shortTypes(types) }
+    // ② osascript 폴백 — 파일 **하나**를 괄호 없이 주면 furl 이 올라간다({목록} 은 'list' 형식만 올라가 Finder 가 못 읽는다)
+    if (list.length === 1 && await osa(`set the clipboard to POSIX file "${qq(list[0])}"`)) { types = await clipTypes(); if (clipCore.hasFile(types)) return { ok: true, formats: clipCore.shortTypes(types) } }
+    await clipboard.writeText(list.join('\n'))
+    return { ok: false, why: `파일로는 못 올렸어요 — 경로 글자만 복사했어요 (형식: ${clipCore.shortTypes(types).join(', ') || '없음'})`, formats: clipCore.shortTypes(types) }
   } catch (e) { return { ok: false, why: `복사 중 오류 — ${e && e.message ? e.message : e}` } }
 })
-/** 복사 진단 — 한 파일로 두 길(그림·파일)을 실제로 밟아 보고 결과를 글로 돌려준다 (설정 › 기기) */
+/** 복사 진단 — 한 파일로 두 길(그림·파일)을 실제로 밟아 보고 결과를 글로 돌려준다 (설정 › 기기). 어느 줄에서 죽어도 그 줄까지는 글로 남는다 */
 ipcMain.handle('fb:copy-diag', async (_e, p) => {
   const out = []
   const path = String(p || '')
-  out.push(`플랫폼 ${process.platform} · 앱 ${app.getVersion()}`)
+  out.push(`플랫폼 ${process.platform} · 앱 ${app.getVersion()} · Electron ${process.versions.electron}`)
   out.push(`대상 ${path || '(없음)'} · 있음 ${path ? existsSync(path) : false}`)
-  try { const before = clipboard.availableFormats(); out.push(`복사 전 형식 [${before.join(', ') || '없음'}]`) } catch (e) { out.push(`형식 읽기 실패 ${e.message}`) }
+  const step = async (label, fn) => { try { out.push(`${label} → ${await fn()}`) } catch (e) { out.push(`${label} → 오류 ${e && e.message ? e.message : e}`) } }
+  await step('복사 전 형식', async () => `[${clipCore.shortTypes(await clipTypes()).join(', ') || '없음'}]`)
   if (path && existsSync(path)) {
-    const refs = `POSIX file "${qq(path)}"`
-    out.push(`osascript 파일 올리기 → ${await osa(`set the clipboard to {${refs}}`)}`)
-    out.push(`그 뒤 형식 [${clipboard.availableFormats().join(', ') || '없음'}]`)
+    await step('파일 URL 올리기(text/uri-list)', async () => { await clipboard.write([new ClipboardItem({ 'text/uri-list': clipCore.uriList([path]) })]); const t = await clipTypes(); return `${clipCore.hasFile(t) ? '파일 ✅' : '파일 ❌'} [${clipCore.shortTypes(t).join(', ') || '없음'}]` })
+    await step('osascript 파일 하나', async () => { const ok = await osa(`set the clipboard to POSIX file "${qq(path)}"`); const t = await clipTypes(); return `${ok} · ${clipCore.hasFile(t) ? '파일 ✅' : '파일 ❌'} [${clipCore.shortTypes(t).join(', ') || '없음'}]` })
     if (/\.(png|jpe?g|gif|webp)$/i.test(path)) {
-      const img = nativeImage.createFromPath(path)
-      out.push(`그림 읽기 ${img.isEmpty() ? '비었음' : `${img.getSize().width}x${img.getSize().height}`}`)
-      if (!img.isEmpty()) { clipboard.writeImage(img); out.push(`writeImage 뒤 되읽기 ${clipboard.readImage().isEmpty() ? '비었음 ❌' : '있음 ✅'}`) }
+      await step('그림 읽기', async () => { const img = nativeImage.createFromPath(path); return img.isEmpty() ? '비었음 ❌' : `${img.getSize().width}x${img.getSize().height}` })
+      await step('그림 올리기(image/png)', async () => { const img = nativeImage.createFromPath(path); if (img.isEmpty()) return '건너뜀'; await clipboard.write([new ClipboardItem({ 'image/png': new Blob([img.toPNG()], { type: 'image/png' }) })]); const t = await clipTypes(); return `${clipCore.hasImage(t) ? '그림 ✅' : '그림 ❌'} [${clipCore.shortTypes(t).join(', ') || '없음'}]` })
     }
   }
   return out.join('\n')
@@ -554,11 +568,11 @@ app.whenReady().then(async () => {
     try { await startHostMode(settings.root) } catch (e) { console.error(e); settings.mode = ''; save() }
   }
   createWin(); startSse(); startUsagePoll()
-  app.setLoginItemSettings({ openAtLogin: !!settings.loginItem, openAsHidden: true })
+  if (!QA) app.setLoginItemSettings({ openAtLogin: !!settings.loginItem, openAsHidden: true })
   app.on('activate', showWin)
   // 자기 업데이트 — 호스트 모드에선 세션이 전부 유휴일 때만 적용한다
   const busyCount = () => { let b = 0; for (const st of states.values()) if (st === 'running' || st === 'awaiting_input') b++; return b }
-  updater.start({ isHost: () => settings.mode === 'host', isBusy: () => busyCount() > 0, busyCount, onChange: () => { pushTrayState(); try { win?.webContents.send('fb:update', updater.state()) } catch {} } })
+  if (!QA) updater.start({ isHost: () => settings.mode === 'host', isBusy: () => busyCount() > 0, busyCount, onChange: () => { pushTrayState(); try { win?.webContents.send('fb:update', updater.state()) } catch {} } })
 })
 app.on('window-all-closed', () => { /* 메뉴바에 남는다 */ })
 app.on('before-quit', () => { try { hostRun?.stop() } catch {} })

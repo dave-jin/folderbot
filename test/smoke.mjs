@@ -2,11 +2,15 @@
 import { deflateSync as zlibDeflate } from 'node:zlib'
 import { execSync, spawn } from 'node:child_process'
 import { createServer } from 'node:net'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync, readdirSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync, readdirSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const root = mkdtempSync(join(tmpdir(), 'fb-vault-'))
+// 브라우저 — 컨테이너(/opt/pw-browsers)면 그것, 맥이면 Playwright 캐시(~/Library/Caches/ms-playwright · `node node_modules/playwright-core/cli.js install chromium-headless-shell`). PW_CHROMIUM 으로 덮는다
+const PW_CHROMIUM = process.env.PW_CHROMIUM || (existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined)
+// realpath — 맥의 tmpdir 은 /var → /private/var 심링크라 호스트가 돌려주는 경로와 글자가 달라진다(2026-09-22 맥미니 실측)
+//   맥의 tmpdir 은 그 자체로 55자라 스텁이 되읊는 60자 안에 절대 경로가 못 들어간다 — 맥에서는 /tmp 아래(realpath /private/tmp/… · 28자)
+const root = realpathSync(mkdtempSync(join(process.platform === 'darwin' ? '/tmp' : tmpdir(), 'fb-vault-')))
 const data = mkdtempSync(join(tmpdir(), 'fb-data-'))
 const claudeCfg = mkdtempSync(join(tmpdir(), 'fb-claude-'))
 for (const d of ['1. Inbox', '2. Projects/2026-09_강의-창업스쿨-2기', '2. Projects/2026-10_해커톤-제안', '3. Area/제품_Rondo', '3. Area/재무_CFO', '4. Resources', '5. Archive']) mkdirSync(join(root, d), { recursive: true })
@@ -27,7 +31,9 @@ mkdirSync(join(fbHome, '.folderbot'), { recursive: true })
 writeFileSync(join(fbHome, '.folderbot/usage.jsonl'),
   [{ t: Date.now() - 90 * 60 * 1000, tool: 'claude', model: 'claude-opus-5', input: 1200, output: 9000, cacheRead: 240000, cacheWrite: 3000 },
    { t: Date.now() - 10 * 60 * 1000, tool: 'claude', model: 'claude-sonnet-5', input: 900, output: 4000, cacheRead: 80000, cacheWrite: 1000 }].map((x) => JSON.stringify(x)).join('\n') + '\n')
-const env = { ...process.env, FOLDERBOT_HOME: fbHome, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg }
+// ⚠ 메인 호스트는 «Claude 만 깔린 기기» 여야 한다 — 실제 codex 가 깔린 맥(2026-09-22 맥미니)에서는 제공자가 둘이 되어 세션 + 가 고르기를 띄우고
+//   «세션 삭제 UI» 같은 검사가 어긋난다. 없는 경로를 주면 codex 는 숨는다(providers.ts 의 ENV_OVERRIDE). 둘인 경우는 아래 V24 블록이 두 번째 호스트로 잰다
+const env = { ...process.env, FOLDERBOT_HOME: fbHome, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_CODEX_BIN: '/nonexistent/codex', FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg }
 /**
  * 🔴 **포트가 이미 잡혀 있으면 그 자리에서 멈춘다** (2026-09-13 실사고).
  *    앞선 실패로 남은 호스트가 같은 포트를 잡고 있으면, 우리는 «건강한 응답» 을 받고 **옛 코드를**
@@ -44,6 +50,10 @@ let hostLog = ''; host.stdout.on('data', (d) => (hostLog += d)); host.stderr.on(
 const base = `http://127.0.0.1:${PORT}`
 const api = async (p, body, method) => { const r = await fetch(base + '/api' + p, { method: method ?? (body ? 'POST' : 'GET'), headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); const j = await r.json(); if (!r.ok) throw new Error(`${p}: ${j.error}`); return j }
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+// ⌨ 단축키는 ControlOrMeta 로 — 맥 Chromium 에서 Control+A 는 전체 선택이 아니다(줄 머리 이동 · 2026-09-22 맥미니 실측)
+//   Home/End 도 맥에선 캐럿을 안 옮긴다(스크롤만) — 줄 끝은 ⌘→, 문서 끝은 ⌘↓, 줄 머리 선택은 ⇧⌘←
+const MAC = process.platform === 'darwin'
+const K = { end: MAC ? 'Meta+ArrowRight' : 'End', docEnd: MAC ? 'Meta+ArrowDown' : 'Control+End', selEnd: MAC ? 'Shift+Meta+ArrowRight' : 'Shift+End', selHome: MAC ? 'Shift+Meta+ArrowLeft' : 'Shift+Home' }
 const fail = (m) => { console.error('✗', m); console.error(hostLog); host.kill(); process.exit(1) }
 const ok = (m) => console.log('✓', m)
 /** 폰 — 채팅에서 왼쪽으로 쓸어 폴더 패널로 (H-5 뒤 헤더에 폴더 단추가 없다) */
@@ -297,7 +307,7 @@ try {
   // 화면 (playwright)
   try {
     const { chromium } = await import('playwright-core')
-    const br = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] })
+    const br = await chromium.launch({ executablePath: PW_CHROMIUM, args: ['--no-sandbox'] })
     globalThis.__br = br
     for (const [name, vp] of [['desktop', { width: 1440, height: 900 }], ['phone', { width: 390, height: 844 }]]) {
       const pg = await br.newPage({ viewport: vp, deviceScaleFactor: 1, ...(name === 'phone' ? { hasTouch: true } : {}) })   // H · 쓸기는 터치 지점이 있는 기기에서만 켜진다 — 폰 판은 터치 기기다
@@ -452,12 +462,15 @@ try {
           if (!me || me.displayName !== '덮은 이름' || me.name !== soonRel.split('/')[1]) fail('F bots_list displayName: ' + JSON.stringify(me))
           // 시안 「1안」 과 나란히 — 스크린샷으로 남긴다
           await pg.$eval('.sb-list', (e) => e.scrollTo(0, 0)); await (await pg.$('.sb-list')).screenshot({ path: 'test/tmp/rail-f.png' })
-          const mp = await pg.context().browser().newPage(); await mp.setViewportSize({ width: 1400, height: 900 }); await mp.goto('file://' + join(process.cwd(), 'test/tmp/rail-name-mock.html')); await wait(300)
-          const cols = await mp.$$('.col'); if (cols[1]) await cols[1].screenshot({ path: 'test/tmp/rail-mock-1.png' }); await mp.close()
-          const cp = await pg.context().browser().newPage(); await cp.setViewportSize({ width: 900, height: 700 })
-          const b64 = (f) => 'data:image/png;base64,' + readFileSync(join(process.cwd(), f)).toString('base64')   // about:blank 은 file:// 을 못 읽는다
-          await cp.setContent(`<body style="margin:0;background:#111;display:flex;gap:24px;padding:20px;font:12px -apple-system,sans-serif;color:#aaa"><div><div>Folder Bot 레일 (F 구현)</div><img src="${b64('test/tmp/rail-f.png')}" style="max-width:400px"></div><div><div>시안 · 1안</div><img src="${b64('test/tmp/rail-mock-1.png')}" style="max-width:420px"></div></body>`); await wait(400)
-          await cp.screenshot({ path: 'test/tmp/rail-compare.png' }); await cp.close()
+          // 시안 html 은 gitignore 된 test/tmp 산출물이라 새 기기(맥미니 2026-09-22)에는 없다 — 있을 때만 나란히 찍는다(단언 없음)
+          if (existsSync(join(process.cwd(), 'test/tmp/rail-name-mock.html'))) {
+            const mp = await pg.context().browser().newPage(); await mp.setViewportSize({ width: 1400, height: 900 }); await mp.goto('file://' + join(process.cwd(), 'test/tmp/rail-name-mock.html')); await wait(300)
+            const cols = await mp.$$('.col'); if (cols[1]) await cols[1].screenshot({ path: 'test/tmp/rail-mock-1.png' }); await mp.close()
+            const cp = await pg.context().browser().newPage(); await cp.setViewportSize({ width: 900, height: 700 })
+            const b64 = (f) => 'data:image/png;base64,' + readFileSync(join(process.cwd(), f)).toString('base64')   // about:blank 은 file:// 을 못 읽는다
+            await cp.setContent(`<body style="margin:0;background:#111;display:flex;gap:24px;padding:20px;font:12px -apple-system,sans-serif;color:#aaa"><div><div>Folder Bot 레일 (F 구현)</div><img src="${b64('test/tmp/rail-f.png')}" style="max-width:400px"></div><div><div>시안 · 1안</div><img src="${b64('test/tmp/rail-mock-1.png')}" style="max-width:420px"></div></body>`); await wait(400)
+            await cp.screenshot({ path: 'test/tmp/rail-compare.png' }); await cp.close()
+          } else console.log('  (시안 비교 스크린샷 건너뜀 — test/tmp/rail-name-mock.html 없음)')
           for (const rel of [soonRel, pastRel, '2. Projects/2026-10_해커톤-제안']) await mcp('tools/call', { name: 'bot_stop', arguments: { bot: rel } })
           await wait(400)
           ok('레일 이름 파생 — 예시 3 · D-2 강조 · 지남 흐림 · 잘려도 칩 · display_name · bots_list.displayName · 시안 비교 test/tmp/rail-compare.png')
@@ -657,7 +670,7 @@ try {
           await pg.click('.composer .cin'); await pg.keyboard.type('abc'); const a = await cin(); await pg.keyboard.press('Shift+Enter'); await wait(80); const b = await cin()
           if (b.v !== 'abc\n' || b.h <= a.h) fail('I-1: ⇧⏎ 한 번에 줄이 안 보인다 ' + JSON.stringify({ a, b }))
           await pg.keyboard.type('d'); await wait(80); const c = await cin(); if (c.v !== 'abc\nd') fail('I-1: ⇧⏎ 뒤 글자를 치니 줄바꿈이 사라졌다 ' + c.v)
-          const clearCin = async () => { await pg.keyboard.press('Control+A'); await pg.keyboard.press('Backspace'); await wait(80); if ((await cin()).v !== '') fail('I: 입력창 비우기 실패 ' + JSON.stringify(await cin())) }
+          const clearCin = async () => { await pg.keyboard.press('ControlOrMeta+A'); await pg.keyboard.press('Backspace'); await wait(80); if ((await cin()).v !== '') fail('I: 입력창 비우기 실패 ' + JSON.stringify(await cin())) }
           await clearCin()
           await pg.keyboard.press('Shift+Enter'); await pg.keyboard.type('x'); await wait(80); const d = await cin(); if (d.v !== '\nx') fail('I-1: 빈 칸의 ⇧⏎ 이 사라졌다 ' + JSON.stringify(d.v))
           await clearCin()
@@ -785,7 +798,7 @@ try {
           await clickRow(hp, '그림.png'); await hp.waitForSelector('.docwrap .zbar .cp', { timeout: 5000 }); await hp.click('.docwrap .zbar .cp'); await wait(300)
           c = await calls(hp); if (!c.some((x) => x[0] === 'copyImage' && x[1].path === `${bot.abs}/files/그림.png` && /raw\?rel=/.test(x[1].url))) fail('M-2 호스트: copyImage 에 파일 경로 + raw url ' + JSON.stringify(c.filter((x) => x[0] === 'copyImage')))
           // ⌘C — 트리 줄에 초점이 있으면 파일 복사, ⌥⌘C 는 경로 복사
-          await hp.focus('.panel .trow:has-text("설명서.pdf")'); await hp.keyboard.press('Control+C'); await wait(300)
+          await hp.focus('.panel .trow:has-text("설명서.pdf")'); await hp.keyboard.press('ControlOrMeta+C'); await wait(300)
           c = await calls(hp); if (c.filter((x) => x[0] === 'copyFiles').length < 2) fail('M-3: 트리에서 ⌘C 가 파일 복사여야 한다 ' + JSON.stringify(c))
           await hp.close()
           // 원격 맥 앱 — 캐시로 받기(진행 띠: 용량·속도·남은·취소) → 사본 경로로 copyFiles → 같은 사본이면 즉시 → 취소하면 부분 없음 → 폴더 50개 초과는 확인창
@@ -874,7 +887,7 @@ try {
           if (!six.multi || !six.firstVisible || six.widthRatio < 0.85 || six.lines !== 6) fail('N-1: 6줄 레이아웃 ' + JSON.stringify(six))
           if (six.leftBottom < six.cinBottom - 2 || six.rightBottom < six.cinBottom - 2 || six.leftBottom > six.boxBottom || six.rightBottom > six.boxBottom) fail('N-1: 버튼이 하단에 안 붙어 있다 ' + JSON.stringify(six))
           await ph.screenshot({ path: 'test/tmp/n1-sixlines.png' })
-          await ph.keyboard.press('Control+A'); await ph.keyboard.press('Backspace'); await wait(200)
+          await ph.keyboard.press('ControlOrMeta+A'); await ph.keyboard.press('Backspace'); await wait(200)
           // N-3 · 3장 동시 → 칩 3개(썸네일 · 진행 링) → 다 올라간 뒤 보내기 · ✕ 로 하나 빼기 · 11개째 거절
           const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
           const files3 = ['a.png', 'b.png', 'c.png'].map((name) => ({ name, mimeType: 'image/png', buffer: Buffer.from(png.split(',')[1], 'base64') }))
@@ -1530,11 +1543,11 @@ try {
             // ⚠ 맥의 ⌘⇧→ 는 CodeMirror 가 `navigator.platform` 으로 고르는 mac 바인딩이라 리눅스 헤드리스에서는 못 누른다 —
             //    같은 명령(selectLineBoundary · selectAll)을 플랫폼 공통 키로 잰다. 앵커를 접던 것은 키가 아니라 필터였다.
             await setCaret(bold); await wait(100)
-            await pg.keyboard.press('Shift+End'); await wait(150)
+            await pg.keyboard.press(K.selEnd); await wait(150)
             st = await ed()
             const boldLineEnd = await pg.evaluate((p) => window.__fbEditor.state.doc.lineAt(p).to, bold)
             if (st.anchor !== bold || st.head !== boldLineEnd) fail(`⌘⇧→(줄 끝 선택): 줄 끝까지 안 고른다 ${JSON.stringify({ anchor: st.anchor, head: st.head, end: boldLineEnd })}`)
-            await pg.keyboard.press('Control+a'); await wait(150)
+            await pg.keyboard.press('ControlOrMeta+a'); await wait(150)
             st = await ed()
             if (st.anchor !== 0 || st.head !== st.doc.length) fail(`⌘A: 전체가 안 골라진다 ${JSON.stringify({ anchor: st.anchor, head: st.head, len: st.doc.length })}`)
             // 표를 걸친 선택은 표를 통째로 — 위에서 표 시작까지 끌어 내린 꼴을 흉내 낸다
@@ -1559,7 +1572,7 @@ try {
             cont = await ed()
             if (!/^- \[ \] $/.test(cont.doc.split('\n')[cont.line - 1])) fail('⏎: 체크박스 항목이 이어지지 않는다 ' + JSON.stringify(cont.doc.split('\n')[cont.line - 1]))
             // 되돌린다 — 아래 churn 검사가 원문 그대로를 본다
-            await pg.keyboard.press('Control+z'); await pg.keyboard.press('Control+z'); await pg.keyboard.press('Control+z'); await wait(300)
+            await pg.keyboard.press('ControlOrMeta+z'); await pg.keyboard.press('ControlOrMeta+z'); await pg.keyboard.press('ControlOrMeta+z'); await wait(300)
             cont = await ed()
             if (cont.doc.includes('- [ ] \n') || cont.doc.includes('\n\n\n- 항목')) fail('⏎ 검사 되돌리기 실패 ' + JSON.stringify(cont.doc.slice(70, 100)))
             await setCaret(await idx('옆 글')); await wait(100)
@@ -1587,7 +1600,7 @@ try {
             ok('편집기 위젯 — 체크박스(한 글자만) · 위키링크')
           }
           await pg.click('.mded .cm-content')
-          await pg.keyboard.press('End'); await pg.keyboard.type('x'); await wait(250)
+          await pg.keyboard.press(K.end); await pg.keyboard.type('x'); await wait(250)
           await pg.keyboard.press('Backspace')
           await wait(1700)                                   // 자동 저장(800ms) 이 끝나길
           const after = readFileSync(abs)
@@ -1613,7 +1626,7 @@ try {
             if (!/\*\*항목\*\*/.test(bold)) fail('서식: 굵게가 파일에 안 들어갔다 ' + JSON.stringify(bold))
             // `/` 메뉴 — 줄 앞에서만 뜬다
             await pg.evaluate(() => { const c = document.querySelector('.mded .cm-content'); c.focus() })
-            await pg.keyboard.press('Control+End'); await pg.keyboard.press('Enter'); await pg.keyboard.type('/')
+            await pg.keyboard.press(K.docEnd); await pg.keyboard.press('Enter'); await pg.keyboard.type('/')
             await wait(600)
             const menu = await pg.evaluate(() => { const t = document.querySelector('.cm-tooltip-autocomplete'); return t ? [...t.querySelectorAll('li')].map((x) => x.textContent) : null })
             if (!menu || !menu.length) fail('서식: `/` 메뉴가 안 뜬다')
@@ -1639,7 +1652,7 @@ try {
             if (/\]\]\]/.test(linked)) fail('`[[` 닫는 괄호가 겹쳤다 ' + JSON.stringify(wl[0]))
             // 넣은 줄을 지워 뒤 검사(목차·찾기)가 보는 문서를 원래대로
             await pg.evaluate(() => { const c = document.querySelector('.mded .cm-content'); c.focus() })
-            await pg.keyboard.press('Control+End'); await pg.keyboard.down('Shift'); await pg.keyboard.press('Home'); await pg.keyboard.up('Shift'); await pg.keyboard.press('Backspace'); await pg.keyboard.press('Backspace'); await wait(600)
+            await pg.keyboard.press(K.docEnd); await pg.keyboard.press(K.selHome); await pg.keyboard.press('Backspace'); await pg.keyboard.press('Backspace'); await wait(600)
             ok('서식 — 고른 글 위 막대 · `/` 메뉴 · `[[` 문서 고르기')
           }
           /**
@@ -1674,7 +1687,7 @@ try {
             await pg.evaluate(() => document.querySelector('.mded .cm-content').focus())
             // ⚠ CodeMirror 의 `Mod` 는 **맥에서만 ⌘** 다 — 리눅스로 도는 이 검사에서는 ⌃ 를 눌러야 한다
             //    (우리 손으로 만든 단축키는 `metaKey || ctrlKey` 라 둘 다 먹어서 이 차이가 여기서만 드러난다)
-            await pg.keyboard.press('Control+f'); await wait(600)
+            await pg.keyboard.press('ControlOrMeta+f'); await wait(600)
             const find = await pg.evaluate(() => ({ cm: !!document.querySelector('.mded .cm-search'), tree: !!document.querySelector('.tfilter') }))
             if (!find.cm) fail('문서 찾기: ⌘F 로 편집기 찾기가 안 뜬다')
             if (find.tree) fail('🔴 ⌘F 가 문서 안인데 파일 목록 거르기가 열렸다 — 단축키가 칸을 안 본다')
@@ -1763,7 +1776,7 @@ try {
           const cellNow = (sel) => pg.evaluate((s2) => { const c = document.querySelector(s2); return c ? [...c.childNodes].filter((n) => !(n.nodeType === 1 && n.classList.contains('lp-grip'))).map((n) => n.textContent).join('') : null }, sel)
           await pg.click(cellSel)
           await pg.waitForFunction((s2) => document.activeElement === document.querySelector(s2), cellSel, { timeout: 5000 })
-          await pg.keyboard.press('End'); await pg.keyboard.type('9')
+          await pg.keyboard.press(K.end); await pg.keyboard.type('9')
           for (let i = 0; i < 30 && (await cellNow(cellSel)) !== '19'; i++) await wait(100)
           if ((await cellNow(cellSel)) !== '19') fail('표: 칸에 글자가 안 들어갔다 · ' + JSON.stringify(await cellNow(cellSel)))
           await pg.click('.mded .lp-h1')
@@ -2365,7 +2378,9 @@ try {
         }
         // 세션 삭제 버튼 — 행에 있고, 누르면 한 번 묻고, 목록에서 사라진다. 원래 보던 세션은 건드리지 않는다
         const keep = (await pg.textContent('.panel .srow.on .n')).trim()
-        await pg.click('.panel .sech:has-text("세션") .tools .ib'); await wait(1000) // 지울 세션 하나 더 만든다
+        const rows0 = (await pg.$$('.panel .srow')).length
+        await pg.click('.panel .sech:has-text("세션") .tools .ib') // 지울 세션 하나 더 만든다 — 생길 때까지(포화된 맥에서 1초를 넘긴다)
+        for (let i = 0; i < 40 && (await pg.$$('.panel .srow')).length <= rows0; i++) await wait(150)
         const names = await pg.$$eval('.panel .srow .n', (r) => r.map((x) => x.textContent.trim()))
         const victim = names.find((n) => n !== keep)
         if (!victim) fail('세션 삭제 UI: 지울 세션이 안 생김 ' + JSON.stringify(names))
@@ -3049,7 +3064,7 @@ try {
           // V-3 · 손가락 — 목록 줄과 절 머리의 버튼
           const taps = await vpg.evaluate(() => {
             const h = (q) => [...document.querySelectorAll(q)].map((e) => Math.round(e.getBoundingClientRect().height)).filter((x) => x > 0)
-            return { hz: h('.hsec .hz'), tools: h('.sech .tools .ib'), ib: h('.rpwrap .sec .ib') }
+            return { hz: h('.hsec .hz:not(.more)'), tools: h('.sech .tools .ib'), ib: h('.rpwrap .sec .ib') }   // «+N개 더 보기»(.more) 는 V-3 가 일부러 40px — 스킬이 7개 넘는 기기에서만 생긴다
           })
           if (taps.hz.some((x) => x < 42)) fail('V-3: 목록 줄이 손가락에 안 닿는다 ' + JSON.stringify(taps.hz))
           if (taps.tools.some((x) => x < 34)) fail('V-3: 절 머리 버튼이 너무 작다 ' + JSON.stringify(taps.tools))
@@ -3118,7 +3133,8 @@ try {
           const after = await pg.evaluate(() => { const r = document.querySelector('.tobot').getBoundingClientRect(); return { x: r.x, y: r.y } })
           if (Math.abs(after.x - on.x) > 0.5 || Math.abs(after.y - on.y) > 0.5) fail('↓: 마우스를 올리니 자리가 움직였다 ' + JSON.stringify({ on, after }))
         }
-        await pg.click('.tobot'); await wait(900)
+        await pg.click('.tobot')
+        for (let i = 0; i < 30 && !(await pg.evaluate(() => document.querySelector('.tobot')?.classList.contains('off'))); i++) await wait(150)   // 부드러운 스크롤이 끝날 때까지(포화된 맥에서 0.9초를 넘긴다)
         if (!(await pg.evaluate(() => document.querySelector('.tobot')?.classList.contains('off')))) fail('ui ↓ should hide at bottom')
         // 파일 칩 → 문서 열이 열린다 · 트리 클릭 → 미리보기 탭
         /**
@@ -3543,6 +3559,7 @@ try {
           const todoFile = join(root, '3. Area/제품_Rondo/todo.md')
           const before = readFileSync(todoFile, 'utf8')
           await pg.evaluate(() => { window.__sseOff?.() })         // 없으면 아래 오프라인 흉내로 끊는다
+          const errN = errs.length                                   // 일부러 끊는 동안의 «못 받음» 은 오류가 아니다(크로미움 153 은 콘솔 error 로 찍는다 · 2026-09-22)
           await pg.context().setOffline(true); await wait(600)
           writeFileSync(todoFile, before.replace('## 요청 · 할 일\n', '## 요청 · 할 일\n- [ ] 끊긴-사이-에-생긴-할일: 다시 붙으면 보여야 한다\n'))
           await wait(700)
@@ -3553,6 +3570,7 @@ try {
           writeFileSync(todoFile, before)                          // 원상복구
           if (!seen) fail('다시 붙어도 할 일이 안 온다 — 재접속 때 화면이 든 것을 다시 안 읽는다 ' + relBot)
           await wait(500)
+          for (let i = errs.length - 1; i >= errN; i--) if (/ERR_INTERNET_DISCONNECTED|Failed to fetch/.test(errs[i])) errs.splice(i, 1)
         }
 
           const shape = await pg.evaluate(() => {
@@ -3997,7 +4015,7 @@ try {
    * ⚠ 터미널 호스트에는 되세울 셸(`onRoot`)이 없다 → `restarting:false` 로 **솔직히** 답해야 한다.
    */
   {
-    const other = mkdtempSync(join(tmpdir(), 'fb-vault2-'))
+    const other = realpathSync(mkdtempSync(join(tmpdir(), 'fb-vault2-')))   // 호스트는 realpath 로 돌려준다(맥 /var → /private/var)
     mkdirSync(join(other, '1. Inbox'), { recursive: true })
     const br = await api(`/root/browse?path=${encodeURIComponent(other)}`)
     if (!br.dirs.some((d) => d.name === '1. Inbox')) fail('루트 고르기: 하위 폴더를 못 읽는다 ' + JSON.stringify(br))
