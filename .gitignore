@@ -148,3 +148,4 @@ dist/
 release/
 .folderbot-data/
 test/tmp/
+desktop/host/
