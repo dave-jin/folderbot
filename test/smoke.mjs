@@ -57,7 +57,8 @@ const K = { end: MAC ? 'Meta+ArrowRight' : 'End', docEnd: MAC ? 'Meta+ArrowDown'
 const fail = (m) => { console.error('✗', m); console.error(hostLog); host.kill(); process.exit(1) }
 const ok = (m) => console.log('✓', m)
 /** 폰 — 채팅에서 왼쪽으로 쓸어 폴더 패널로 (H-5 뒤 헤더에 폴더 단추가 없다) */
-const swipePanel = async (p) => { await p.mouse.move(320, 420); await p.mouse.down(); for (let i = 1; i <= 8; i++) { await p.mouse.move(320 - i * 25, 420); await new Promise((r) => setTimeout(r, 16)) } await p.mouse.up(); await new Promise((r) => setTimeout(r, 600)) }
+/** Z-2(2026-09-22) · 폴더로 **들어가는** 문은 독이다 — 쓸기는 «뒤로/앞으로» 뿐이라 👈 로는 폴더가 안 열린다 */
+const swipePanel = async (p) => { await p.click('.dock .db[title="파일"]'); await new Promise((r) => setTimeout(r, 600)) }
 
 /** 진짜 PNG 하나 (M-1 뷰어 검사용) — 라이브러리 없이 zlib 로. 상자보다 큰 그림이어야 «커서 기준» 이 보인다 */
 function bigPng(w, h) {
@@ -848,8 +849,8 @@ try {
           const ph = await br.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
           await ph.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark'); window.__shared = []; navigator.share = async (d) => { window.__shared.push((d.files || []).map((f) => [f.name, f.size, f.type])) }; navigator.canShare = () => true; const of = window.fetch.bind(window); window.fetch = (u, o = {}) => { const h = new Headers(o.headers || {}); h.set('x-fb-as', 'iphone'); return of(u, { ...o, headers: h }) } })
           await ph.goto(base + `/#bot=${bot.id}`); await ph.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(500)
-          // 폴더 패널은 왼쪽으로 쓸어서(H-5 뒤 헤더에 폴더 단추가 없다 — 독은 H 에서)
-          await ph.mouse.move(320, 400); await ph.mouse.down(); for (let i = 1; i <= 8; i++) { await ph.mouse.move(320 - i * 25, 400); await wait(16) } await ph.mouse.up(); await wait(700)
+          // 폴더 패널은 독의 📁 로 연다 (Z-2 뒤 👈 는 «앞으로» 라 폴더를 열지 않는다)
+          await ph.click('.dock .db[title="파일"]'); await wait(700)
           await ph.waitForSelector('.panel .trow', { timeout: 5000 }); await expandFiles(ph)
           await ctxOn(ph, '설명서.pdf', '공유…'); await wait(800)
           await ctxOn(ph, 'many', '공유…'); await wait(1500)
@@ -1152,8 +1153,12 @@ try {
               const dl = await hp.evaluate(() => { const d = document.querySelector('.drawer.left'); return { open: d?.classList.contains('open'), home: !!d?.querySelector('.mhome'), rows: d?.querySelectorAll('.mrow').length ?? 0, w: d?.getBoundingClientRect().width, scrim: !!document.querySelector('.scrim') } })
               if (!dl.open || !dl.home || dl.rows < 2 || dl.w > 500 * 0.9 || !dl.scrim) fail('H 좁음: 왼쪽 서랍 = 봇 목록(홈) ' + JSON.stringify(dl))
               await hp.screenshot({ path: 'test/tmp/h-narrow-left.png' })
-              await drag(470, 500, 250, 505); if ((await view()) !== 'chat') fail('H 좁음: 레일 열린 채 👈 → 닫힘 ' + (await view()))
-              await drag(380, 500, 150, 505); if ((await view()) !== 'panel') fail('H 좁음: 👈 → 오른쪽 서랍(패널) ' + (await view()))
+              await drag(470, 500, 250, 505); if ((await view()) !== 'chat') fail('H 좁음: 레일 열린 채 👈 → 방금 한 뒤로를 무름(채팅) ' + (await view()))
+              // 🔴 Z-2 · 👈 는 «앞으로» 다 — 앞으로 갈 데가 없으면 아무 일도 없다. 종전 band 에서는 여기서 폴더가 튀어나왔다
+              await drag(380, 500, 150, 505); if ((await view()) !== 'chat') fail('🔴 Z-2: 앞으로 갈 데가 없는 👈 가 폴더를 열었다 ' + (await view()))
+              // 🔴 갈 데가 없던 쓸기도 **글 선택을 남기면 안 된다** — 남으면 다음 쓸기가 «글 고르는 중» 으로 막힌다(실측)
+              if (await hp.evaluate(() => !(window.getSelection()?.isCollapsed ?? true))) fail('🔴 Z-2: 갈 데 없는 👈 가 글 선택을 남겼다 — 다음 쓸기가 막힌다')
+              await hp.click('.dock .db[title="파일"]'); await wait(400); if ((await view()) !== 'panel') fail('H 좁음: 독 📁 → 폴더')
               await hp.screenshot({ path: 'test/tmp/h-narrow-right.png' })
               // ⚠ 오른쪽 서랍 안의 할 일 행은 스스로 쓸린다(V16) — 그 위에서 시작한 끌기는 행이 먹는다(H-3 ①). 닫기는 머리말(제목 줄)에서 끈다
               await drag(150, 30, 390, 35); if ((await view()) !== 'chat') fail('H 좁음: 패널 열린 채 👉 → 닫힘 ' + (await view()))
@@ -1173,6 +1178,26 @@ try {
               await drag(pb2.x + pb2.width - 40, pb2.y + pb2.height / 2, pb2.x + 40, pb2.y + pb2.height / 2 + 2); if ((await view()) !== 'chat') fail('H 좁음: 코드 블록 위의 가로 끌기가 서랍을 열었다')
               const preScrolled = await hp.$eval('.amsg pre', (e) => e.scrollLeft > 0 || e.scrollWidth <= e.clientWidth); if (!preScrolled) console.log('  (참고) 코드 블록 scrollLeft 0 — 브라우저가 터치 스크롤을 흉내 내지 않았을 뿐, 서랍은 안 열렸다')
               await hp.mouse.move(250, 500); await hp.mouse.wheel(300, 0); await wait(300); if ((await view()) !== 'chat') fail('H 좁음: 트랙패드 가로 휠이 서랍을 열었다')
+              /**
+               * 🔴 **Z (2026-09-22 Dave 확정 · A Safari 모델) — 쓸기는 «고정 기능» 이 아니라 «온 길» 이다.**
+               *    종전 band 에서는 문서에서 👉 하면 폴더를 건너뛰고 채팅으로 갔고, [뒤로] 버튼은 폴더로 가서 두 모델이 공존했다.
+               */
+              const openDocFromPanel = async () => { await hp.click('.dock .db[title="파일"]'); await wait(450); const hit = await hp.evaluate(() => { const b = [...document.querySelectorAll('.panel .trow')].find((x) => /CLAUDE\.md/.test(x.textContent ?? '')); b?.click(); return !!b }); if (!hit) fail('Z: 폴더 트리에 CLAUDE.md 가 없다'); await wait(700) }
+              await openDocFromPanel(); if ((await view()) !== 'doc') fail('Z: 폴더에서 문서를 못 열었다 ' + (await view()))
+              // ① 폴더를 거쳐 왔으면 👉 는 폴더로 (건너뛰지 않는다)
+              await drag(150, 30, 390, 35); if ((await view()) !== 'panel') fail('🔴 Z-2: 폴더에서 연 문서인데 👉 가 폴더를 건너뛰었다 ' + (await view()))
+              await drag(150, 30, 390, 35); if ((await view()) !== 'chat') fail('Z-2: 폴더에서 👉 → 채팅 ' + (await view()))
+              // ② 👈 는 방금 한 뒤로를 그대로 무른다 — 폴더, 그 다음 문서
+              await drag(380, 500, 150, 505); if ((await view()) !== 'panel') fail('Z-2: 👈 → 방금 한 뒤로를 무름(폴더) ' + (await view()))
+              await drag(380, 500, 150, 505); if ((await view()) !== 'doc') fail('Z-2: 👈 두 번째 → 문서 ' + (await view()))
+              // ③ 🔴 [뒤로] 버튼과 쓸기가 **같은 곳**으로 간다 (두 모델 공존이 Z-2 의 정체였다)
+              await hp.click('.docwrap button[title="뒤로"]'); await wait(600)
+              if ((await view()) !== 'panel') fail('🔴 Z-2: 문서의 [뒤로] 버튼이 쓸기와 다른 데로 갔다 ' + (await view()))
+              // ④ 채팅에서 바로 연 문서는 온 길이 채팅이라 👉 가 채팅으로 (같은 문서라도 길이 다르면 뒤가 다르다)
+              await drag(150, 30, 390, 35); await wait(200); if ((await view()) !== 'chat') fail('Z-2: 폴더 → 채팅 ' + (await view()))
+              await hp.click('.dock .db[title="문서"]'); await wait(500); if ((await view()) !== 'doc') fail('Z: 독 📄 → 문서 ' + (await view()))
+              await drag(150, 30, 390, 35); if ((await view()) !== 'chat') fail('🔴 Z-2: 채팅에서 연 문서인데 👉 가 채팅으로 안 갔다 ' + (await view()))
+              await hp.screenshot({ path: 'test/tmp/z-narrow-stack.png' })
               // ☰ 로도 레일 · 어두워진 채팅(스크림) 탭 → 닫힘
               await hp.click('.chat-hdr .hb-menu'); await wait(400); if ((await view()) !== 'list') fail('H 좁음: ☰ → 레일')
               await hp.evaluate(() => { document.querySelector('.scrim')?.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 480, clientY: 400 })) }); await wait(350); if ((await view()) !== 'chat') fail('H 좁음: 어두워진 채팅 탭 → 닫힘')
@@ -3523,10 +3548,13 @@ try {
           await pg.click('.mrow'); await wait(400)
           await drag(200, 420, 260, 560)                  // 비스듬히 아래로 = 읽어 내려가기 — 넘기지 않는다
           if ((await view()) !== 'chat') fail('폰 제스처: 세로가 섞인 끌기를 넘기기로 읽었다 ' + (await view()))
-          await drag(300, 420, 110, 426)                  // 왼쪽으로 → 이 폴더에서(패널)
-          if ((await view()) !== 'panel') fail('폰 제스처: 왼쪽으로 끌었는데 폴더로 안 간다 ' + (await view()))
-          await pg.click('.rpwrap .rb'); await wait(300)  // 패널의 「대화로」
-          if ((await view()) !== 'chat') fail('폰 제스처: 패널에서 대화로 못 돌아왔다')
+          // Z-2(2026-09-22) · 👈 는 «앞으로(방금 한 뒤로를 무르기)» 다 — 폴더로 **들어가는** 문이 아니다
+          await drag(300, 420, 110, 426)
+          if ((await view()) !== 'chat') fail('🔴 Z-2: 앞으로 갈 데가 없는 👈 가 폴더를 열었다 ' + (await view()))
+          await pg.click('.dock .db[title="파일"]'); await wait(400)   // 폴더는 독으로 연다
+          if ((await view()) !== 'panel') fail('폰 제스처: 독 📁 로 폴더가 안 열린다 ' + (await view()))
+          await pg.click('.rpwrap .rb'); await wait(300)  // 패널의 [뒤로]
+          if ((await view()) !== 'chat') fail('폰 제스처: 패널에서 [뒤로] 로 대화에 못 돌아왔다')
           // «최신으로» — 규칙 자체를 잰다(transform 으로 가운데를 맞추면 :active 에 진다) + 보이면 눌러서 제자리인지
           const rule = await pg.evaluate(() => [...document.styleSheets].flatMap((sh) => { try { return [...sh.cssRules].map((r) => r.cssText) } catch { return [] } }).find((t) => t.startsWith('.tobot {') || t.startsWith('.tobot{')) ?? '')
           if (/transform:\s*translate/.test(rule) || !/translate:\s*-50%/.test(rule)) fail('최신으로: 가운데 맞춤이 transform 이다 — :active 의 scale 에 덮인다 · ' + rule)
@@ -3541,7 +3569,7 @@ try {
             if (at > 80) fail('최신으로: 눌렀는데 아래로 안 내려간다 ' + at)
           }
           await pg.click('.chat-hdr .rb'); await wait(350)  // 뒤로 → 홈 (아래 검사들의 출발점)
-          ok('폰 제스처 — 오른쪽 끌기 = 뒤로 · 왼쪽 끌기 = 폴더 · 비스듬한 끌기는 스크롤 · 최신으로 단추는 제자리' + (tb ? '(눌러서 확인)' : '(규칙만 — 단추가 안 떴다)'))
+          ok('폰 제스처 — 👉 = 뒤로(온 길) · 👈 = 앞으로 · 폴더는 독 · 비스듬한 끌기는 스크롤 · 최신으로 단추는 제자리' + (tb ? '(눌러서 확인)' : '(규칙만 — 단추가 안 떴다)'))
         }
         await pg.click('.mrow'); await wait(300); await swipePanel(pg); if (!(await pg.$('.rpwrap .rb'))) fail('phone: panel page'); await pg.screenshot({ path: 'test/tmp/phone-panel.png' })
         // 쓸어서 처리 — 행 도구는 없고, 오른쪽으로 길게 쓸면 완료된다 (터치 흉내)
