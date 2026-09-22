@@ -198,6 +198,13 @@ export function FolderPicker({ onClose, onStarted }: { onClose: () => void; onSt
   const byRel = useMemo(() => { const m = new Map<string, PNode>(); for (const l of Object.values(dirs)) for (const n of l) m.set(n.rel, n); for (const n of flat ?? []) if (!m.has(n.rel)) m.set(n.rel, n); return m }, [dirs, flat])
   const botOfRel = (rel: string) => s.bots.find((b) => b.rel === rel)
   const topRole = (rel: string) => byRel.get(rel.split('/')[0])?.role
+  /**
+   * AC · **칸(섹션) 자체는 봇이 못 된다** (2026-09-23 Dave: *«이렇게 폴더 전체가 생기면 안돼»*).
+   * 칸 = 맨 위 한 마디이면서 역할이 붙은 폴더(`1. Inbox`·`2. Projects`·`3. Area`·`4. Resources`·`5. Archive`).
+   * 고르면 **시작이 아니라 펼쳐서** 그 안의 폴더를 보여 준다 — 봇은 칸이 아니라 **일 하나**에 붙는다.
+   */
+  const isSection = (n: PNode) => !n.rel.includes('/') && !!n.role
+  const selIsSection = (() => { const n = sel ? byRel.get(sel) : undefined; return !!n && isSection(n) })()
   // 보이는 행 — 검색 중이면 평평하게, 아니면 트리
   const rows = useMemo(() => {
     const out: { n: PNode; depth: number; kind: 'dir' | 'new' }[] = []
@@ -299,7 +306,7 @@ export function FolderPicker({ onClose, onStarted }: { onClose: () => void; onSt
       <div className="modal-b" style={{ flex: 1 }} ref={listRef}>
         {rows.map(({ n, depth, kind }) => kind === 'new' ? (newIn === n.rel.replace(NEW_MARK, '') ? <div key={n.rel} className="newbox" style={{ marginLeft: 18 + depth * 16 }}><div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5 }}><Icon n="fplus" size={14} />새 폴더 만들기</div><input className="nm" autoFocus placeholder="이름" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void create(); if (e.key === 'Escape') setNewIn(null) }} /><div className="pv"><Icon n="chev" size={12} /><span className="mono">{newIn}/{preview(newIn, newName || '이름')}</span><span>· 하네스 설치 · 바로 시작</span></div></div>
             : <button key={n.rel} className="trow" style={{ ['--pad' as string]: `${18 + depth * 16 + 19}px`, color: 'var(--t2)' }} onClick={() => { setNewIn(n.rel.replace(NEW_MARK, '')); setNewName('') }}><Icon n="fplus" size={13} color="var(--t3)" /><span className="n">새 폴더 만들기</span></button>)
-          : <button key={n.rel} data-rel={n.rel} className={`trow dir ${sel === n.rel ? 'on' : ''}`} style={{ ['--pad' as string]: `${18 + depth * 16}px`, minHeight: 32, opacity: topRole(n.rel) === 'archive' ? .7 : 1 }} onClick={() => setSel(n.rel)} onDoubleClick={() => (n.botId || botOfRel(n.rel) ? onStarted(botOfRel(n.rel)!) : void start(n.rel))} title={n.rel}>
+          : <button key={n.rel} data-rel={n.rel} className={`trow dir ${sel === n.rel ? 'on' : ''}`} style={{ ['--pad' as string]: `${18 + depth * 16}px`, minHeight: 32, opacity: topRole(n.rel) === 'archive' ? .7 : 1 }} onClick={() => setSel(n.rel)} onDoubleClick={() => (isSection(n) ? toggle(n.rel) : n.botId || botOfRel(n.rel) ? onStarted(botOfRel(n.rel)!) : void start(n.rel))} title={n.rel}>
             <span className="cv" onClick={(e) => { e.stopPropagation(); toggle(n.rel) }} style={{ width: 14, padding: 4, margin: -4 }}>{q ? null : <Icon n={exp.has(n.rel) ? 'chevd' : 'chev'} size={10} />}</span><Icon n="folder" size={13} color="var(--t2)" />
             <span className="n" style={{ color: sel === n.rel ? 'var(--w)' : undefined }}>{q ? <span className="hitn"><span className="nm"><Hit s={n.name} q={q} /></span>{n.rel.includes('/') ? <span className="pth"><Mid s={n.rel.slice(0, n.rel.lastIndexOf('/'))} tail={10} /></span> : null}</span> : <Mid s={n.name} tail={8} />}</span>
             <span style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 'none' }}>
@@ -310,7 +317,7 @@ export function FolderPicker({ onClose, onStarted }: { onClose: () => void; onSt
           </button>)}
         {!rows.length ? <div className="empty">{q ? '찾는 폴더가 없어요' : '읽는 중…'}</div> : null}
       </div>
-      <div className="modal-f" style={{ flexWrap: 'nowrap', whiteSpace: 'nowrap' }}><span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--t2)', fontSize: 12, flex: 'none' }}><FolderBot color="#e08850" size={20} />또는 오케스트레이터에게 "X 폴더에서 시작해"</span><span className="crumb">{crumbs.length ? <span>{crumbs.slice(0, -1).map((c) => `${c} / `).join('')}<b>{crumbs[crumbs.length - 1]}</b></span> : <span style={{ color: 'var(--t3)' }}>폴더를 고르세요</span>}</span>{err ? <span className="err" style={{ color: 'var(--err)', fontSize: 12, flex: 'none' }}>{err}</span> : null}<button className="btn" onClick={onClose} style={{ flex: 'none' }}>취소</button><button className="btn primary" style={{ flex: 'none' }} disabled={busy || !sel} onClick={() => (selBot ? onStarted(selBot) : sel ? void start(sel) : undefined)}>{selBot ? '봇 열기' : selNode && topRole(sel!) === 'archive' ? '보관 폴더지만 시작' : '이 폴더에서 시작'}</button></div>
+      <div className="modal-f" style={{ flexWrap: 'nowrap', whiteSpace: 'nowrap' }}><span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--t2)', fontSize: 12, flex: 'none' }}><FolderBot color="#e08850" size={20} />또는 오케스트레이터에게 "X 폴더에서 시작해"</span><span className="crumb">{crumbs.length ? <span>{crumbs.slice(0, -1).map((c) => `${c} / `).join('')}<b>{crumbs[crumbs.length - 1]}</b></span> : <span style={{ color: 'var(--t3)' }}>폴더를 고르세요</span>}</span>{selIsSection && !err ? <span style={{ color: 'var(--t3)', fontSize: 12, flex: 'none' }}>칸이에요 — 그 안의 폴더를 고르세요</span> : null}{err ? <span className="err" style={{ color: 'var(--err)', fontSize: 12, flex: 'none' }}>{err}</span> : null}<button className="btn" onClick={onClose} style={{ flex: 'none' }}>취소</button><button className="btn primary" style={{ flex: 'none' }} disabled={busy || !sel || selIsSection} title={selIsSection ? '칸에는 봇을 만들지 않아요 — 그 안의 폴더를 고르세요' : ''} onClick={() => (selBot ? onStarted(selBot) : sel ? void start(sel) : undefined)}>{selBot ? '봇 열기' : selNode && topRole(sel!) === 'archive' ? '보관 폴더지만 시작' : '이 폴더에서 시작'}</button></div>
     </div>
   </>
 }

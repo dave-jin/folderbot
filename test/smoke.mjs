@@ -383,6 +383,32 @@ try {
   await mcp('tools/call', { name: 'folder_move', arguments: { from: '1. Inbox/예시랩_자문자료.txt', to: '3. Area/재무_CFO/자료/예시랩_자문자료.txt' } })
   if (!existsSync(join(root, '3. Area/재무_CFO/자료/예시랩_자문자료.txt'))) fail('move')
   const undo = await api('/undo'); await api('/undo', { t: undo[0].t }); if (!existsSync(join(root, '1. Inbox/예시랩_자문자료.txt'))) fail('undo'); ok('inbox move + undo')
+  /**
+   * 🔴 **AC · 칸(섹션) 자체에는 봇을 안 만든다** (2026-09-23 Dave 스크린샷 056: *«리소스와 아카이브도 프로젝트와
+   *    에어리어 처럼 그 하단에 폴더명으로 생겨야해. 이렇게 폴더 전체가 생기면 안돼»*).
+   *    `2. Projects`·`3. Area` 는 글롭(`…/*`)의 부모라 자연히 막혀 있었지만 `4. Resources`·`5. Archive`·`1. Inbox` 는 통과했다.
+   */
+  {
+    for (const sec of ['4. Resources', '5. Archive', '1. Inbox', '2. Projects', '3. Area']) {
+      const r = await fetch(base + '/api/bots/start', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rel: sec }) })
+      const body = await r.json()
+      if (r.status === 200) fail(`🔴 AC: 칸 「${sec}」 이 통째로 봇이 됐다 · ` + JSON.stringify(body))
+      if (!/칸이에요/.test(body.error ?? '')) fail(`AC: 왜 안 되는지 안 알려 준다 (${sec}) · ` + JSON.stringify(body))
+      if ((await api('/bots')).some((b) => b.rel === sec)) fail(`🔴 AC: 막았는데 목록에 「${sec}」 봇이 있다`)
+    }
+    // 칸 「안」 의 폴더는 그대로 된다 — 폴더명이 봇 이름이고 섹션은 그 칸이다
+    mkdirSync(join(root, '4. Resources/2026_소울-영어오디오'), { recursive: true })
+    const kid = await api('/bots/start', { rel: '4. Resources/2026_소울-영어오디오' })
+    if (kid.name !== '2026_소울-영어오디오' || kid.section !== '4. Resources') fail('AC: 칸 안 폴더가 폴더명으로 안 생겼다 ' + JSON.stringify(kid))
+    // 안내에 «그 안의 폴더» 예시가 들어간다 — 사람이 다음에 뭘 할지 안다
+    const r2 = await fetch(base + '/api/bots/start', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rel: '4. Resources' }) })
+    if (!/2026_/.test((await r2.json()).error ?? '')) fail('AC: 안내에 그 안의 폴더 예시가 없다')
+    // 봇도 같은 문에 걸린다(MCP)
+    const mres = await mcp('tools/call', { name: 'bot_start', arguments: { rel: '5. Archive' } })
+    if (!/칸이에요/.test(mres.result.content[0].text)) fail('AC: 봇(MCP)도 같은 문에 걸려야 한다 · ' + mres.result.content[0].text)
+    await api(`/bots/${kid.id}/stop`, {})
+    ok('AC 칸은 봇이 아니다 — 다섯 칸 전부 막히고 · 그 안의 폴더는 폴더명으로 · 봇도 같은 문')
+  }
   // 어디서든 시작 — Resources 의 깊은 폴더 · 그 안에 새 폴더 · ls 에 하네스/봇/역할
   mkdirSync(join(root, '4. Resources/2026_브랜딩-DAVE/02_링크드인'), { recursive: true })
   const deep = await api('/bots/start', { rel: '4. Resources/2026_브랜딩-DAVE/02_링크드인' })

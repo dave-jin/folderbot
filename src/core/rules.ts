@@ -91,6 +91,31 @@ export function globParents(globs: string[]): string[] {
   return out
 }
 
+/**
+ * AC · **칸(섹션) 자체는 봇이 될 수 없다** (2026-09-23 Dave: *«리소스와 아카이브도 프로젝트와 에어리어 처럼
+ * 그 하단에 폴더명으로 생겨야해. 이렇게 폴더 전체가 생기면 안돼»* · 스크린샷 056 에서 `4. Resources` 통째로 봇이 됐다).
+ *
+ * 🔴 **봇은 「일 하나」에 붙는다.** 칸은 일이 아니라 **일들이 사는 자리**다 — 칸에 봇을 붙이면 트리에 수십 개
+ *    프로젝트가 한꺼번에 딸려 들어오고, 레일에서는 상위 칸이 없어 「관제」 자리로 떠 버린다(056 이 그 모습이다).
+ * 🔴 `2. Projects`·`3. Area` 는 글롭(`…/*`)의 **부모**라 자연히 막혀 있었는데, `4. Resources`·`5. Archive`·
+ *    `1. Inbox` 는 글롭에 `/*` 가 없어 **칸 자체가 통과**했다. 판정을 여기 한곳에 둔다.
+ */
+export function sectionRoots(rules: FolderRules): string[] {
+  const strip = (g: string) => g.replace(/\/\*+$/, '')
+  // ⚠ `*/*` 같은 글롭의 부모는 `*` 다 — 그건 «칸» 이 아니라 «아무 폴더나» 라는 뜻이라 여기 넣지 않는다
+  const out = new Set<string>(globParents(rules.roles.active).filter((g) => g && !g.includes('*')))
+  for (const g of [...rules.roles.inbox, ...rules.roles.reference, ...rules.roles.archive]) {
+    const r = strip(g).trim()
+    if (r && !r.includes('*')) out.add(r)
+  }
+  return [...out]
+}
+/** 이 경로가 칸 자체인가 — 봇은 칸이 아니라 **그 안의 폴더**에 붙는다 */
+export function isSectionRoot(rules: FolderRules, rel: string): boolean {
+  const r = String(rel ?? '').replace(/^\/+|\/+$/g, '')
+  return !!r && sectionRoots(rules).some((x) => x === r)
+}
+
 export function roleOf(rules: FolderRules, rel: string): 'inbox' | 'active' | 'reference' | 'archive' | null {
   const top = (list: string[]) => list.some((g) => rel === g || rel.startsWith(g.replace(/\/\*$/, '') + '/'))
   if (rules.roles.active.some((g) => globMatch(g, rel))) return 'active'
