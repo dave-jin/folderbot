@@ -22,9 +22,14 @@ export const AGENT_MODELS: Record<ProviderId, AgentModel[]> = {
      *    선택하게 할꺼야»* · Claude Code 의 모델 메뉴와 같은 결).
      * ⛔ 목록을 늘리지 마라 — 고를 것이 많아지면 «무엇이 다른지» 를 매번 생각하게 된다.
      *    옛 판·특수 판은 `MORE_MODELS` 로 내려간다(「더 많은 모델」).
+     *
+     * 🔴 **이 목록은 짐작으로 고치지 않는다 — 깔려 있는 `claude` CLI 가 정본이다** (AF · 2026-09-23).
+     *    확인하는 법: `strings -a $(readlink -f $(which claude)) | grep -oE 'claude-(opus|sonnet|haiku|fable)-[0-9-]+' | sort -u`
+     *    (별칭은 `"opus55"` 꼴로, 표시 이름은 `Opus 5.5` 꼴로 같은 번들에 들어 있다.)
+     *    2026-09-23 실측(CLI 2.1.280 · npm 최신과 같음): Opus 5.5 **있음** · Fable 5.2 **없음**(Fable 은 5 와 5.1 뿐).
      */
     { v: 'claude-fable-5-1', t: 'Fable 5.1', d: '가장 똑똑함 · 기본' },
-    { v: 'claude-opus-5', t: 'Opus 5', d: '' },
+    { v: 'claude-opus-5-5', t: 'Opus 5.5', d: '' },
     { v: 'claude-sonnet-5', t: 'Sonnet 5', d: '빠름' },
     { v: 'claude-haiku-4-5-20251001', t: 'Haiku 4.5', d: '가장 빠름' }
   ],
@@ -55,6 +60,7 @@ export const MORE_MODELS: Record<ProviderId, AgentModel[]> = {
     // 🔴 **Claude Code 의 「더 많은 모델」과 같은 줄 세우기** (2026-09-15 Dave 스크린샷) — 옛 판을
     //    여기서 고를 수 있어야 한다. 첫 목록은 그대로 짧게 둔다.
     { v: 'claude-fable-5', t: 'Fable 5', d: '' },
+    { v: 'claude-opus-5', t: 'Opus 5', d: '' },
     { v: 'claude-opus-4-8', t: 'Opus 4.8', d: '' },
     { v: 'claude-opus-4-7', t: 'Opus 4.7', d: '' },
     { v: 'claude-opus-4-6', t: 'Opus 4.6', d: '' },
