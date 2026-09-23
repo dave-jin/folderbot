@@ -92,7 +92,6 @@ b,strong { color:var(--w); font-weight:600 }
   height:calc(var(--tabh) + env(safe-area-inset-bottom)); padding-bottom:env(safe-area-inset-bottom);
   border-top:1px solid var(--line); background:color-mix(in srgb, var(--sb) 86%, transparent); backdrop-filter:blur(18px) saturate(1.2);
   transition:transform .2s ease-out }
-.tabbar.hide { transform:translateY(100%) }
 .tabbar .tb { flex:1; min-width:0; position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
   color:var(--t3); font-size:10.5px; line-height:1 }
 .tabbar .tb.on { color:var(--w) }
@@ -102,7 +101,15 @@ b,strong { color:var(--w); font-weight:600 }
 /* 탭이 가리지 않게 입력칸과 서랍이 그만큼 올라온다 */
 /* ⚠ **키보드가 올라온 동안에는 `bottom` 을 전환하지 않는다.** 키보드는 시각 뷰포트에 화면을 다시 붙이는데(P-4),
    그때 입력칸이 0.2초 동안 «움직이는 중» 이면 손가락이 옛 자리를 누른다 — 실측으로 폰의 보내기 단추가 안 먹었다. */
-.app.phone .chat-foot { bottom:var(--tablift) }
+/* 🔴 **안전영역을 두 번 빼지 않는다** (AD · 2026-09-23 Dave: «채팅창과 하단 탭 사이의 여백이 너무 많다»).
+   `--tablift` 가 이미 `safe-area-inset-bottom` 을 품고 있는데 아래 폰 규칙이 `--sab` 를 **또** 더해
+   아이폰에서 30여 px 이 그냥 비어 있었다. 탭이 있을 때는 작은 숨 자리(6px)만 둔다. */
+.app.phone .chat-foot { bottom:var(--tablift); padding-bottom:6px }
+.app.phone.notabs .chat-foot { padding-bottom:calc(var(--sab) + 4px) }
+/* 🔴 **시트는 탭 위에 앉는다** (AD · 2026-09-23 실측). 시트는 서랍 안에 있어 `z-index:90` 이 **서랍의 쌓임 맥락
+   (z-index:31) 안에서만** 셈이 된다 — 탭(32)이 늘 떠 있게 되자 시트 아래쪽 [저장] 단추가 탭에 깔려 안 눌렸다.
+   높이를 탭만큼 올려 둔다(키보드가 올라오면 탭이 없어 `--tablift` 가 0 이라 저절로 제자리다). */
+.app.phone .tsheet { bottom:calc(var(--kbh, 0px) + var(--tablift)) }
 .app.phone:not(.kb) .chat-foot { transition:bottom .2s ease-out }
 /* 「최근으로」 단추도 같이 올라온다 — 안 올리면 탭이 덮어 누를 수가 없다(실측) */
 .app.phone .tobot { bottom:calc(var(--footh) + 14px + var(--tablift)) }
@@ -1224,6 +1231,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .live.hold .bounce i:nth-child(2) { animation-delay:.18s } .live.hold .bounce i:nth-child(3) { animation-delay:.36s }
 @keyframes fbBounceDot { 0%,60%,100% { opacity:.25; transform:translateY(0) } 30% { opacity:1; transform:translateY(-3px) } }
 /* 헤더 한 줄 — 레일·대기 줄과 같은 값에서 나온다 */
+.pfoot.sm { padding:6px 12px calc(var(--sab) + 6px); font-size:11.5px; opacity:.75 }
 .hstate { display:inline-flex; align-items:center; gap:5px; flex:none; font-size:11.5px; white-space:nowrap;
   color:color-mix(in srgb, var(--hold) 62%, var(--t2)) }
 .hstate i { width:6px; height:6px; border-radius:50%; background:var(--hold); animation:fbBreathe 2.6s ease-in-out infinite }

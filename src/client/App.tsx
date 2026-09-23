@@ -22,10 +22,10 @@ import { CopyProgressHost } from './fileCopy'
 import { attachRoom } from '../core/attach'
 import { applyViewport, planViewport } from '../core/viewport'
 import { canStartSwipe, dragProgress, lockOf, scrollableEats, stageOf, swipeVerdict } from '../core/drawer'
-import { back as navBackOf, curOf, dismiss, goTo, navInit, swipeMove, type Nav, type Page } from '../core/navstack'
+import { curOf, dismiss, goTo, navInit, type Nav, type Page } from '../core/navstack'
 import { botUnread, shouldMarkRead } from '../core/unread'
 import { clampDockOffset, isDockDrag, readDockOffset } from '../core/dock'
-import { tabActive, tabVisible } from '../core/tabbar'
+import { tabActive } from '../core/tabbar'
 import { SwipeRow } from './SwipeRow'
 import { dueChip } from '../core/botName'
 import { LocalOpenHost, localBridge, openOnThisDevice, useLocalSettings } from './localOpen'
@@ -260,13 +260,15 @@ function Main() {
   const [iconSz] = useIconSize() // 레일 폴더봇 크기 — 설정에서 고른다(--fbi 도 함께 나간다)
   /**
    * Z-2 · **화면은 칸이 아니라 «온 길»(스택)이다** (2026-09-22 Dave 확정 · A Safari 모델). 지금 보는 쪽은 `view`
-   * 하나로 읽고, 옮길 때는 `setView`(한 걸음 들어감) 와 `navBack`(한 걸음 되돌아감) 둘만 쓴다.
-   * 🔴 [뒤로] 버튼·👉 쓸기·스크림 탭·Esc 가 **모두 `navBack` 하나**다 — 두 모델이 공존하던 것이 Z-2 의 정체였다.
+   * 하나로 읽고, 옮길 때는 `setView`(그 쪽으로) 와 `toList`(봇 목록으로) 둘만 쓴다.
+   * 🔴 **AD(2026-09-23)** — 폰에서는 **👉 쓸기·모든 좌상단 버튼이 전부 `toList` 하나**다. 앞으로 가는 길은 하단 탭이 맡는다.
+   *    Z-2 의 «온 길 되짚기»(back/forward)는 길이 둘이 되는 걸 막으려고 **걷어냈다** — 스택은 `dismiss` 가 쓰는 기록으로만 남는다.
    */
   const [nav, setNav] = useState<Nav>(() => navInit(!!hash.bot || stageOf(window.innerWidth) !== 'narrow'))
   const view = curOf(nav)
   const setView = (p: Page) => setNav((n) => goTo(n, p))
-  const navBack = () => setNav(navBackOf)
+  /** AD · **모든 화면의 좌상단·👉 = 봇 목록** (2026-09-23 Dave: *«무조건 폴더 리스트로 가도록 통일»*) */
+  const toList = () => setView('list')
   /** 어두워진 채팅 탭 · Esc · [접기] — «채팅으로 돌아가기». 「뒤로」와 갈라 둔다(봇 목록은 뒤로 열고 폴더·문서는 앞으로 열기 때문) */
   const navDismiss = () => setNav(dismiss)
   const [lay, setLay] = useState<Layout>(() => { try { return { ...DEF, ...JSON.parse(localStorage.getItem('fb:layout') ?? '') } } catch { return DEF } })
@@ -574,23 +576,12 @@ function Main() {
    * ⚠ 독의 포인터는 서랍 쓸기로 새면 안 된다(`stopPropagation`) — 독을 잡고 세로로 끄는 동안 채팅이 넘어가면 안 된다.
    */
   /**
-   * Z · 폰 **하단 탭** (2026-09-22 Dave 확정 「B · 하단 탭(내리면 숨음)」). 읽어 내려가면 비키고 올라오면 돌아온다.
-   * 🔴 스크롤은 **창에서 캡처로** 듣는다 — 채팅·폴더·문서가 저마다 다른 스크롤러라 하나씩 붙이면 한 군데는 꼭 빠진다.
+   * Z·AD · 폰 **하단 탭**. 2026-09-22 에 「내리면 숨음」으로 만들었다가 2026-09-23 Dave 지시로 **고정**했다 —
+   * *«사라지더라도 실제 채팅창이 고정되어 있으니까 의미가 없어»*. 숨어서 버는 자리가 없으면 깜빡임만 남는다.
+   * 탭이 없는 때는 둘뿐이다 — **봇 목록**(갈 곳이 목록 자체다)과 **키보드**(입력칸을 가린다).
    */
-  const [tabsOn, setTabsOn] = useState(true)
-  const tabTops = useRef(new WeakMap<EventTarget, number>())
-  useEffect(() => {
-    if (!phone) return
-    const f = (e: Event) => {
-      const t = e.target as HTMLElement | null; if (!t || !(t instanceof HTMLElement)) return
-      const to = t.scrollTop; const from = tabTops.current.get(t) ?? to
-      tabTops.current.set(t, to)
-      setTabsOn((v) => tabVisible(v, from, to))
-    }
-    window.addEventListener('scroll', f, true)
-    return () => window.removeEventListener('scroll', f, true)
-  }, [phone])
-  useEffect(() => { setTabsOn(true) }, [view])   // 화면을 옮기면 탭은 늘 보이는 데서 시작한다
+  /** AD · 폰의 「할 일」과 「폴더」는 **다른 화면**이다 (2026-09-23 Dave) — 같은 서랍을 쓰되 보여 주는 절이 다르다 */
+  const [panelTab, setPanelTab] = useState<'todo' | 'files'>('files')
   const tabsHere = phone && view !== 'list' && !kb   // 봇 목록과 키보드 위에서는 탭 자체가 없다
   const dockRef = useRef<HTMLDivElement>(null)
   const [dockY, setDockY] = useState(() => { try { return readDockOffset(localStorage.getItem('fb:docky')) } catch { return 0 } })
@@ -654,16 +645,18 @@ function Main() {
         if (el.matches('pre, table, .tblwrap, .achips, .cchips, .chat-scroll, .md') && scrollableEats(el, dir)) { g.dead = true; return }
       }
       /**
-       * Z-2 · 👉 는 온 길을 한 걸음 되돌아가고 👈 는 그 뒤로를 무른다.
-       * 🔴 **갈 데가 없어도 «가로 쓸기» 로는 잡는다**(`lock='h'` · `next=null`). 안 잡으면 손가락이 글 위를 지나며
-       *    **선택을 남기고**, 그 선택 때문에 다음 쓸기가 «글 고르는 중» 으로 막힌다 — 실측으로 한 번 막혔다.
+       * 🔴 **AD (2026-09-23 Dave) — 쓸기는 👉 하나뿐이고 «어디서든 봇 목록» 이다.**
+       *    *«왼쪽으로 쓸기 기능은 아예 삭제(탭으로 다 해결됨) · 오른쪽으로 쓸기만 남겨서 어디서든 바로 폴더 리스트»*.
+       *    Z-2 의 온 길(스택) 되짚기는 **하단 탭이 대신**한다 — 길이 둘이면 또 «두 가지 뜻» 이 생긴다.
+       * 🔴 **갈 데가 없어도 «가로 쓸기» 로는 잡는다**(`next=null`). 안 잡으면 손가락이 글 위를 지나며 **선택을 남기고**,
+       *    그 선택 때문에 다음 쓸기가 «글 고르는 중» 으로 막힌다 — 실측으로 한 번 막혔다.
        */
-      const mv = swipeMove(nav, dir)
-      g.lock = 'h'; g.dir = dir; g.side = mv?.side ?? null; g.mode = mv?.mode ?? 'swap'; g.next = mv?.next ?? null
-      if (mv && mv.mode !== 'swap') setDragSide(mv.side)   // 폴더↔문서는 같은 서랍 안에서 내용만 바뀐다 — 손가락 따라 움직일 그림이 없다
+      const goList = dir === 'r' && view !== 'list'
+      g.lock = 'h'; g.dir = dir; g.side = goList ? 'left' : null; g.mode = 'open'; g.next = goList ? goTo(nav, 'list') : null
+      if (goList) setDragSide('left')
       try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* 합성 이벤트 */ }
     }
-    if (g.lock === 'h' && g.side && g.mode !== 'swap') paintDrag(g.side, dx, g.mode === 'open')
+    if (g.lock === 'h' && g.side) paintDrag(g.side, dx, true)
   }
   const swUp = (e: React.PointerEvent) => {
     const g = gref.current; if (!g || g.id !== e.pointerId) return
@@ -676,7 +669,7 @@ function Main() {
     // 드릴인(서브에이전트) 안에서의 👉 는 먼저 드릴에서 나온다 — Chat 이 fb:nav 를 받아 preventDefault 하면 서랍은 안 연다
     if (ok && g.dir === 'r' && view === 'chat') { const ev = new CustomEvent('fb:nav', { cancelable: true, detail: 'back' }); window.dispatchEvent(ev); if (ev.defaultPrevented) ok = false }
     if (ok && g.next) setNav(g.next)
-    if (g.mode !== 'swap' && g.side) settle(g.side)
+    if (g.side) settle(g.side)
     else setDragSide('')
   }
   const swCancel = () => { const g = gref.current; gref.current = null; if (g?.side) settle(g.side) }
@@ -799,8 +792,19 @@ function Main() {
         <div className="gap" />
         {stripBots.map(({ b, sum }) => <button key={b.id} className={`bot ${b.id === bot.id ? 'on' : ''} ${sum.unread ? 'unread' : ''}`} onClick={() => go(b.id)}><FolderBot color={b.color} size={17} mood={sum.mood} unread={sum.unread} mono /><span className="fly"><b><Mid s={b.displayName} /></b><span><span className={`dot ${stateDot(sum.state ?? undefined)}`} style={{ marginRight: 5 }} />{sum.text}</span><span className="t3">{b.section} · {fmtTime(sum.t)}</span></span></button>)}
       </div>
-  const docwrapEl = showDoc ? <div className="docwrap" style={{ width: wide || narrow ? undefined : fit.doc, flex: wide ? 3 : 'none', display: 'flex', minWidth: 0 }}><DocPane bot={bot} docs={docs} filesTick={s.filesTick[bot.id]} onTalk={(rel) => { setPrefill(`${rel} 파일 봐 줘: `); if (phone) setView('chat') }} onHide={() => setDocOpen((d) => ({ ...d, [bot.id]: false }))} wide={wide} onWide={() => setWide(!wide)} onAttach={(rel) => addAttach({ rel, abs: `${bot.abs}/${rel}` })} say={say} phone={phone} onBack={navBack} /></div> : null
-  const rpwrapEl = <div className="rpwrap" style={{ width: narrow ? '100%' : fit.rp, flex: 'none', display: 'flex', minWidth: 0 }}><Panel bot={bot} sessions={sessions} sessionId={sessionId} go={go} onOpenFile={(rel, pin) => openInDocPane(rel, { pin })} onTalk={(t) => { setPrefill(t); if (phone) setView('chat') }} onAttach={(rel, dir) => addAttach({ rel, abs: `${bot.abs}/${rel}`, dir })} onMention={(rel) => { setMentionReq((m) => [...m, rel]); if (phone) setView('chat') }} onStartAt={startAt} onNewFolderAt={newFolderAt} touched={touched} filesTick={s.filesTick[bot.id]} secH={lay.secH} onSecH={(h) => setLay({ ...lay, secH: h })} onCollapse={closeRp} focusSec={focusSec} say={say} refresh={refresh} activeDoc={showDoc ? docs.active : null} onDragY={(on) => setDrag(on ? 'y' : '')} phone={phone} onBack={navBack} /></div>
+  const docwrapEl = showDoc ? <div className="docwrap" style={{ width: wide || narrow ? undefined : fit.doc, flex: wide ? 3 : 'none', display: 'flex', minWidth: 0 }}><DocPane bot={bot} docs={docs} filesTick={s.filesTick[bot.id]} onTalk={(rel) => { setPrefill(`${rel} 파일 봐 줘: `); if (phone) setView('chat') }} onHide={() => setDocOpen((d) => ({ ...d, [bot.id]: false }))} wide={wide} onWide={() => setWide(!wide)} onAttach={(rel) => addAttach({ rel, abs: `${bot.abs}/${rel}` })} say={say} phone={phone} onBack={toList} /></div> : null
+  /**
+   * AD · **문서 탭은 비어 있어도 눌린다** (2026-09-23 Dave: *«문서가 없을 때 누르면 그냥 빈 문서 보여 주면 돼»*).
+   *    종전에는 `disabled` 라 손가락이 아무 반응도 못 받았다 — 흐린 단추는 «고장» 으로 읽힌다.
+   */
+  const docEmptyEl = <div className="docwrap" style={{ display: 'flex', minWidth: 0, flex: 1 }}>
+    <div className="pane" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <div className="hdr">{phone ? <button className="rb glassb" onClick={toList} title="봇 목록"><Icon n="list" size={20} /></button> : null}<span className="ttl">문서</span><span className="sp" /></div>
+      <div className="empty" style={{ flex: 1 }}><FolderBot color={bot.color} size={40} mood="idle" /><div>연 문서가 없어요.<br /><span style={{ color: 'var(--t3)' }}>아래 <b>폴더</b> 탭에서 파일을 누르면 여기에 열려요.</span></div>
+        <button className="btn" onClick={() => { setPanelTab('files'); setView('panel') }}>폴더 열기</button></div>
+    </div>
+  </div>
+  const rpwrapEl = <div className="rpwrap" style={{ width: narrow ? '100%' : fit.rp, flex: 'none', display: 'flex', minWidth: 0 }}><Panel bot={bot} sessions={sessions} sessionId={sessionId} go={go} onOpenFile={(rel, pin) => openInDocPane(rel, { pin })} onTalk={(t) => { setPrefill(t); if (phone) setView('chat') }} onAttach={(rel, dir) => addAttach({ rel, abs: `${bot.abs}/${rel}`, dir })} onMention={(rel) => { setMentionReq((m) => [...m, rel]); if (phone) setView('chat') }} onStartAt={startAt} onNewFolderAt={newFolderAt} touched={touched} filesTick={s.filesTick[bot.id]} secH={lay.secH} onSecH={(h) => setLay({ ...lay, secH: h })} onCollapse={closeRp} focusSec={focusSec} say={say} refresh={refresh} activeDoc={showDoc ? docs.active : null} onDragY={(on) => setDrag(on ? 'y' : '')} phone={phone} onBack={toList} only={phone ? panelTab : undefined} /></div>
   const stripRightEl = <div className="strip right"><button className="ib" onClick={() => openRp()} title="패널 펼치기 (⌘⇧B)"><Icon n="panelr" size={14} /></button>
     {/* S-3 · 패널을 접어 둬도 **새 세션 +** 는 우측 상단에 남는다 (2026-09-21 Dave: «상시 노출») — 펼친 패널 「세션」 줄의 + 와 같은 일 */}
     <button className="ib nsb" onClick={() => { void newSession(); openRp('sessions') }} title="새 세션 (⌘N)"><Icon n="plus" size={14} /><span className="fly"><b>새 세션</b><span>이 폴더에서</span></span></button><div className="gap" />
@@ -809,7 +813,7 @@ function Main() {
         <button className="ib" onClick={() => openRp('files')}><Icon n="folder" size={14} /><span className="fly"><b>파일</b><span>{bot.rel || '볼트'}</span></span></button>
         <button className="ib" onClick={() => openRp('routines')}><Icon n="cal" size={14} /><span className="fly"><b>루틴</b><span>{bot.routines.length}개</span></span></button>
       </div>
-  return <div className={`app ${isDesktop ? 'desktop' : ''} ${phone ? 'phone' : ''} ${mid ? 'smid' : ''} ${kb ? 'kb' : ''} ${drag === 'x' ? 'dragx' : drag === 'y' ? 'dragy' : ''} ${phone && !tabsHere ? 'notabs' : ''}`} data-view={view === 'doc' && !showDoc ? 'panel' : view} data-nav={`${nav.stack.join('>')}${nav.fwd.length ? ' |' + [...nav.fwd].reverse().join('>') : ''}`}>
+  return <div className={`app ${isDesktop ? 'desktop' : ''} ${phone ? 'phone' : ''} ${mid ? 'smid' : ''} ${kb ? 'kb' : ''} ${drag === 'x' ? 'dragx' : drag === 'y' ? 'dragy' : ''} ${phone && !tabsHere ? 'notabs' : ''}`} data-view={view === 'doc' && !showDoc && !phone ? 'panel' : view} data-nav={`${nav.stack.join('>')}${nav.fwd.length ? ' |' + [...nav.fwd].reverse().join('>') : ''}`}>
     {s.online === 'off' ? <div className="offline">{s.hostName || '호스트'} 와 다시 연결하는 중…</div> : null}
     {s.auth.verdict === 'unreadable' || s.auth.verdict === 'loggedout' ? <div className="banner"><span className="dot wait" /><span><b>{s.hostName} 에서 Claude 로그인이 필요해요.</b> 호스트 맥에서 <span className="mono">claude</span> → <span className="mono">/login</span>, 또는 설정 › Claude 토큰. 보낸 지시는 대기열에 두었다가 복구되면 이어서 해요.</span><span style={{ marginLeft: 'auto' }} /><button className="btn" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button></div> : null}
     <div className={`cols ${dragSide ? 'dragging' : ''}`} ref={colsRef} onPointerDown={swDown} onPointerMove={swMove} onPointerUp={swUp} onPointerCancel={swCancel}>
@@ -819,7 +823,7 @@ function Main() {
       {stage === 'wide' ? <div className="divx" onPointerDown={sbOpen ? dragX('sb', 1) : undefined} onDoubleClick={() => setLay({ ...lay, sb: DEF.sb, sbOpen: true, sbPin: true })} /> : null}
 
       {/* ── 채팅 ── */}
-      <Chat bot={bot} sessions={sessions} cur={cur} items={items} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openInDocPane(rel, { pin })} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={navBack} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} queue={queueFor(sessionId)} onQueue={(f) => { if (sessionId) onQueue(sessionId, f) }} onReveal={reveal} />
+      <Chat bot={bot} sessions={sessions} cur={cur} items={items} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openInDocPane(rel, { pin })} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={toList} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} queue={queueFor(sessionId)} onQueue={(f) => { if (sessionId) onQueue(sessionId, f) }} onReveal={reveal} />
 
       {/* ── 문서 열 (넓음만 흐름 안 · 중간·좁음은 오른쪽 서랍) ── */}
       {stage === 'wide' && showDoc ? <><div className="divx" onPointerDown={dragX('doc', -1)} onDoubleClick={() => setLay({ ...lay, doc: DEF.doc })} />{docwrapEl}</> : null}
@@ -831,7 +835,7 @@ function Main() {
       {/* ── H · 중간·좁음의 서랍 — 채팅을 밀지 않고 덮는다. 끌리는 동안(dragSide) 미리 붙여 손가락을 따라온다 ── */}
       {narrow && (view !== 'chat' || dragSide) ? <div className="scrim" ref={scrimRef} onClick={navDismiss} /> : null}
       {narrow && (view === 'list' || dragSide === 'left') ? <div className={`drawer left ${view === 'list' ? 'open' : ''}`} ref={leftRef}>{phone ? homeEl : sidebarEl}</div> : null}
-      {narrow && (view === 'panel' || view === 'doc' || dragSide === 'right') ? <div className={`drawer right ${view === 'panel' || view === 'doc' ? 'open' : ''}`} ref={rightRef}>{view === 'doc' && showDoc ? docwrapEl : rpwrapEl}</div> : null}
+      {narrow && (view === 'panel' || view === 'doc' || dragSide === 'right') ? <div className={`drawer right ${view === 'panel' || view === 'doc' ? 'open' : ''}`} ref={rightRef}>{view === 'doc' ? (showDoc ? docwrapEl : docEmptyEl) : rpwrapEl}</div> : null}
       {/* H-4 · 알약 독 — 채팅 오른쪽 가장자리에 세로로. 📄 문서(없으면 흐리게) · ☑ 할 일 · 📁 파일 · ↗ 외부에서 열기(문서가 열려 있을 때). 이모지 대신 앱 아이콘 */}
       {mid && view === 'chat' && !kb ? <div className={`dock ${dockDrag ? 'dragging' : ''}`} ref={dockRef} style={{ translate: `0 ${dockY}px` }}
         onPointerDown={dockDown}>
@@ -844,13 +848,13 @@ function Main() {
 
       {/* ── Z · 폰 하단 탭 (2026-09-22 Dave 확정 「B」) — 봇 목록만 빼고 늘 있고, 읽어 내려가면 비킨다 ── */}
       {tabsHere ? (() => {
-        const on = tabActive(view, focusSec?.sec)
+        const on = tabActive(view, panelTab)
         const todoN = (s.todos[bot.id] ?? []).filter((t) => !t.done).length
-        return <nav className={`tabbar ${tabsOn ? '' : 'hide'}`}>
+        return <nav className="tabbar">
           <button className={`tb ${on === 'chat' ? 'on' : ''}`} data-tab="chat" onClick={() => setView('chat')}><Icon n="chat" size={19} /><span>채팅</span></button>
-          <button className={`tb ${on === 'doc' ? 'on' : ''} ${docs.tabs.length ? '' : 'dim'}`} data-tab="doc" disabled={!docs.tabs.length} onClick={() => setView('doc')}><Icon n="doc" size={19} />{docs.tabs.length ? <span className="bd">{docs.tabs.length}</span> : null}<span>문서</span></button>
-          <button className={`tb ${on === 'todo' ? 'on' : ''}`} data-tab="todo" onClick={() => { setFocusSec({ sec: 'todo', n: Date.now() }); setView('panel') }}><Icon n="check" size={19} />{todoN ? <span className="bd">{todoN}</span> : null}<span>{bot.orchestrator ? 'Inbox' : '할 일'}</span></button>
-          <button className={`tb ${on === 'files' ? 'on' : ''}`} data-tab="files" onClick={() => { setFocusSec({ sec: 'files', n: Date.now() }); setView('panel') }}><Icon n="folder" size={19} /><span>폴더</span></button>
+          <button className={`tb ${on === 'doc' ? 'on' : ''} ${docs.tabs.length ? '' : 'dim'}`} data-tab="doc" onClick={() => setView('doc')}><Icon n="doc" size={19} />{docs.tabs.length ? <span className="bd">{docs.tabs.length}</span> : null}<span>문서</span></button>
+          <button className={`tb ${on === 'todo' ? 'on' : ''}`} data-tab="todo" onClick={() => { setPanelTab('todo'); setView('panel') }}><Icon n="check" size={19} />{todoN ? <span className="bd">{todoN}</span> : null}<span>{bot.orchestrator ? 'Inbox' : '할 일'}</span></button>
+          <button className={`tb ${on === 'files' ? 'on' : ''}`} data-tab="files" onClick={() => { setPanelTab('files'); setView('panel') }}><Icon n="folder" size={19} /><span>폴더</span></button>
         </nav>
       })() : null}
     </div>
