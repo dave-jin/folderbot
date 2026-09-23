@@ -2216,10 +2216,12 @@ try {
           {
             await pg.click('.composer .cbtn[title="모델"]'); await wait(400)
             const first = await pg.$$eval('.cpop.r .prow2 b', (r) => r.map((x) => x.textContent))
-            for (const want of ['Fable 5.1', 'Opus 5', 'Sonnet 5', 'Haiku 4.5', '더 많은 모델']) if (!first.includes(want)) fail(`모델 목록: «${want}» 가 없다 ` + JSON.stringify(first))
+            // AF(2026-09-23) · 첫 목록은 **종류별 최신 하나씩** — Opus 는 5.5 가 최신이라 5 는 「더 많은 모델」로 내려갔다
+            for (const want of ['Fable 5.1', 'Opus 5.5', 'Sonnet 5', 'Haiku 4.5', '더 많은 모델']) if (!first.includes(want)) fail(`모델 목록: «${want}» 가 없다 ` + JSON.stringify(first))
+            if (first.includes('Opus 5')) fail('AF: 첫 목록에 옛 Opus 5 가 남아 있다(한 종류에 둘) ' + JSON.stringify(first))
             await pg.click('.cpop.r .prow2.more'); await wait(300)
             const more = await pg.$$eval('.cpop.r .prow2 b', (r) => r.map((x) => x.textContent))
-            for (const want of ['Opus 4.8', 'Opus 4.7', 'Sonnet 4.6', 'Sonnet 5 · 1M']) if (!more.includes(want)) fail(`더 많은 모델: «${want}» 가 없다 ` + JSON.stringify(more))
+            for (const want of ['Opus 5', 'Opus 4.8', 'Opus 4.7', 'Sonnet 4.6', 'Sonnet 5 · 1M']) if (!more.includes(want)) fail(`더 많은 모델: «${want}» 가 없다 ` + JSON.stringify(more))
             await pg.keyboard.press('Escape'); await wait(300)
             /**
              * 🔴 **돌던 대화의 모델을 바꿀 땐 한 번 묻는다** (2026-09-15 Dave 지정 문안 — Claude Code 와 같은 확인창).
