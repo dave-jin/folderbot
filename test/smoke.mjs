@@ -3944,7 +3944,16 @@ try {
         }
         // AD(2026-09-23) · 파일은 「폴더」 탭에 산다(할 일 탭에는 트리가 없다)
         await tapNav(pg, 'files'); await wait(500)
-        await pg.click('.panel .secb button.trow:not(.dir)'); await wait(600); if (!(await pg.$('.docwrap .dfoot'))) fail('phone: doc page'); await pg.screenshot({ path: 'test/tmp/phone-doc.png' })
+        await pg.click('.panel .secb button.trow:not(.dir)'); await wait(600); if (!(await pg.$('.docwrap .dfoot'))) fail('phone: doc page');
+        /**
+         * 🔴 **AE · 문서 화면에도 탭이 있어야 한다** (2026-09-23 Dave: *«하단 탭은 채팅, 문서, 폴더 모두에서 없어지면 안 됩니다»*).
+         *    문서를 열면 편집기가 **스스로 초점을 가져가** 앱이 «입력 중»(kb)으로 읽고 탭을 통째로 감췄다 — 키보드는 안 올라왔는데도.
+         */
+        const docBar = await pg.evaluate(() => ({ cls: document.querySelector('.app')?.className, bar: !!document.querySelector('.tabbar'), ae: (document.activeElement?.className || '').slice(0, 20), kbh: getComputedStyle(document.documentElement).getPropertyValue('--kbh').trim() }))
+        if (!docBar.bar) fail('🔴 AE: 문서 화면에 하단 탭이 없다 ' + JSON.stringify(docBar))
+        const dgap = await pg.evaluate(() => { const f = document.querySelector('.docwrap .dfoot')?.getBoundingClientRect(); const b = document.querySelector('.tabbar')?.getBoundingClientRect(); return f && b ? Math.round(b.top - f.bottom) : null })
+        if (dgap === null || dgap < 0) fail('AE: 문서 아래 줄이 탭에 깔린다 · ' + dgap)
+        await pg.screenshot({ path: 'test/tmp/phone-doc.png' })
         // ── 폰 폴더 고르기 (V17 B안) — 한 단계씩 들어가고, 푸터가 안 넘치고, 이름이 폭을 전부 쓴다 ──
         // 홈으로 — 화면 상태는 React 가 쥐고 있으니 해시를 지우고 다시 연다. ⚠ 부팅은 이제 **마지막 화면(대화)** 으로 돌아오므로(2026-09-17) 뒤로 한 번
         //   기억을 지우고 열면 첫 화면(목록)이다 — 마지막 화면 복원은 위에서 따로 잰다
