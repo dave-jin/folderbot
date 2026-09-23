@@ -582,7 +582,14 @@ function Main() {
    */
   /** AD · 폰의 「할 일」과 「폴더」는 **다른 화면**이다 (2026-09-23 Dave) — 같은 서랍을 쓰되 보여 주는 절이 다르다 */
   const [panelTab, setPanelTab] = useState<'todo' | 'files'>('files')
-  const tabsHere = phone && view !== 'list' && !kb   // 봇 목록과 키보드 위에서는 탭 자체가 없다
+  /**
+   * 🔴 **AE (2026-09-23 Dave) — 탭은 채팅·문서·폴더 어디서도 사라지면 안 된다.**
+   *    종전 조건이 `!kb` 였는데, `kb` 는 «입력 중이냐» **하나로** 정해진다(그 판정은 사고 4건이 걸린 자리라 안 건드린다).
+   *    그런데 **문서를 열면 CodeMirror 가 스스로 초점을 가져간다**(Y 라운드에서 본 그 버릇) — 사람은 아무것도 안 쳤고
+   *    키보드도 안 올라왔는데(`--kbh: 0px`) 앱은 «입력 중» 으로 읽어 **문서 화면의 탭이 통째로 사라졌다.**
+   *    탭이 숨을 이유는 하나뿐이다 — **키보드가 입력칸을 가리는 채팅 화면**. 문서·폴더에는 입력칸이 없으므로 숨을 이유가 없다.
+   */
+  const tabsHere = phone && view !== 'list' && !(kb && view === 'chat')
   const dockRef = useRef<HTMLDivElement>(null)
   const [dockY, setDockY] = useState(() => { try { return readDockOffset(localStorage.getItem('fb:docky')) } catch { return 0 } })
   const [dockDrag, setDockDrag] = useState(false)
