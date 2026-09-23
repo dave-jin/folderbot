@@ -28,9 +28,12 @@ export function goTo(n: Nav, p: Page): Nav {
   if (i >= 0) return { stack: n.stack.slice(0, i + 1), fwd: [...n.fwd, ...n.stack.slice(i + 1).reverse()] }
   return { stack: [...n.stack, p], fwd: [] }
 }
-/** 한 걸음 뒤로 — 뿌리(봇 목록)에서는 아무 일도 없다 */
-export function back(n: Nav): Nav { return canBack(n) ? { stack: n.stack.slice(0, -1), fwd: [...n.fwd, curOf(n)] } : n }
-/** 방금 한 뒤로를 무른다 */
+/**
+ * 🔴 **AD(2026-09-23) — 「한 걸음 뒤로/앞으로」는 폰에서 걷어냈다.** Dave 지시로 👉 는 «어디서든 봇 목록» 이 되고
+ *    앞으로 가는 길은 전부 하단 탭이 맡는다. 되짚기를 남겨 두면 **길이 둘**이 되어 Z-2 의 고장이 그대로 되살아난다.
+ *    스택은 이제 «온 길의 기록» 으로만 남아 `goTo`(거기까지 되돌아가기)와 `dismiss` 가 쓴다.
+ */
+/** 방금 한 뒤로를 무른다 — `dismiss` 가 쓴다 */
 export function fwd(n: Nav): Nav { return canFwd(n) ? { stack: [...n.stack, n.fwd[n.fwd.length - 1]], fwd: n.fwd.slice(0, -1) } : n }
 
 /**
@@ -41,23 +44,4 @@ export function dismiss(n: Nav): Nav {
   if (curOf(n) === 'chat') return n
   if (n.fwd[n.fwd.length - 1] === 'chat') return fwd(n)
   return goTo(n, 'chat')
-}
-
-/** 그 쪽이 화면 어디에 사나 — 채팅은 바닥(서랍 아님) · 봇 목록은 왼쪽 서랍 · 폴더와 문서는 오른쪽 서랍 */
-export function sideOf(p: Page): 'left' | 'right' | null { return p === 'list' ? 'left' : p === 'chat' ? null : 'right' }
-
-/**
- * 쓸기 한 번이 무엇을 하나. `dir` 은 손가락이 가는 쪽 — 👉 는 `'r'`(뒤로) · 👈 는 `'l'`(앞으로).
- * `mode` 는 **그림이 어떻게 움직이나**다 — 서랍이 나오면 `open`, 들어가면 `close`,
- * 오른쪽 서랍 안에서 폴더↔문서처럼 **내용만 바뀌면** `swap`(손가락을 따라 움직일 그림이 없다).
- * 갈 데가 없으면 `null`.
- */
-export function swipeMove(n: Nav, dir: 'r' | 'l'): { next: Nav; to: Page; side: 'left' | 'right'; mode: 'open' | 'close' | 'swap' } | null {
-  const after = dir === 'r' ? back(n) : fwd(n)
-  if (after === n) return null
-  const from = curOf(n), to = curOf(after)
-  const a = sideOf(from), b = sideOf(to)
-  if (a === null && b !== null) return { next: after, to, side: b, mode: 'open' }
-  if (a !== null && b === null) return { next: after, to, side: a, mode: 'close' }
-  return { next: after, to, side: (b ?? a)!, mode: 'swap' }
 }
