@@ -1527,6 +1527,24 @@ try {
               if ((await view()) !== 'list') fail('AI: 봇 목록을 다시 못 열었다 ' + (await view()))
               const dl = await hp.evaluate(() => { const d = document.querySelector('.drawer.left'); return { open: d?.classList.contains('open'), home: !!d?.querySelector('.mhome'), rows: d?.querySelectorAll('.mrow').length ?? 0, w: d?.getBoundingClientRect().width, scrim: !!document.querySelector('.scrim') } })
               if (!dl.open || !dl.home || dl.rows < 2 || dl.w > 500 * 0.9 || !dl.scrim) fail('AD: 왼쪽 서랍 = 봇 목록(홈) ' + JSON.stringify(dl))
+              /**
+               * 🔴 **AQ · 목록은 «맨 위 레이어» 로 덮고, 뒤 화면은 제자리에 선다** (2026-09-24 Dave · IMG_2124:
+               *    *«폴더보드 자체가 레이어상 더 위에 있어야 … 리스트 부분만 와야 하는데 뒤에 배경이 같이 따라오거든»*).
+               * ⚠ Dave 가 본 그림은 **우리 서랍이 아니라 사파리의 뒤로 쓸기**였다(화면 전체가 밀리고 옛 스냅숏이 따라온다).
+               *    그래도 «우리 것은 그렇지 않다» 를 수치로 못 박아 둔다 — 다음에 같은 신고가 오면 어느 쪽인지 바로 갈린다.
+               */
+              {
+                const lay = await hp.evaluate(() => {
+                  const z = (sel) => { const el = document.querySelector(sel); return el ? Number(getComputedStyle(el).zIndex) || 0 : null }
+                  const c = document.querySelector('.col.chat')
+                  return { drawer: z('.drawer.left'), scrim: z('.scrim'), right: z('.drawer.right'), chatLeft: c ? Math.round(c.getBoundingClientRect().left) : null }
+                })
+                if (lay.drawer === null || lay.scrim === null) fail('AQ: 서랍·스크림을 못 찾았다 ' + JSON.stringify(lay))
+                if (!(lay.drawer > lay.scrim)) fail('🔴 AQ: 봇 목록이 스크림보다 위가 아니다(뒤에 있는 것처럼 보인다) ' + JSON.stringify(lay))
+                if (lay.right !== null && !(lay.drawer > lay.right)) fail('🔴 AQ: 봇 목록이 다른 서랍보다 위가 아니다 ' + JSON.stringify(lay))
+                if (lay.chatLeft !== 0) fail('🔴 AQ: 목록을 여는데 뒤 화면이 같이 밀렸다(배경이 따라온다) ' + JSON.stringify(lay))
+                ok(`AQ 목록 레이어 — 서랍 z=${lay.drawer} > 스크림 ${lay.scrim} · 뒤 화면 제자리(x=${lay.chatLeft})`)
+              }
               await hp.screenshot({ path: 'test/tmp/h-narrow-left.png' })
               // 🔴 👈 는 아예 없다 — 무엇을 해도 아무 일이 없어야 한다
               await drag(470, 500, 250, 505); if ((await view()) !== 'list') fail('🔴 AD: 👈 가 아직 살아 있다 ' + (await view()))
