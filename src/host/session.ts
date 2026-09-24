@@ -151,22 +151,26 @@ export class ClaudeWorker extends EventEmitter {
   send(text: string): boolean {
     return this.write({ type: 'user', message: { role: 'user', content: [{ type: 'text', text }] } })
   }
-  respondPermission(requestId: string, allow: boolean, always = false): void {
+  /** @returns 미뤄진 질문에 **우리가 직접** 결과를 넣었으면 true — claude 가 되돌려 주지 않으니 화면 줄은 우리가 닫아야 한다(AX) */
+  respondPermission(requestId: string, allow: boolean, always = false): boolean {
     const p = this.pending.get(requestId); this.pending.delete(requestId)
     if (this.deferredAsks.delete(requestId)) {
       this.write({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: requestId, is_error: true, content: '사용자가 질문을 취소했습니다. 반복하지 말고 진행하세요.' }] } })
-      return
+      return true
     }
     const inner = allow ? { behavior: 'allow', updatedInput: p?.input ?? {}, ...(always && p && p.suggestions.length ? { updatedPermissions: p.suggestions } : {}) } : { behavior: 'deny', message: '사용자가 Folder Bot 에서 거부했습니다' }
     this.write({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response: inner } })
+    return false
   }
-  respondAsk(requestId: string, answers: Record<string, string>): void {
+  /** @returns 미뤄진 질문에 우리가 직접 답을 넣었으면 true(AX) */
+  respondAsk(requestId: string, answers: Record<string, string>): boolean {
     const p = this.pending.get(requestId); this.pending.delete(requestId)
     if (this.deferredAsks.delete(requestId)) {
       this.write({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: requestId, content: JSON.stringify(answers) }] } })
-      return
+      return true
     }
     this.write({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response: { behavior: 'allow', updatedInput: { ...(p?.input ?? {}), answers } } } })
+    return false
   }
   interrupt(): void { this.write({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } }) }
   kill(): void { try { this.proc.kill('SIGTERM') } catch { /* */ } setTimeout(() => { try { this.proc.kill('SIGKILL') } catch { /* */ } }, 4000).unref() }
@@ -689,16 +693,32 @@ export class SessionManager extends EventEmitter {
     this.setState(r, { kind: 'user_sent' })
     this.persist(r)
   }
+  /**
+   * 🔴 **AX · 우리가 직접 결과를 넣은 도구 줄은 우리가 닫는다** (2026-09-25 Dave: *«왜 이미 끝난 이전 도구가 계속
+   *    돌고 있어?»* · 스크린샷_234 — 답까지 달린 `AskUserQuestion` 줄이 한참 뒤까지 돌고 있었다).
+   * 도구 줄은 claude 가 stdout 으로 내보내는 `tool_result` 를 받아야 닫힌다. 그런데 **미뤄진 질문**(`tool_deferred`)은
+   * 답을 **우리가 claude 의 stdin 으로** 넣고, claude 는 그 결과를 되돌려 내보내지 않는다 — 그래서 줄이 영영 열려 있었다.
+   * ⚠ 이미 결과가 있는 줄은 건드리지 않는다(나중에 claude 가 진짜 결과를 주면 그쪽이 덮는다).
+   */
+  private closeTool(r: SessionRec, toolUseId: string, result: string, isError = false): void {
+    const id = `t_${toolUseId}`
+    for (let i = r.items.length - 1; i >= 0; i--) {
+      const it = r.items[i]
+      if (it.id !== id) continue
+      if (it.kind === 'tool' && it.result === undefined) { it.result = result; it.isError = isError; this.push(r, it, true) }
+      return
+    }
+  }
   respondPermission(r: SessionRec, requestId: string, allow: boolean, always = false): void {
     const w = this.workers.get(r.id); if (!w) return
     const label = always ? rulesLabel(w.pending.get(requestId)?.suggestions ?? []) : ''
-    w.respondPermission(requestId, allow, always)
+    if (w.respondPermission(requestId, allow, always)) this.closeTool(r, requestId, '질문을 취소했어요', true)
     this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: allow ? (always ? `이 세션에서 항상 허용${label ? ` · ${label}` : ''}` : '허용') : '거부' })
     this.setState(r, { kind: 'input_provided' })
   }
   respondAsk(r: SessionRec, requestId: string, answers: Record<string, string>): void {
     const w = this.workers.get(r.id); if (!w) return
-    w.respondAsk(requestId, answers)
+    if (w.respondAsk(requestId, answers)) this.closeTool(r, requestId, JSON.stringify(answers))
     this.push(r, { id: itemId('s'), t: Date.now(), kind: 'user', text: Object.values(answers).join(' · ') })
     this.setState(r, { kind: 'input_provided' })
   }
