@@ -27,3 +27,28 @@ describe('AK · 파일 이름의 공백 (2026-09-24 Dave)', () => {
     expect(candidatePaths('→ 처리')).toEqual([])
   })
 })
+
+/**
+ * 🔴 **AP · 띄어쓰기가 여럿인 «맨 이름»** (2026-09-24 Dave: *«왜 이 파일은 칩으로 안만들어진거야?»* ·
+ * 스크린샷_2229 — `@CleanShot 2026-09-24 at 10.25.19 PM@2x.png` 가 글자로만 남았다).
+ * AK 에서 고친 것은 **슬래시가 든 경로**뿐이었다. 슬래시가 없는 이름은 `bareFileNames` 가 맡는데
+ * 거기에는 왼쪽으로 넓히는 길이 **아예 없었다**(주석에는 있다고 적혀 있었다) — 공백에서 그냥 끊겼다.
+ */
+describe('AP · 공백이 여럿 든 맨 파일 이름', () => {
+  const T = '제목 규칙은 여기에도 잘리지 않게 나오게 하고 싶어. @CleanShot 2026-09-24 at 10.25.19 PM@2x.png 고려해서 제목 길이 잡아줘.'
+  it('🔴 Dave 의 실제 이름이 통째로 후보에 든다 — 네 번 띄어쓴 이름', () => {
+    expect(candidatePaths(T)).toContain('CleanShot 2026-09-24 at 10.25.19 PM@2x.png')
+  })
+  it('짧은 조각도 함께 낸다 — 어느 것이 진짜인지는 호스트가 고른다', () => {
+    const got = candidatePaths(T)
+    expect(got).toContain('PM@2x.png')
+    expect(got).toContain('10.25.19 PM@2x.png')
+  })
+  it('「@」 앞으로는 넘어가지 않는다 — 문장을 삼키지 않는다', () => {
+    for (const p of candidatePaths(T)) expect(p, p).not.toMatch(/싶어/)
+  })
+  it('공백 없는 이름과 아닌 것은 종전 그대로', () => {
+    expect(candidatePaths('앞 설명서.pdf 뒤')).toContain('설명서.pdf')
+    expect(candidatePaths('앞 → 처리 뒤')).toEqual([])
+  })
+})

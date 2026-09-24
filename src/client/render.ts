@@ -1,4 +1,5 @@
 import { marked } from 'marked'
+import { unlinkFileMailto } from '../core/paths'
 import { extractMath, fillMath, type MathChunk } from '../core/math'
 import { expandWikilinks } from '../core/wikilinks'
 import { mdBlocks } from '../core/mdBlocks'
@@ -11,7 +12,8 @@ marked.setOptions({ gfm: true, breaks: true })
  */
 export function renderMarkdown(text: string, math: ((c: MathChunk) => string) | null = null): string {
   const m = extractMath(text)
-  const h = marked.parse(expandWikilinks(m.text)) as string
+  /* AP · 마크다운이 `이름@2x.png` 을 메일로 보고 링크로 감싼다 — 파일 이름이면 되돌린다(`core/paths`) */
+  const h = unlinkFileMailto(marked.parse(expandWikilinks(m.text)) as string)
   return fillMath(h, m.chunks, math)
 }
 
