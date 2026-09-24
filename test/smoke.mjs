@@ -16,7 +16,7 @@ const claudeCfg = mkdtempSync(join(tmpdir(), 'fb-claude-'))
 for (const d of ['1. Inbox', '2. Projects/2026-09_강의-창업스쿨-2기', '2. Projects/2026-10_해커톤-제안', '3. Area/제품_Rondo', '3. Area/재무_CFO', '4. Resources', '5. Archive']) mkdirSync(join(root, d), { recursive: true })
 writeFileSync(join(root, '3. Area/제품_Rondo/CLAUDE.md'), '# 제품_Rondo\n')
 writeFileSync(join(root, '3. Area/제품_Rondo/readme.md'), '# Rondo\n')
-writeFileSync(join(root, '3. Area/제품_Rondo/todo.md'), '# todo\n\n## 요청 · 할 일\n- [ ] PRD v1.0 확정: Q2·Q5\n- [ ] Tailscale 폰 설치\n- [ ] 무응답 3건 후속 연락: 9/1 발송분이 엿새째 무응답. ① 가상 대표에게 문자 ② 예시 기관에 「총 1회」 적용 범위 문의 ③ 답을 보고 다음 회차를 정한다\n\n## 진행 중\n- [ ] 표지 문구 3안: 편집자에게 보냄\n\n## 완료\n')
+writeFileSync(join(root, '3. Area/제품_Rondo/todo.md'), '# todo\n\n## 요청 · 할 일\n- [ ] PRD v1.0 확정: Q2·Q5\n- [x] 옛 완료 1\n- [x] 옛 완료 2\n- [x] 옛 완료 3\n- [x] 옛 완료 4\n- [x] 옛 완료 5\n- [x] 최근 완료 6\n- [ ] Tailscale 폰 설치\n- [ ] 무응답 3건 후속 연락: 9/1 발송분이 엿새째 무응답. ① 가상 대표에게 문자 ② 예시 기관에 「총 1회」 적용 범위 문의 ③ 답을 보고 다음 회차를 정한다\n\n## 진행 중\n- [ ] 표지 문구 3안: 편집자에게 보냄\n\n## 완료\n')
 writeFileSync(join(root, '3. Area/재무_CFO/CLAUDE.md'), '# CFO\n')
 writeFileSync(join(root, '2. Projects/2026-09_강의-창업스쿨-2기/CLAUDE.md'), '# 강의\n')
 writeFileSync(join(root, '1. Inbox/예시랩_자문자료.txt'), 'x')
@@ -271,9 +271,9 @@ try {
   await api('/auth/token', { token: 'sk-ant-oat01-test' }); if (!/sk-ant-oat01-test/.test(readFileSync(join(data, 'config.json'), 'utf8'))) fail('token save')
   await api('/auth/token', { token: '' }); if (/sk-ant-oat01/.test(readFileSync(join(data, 'config.json'), 'utf8'))) fail('token clear'); ok('auth token set/clear')
   // todo
-  let todo = await api(`/bots/${bot.id}/todo`); if (todo.length !== 4) fail('todo parse')
-  todo = await api(`/bots/${bot.id}/todo`, { title: '알파 동결 문서', desc: 'PRD v1.0 뒤에' }); if (todo.length !== 5) fail('todo add')
-  { const target = todo[0]; todo = await api(`/bots/${bot.id}/todo/toggle`, { line: target.line, done: true }); const t2 = todo.find((t) => t.title === target.title); if (!t2 || !t2.done) fail('todo toggle: ' + JSON.stringify(todo.map((t) => [t.title, t.done]))) } ok('todo add/toggle')
+  let todo = await api(`/bots/${bot.id}/todo`); if (todo.length !== 10) fail('todo parse ' + todo.length)   // AK · 픽스처에 완료 4건이 섞여 있다(차례 검사용)
+  todo = await api(`/bots/${bot.id}/todo`, { title: '알파 동결 문서', desc: 'PRD v1.0 뒤에' }); if (todo.length !== 11) fail('todo add ' + todo.length)
+  { const target = todo.find((t) => !t.done); todo = await api(`/bots/${bot.id}/todo/toggle`, { line: target.line, done: true }); const t2 = todo.find((t) => t.title === target.title); if (!t2 || !t2.done) fail('todo toggle: ' + JSON.stringify(todo.map((t) => [t.title, t.done]))) } ok('todo add/toggle')
   // 세션 휴면·기상 (같은 cli 세션 id 로 --resume)
   const before = chat.info.cliSessionId
   await api(`/sessions/${s1.sessionId}/hibernate`, {})
@@ -1067,9 +1067,15 @@ try {
           // N-3 · 3장 동시 → 칩 3개(썸네일 · 진행 링) → 다 올라간 뒤 보내기 · ✕ 로 하나 빼기 · 11개째 거절
           const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
           const files3 = ['a.png', 'b.png', 'c.png'].map((name) => ({ name, mimeType: 'image/png', buffer: Buffer.from(png.split(',')[1], 'base64') }))
-          const photoAttr = await ph.$eval('input[accept="image/*"][multiple]', (e) => ({ accept: e.accept, multiple: e.multiple, hidden: e.hidden })); if (!photoAttr.multiple || photoAttr.accept !== 'image/*') fail('N-4: 📷 입력이 image/* multiple 이어야 한다')
+          /**
+           * 🔴 **AK · 사진과 파일이 한 입력칸으로 합쳐졌다** (2026-09-24 Dave, 1depth). 종전에는 `accept="image/*" multiple`
+           *    입력이 따로 있었는데, **iOS 가 어차피 같은 세 줄 시트를 띄우므로** 우리 줄을 나눠 둘 이유가 없었다.
+           *    이제 고르는 칸은 `multiple`(accept 없음 — 사진·파일 둘 다) 하나이고, 카메라만 `capture` 로 따로 남는다. */
+          const photoAttr = await ph.$eval('input[type="file"][multiple]', (e) => ({ accept: e.accept, multiple: e.multiple, hidden: e.hidden }))
+          if (!photoAttr.multiple || photoAttr.accept) fail('AK: 고르는 입력이 multiple(accept 없음) 이어야 한다 ' + JSON.stringify(photoAttr))
+          if (!(await ph.$('input[type="file"][capture]'))) fail('AK: 카메라 입력(capture)은 남아 있어야 한다')
           if (await ph.$('.composer.ph .cleft .plusb.photo')) fail('Q-1: 입력창 왼쪽의 📷 는 뺐다 — + 하나뿐이어야 한다'); if ((await ph.$$eval('.composer.ph .cleft .plusb', (r) => r.length)) !== 1) fail('Q-1: 왼쪽 단추는 + 하나')
-          await ph.setInputFiles('input[accept="image/*"][multiple]', files3); await wait(150)
+          await ph.setInputFiles('input[type="file"][multiple]', files3); await wait(150)
           const mid = await ph.evaluate(() => ({ chips: document.querySelectorAll('.achips .achip').length, thumbs: document.querySelectorAll('.achips .achip img').length, rings: document.querySelectorAll('.achips .achip .ring').length, dis: !!document.querySelector('.cright.dis') }))
           await wait(1500)
           const done = await ph.evaluate(() => ({ chips: document.querySelectorAll('.achips .achip').length, thumbs: document.querySelectorAll('.achips .achip img').length, rings: document.querySelectorAll('.achips .achip .ring').length, dis: !!document.querySelector('.cright.dis'), sendOn: !document.querySelector('.cright .sendb')?.disabled, row: (() => { const a = document.querySelector('.achips').getBoundingClientRect(), t = document.querySelector('.composer.ph .ctext').getBoundingClientRect(); return a.bottom <= t.top + 1 })(), scroll: getComputedStyle(document.querySelector('.achips')).overflowX }))
@@ -1078,18 +1084,18 @@ try {
           await ph.screenshot({ path: 'test/tmp/n3-chips.png' })
           await ph.click('.achips .achip:nth-child(2) .x'); await wait(200); const left2 = await ph.$$eval('.achips .achip .nm', (r) => r.map((x) => x.textContent)); if (left2.length !== 2 || left2.includes('b.png')) fail('N-3: ✕ 로 하나만 빠져야 한다 ' + JSON.stringify(left2))
           const files9 = Array.from({ length: 9 }, (_, i) => ({ name: `m${i}.png`, mimeType: 'image/png', buffer: Buffer.from(png.split(',')[1], 'base64') }))
-          await ph.setInputFiles('input[accept="image/*"][multiple]', files9); await wait(2500)
+          await ph.setInputFiles('input[type="file"][multiple]', files9); await wait(2500)
           const cnt = await ph.$$eval('.achips .achip', (r) => r.length); const tst = (await ph.textContent('.toast').catch(() => '')) ?? ''
           if (cnt !== 10 || !/10개까지/.test(tst)) fail('N-3: 11개째는 거절 ' + JSON.stringify({ cnt, tst }))
           // 같은 이름은 _2
           const up1 = await api(`/bots/${bot.id}/upload`, { name: 'dup.txt', data: Buffer.from('x').toString('base64') }); const up2 = await api(`/bots/${bot.id}/upload`, { name: 'dup.txt', data: Buffer.from('y').toString('base64') })
           if (up1.rel !== '첨부/dup.txt' || up2.rel !== '첨부/dup_2.txt') fail('N-3: 같은 이름은 _2 ' + JSON.stringify([up1.rel, up2.rel]))
-          // N-4 → Q-1 · + 메뉴 첫 두 줄 「카메라로 찍기」(capture) · 「사진에서 고르기」(image/* multiple) — 둘 다 + → 줄 = 2스텝 · 폰 안내에 ⌘V 없음
+          /* N-4 → Q-1 → **AK** · + 메뉴는 「카메라로 찍기」(capture · 진짜 1depth)와 「사진·파일 고르기」(합친 한 줄) 로 시작한다 */
           await ph.click('.composer.ph .cleft .plusb'); await wait(300)
-          const menu = await ph.evaluate(() => ({ rows: [...document.querySelectorAll('.cpop.plus .prow2 b')].map((b) => b.textContent), hint: document.querySelector('.cpop.plus .hint')?.textContent, cam: !!document.querySelector('input[capture="environment"]'), photo: !!document.querySelector('input[accept="image/*"][multiple]:not([capture])') }))
-          if (menu.rows[0] !== '카메라로 찍기' || menu.rows[1] !== '사진에서 고르기' || /⌘V/.test(menu.hint ?? '') || !menu.cam || !menu.photo) fail('Q-1: + 메뉴 ' + JSON.stringify(menu))
-          // 「사진에서 고르기」 → 사진 입력이 바로 열린다(2스텝)
-          const [chooser] = await Promise.all([ph.waitForEvent('filechooser', { timeout: 3000 }), ph.click('.cpop.plus .prow2:has-text("사진에서 고르기")')]); if (!chooser.isMultiple()) fail('Q-1: 사진 고르기는 여러 장'); await ph.click('.composer.ph .cleft .plusb'); await wait(300)
+          const menu = await ph.evaluate(() => ({ rows: [...document.querySelectorAll('.cpop.plus .prow2 b')].map((b) => b.textContent), hint: document.querySelector('.cpop.plus .hint')?.textContent, cam: !!document.querySelector('input[capture="environment"]'), photo: !!document.querySelector('input[type="file"][multiple]:not([capture])') }))
+          if (menu.rows[0] !== '카메라로 찍기' || menu.rows[1] !== '사진·파일 고르기' || /⌘V/.test(menu.hint ?? '') || !menu.cam) fail('AK: + 메뉴 — 첫 두 줄은 카메라 · 사진·파일 (첨부가 + 의 본업이라 루틴보다 위) ' + JSON.stringify(menu))
+          // 「사진·파일 고르기」 → 고르는 칸이 바로 열린다 (그 뒤 세 줄 시트는 iOS 것이라 웹앱이 못 없앤다)
+          const [chooser] = await Promise.all([ph.waitForEvent('filechooser', { timeout: 3000 }), ph.click('.cpop.plus .prow2:has-text("사진·파일 고르기")')]); if (!chooser.isMultiple()) fail('AK: 사진·파일 고르기는 여러 장'); await ph.click('.composer.ph .cleft .plusb'); await wait(300)
           await ph.screenshot({ path: 'test/tmp/n4-plus.png' }); await ph.keyboard.press('Escape'); await ph.click('.composer.ph .cin'); await wait(200)
           // N-4 · 붙여넣기 — 폰 클립보드는 files 로 온다
           await ph.evaluate(() => { for (const b of document.querySelectorAll('.achips .achip .x')) b.click() }); await wait(200)
@@ -1185,7 +1191,7 @@ try {
             // P-3 · 첨부 칩은 글 위 28px 별도 행, 6px 간격 · 첨부 없으면 행 자체가 없다
             if (await pp.$('.composer.ph .achips')) fail('P-3: 첨부가 없는데 빈 칩 행이 있다')
             const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
-            await pp.setInputFiles('input[accept="image/*"][multiple]', [{ name: '스크린샷.png', mimeType: 'image/png', buffer: Buffer.from(png.split(',')[1], 'base64') }]); await wait(1200)
+            await pp.setInputFiles('input[type="file"][multiple]', [{ name: '스크린샷.png', mimeType: 'image/png', buffer: Buffer.from(png.split(',')[1], 'base64') }]); await wait(1200)
             await pp.click('.composer .cin'); await pp.keyboard.type('이 그림 보고'); await wait(200)
             const p3 = await pp.evaluate(() => { const a = document.querySelector('.composer.ph .achips'); const t = document.querySelector('.composer.ph .ctext'); const c = a?.querySelector('.achip'); const cin = document.querySelector('.composer .cin'); return a && c ? { rowH: a.getBoundingClientRect().height, chipH: c.getBoundingClientRect().height, gap: t.getBoundingClientRect().top - a.getBoundingClientRect().bottom, above: a.getBoundingClientRect().bottom <= t.getBoundingClientRect().top + 1, inline: !!cin.querySelector('.ichip'), text: cin.dataset.value } : null })
             if (!p3 || Math.abs(p3.rowH - 28) > 1 || Math.abs(p3.chipH - 28) > 1 || !p3.above || Math.abs(p3.gap - 6) > 1.5 || p3.inline || /@/.test(p3.text ?? '')) fail('P-3: 첨부 칩 행 ' + JSON.stringify(p3))
@@ -1349,6 +1355,42 @@ try {
                 await hp.keyboard.press('Escape'); await wait(450)
                 const b2 = await st()
                 if (b2.bot !== b0.bot) fail('🔴 AJ: 목록을 닫았더니 보던 봇이 바뀌었다(오케스트레이터로 갔다) ' + JSON.stringify({ b0, b2 }))
+              }
+              /**
+               * 🔴 **AK (2026-09-24 Dave · 폰 세 가지)**
+               *  ① *«플러스 → 사진에서 고르기 를 눌렀을 때 세 개의 메뉴가 뜨는 대신 바로 사진첩이 … 무조건 다 1depth»* —
+               *     세 줄짜리 시트는 **iOS 것**이라 웹앱이 못 건너뛴다. **우리 줄**을 합쳐 겹을 하나 걷었다.
+               *  ② *«채팅창 공간이 너무 길어지면 플러스 버튼이 잘려서 선택이 안 돼»* — 팝업 머리가 화면 위로 넘어가면 안 된다.
+               *  ③ *«대기 화면이 나오면 채팅의 맨 아래 화면까지 안 보이는 버그»* — 아래 여백이 **탭 바 높이까지** 비워야 한다.
+               */
+              {
+                if ((await view()) === 'list') { await hp.keyboard.press('Escape'); await wait(400) }
+                await tapNav(hp, 'chat'); await wait(500)   // ⚠ 앞 검사가 문서·폴더에 있을 수 있다 — 채팅으로 데려온다
+                // ③ — `.tobot` 은 이미 탭 바를 세는데 `.chat-body` 는 안 셌다. 둘이 같은 셈을 써야 한다
+                const pad = await hp.evaluate(() => {
+                  const col = document.querySelector('.col.chat'), body = document.querySelector('.chat-body'), tb = document.querySelector('.tabbar')
+                  return { pb: parseFloat(getComputedStyle(body).paddingBottom), footh: parseFloat(getComputedStyle(col).getPropertyValue('--footh')) || 0, tab: tb ? tb.getBoundingClientRect().height : 0 }
+                })
+                if (pad.tab > 0 && pad.pb < pad.footh + pad.tab - 2) fail('🔴 AK: 대화 아래 여백이 탭 바 높이만큼 모자라다 — 맨 아래 줄이 가린다 ' + JSON.stringify(pad))
+                // ①② — 입력창을 길게 만든 뒤 + 를 연다
+                await hp.fill('.composer .cin', Array.from({ length: 8 }, (_, i) => `길게 쓴 줄 ${i + 1}`).join('\n')); await wait(400)
+                // ⚠ 합성 클릭은 «입력칸 초점 해제 → 입력창이 움직임 → click 이 안 남» 순서를 타서 팝업이 안 열린다
+                //   (실기기 탭은 그 문제가 없다 — 2026-09-23 AB 에서 배운 자리다). 재려는 것은 **길이**이므로 초점만 먼저 뗀다
+                await hp.evaluate(() => document.activeElement?.blur()); await wait(300)
+                await hp.click('.composer.ph .cleft .plusb'); await wait(400)
+                const pop = await hp.evaluate(() => {
+                  const el = document.querySelector('.cpop.plus')
+                  if (!el) return { miss: { view: document.querySelector('.app')?.dataset.view, cls: document.querySelector('.app')?.className, plus: !!document.querySelector('.composer.ph .cleft .plusb'), pops: document.querySelectorAll('.cpop').length } }
+                  const hdr = document.querySelector('.chat-hdr')
+                  return { top: el.getBoundingClientRect().top, ceil: hdr ? hdr.getBoundingClientRect().bottom : 0, rows: [...el.querySelectorAll('.prow2 .t b')].map((b2) => b2.textContent ?? '') }
+                })
+                if (!pop || pop.miss) fail('AK: 입력창이 길 때 + 팝업이 안 열렸다 ' + JSON.stringify(pop))
+                if (pop.top < pop.ceil - 1) fail('🔴 AK: 입력창이 길어지자 + 팝업 머리가 화면(헤더) 위로 잘렸다 — 윗줄을 못 누른다 ' + JSON.stringify(pop))
+                if (pop.rows.some((r) => /사진에서 고르기/.test(r))) fail('🔴 AK: + 메뉴에 아직 우리가 만든 겹(「사진에서 고르기」)이 있다 ' + JSON.stringify(pop.rows))
+                if (!pop.rows.some((r) => /사진·파일 고르기/.test(r))) fail('🔴 AK: 사진과 파일을 합친 한 줄이 없다 ' + JSON.stringify(pop.rows))
+                if (!pop.rows.some((r) => /카메라로 찍기/.test(r))) fail('AK: 카메라(진짜 1depth)는 남아 있어야 한다 ' + JSON.stringify(pop.rows))
+                await hp.keyboard.press('Escape'); await hp.fill('.composer .cin', ''); await wait(300)
+                ok(`AK 폰 — 대화 아래 여백 ${pad.pb}px(탭 ${pad.tab}) · + 팝업 안 잘림 · 메뉴 ${pop.rows.length}줄(사진·파일 한 줄)`)
               }
               // 아래 검사들은 «목록이 열린 채» 를 본다 — 도로 열어 둔다
               if ((await view()) !== 'list') { await drag(8, 500, 260, 505); await wait(400) }
@@ -3327,13 +3369,40 @@ try {
         if (await pg.$('.todo .dsc')) fail('ui todo: desc must be hidden until opened')
         const rowEl = await pg.$('.todo:has(.mk)'); await rowEl.dblclick(); await wait(200)
         if (!(await pg.$('.todo.on .dsc'))) fail('ui todo: double-click should reveal the description')
-        await rowEl.dblclick(); await wait(150); if (await pg.$('.todo .dsc')) fail('ui todo: second double-click should collapse')
+        /* ⚠ 펼친 줄의 «가운데» 는 설명(.dsc)이라 진짜 클릭을 그 자리에 놓으면 **편집이 열린다**(설명·제목은 눌러서
+           고치는 자리다 — 의도된 동작). 여기서 재려는 것은 «두 번째 더블클릭이 접느냐» 하나이므로 줄에 직접 건다. */
+        await pg.evaluate(() => document.querySelector('.todo.on')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))); await wait(250); if (await pg.$('.todo .dsc')) fail('ui todo: second double-click should collapse ' + JSON.stringify(await pg.evaluate(() => [...document.querySelectorAll('.todo')].map((r) => ({ c: r.className, t: (r.textContent ?? '').slice(0, 18) })))))
         // 편집 — 한 칸에 «제목: 설명»
-        await pg.hover('.todo'); await pg.click('.todo .tools button[title="편집"]'); await wait(200)
-        if (!(await pg.$('.todo.edit .ein'))) fail('ui todo edit box'); const cur = await pg.inputValue('.todo.edit .ein'); if (!/:/.test(cur) && !/PRD/.test(cur)) fail('ui todo edit value: ' + cur)
-        await pg.fill('.todo.edit .ein', 'PRD v1.0 확정 (편집됨): Q2·Q5'); await pg.keyboard.press('Enter'); await wait(600)
+        /* ⚠ 첫 줄이 무엇인지는 앞 검사들(완료 처리·이동·추가)에 따라 바뀐다 — **설명이 있는 줄**을 집는다.
+           재려는 것은 «편집 상자에 «제목: 설명» 이 한 칸으로 들어오는가» 이므로 어느 줄이냐는 상관없다. */
+        await pg.hover('.todo:has(.mk)'); await pg.click('.todo:has(.mk) .tools button[title="편집"]'); await wait(200)
+        if (!(await pg.$('.todo.edit .ein'))) fail('ui todo edit box'); const cur = await pg.inputValue('.todo.edit .ein'); if (!/:/.test(cur)) fail('ui todo edit value: ' + cur)
+        await pg.fill('.todo.edit .ein', `${cur.split(':')[0]} (편집됨):${cur.split(':').slice(1).join(':')}`); await pg.keyboard.press('Enter'); await wait(600)
         if (!/편집됨/.test((await pg.textContent('.panel')) ?? '')) fail('ui todo edit save')
         if (!(await pg.$('.sech .ib.mdb'))) fail('ui todo: todo.md button missing')
+        /**
+         * 🔴 **AK · 안 끝난 일이 맨 위, 끝난 일은 최근 몇 개만** (2026-09-24 Dave: *«아직 끝내지 않은 항목이
+         *    맨 상단에 떠야 돼 … 완료된 건 최근 완료 항목 몇 개만 화면에 보이고 나머지는 더보기»*).
+         * ⚠ 픽스처의 «요청 · 할 일» 절에는 완료 한 줄이 **안 끝난 일들보다 위에** 적혀 있다 — 파일 순서대로
+         *    그리면 그 줄이 맨 위에 온다. 화면 차례만 바뀌고 파일은 그대로여야 한다.
+         */
+        {
+          // ⚠ 차례는 **절 안에서** 본다 — 절이 여럿이면 절 경계를 넘어 비교하는 순간 거짓 빨강이 난다
+          const t = await pg.evaluate(() => [...document.querySelectorAll('.tsec')].map((h) => ({
+            sec: h.textContent ?? '',
+            rows: [...(h.parentElement?.querySelectorAll('.todo:not(.add):not(.addbtn)') ?? [])].map((r) => ({ done: r.classList.contains('done'), tx: (r.textContent ?? '').slice(0, 24) })),
+            more: [...(h.parentElement?.querySelectorAll('.todo.addbtn.more') ?? [])].map((b2) => b2.textContent ?? ''),
+          })))
+          for (const sec of t) {
+            const firstDone = sec.rows.findIndex((r) => r.done)
+            const lastLive = sec.rows.map((r) => r.done).lastIndexOf(false)
+            if (firstDone >= 0 && firstDone < lastLive) fail('🔴 AK: 끝난 일이 안 끝난 일보다 위에 있다 ' + JSON.stringify(sec))
+          }
+          if (!t.some((sec) => sec.more.some((m) => /더보기/.test(m)))) fail('🔴 AK: 끝난 일이 3건을 넘는데 「더보기」 가 없다(다 펼쳐 보인다) ' + JSON.stringify(t))
+          const md0 = readFileSync(join(root, '3. Area/제품_Rondo', 'todo.md'), 'utf8')
+          if (!/- \[x\] 옛 완료 1[\s\S]*?- \[ \] Tailscale/.test(md0)) fail('🔴 AK: 화면 차례를 바꾸면서 파일까지 다시 썼다 — 파일에서는 끝난 줄이 원래 자리(안 끝난 줄 위)에 있어야 한다\n' + md0)
+          ok('AK 할 일 차례 — 안 끝난 일이 위 · 완료는 최근 몇 개 + 더보기 · 파일은 그대로')
+        }
         const cbar = await pg.textContent('.composer .cbar'); if (!/Fable 5.1|Sonnet 5/.test(cbar) || !/자동|계획/.test(cbar) || !/높음/.test(cbar)) fail('ui cbar labels: ' + cbar)
         // 슬래시 자동완성 → 스킬이 뜬다 · @ → 파일이 뜬다
         await pg.fill('.composer .cin', '/st'); await wait(300); const sp = await pg.textContent('.cpop'); if (!/standup/.test(sp ?? '') || !/status/.test(sp ?? '')) fail('ui slash popup: ' + sp)
