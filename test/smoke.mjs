@@ -2011,12 +2011,17 @@ try {
             const ed = () => pg.evaluate(() => { const v = window.__fbEditor; const m = v.state.selection.main; return { anchor: m.anchor, head: m.head, line: v.state.doc.lineAt(m.head).number, doc: v.state.doc.toString(), lines: v.state.doc.lines } })
             const idx = (w) => pg.evaluate((w) => window.__fbEditor.state.doc.toString().indexOf(w), w)
             const setCaret = (pos, head) => pg.evaluate(({ pos, head }) => { const v = window.__fbEditor; v.dispatch({ selection: { anchor: pos, head: head ?? pos } }); v.focus() }, { pos, head })
-            // 낱말의 화면 가운데 — 글자 노드를 훑어 찾는다(마크 span 안에 있어도)
+            // 낱말의 화면 가운데 — 글자 노드를 훑어 찾는다(마크 span 안에 있어도).
+            // ⚠ 한 낱말이 **이어진 여러 글자 노드**에 걸칠 수 있다 — 링크 아이콘과 첫 글자를 한 묶음(.fvw)으로 두면 «예|시 링크» 로 갈린다(2026-09-25).
+            //    그래서 줄 안의 글자 노드를 이어 붙여 찾고, 범위는 시작 노드·끝 노드로 잡는다.
             const wordBox = (w) => pg.evaluate((w) => {
-              const walker = document.createTreeWalker(document.querySelector('.mded .cm-content'), NodeFilter.SHOW_TEXT)
-              for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-                const i = (n.textContent ?? '').indexOf(w); if (i < 0) continue
-                const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + w.length); const b = r.getBoundingClientRect()
+              for (const line of document.querySelectorAll('.mded .cm-line')) {
+                const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT); const nodes = []; let all = ''
+                for (let n = walker.nextNode(); n; n = walker.nextNode()) { nodes.push([n, all.length]); all += n.textContent ?? '' }
+                const i = all.indexOf(w); if (i < 0) continue
+                const at = (k) => { let hit = nodes[0]; for (const x of nodes) if (x[1] <= k) hit = x; return [hit[0], k - hit[1]] }
+                const [sn, so] = at(i), [en, eo] = at(i + w.length - 1)
+                const r = document.createRange(); r.setStart(sn, so); r.setEnd(en, eo + 1); const b = r.getBoundingClientRect()
                 return { x: b.left + b.width / 2, y: b.top + b.height / 2 }
               }
               return null
