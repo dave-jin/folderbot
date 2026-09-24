@@ -1,0 +1,36 @@
+import { describe, it, expect } from 'vitest'
+import { mdPlain, notePlain } from '../../src/core/mdPlain'
+
+/** 2026-09-25 디자인 검수 — 알림 미리보기에 `## 증상 정리 **증상**: …` 처럼 마크다운 기호가 그대로 나왔다 */
+describe('mdPlain — 알림 미리보기는 글자만', () => {
+  it('제목·굵게·코드·링크 기호를 뗀다', () => {
+    expect(mdPlain('## 증상 정리\n\n**증상**: 화면이 `흔들린다`. [자세히](https://x.com)'))
+      .toBe('증상 정리 증상: 화면이 흔들린다. 자세히')
+  })
+  it('목록·체크박스·인용·콜아웃·가로줄', () => {
+    expect(mdPlain('- [ ] 할 일\n1. 하나\n> [!note] 메모\n> 인용\n---\n끝')).toBe('할 일 하나 메모 인용 끝')
+  })
+  it('펜스는 안의 글자만 · 표는 칸 글자만', () => {
+    expect(mdPlain('```bash\nnpm run qa\n```\n| 가 | 나 |\n|---|---|\n| 1 | 2 |')).toBe('npm run qa 가 나 1 2')
+  })
+  it('단어 속 밑줄·경로는 건드리지 않는다', () => {
+    expect(mdPlain('제품_Rondo 의 01_기획/기획안_v2.md')).toBe('제품_Rondo 의 01_기획/기획안_v2.md')
+    expect(mdPlain('*기울임* 과 _밑줄 기울임_')).toBe('기울임 과 밑줄 기울임')
+  })
+  it('줄 맨 앞의 연도는 번호 목록이 아니다', () => {
+    expect(mdPlain('2026. 9. 25 회의록\n1. 첫 안건')).toBe('2026. 9. 25 회의록 첫 안건')
+  })
+  it('줄 가운데 ``` 는 펜스가 아니다 · 주소 속 괄호', () => {
+    expect(mdPlain('Use ```npm run qa``` now')).toBe('Use npm run qa now')
+    expect(mdPlain('[문서](https://x.test/a_(b)) 끝')).toBe('문서 끝')
+    expect(mdPlain('[제목](https://x.test "설명") 과')).toBe('제목 과')
+  })
+  it('위키링크는 별칭을, 없으면 이름을', () => {
+    expect(mdPlain('[[문서|별칭]] 과 [[다른 문서]]')).toBe('별칭 과 다른 문서')
+  })
+  it('승인 대기 알림은 명령 원문 그대로 · 답 알림만 평문', () => {
+    expect(notePlain({ kind: 'awaiting', body: 'Bash: rm -rf ~/tmp/* ~/x/*' })).toBe('Bash: rm -rf ~/tmp/* ~/x/*')
+    expect(notePlain({ kind: 'error', body: '__init__.py 없음' })).toBe('__init__.py 없음')
+    expect(notePlain({ kind: 'done', body: '## 끝 **완료**' })).toBe('끝 완료')
+  })
+})

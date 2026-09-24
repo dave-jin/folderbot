@@ -1,5 +1,6 @@
 import { invalidateUsage } from './usage'
 import { DEVICE_RULES_MD, type ClientCtx } from '../core/clientCtx'
+import { mdPlain } from '../core/mdPlain'   // 알림 미리보기는 글자만 — 마크다운 기호가 그대로 나왔다(2026-09-25)
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { hostname } from 'node:os'
@@ -97,7 +98,7 @@ export class Host {
       if (!notify || r.state === 'awaiting_input') return
       const bot = this.registry.bot(r.botId)
       const last = [...r.items].reverse().find((i) => i.kind === 'assistant') as { text: string } | undefined
-      if (r.state === 'done') this.notifier.emit(r.routine ? 'routine' : 'done', r.botId, `${bot?.name ?? ''} · ${STATE_LABEL.done}`, (last?.text ?? r.name).slice(0, 140), r.id, { push: !r.routine || bot?.routines.find((x) => x.name === r.routine)?.push !== false })
+      if (r.state === 'done') this.notifier.emit(r.routine ? 'routine' : 'done', r.botId, `${bot?.name ?? ''} · ${STATE_LABEL.done}`, mdPlain(last?.text ?? r.name).slice(0, 140), r.id, { push: !r.routine || bot?.routines.find((x) => x.name === r.routine)?.push !== false })
       if (r.state === 'error') this.notifier.emit('error', r.botId, `${bot?.name ?? ''} · ${STATE_LABEL.error}`, (r.lastError ?? '세션 오류').split('\n').pop()!.slice(0, 140), r.id)
     })
   }

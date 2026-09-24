@@ -409,7 +409,9 @@ b,strong { color:var(--w); font-weight:600 }
 .sech .tools .ib.nsb { opacity:1 }
 /* 폰 — 쓸어서 처리 (V16). 행은 껍데기 안에서 좌우로 움직이고, 뒤에서 색·아이콘이 무엇이 일어날지 미리 말한다 */
 .swwrap { position:relative; overflow:hidden; background:var(--bg); touch-action:pan-y }
-.mhome .swwrap .mrow { background:var(--bg) }   /* 폰 홈 폴더 행 — 쓸리는 동안 뒤의 예고색 위를 미끄러진다 */
+.mhome .swwrap, .mhome .swwrap .swrow, .mhome .swwrap .mrow { background:var(--sb) }   /* 폰 홈 폴더 행 — 쓸리는 동안 뒤의 예고색 위를 미끄러진다.
+   ⚠ 목록은 서랍 바탕(--sb) 위에 있다 — 종전 --bg 는 밀 수 있는 행만 다른 색 띠로 떠 보였다(라이트에서 흰 띠 · 2026-09-25 디자인 검수) */
+.mhome .swwrap .mrow:active { background:var(--sel) }
 .swrow { position:relative; transition:transform .18s cubic-bezier(.2,.8,.2,1); background:var(--bg); will-change:transform }
 .swwrap.armed .swrow { box-shadow:0 0 22px rgba(0,0,0,.5) }
 .swhint { position:absolute; top:0; bottom:0; display:flex; align-items:center; gap:10px; padding:0 18px; pointer-events:none; color:#fff }
@@ -468,6 +470,8 @@ b,strong { color:var(--w); font-weight:600 }
 .ptodo { display:flex; gap:12px; align-items:flex-start; padding:9px 14px; min-height:52px; box-sizing:border-box; background:var(--bg) }
 .ptodo .ring { width:22px; height:22px; border-radius:50%; border:2px solid var(--t3); flex:none; margin-top:1px; display:inline-flex; align-items:center; justify-content:center; background:transparent }
 .ptodo.done .ring { background:var(--done); border-color:var(--done) }
+.ptodo .ring { padding:0; position:relative } .ptodo .ring svg { transform:none }
+.ptodo .ring::before { content:''; position:absolute; inset:-12px }   /* 보이는 동그라미는 22px 그대로, 누르는 칸만 42px — 빗나가면 행이 펼쳐졌다(2026-09-25 디자인 검수 · Codex 지적) */   /* ⚠ 컨텍스트 게이지의 `.ring svg { rotate(-90deg) }` 가 여기까지 걸려 완료 체크가 «›» 로 누웠다 (2026-09-25 디자인 검수) */
 .ptodo .bd { flex:1; min-width:0 }
 .ptodo .tt { font-size:15.5px; line-height:1.35; color:var(--w); font-weight:500; overflow-wrap:anywhere }
 .ptodo.done .tt { color:var(--t3); text-decoration:line-through }
@@ -763,7 +767,7 @@ b,strong { color:var(--w); font-weight:600 }
    (순서로 이기려 들면 규칙 하나 옮길 때마다 조용히 사라진다) */
 .sbtiles .mcards { display:grid; grid-template-columns:1fr 1fr; gap:6px }
 .mcards button { position:relative; text-align:left; overflow:hidden }
-.mcards button .sub { font-size:11.5px; color:var(--t3); line-height:1.4; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.mcards button .sub { display:block; /* ⚠ 채팅 서브에이전트의 전역 `.sub { display:flex }` 가 걸려 말줄임표가 안 먹었다 */ font-size:11.5px; color:var(--t3); line-height:1.4; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .mcards button .act { position:absolute; right:10px; bottom:10px; height:22px; padding:0 9px; border-radius:7px; background:var(--box); color:var(--t2); font-size:11.5px; display:inline-flex; align-items:center; cursor:pointer }
 .mcards button .act:hover { background:var(--hover); color:var(--w) }
 .mcards button.hot { border-color:color-mix(in srgb,var(--wait) 45%,transparent) }
@@ -773,6 +777,14 @@ b,strong { color:var(--w); font-weight:600 }
 .sbtiles .mcards button .n span { color:var(--t3); margin-left:4px }
 .sbtiles .mcards button .sub { font-size:10.5px }
 .sbtiles .mcards button .act { right:6px; bottom:6px; height:18px; padding:0 6px; font-size:10.5px }
+/* 부제목과 칸 안 단추는 **한 줄에 나란히** 선다 — 단추가 떠 있던 시절에는 부제목이 그 밑으로 들어가 말줄임표까지 가려졌다
+   («제품_Rondo · As»). 단추 폭이 글자마다 달라 여백 어림으로는 못 막는다 (2026-09-25 디자인 검수) */
+.mcards button .subrow { display:flex; align-items:center; gap:6px; width:100%; min-width:0 }
+.mcards button .subrow .sub { flex:1; min-width:0 }
+.mcards button .subrow .act { position:static; flex:none; margin:-3px -4px -3px 0 }   /* 위아래 음수 여백 — 단추가 줄을 키우면 위 제목이 눌린다 */
+.sbtiles .mcards button .subrow .act { margin:-2px -3px -2px 0 }
+/* 작은 타일(64px)은 아이콘+제목+부제목이 1~2px 넘쳤다 — 그동안 부제목 아랫단이 조용히 잘렸고, 줄로 묶자 제목이 눌렸다. 제목은 줄지 않게 하고 여백을 1px 씩 뺀다 */
+.mcards button .n, .mcards button > .sub, .mcards button .subrow { flex:none } .sbtiles .mcards button { padding:7px 9px; gap:1px } .sbtiles .mcards button .n { line-height:1.25 }
 /* 확인창 — 되돌리기 어려운 한 걸음 앞 (모델 바꾸기 등) */
 .modal.conf .cbody { margin:0; font-size:14px; line-height:1.65; color:var(--t2) }
 .modal.conf .cskip { display:flex; align-items:center; gap:9px; margin:16px 0 2px; font-size:13.5px; color:var(--t2); cursor:pointer }
@@ -929,6 +941,7 @@ b,strong { color:var(--w); font-weight:600 }
 .fvic { width:13px; height:13px; border-radius:2.5px; vertical-align:-2px; margin-right:5px; object-fit:contain; flex:none; display:inline-block }
 .md a { text-decoration:none; border-bottom:1px solid var(--line2) } .md a:hover { border-bottom-color:var(--t3) }
 .mded .fvic { margin-right:4px }
+.fvw { white-space:nowrap }   /* 아이콘 + 링크 첫 글자 — 둘 사이에서 줄이 안 바뀐다 (favicons.ts keepWithText) */
 /* 2026-09-17 Dave: «문서의 링크도 파비콘 + 바로 클릭, 표 안에서도». 본문 표식(.lp-xl)은 마크라 글자를 안 바꾸고,
    표 칸의 링크(.lp-cl)는 칸에 들어가면 원문으로 풀린다 (MdEditor `xlink` · `cellNodes`) */
 .mded .lp-xl { cursor:pointer }
@@ -993,6 +1006,15 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 /* 🔴 블록 위젯에 margin 을 주지 않는다 (2026-09-16) — CodeMirror 는 위젯 높이를 rect 로 재는데 margin 은 rect 밖이라 줄 높이 지도가
    그만큼 어긋난다. `---`·표 아래를 누르면 **다음 줄**에 캐럿이 서던 원인(실측: 인용 줄을 눌렀는데 그 아래 빈 줄로). 여백은 padding 으로 */
 .mded .lp-hr { display:block; padding:10px 0; cursor:default } .mded .lp-hr::after { content:''; display:block; height:1px; background:var(--line2) }
+/* 코드 — 채팅(.md pre·.md code)과 같은 바탕·모서리. 펜스 줄(```)은 숨겨진 채 상자의 위·아래 여백이 된다 (2026-09-25 디자인 검수) */
+.mded .cm-line.lp-code { background:var(--box); font-family:var(--mono); font-size:.86em; line-height:1.75; padding:0 14px }
+/* ⚠ 위아래 띄움은 margin 이 아니라 투명 border — CodeMirror 는 줄 높이를 getBoundingClientRect 로 재서 margin 을 못 센다.
+   margin 을 쓰면 코드 상자마다 높이 지도가 8px 씩 어긋나 «누른 줄의 윗줄에 캐럿» 이 된다(리뷰 · Claude 적대 검토) */
+.mded .cm-line.lp-code { background-clip:padding-box }
+.mded .cm-line.lp-code-a { border-radius:12px 12px 0 0; padding-top:6px; border-top:4px solid transparent }
+.mded .cm-line.lp-code-z { border-radius:0 0 12px 12px; padding-bottom:6px; border-bottom:4px solid transparent }
+.mded .lp-codeinfo { font-size:.85em; color:var(--t3); letter-spacing:.3px }
+.mded .lp-ic { font-family:var(--mono); font-size:.86em; background:var(--box); padding:1px 5px; border-radius:4px }
 .mded .lp-quote { padding-left:12px; border-left:2px solid var(--line2); color:var(--t2) }
 
 /* 편집기 위젯 — 체크박스 · 위키링크 · 단독 이미지 */
@@ -1124,7 +1146,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 
 
 /* ⋯ 메뉴 안의 «값 조절» 줄 — 누를 때마다 메뉴가 닫히면 안 되므로 단추에서 전파를 멈춘다 */
-.menu .mrow { display:flex; align-items:center; gap:8px; padding:5px 8px; font-size:12.5px; color:var(--t) }
+.menu .mrow { display:flex; align-items:center; gap:8px; padding:5px 8px; font-size:12.5px; color:var(--t); min-height:0 }   /* ⚠ min-height:0 — 폰 홈 목록의 `.mrow { min-height:70px }` 가 이 메뉴 줄까지 걸려 「글자 크기」 줄이 70px 로 늘었다(2026-09-25 디자인 검수 · Codex 지적) */
 .menu .mrow b { min-width:30px; text-align:center; color:var(--w); font-size:12px }
 .menu .mrow .mb { width:20px; height:20px; border:1px solid var(--line2); border-radius:5px; display:inline-flex; align-items:center; justify-content:center; color:var(--t2); margin-left:auto }
 .menu .mrow .mb + b + .mb { margin-left:0 }
@@ -1287,6 +1309,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
   .srow .del, .srow .ren { width:38px; height:38px }
   .seg button { min-height:38px; padding:0 14px; font-size:13px }
   .menu button, .menu .menu-a { min-height:44px }
+  .menu .mrow .mb { width:40px; height:40px; min-height:40px; border-radius:9px; font-size:16px }   /* ⚠ 위 줄이 높이만 44 로 늘려 −/+ 가 폭 20 의 길쭉한 막대가 됐다 — 정사각으로 (2026-09-25 디자인 검수) */
   .dtb .nb { width:34px; height:34px }
 
   /* V-5 ─ 문서 화면은 **경로 한 줄 + ⋯** 만 남긴다.
@@ -1346,3 +1369,11 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
   color:color-mix(in srgb, var(--wait) 62%, var(--w)); white-space:nowrap }
 .live.cliold .hact:hover { background:color-mix(in srgb, var(--wait) 18%, transparent) }
 .live.cliold .hact:disabled { opacity:.6 }
+
+/* 🔴 한국어는 **띄어쓰기에서** 줄을 바꾼다 (2026-09-25 디자인 검수). 기본값은 음절 사이마다 줄을 바꿔서
+   「무|언가가」 「링|크」 처럼 낱말 한가운데가 끊겼다. keep-all 로 낱말을 지키고, 한 줄보다 긴 낱말(주소·긴 영문)은
+   overflow-wrap:anywhere 가 받아 준다 — 칸을 뚫지 않는다. ⚠ 입력창(.cin)은 뺀다: 한 줄짜리 말을 치는 자리라 낱말이 튀면 거슬린다.
+   문서 편집기(.mded)는 넣는다 — 보기와 편집의 줄바꿈이 같아야 하고, 한국 워드프로세서(한글·Word)도 어절 단위가 기본이다. */
+.md, .umsg, .todo .dsc, .ptodo .tt, .ptodo .dsc, .mded .cm-content.cm-lineWrapping { word-break:keep-all; overflow-wrap:anywhere }
+
+.meta.perr { color:var(--err); margin:4px 0 6px }   /* 질문·권한 카드의 보내기 실패 (리뷰) */

@@ -1185,6 +1185,20 @@ try {
           await ph.evaluate(() => { for (const b of document.querySelectorAll('.achips .achip .x')) b.click() }); await wait(200)
           await ph.evaluate((b64) => { const bin = atob(b64); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); const dt = new DataTransfer(); dt.items.add(new File([u8], 'paste.png', { type: 'image/png' })); const ev = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }); document.querySelector('.composer.ph .cin').dispatchEvent(ev) }, png.split(',')[1]); await wait(1500)
           const pasted = await ph.$$eval('.achips .achip .nm', (r) => r.map((x) => x.textContent)); if (!pasted.some((n) => /스크린샷_/.test(n ?? ''))) fail('N-4: 붙여넣은 그림이 칩으로 안 붙었다 ' + JSON.stringify(pasted))
+          // 🔴 손가락 기기에는 키 안내를 안 쓴다 — 일하는 중의 안내가 «(⌘⏎)» 였다(⌘ 키가 없다 · 2026-09-25 디자인 검수)
+          {
+            await api(`/sessions/${sidN}/send`, { text: '긴스트리밍 해 줘' })
+            let phq = ''
+            for (let k = 0; k < 20; k++) { phq = await ph.$eval('.composer.ph .cin', (e) => e.dataset.placeholder ?? ''); if (/대기열/.test(phq)) break; await wait(150) }
+            if (!/대기열/.test(phq)) fail('폰 입력창: 일하는 중 안내가 안 떴다(검사 전제 깨짐) · ' + JSON.stringify(phq))
+            if (/[⌘⏎↩]/.test(phq)) fail('🔴 폰 입력창: 손가락 기기에 키 안내가 떴다 · ' + JSON.stringify(phq))
+            await api(`/sessions/${sidN}/interrupt`, {}); await wait(800)
+          }
+          // 🔴 폰 목록용 `.mrow { min-height:70px }` 가 메뉴 줄(문서 ⋯ 의 「글자 크기」)까지 늘렸다 · −/+ 는 정사각 (2026-09-25 디자인 검수 · Codex)
+          {
+            const mr = await ph.evaluate(() => { const m = document.createElement('div'); m.className = 'menu'; m.style.cssText = 'position:fixed;left:0;top:0'; m.innerHTML = '<div class="mrow"><span>글자 크기</span><button class="mb">−</button><b>14</b><button class="mb">+</button></div>'; document.body.append(m); const r = m.querySelector('.mrow').getBoundingClientRect(), b = m.querySelector('.mb').getBoundingClientRect(); m.remove(); return { h: r.height, bw: b.width, bh: b.height } })
+            if (mr.h > 60 || Math.abs(mr.bw - mr.bh) > 4) fail('🔴 폰 메뉴 줄: 목록 규칙이 새서 늘어나거나 −/+ 가 길쭉하다 · ' + JSON.stringify(mr))
+          }
           await ph.close(); await fetch(base + `/api/sessions/${sidN}`, { method: 'DELETE' })
           ok('N 폰 입력창 — H-5 헤더 · 본문과 같은 글자 · 질문 헤더(흐름 안 · 펼침) · 6줄 첫 줄 보임·전폭·버튼 하단 · 3장 칩(썸네일·링·✕) · 11개째 거절 · _2 · 📷 · 카메라 · ⌘V 없음 · 붙여넣기 files')
         }
@@ -1927,7 +1941,7 @@ try {
           const rel = 'churn.md'
           const abs = join(root, '3. Area/제품_Rondo', rel)
           // ⚠ 제목이 **둘** 이어야 목차 단추가 나온다(하나짜리 문서에 목차는 자리만 먹는다)
-          const src = ['---', 'type: reference', 'tags: [PARA, 지침]', '---', '', '# 제목', '', '**굵게** 와 *기울임* 과 `코드`.', '', '- [ ] 할 일', '- 항목', '', '## 두 번째 제목', '', '---', '', '> 인용', '', '> [!note] 콜아웃 줄', '', '[[위키링크]] 와 https://example.com', '', '[예시 링크](https://example.com/page) 옆 글', '', '| 가 | 나 |', '|---|---|', '| 1 | 2 |', ''].join('\n')
+          const src = ['---', 'type: reference', 'tags: [PARA, 지침]', '---', '', '# 제목', '', '**굵게** 와 *기울임* 과 `코드`.', '', '- [ ] 할 일', '- 항목', '', '## 두 번째 제목', '', '---', '', '> 인용', '', '> [!note] 콜아웃 줄', '', '[[위키링크]] 와 https://example.com', '', '[예시 링크](https://example.com/page) 옆 글', '', '| 가 | 나 |', '|---|---|', '| 1 | 2 |', '', '```bash', 'npm run qa', '---', '- [ ] 코드 속 줄', '```', '', '```md', '| 코드 | 표 |', '|---|---|', '| a | b |', '```', '', '주소는 `https://api.example.com/v1` 처럼 코드로', ''].join('\n')
           // ⚠ API 로 만든다 — 파일을 직접 쓰면 호스트가 모르고 트리가 안 새로 그려진다
           await api(`/bots/${bot.id}/file`, { rel, text: src })
           const before = readFileSync(abs)
@@ -1997,12 +2011,17 @@ try {
             const ed = () => pg.evaluate(() => { const v = window.__fbEditor; const m = v.state.selection.main; return { anchor: m.anchor, head: m.head, line: v.state.doc.lineAt(m.head).number, doc: v.state.doc.toString(), lines: v.state.doc.lines } })
             const idx = (w) => pg.evaluate((w) => window.__fbEditor.state.doc.toString().indexOf(w), w)
             const setCaret = (pos, head) => pg.evaluate(({ pos, head }) => { const v = window.__fbEditor; v.dispatch({ selection: { anchor: pos, head: head ?? pos } }); v.focus() }, { pos, head })
-            // 낱말의 화면 가운데 — 글자 노드를 훑어 찾는다(마크 span 안에 있어도)
+            // 낱말의 화면 가운데 — 글자 노드를 훑어 찾는다(마크 span 안에 있어도).
+            // ⚠ 한 낱말이 **이어진 여러 글자 노드**에 걸칠 수 있다 — 링크 아이콘과 첫 글자를 한 묶음(.fvw)으로 두면 «예|시 링크» 로 갈린다(2026-09-25).
+            //    그래서 줄 안의 글자 노드를 이어 붙여 찾고, 범위는 시작 노드·끝 노드로 잡는다.
             const wordBox = (w) => pg.evaluate((w) => {
-              const walker = document.createTreeWalker(document.querySelector('.mded .cm-content'), NodeFilter.SHOW_TEXT)
-              for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-                const i = (n.textContent ?? '').indexOf(w); if (i < 0) continue
-                const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + w.length); const b = r.getBoundingClientRect()
+              for (const line of document.querySelectorAll('.mded .cm-line')) {
+                const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT); const nodes = []; let all = ''
+                for (let n = walker.nextNode(); n; n = walker.nextNode()) { nodes.push([n, all.length]); all += n.textContent ?? '' }
+                const i = all.indexOf(w); if (i < 0) continue
+                const at = (k) => { let hit = nodes[0]; for (const x of nodes) if (x[1] <= k) hit = x; return [hit[0], k - hit[1]] }
+                const [sn, so] = at(i), [en, eo] = at(i + w.length - 1)
+                const r = document.createRange(); r.setStart(sn, so); r.setEnd(en, eo + 1); const b = r.getBoundingClientRect()
                 return { x: b.left + b.width / 2, y: b.top + b.height / 2 }
               }
               return null
@@ -2225,6 +2244,37 @@ try {
           }
           // 콜아웃 — `> [!note]` 는 표시를 숨기고 줄에 색을 준다
           if (!(await pg.$('.mded .lp-cal'))) fail('콜아웃이 안 그려졌다')
+          /**
+           * 🔴 **코드는 코드처럼** (2026-09-25 디자인 검수) — 펜스(```)를 숨기는 규칙 탓에 코드 블록이 본문 줄처럼 흩어졌고,
+           *    코드 안의 `---`·`- [ ]` 가 가로줄·눌리는 체크박스로 바뀌었다. 상자(바탕)가 있고, 코드 줄은 그대로여야 한다.
+           */
+          {
+            const cb = await pg.evaluate(() => {
+              const lines = [...document.querySelectorAll('.mded .cm-line.lp-code')]
+              return { n: lines.length, bg: lines[0] ? getComputedStyle(lines[0]).backgroundColor : '', info: document.querySelector('.mded .lp-codeinfo')?.textContent ?? '', ic: !!document.querySelector('.mded .lp-ic'),
+                inHr: lines.some((l) => l.querySelector('.lp-hr') || l.classList.contains('lp-hr')), inCheck: lines.some((l) => l.querySelector('.lp-check')), text: lines.map((l) => l.textContent).join('|') }
+            })
+            if (cb.n < 4) fail('문서 코드 블록: 줄마다 상자 클래스가 안 붙었다 · ' + JSON.stringify(cb))
+            if (!cb.bg || cb.bg === 'rgba(0, 0, 0, 0)') fail('문서 코드 블록: 바탕이 없다 · ' + JSON.stringify(cb))
+            if (cb.info !== 'bash') fail('문서 코드 블록: 언어 이름이 표식으로 안 붙었다 · ' + JSON.stringify(cb))
+            if (!cb.ic) fail('문서 인라인 코드: 바탕 표식(lp-ic)이 없다')
+            if (cb.inHr || cb.inCheck || !/---/.test(cb.text) || !/\[ \]/.test(cb.text)) fail('🔴 문서 코드 블록: 코드 안의 --- · - [ ] 가 가로줄·체크박스로 바뀌었다 · ' + JSON.stringify(cb))
+            // 🔴 펜스 안의 표는 코드 그대로(표 위젯 아님) · 인라인 코드 속 주소엔 아이콘·링크 없음 (리뷰 · Claude 적대 검토)
+            const cb2 = await pg.evaluate(() => ({ tblInCode: [...document.querySelectorAll('.mded .cm-line.lp-code')].some((l) => /\| 코드 \| 표 \|/.test(l.textContent ?? '')), widgetHasCode: [...document.querySelectorAll('.mded .lp-tblw')].some((w) => /코드/.test(w.textContent ?? '')), icIcon: !!document.querySelector('.mded .lp-ic img.fvic, .mded .lp-ic .lp-xl') }))
+            if (!cb2.tblInCode || cb2.widgetHasCode) fail('🔴 문서: 펜스 안의 표가 표 위젯으로 접혔다 · ' + JSON.stringify(cb2))
+            if (cb2.icIcon) fail('🔴 문서: 인라인 코드 속 주소에 아이콘·링크가 붙었다')
+            ok('문서 — 코드 블록은 상자·언어 표식 · 코드 속 --- 와 - [ ] 는 글자 그대로 · 인라인 코드 바탕')
+          }
+          // 🔴 한국어는 띄어쓰기에서 줄을 바꾼다 — 「무|언가가」 처럼 낱말 가운데가 끊겼다 (2026-09-25 디자인 검수)
+          {
+            const wb = await pg.evaluate(() => [document.querySelector('.mded .cm-content'), document.querySelector('.chat-body .md'), document.querySelector('.umsg')].filter(Boolean).map((e) => ({ c: e.className.slice(0, 30), wb: getComputedStyle(e).wordBreak, ow: getComputedStyle(e).overflowWrap })))
+            if (!wb.length || wb.some((x) => x.wb !== 'keep-all' || x.ow !== 'anywhere')) fail('🔴 한국어 줄바꿈: 본문 칸이 낱말 가운데서 끊긴다(keep-all 아님) · ' + JSON.stringify(wb))
+          }
+          // 🔴 문서 링크의 아이콘은 첫 글자와 한 묶음 — 아이콘만 윗줄 끝에 남던 것 (2026-09-25 디자인 검수)
+          {
+            const fw = await pg.evaluate(() => [...document.querySelectorAll('.mded img.fvic')].map((i) => { const w = i.closest('.fvw'); return { w: !!w, t: w ? w.textContent.length : 0 } }))
+            if (!fw.length || fw.some((x) => !x.w || x.t < 1)) fail('🔴 문서 링크: 아이콘이 링크 글자와 묶이지 않았다 · ' + JSON.stringify(fw))
+          }
           // ⚠ 열어 둔 채로 파일을 지우면 문서 열이 다시 읽으며 404 를 낸다 — 먼저 다른 파일로 옮긴다
           await pg.evaluate(() => { const t = [...document.querySelectorAll('.trow')].find((x) => /todo\.md/.test(x.textContent ?? '')); t?.click() })
           await wait(700)
@@ -2706,6 +2756,31 @@ try {
           {
             await pg.fill('.composer .cin', '질문 좀 해 줘'); await pg.click('.composer .sendb')
             await pg.waitForSelector('.card .opt input', { timeout: 8000 })
+            /**
+             * 🔴 **질문에는 [허용] 이 없다** (2026-09-25 디자인 검수). 「확인 대기」 타일이 질문에도 [허용] 을 띄웠고, 누르면 답 없이
+             *    허용이 가거나 질문이 취소됐다. 타일은 [답하기] 로 그 대화를 열고, 호스트도 질문에 온 «허용» 을 거절한다.
+             */
+            {
+              await wait(400)
+              const tile = await pg.evaluate(() => { const b = [...document.querySelectorAll('.mcards button')].find((x) => /확인 대기/.test(x.textContent ?? '')); return b ? { act: b.querySelector('.act')?.textContent ?? '', sub: b.querySelector('.sub')?.textContent ?? '' } : null })
+              if (!tile) fail('확인 대기 타일: 화면에 없다(검사 전제 깨짐)'); else if (tile.act !== '답하기' || (tile.act === '허용' || /AskUserQuestion/.test(tile.sub))) fail('🔴 확인 대기 타일: 질문에 [허용]·도구 이름이 떴다 · ' + JSON.stringify(tile))
+              let sidQ = '', reqQ = ''
+              for (const x of await api(`/bots/${bot.id}/sessions`)) { const c = await api(`/sessions/${x.id}/chat`); const p = c.info.pending?.find((q) => q.ask); if (p) { sidQ = x.id; reqQ = p.requestId } }
+              const r = await fetch(base + `/api/sessions/${sidQ}/permission`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: reqQ, allow: true }) })
+              if (r.status !== 400) fail('🔴 호스트: 질문에 온 «허용» 을 받아 줬다 · ' + r.status)
+              if (!(await pg.$('.card .opt input'))) fail('🔴 호스트: 질문에 «허용» 이 오자 질문 카드가 사라졌다')
+              // 🔴 답(/ask)은 질문에만 (리뷰 · Codex) — 질문이 아닌 id 에 답을 보내면 400
+              const r2 = await fetch(base + `/api/sessions/${sidQ}/ask`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: 'not-a-question', answers: { a: 'b' } }) })
+              if (r2.status !== 400) fail('🔴 호스트: 질문이 아닌 id 에도 답을 받아 줬다(허용 가드 우회) · ' + r2.status)
+              ok('질문에는 [허용] 이 없다 — 타일은 [답하기] · 호스트는 질문에 온 허용을 400 으로 거절')
+              // 🔴 타일 부제목은 말줄임표로 끝나고 단추 밑으로 안 들어간다 · 제목은 안 눌린다 (2026-09-25 디자인 검수)
+              const tl = await pg.evaluate(() => [...document.querySelectorAll('.mcards button')].map((b) => {
+                const s = b.querySelector('.sub'), a = b.querySelector('.act'), n = b.querySelector('.n')
+                return { disp: getComputedStyle(s).display, over: a ? s.getBoundingClientRect().right - a.getBoundingClientRect().left : -1, nH: n.getBoundingClientRect().height, fs: parseFloat(getComputedStyle(n).fontSize), subCut: s.getBoundingClientRect().bottom - b.getBoundingClientRect().bottom }
+              }))
+              const badT = tl.filter((t) => t.disp === 'flex' || t.over > 0.5 || t.nH < t.fs || t.subCut > 0.5)
+              if (!tl.length || badT.length) fail('🔴 상태 타일: 부제목이 단추 밑으로 들어가거나(말줄임표 없음) 제목·부제목이 눌린다 · ' + JSON.stringify(tl))
+            }
             const ins = await pg.$$('.card .opt input')
             if (ins.length < 2) fail('질문 카드: 「기타」 칸이 질문 수만큼 없다 · ' + ins.length)
             await ins[1].fill('직접 쓴 둘째 답')
@@ -2779,6 +2854,29 @@ try {
             let fv = 0
             for (let i = 0; i < 40; i++) { fv = await pg.evaluate(() => document.querySelectorAll('.chat-body .md a img.fvic').length); if (fv) break; await wait(300) }
             if (!fv) fail('채팅: 답 속 링크에 파비콘 자리가 없다')
+            /**
+             * 🔴 **자리표시자 지구본은 보이고, 아이콘은 링크 글자와 한 줄에 선다** (2026-09-25 디자인 검수).
+             *    지구본 SVG 가 두 번 인코딩돼(`%2523666`) 선이 안 그려졌고 → 빈칸만 남았다. 또 아이콘 뒤에서 줄이 바뀌어
+             *    폰에서 아이콘(과 밑줄 토막)만 윗줄 끝에 남았다. 폭을 좁혀 가며 아이콘과 첫 글자의 줄을 잰다.
+             */
+            const fvx = await pg.evaluate(async () => {
+              const a = [...document.querySelectorAll('.chat-body .md a')].find((x) => x.querySelector('img.fvic'))
+              const img = a.querySelector('img.fvic')
+              const svg = img.src.startsWith('data:image/svg') ? decodeURIComponent(img.src.split(',')[1]) : ''
+              const wrap = img.closest('.fvw'), md = a.closest('.md'), w0 = md.style.width, out = []
+              for (let w = 140; w <= 420; w += 7) {
+                md.style.width = w + 'px'
+                const t = wrap ? [...wrap.childNodes].find((n) => n.nodeType === 3) : null
+                if (!t) break
+                const r = document.createRange(); r.setStart(t, 0); r.setEnd(t, 1)
+                if (Math.abs(r.getBoundingClientRect().top - img.getBoundingClientRect().top) > 8) out.push(w)
+              }
+              md.style.width = w0
+              return { wrap: !!wrap, head: wrap?.textContent ?? '', svgBad: svg && !/stroke="#666"/.test(svg), split: out }
+            })
+            if (!fvx.wrap || fvx.head.length !== 1) fail('🔴 채팅 링크: 아이콘이 첫 글자와 묶이지 않았다 · ' + JSON.stringify(fvx))
+            if (fvx.svgBad) fail('🔴 채팅 링크: 자리표시자 지구본 색이 깨졌다(두 번 인코딩) · ' + JSON.stringify(fvx))
+            if (fvx.split.length) fail('🔴 채팅 링크: 아이콘과 링크 글자가 다른 줄로 갈라진다 · 폭 ' + fvx.split.join(','))
             await pg.fill('.composer .cin', ''); await wait(300)
             ok('링크 파비콘 — 채팅 · 문서 · 입력창이 같은 캐시를 본다')
           }
@@ -4142,6 +4240,12 @@ try {
          */
         {
           const rowSel = '.mhome .swwrap .swrow'
+          // 🔴 밀 수 있는 행도 서랍과 같은 바탕 — 종전에는 그 행들만 다른 색 띠로 떠 보였다(라이트에서 흰 띠 · 2026-09-25 디자인 검수)
+          {
+            const bgs = await pg.evaluate(() => { const d = getComputedStyle(document.querySelector('.drawer.left')).backgroundColor; return { d, rows: [...document.querySelectorAll('.mhome .mrow')].map((r) => getComputedStyle(r).backgroundColor) } })
+            const odd = bgs.rows.filter((c) => c !== bgs.d && c !== 'rgba(0, 0, 0, 0)')
+            if (!bgs.rows.length || odd.length) fail('🔴 폰 목록: 행 바탕이 서랍과 다르다(띠로 떠 보인다) · ' + JSON.stringify(bgs))
+          }
           const n = (await pg.$$(rowSel)).length; if (n < 2) fail('phone home: folder rows should be swipeable (.swwrap) · ' + n)
           if (await pg.$('.mhome .secl:has-text("관제") + .swwrap')) fail('phone home: orchestrator row must not be swipeable')
           const sel = `${rowSel} >> nth=${n - 1}`
@@ -4267,6 +4371,17 @@ try {
           await pg.screenshot({ path: 'test/tmp/phone-swipe.png' })
           // ── 새 폰 할 일 (V19) — 행 생김새 · 오른쪽 여백 · 길게 눌러 옮기기 · 편집 시트 ──
           await pg.waitForSelector('.panel .ptodo', { timeout: 5000 })
+          // 🔴 완료 표시는 ✓ 그대로 — 컨텍스트 게이지의 `.ring svg` 회전이 걸려 «›» 로 누웠었다 (2026-09-25 디자인 검수)
+          {
+            const tr = await pg.evaluate(() => { const v = document.querySelector('.panel .ptodo.done .ring svg'); return v ? getComputedStyle(v).transform : null })
+            if (tr === null) fail('폰 할 일: 완료 항목의 체크가 안 보인다(검사 전제 깨짐)')
+            if (tr !== 'none') fail('🔴 폰 할 일: 완료 체크가 돌아가 «›» 로 보인다 · ' + tr)
+          }
+          // 🔴 완료 동그라미는 22px 로 보이지만 누르는 칸은 40px 이상 — 빗나가면 행이 펼쳐졌다 (2026-09-25 디자인 검수)
+          {
+            const hit = await pg.evaluate(() => { const r = document.querySelector('.panel .ptodo .ring'); return r ? parseFloat(getComputedStyle(r, '::before').height) || 0 : -1 })
+            if (hit < 40) fail('🔴 폰 할 일: 완료 동그라미의 누르는 칸이 좁다 · ' + hit)
+          }
         // 🔴 끊겼다 붙는 동안 바뀐 파일이 화면에 온다 (2026-09-13 Dave: «원격 모바일에서 수정된 파일이 바로 적용이 안 돼»)
         //    맥은 SSE 가 안 끊겨 프레임으로 최신이 됐고, 폰은 그 프레임을 놓친 채 /state 만 다시 읽어 할 일이 낡아 있었다.
         {
