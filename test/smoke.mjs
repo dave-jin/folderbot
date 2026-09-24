@@ -4214,6 +4214,12 @@ try {
          */
         {
           const rowSel = '.mhome .swwrap .swrow'
+          // 🔴 밀 수 있는 행도 서랍과 같은 바탕 — 종전에는 그 행들만 다른 색 띠로 떠 보였다(라이트에서 흰 띠 · 2026-09-25 디자인 검수)
+          {
+            const bgs = await pg.evaluate(() => { const d = getComputedStyle(document.querySelector('.drawer.left')).backgroundColor; return { d, rows: [...document.querySelectorAll('.mhome .mrow')].map((r) => getComputedStyle(r).backgroundColor) } })
+            const odd = bgs.rows.filter((c) => c !== bgs.d && c !== 'rgba(0, 0, 0, 0)')
+            if (!bgs.rows.length || odd.length) fail('🔴 폰 목록: 행 바탕이 서랍과 다르다(띠로 떠 보인다) · ' + JSON.stringify(bgs))
+          }
           const n = (await pg.$$(rowSel)).length; if (n < 2) fail('phone home: folder rows should be swipeable (.swwrap) · ' + n)
           if (await pg.$('.mhome .secl:has-text("관제") + .swwrap')) fail('phone home: orchestrator row must not be swipeable')
           const sel = `${rowSel} >> nth=${n - 1}`
