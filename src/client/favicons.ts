@@ -90,7 +90,8 @@ function keepWithText(a: HTMLElement, img: HTMLImageElement): void {
   const w = document.createTreeWalker(a, NodeFilter.SHOW_TEXT)
   let t = w.nextNode() as Text | null
   while (t && !t.data.trim()) t = w.nextNode() as Text | null
-  if (!t) return
+  // ⚠ 첫 글자가 `<code>`·`<strong>` 같은 요소 안이면 묶지 않는다 — 아이콘이 그 요소 안으로 들어가 코드 바탕을 입는다
+  if (!t || t.parentNode !== a) return
   const lead = t.data.length - t.data.trimStart().length
   const first = Array.from(t.data.slice(lead))[0] ?? ''
   t.splitText(lead + first.length)          // t 에는 «앞 공백 + 첫 글자» 만 남는다
