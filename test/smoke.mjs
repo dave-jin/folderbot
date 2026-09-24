@@ -2512,11 +2512,17 @@ try {
             await wait(300)
             if (!(await pg.$('.composer .cin .ichip'))) fail('첨부 칩: 첨부가 안 붙었다(입력창 안 칩) · ' + JSON.stringify(await pg.evaluate(() => { const c = document.querySelector('.composer .cin'); return { html: c?.innerHTML.slice(0, 300), dv: c?.dataset.value, cnt: document.querySelector('.cbar .acount')?.textContent ?? null } })))
             await pg.click('.composer .sendb'); await wait(900)
-            const um = await pg.evaluate(() => { const u = [...document.querySelectorAll('.chat-body .umsg')].pop(); return u ? { text: u.textContent ?? '', chips: [...u.querySelectorAll('.pchip')].map((x) => x.textContent ?? ''), raw: u.textContent?.includes('첨부 파일 (읽어서 참고해)') } : null })
+            /* 🔴 **AW · 같은 파일은 한 번, 하단 칩 디자인으로** (2026-09-25 Dave: *«구지 칩이 두번 보일 필요 있나? … 디자인은
+                  하단 칩 디자인으로 하고, 하단에 첨부만 따로 모아서 칩을 보여줄 필요는 없을것 같아»*). 종전엔 글 속 `@이름` 이
+                  단순한 `.pchip` 으로, 그 아래에 같은 파일이 `.fchip`(아이콘·이름·폴더) 줄로 **또** 나왔다. */
+            const um = await pg.evaluate(() => { const u = [...document.querySelectorAll('.chat-body .umsg')].pop(); return u ? { text: u.textContent ?? '', chips: [...u.querySelectorAll('.pchip, .fchip')].map((x) => x.textContent ?? ''), fchips: u.querySelectorAll('.fchip').length, pchips: u.querySelectorAll('.pchip').length, row: !!u.querySelector('.uatt'), raw: u.textContent?.includes('첨부 파일 (읽어서 참고해)') } : null })
             if (!um || um.raw) fail('첨부 칩: 첨부 꼬리가 글자로 보인다 · ' + JSON.stringify(um))
             if (!um.chips.some((c) => /todo\.md/.test(c))) fail('첨부 칩: 내 말풍선에 칩이 없다 · ' + JSON.stringify(um))
+            if (um.chips.filter((c) => /todo\.md/.test(c)).length > 1) fail('🔴 AW: 같은 파일 칩이 두 번 보인다(글 속 + 아래 줄) · ' + JSON.stringify(um))
+            if (um.pchips) fail('🔴 AW: 글 속 칩이 하단 칩 디자인(.fchip)이 아니다 · ' + JSON.stringify(um))
+            if (um.row) fail('🔴 AW: 글 속에 이미 보인 첨부를 아래 줄에 또 모았다 · ' + JSON.stringify(um))
             await wait(400)
-            ok('내 메시지의 첨부·@멘션은 칩으로 보인다')
+            ok('내 메시지의 첨부·@멘션은 칩으로 보인다 · AW 같은 파일은 한 번 · 하단 칩 디자인')
           }
           /**
            * 🔴 **네 칸은 «하는 곳» 이다** (2026-09-15 Dave: 폰 홈의 4칸을 전부 액션으로 · 맥 레일 맨 위에도).

@@ -305,6 +305,8 @@ b,strong { color:var(--w); font-weight:600 }
 .fchip[data-tip]:hover::after { content:attr(data-tip); position:absolute; left:0; bottom:calc(100% + 6px); background:var(--box); border:1px solid var(--line2); border-radius:6px; padding:5px 9px; font-size:11px; color:var(--t2); white-space:nowrap; box-shadow:0 8px 24px rgba(0,0,0,.45); z-index:12; pointer-events:none }
 .chip.more { border-style:dashed; color:var(--t3); height:24px } .chip.more:hover { color:var(--w) }
 .umsg .files.uatt .fchip { vertical-align:middle }
+/* AW · 글 속에 선 파일 칩 — 앞뒤 글자와 붙지 않게 숨 한 칸, 긴 이름은 줄 폭 안에서 줄인다 */
+.umsg > .fchip { margin:0 3px; max-width:min(340px, 100%) }
 .composer .crow { display:flex; align-items:flex-end; gap:8px }
 /* 입력창 — contenteditable. 글 속에 칩(.ichip)이 선다 (InlineInput.tsx 머리말) */
 .composer .cin { position:relative; flex:1; min-width:0; min-height:26px; max-height:180px; overflow:auto; padding:2px 0; color:var(--w); font-size:13.5px; line-height:1.6; white-space:pre-wrap; word-break:break-word; outline:0; cursor:text }
