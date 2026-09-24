@@ -708,7 +708,13 @@ export class Gateway {
       if (!sub && m === 'DELETE') { h.sessions.remove(r.id); return json(200, { ok: true }) }
       if (sub === 'chat') return json(200, { info: h.sessions.info(r), items: r.items.slice(-800) })
       if (sub === 'send' && m === 'POST') { const b = await body(); h.sendToBot(bot, String(b.text), r.id, undefined, undefined, { client: clientOf(who, b.client) }); return json(200, { ok: true }) }
-      if (sub === 'permission' && m === 'POST') { const b = await body(); h.sessions.respondPermission(r, String(b.requestId), !!b.allow, !!b.always); return json(200, { ok: true }) }
+      if (sub === 'permission' && m === 'POST') {
+        const b = await body()
+        // 🔴 질문(AskUserQuestion)은 «허용» 으로 닫지 않는다 — 답은 `/ask` 로 온다. 허용을 받아 주면 답 없이 넘어가거나(보통 질문)
+        //    질문이 취소된다(미뤄진 질문). 거부(취소)는 그대로 받는다 (2026-09-25 디자인 검수)
+        if (b.allow && h.sessions.pendingOf(r.id).find((x) => x.requestId === String(b.requestId))?.ask) return json(400, { error: '질문은 허용이 아니라 답으로 보내 주세요' })
+        h.sessions.respondPermission(r, String(b.requestId), !!b.allow, !!b.always); return json(200, { ok: true })
+      }
       /**
        * S · 여기까지 읽었다 (2026-09-21 Dave) — 화면이 맨 아래에 닿고 턴이 끝나면 한 번 부른다.
        * ⚠ 같이 그 세션의 **알림도 읽음**으로 넘긴다 — 대화를 다 읽었는데 🔔 에 같은 건이 남아 있으면 배지가 거짓말을 한다(실제로 50 이 쌓였다).

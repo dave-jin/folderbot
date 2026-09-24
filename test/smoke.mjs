@@ -2723,6 +2723,21 @@ try {
           {
             await pg.fill('.composer .cin', '질문 좀 해 줘'); await pg.click('.composer .sendb')
             await pg.waitForSelector('.card .opt input', { timeout: 8000 })
+            /**
+             * 🔴 **질문에는 [허용] 이 없다** (2026-09-25 디자인 검수). 「확인 대기」 타일이 질문에도 [허용] 을 띄웠고, 누르면 답 없이
+             *    허용이 가거나 질문이 취소됐다. 타일은 [답하기] 로 그 대화를 열고, 호스트도 질문에 온 «허용» 을 거절한다.
+             */
+            {
+              await wait(400)
+              const tile = await pg.evaluate(() => { const b = [...document.querySelectorAll('.mcards button')].find((x) => /확인 대기/.test(x.textContent ?? '')); return b ? { act: b.querySelector('.act')?.textContent ?? '', sub: b.querySelector('.sub')?.textContent ?? '' } : null })
+              if (!tile) fail('확인 대기 타일: 화면에 없다(검사 전제 깨짐)'); else if (tile.act !== '답하기' || (tile.act === '허용' || /AskUserQuestion/.test(tile.sub))) fail('🔴 확인 대기 타일: 질문에 [허용]·도구 이름이 떴다 · ' + JSON.stringify(tile))
+              let sidQ = '', reqQ = ''
+              for (const x of await api(`/bots/${bot.id}/sessions`)) { const c = await api(`/sessions/${x.id}/chat`); const p = c.info.pending?.find((q) => q.ask); if (p) { sidQ = x.id; reqQ = p.requestId } }
+              const r = await fetch(base + `/api/sessions/${sidQ}/permission`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: reqQ, allow: true }) })
+              if (r.status !== 400) fail('🔴 호스트: 질문에 온 «허용» 을 받아 줬다 · ' + r.status)
+              if (!(await pg.$('.card .opt input'))) fail('🔴 호스트: 질문에 «허용» 이 오자 질문 카드가 사라졌다')
+              ok('질문에는 [허용] 이 없다 — 타일은 [답하기] · 호스트는 질문에 온 허용을 400 으로 거절')
+            }
             const ins = await pg.$$('.card .opt input')
             if (ins.length < 2) fail('질문 카드: 「기타」 칸이 질문 수만큼 없다 · ' + ins.length)
             await ins[1].fill('직접 쓴 둘째 답')

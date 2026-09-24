@@ -1058,8 +1058,10 @@ function ActionTiles({ go, setModal, onTodo, say, compact }: { go: (b: string, s
     <button className={waiting.length ? 'hot' : ''} onClick={() => (w0 ? go(w0.botId, w0.id) : setModal('notify'))}>
       <Icon n="bell" size={compact ? 16 : 22} color={waiting.length ? 'var(--wait)' : 'var(--t3)'} />
       <span className="n">확인 대기<span>{waiting.length}</span></span>
-      <span className="sub">{w0 ? `${nameOf(w0.botId)} · ${w0.pending[0]?.displayName ?? w0.name}` : '없음'}</span>
-      {w0?.pending[0] ? act(allow, '허용', 'w') : null}
+      {/* 🔴 질문(AskUserQuestion)은 «허용» 할 것이 아니라 **답할** 것이다 (2026-09-25 디자인 검수). 종전에는 질문에도 [허용] 이 떠서,
+          누르면 답 없이 허용이 가거나(보통 질문) 질문이 취소됐다(미뤄진 질문). 도구 이름도 사람 말로 바꾼다. */}
+      <span className="sub">{w0 ? `${nameOf(w0.botId)} · ${w0.pending[0]?.ask ? '질문에 답해 주세요' : w0.pending[0]?.displayName ?? w0.name}` : '없음'}</span>
+      {w0?.pending[0] ? (w0.pending[0].ask ? act(() => go(w0.botId, w0.id), '답하기', 'w') : act(allow, '허용', 'w')) : null}
     </button>
     <button onClick={() => (r0 ? go(r0.botId, r0.id) : setModal('notify'))}>
       <Icon n="run" size={compact ? 16 : 22} color={running.length ? 'var(--run)' : 'var(--t3)'} />
