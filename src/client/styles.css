@@ -1362,3 +1362,8 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
   color:color-mix(in srgb, var(--wait) 62%, var(--w)); white-space:nowrap }
 .live.cliold .hact:hover { background:color-mix(in srgb, var(--wait) 18%, transparent) }
 .live.cliold .hact:disabled { opacity:.6 }
+
+/* 🔴 한국어는 **띄어쓰기에서** 줄을 바꾼다 (2026-09-25 디자인 검수). 기본값은 음절 사이마다 줄을 바꿔서
+   「무|언가가」 「링|크」 처럼 낱말 한가운데가 끊겼다. keep-all 로 낱말을 지키고, 한 줄보다 긴 낱말(주소·긴 영문)은
+   overflow-wrap:anywhere 가 받아 준다 — 칸을 뚫지 않는다. ⚠ 입력창(.cin)은 뺀다: 치는 도중 줄이 통째로 튄다. */
+.md, .umsg, .todo .dsc, .ptodo .tt, .ptodo .dsc, .mded .cm-content.cm-lineWrapping { word-break:keep-all; overflow-wrap:anywhere }

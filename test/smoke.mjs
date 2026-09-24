@@ -2242,6 +2242,11 @@ try {
             if (cb.inHr || cb.inCheck || !/---/.test(cb.text) || !/\[ \]/.test(cb.text)) fail('🔴 문서 코드 블록: 코드 안의 --- · - [ ] 가 가로줄·체크박스로 바뀌었다 · ' + JSON.stringify(cb))
             ok('문서 — 코드 블록은 상자·언어 표식 · 코드 속 --- 와 - [ ] 는 글자 그대로 · 인라인 코드 바탕')
           }
+          // 🔴 한국어는 띄어쓰기에서 줄을 바꾼다 — 「무|언가가」 처럼 낱말 가운데가 끊겼다 (2026-09-25 디자인 검수)
+          {
+            const wb = await pg.evaluate(() => [document.querySelector('.mded .cm-content'), document.querySelector('.chat-body .md'), document.querySelector('.umsg')].filter(Boolean).map((e) => ({ c: e.className.slice(0, 30), wb: getComputedStyle(e).wordBreak, ow: getComputedStyle(e).overflowWrap })))
+            if (!wb.length || wb.some((x) => x.wb !== 'keep-all' || x.ow !== 'anywhere')) fail('🔴 한국어 줄바꿈: 본문 칸이 낱말 가운데서 끊긴다(keep-all 아님) · ' + JSON.stringify(wb))
+          }
           // ⚠ 열어 둔 채로 파일을 지우면 문서 열이 다시 읽으며 404 를 낸다 — 먼저 다른 파일로 옮긴다
           await pg.evaluate(() => { const t = [...document.querySelectorAll('.trow')].find((x) => /todo\.md/.test(x.textContent ?? '')); t?.click() })
           await wait(700)
