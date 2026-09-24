@@ -4,6 +4,7 @@ import { api, setToken, token, uploadFile } from './api'
 import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
 import { holdHeader, holdLine, holderOf, type Holder } from '../core/waiting'
 import { cliNeedsUpdate, cliVersionShort, cliUpdateLine } from '../core/cliUpdate'
+import { mdPlain } from '../core/mdPlain'
 import { AskHost, ConfirmHost, DiffHost, FolderPicker, Md, NotifyCenter, Onboarding, Pairing, RoutineSheet, Settings, askConfirm, askName, showDiff, useToast } from './Sheets'
 import { AgentPickHost, pickAgent } from './AgentPick'
 import type { SecId } from './Settings'
@@ -969,7 +970,7 @@ function HoverCard({ b, sum, top, left }: { b: Bot; sum: ReturnType<typeof botSu
   const lastN = s.notifications.find((n) => n.botId === b.id)
   const pct = topS?.ctx?.window ? Math.round((topS.ctx.used / topS.ctx.window) * 100) : 0
   const y = Math.max(8, Math.min(top - 8, (typeof window !== 'undefined' ? window.innerHeight : 800) - 230))
-  const say = lastMsg ? `${lastMsg.kind === 'user' ? '나' : '봇'}: ${lastMsg.text.replace(/\s+/g, ' ').slice(0, 140)}` : lastN ? `${lastN.title}: ${lastN.body}`.slice(0, 140) : ''
+  const say = lastMsg ? `${lastMsg.kind === 'user' ? '나' : '봇'}: ${lastMsg.text.replace(/\s+/g, ' ').slice(0, 140)}` : lastN ? `${lastN.title}: ${mdPlain(lastN.body)}`.slice(0, 140) : ''
   return <div className="hcard" style={{ top: y, left }}>
     <div className="hh"><FolderBot color={b.color} size={28} mood={sum.mood} mono /><b title={b.name}><Mid s={b.displayName} /></b><span className={`dot ${stateDot(sum.state ?? undefined)}`} /></div>
     <div className="hp mono">{b.rel || '볼트 (오케스트레이터)'}</div>
@@ -1009,7 +1010,7 @@ function botSummary(bot: Bot, sessions: SessionInfo[], notif: NotifyEvent[]) {
   const holder: Holder = top ? holderOf(top.state, top.inflight, Date.now(), top.bg ?? 0) : 'none'
   const text = wait ? `확인해 주세요 · ${wait.pending[0]?.displayName ?? wait.name}`
     : holder === 'other' ? `${holdHeader(holder, top?.inflight, top?.bg ?? 0)} · ${top?.inflight?.summary || top?.name || ''}`
-      : run ? `일하는 중 · ${run.activity || run.name}` : last ? last.body : top ? `${top.name}${top.hibernated ? ' · 절전' : ''}` : '메시지를 보내 보세요'
+      : run ? `일하는 중 · ${run.activity || run.name}` : last ? mdPlain(last.body) : top ? `${top.name}${top.hibernated ? ' · 절전' : ''}` : '메시지를 보내 보세요'
   return { state, text, unread, holder, t: Math.max(top?.lastActivity ?? bot.startedAt, last?.t ?? 0), mood: moodOf(state, !!top?.hibernated && !run && !wait, holder) }
 }
 
@@ -1078,7 +1079,7 @@ function ActionTiles({ go, setModal, onTodo, say, compact }: { go: (b: string, s
     <button onClick={() => (last ? go(last.botId, last.sessionId) : setModal('notify'))}>
       <Icon n="check" size={compact ? 16 : 22} color={last?.kind === 'error' ? 'var(--err)' : 'var(--done)'} />
       <span className="n">마지막 결과<span>{last ? fmtTime(last.t) : ''}</span></span>
-      <span className="sub">{last ? `${nameOf(last.botId)} · ${last.body}` : '아직 없어요'}</span>
+      <span className="sub">{last ? `${nameOf(last.botId)} · ${mdPlain(last.body)}` : '아직 없어요'}</span>
     </button>
   </div>
 }
