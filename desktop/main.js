@@ -10,6 +10,16 @@ const perms = require('./perms')
 const localfs = require('./localfs')
 const { folderIcon } = require('./trayIcon')
 const { pickBounds } = require('./winBounds')
+
+/**
+ * 🔴 **AO · 두 손가락 쓸기로 앞뒤 페이지에 가지 않는다** (2026-09-24 Dave: *«왼쪽 혹은 오른쪽으로 쓸기에서
+ *    이전 혹은 다음 페이지로 이동하는 기능이 여전히 남아 있어»*).
+ * 이건 **우리 손짓 코드가 아니라 크로미움이 맥에서 주는 기본 동작**이다 — 화면 쪽에서 아무리 쓸기를 지워도 남는다.
+ * 화면은 이제 기록을 안 쌓지만(`useHash`), 알림·트레이가 주소를 직접 바꾸는 길이 남아 있어 한 칸이 생길 수 있다.
+ * **갈 곳이 생겨도 손짓이 안 먹게** 여기서 그 기능 자체를 끈다 — 두 겹으로 막는다.
+ * ⚠ 스위치는 `app.whenReady()` **전에** 걸어야 먹는다.
+ */
+app.commandLine.appendSwitch('disable-features', 'OverscrollHistoryNavigation')
 const { navHash, withHash } = require('./nav')
 const clipCore = require('./clip-core')
 
