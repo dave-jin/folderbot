@@ -764,7 +764,7 @@ b,strong { color:var(--w); font-weight:600 }
    (순서로 이기려 들면 규칙 하나 옮길 때마다 조용히 사라진다) */
 .sbtiles .mcards { display:grid; grid-template-columns:1fr 1fr; gap:6px }
 .mcards button { position:relative; text-align:left; overflow:hidden }
-.mcards button .sub { font-size:11.5px; color:var(--t3); line-height:1.4; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.mcards button .sub { display:block; /* ⚠ 채팅 서브에이전트의 전역 `.sub { display:flex }` 가 걸려 말줄임표가 안 먹었다 */ font-size:11.5px; color:var(--t3); line-height:1.4; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .mcards button .act { position:absolute; right:10px; bottom:10px; height:22px; padding:0 9px; border-radius:7px; background:var(--box); color:var(--t2); font-size:11.5px; display:inline-flex; align-items:center; cursor:pointer }
 .mcards button .act:hover { background:var(--hover); color:var(--w) }
 .mcards button.hot { border-color:color-mix(in srgb,var(--wait) 45%,transparent) }
@@ -774,6 +774,14 @@ b,strong { color:var(--w); font-weight:600 }
 .sbtiles .mcards button .n span { color:var(--t3); margin-left:4px }
 .sbtiles .mcards button .sub { font-size:10.5px }
 .sbtiles .mcards button .act { right:6px; bottom:6px; height:18px; padding:0 6px; font-size:10.5px }
+/* 부제목과 칸 안 단추는 **한 줄에 나란히** 선다 — 단추가 떠 있던 시절에는 부제목이 그 밑으로 들어가 말줄임표까지 가려졌다
+   («제품_Rondo · As»). 단추 폭이 글자마다 달라 여백 어림으로는 못 막는다 (2026-09-25 디자인 검수) */
+.mcards button .subrow { display:flex; align-items:center; gap:6px; width:100%; min-width:0 }
+.mcards button .subrow .sub { flex:1; min-width:0 }
+.mcards button .subrow .act { position:static; flex:none; margin:-3px -4px -3px 0 }   /* 위아래 음수 여백 — 단추가 줄을 키우면 위 제목이 눌린다 */
+.sbtiles .mcards button .subrow .act { margin:-2px -3px -2px 0 }
+/* 작은 타일(64px)은 아이콘+제목+부제목이 1~2px 넘쳤다 — 그동안 부제목 아랫단이 조용히 잘렸고, 줄로 묶자 제목이 눌렸다. 제목은 줄지 않게 하고 여백을 1px 씩 뺀다 */
+.mcards button .n, .mcards button > .sub, .mcards button .subrow { flex:none } .sbtiles .mcards button { padding:7px 9px; gap:1px } .sbtiles .mcards button .n { line-height:1.25 }
 /* 확인창 — 되돌리기 어려운 한 걸음 앞 (모델 바꾸기 등) */
 .modal.conf .cbody { margin:0; font-size:14px; line-height:1.65; color:var(--t2) }
 .modal.conf .cskip { display:flex; align-items:center; gap:9px; margin:16px 0 2px; font-size:13.5px; color:var(--t2); cursor:pointer }

@@ -2737,6 +2737,13 @@ try {
               if (r.status !== 400) fail('🔴 호스트: 질문에 온 «허용» 을 받아 줬다 · ' + r.status)
               if (!(await pg.$('.card .opt input'))) fail('🔴 호스트: 질문에 «허용» 이 오자 질문 카드가 사라졌다')
               ok('질문에는 [허용] 이 없다 — 타일은 [답하기] · 호스트는 질문에 온 허용을 400 으로 거절')
+              // 🔴 타일 부제목은 말줄임표로 끝나고 단추 밑으로 안 들어간다 · 제목은 안 눌린다 (2026-09-25 디자인 검수)
+              const tl = await pg.evaluate(() => [...document.querySelectorAll('.mcards button')].map((b) => {
+                const s = b.querySelector('.sub'), a = b.querySelector('.act'), n = b.querySelector('.n')
+                return { disp: getComputedStyle(s).display, over: a ? s.getBoundingClientRect().right - a.getBoundingClientRect().left : -1, nH: n.getBoundingClientRect().height, fs: parseFloat(getComputedStyle(n).fontSize), subCut: s.getBoundingClientRect().bottom - b.getBoundingClientRect().bottom }
+              }))
+              const badT = tl.filter((t) => t.disp === 'flex' || t.over > 0.5 || t.nH < t.fs || t.subCut > 0.5)
+              if (!tl.length || badT.length) fail('🔴 상태 타일: 부제목이 단추 밑으로 들어가거나(말줄임표 없음) 제목·부제목이 눌린다 · ' + JSON.stringify(tl))
             }
             const ins = await pg.$$('.card .opt input')
             if (ins.length < 2) fail('질문 카드: 「기타」 칸이 질문 수만큼 없다 · ' + ins.length)

@@ -1060,20 +1060,20 @@ function ActionTiles({ go, setModal, onTodo, say, compact }: { go: (b: string, s
       <span className="n">확인 대기<span>{waiting.length}</span></span>
       {/* 🔴 질문(AskUserQuestion)은 «허용» 할 것이 아니라 **답할** 것이다 (2026-09-25 디자인 검수). 종전에는 질문에도 [허용] 이 떠서,
           누르면 답 없이 허용이 가거나(보통 질문) 질문이 취소됐다(미뤄진 질문). 도구 이름도 사람 말로 바꾼다. */}
-      <span className="sub">{w0 ? `${nameOf(w0.botId)} · ${w0.pending[0]?.ask ? '질문에 답해 주세요' : w0.pending[0]?.displayName ?? w0.name}` : '없음'}</span>
-      {w0?.pending[0] ? (w0.pending[0].ask ? act(() => go(w0.botId, w0.id), '답하기', 'w') : act(allow, '허용', 'w')) : null}
+      <span className="subrow"><span className="sub">{w0 ? `${nameOf(w0.botId)} · ${w0.pending[0]?.ask ? '질문에 답해 주세요' : w0.pending[0]?.displayName ?? w0.name}` : '없음'}</span>
+      {w0?.pending[0] ? (w0.pending[0].ask ? act(() => go(w0.botId, w0.id), '답하기', 'w') : act(allow, '허용', 'w')) : null}</span>
     </button>
     <button onClick={() => (r0 ? go(r0.botId, r0.id) : setModal('notify'))}>
       <Icon n="run" size={compact ? 16 : 22} color={running.length ? 'var(--run)' : 'var(--t3)'} />
       <span className="n">일하는 중<span>{running.length}</span></span>
-      <span className="sub">{r0 ? `${nameOf(r0.botId)} · ${r0.activity || r0.name}` : '없음'}</span>
-      {r0 ? act(stop, '중단', 'r') : null}
+      <span className="subrow"><span className="sub">{r0 ? `${nameOf(r0.botId)} · ${r0.activity || r0.name}` : '없음'}</span>
+      {r0 ? act(stop, '중단', 'r') : null}</span>
     </button>
     <button onClick={() => (t0 ? onTodo(t0.botId) : go('orch'))}>
       <Icon n="check" size={compact ? 16 : 22} color={todo?.open ? '#7fb0ff' : 'var(--t3)'} />
       <span className="n">할 일<span>{todo?.open ?? 0}</span></span>
-      <span className="sub">{t0?.next ? `${t0.name} · ${t0.next.title}` : '다 끝냈어요'}</span>
-      {t0?.next ? act(check, '✓', 't') : null}
+      <span className="subrow"><span className="sub">{t0?.next ? `${t0.name} · ${t0.next.title}` : '다 끝냈어요'}</span>
+      {t0?.next ? act(check, '✓', 't') : null}</span>
     </button>
     <button onClick={() => (last ? go(last.botId, last.sessionId) : setModal('notify'))}>
       <Icon n="check" size={compact ? 16 : 22} color={last?.kind === 'error' ? 'var(--err)' : 'var(--done)'} />
