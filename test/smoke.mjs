@@ -2746,6 +2746,28 @@ try {
             await wait(300)
             ok('질문 카드 — 「기타」는 질문마다 따로 · 답도 제 질문에 붙어 간다 · 여럿 질문은 중복 선택(토글·네모)이고 하나 질문은 라디오 그대로')
           }
+          /**
+           * 🔴 **AX · 답한 질문의 도구 줄은 멈춘다** (2026-09-25 Dave: *«왜 이미 끝난 이전 도구가 계속 돌고 있어?»* · 스크린샷_234).
+           *    미뤄진 질문(`tool_deferred`)은 답을 호스트가 claude 에 직접 넣고, claude 는 그 결과를 되돌려 내보내지 않는다 —
+           *    그래서 AskUserQuestion 줄이 대화가 한참 흘러도 돌았다. 답을 넣는 순간 호스트가 그 줄을 닫아야 한다.
+           */
+          {
+            await pg.fill('.composer .cin', '미룬질문 해 줘'); await pg.click('.composer .sendb')
+            await pg.waitForSelector('.card .opt', { timeout: 8000 })
+            await pg.evaluate(() => { const b = [...document.querySelectorAll('.card .opt')].find((x) => x.textContent?.includes('예 안')); b?.click() })
+            await wait(150); await pg.click('.card .btns .btn.primary')
+            let body = ''
+            for (let i = 0; i < 60; i++) { body = (await pg.textContent('.chat-body')) ?? ''; if (/미룬 답 받음/.test(body)) break; await wait(250) }
+            if (!/미룬 답 받음/.test(body)) fail('미룬 질문: 답이 CLI 까지 안 갔다')
+            // 호스트가 들고 있는 줄 자체를 본다 — 화면은 묶음을 접어 그리므로 DOM 만으론 헛돌 수 있다
+            let askItem = null
+            for (const x of await api(`/bots/${bot.id}/sessions`)) { const c = await api(`/sessions/${x.id}/chat`); askItem = c.items.find((t) => t.kind === 'tool' && /^t_stub-ask-/.test(t.id)) ?? askItem }
+            if (!askItem) fail('미룬 질문: AskUserQuestion 도구 줄이 없다(검사 전제 깨짐)')
+            else if (askItem.result === undefined) fail('🔴 미룬 질문: 답했는데 AskUserQuestion 도구 줄이 안 닫혔다 · ' + JSON.stringify(askItem).slice(0, 200))
+            // ⚠ 위 대조는 스텁이 턴을 아직 안 끝낸 3초 안에 한다 — 턴이 끝나면 호스트가 열린 줄을 다 닫아 버그가 가려진다
+            await wait(3500)   // 스텁의 턴이 끝날 때까지 — 다음 검사가 «한가한 세션» 을 전제한다
+            ok('미룬 질문 — 답하면 AskUserQuestion 도구 줄이 멈춘다(호스트가 닫는다)')
+          }
           // 🔴 **링크 앞에 파비콘** (2026-09-13 Dave) — 자리표시자를 먼저 놓으므로 인터넷이 없어도 자리는 있다.
           //    ⛔ 비워 두고 도착할 때 넣으면 글줄이 그때마다 옆으로 밀린다.
           {

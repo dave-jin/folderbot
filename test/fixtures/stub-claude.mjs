@@ -28,7 +28,7 @@ const say = (o) => process.stdout.write(JSON.stringify({ session_id: sessionId, 
 try { const dir = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-')); mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, `${sessionId}.jsonl`), JSON.stringify({ cwd: process.cwd() }) + '\n') } catch {}
 say({ type: 'system', subtype: 'init', model, tools: [], mcp_servers: [], slash_commands: ['compact', 'context', 'review'] })
 const rl = createInterface({ input: process.stdin })
-let pendingReq = null, pendingAsk = null
+let pendingReq = null, pendingAsk = null, pendingDeferred = null
 rl.on('line', (raw) => {
   let msg; try { msg = JSON.parse(raw) } catch { return }
   /**
@@ -61,6 +61,19 @@ rl.on('line', (raw) => {
     return
   }
   if (msg.type !== 'user') return
+  /**
+   * 🔴 **AX · 미뤄진 질문의 답** — 실 CLI 는 `tool_deferred` 로 턴을 끊고, 답은 호스트가 stdin 에 `tool_result` 로 넣는다.
+   *    ⚠ 실 CLI 처럼 **그 tool_result 를 되돌려 내보내지 않는다** — 그래야 «화면의 질문 도구 줄이 영영 돈다»(스크린샷_234)가 재현된다.
+   */
+  const tr = msg.message?.content?.find?.((b) => b.type === 'tool_result')
+  if (tr && pendingDeferred && tr.tool_use_id === pendingDeferred) {
+    pendingDeferred = null
+    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: tr.is_error ? '미룬 질문 취소됨' : `미룬 답 받음: ${tr.content}` }] } })
+    // ⚠ 턴을 바로 끝내지 않는다 — 스크린샷_234 는 답 뒤로 6분짜리 턴이 이어지는 동안 질문 줄이 돌았다.
+    //    턴 끝(result)은 호스트가 열린 줄을 다 닫으므로, 바로 끝내면 버그가 가려진다.
+    setTimeout(() => say({ type: 'result', subtype: 'success', duration_ms: 3000, total_cost_usd: 0.001 }), 3000)
+    return
+  }
   const rawText = msg.message?.content?.map?.((b) => b.text ?? '').join('') ?? ''
   // J · 메시지 앞의 기기 블록은 떼고 본다(실제 CLI 는 그대로 읽는다). «기기확인» 이면 블록을 그대로 되읊어 검사가 값을 본다
   const cm = /^<folderbot-client\s+[^>]*\/>\s*/.exec(rawText); const clientBlock = cm ? cm[0].trim() : ''; const text = cm ? rawText.slice(cm[0].length) : rawText
@@ -157,6 +170,13 @@ rl.on('line', (raw) => {
   say({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `stub-task-${u}`, content: '하위 조사 결과: 2건' }] } })
   say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: `stub-todo-${u}`, name: 'TodoWrite', input: { todos: [{ content: '읽기', status: 'completed', activeForm: '읽는 중' }, { content: '답 쓰기', status: 'in_progress', activeForm: '답 쓰는 중' }] } }] } })
   say({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `stub-todo-${u}`, content: 'ok' }] } })
+  if (/미룬질문/.test(text)) {
+    const id = `stub-ask-${u}`; pendingDeferred = id
+    const input = { questions: [{ question: '미룬 질문은 무엇으로 할까요?', header: '미룸', options: [{ label: '예 안' }, { label: '아니오 안' }] }] }
+    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input }] } })
+    say({ type: 'result', subtype: 'success', stop_reason: 'tool_deferred', deferred_tool_use: { id, name: 'AskUserQuestion', input }, duration_ms: 40, total_cost_usd: 0.001 })
+    return
+  }
   if (/질문/.test(text)) {
     pendingAsk = true
     process.stdout.write(JSON.stringify({ type: 'control_request', request_id: `req-${randomUUID()}`, request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', display_name: 'AskUserQuestion', description: '', input: { questions: [
