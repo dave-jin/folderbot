@@ -34,6 +34,17 @@ export async function refreshModels(): Promise<void> {
 }
 export function onModels(cb: () => void): () => void { watchers.add(cb); return () => { watchers.delete(cb) } }
 /**
+ * 🔴 **AL · 「새로고침」 — 호스트 캐시까지 버린다** (2026-09-24 Dave: *«리프레시가 가능하도록»*).
+ * ⚠ `refreshModels()` 는 **호스트가 이미 캐시한 답**을 다시 받을 뿐이라, CLI 를 새로 깔아도 그대로였다.
+ *    이쪽은 호스트에게 «후보를 다시 훑고 판을 다시 읽어라» 라고 시킨다.
+ */
+export async function hardRefreshModels(): Promise<{ claude: string[]; codex: string[] } | null> {
+  try {
+    const r = await api<{ models: { claude: string[]; codex: string[] } }>('/agents/refresh', { method: 'POST', body: {} })
+    setFoundModels(r.models); return r.models
+  } catch { return null }
+}
+/**
  * 첫 목록 — **골라 둔 것만**(종류별 최신 하나씩). 기계에서 주워 온 이름은 여기 안 섞는다.
  * 🔴 2026-09-14 Dave 스크린샷: 긁어 온 이름을 첫 목록에 섞었더니 플러그인 이름(`claude-mythos` 등)이
  *    줄줄이 서서 «무엇을 골라야 하나» 가 됐다. 고르기는 짧아야 한다.

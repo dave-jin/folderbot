@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
-import { AGENT_MODELS, DEFAULT_MODEL, MORE_MODELS } from '../../src/core/agents'
+import { AGENT_MODELS, DEFAULT_MODEL, MORE_MODELS, splitModels } from '../../src/core/agents'
 
 /** 깔려 있는 `claude` CLI 가 아는 모델 이름들 — 없으면 null(그 기기에서는 건너뛴다) */
 function cliModels(): Set<string> | null {
@@ -105,6 +105,29 @@ describe('AI · 첫 목록은 호스트 CLI 가 아는 것에서 (2026-09-24)', 
   it('사람이 붙인 설명은 살린다', async () => {
     const { splitModels } = await import('../../src/core/agents')
     const { first } = splitModels(['claude-sonnet-5', 'claude-haiku-4-5'])
-    expect(first.find((m) => m.v === 'claude-sonnet-5')?.d).toBe('빠름')
+    expect(first.find((m) => m.v === 'claude-sonnet-5')?.d).toBe(AGENT_MODELS.claude.find((m) => m.v === 'claude-sonnet-5')?.d)   // AL · 설명 문구가 바뀌어도 «박아 둔 것을 쓴다» 는 계약은 그대로
+  })
+})
+
+/**
+ * 🔴 **AL · 두 벌 중 새 판을 고르면 Opus 5.5 가 첫 목록에 선다** (2026-09-24 Dave 사고 재현).
+ * 낡은 번들(2.1.278)에는 `claude-opus-5-5` 가 아예 없어서, 아무리 새로고침해도 Opus 5 만 떴다.
+ */
+describe('AL · CLI 판에 따라 첫 목록이 달라진다', () => {
+  const OLD = ['claude-fable-5', 'claude-fable-5-1', 'claude-opus-4-8', 'claude-opus-5', 'claude-sonnet-4-6', 'claude-haiku-4-5']
+  const NEW = [...OLD, 'claude-opus-5-5', 'claude-sonnet-5']
+  it('낡은 번들에서는 Opus 5 가 최신이다 — 화면이 거짓말한 게 아니다', () => {
+    const first = splitModels(OLD).first.map((m) => m.t)
+    expect(first).toContain('Opus 5')
+    expect(first).not.toContain('Opus 5.5')
+  })
+  it('🔴 새 번들이면 Opus 5.5 가 첫 목록에 서고 Opus 5 는 「더 많은 모델」로 내려간다', () => {
+    const { first, more } = splitModels(NEW)
+    expect(first.map((m) => m.t)).toContain('Opus 5.5')
+    expect(first.map((m) => m.t)).not.toContain('Opus 5')
+    expect(more.map((m) => m.t)).toContain('Opus 5')
+  })
+  it('첫 목록의 모든 줄에 설명이 있다 — 한 줄만 비면 줄 높이가 들쭉날쭉해진다', () => {
+    for (const m of AGENT_MODELS.claude) expect(m.d, m.t).toBeTruthy()
   })
 })

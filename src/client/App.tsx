@@ -3,7 +3,7 @@ import type { Bot, ChatItem, NotifyEvent, PermissionMode, PermissionRequest, Rou
 import { api, setToken, token, uploadFile } from './api'
 import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
 import { holdHeader, holdLine, holderOf, type Holder } from '../core/waiting'
-import { cliTooOld, cliUpdateLine, requiredCliVersion } from '../core/cliUpdate'
+import { cliTooOld, cliVersionShort, cliUpdateLine, requiredCliVersion } from '../core/cliUpdate'
 import { AskHost, ConfirmHost, DiffHost, FolderPicker, Md, NotifyCenter, Onboarding, Pairing, RoutineSheet, Settings, askConfirm, askName, showDiff, useToast } from './Sheets'
 import { AgentPickHost, pickAgent } from './AgentPick'
 import type { SecId } from './Settings'
@@ -35,9 +35,9 @@ import { ICON_PX, useIconSize, useTheme } from './theme'
 import { UsageCard, UsageStrip, useUsage } from './Usage'
 import { PermGate, usePerms } from './Perms'
 import { Palette } from './Palette'
-import { MODES, effortLabel, effortsFor, fmtK, modeLabel, modelLabel, modelsFor, moreModelsFor, onModels, refreshModels } from './consts'
+import { MODES, effortLabel, effortsFor, fmtK, hardRefreshModels, modeLabel, modelLabel, modelsFor, moreModelsFor, onModels, refreshModels } from './consts'
 import { rulesLabel } from '../core/permPolicy'
-import { DEFAULT_EFFORT, DEFAULT_MODEL } from '../core/agents'
+import { DEFAULT_EFFORT, DEFAULT_MODEL, sameModel} from '../core/agents'
 import { cronFromText, routineName } from '../core/routineText'
 import { BARE_URL_RE, faviconHost } from '../core/favicon'
 import { workLabel, workMood } from '../core/work'
@@ -1212,6 +1212,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
    *    무엇을 쳐야 하는지 스스로 알아내야 했다. 이제 띠가 뜨고 **거기서 바로** 올린다(폰·데스크톱 같다).
    */
   const [cliV, setCliV] = useState<string | null>(null)
+  const [mRef, setMRef] = useState(false)   // AL · 모델 새로고침 중
   const [cliBusy, setCliBusy] = useState(false)
   const loadCli = async () => { try { const a = await api<{ id: string; version: string | null }[]>('/agents'); setCliV(a.find((x) => x.id === 'claude')?.version ?? null) } catch { /* 못 물어봤으면 조용히 */ } }
   useEffect(() => { void loadCli() }, [])
@@ -1502,12 +1503,40 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
      *    선택하게 할꺼야»). 나머지(긴 문맥·기계에서 주워 온 이름)는 **「더 많은 모델」** 아래로.
      * ⛔ 첫 목록을 늘리지 마라 — 고를 것이 많아지면 «무엇이 다른지» 를 매번 생각하게 된다.
      */
-    : pop === 'model' ? <div className="cpop r"><div className="h">모델 · 이 세션{vend === 'codex' ? ' · Codex' : ''}</div>
+    : pop === 'model' ? (phone
+      /**
+       * 🔴 **AL · 폰에서는 Claude 앱과 같은 「모델 선택」 시트** (2026-09-24 Dave 캡처 IMG_2115).
+       *    종전에는 입력칸 위에 뜨는 작은 팝업이라 ① 화면 위로 잘리고 ② 줄이 좁아 설명을 못 읽었다.
+       *    Claude 앱의 결 — **아래에서 올라오는 시트 · 가운데 제목 · 왼쪽 닫기 · 카드 안에 이름과 설명 · 고른 줄에 체크**.
+       * ⚠ 「노력」을 같은 시트에 둔 것도 Claude 앱과 같다 — 모델을 고르러 왔다가 노력까지 정하고 나간다.
+       * ⚠ 맨 아래 줄은 **왜 이 목록인가**를 말한다 — 목록은 호스트 CLI 가 아는 것이라, 판과 새로고침이 여기 있어야
+       *    «Opus 5.5 가 왜 없지» 를 사람이 스스로 풀 수 있다(2026-09-24 에 실제로 막혔던 자리다).
+       */
+      ? <><div className="backdrop" onClick={() => setPop('')} /><div className="tsheet msheet">
+        <div className="grip" />
+        <div className="sh"><button className="x" onClick={() => setPop('')} aria-label="닫기"><Icon n="x" size={16} /></button><b>모델 선택</b></div>
+        <div className="card">
+          {modelList.map((m) => <button key={m.v} className={`mrow ${sameModel(cfg.model, m.v) ? 'on' : ''}`} onClick={() => void applyCfg({ model: m.v })}>
+            <div className="t"><b>{m.t}</b>{m.d ? <small>{m.d}</small> : null}</div>
+            {sameModel(cfg.model, m.v) ? <Icon n="check" size={16} color="var(--run)" /> : null}
+          </button>)}
+          {moreList.length && moreOpen ? moreList.map((m) => <button key={m.v} className={`mrow ${sameModel(cfg.model, m.v) ? 'on' : ''}`} onClick={() => void applyCfg({ model: m.v })}>
+            <div className="t"><b>{m.t}</b></div>{sameModel(cfg.model, m.v) ? <Icon n="check" size={16} color="var(--run)" /> : null}
+          </button>) : null}
+        </div>
+        {moreList.length && !moreOpen ? <div className="card"><button className="mrow" onClick={() => setMoreOpen(true)}><div className="t"><b>더 많은 모델</b><small>{moreList.length}개</small></div><Icon n="chev" size={13} color="var(--t3)" /></button></div> : null}
+        <div className="card"><button className="mrow" onClick={() => setPop('effort')}><div className="t"><b>노력</b></div><span className="v">{effortLabel(cfg.effort, vend)}</span><Icon n="chev" size={13} color="var(--t3)" /></button></div>
+        <div className="foot">
+          <span className="tx">{cliVersionShort(cliV) ? `Claude CLI ${cliVersionShort(cliV)}` : '이 맥의 Claude CLI'} 가 아는 목록</span>
+          <button className="lnk" disabled={mRef} onClick={async () => { setMRef(true); try { await hardRefreshModels() } finally { setMRef(false) } }}>{mRef ? '읽는 중…' : '새로고침'}</button>
+        </div>
+      </div></>
+      : <div className="cpop r"><div className="h">모델 · 이 세션{vend === 'codex' ? ' · Codex' : ''}</div>
       {modelList.map((m, i) => <button key={m.v} className={`prow2 ${cfg.model === m.v ? 'on' : ''}`} onClick={() => void applyCfg({ model: m.v })}><div className="t"><b>{m.t}</b>{m.d ? <small>{m.d}</small> : null}</div>{cfg.model === m.v ? <Icon n="check" size={13} /> : <span className="k">{i + 1}</span>}</button>)}
       {moreList.length ? (moreOpen
         ? <>{moreList.map((m) => <button key={m.v} className={`prow2 ${cfg.model === m.v ? 'on' : ''}`} onClick={() => void applyCfg({ model: m.v })}><div className="t"><b>{m.t}</b>{m.d ? <small>{m.d}</small> : null}</div>{cfg.model === m.v ? <Icon n="check" size={13} /> : null}</button>)}</>
         : <button className="prow2 more" onClick={(e) => { e.stopPropagation(); setMoreOpen(true) }}><div className="t"><b>더 많은 모델</b></div><Icon n="chev" size={12} /></button>) : null}
-      <div className="hint"><span>바꾸면 이 세션을 이어서 재시작해요 (대화 유지)</span></div></div>
+      <div className="hint"><span>바꾸면 이 세션을 이어서 재시작해요 (대화 유지)</span><span className="sp" /><button className="lnk" onClick={() => void hardRefreshModels()}>새로고침</button></div></div>)
     : pop === 'effort' ? <div className="cpop r"><div className="effort"><div className="top"><span style={{ color: 'var(--t3)', fontSize: 12.5 }}>노력</span><b>{effortLabel(cfg.effort, vend)}</b></div><div className="lbl"><span>더 빠르게</span><span>더 스마트하게</span></div><input type="range" min={0} max={effortList.length - 1} step={1} value={Math.max(0, effortList.findIndex((e) => e.v === cfg.effort))} onChange={(e) => { const v = effortList[Number(e.target.value)].v; if (v !== cfg.effort) void (async () => { if (cur) { try { await api(`/sessions/${cur.id}/settings`, { body: { effort: v } }) } catch (er) { say((er as Error).message) } } else setDraft((d) => ({ ...d, effort: v })) })() }} /><div className="steps">{effortList.map((e) => <span key={e.v}>{e.t}</span>)}</div></div><div className="hint"><span>다음 턴부터 적용 · 기본값은 설정에서</span></div></div>
     : pop === 'ctx' ? <div className="cpop r ctxpop"><div className={`big ${pct >= 80 ? 'hot' : ''}`}><Ring pct={pct} size={40} stroke={3} /><div><b>컨텍스트 {ctx ? `${pct}%` : '—'}</b><small>{ctx ? `${fmtK(ctx.used)} / ${fmtK(ctx.window)} 토큰 · 이 세션` : '첫 답이 오면 잽니다'}</small></div></div><hr /><button className="prow2" onClick={() => { setPop(''); void sendText('/compact') }}><div className="t"><b>/compact 압축</b><small>대화를 요약해 컨텍스트를 줄여요</small></div></button><div className="hint"><span>80% 를 넘으면 링이 주황</span></div></div>
     : pop === 'plus' ? <div className="cpop plus">{phone ? <button className="prow2" onClick={() => { setPop(''); camRef.current?.click() }}><span className="ic-cam" /><div className="t"><b>카메라로 찍기</b></div></button> : null}<button className="prow2" onClick={() => { setPop(''); fileRef.current?.click() }}><Icon n="phone" size={14} color="var(--t3)" /><div className="t"><b>{phone ? '사진·파일 고르기' : '이 기기에서 파일 올리기'}</b>{phone ? <small>사진 보관함 · 파일 앱</small> : null}</div><span className="k">→ 첨부/</span></button>{bot.orchestrator ? null : <button className="prow2" onClick={() => { setPop(''); openRoutine() }}><Icon n="clock" size={14} color="var(--t3)" /><div className="t"><b>루틴으로 만들기</b><small>{routinePeek()}</small></div></button>}<button className="prow2" onClick={() => { setPop(''); setPickOpen(true) }}><Icon n="folder" size={14} color="var(--t3)" /><div className="t"><b>{bot.orchestrator ? '볼트' : '이 폴더'}에서 고르기</b></div></button>{docTabs.length ? <button className="prow2" onClick={() => { setPop(''); for (const rel of docTabs) addAtt({ rel, abs: `${bot.abs}/${rel}` }) }}><Icon n="doc" size={14} color="var(--t3)" /><div className="t"><b>열린 문서 첨부 ({docTabs.length})</b></div></button> : null}<hr /><button className="prow2" onClick={() => { setPop(''); setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}@`); setCaret(text.length + 1); taRef.current?.focus() }}><span className="mono" style={{ width: 14, textAlign: 'center', color: 'var(--t3)' }}>@</span><div className="t"><b>@ 로 이름 쳐서 넣기</b></div></button><div className="hint"><span>{phone ? '사진 앱에서 복사한 이미지는 길게 눌러 붙여넣기' : '스크린샷은 ⌘V 로 붙여 넣으면 첨부/ 에 저장'}</span></div></div>

@@ -216,6 +216,9 @@ export function modelsFromBinary(bin: string): string[] {
   return out
 }
 
+/** AL · 「새로고침」 — 번들 훑기 캐시를 버린다(CLI 를 바꿔 깔았을 때 즉시 반영) */
+export function forgetModels(): void { binCache.clear() }
+
 export function agentModels(): { claude: string[]; codex: string[] } {
   const ps = providers()
   const out = { claude: [] as string[], codex: [] as string[] }
