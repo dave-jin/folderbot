@@ -1246,3 +1246,12 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .hstate i { width:6px; height:6px; border-radius:50%; background:var(--hold); animation:fbBreathe 2.6s ease-in-out infinite }
 .dot.hold { background:var(--hold); animation:fbBreathe 2.6s ease-in-out infinite }
 @media (prefers-reduced-motion: reduce) { .live.hold .bounce i, .hstate i, .dot.hold { animation:none } }
+
+/* AJ · CLI 가 낡았을 때 뜨는 띠 (2026-09-24) — 대기 줄과 같은 자리·같은 모양이되 노랑(네 손이 필요하다는 뜻) */
+.live.cliold { display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:12px;
+  border:1px dashed color-mix(in srgb, var(--wait) 45%, var(--line)); background:linear-gradient(90deg, color-mix(in srgb, var(--wait) 10%, transparent), transparent) }
+.live.cliold .tx { color:color-mix(in srgb, var(--wait) 62%, var(--w)); font-size:12.5px; min-width:0 }
+.live.cliold .hact { flex:none; border:1px solid color-mix(in srgb, var(--wait) 45%, var(--line)); border-radius:8px; padding:3px 9px; font-size:11.5px;
+  color:color-mix(in srgb, var(--wait) 62%, var(--w)); white-space:nowrap }
+.live.cliold .hact:hover { background:color-mix(in srgb, var(--wait) 18%, transparent) }
+.live.cliold .hact:disabled { opacity:.6 }

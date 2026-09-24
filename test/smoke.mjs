@@ -33,7 +33,8 @@ writeFileSync(join(fbHome, '.folderbot/usage.jsonl'),
    { t: Date.now() - 10 * 60 * 1000, tool: 'claude', model: 'claude-sonnet-5', input: 900, output: 4000, cacheRead: 80000, cacheWrite: 1000 }].map((x) => JSON.stringify(x)).join('\n') + '\n')
 // ⚠ 메인 호스트는 «Claude 만 깔린 기기» 여야 한다 — 실제 codex 가 깔린 맥(2026-09-22 맥미니)에서는 제공자가 둘이 되어 세션 + 가 고르기를 띄우고
 //   «세션 삭제 UI» 같은 검사가 어긋난다. 없는 경로를 주면 codex 는 숨는다(providers.ts 의 ENV_OVERRIDE). 둘인 경우는 아래 V24 블록이 두 번째 호스트로 잰다
-const env = { ...process.env, FOLDERBOT_HOME: fbHome, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_CODEX_BIN: '/nonexistent/codex', FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg }
+// 🔴 `FOLDERBOT_QA` — 검사는 **실 CLI·실 앱을 건드리지 않는다**(실제로 `claude update` 를 돌려 버린 적이 있다)
+const env = { ...process.env, FOLDERBOT_QA: '1', FOLDERBOT_HOME: fbHome, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_CODEX_BIN: '/nonexistent/codex', FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg }
 /**
  * 🔴 **포트가 이미 잡혀 있으면 그 자리에서 멈춘다** (2026-09-13 실사고).
  *    앞선 실패로 남은 호스트가 같은 포트를 잡고 있으면, 우리는 «건강한 응답» 을 받고 **옛 코드를**
@@ -371,6 +372,22 @@ try {
     await wait(700)
     if ((await api(`/bots/${bot.id}/routines`)).length && ymlWas === null) fail('AA: 치우기가 안 됐다')
     ok('AA 루틴 — 「20」은 400+되묻기 · 사람 말 → cron · .bot.yml 을 밖에서 고쳐도 따라옴 · 깨진 YAML 로 안 날림 · 지금 한 번 · 봇 도구 4개(approve 없음)')
+  }
+  /**
+   * AJ · **CLI 업데이트 길이 열려 있나** (2026-09-24 Dave). 스텁 환경에는 진짜 claude 가 없을 수 있으니
+   * «없으면 400 · 있으면 200» 둘 다 제대로 답하는지만 잰다 — 여기서 진짜 업데이트를 돌리지는 않는다.
+   */
+  {
+    const ag = await api('/agents')
+    const cl = ag.find((x) => x.id === 'claude')
+    if (!cl) fail('AJ: /api/agents 에 claude 가 없다 ' + JSON.stringify(ag))
+    if (!('version' in cl)) fail('AJ: 제공자에 판(version)이 없다 — 화면이 낡았는지 못 잰다 ' + JSON.stringify(cl))
+    const r = await fetch(base + '/api/agents/claude/update', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+    const body = await r.json().catch(() => ({}))
+    if (r.status !== 200 && r.status !== 400) fail('AJ: 업데이트 길이 이상한 답을 준다 ' + r.status + ' ' + JSON.stringify(body))
+    if (r.status === 200 && !body.skipped) fail('🔴 AJ: 검사에서 실제로 CLI 를 올리려 했다 — QA 는 실 CLI 를 안 건드린다 ' + JSON.stringify(body))
+    if (r.status !== 200 && !body.error) fail('AJ: 못 했으면 왜인지 말해야 한다 ' + JSON.stringify(body))
+    ok(`AJ CLI 업데이트 길 — /api/agents 에 판 · POST update ${r.status}${body.skipped ? ' (QA 는 건너뜀)' : ''}`)
   }
   const cands = await mcp('tools/call', { name: 'bots_candidates', arguments: {} }); if (!/제품_Rondo/.test(cands.result.content[0].text)) fail('mcp candidates')
   const sent = await mcp('tools/call', { name: 'bot_send', arguments: { bot: '재무_CFO', text: '숫자 검토' } })
@@ -1314,6 +1331,24 @@ try {
                 await drag(8, 500, 260, 505); await wait(400)
                 if ((await view()) !== 'list') fail('🔴 AI: 드릴인 안에서 👉 가 봇 목록을 안 열었다(뒤로 가기로 먹혔다) ' + (await view()))
                 await hp.keyboard.press('Escape'); await wait(350)
+              }
+              /**
+               * 🔴 **AJ (2026-09-24 Dave)** — ① 목록을 열었다 닫아도 **보던 봇이 그대로**여야 한다(오케스트레이터로 안 간다)
+               *    ② 목록을 **끌어 오면 키보드가 내려간다**(반쯤 덮인 채 열리면 볼 수 있는 폴더가 절반으로 준다)
+               */
+              {
+                const st = () => hp.evaluate(() => ({ bot: new URLSearchParams(location.hash.slice(1)).get('bot'), view: document.querySelector('.app').dataset.view, ae: document.activeElement?.className ?? '' }))
+                if ((await view()) === 'list') { await hp.keyboard.press('Escape'); await wait(400) }
+                await hp.click('.composer .cin'); await wait(300)
+                const b0 = await st()
+                if (!/cin/.test(b0.ae)) fail('AJ: 입력칸에 초점이 안 갔다 ' + JSON.stringify(b0))
+                await drag(8, 500, 260, 505); await wait(450)
+                const b1 = await st()
+                if (b1.view !== 'list') fail('AJ: 가장자리 끌기로 목록이 안 열렸다 ' + JSON.stringify(b1))
+                if (/cin/.test(b1.ae)) fail('🔴 AJ: 목록을 끌어 왔는데 입력칸이 초점을 쥐고 있다(키보드가 안 내려간다) ' + JSON.stringify(b1))
+                await hp.keyboard.press('Escape'); await wait(450)
+                const b2 = await st()
+                if (b2.bot !== b0.bot) fail('🔴 AJ: 목록을 닫았더니 보던 봇이 바뀌었다(오케스트레이터로 갔다) ' + JSON.stringify({ b0, b2 }))
               }
               // 아래 검사들은 «목록이 열린 채» 를 본다 — 도로 열어 둔다
               if ((await view()) !== 'list') { await drag(8, 500, 260, 505); await wait(400) }

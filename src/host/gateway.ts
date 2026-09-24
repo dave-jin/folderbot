@@ -183,6 +183,27 @@ export class Gateway {
     if (p === '/api/agents' && m === 'GET') return json(200, providers())
     // 쓸 수 있는 모델 — **기계에서 주워 온다**(빌트인 목록은 화면이 빈 자리를 메울 때만 쓴다)
     if (p === '/api/agents/models' && m === 'GET') return json(200, agentModels())
+    /**
+     * AJ · **CLI 업데이트를 화면에서 바로** (2026-09-24 Dave). 앱은 **호스트의 CLI** 로 도는데 그게 낡으면
+     * 새 모델이 400 으로 죽는다 — 그때 사람이 어느 기계에 들어가 무엇을 쳐야 하는지 스스로 알아내야 했다.
+     * ⚠ **claude 만** 연다. Codex 는 올리는 길이 설치 방식마다 달라(npm·brew·직접) 여기서 함부로 못 부른다.
+     * ⚠ 오래 걸리므로(내려받기) 넉넉히 기다리고, 끝나면 **새 판을 다시 읽어** 돌려준다 — 「했다」가 아니라 「이렇게 됐다」를 말한다.
+     */
+    if (p === '/api/agents/claude/update' && m === 'POST') {
+      const cl = providers().find((x) => x.id === 'claude')
+      if (!cl?.bin) return json(400, { error: '이 호스트에 claude CLI 가 없어요' })
+      const before = cl.version ?? null
+      // 🔴 **QA 는 실 CLI 를 건드리지 않는다** (리포 규칙). 검사에서는 길이 열려 있는지만 보고 실제로는 안 올린다
+      if (process.env.FOLDERBOT_QA) return json(200, { ok: true, skipped: true, before, after: before, changed: false, out: 'QA — 실제 업데이트는 건너뜀' })
+      try {
+        const out = await new Promise<string>((res, rej) => {
+          execFile(cl.bin!, ['update'], { timeout: 5 * 60_000, maxBuffer: 4 * 1024 * 1024 }, (e, so, se) => (e && !so && !se ? rej(e) : res(String(so || '') + String(se || ''))))
+        })
+        const after = providers().find((x) => x.id === 'claude')?.version ?? null
+        void h.refreshAuth(true)      // 화면이 제공자·판을 다시 읽게 한다(에이전트 상태와 같은 길)
+        return json(200, { ok: true, before, after, changed: !!after && after !== before, out: out.slice(-1200) })
+      } catch (e) { return json(500, { error: (e as Error).message, before }) }
+    }
     if (p === '/api/usage' && m === 'GET') {
       // 봇별 내역 — 세션의 CLI 세션 id 가 곧 기록 파일 이름이다 (L)
       const bySid = new Map<string, { botId: string; name: string }>()
