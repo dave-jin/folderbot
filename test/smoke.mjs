@@ -1186,6 +1186,15 @@ try {
           await ph.evaluate((b64) => { const bin = atob(b64); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); const dt = new DataTransfer(); dt.items.add(new File([u8], 'paste.png', { type: 'image/png' })); const ev = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }); document.querySelector('.composer.ph .cin').dispatchEvent(ev) }, png.split(',')[1]); await wait(1500)
           const pasted = await ph.$$eval('.achips .achip .nm', (r) => r.map((x) => x.textContent)); if (!pasted.some((n) => /스크린샷_/.test(n ?? ''))) fail('N-4: 붙여넣은 그림이 칩으로 안 붙었다 ' + JSON.stringify(pasted))
           await ph.close(); await fetch(base + `/api/sessions/${sidN}`, { method: 'DELETE' })
+          // 🔴 손가락 기기에는 키 안내를 안 쓴다 — 일하는 중의 안내가 «(⌘⏎)» 였다(⌘ 키가 없다 · 2026-09-25 디자인 검수)
+          {
+            await api(`/sessions/${sidN}/send`, { text: '긴스트리밍 해 줘' })
+            let phq = ''
+            for (let k = 0; k < 20; k++) { phq = await ph.$eval('.composer.ph .cin', (e) => e.dataset.placeholder ?? ''); if (/대기열/.test(phq)) break; await wait(150) }
+            if (!/대기열/.test(phq)) fail('폰 입력창: 일하는 중 안내가 안 떴다(검사 전제 깨짐) · ' + JSON.stringify(phq))
+            if (/[⌘⏎↩]/.test(phq)) fail('🔴 폰 입력창: 손가락 기기에 키 안내가 떴다 · ' + JSON.stringify(phq))
+            await api(`/sessions/${sidN}/interrupt`, {}); await wait(800)
+          }
           ok('N 폰 입력창 — H-5 헤더 · 본문과 같은 글자 · 질문 헤더(흐름 안 · 펼침) · 6줄 첫 줄 보임·전폭·버튼 하단 · 3장 칩(썸네일·링·✕) · 11개째 거절 · _2 · 📷 · 카메라 · ⌘V 없음 · 붙여넣기 files')
         }
         /**

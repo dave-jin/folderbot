@@ -1354,7 +1354,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   /** ⏎ 가 보내기인 기기인가 — 폰 화면도 아니고 손가락 포인터도 아닐 때만 (위 `onKey` 머리말) */
   const touch = useMedia('(pointer: coarse)'); const [lcfgC] = useLocalSettings()
   const enterSends = !phone && !touch
-  const sendKey = enterSends ? '⏎' : '⌘⏎'
+  const sendKey = enterSends ? '⏎' : '⌘⏎'   // ⚠ 손가락 기기에는 키 안내를 안 쓴다 — ⌘ 키가 없다(2026-09-25 디자인 검수 · N 의 «폰 안내에 ⌘V 없음» 과 같은 뜻)
   /**
    * 🔴 **볼트 안 파일은 복사하지 않는다** — 맥 앱은 놓인 파일의 진짜 경로를 안다(`pathOf`, preload 의 webUtils).
    *    호스트에 «이 경로가 볼트 안이냐» 를 물어(`exists` 가 절대 경로도 받는다) 안이면 그대로 첨부, 밖이면
@@ -1706,7 +1706,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
         {/* Q-1 (2026-09-19 Dave: «+ 하나만 있는 UX가 더 좋아 · 2스텝 안에 카메라/이미지첨부») — 📷 단추는 뺐다. 카메라·사진은 + 메뉴 첫 두 줄 */}
         {phone ? <div className="cleft">{plusBtn}</div> : null}
         <div className={phone ? 'ctext' : 'crow'}>
-          <InlineInput ref={taRef} placeholder={drill ? '메인 대화로 보냅니다 — 이 안에는 직접 말을 걸 수 없어요' : running ? `보내면 대기열에 들어갑니다 (${sendKey})` : state === 'awaiting_input' ? '답을 기다리는 중 — 보내면 대기열에' : enterSends ? '메시지…  ⏎ 보내기 · ⇧⏎ 줄 바꿈 · / 스킬 · @ 파일' : '메시지…  / 스킬 · @ 파일'} value={text} chips={chipsByName} onChange={(t, c) => { setText(t); setCaret(c) }} onCaret={setCaret} onKeyDown={onKey} onFocus={() => { if (phone) stickBottom() }} onChipClick={(name) => { const a = attach.find((x) => attName(x) === name); if (a && !a.uploading && !a.dir) onFile(a.rel) }} />
+          <InlineInput ref={taRef} placeholder={drill ? '메인 대화로 보냅니다 — 이 안에는 직접 말을 걸 수 없어요' : running ? (touch ? '보내면 대기열에 들어갑니다' : `보내면 대기열에 들어갑니다 (${sendKey})`) : state === 'awaiting_input' ? '답을 기다리는 중 — 보내면 대기열에' : enterSends ? '메시지…  ⏎ 보내기 · ⇧⏎ 줄 바꿈 · / 스킬 · @ 파일' : '메시지…  / 스킬 · @ 파일'} value={text} chips={chipsByName} onChange={(t, c) => { setText(t); setCaret(c) }} onCaret={setCaret} onKeyDown={onKey} onFocus={() => { if (phone) stickBottom() }} onChipClick={(name) => { const a = attach.find((x) => attName(x) === name); if (a && !a.uploading && !a.dir) onFile(a.rel) }} />
         </div>
         {phone ? <div className={`cright ${uploading ? 'dis' : ''}`}>{ringBtn}{sendBtn}</div> : null}
         {!phone ? <div className="cbar">{modeBtn}{plusBtn}{attach.length ? <span className="acount">첨부 {attach.length}개 · 봇이 읽어서 참고</span> : null}<span className="sp" />{modelBtn}{effortBtn}{ringBtn}{sendBtn}</div> : null}
