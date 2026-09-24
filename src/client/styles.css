@@ -1103,6 +1103,20 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .cbbar .lg { font-family:var(--mono); font-size:10.5px; color:var(--t3); text-transform:uppercase; letter-spacing:.04em }
 .cbbar .cp { font-size:11px; line-height:1.6; color:var(--t2); background:var(--bg2); border:1px solid var(--line2); border-radius:5px; padding:0 7px }
 .cbbar .cp:hover { color:var(--w); border-color:var(--t3) }
+/* 🔴 **AR · 올려놓을 수 없는 기기에서는 늘 보인다** (2026-09-24 Dave: *«모바일에서 코드블록 … 전체 복사 기능이 없어»*).
+      단추는 처음부터 있었는데 `opacity:0` 이고 **마우스를 올려야만** 나타났다 — 터치에는 올려놓기가 없으니
+      폰에서는 있으나 마나였다(보이지도, 눌리지도 않았다).
+   ⚠ 「폰이냐」가 아니라 **「올려놓을 수 있느냐」**로 가른다(`hover: none`) — 터치 노트북·태블릿도 같이 맞는다.
+   ⚠ 늘 보이면 첫 줄을 가리므로 그만큼 코드 위를 띄운다. */
+@media (hover: none) {
+  .md .cbbar { opacity:1; pointer-events:auto }
+  .md .cbwrap pre { padding-top:30px }
+    /* 손가락 크기 — 보이는 알약은 32px 이고, 누를 수 있는 넓이는 `::after` 로 44px 까지 넓힌다
+     (Web Interface Guidelines: 작은 표적은 **보이는 크기는 그대로 두고 누를 넓이만** 넓힌다) */
+  .cbbar .cp { font-size:13px; padding:6px 12px; line-height:1.4; position:relative }
+  .cbbar .cp::after { content:''; position:absolute; inset:-6px -4px }
+}
+
 
 /* ⋯ 메뉴 안의 «값 조절» 줄 — 누를 때마다 메뉴가 닫히면 안 되므로 단추에서 전파를 멈춘다 */
 .menu .mrow { display:flex; align-items:center; gap:8px; padding:5px 8px; font-size:12.5px; color:var(--t) }

@@ -128,8 +128,13 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
       <HarnessSec bot={bot} open={!!open.harness} tog={() => tog('harness')} onOpenFile={onOpenFile} say={say} filesTick={filesTick} />
     </div> : null}
     {only ? null : <div className="divy" style={{ cursor: 'default' }} />}
-    {/* 루틴 — 폰에서는 안 보인다(만들고 고치는 자리는 데스크톱과 채팅이다) */}
-    {only ? null : <div className="sec fix">
+    {/**
+     * 🔴 **AR · 루틴은 폰의 「폴더」 탭에도 있다** (2026-09-24 Dave: *«폴더 섹션에 모바일에서도 루틴 메뉴 추가해줘»*).
+     *    종전에는 폰에서 통째로 감췄다 — 「만들고 고치는 자리는 데스크톱과 채팅」이라고 봤기 때문인데,
+     *    **루틴이 도는지 보고 손보는 일**은 폰에서 더 자주 생긴다(집 밖에서 «아침 브리핑 왜 안 왔지»).
+     * ⚠ 「할 일」 탭에는 여전히 두지 않는다 — 그 탭은 **지금 내가 할 일** 하나만 담는 자리다(AD 계약).
+     */}
+    {only === 'todo' ? null : <div className="sec fix">
       <button className="sech" onClick={() => tog('routines')}><Icon n={open.routines ? 'chevd' : 'chev'} size={9} /><span>루틴</span><span className="c">{bot.routines.length}</span></button>
       {open.routines ? <div style={{ padding: '0 0 6px' }}>{bot.routines.map((r) => <div key={r.name} className="kv"><Icon n="clock" size={12} color="var(--t3)" /><span className="n">{r.name}</span><span className="mono" style={{ fontSize: 11, color: 'var(--t3)' }}>{r.cron}</span></div>)}<button className="kv" onClick={() => setRoutines(true)}><Icon n="plus" size={12} /><span className="n">{bot.routines.length ? '루틴 편집' : '루틴 추가'}</span></button></div> : null}
     </div>}
