@@ -322,6 +322,14 @@ export class Gateway {
     if (p === '/api/undo' && m === 'GET') return json(200, reg.undoList())
     if (p === '/api/undo' && m === 'POST') { const b = await body(); reg.undo(Number(b.t)); h.afterBotsChanged(); return json(200, { ok: true }) }
     if (p === '/api/notifications' && m === 'GET') return json(200, h.notifier.events.slice(0, 100))
+    /* AV · 봇 하나의 세션을 전부 읽음으로 — 알림도 함께 닫는다(같은 대화의 알림이 남으면 종이 계속 운다) */
+    { const mm = /^\/api\/bots\/([^/]+)\/read-all$/.exec(p)
+      if (mm && m === 'POST') {
+        const botId = decodeURIComponent(mm[1])
+        const n = h.sessions.readAll(botId)
+        for (const x of h.sessions.list(botId)) h.notifier.markReadBySession(x.id)
+        return json(200, { ok: true, read: n })
+      } }
     if (p === '/api/notifications/read' && m === 'POST') { const b = await body(); h.notifier.markRead(Array.isArray(b.ids) ? (b.ids as string[]) : undefined); return json(200, { ok: true }) }
     if (p === '/api/push/subscribe' && m === 'POST') { const b = await body(); h.notifier.addSub(b.sub as { endpoint: string; keys: { p256dh: string; auth: string } }, device); return json(200, { ok: true }) }
     if (p === '/api/push/test' && m === 'POST') { h.notifier.emit('done', 'orch', 'Folder Bot', '푸시가 도착하면 성공이에요', undefined, { mac: false }); return json(200, { ok: true }) }

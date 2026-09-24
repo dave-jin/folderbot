@@ -402,6 +402,24 @@ try {
       if (cl2 && !('others' in cl2)) fail('AL: 제공자에 «안 고른 CLI»(others) 가 없다 — 화면이 왜 이 판인지 못 말한다 ' + JSON.stringify(cl2))
       ok(`AL 새로고침 — 후보 다시 훑기 · 모델 ${rb.models.claude.length}개${cl2?.others?.length ? ` · 안 고른 CLI ${cl2.others.length}벌` : ''}`)
     }
+    /**
+     * 🔴 **AV · 「모두 읽음」** (2026-09-25 Dave: *«다 읽었는데도 왜 더블닷이 안사라지지? 읽었다는 기준이 어떻게 돼?»*).
+     *    봇 줄의 더블링은 **세션 하나라도** 안 읽었으면 켜진다. 실측: 오케스트레이터 34세션 중 **딱 하나**가
+     *    「본 뒤 새 답이 온」 것이었는데, 어느 세션인지 화면이 안 알려 줘서 다 읽은 줄 알았다.
+     * ⚠ 읽은 지점은 각 세션의 **마지막 답 시각** — 누르는 사이 온 답까지 삼키면 안 된다.
+     */
+    {
+      const before = await api(`/bots/${bot.id}/sessions`)
+      const unread = (xs) => xs.filter((x) => x.lastReplyAt && x.lastReplyAt > (x.readAt ?? 0))
+      if (!unread(before).length) fail('AV: 안 읽은 세션이 없어 「모두 읽음」 을 잴 수 없다 — 검사가 헛돈다 ' + JSON.stringify(before.map((x) => [x.lastReplyAt, x.readAt])))
+      const rr = await fetch(base + `/api/bots/${bot.id}/read-all`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+      const rb2 = await rr.json()
+      if (rr.status !== 200 || !rb2.ok) fail('🔴 AV: 「모두 읽음」 길이 없다 ' + rr.status + ' ' + JSON.stringify(rb2))
+      const after = await api(`/bots/${bot.id}/sessions`)
+      if (unread(after).length) fail('🔴 AV: 「모두 읽음」 뒤에도 안 읽은 세션이 남았다 ' + JSON.stringify(unread(after).map((x) => x.name)))
+      for (const x of after) if (x.readAt && x.lastReplyAt && x.readAt > x.lastReplyAt) fail('AV: 읽은 지점이 마지막 답보다 뒤다(누르는 사이 온 답을 삼킨다) ' + JSON.stringify(x))
+      ok(`AV 모두 읽음 — 안 읽음 ${unread(before).length} → 0 · 읽은 지점 = 각 세션의 마지막 답`)
+    }
   }
   const cands = await mcp('tools/call', { name: 'bots_candidates', arguments: {} }); if (!/제품_Rondo/.test(cands.result.content[0].text)) fail('mcp candidates')
   const sent = await mcp('tools/call', { name: 'bot_send', arguments: { bot: '재무_CFO', text: '숫자 검토' } })
