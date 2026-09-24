@@ -4365,6 +4365,11 @@ try {
             if (tr === null) fail('폰 할 일: 완료 항목의 체크가 안 보인다(검사 전제 깨짐)')
             if (tr !== 'none') fail('🔴 폰 할 일: 완료 체크가 돌아가 «›» 로 보인다 · ' + tr)
           }
+          // 🔴 완료 동그라미는 22px 로 보이지만 누르는 칸은 40px 이상 — 빗나가면 행이 펼쳐졌다 (2026-09-25 디자인 검수)
+          {
+            const hit = await pg.evaluate(() => { const r = document.querySelector('.panel .ptodo .ring'); return r ? parseFloat(getComputedStyle(r, '::before').height) || 0 : -1 })
+            if (hit < 40) fail('🔴 폰 할 일: 완료 동그라미의 누르는 칸이 좁다 · ' + hit)
+          }
         // 🔴 끊겼다 붙는 동안 바뀐 파일이 화면에 온다 (2026-09-13 Dave: «원격 모바일에서 수정된 파일이 바로 적용이 안 돼»)
         //    맥은 SSE 가 안 끊겨 프레임으로 최신이 됐고, 폰은 그 프레임을 놓친 채 /state 만 다시 읽어 할 일이 낡아 있었다.
         {

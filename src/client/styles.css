@@ -470,7 +470,8 @@ b,strong { color:var(--w); font-weight:600 }
 .ptodo { display:flex; gap:12px; align-items:flex-start; padding:9px 14px; min-height:52px; box-sizing:border-box; background:var(--bg) }
 .ptodo .ring { width:22px; height:22px; border-radius:50%; border:2px solid var(--t3); flex:none; margin-top:1px; display:inline-flex; align-items:center; justify-content:center; background:transparent }
 .ptodo.done .ring { background:var(--done); border-color:var(--done) }
-.ptodo .ring { padding:0 } .ptodo .ring svg { transform:none }   /* ⚠ 컨텍스트 게이지의 `.ring svg { rotate(-90deg) }` 가 여기까지 걸려 완료 체크가 «›» 로 누웠다 (2026-09-25 디자인 검수) */
+.ptodo .ring { padding:0; position:relative } .ptodo .ring svg { transform:none }
+.ptodo .ring::before { content:''; position:absolute; inset:-12px }   /* 보이는 동그라미는 22px 그대로, 누르는 칸만 42px — 빗나가면 행이 펼쳐졌다(2026-09-25 디자인 검수 · Codex 지적) */   /* ⚠ 컨텍스트 게이지의 `.ring svg { rotate(-90deg) }` 가 여기까지 걸려 완료 체크가 «›» 로 누웠다 (2026-09-25 디자인 검수) */
 .ptodo .bd { flex:1; min-width:0 }
 .ptodo .tt { font-size:15.5px; line-height:1.35; color:var(--w); font-weight:500; overflow-wrap:anywhere }
 .ptodo.done .tt { color:var(--t3); text-decoration:line-through }
