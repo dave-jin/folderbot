@@ -1,4 +1,5 @@
 import { withClient, type ClientCtx } from '../core/clientCtx'
+import { providerBin } from './providers'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { EventEmitter } from 'node:events'
@@ -44,11 +45,18 @@ export function cleanClaudeEnv(opts: { noToken?: boolean } = {}): Record<string,
 }
 export const AUTH_ERROR = /Failed to authenticate|Not logged in|Please run \/login|Login expired|OAuth session expired|Invalid authentication|authentication_error/i
 
+/**
+ * 🔴 **AT · 턴을 띄우는 claude 는 목록을 만든 claude 와 같다** (2026-09-25 Dave: *«무조건 모델이나 실행환경에서의
+ *    claude 버전만 확인하면 되는거 아니야?»*).
+ * 종전에는 여기에 **따로** 「먼저 있는 경로」(`~/.local` → brew → `/usr/local`) 훑기가 있었다. AL 에서 목록 쪽
+ * (`providers`)만 「가장 새 판」으로 고쳐서, **목록은 새 판(2.1.281)을 보고 Opus 5.5 를 내주는데 턴은 낡은
+ * 판(2.1.278)으로 띄우는** 갈림이 생겼다 — 미니에서 난 `400 · does not support this model` 의 정체다.
+ * ⇒ 고르는 곳은 `providers` 하나다. 여기서 다시 고르지 않는다. 사람이 정해 준 경로(환경변수·설정)만 먼저 이긴다.
+ */
 export function claudeBin(override?: string): string {
   if (process.env.FOLDERBOT_CLI_BIN) return process.env.FOLDERBOT_CLI_BIN
   if (override) return override
-  for (const p of [join(homedir(), '.local', 'bin', 'claude'), '/opt/homebrew/bin/claude', '/usr/local/bin/claude']) if (existsSync(p)) return p
-  return 'claude'
+  return providerBin('claude') ?? 'claude'
 }
 
 /** `~/.claude/projects/<slug>/<sid>.jsonl` 이 있는가 — 없으면 --resume 을 붙이지 않는다(무한 재시도 사고 방지) */

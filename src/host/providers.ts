@@ -28,6 +28,9 @@ const ENV_OVERRIDE: Record<ProviderId, string> = { claude: 'FOLDERBOT_CLI_BIN', 
 function candidates(id: ProviderId): string[] {
   const ov = process.env[ENV_OVERRIDE[id]]
   if (ov) return existsSync(ov) ? [ov] : []
+  // 검사용 — 후보 목록을 통째로 갈아 끼운다(`test/unit/cliResolve.test.ts`). 있으면 이 목록만 본다
+  const list = process.env[`FOLDERBOT_${id.toUpperCase()}_CANDIDATES`]
+  if (list) return list.split(':').filter((p) => p && existsSync(p))
   const out = CANDIDATES[id].filter((p) => existsSync(p))
   try { const p = execFileSync('which', [id], { encoding: 'utf8' }).trim(); if (p && existsSync(p) && !out.includes(p)) out.push(p) } catch { /* 없으면 없는 대로 */ }
   return out
