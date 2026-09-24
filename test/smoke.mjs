@@ -1516,6 +1516,33 @@ try {
                 const twice = dead.filter((d) => d.grow > 2)
                 if (twice.length) fail('🔴 AL: 안전영역을 두 곳에서 세는 화면이 있다(그만큼 빈 띠가 생긴다) ' + JSON.stringify(twice))
                 if (!dead.some((d) => d.id === 'doc')) fail('AL: 문서 화면을 못 재 봤다 — 검사가 헛돌았다 ' + JSON.stringify({ dead, why, tabs: await hp.$$eval('.tabbar [data-tab]', (r) => r.map((x) => x.dataset.tab)).catch(() => null), view: await view() }))
+              /**
+               * 🔴 **AR · 폰에서 «전체 복사» 와 «루틴»** (2026-09-24 Dave: *«모바일에서 코드블록 및 텍스트 문서
+               *    내용 전체 복사 기능이 없어 … 폴더 섹션에 모바일에서도 루틴 메뉴 추가해줘»*).
+               * ⚠ 코드 복사 단추는 **원래 있었다** — `opacity:0` 이고 마우스를 올려야 나타나서, 터치에서는
+               *    보이지도 눌리지도 않았다. 그래서 「있나」가 아니라 **「보이고 누를 수 있나」**를 잰다.
+               */
+              {
+                const home = await hp.$('.tabbar [data-tab="chat"]'); if (home) { await home.click(); await wait(500) }
+                const cb = await hp.evaluate(() => {
+                  const bar = document.querySelector('.md .cbbar'); if (!bar) return null
+                  const b = bar.querySelector('.cp'); const cs = getComputedStyle(bar)
+                  const r = b ? b.getBoundingClientRect() : null
+                  return { op: Number(cs.opacity), pe: cs.pointerEvents, h: r ? Math.round(r.height) : 0, txt: b ? (b.textContent ?? '') : '' }
+                })
+                if (!cb) fail('AR: 코드 블록이 화면에 없어 복사 단추를 못 쟀다 — 검사가 헛돈다')
+                if (cb.op < 1 || cb.pe === 'none') fail('🔴 AR: 폰에서 코드 복사 단추가 안 보이거나 안 눌린다(올려놓기가 없는 기기다) ' + JSON.stringify(cb))
+                if (cb.h < 30) fail('🔴 AR: 코드 복사 단추가 손가락으로 누르기엔 작다(보이는 크기 30px + 누를 넓이 44px 계약) ' + JSON.stringify(cb))
+                // 폴더 탭에 루틴이 있나
+                const ft = await hp.$('.tabbar [data-tab="files"]'); if (ft) { await ft.click(); await wait(600) }
+                const rt = await hp.evaluate(() => [...document.querySelectorAll('.panel .sech')].map((x) => (x.textContent ?? '').trim()))
+                if (!rt.some((t) => /루틴/.test(t))) fail('🔴 AR: 폰 「폴더」 탭에 루틴이 없다 ' + JSON.stringify(rt))
+                const td = await hp.$('.tabbar [data-tab="todo"]'); if (td) { await td.click(); await wait(600) }
+                const rt2 = await hp.evaluate(() => [...document.querySelectorAll('.panel .sech')].map((x) => (x.textContent ?? '').trim()))
+                if (rt2.some((t) => /루틴/.test(t))) fail('🔴 AR: 「할 일」 탭에는 루틴이 없어야 한다(그 탭은 지금 할 일만) ' + JSON.stringify(rt2))
+                if (home) { await home.click(); await wait(500) }
+                ok(`AR 폰 — 코드 복사 단추 보임·누를 수 있음(${cb.h}px) · 폴더 탭에 루틴 · 할 일 탭에는 없음`)
+              }
                 /* ⚠ 다음 검사는 «열린 문서가 없고 채팅에서 시작» 을 전제한다 — **내가 바꾼 것은 내가 되돌린다.**
                       안 되돌리면 뒤의 AD 검사가 «빈 문서 화면이 안 나온다» 로 엉뚱하게 빨개진다(실측). */
                 if (openedDoc) { const d = await hp.$('.tabbar [data-tab="doc"]'); if (d) { await d.click(); await wait(500); await hp.click('.col.doc'); await hp.keyboard.press('ControlOrMeta+w'); await wait(600) } }
@@ -1564,7 +1591,10 @@ try {
               }))
               let pane = await paneOf()
               if (pane.ttl !== '폴더' || !pane.tree) fail('AD: 「폴더」 탭은 파일만 보여야 한다 ' + JSON.stringify(pane))
-              for (const bad of ['세션', '명령 · 스킬', '루틴']) if (pane.secs.includes(bad)) fail(`🔴 AD: 「폴더」 탭에 «${bad}» 이 남아 있다 · ` + JSON.stringify(pane))
+              /* 🔴 **AR 에서 「루틴」은 뺐다** (2026-09-24 Dave 가 AD 결정을 뒤집었다: *«폴더 섹션에 모바일에서도
+                    루틴 메뉴 추가해줘»*). 루틴이 **도는지 보고 손보는 일**은 오히려 폰에서 더 자주 생긴다.
+                 ⚠ 세션·명령·스킬은 그대로 뺀다 — 그것들은 만들고 고치는 자리가 데스크톱이다. */
+              for (const bad of ['세션', '명령 · 스킬']) if (pane.secs.includes(bad)) fail(`🔴 AD: 「폴더」 탭에 «${bad}» 이 남아 있다 · ` + JSON.stringify(pane))
               if (!pane.foot) fail('AD: 지우기·은퇴 줄은 폴더 탭 아래에 남아야 한다 ' + JSON.stringify(pane))
               if (pane.on !== 'files') fail('AD: 탭 표시가 «폴더» 여야 한다 ' + JSON.stringify(pane))
               await tapNav(hp, 'todo'); await wait(450)

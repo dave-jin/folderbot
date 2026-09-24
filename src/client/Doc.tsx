@@ -9,7 +9,7 @@ const MdEditor = lazy(() => import('./MdEditor'))
 /** ⚠ 캔버스도 지연 로드 — `.canvas` 를 한 번도 안 연 사람이 이 코드를 받을 이유가 없다 */
 const Canvas = lazy(() => import('./Canvas'))
 import type { Bot } from '../core/types'
-import { copySay } from './clip'
+import { copySay, copyText } from './clip'
 import { api, uploadFile } from './api'
 import { normalizeDepth, outline } from '../core/outline'
 import { Icon, Mid } from './FolderBot'
@@ -220,6 +220,14 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
             {menu ? <Float at={menu} onClose={() => setMenu(null)}><div style={{ display: 'contents' }} onClick={() => setMenu(null)}>{heads.length > 1 ? <button onClick={() => setToc(!toc)}><Icon n="list" size={13} /><span>목차</span></button> : null}<button onClick={() => onTalk(rel)}><Icon n="sub" size={13} /><span>봇에게 이 파일 말하기</span></button><button onClick={() => onAttach(rel)}><Icon n="plus" size={13} /><span>첨부로 보내기</span></button><button onClick={() => { void copySay(`${bot.abs}/${rel}`, say, '경로를 복사했어요') }}><Icon n="file" size={13} /><span>경로 복사</span></button><button onClick={openHere}><Icon n="open" size={13} /><span>{main ? '기본 앱으로 열기' : '이 기기에서 열기'}</span></button>
               {main ? null : <a className="menu-a" href={raw(rel)} download style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="doc" size={13} /><span>이 기기로 내려받기</span></a>}
               <a className="menu-a" href={raw(rel)} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="open" size={13} /><span>새 창에서 열기</span></a><hr /><button onClick={() => docs.pin(rel)}><Icon n="doc" size={13} /><span>탭 고정</span><span className="k">더블클릭</span></button>
+              {/**
+                * 🔴 **AR · 글 전체 복사** (2026-09-24 Dave: *«모바일에서 … 텍스트 문서 내용 전체 복사 기능이 없어»*).
+                *    종전 메뉴에는 **「경로 복사」만** 있었다 — 경로는 맥에서나 쓸모가 있고, 폰에서 남에게 보낼 때
+                *    필요한 것은 **글 자체**다. 손으로 긁는 수밖에 없었는데 긴 문서에서는 사실상 불가능하다.
+                * ⚠ 화면에 보이는 것을 준다 — 고치는 중이면 **고치던 글(`draft`)**, 아니면 저장된 글.
+                * ⚠ 잘린 문서(`truncated`)면 그렇다고 말한다 — 다 복사한 것처럼 보이면 안 된다.
+                */}
+              {doc?.kind === 'text' ? <button onClick={() => { const t = draft || doc.text || ''; void copyText(t).then((ok) => say(ok ? (doc.truncated ? '보이는 데까지 복사했어요 (문서가 잘려 있어요)' : `문서를 복사했어요 · ${t.length.toLocaleString()}자`) : '복사를 못 했어요')) }}><Icon n="copy" size={13} /><span>내용 복사</span></button> : null}
               {doc?.kind === 'text' ? <button onClick={() => setPrintHtml(renderMarkdown(draft || doc.text || ''))}><Icon n="file" size={13} /><span>PDF 로 저장</span></button> : null}
               {/* 🔴 **읽기 편한 크기는 사람의 성질이다** (B9) — 문서마다 따로 두지 않고 이 기기에 남긴다.
                   ⚠ 폭은 «넓게»(문서 열을 키우는 것)와 다른 일이다 — 이건 **글줄 길이**다. */}
