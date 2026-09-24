@@ -1,5 +1,5 @@
 import type { PermissionMode } from '../core/types'
-import { AGENT_EFFORTS, AGENT_MODELS, DEFAULT_EFFORT, DEFAULT_MODEL, MORE_MODELS, type AgentModel, type ProviderId, sameModel } from '../core/agents'
+import { AGENT_EFFORTS, AGENT_MODELS, DEFAULT_EFFORT, DEFAULT_MODEL, MORE_MODELS, type AgentModel, type ProviderId, sameModel, splitModels } from '../core/agents'
 import { mergeModels } from '../core/modelList'
 import { api } from './api'
 
@@ -38,11 +38,26 @@ export function onModels(cb: () => void): () => void { watchers.add(cb); return 
  * 🔴 2026-09-14 Dave 스크린샷: 긁어 온 이름을 첫 목록에 섞었더니 플러그인 이름(`claude-mythos` 등)이
  *    줄줄이 서서 «무엇을 골라야 하나» 가 됐다. 고르기는 짧아야 한다.
  */
-export const modelsFor = (v?: ProviderId): AgentModel[] => AGENT_MODELS[v ?? 'claude']
+/**
+ * AI · **Claude 첫 목록은 호스트 CLI 가 아는 것에서** (2026-09-24 Dave) — 종류별 최신 하나씩.
+ * 🔴 박아 둔 목록만 믿으면 **그 호스트가 못 돌리는 모델**을 고르게 된다(실측: 미니의 CLI 2.1.278 에
+ *    Opus 5.5 를 고르자 400). 못 주워 왔으면 박아 둔 목록 그대로다.
+ */
+export const modelsFor = (v?: ProviderId): AgentModel[] => {
+  const id = v ?? 'claude'
+  if (id !== 'claude' || !found.claude.length) return AGENT_MODELS[id]
+  const { first } = splitModels(found.claude)
+  return first.length ? first : AGENT_MODELS.claude
+}
 /** 「더 많은 모델」 — 긴 문맥(1M) · 기계에서 주워 온 이름. 첫 목록과 겹치는 것은 뺀다 */
 export const moreModelsFor = (v?: ProviderId): AgentModel[] => {
   const id = v ?? 'claude'
-  const first = new Set(AGENT_MODELS[id].map((m) => m.v))
+  const first = new Set(modelsFor(id).map((m) => m.v))
+  if (id === 'claude' && found.claude.length) {
+    const { more } = splitModels(found.claude)
+    return [...more, ...MORE_MODELS.claude].filter((m) => m.v && !first.has(m.v))
+      .filter((m, i, a) => a.findIndex((x) => x.v === m.v) === i)
+  }
   return mergeModels(found[id], MORE_MODELS[id]).filter((m) => m.v && !first.has(m.v)) as AgentModel[]
 }
 export const effortsFor = (v?: ProviderId): { v: string; t: string }[] => AGENT_EFFORTS[v ?? 'claude']

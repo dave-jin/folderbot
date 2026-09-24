@@ -1303,6 +1303,21 @@ try {
               /** 🔴 AH(2026-09-24 Dave) · 쓸기는 **맨 왼쪽 가장자리에서만** — 안쪽에서 잡으면 쓸리는 행과 다툰다 */
               await drag(120, 500, 320, 505); if ((await view()) === 'list') fail('🔴 AH: 안쪽(120px)에서 잡은 끌기가 봇 목록을 열었다')
               await drag(8, 500, 260, 505); if ((await view()) !== 'list') fail('AH: 가장자리 👉 → 봇 목록 ' + (await view()))
+              /**
+               * 🔴 **AI · 오른쪽 쓸기는 «봇 목록» 하나뿐이다** (2026-09-24 Dave: «그 액션에서 뒤로 가기는 완전히 없애»).
+               *    종전에는 드릴인(서브에이전트) 안에서 👉 가 «드릴에서 나오기» 로 먼저 먹혀, 같은 손짓이 자리에 따라 다른 뜻이었다.
+               */
+              await hp.keyboard.press('Escape'); await wait(350)
+              const drilled = await hp.evaluate(() => { const b = [...document.querySelectorAll('.amsg .meta, .sub-card, [data-drill]')].find((x) => /에이전트|하위|서브/.test(x.textContent ?? '')); if (b) { b.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })
+              if (drilled) {
+                await wait(500)
+                await drag(8, 500, 260, 505); await wait(400)
+                if ((await view()) !== 'list') fail('🔴 AI: 드릴인 안에서 👉 가 봇 목록을 안 열었다(뒤로 가기로 먹혔다) ' + (await view()))
+                await hp.keyboard.press('Escape'); await wait(350)
+              }
+              // 아래 검사들은 «목록이 열린 채» 를 본다 — 도로 열어 둔다
+              if ((await view()) !== 'list') { await drag(8, 500, 260, 505); await wait(400) }
+              if ((await view()) !== 'list') fail('AI: 봇 목록을 다시 못 열었다 ' + (await view()))
               const dl = await hp.evaluate(() => { const d = document.querySelector('.drawer.left'); return { open: d?.classList.contains('open'), home: !!d?.querySelector('.mhome'), rows: d?.querySelectorAll('.mrow').length ?? 0, w: d?.getBoundingClientRect().width, scrim: !!document.querySelector('.scrim') } })
               if (!dl.open || !dl.home || dl.rows < 2 || dl.w > 500 * 0.9 || !dl.scrim) fail('AD: 왼쪽 서랍 = 봇 목록(홈) ' + JSON.stringify(dl))
               await hp.screenshot({ path: 'test/tmp/h-narrow-left.png' })
@@ -2261,12 +2276,23 @@ try {
           {
             await pg.click('.composer .cbtn[title="모델"]'); await wait(400)
             const first = await pg.$$eval('.cpop.r .prow2 b', (r) => r.map((x) => x.textContent))
-            // AF(2026-09-23) · 첫 목록은 **종류별 최신 하나씩** — Opus 는 5.5 가 최신이라 5 는 「더 많은 모델」로 내려갔다
-            for (const want of ['Fable 5.1', 'Opus 5.5', 'Sonnet 5', 'Haiku 4.5', '더 많은 모델']) if (!first.includes(want)) fail(`모델 목록: «${want}» 가 없다 ` + JSON.stringify(first))
-            if (first.includes('Opus 5')) fail('AF: 첫 목록에 옛 Opus 5 가 남아 있다(한 종류에 둘) ' + JSON.stringify(first))
+            /**
+             * AI(2026-09-24) · 첫 목록은 **이 호스트의 CLI 가 아는 것에서 종류별 최신 하나씩**이다.
+             * 🔴 박아 둔 목록을 그대로 띄우면 그 호스트가 못 돌리는 모델을 고르게 된다(실측: 미니 CLI 2.1.278 + Opus 5.5 → 400).
+             * ⚠ 그래서 **이름을 박아 놓고 재지 않는다** — 「한 종류에 하나씩인가」와 「더 많은 모델이 있나」를 잰다.
+             */
+            const fam = (t) => (/^([A-Za-z]+)/.exec(t ?? '') ?? [])[1] ?? ''
+            const picks = first.filter((t) => /^(Fable|Opus|Sonnet|Haiku|Mythos) [0-9]/.test(t ?? ''))
+            if (picks.length < 2) fail('모델 목록: 고를 것이 너무 적다 ' + JSON.stringify(first))
+            if (new Set(picks.map(fam)).size !== picks.length) fail('🔴 AI: 한 종류가 첫 목록에 둘 이상 있다 ' + JSON.stringify(picks))
+            if (!first.includes('더 많은 모델')) fail('모델 목록: 「더 많은 모델」 이 없다 ' + JSON.stringify(first))
             await pg.click('.cpop.r .prow2.more'); await wait(300)
             const more = await pg.$$eval('.cpop.r .prow2 b', (r) => r.map((x) => x.textContent))
-            for (const want of ['Opus 5', 'Opus 4.8', 'Opus 4.7', 'Sonnet 4.6', 'Sonnet 5 · 1M']) if (!more.includes(want)) fail(`더 많은 모델: «${want}» 가 없다 ` + JSON.stringify(more))
+            // 「더 많은 모델」에는 옛 판이 온다 — 첫 목록과 겹치면 안 된다
+            for (const want of ['Opus 4.8', 'Sonnet 4.6', 'Sonnet 5 · 1M']) if (!more.includes(want)) fail(`더 많은 모델: «${want}» 가 없다 ` + JSON.stringify(more))
+            // ⚠ 팝업은 첫 목록을 **그대로 두고 아래에 덧붙인다** — «겹치지 않는가» 는 화면에서 못 잰다.
+            //    그 계약(first ∩ more = ∅)은 `splitModels` 유닛이 데이터에서 잰다. 여기서는 «옛 판이 더 있나» 만 본다.
+            if (!more.some((t) => !picks.includes(t) && /^(Fable|Opus|Sonnet|Haiku) [0-9]/.test(t ?? ''))) fail('AI: 「더 많은 모델」에 옛 판이 없다 ' + JSON.stringify(more))
             await pg.keyboard.press('Escape'); await wait(300)
             /**
              * 🔴 **돌던 대화의 모델을 바꿀 땐 한 번 묻는다** (2026-09-15 Dave 지정 문안 — Claude Code 와 같은 확인창).

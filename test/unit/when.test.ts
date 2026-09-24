@@ -93,3 +93,31 @@ describe('AA-3 · 때 이름이 왕복한다', () => {
     }
   })
 })
+
+describe('AI · 루틴 기본 권한과 세션 둘까지 (2026-09-24 Dave)', () => {
+  it('🔴 루틴은 묻지 않고 바로 돈다 — 사람이 없는데 물으면 그 회차는 멈춰 선다', async () => {
+    const { approveToMode, DEFAULT_ROUTINE_APPROVE } = await import('../../src/host/routines')
+    expect(DEFAULT_ROUTINE_APPROVE).toBe('always')
+    expect(approveToMode(undefined)).toBe('bypassPermissions')   // 적어 두지 않은 루틴도 바로 돈다
+    expect(approveToMode('always')).toBe('bypassPermissions')
+    expect(approveToMode('folder')).toBe('acceptEdits')
+    expect(approveToMode('readonly')).toBe('plan')               // 낮추는 길은 남아 있다
+  })
+
+  it('루틴 세션은 둘까지 — 오래된 «끝난» 것부터 걷는다', async () => {
+    const { routinesToDrop } = await import('../../src/host/routines')
+    const S = (id: string, state: string, t: number, routine = 'r') => ({ id, routine, state, lastActivity: t })
+    expect(routinesToDrop([S('a', 'done', 3), S('b', 'done', 2), S('c', 'done', 1)])).toEqual(['c'])
+    expect(routinesToDrop([S('a', 'done', 2), S('b', 'done', 1)])).toEqual([])
+    // 루틴이 아닌 세션은 건드리지 않는다
+    expect(routinesToDrop([{ id: 'x', state: 'done', lastActivity: 9 }, S('a', 'done', 3), S('b', 'done', 2), S('c', 'done', 1)])).toEqual(['c'])
+  })
+
+  it('🔴 도는 중·확인 대기는 걷지 않는다 — 일을 끊고 안 읽은 답을 지우게 된다', async () => {
+    const { routinesToDrop } = await import('../../src/host/routines')
+    const S = (id: string, state: string, t: number) => ({ id, routine: 'r', state, lastActivity: t })
+    expect(routinesToDrop([S('run', 'running', 3), S('ask', 'awaiting_input', 2), S('old', 'done', 1)])).toEqual(['old'])
+    // 도는 것이 둘을 넘어도 죽이지 않는다 — 잠시 셋이 되는 편이 낫다
+    expect(routinesToDrop([S('r1', 'running', 3), S('r2', 'running', 2), S('r3', 'running', 1)])).toEqual([])
+  })
+})

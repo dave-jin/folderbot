@@ -12,7 +12,7 @@ import { FolderWatch } from './watch'
 import { Notifier } from './notify'
 import { type HostConfig, absRoot, saveConfig } from './paths'
 import { ORCH_ID, Registry, canon } from './registry'
-import { Routines, approveToMode } from './routines'
+import { Routines, approveToMode, routinesToDrop } from './routines'
 import { SessionManager, setOauthToken, setKeychainLogin, AUTH_ERROR, type SessionRec } from './session'
 import { readTodo, todoAdd, todoContext } from './todoStore'
 import { recent as recentFiles, tree as fileTree } from './files'
@@ -145,6 +145,15 @@ export class Host {
   runRoutine(bot: Bot, r: RoutineDef): void {
     this.log(`루틴 실행: ${bot.name} · ${r.name}`)
     const s = this.sessions.create(bot, `루틴 · ${r.name}`, { permissionMode: approveToMode(r.approve), routine: r.name })
+    /**
+     * AI · **루틴 세션은 둘까지만** (2026-09-24 Dave). 새로 만든 뒤 오래된 «끝난» 것부터 걷는다 —
+     * 🔴 도는 중·확인 대기는 걷지 않는다(하던 일을 끊고 안 읽은 답을 지우게 된다). 판정은 `core` 가 아니라
+     *    `routines.routinesToDrop` 한 곳에 있다(순수 · 유닛).
+     */
+    for (const id of routinesToDrop(this.sessions.list(bot.id))) {
+      this.log(`루틴 세션 정리: ${id}`)
+      this.sessions.remove(id)
+    }
     this.sessions.send(s, bot, `${r.prompt}\n\n(이건 예약된 루틴 "${r.name}" 이야. 사람이 없을 수 있으니 ${r.approve === 'always' ? '' : r.approve === 'folder' ? '이 폴더 안 파일만 고치고 ' : '파일을 고치지 말고 제안만 하고 '}결과를 짧게 요약해.)`)
   }
 

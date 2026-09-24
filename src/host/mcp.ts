@@ -127,7 +127,7 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       const b = reg.bot(botId); if (!b) throw new Error('봇을 못 찾았어요')
       return host.routines.decorate(b.id, b.routines).map((r) => ({
         name: r.name, when: describeCron(r.cron), cron: r.cron, prompt: r.prompt,
-        enabled: r.enabled !== false, push: !!r.push, approve: r.approve ?? 'readonly',
+        enabled: r.enabled !== false, push: !!r.push, approve: r.approve ?? 'always',
         next: r.nextRun ? formatNext(new Date(r.nextRun)) : null,
         error: r.lastError ?? null,
       }))
@@ -140,7 +140,7 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       if (!w.ok) return whenProblem(w)
       const def: RoutineDef = { name, cron: w.cron, prompt: s('prompt'), ...(a.push === undefined ? {} : { push: !!a.push }) }
       saveRoutines(reg, host, b.abs, [...b.routines, def])
-      return { ok: true, name, when: w.text, confirm: confirmLine(w.cron), note: '승인 수준(approve)은 사람이 화면에서 정해요 — 기본은 계획만 세우는 단계입니다' }
+      return { ok: true, name, when: w.text, confirm: confirmLine(w.cron), note: '승인 수준(approve)은 사람이 화면에서 정해요 — 기본은 «묻지 않고 바로 한다» 입니다(루틴은 사람이 없을 때 도니까)' }
     }
     case 'routine_update': {
       const b = reg.bot(botId); if (!b) throw new Error('봇을 못 찾았어요')

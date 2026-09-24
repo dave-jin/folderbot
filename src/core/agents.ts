@@ -71,6 +71,54 @@ export const MORE_MODELS: Record<ProviderId, AgentModel[]> = {
 }
 
 /**
+ * AI · **첫 목록은 호스트 CLI 가 아는 것에서 만든다** (2026-09-24 Dave: *«이름당 가장 최신 모델만 뜨고,
+ * 나머지 모델은 더 많은 모델로»*).
+ *
+ * 🔴 **왜 박아 두면 안 되나** — 박아 둔 목록은 **이 맥의 CLI 가 무엇을 받는지 모른다.** 실제로 Dave 의 호스트(미니)는
+ *    CLI 2.1.278 이었는데 목록에는 Opus 5.5 가 서 있었고, 고르는 순간
+ *    «400 · Claude Code 2.1.278 does not support this model; version 2.1.280 or newer is required» 로 죽었다.
+ *    고를 수 있는 것은 **그 호스트가 실제로 돌릴 수 있는 것**이어야 한다.
+ * ⚠ 못 주워 왔으면 박아 둔 목록 그대로다(빈 칸보다 낫다).
+ */
+const FAMILY_ORDER = ['fable', 'opus', 'sonnet', 'haiku'] as const
+const FAMILY_LABEL: Record<string, string> = { fable: 'Fable', opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku', mythos: 'Mythos' }
+/** `claude-opus-5-5` → { fam:'opus', ver:[5,5] } · 날짜 꼬리표(`-20260401`)는 같은 모델의 다른 표기라 뗀다 */
+export function modelParts(id: string): { fam: string; ver: number[] } | null {
+  const m = /^claude-([a-z]+)-((?:\d+)(?:-\d+)*)$/i.exec(String(id ?? '').replace(/-\d{8}$/, ''))
+  if (!m) return null
+  return { fam: m[1].toLowerCase(), ver: m[2].split('-').map(Number) }
+}
+const cmpVer = (a: number[], b: number[]): number => { for (let i = 0; i < Math.max(a.length, b.length); i++) { const d = (a[i] ?? 0) - (b[i] ?? 0); if (d) return d } return 0 }
+/** `claude-opus-5-5` → 「Opus 5.5」 */
+export function modelTitle(id: string): string {
+  const p = modelParts(id)
+  return p ? `${FAMILY_LABEL[p.fam] ?? p.fam} ${p.ver.join('.')}` : id.replace(/^claude-/, '')
+}
+/**
+ * 주워 온 이름들을 **종류별 최신 하나씩**(첫 목록)과 **나머지**(더 많은 모델)로 가른다.
+ * 설명(`d`)은 박아 둔 목록에 같은 이름이 있으면 그것을 쓴다 — 「가장 똑똑함 · 기본」 같은 말은 사람이 붙인 것이다.
+ */
+export function splitModels(found: string[], curated: AgentModel[] = AGENT_MODELS.claude): { first: AgentModel[]; more: AgentModel[] } {
+  const desc = new Map(curated.map((m) => [m.v.replace(/-\d{8}$/, ''), m.d ?? '']))
+  const best = new Map<string, { id: string; ver: number[] }>()
+  const rest: string[] = []
+  for (const id of found) {
+    const p = modelParts(id)
+    if (!p) { rest.push(id); continue }
+    const cur = best.get(p.fam)
+    if (!cur || cmpVer(p.ver, cur.ver) > 0) { if (cur) rest.push(cur.id); best.set(p.fam, { id, ver: p.ver }) }
+    else rest.push(id)
+  }
+  const fam = [...best.keys()].sort((a, b) => {
+    const ia = FAMILY_ORDER.indexOf(a as typeof FAMILY_ORDER[number]), ib = FAMILY_ORDER.indexOf(b as typeof FAMILY_ORDER[number])
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b)
+  })
+  const first = fam.map((f) => { const id = best.get(f)!.id; return { v: id, t: modelTitle(id), d: desc.get(id) ?? '' } })
+  const more = rest.sort().map((id) => ({ v: id, t: modelTitle(id), d: '' }))
+  return { first, more }
+}
+
+/**
  * 같은 모델인가 — 🔴 **날짜 꼬리표와 `claude-` 머리는 같은 모델의 다른 표기다**.
  *    CLI 는 `claude-fable-5-1` 로 띄워도 답에는 `claude-fable-5-1-20260501` 처럼 판을 박아 보낸다.
  *    그걸 «바뀌었다» 로 보면 사람이 고른 이름이 매 턴 덮인다.

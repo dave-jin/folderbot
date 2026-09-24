@@ -441,7 +441,7 @@ export function RoutineSheet({ bot, onClose, draft }: { bot: Bot; onClose: () =>
               </span>
             </div>
           })}
-          <button className="srow" onClick={() => { setList([...list, { name: '새 루틴', cron: '0 9 * * *', when: '매일 아침 9시', prompt: '', approve: 'readonly', push: true }]); setI(list.length) }}><Icon n="plus" size={12} />새 루틴</button>
+          <button className="srow" onClick={() => { setList([...list, { name: '새 루틴', cron: '0 9 * * *', when: '매일 아침 9시', prompt: '', approve: 'always', push: true }]); setI(list.length) }}><Icon n="plus" size={12} />새 루틴</button>
           {cur ? <button className="srow" style={{ color: 'var(--error)', marginTop: 'auto' }} onClick={() => { setList(list.filter((_, k) => k !== i)); setI(0) }}><Icon n="x" size={12} />이 루틴 삭제</button> : null}
         </div>
         <div className="sheet-b" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -463,7 +463,7 @@ export function RoutineSheet({ bot, onClose, draft }: { bot: Bot; onClose: () =>
             </div>
             <div className="field"><label>끝나면 폰으로 한 줄 푸시</label><select value={cur.push === false ? 'off' : 'on'} onChange={(e) => upd({ push: e.target.value === 'on' })}><option value="on">켬</option><option value="off">끔</option></select></div>
             {/* 🔴 always 가 bypassPermissions 라는 사실을 모르고 고르면 안 된다 (AA-4) */}
-            <div className="field"><label>승인 수준 · 사람이 없을 때</label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{([['readonly', '계획만 세운다', '파일을 쓰지 않아요. 기본값'], ['folder', '이 폴더 안에서는 쓴다', 'todo.md·노트 갱신까지 스스로'], ['always', '무엇이든 한다', '⚠ 모든 확인을 건너뜁니다(bypassPermissions)']] as const).map(([v, t, sub]) => <button key={v} className={`preset ${(cur.approve ?? 'readonly') === v ? 'on' : ''}`} style={{ padding: '10px 12px', minWidth: 150 }} onClick={() => upd({ approve: v })}><b style={{ fontSize: 12 }}>{t}</b><small>{sub}</small></button>)}</div></div>
+            <div className="field"><label>승인 수준 · 사람이 없을 때</label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{([['always', '묻지 않고 바로 한다', '기본값 · 사람이 없어도 끝까지 돈다 (모든 확인을 건너뜀)'], ['folder', '이 폴더 안에서만 쓴다', 'todo.md·노트 갱신까지 스스로'], ['readonly', '계획만 세운다', '파일을 쓰지 않아요']] as const).map(([v, t, sub]) => <button key={v} className={`preset ${(cur.approve ?? 'always') === v ? 'on' : ''}`} style={{ padding: '10px 12px', minWidth: 150 }} onClick={() => upd({ approve: v })}><b style={{ fontSize: 12 }}>{t}</b><small>{sub}</small></button>)}</div></div>
             {cur.lastError ? <div className="rterr" style={{ border: '1px solid var(--error)', borderRadius: 8, padding: '8px 10px' }}><b>이 루틴은 지금 안 걸려 있어요</b><br />{cur.lastError}</div> : null}
             {ran ? <div className="rtnext" style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>{ran}</div> : null}
           </> : <div className="empty">루틴이 없어요. 왼쪽에서 추가하세요.</div>}

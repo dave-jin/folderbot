@@ -70,3 +70,41 @@ describe('AH · 모델 이름표와 목록 주워 오기 (2026-09-24)', () => {
     expect(modelsFromBinary(bin)).toBe(found)                     // 두 번째는 캐시 (200MB 를 다시 안 읽는다)
   })
 })
+
+describe('AI · 첫 목록은 호스트 CLI 가 아는 것에서 (2026-09-24)', () => {
+  it('종류별 **가장 최신 하나씩**만 첫 목록, 나머지는 더 많은 모델', async () => {
+    const { splitModels } = await import('../../src/core/agents')
+    const { first, more } = splitModels([
+      'claude-opus-5', 'claude-opus-5-5', 'claude-opus-4-8',
+      'claude-fable-5', 'claude-fable-5-1', 'claude-sonnet-5', 'claude-haiku-4-5',
+    ])
+    expect(first.map((m) => m.v)).toEqual(['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5', 'claude-haiku-4-5'])
+    expect(first.map((m) => m.t)).toEqual(['Fable 5.1', 'Opus 5.5', 'Sonnet 5', 'Haiku 4.5'])
+    expect(more.map((m) => m.v)).toContain('claude-opus-5')
+    expect(more.map((m) => m.v)).toContain('claude-opus-4-8')
+    expect(more.map((m) => m.v)).not.toContain('claude-opus-5-5')   // 첫 목록과 겹치지 않는다
+  })
+
+  it('🔴 호스트 CLI 가 낡아 Opus 5.5 를 모르면 **목록에 안 뜬다** — 고를 수 없는 것을 보여 주면 400 이 난다', async () => {
+    const { splitModels } = await import('../../src/core/agents')
+    const old = splitModels(['claude-opus-5', 'claude-opus-4-8', 'claude-sonnet-5'])
+    expect(old.first.map((m) => m.v)).toEqual(['claude-opus-5', 'claude-sonnet-5'])
+    expect(old.first.map((m) => m.v)).not.toContain('claude-opus-5-5')
+  })
+
+  it('5 와 5.5 의 차례를 숫자로 센다 — 글자 순서로 세면 5.5 가 5 보다 앞선다', async () => {
+    const { splitModels, modelTitle, modelParts } = await import('../../src/core/agents')
+    expect(splitModels(['claude-opus-5-5', 'claude-opus-5']).first[0].v).toBe('claude-opus-5-5')
+    expect(splitModels(['claude-opus-5', 'claude-opus-5-5']).first[0].v).toBe('claude-opus-5-5')
+    expect(splitModels(['claude-opus-4-10', 'claude-opus-4-9']).first[0].v).toBe('claude-opus-4-10')
+    expect(modelTitle('claude-haiku-4-5')).toBe('Haiku 4.5')
+    expect(modelParts('claude-opus-5-5-20260401')).toEqual({ fam: 'opus', ver: [5, 5] })
+    expect(modelParts('<synthetic>')).toBeNull()
+  })
+
+  it('사람이 붙인 설명은 살린다', async () => {
+    const { splitModels } = await import('../../src/core/agents')
+    const { first } = splitModels(['claude-sonnet-5', 'claude-haiku-4-5'])
+    expect(first.find((m) => m.v === 'claude-sonnet-5')?.d).toBe('빠름')
+  })
+})
