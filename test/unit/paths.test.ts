@@ -74,8 +74,13 @@ describe('botRelOf — 절대 경로 → 봇 폴더 기준 rel (볼트 안·폴�
 
 describe('bareFileNames — 파일명만 적힌 것도 후보 (G)', () => {
   it('백틱 안·문장 속 파일명 · URL 은 아님 · 경로가 있으면 경로도 함께', () => {
-    expect(bareFileNames('설명서 PDF 가 나왔습니다 — `이한율_준비할것_설명서_2026-09-19.pdf` (A4 13쪽)')).toEqual(['이한율_준비할것_설명서_2026-09-19.pdf'])
-    expect(bareFileNames('그림은 그림.png 이고 https://x.com/a.png 는 링크다')).toEqual(['그림.png'])
+    /* ⚠ **AP 뒤로는 «완전일치» 로 재지 않는다** (2026-09-24) — 띄어쓰기가 든 이름을 잡으려고 «왼쪽으로 한 낱말 더»
+       변형을 **함께** 낸다(`그림은 그림.png` 처럼 없는 것도 섞인다). 어느 것이 진짜인지는 호스트가 고른다.
+       그래서 여기서 지킬 것은 둘이다 — **진짜가 들어 있나** · **들어오면 안 되는 것이 없나**. */
+    expect(bareFileNames('설명서 PDF 가 나왔습니다 — `이한율_준비할것_설명서_2026-09-19.pdf` (A4 13쪽)')).toContain('이한율_준비할것_설명서_2026-09-19.pdf')
+    const g = bareFileNames('그림은 그림.png 이고 https://x.com/a.png 는 링크다')
+    expect(g).toContain('그림.png')
+    expect(g.some((x) => /x\.com|https/.test(x)), JSON.stringify(g)).toBe(false)   // URL 은 여전히 후보가 아니다
     expect(candidatePaths('메모는 `files/메모.md` 를, 설명서는 `설명서.pdf` 를 보세요')).toEqual(expect.arrayContaining(['files/메모.md', '설명서.pdf']))
     expect(candidatePaths('버전 v1.2.3 을 배포했다')).toEqual([])
   })

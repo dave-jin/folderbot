@@ -40,14 +40,57 @@ const SKIP = [
  * @param max 한 답에서 만들 칩의 상한. 너무 많으면 그것대로 시끄럽다.
  */
 /** 파일명만 적힌 것(«설명서.pdf») — 알려진 확장자로 끝나는 낱말. 폴더는 호스트가 찾는다(봇 폴더 → 참조 폴더 → 볼트) (G · 2026-09-19) */
-const BARE_RE = /(?<![\/\w.\-@])[^\s/`"'()\[\]<>|:]{1,120}\.(?:pdf|png|jpe?g|gif|webp|svg|md|txt|docx?|pptx?|xlsx?|hwp|csv|json|zip|mp4|mov|key|numbers|pages|canvas)(?![\w.\-])/gi
+/** 알려진 확장자 — `BARE_RE` 와 「메일로 오인된 파일 이름」 판정이 **같은 목록**을 쓴다(두 벌이 되면 한쪽이 낡는다) */
+export const FILE_EXT = 'pdf|png|jpe?g|gif|webp|svg|md|txt|docx?|pptx?|xlsx?|hwp|csv|json|zip|mp4|mov|key|numbers|pages|canvas'
+const BARE_RE = new RegExp(String.raw`(?<![\/\w.\-@])[^\s/\`"'()\[\]<>|:]{1,120}\.(?:${FILE_EXT})(?![\w.\-])`, 'gi')
+
+/**
+ * 🔴 **AP · 파일 이름이 메일 주소로 오인돼 링크가 되는 것을 되돌린다** (2026-09-24 Dave · 스크린샷_2229).
+ *
+ * 맥 캡처 도구는 `CleanShot … PM@2x.png` 처럼 **`@` 가 든 이름**을 짓는다. 마크다운(GFM)은 그걸
+ * `이름@도메인.확장자` 로 보고 **`<a href="mailto:PM@2x.png">`** 로 감싼다. 그러면 두 가지가 한꺼번에 망가진다 —
+ *   ① 링크 안은 칩으로 안 바꾸므로 **파일 칩이 영영 안 생기고**
+ *   ② 눌러도 파일이 아니라 **메일 앱이 뜬다.**
+ * ⚠ 진짜 메일은 건드리지 않는다 — 끝이 **우리가 아는 파일 확장자**일 때만 되돌린다(`dave@example.com` 은 그대로).
+ */
+const MAILTO_FILE = new RegExp(String.raw`<a href="mailto:([^"]*\.(?:${FILE_EXT}))">([^<]*)</a>`, 'gi')
+export function unlinkFileMailto(html: string): string {
+  return String(html ?? '').replace(MAILTO_FILE, (m, href, text) => (String(text).trim() === String(href).trim() ? text : m))
+}
 export function bareFileNames(text: string, max = 20): string[] {
   if (!text) return []
   let masked = text
   for (const re of SKIP) masked = masked.replace(re, (m) => ' '.repeat(m.length))
   const out: string[] = []
-  for (const m of masked.matchAll(BARE_RE)) { const v = m[0]; if (!out.includes(v)) out.push(v); if (out.length >= max) break }
-  return out
+  const push = (v: string) => { if (v && v.length <= 160 && !out.includes(v)) out.push(v) }
+  for (const m of masked.matchAll(BARE_RE)) {
+    const core = m[0], at = m.index ?? 0
+    /**
+     * 🔴 **AP · 이름에 띄어쓰기가 여럿이어도 통째로 잡는다** (2026-09-24 Dave · 스크린샷_2229 —
+     *    `CleanShot 2026-09-24 at 10.25.19 PM@2x.png` 가 칩이 안 됐다). 맥 캡처 도구가 이렇게 짓는다.
+     * ⚠ AK 에서 고친 것은 **슬래시가 든 경로**뿐이었고, 슬래시 없는 맨 이름에는 왼쪽으로 넓히는 길이
+     *    **아예 없었다**(주석에는 있다고 적혀 있었다) — 공백에서 그냥 끊겨 없는 파일을 가리켰다.
+     * ⚠ **어디까지가 이름인지는 글만 봐서는 못 정한다.** 그래서 정하지 않는다 — 1낱말·2낱말·… 변형을
+     *    함께 내고 **호스트가 «있는 것» 을 고른다**(화면이 그중 가장 긴 것을 칩으로 쓴다).
+     * ⚠ 멈추는 자리 셋 — ① `@`(적어 넣기 표식)를 만나면 그 뒤부터가 이름이고 거기서 끝 ② 다섯 낱말
+     *    ③ 파일 이름에 못 오는 글자. 안 그러면 앞 문장을 통째로 삼킨다.
+     */
+    const vars: string[] = []
+    let start = at
+    for (let n = 0; n < 5; n++) {
+      const w = /(\S+)[ \t]$/.exec(masked.slice(0, start))
+      if (!w) break
+      const word = w[1]
+      if (/[/`"'()\[\]<>|:]/.test(word)) break
+      start -= w[0].length
+      vars.push(text.slice(start, at + core.length).replace(/^@/, ''))
+      if (word.startsWith('@')) break                  // 적어 넣기 표식 — 여기가 이름의 시작이다
+    }
+    for (const v of vars.reverse()) push(v)             // 긴 것부터
+    push(core)
+    if (out.length >= max) break
+  }
+  return out.slice(0, max)
 }
 
 export function candidatePaths(text: string, max = 20): string[] {

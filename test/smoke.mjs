@@ -825,6 +825,8 @@ try {
           writeFileSync(join(fdir, '설명서.pdf'), '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000052 00000 n \n0000000101 00000 n \ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n160\n%%EOF\n')
           writeFileSync(join(fdir, '그림.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'))
           writeFileSync(join(fdir, '보고서.docx'), 'PK\u0003\u0004 not really'); writeFileSync(join(fdir, 'dup.md'), '# A\n'); writeFileSync(join(fdir, 'sub/dup.md'), '# B\n')
+          /* AP · 맥 캡처 도구가 짓는 이름 — **띄어쓰기 넷 + `@`**. 종전에는 공백에서 끊겨 칩이 안 됐다(2026-09-24 Dave) */
+          writeFileSync(join(fdir, 'CleanShot 2026-09-24 at 10.25.19 PM@2x.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'))
           const hashBefore = await pg.evaluate(() => location.hash)
           const sidG = (await api(`/bots/${bot.id}/sessions`, { name: 'g-doc' })).id; await pg.evaluate((h) => { location.hash = h }, `#bot=${bot.id}&s=${sidG}`); await wait(600)
           const closeDoc = async () => { for (let i = 0; i < 3 && (await pg.$('.docwrap')); i++) { await pg.keyboard.press('Meta+Shift+D'); await wait(300) } }
@@ -856,6 +858,33 @@ try {
           const rr = await fetch(base + `/api/bots/${bot.id}/raw?rel=${encodeURIComponent('files/설명서.pdf')}`, { headers: { 'x-fb-as': 'macbook' } }); if (rr.status !== 200 || !/pdf/.test(rr.headers.get('content-type') ?? '')) fail('G 원격: raw pdf ' + rr.status)
           await closeDoc(); await fetch(base + `/api/sessions/${sidG}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(800)
           ok('PDF 칩 — pdf→뷰어 · png→img · docx→미리보기 없음+외부에서 열기 ↗ · 파일명만(찾기 · 여럿이면 고르기) · 원격은 호스트 스트리밍')
+        }
+        /**
+         * 🔴 **AP · 띄어쓰기가 여럿인 이름도 칩이 된다** (2026-09-24 Dave: *«왜 이 파일은 칩으로 안만들어진거야?»*
+         *    · 스크린샷_2229 — `CleanShot 2026-09-24 at 10.25.19 PM@2x.png` 가 글자로만 남았다. 맥 캡처 도구가 이렇게 짓는다).
+         * ⚠ 위의 G 검사는 **백틱 코드 경로**를 보는데 이건 **맨 글자**라 길이 다르다 — 글에서 후보를 뽑아
+         *    호스트에 «있느냐» 를 묻고 칩으로 바꾸는 쪽이다. 그래서 따로 잰다.
+         */
+        {
+          const NAME = 'CleanShot 2026-09-24 at 10.25.19 PM@2x.png'
+          const hashB = await pg.evaluate(() => location.hash)
+          const sidP = (await api(`/bots/${bot.id}/sessions`, { name: 'ap-chip' })).id
+          await pg.evaluate((h) => { location.hash = h }, `#bot=${bot.id}&s=${sidP}`); await wait(600)
+          await api(`/sessions/${sidP}/send`, { text: `되읊어: 캡처는 ${NAME} 입니다` })
+          let ch = []
+          for (let i = 0; i < 40 && !ch.some((c) => c[1] === `files/${NAME}`); i++) { await wait(250); ch = await pg.$$eval('.amsg .pchip', (r) => r.map((x) => [x.textContent, x.dataset.rel])) }
+          if (!ch.some((c) => c[1] === `files/${NAME}`)) {
+            /* ⚠ 갈라서 본다 — 글이 안 온 건지 · 호스트가 못 찾은 건지 · **렌더러가 링크로 감쌌는지**.
+               실제로 세 번째였다: 마크다운이 `PM@2x.png` 를 메일로 보고 `<a href="mailto:…">` 로 감쌌다. */
+            const html = (await pg.evaluate(() => document.querySelector('.amsg .md')?.innerHTML ?? '(md 없음)').catch(() => '')) ?? ''
+            const ex = await api(`/bots/${bot.id}/exists`, { rels: [NAME] })
+            fail('🔴 AP: 띄어쓰기가 넷인 이름이 칩이 안 됐다 · 칩=' + JSON.stringify(ch) + ' · exists=' + JSON.stringify(ex) + ' · html=' + JSON.stringify(html.slice(0, 260)))
+          }
+          /* 🔴 메일 링크로 감싸지지 않았는지도 함께 본다 — 감싸지면 칩이 안 될 뿐 아니라 **눌렀을 때 메일 앱이 뜬다** */
+          if (await pg.$('.amsg .md a[href^="mailto:"]')) fail('🔴 AP: 파일 이름이 메일 링크로 감싸졌다 · ' + JSON.stringify(await pg.$$eval('.amsg .md a[href^="mailto:"]', (r) => r.map((x) => x.getAttribute('href')))))
+          for (let i = 0; i < 3 && (await pg.$('.docwrap')); i++) { await pg.keyboard.press('Meta+Shift+D'); await wait(300) }
+          await fetch(base + `/api/sessions/${sidP}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashB); await wait(800)
+          ok('AP 칩 — 띄어쓰기 넷 + @ 가 든 이름도 통째로 칩')
         }
         /**
          * 🔴 **I · 입력창 줄내림** (2026-09-19, 실측 `test/repro-enter.mjs`) — ⇧⏎ 한 번에 줄이 보인다(끝 줄바꿈의 자리표 <br>) ·
