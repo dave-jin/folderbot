@@ -1300,7 +1300,9 @@ try {
                *   모든 탭의 왼쪽 상단 버튼을 클릭하면 무조건 폴더 리스트로»*.
                */
               // 👉 는 어디서든 봇 목록 — 채팅에서
-              await drag(120, 500, 320, 505); if ((await view()) !== 'list') fail('AD: 👉 → 봇 목록 ' + (await view()))
+              /** 🔴 AH(2026-09-24 Dave) · 쓸기는 **맨 왼쪽 가장자리에서만** — 안쪽에서 잡으면 쓸리는 행과 다툰다 */
+              await drag(120, 500, 320, 505); if ((await view()) === 'list') fail('🔴 AH: 안쪽(120px)에서 잡은 끌기가 봇 목록을 열었다')
+              await drag(8, 500, 260, 505); if ((await view()) !== 'list') fail('AH: 가장자리 👉 → 봇 목록 ' + (await view()))
               const dl = await hp.evaluate(() => { const d = document.querySelector('.drawer.left'); return { open: d?.classList.contains('open'), home: !!d?.querySelector('.mhome'), rows: d?.querySelectorAll('.mrow').length ?? 0, w: d?.getBoundingClientRect().width, scrim: !!document.querySelector('.scrim') } })
               if (!dl.open || !dl.home || dl.rows < 2 || dl.w > 500 * 0.9 || !dl.scrim) fail('AD: 왼쪽 서랍 = 봇 목록(홈) ' + JSON.stringify(dl))
               await hp.screenshot({ path: 'test/tmp/h-narrow-left.png' })
@@ -1349,8 +1351,20 @@ try {
               if (!kept.right || kept.ttl !== '할 일') fail('🔴 AG: 목록을 여는 순간 있던 화면이 사라졌다(채팅이 드러난다) ' + JSON.stringify(kept))
               const zs = await hp.evaluate(() => { const z = (q) => { const e = document.querySelector(q); return e ? +getComputedStyle(e).zIndex : null }; return { left: z('.drawer.left'), scrim: z('.scrim'), right: z('.drawer.right') } })
               if (!(zs.left > zs.scrim && zs.scrim > zs.right)) fail('AG: 목록 > 스크림 > 있던 화면 차례가 아니다 ' + JSON.stringify(zs))
-              await hp.keyboard.press('Escape'); await wait(350)
+              /**
+               * 🔴 **AH · 목록을 도로 넣으면 있던 화면으로 돌아간다** (2026-09-24 Dave: «항상 채팅 화면으로 가더라»).
+               *    목록은 덮개일 뿐이라 걷으면 밑에 있던 것이 나와야 한다.
+               */
+              await hp.keyboard.press('Escape'); await wait(400)
+              const back1 = await hp.evaluate(() => ({ view: document.querySelector('.app').dataset.view, ttl: document.querySelector('.drawer.right .hdr .ttl')?.textContent ?? null }))
+              if (back1.view !== 'panel' || back1.ttl !== '할 일') fail('🔴 AH: 목록을 닫았더니 「할 일」이 아니라 딴 데로 갔다 ' + JSON.stringify(back1))
               await tapNav(hp, 'files'); await wait(400); await topLeft('폴더')
+              // 문서에서도 같다 — 닫으면 문서로 돌아온다
+              await tapNav(hp, 'doc'); await wait(450)
+              await hp.click('.drawer.right .hdr .rb.glassb'); await wait(450)
+              await hp.keyboard.press('Escape'); await wait(400)
+              if ((await view()) !== 'doc') fail('🔴 AH: 문서에서 목록을 닫았더니 문서로 안 돌아왔다 ' + (await view()))
+              await tapNav(hp, 'chat'); await wait(350)
 
               /** 🔴 AD · 문서 탭은 **비어 있어도 눌린다** — 흐린 단추는 「고장」 으로 읽힌다 */
               await hp.evaluate(() => { const b = document.querySelector('.tabbar [data-tab="doc"]'); if (b?.disabled) throw new Error('문서 탭이 disabled 다') })
@@ -3840,7 +3854,7 @@ try {
           const drag = async (x0, y0, x1, y1) => { await pg.mouse.move(x0, y0); await pg.mouse.down(); for (let i = 1; i <= 6; i++) await pg.mouse.move(x0 + ((x1 - x0) * i) / 6, y0 + ((y1 - y0) * i) / 6); await pg.mouse.up(); await wait(250) }
           await pg.click('.mrow'); await wait(400)
           if ((await view()) !== 'chat') fail('폰 제스처: 대화 화면에서 시작해야 한다 ' + (await view()))
-          await drag(120, 420, 300, 428)                  // 오른쪽으로 → 뒤로(홈)
+          await drag(8, 420, 188, 428)                    // AH · 가장자리에서 오른쪽으로 → 봇 목록
           if ((await view()) !== 'list') fail('폰 제스처: 오른쪽으로 끌었는데 뒤로 안 간다 ' + (await view()))
           await pg.click('.mrow'); await wait(400)
           await drag(200, 420, 260, 560)                  // 비스듬히 아래로 = 읽어 내려가기 — 넘기지 않는다
@@ -3852,8 +3866,10 @@ try {
           if ((await view()) !== 'panel') fail('폰 제스처: 하단 탭 «폴더» 로 폴더가 안 열린다 ' + (await view()))
           await pg.click('.rpwrap .rb'); await wait(400)  // 🔴 AD · 좌상단은 무조건 봇 목록이다
           if ((await view()) !== 'list') fail('🔴 AD: 패널 좌상단이 봇 목록으로 안 간다 ' + (await view()))
-          await pg.keyboard.press('Escape'); await wait(350)
-          if ((await view()) !== 'chat') fail('폰 제스처: Esc 로 대화에 못 돌아왔다 ' + (await view()))
+          // AH(2026-09-24) · 목록을 닫으면 **있던 화면**(폴더)으로 돌아온다 — 채팅이 아니다
+          await pg.keyboard.press('Escape'); await wait(400)
+          if ((await view()) !== 'panel') fail('🔴 AH: 목록을 닫았더니 있던 화면(폴더)으로 안 돌아왔다 ' + (await view()))
+          await tapNav(pg, 'chat'); await wait(350)
           // «최신으로» — 규칙 자체를 잰다(transform 으로 가운데를 맞추면 :active 에 진다) + 보이면 눌러서 제자리인지
           const rule = await pg.evaluate(() => [...document.styleSheets].flatMap((sh) => { try { return [...sh.cssRules].map((r) => r.cssText) } catch { return [] } }).find((t) => t.startsWith('.tobot {') || t.startsWith('.tobot{')) ?? '')
           if (/transform:\s*translate/.test(rule) || !/translate:\s*-50%/.test(rule)) fail('최신으로: 가운데 맞춤이 transform 이다 — :active 의 scale 에 덮인다 · ' + rule)

@@ -1,5 +1,5 @@
 import type { PermissionMode } from '../core/types'
-import { AGENT_EFFORTS, AGENT_MODELS, DEFAULT_EFFORT, DEFAULT_MODEL, MORE_MODELS, type AgentModel, type ProviderId } from '../core/agents'
+import { AGENT_EFFORTS, AGENT_MODELS, DEFAULT_EFFORT, DEFAULT_MODEL, MORE_MODELS, type AgentModel, type ProviderId, sameModel } from '../core/agents'
 import { mergeModels } from '../core/modelList'
 import { api } from './api'
 
@@ -53,10 +53,16 @@ export const MODES: { v: PermissionMode; t: string; d: string }[] = [
   { v: 'bypassPermissions', t: '항상 허용', d: '묻지 않음 — 루틴·신뢰하는 폴더에서만' }
 ]
 /** 이름이 목록에 없으면 **지어내지 않고** id 를 다듬어 그대로 보여 준다 — 사용자가 직접 넣은 이름일 수 있다 */
+/**
+ * AH · 🔴 **날짜 꼬리표가 붙어도 제 이름표를 단다** (2026-09-24). CLI 는 답에 `claude-opus-5-5-20260…` 처럼
+ * 판을 박아 보낼 수 있는데 `===` 로만 찾으면 못 찾아 **소문자 대체 이름**(「opus 5」)이 칩에 떴다.
+ * 같은 모델인지는 `sameModel` 하나가 정한다(호스트도 같은 함수를 쓴다).
+ */
 export const modelLabel = (id?: string, vendor?: ProviderId): string =>
-  modelsFor(vendor).find((m) => m.v === id)?.t
+  modelsFor(vendor).find((m) => sameModel(m.v, id))?.t
   ?? AGENT_MODELS.codex.find((m) => m.v === id)?.t
-  ?? AGENT_MODELS.claude.find((m) => m.v === id)?.t
+  ?? AGENT_MODELS.claude.find((m) => sameModel(m.v, id))?.t
+  ?? MORE_MODELS.claude.find((m) => sameModel(m.v, id))?.t
   ?? (id ? id.replace(/^claude-/, '').replace(/-\d{8}$/, '').replace(/-(\d)-(\d)$/, ' $1.$2').replace(/-/g, ' ') : modelLabel(DEFAULT_MODEL[vendor ?? 'claude'], vendor))
 export const effortLabel = (v?: string, vendor?: ProviderId): string => effortsFor(vendor).find((e) => e.v === v)?.t ?? effortsFor(vendor).find((e) => e.v === DEFAULT_EFFORT[vendor ?? 'claude'])?.t ?? '높음'
 export const modeLabel = (v?: string): string => MODES.find((m) => m.v === v)?.t ?? '자동'
