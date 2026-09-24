@@ -58,7 +58,9 @@ function openDeepLink(url) {
 function navigate(hash) {
   if (!win) { pendingNav = hash; showWin(); return }
   showWin()
-  win.webContents.executeJavaScript(`location.hash=${JSON.stringify(hash.replace(/^#/, ''))}`).catch(() => {})
+  /* AQ · `location.hash=` 는 기록을 한 칸 쌓는다(뒤로 쓸기가 걷어 갈 곳이 생긴다) — 같은 자리에 덮어쓰고
+     화면에는 직접 알린다(`replaceState` 는 `hashchange` 를 안 쏜다). */
+  win.webContents.executeJavaScript(`(()=>{const h=${JSON.stringify(hash.replace(/^#/, ''))};history.replaceState(null,'',h?'#'+h:location.pathname+location.search);dispatchEvent(new HashChangeEvent('hashchange'))})()`).catch(() => {})
 }
 function showWin() { if (!win) createWin(); if (win.isMinimized()) win.restore(); win.show(); win.focus(); if (app.dock) app.dock.show(); try { updater.checkOnFocus() } catch {} }
 

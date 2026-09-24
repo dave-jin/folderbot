@@ -79,6 +79,8 @@ const deadGap = (scope) => pg.evaluate((sel) => {
 }, scope)
 
 const shots = []
+await pg.waitForSelector('.tabbar [data-tab]', { timeout: 10000 }).catch(() => {})   // ⚠ 늦게 뜨면 «탭 없음» 으로 읽혀 화면을 하나도 안 찍는다(실측)
+console.log('  들어간 자리:', JSON.stringify(await pg.evaluate(() => ({ view: document.querySelector('.app')?.dataset.view, hash: location.hash.slice(0, 30), hlen: history.length, tabbar: !!document.querySelector('.tabbar') }))))
 const tabs = await pg.$$eval('.tabbar [data-tab]', (r) => r.map((x) => [x.dataset.tab, (x.textContent || '').trim()]))
 console.log('탭:', JSON.stringify(tabs))
 for (const [id, label] of tabs) {
@@ -101,6 +103,26 @@ for (const [id, label] of tabs) {
   const f = `test/tmp/shot-${id}.png`
   await pg.screenshot({ path: f })
   shots.push({ label, gap: g1?.gap ?? null, grow: g0 && g1 ? g1.gap - g0.gap : null, who: g1?.who ?? '', file: f })
+}
+/**
+ * AQ · **봇 목록 서랍** — Dave 가 사파리 뒤로 쓸기와 헷갈린 자리(IMG_2124). 우리 것은 **목록만 위로 덮고
+ * 뒤 화면은 제자리에 선다.** 그것을 눈으로도 보고 수치로도 남긴다.
+ */
+await pg.keyboard.press('Escape'); await wait(400)
+await pg.waitForSelector('.tabbar [data-tab="chat"]', { timeout: 8000 }).catch(() => {})
+if (await pg.$('.tabbar [data-tab="chat"]')) { await pg.click('.tabbar [data-tab="chat"]'); await wait(500) }
+{
+  const before = await pg.evaluate(() => { const c = document.querySelector('.col.chat'); return c ? Math.round(c.getBoundingClientRect().left) : null })
+  const menu = await pg.$('.chat-hdr .rb, .chat-hdr button')
+  if (menu) { await menu.click(); await wait(600) }
+  const st = await pg.evaluate(() => {
+    const d = document.querySelector('.drawer.left'), c = document.querySelector('.col.chat')
+    const z = (el) => (el ? Number(getComputedStyle(el).zIndex) || 0 : null)
+    return { open: !!d?.classList.contains('open'), drawerZ: z(d), scrimZ: z(document.querySelector('.scrim')), chatLeft: c ? Math.round(c.getBoundingClientRect().left) : null, drawerLeft: d ? Math.round(d.getBoundingClientRect().left) : null }
+  })
+  await pg.screenshot({ path: 'test/tmp/shot-list.png' })
+  console.log(`  봇 목록 서랍 · 열림 ${st.open} · 서랍 z=${st.drawerZ}(스크림 ${st.scrimZ}) · 뒤 화면 x ${before} → ${st.chatLeft} ${before === st.chatLeft ? '(제자리 ✅)' : '(따라 움직임 🔴)'} · test/tmp/shot-list.png`)
+  await pg.keyboard.press('Escape'); await wait(400)
 }
 // 모델 시트
 await pg.click('.tabbar [data-tab="chat"]'); await wait(600)

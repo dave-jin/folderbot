@@ -57,6 +57,14 @@ function useHash(): [Record<string, string>, (p: Record<string, string>) => void
   const [h, setH] = useState<Record<string, string>>(parse)
   useEffect(() => { const f = () => setH(parse()); window.addEventListener('hashchange', f); return () => window.removeEventListener('hashchange', f) }, [])
   /**
+   * ⛔ **AQ · 「뒤로가기를 가로채는 덫」은 놓지 않는다** (2026-09-24 실측으로 폐기).
+   *    `popstate` 로 되돌리는 안전장치를 넣어 봤더니 **정상 이동까지 되돌렸다** — 같은 문서 안의 이동
+   *    (알림 딥링크·`#` 링크·주소창 이동)도 `popstate` 를 쏘기 때문이다. 실측: `#bot=…` 로 들어가자마자
+   *    덫이 주소를 지워 **봇 목록으로 튕겼다**(`view:list · hash:""`). 알림에서 그 대화로 가는 길이 깨질 자리였다.
+   * ⇒ 막는 방식은 하나로 간다 — **기록을 아예 안 쌓는다**(`useHash` · 토큰 떼기 · 셸 딥링크 셋 다).
+   *    쌓이는 곳이 없으면 뒤로 갈 곳도 없고, 덫이 필요 없다. 검사가 `history.length` 로 그것을 잠근다.
+   */
+  /**
    * 🔴 **AO · 화면을 옮겨도 «페이지 기록» 을 쌓지 않는다** (2026-09-24 Dave: *«왼쪽 혹은 오른쪽으로 쓸기에서
    *    이전 혹은 다음 페이지로 이동하는 기능이 여전히 남아 있어. 이거 없애기로 했는데»*).
    *
@@ -151,7 +159,7 @@ function useViewportLock(): void {
 export function App() {
   const { s } = useStore()
   useViewportLock()
-  const [authed, setAuthed] = useState(() => { const h = new URLSearchParams(location.hash.slice(1)); const t = h.get('token'); if (t) { setToken(t); h.delete('token'); location.hash = h.toString(); location.reload() } return !!token() })
+  const [authed, setAuthed] = useState(() => { const h = new URLSearchParams(location.hash.slice(1)); const t = h.get('token'); if (t) { setToken(t); h.delete('token'); history.replaceState(null, '', h.toString() ? `#${h}` : location.pathname + location.search); location.reload() }   /* AQ · 여기서 `location.hash =` 를 쓰면 **첫 로드에 기록이 한 칸** 생긴다 — 사파리 뒤로 쓸기에는 그 한 칸이면 충분하다 */ return !!token() })
   useEffect(() => { const f = () => setAuthed(false); window.addEventListener('fb:authlost', f); return () => window.removeEventListener('fb:authlost', f) }, [])
   const perm = usePerms() // ⚠ 훅은 early return 앞에 — 뒤에 두면 React #310(훅 수 변동)
   /**
