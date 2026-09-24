@@ -129,6 +129,12 @@ function favImg(url: string): HTMLImageElement {
   return img
 }
 const MDLINK_RE = /\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g
+/**
+ * 아이콘 + 링크 첫 글자를 한 묶음으로 — 그 사이에서 줄이 바뀌면 아이콘만 윗줄 끝에 남는다(2026-09-25 디자인 검수 · 채팅의 `.fvw` 와 같은 뜻).
+ * `inclusiveStart` 라야 바로 앞(side -1)의 아이콘 위젯까지 같은 묶음에 들어간다.
+ */
+const FVW = Decoration.mark({ class: 'fvw', inclusiveStart: true })
+const firstLen = (t: string): number => (Array.from(t)[0] ?? '').length || 1
 
 /**
  * 바깥 링크는 바깥에서 연다 (2026-09-17 Dave: «문서의 링크도 … 바로 클릭이 가능해야 해»).
@@ -142,7 +148,8 @@ function openExt(url: string): void { window.open(url, '_blank', 'noopener,noref
  * `data-lf/lt` 는 mousedown 에서 «캐럿이 이 링크 안인가» 를 가리는 데 쓴다 — 안이면 누르는 것은 편집이다.
  */
 function xlink(url: string, lf: number, lt: number): Decoration {
-  return Decoration.mark({ class: 'lp-xl', attributes: { 'data-href': url, 'data-lf': String(lf), 'data-lt': String(lt), title: url } })
+  // `inclusiveStart` — 링크 앞 아이콘 위젯(side 1)도 같은 마크 안에 들어가야 아이콘과 첫 글자가 한 묶음(`FVW`)으로 이어진다
+  return Decoration.mark({ class: 'lp-xl', inclusiveStart: true, attributes: { 'data-href': url, 'data-lf': String(lf), 'data-lt': String(lt), title: url } })
 }
 
 /**
@@ -800,15 +807,17 @@ function build(state: EditorState): { deco: DecorationSet; atoms: Atom[] } {
     MDLINK_RE.lastIndex = 0
     for (let m = MDLINK_RE.exec(text); m; m = MDLINK_RE.exec(text)) {
       const at = line.from + m.index + 1
-      marks.push(Decoration.widget({ widget: new FavWidget(m[2]), side: -1 }).range(at))
+      marks.push(Decoration.widget({ widget: new FavWidget(m[2]), side: 1 }).range(at))
       marks.push(xlink(m[2], line.from + m.index, line.from + m.index + m[0].length).range(at, at + m[1].length))
+      marks.push(FVW.range(at, at + firstLen(m[1])))
     }
     const bare = new RegExp(BARE_URL_RE.source, 'g')
     for (let m = bare.exec(text); m; m = bare.exec(text)) {
       if (text[m.index - 1] === '(') continue          // `[글](주소)` 의 주소 — 위에서 이미 달았다
       const from = line.from + m.index, to = from + m[0].length
-      marks.push(Decoration.widget({ widget: new FavWidget(m[0]), side: -1 }).range(from))
+      marks.push(Decoration.widget({ widget: new FavWidget(m[0]), side: 1 }).range(from))
       marks.push(xlink(m[0], from, to).range(from, to))
+      marks.push(FVW.range(from, from + firstLen(m[0])))
     }
 
     /**

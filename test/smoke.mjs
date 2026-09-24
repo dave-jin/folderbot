@@ -2247,6 +2247,11 @@ try {
             const wb = await pg.evaluate(() => [document.querySelector('.mded .cm-content'), document.querySelector('.chat-body .md'), document.querySelector('.umsg')].filter(Boolean).map((e) => ({ c: e.className.slice(0, 30), wb: getComputedStyle(e).wordBreak, ow: getComputedStyle(e).overflowWrap })))
             if (!wb.length || wb.some((x) => x.wb !== 'keep-all' || x.ow !== 'anywhere')) fail('🔴 한국어 줄바꿈: 본문 칸이 낱말 가운데서 끊긴다(keep-all 아님) · ' + JSON.stringify(wb))
           }
+          // 🔴 문서 링크의 아이콘은 첫 글자와 한 묶음 — 아이콘만 윗줄 끝에 남던 것 (2026-09-25 디자인 검수)
+          {
+            const fw = await pg.evaluate(() => [...document.querySelectorAll('.mded img.fvic')].map((i) => { const w = i.closest('.fvw'); return { w: !!w, t: w ? w.textContent.length : 0 } }))
+            if (!fw.length || fw.some((x) => !x.w || x.t < 1)) fail('🔴 문서 링크: 아이콘이 링크 글자와 묶이지 않았다 · ' + JSON.stringify(fw))
+          }
           // ⚠ 열어 둔 채로 파일을 지우면 문서 열이 다시 읽으며 404 를 낸다 — 먼저 다른 파일로 옮긴다
           await pg.evaluate(() => { const t = [...document.querySelectorAll('.trow')].find((x) => /todo\.md/.test(x.textContent ?? '')); t?.click() })
           await wait(700)
