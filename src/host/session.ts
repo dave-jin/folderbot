@@ -331,6 +331,21 @@ export class SessionManager extends EventEmitter {
     r.readAt = next; this.persist(r); this.emit('sessions', r.botId)
     return r
   }
+  /**
+   * 🔴 **AV · 이 봇의 모든 세션을 읽음으로** (2026-09-25 Dave 승인: 「모두 읽음」 단추).
+   *    봇 줄의 더블링은 **세션 하나라도** 안 읽었으면 켜지는데, 어느 세션인지 찾아 끝까지 내려야만 풀렸다.
+   * ⚠ 읽은 지점은 각 세션의 **마지막 답 시각**으로 적는다(`markRead` 와 같은 원칙) — 누르는 사이 온 답까지 삼키지 않는다.
+   * @returns 새로 읽음이 된 세션 수
+   */
+  readAll(botId: string): number {
+    let n = 0
+    for (const r of this.recs.values()) {
+      if (r.botId !== botId || !r.lastReplyAt || (r.readAt ?? 0) >= r.lastReplyAt) continue
+      r.readAt = r.lastReplyAt; this.persist(r); n++
+    }
+    if (n) this.emit('sessions', botId)
+    return n
+  }
   rename(id: string, name: string): void { const r = this.recs.get(id); if (!r) return; r.name = name; r.named = true; this.persist(r); this.emit('sessions', r.botId) }
   /**
    * 🔴 **첫 말이 제목이 된다** (2026-09-15 Dave: «첫 채팅이 진행되면 그에 맞는 채팅 제목을 자동으로»).

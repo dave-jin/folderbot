@@ -29,7 +29,10 @@ b,strong { color:var(--w); font-weight:600 }
 .ico { stroke:currentColor; fill:none; stroke-width:1.4; stroke-linecap:round; stroke-linejoin:round; flex:none }
 .mono { font-family:var(--mono) }
 .dot { width:6px; height:6px; border-radius:50%; display:inline-block; flex:none }
-.dot.run { background:var(--run) } .dot.wait { background:var(--wait) } .dot.done { background:var(--done) } .dot.err { background:var(--err) } .dot.none { background:transparent }
+.dot.run { background:var(--run) }
+/* AV · 세션 행의 「안 읽음」 — 배지와 같은 말(링 = 볼 게 있다). 제목도 밝고 굵게 해서 **어느 세션인지** 한눈에 */
+.dot.unread { background:transparent; box-shadow:inset 0 0 0 1.5px var(--done) }
+.srow.unread .n { color:var(--w); font-weight:600 } .dot.wait { background:var(--wait) } .dot.done { background:var(--done) } .dot.err { background:var(--err) } .dot.none { background:transparent }
 .ib { position:relative; display:inline-flex; width:24px; height:24px; border-radius:6px; align-items:center; justify-content:center; color:var(--t3); flex:none } .ib:hover { color:var(--t2); background:var(--hover) } .ib.on { color:var(--w); background:var(--sel) }
 .ib .bd, .strip .ib .bd, .rb .bd { position:absolute; right:-4px; top:-3px; min-width:12px; height:12px; border-radius:6px; background:var(--t); color:var(--onAccent); font-size:9px; font-weight:700; display:flex; align-items:center; justify-content:center; padding:0 3px; line-height:1 }
 .btn { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line2); border-radius:6px; padding:5px 12px; font-size:12.5px; color:var(--t); white-space:nowrap; min-height:30px } .btn:hover { background:var(--hover) }
