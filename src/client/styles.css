@@ -1096,6 +1096,8 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .sortbar button { flex:none; padding:2px 9px; border-radius:999px; font-size:11px; line-height:1.6; text-align:center; color:var(--t3); background:none; border:0 }
 .sortbar button:hover { color:var(--t); background:var(--hover) }
 .sortbar button.on { background:var(--sel); color:var(--w) }
+/* AZ · 폰 홈의 정렬 — 손가락 크기(높이 36)·섹션 제목과 같은 들여쓰기. 레일과 같은 부품이라 모양은 여기서만 키운다 */
+.mhome .sortbar { padding:10px 16px 2px; gap:6px } .mhome .sortbar .lb { font-size:13px } .mhome .sortbar button { font-size:14px; min-height:36px; padding:0 14px }
 .brow.dsrc { opacity:.4 }
 .brow.dover { box-shadow:inset 0 2px 0 var(--run) }
 

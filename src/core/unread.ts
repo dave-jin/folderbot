@@ -67,3 +67,11 @@ const LIVE: BotMood[] = ['work', 'hold', 'wait', 'error']
 export function badgeOn(mood: BotMood, unread: boolean): boolean {
   return unread || LIVE.includes(mood)
 }
+
+/* ── 레일 «상태» 정렬 차례 (App 레일·폰 홈이 같이 쓴다) ── */
+/**
+ * 🔴 **AZ · 「대기」(hold — 다른 에이전트·도구를 기다리는 중)가 빠져 있었다** (2026-09-25 Dave: *«'대기' 항목은 맨 밑으로 보내지 말고
+ *    '유휴' 항목보다는 위에»*). 표에 없는 갈래는 `?? 9` 로 맨 뒤에 섰다 — 바로 위 경고가 말한 그 사고다. 대기는 아직 끝나지 않은 일이라
+ *    일하는 중 바로 뒤에 둔다. 유휴(idle)·절전(sleep)이 맨 뒤다. ⚠ 새 갈래를 만들면 `core/unread` 의 `BotMood` 와 이 표를 함께 늘린다
+ */
+export const MOOD_RANK: Record<BotMood, number> = { wait: 0, work: 1, hold: 2, error: 3, done: 4, idle: 5, sleep: 6 }
