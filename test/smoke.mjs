@@ -4322,6 +4322,12 @@ try {
           await pg.screenshot({ path: 'test/tmp/phone-swipe.png' })
           // ── 새 폰 할 일 (V19) — 행 생김새 · 오른쪽 여백 · 길게 눌러 옮기기 · 편집 시트 ──
           await pg.waitForSelector('.panel .ptodo', { timeout: 5000 })
+          // 🔴 완료 표시는 ✓ 그대로 — 컨텍스트 게이지의 `.ring svg` 회전이 걸려 «›» 로 누웠었다 (2026-09-25 디자인 검수)
+          {
+            const tr = await pg.evaluate(() => { const v = document.querySelector('.panel .ptodo.done .ring svg'); return v ? getComputedStyle(v).transform : null })
+            if (tr === null) fail('폰 할 일: 완료 항목의 체크가 안 보인다(검사 전제 깨짐)')
+            if (tr !== 'none') fail('🔴 폰 할 일: 완료 체크가 돌아가 «›» 로 보인다 · ' + tr)
+          }
         // 🔴 끊겼다 붙는 동안 바뀐 파일이 화면에 온다 (2026-09-13 Dave: «원격 모바일에서 수정된 파일이 바로 적용이 안 돼»)
         //    맥은 SSE 가 안 끊겨 프레임으로 최신이 됐고, 폰은 그 프레임을 놓친 채 /state 만 다시 읽어 할 일이 낡아 있었다.
         {
