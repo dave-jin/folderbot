@@ -1186,6 +1186,11 @@ try {
           await ph.evaluate((b64) => { const bin = atob(b64); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); const dt = new DataTransfer(); dt.items.add(new File([u8], 'paste.png', { type: 'image/png' })); const ev = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }); document.querySelector('.composer.ph .cin').dispatchEvent(ev) }, png.split(',')[1]); await wait(1500)
           const pasted = await ph.$$eval('.achips .achip .nm', (r) => r.map((x) => x.textContent)); if (!pasted.some((n) => /스크린샷_/.test(n ?? ''))) fail('N-4: 붙여넣은 그림이 칩으로 안 붙었다 ' + JSON.stringify(pasted))
           await ph.close(); await fetch(base + `/api/sessions/${sidN}`, { method: 'DELETE' })
+          // 🔴 폰 목록용 `.mrow { min-height:70px }` 가 메뉴 줄(문서 ⋯ 의 「글자 크기」)까지 늘렸다 · −/+ 는 정사각 (2026-09-25 디자인 검수 · Codex)
+          {
+            const mr = await ph.evaluate(() => { const m = document.createElement('div'); m.className = 'menu'; m.style.cssText = 'position:fixed;left:0;top:0'; m.innerHTML = '<div class="mrow"><span>글자 크기</span><button class="mb">−</button><b>14</b><button class="mb">+</button></div>'; document.body.append(m); const r = m.querySelector('.mrow').getBoundingClientRect(), b = m.querySelector('.mb').getBoundingClientRect(); m.remove(); return { h: r.height, bw: b.width, bh: b.height } })
+            if (mr.h > 60 || Math.abs(mr.bw - mr.bh) > 4) fail('🔴 폰 메뉴 줄: 목록 규칙이 새서 늘어나거나 −/+ 가 길쭉하다 · ' + JSON.stringify(mr))
+          }
           // 🔴 손가락 기기에는 키 안내를 안 쓴다 — 일하는 중의 안내가 «(⌘⏎)» 였다(⌘ 키가 없다 · 2026-09-25 디자인 검수)
           {
             await api(`/sessions/${sidN}/send`, { text: '긴스트리밍 해 줘' })

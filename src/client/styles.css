@@ -1142,7 +1142,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 
 
 /* ⋯ 메뉴 안의 «값 조절» 줄 — 누를 때마다 메뉴가 닫히면 안 되므로 단추에서 전파를 멈춘다 */
-.menu .mrow { display:flex; align-items:center; gap:8px; padding:5px 8px; font-size:12.5px; color:var(--t) }
+.menu .mrow { display:flex; align-items:center; gap:8px; padding:5px 8px; font-size:12.5px; color:var(--t); min-height:0 }   /* ⚠ min-height:0 — 폰 홈 목록의 `.mrow { min-height:70px }` 가 이 메뉴 줄까지 걸려 「글자 크기」 줄이 70px 로 늘었다(2026-09-25 디자인 검수 · Codex 지적) */
 .menu .mrow b { min-width:30px; text-align:center; color:var(--w); font-size:12px }
 .menu .mrow .mb { width:20px; height:20px; border:1px solid var(--line2); border-radius:5px; display:inline-flex; align-items:center; justify-content:center; color:var(--t2); margin-left:auto }
 .menu .mrow .mb + b + .mb { margin-left:0 }
@@ -1305,6 +1305,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
   .srow .del, .srow .ren { width:38px; height:38px }
   .seg button { min-height:38px; padding:0 14px; font-size:13px }
   .menu button, .menu .menu-a { min-height:44px }
+  .menu .mrow .mb { width:40px; height:40px; min-height:40px; border-radius:9px; font-size:16px }   /* ⚠ 위 줄이 높이만 44 로 늘려 −/+ 가 폭 20 의 길쭉한 막대가 됐다 — 정사각으로 (2026-09-25 디자인 검수) */
   .dtb .nb { width:34px; height:34px }
 
   /* V-5 ─ 문서 화면은 **경로 한 줄 + ⋯** 만 남긴다.
