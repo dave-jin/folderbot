@@ -1,6 +1,10 @@
 /** 에이전트 제공자 — 화면·호스트가 같은 이름을 쓴다 */
 export type ProviderId = 'claude' | 'codex'
-export interface Provider { id: ProviderId; name: string; bin: string | null; version: string | null }
+export interface Provider {
+  id: ProviderId; name: string; bin: string | null; version: string | null
+  /** AL · 이 맥에 같은 CLI 가 여러 벌 있을 때 **안 고른 것들**. 화면이 «왜 이 판인가» 를 말해 줄 수 있게 넘긴다 */
+  others?: { bin: string; version: string | null }[]
+}
 export const PROVIDER_LABEL: Record<ProviderId, string> = { claude: 'Claude Code', codex: 'Codex' }
 
 /**
@@ -28,10 +32,11 @@ export const AGENT_MODELS: Record<ProviderId, AgentModel[]> = {
      *    (별칭은 `"opus55"` 꼴로, 표시 이름은 `Opus 5.5` 꼴로 같은 번들에 들어 있다.)
      *    2026-09-23 실측(CLI 2.1.280 · npm 최신과 같음): Opus 5.5 **있음** · Fable 5.2 **없음**(Fable 은 5 와 5.1 뿐).
      */
-    { v: 'claude-fable-5-1', t: 'Fable 5.1', d: '가장 똑똑함 · 기본' },
-    { v: 'claude-opus-5-5', t: 'Opus 5.5', d: '' },
-    { v: 'claude-sonnet-5', t: 'Sonnet 5', d: '빠름' },
-    { v: 'claude-haiku-4-5-20251001', t: 'Haiku 4.5', d: '가장 빠름' }
+    /* AL · 설명은 **모든 줄에** 붙인다 — 한 줄만 비면 줄 높이가 들쭉날쭉해지고, 무엇이 다른지도 안 보인다 */
+    { v: 'claude-fable-5-1', t: 'Fable 5.1', d: '가장 어려운 일에 · 기본' },
+    { v: 'claude-opus-5-5', t: 'Opus 5.5', d: '큰 작업에 가장 강함' },
+    { v: 'claude-sonnet-5', t: 'Sonnet 5', d: '일상 작업에 효율적' },
+    { v: 'claude-haiku-4-5-20251001', t: 'Haiku 4.5', d: '가장 빠른 답' }
   ],
   codex: [
     // 🔴 **맨 위는 «CLI 기본»** (2026-09-13 Dave 신고) — ChatGPT 계정으로 붙으면 쓸 수 있는 모델이

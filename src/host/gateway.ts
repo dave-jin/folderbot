@@ -14,8 +14,8 @@ import type { Host } from './host'
 import { bindAddresses, tailnetInfo } from './tailnet'
 import { saveConfig } from './paths'
 import { handleMcp } from './mcp'
-import { providers } from './providers'
-import { agentModels, codexAuth, diagnose } from './auth'
+import { providers, forgetProviders } from './providers'
+import { agentModels, codexAuth, diagnose, forgetModels } from './auth'
 import { canon } from './registry'
 import { normalizeRootInput } from '../core/rootPath'
 import { searchConversations } from '../core/convSearch'
@@ -183,6 +183,20 @@ export class Gateway {
     if (p === '/api/agents' && m === 'GET') return json(200, providers())
     // 쓸 수 있는 모델 — **기계에서 주워 온다**(빌트인 목록은 화면이 빈 자리를 메울 때만 쓴다)
     if (p === '/api/agents/models' && m === 'GET') return json(200, agentModels())
+    /**
+     * 🔴 **AL · 새로고침** (2026-09-24 Dave: *«폴더봇을 종료했다가 다시 시작하면 종류별 최신 모델이 자동으로
+     *    선택되도록 바뀌거나, 혹은 리프레시가 가능하도록 했으면 좋겠는데 지금은 전혀 그렇게 되지가 않아»*).
+     * ⚠ **재시작으로는 안 고쳐지는 게 맞았다** — 고르는 코드가 판을 안 보고 «먼저 있는 경로» 를 집었기 때문이다
+     *    (`providers.resolve`). 이제 판을 보고 고르므로, 여기서 캐시만 버리면 **CLI 를 새로 깔자마자** 반영된다.
+     */
+    if (p === '/api/agents/refresh' && m === 'POST') {
+      forgetProviders(); forgetModels()
+      const ps = providers()
+      // ⚠ `refreshAuth(true)` 는 «턴이 인증 오류로 죽었다» 는 신호다 — 그걸 주면 멀쩡한 로그인을
+      //    «못 읽음» 으로 낮춰 버린다(실측: 이 줄 때문에 위임 세션이 안 돌고 idle 로 남았다). 새로고침은 그냥 다시 읽는 것이다.
+      void h.refreshAuth()
+      return json(200, { ok: true, providers: ps, models: agentModels() })
+    }
     /**
      * AJ · **CLI 업데이트를 화면에서 바로** (2026-09-24 Dave). 앱은 **호스트의 CLI** 로 도는데 그게 낡으면
      * 새 모델이 400 으로 죽는다 — 그때 사람이 어느 기계에 들어가 무엇을 쳐야 하는지 스스로 알아내야 했다.

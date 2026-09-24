@@ -87,12 +87,16 @@ b,strong { color:var(--w); font-weight:600 }
 /* ── Z · 폰 하단 탭 (2026-09-22 Dave 확정 「B · 하단 탭(내리면 숨음)」) — 떠 있던 독을 폰에서 대신한다 ──
    🔴 **탭은 서랍보다 위에 있다**(z-index > .drawer 31) — 폴더·문서를 열어도 «어디로 갈지» 가 안 사라진다.
    🔴 높이는 `--tablift` 하나로 나간다. 탭이 숨으면 0 이 되어 입력칸·서랍이 그만큼 내려온다 — 두 군데서 따로 재면 어긋난다. */
-.app.phone { --tabh:56px; --tablift:calc(var(--tabh) + env(safe-area-inset-bottom)) }
+/* 🔴 **AL · 안전영역은 토큰 하나(`--sab`)로만 읽는다** (`docs/LAYOUT.md`). `env(...)` 를 여기저기서 직접
+      부르면 ① 두 곳에서 세는 실수를 눈으로 못 잡고 ② **검사가 아예 못 잡는다** — 브라우저에는 홈 인디케이터가
+      없어 `env(safe-area-inset-bottom)` 이 늘 0 이라 「빈 띠」가 화면에 안 나타난다. `--sab` 한 곳이면
+      검사가 그 값을 34px 로 갈아 끼워 **실기기를 흉내** 낼 수 있다(스모크의 죽은 여백 검사). */
+.app.phone { --tabh:56px; --tablift:calc(var(--tabh) + var(--sab)) }
 /* 🔴 **탭이 숨어도 자리는 그대로 비워 둔다.** 숨을 때 채팅 높이까지 바뀌면 «스크롤 → 탭 숨음 → 높이 변함 →
    스크롤 튐» 이 되돌이가 된다(실측: O 의 클램프 점프). 자리를 거두는 것은 탭 자체가 없을 때(봇 목록·키보드)뿐이다. */
 .app.phone.notabs { --tablift:0px }
 .tabbar { position:absolute; left:0; right:0; bottom:0; z-index:32; display:flex; align-items:stretch;
-  height:calc(var(--tabh) + env(safe-area-inset-bottom)); padding-bottom:env(safe-area-inset-bottom);
+  height:calc(var(--tabh) + var(--sab)); padding-bottom:var(--sab);
   border-top:1px solid var(--line); background:color-mix(in srgb, var(--sb) 86%, transparent); backdrop-filter:blur(18px) saturate(1.2);
   transition:transform .2s ease-out }
 .tabbar .tb { flex:1; min-width:0; position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
@@ -116,6 +120,30 @@ b,strong { color:var(--w); font-weight:600 }
    (z-index:31) 안에서만** 셈이 된다 — 탭(32)이 늘 떠 있게 되자 시트 아래쪽 [저장] 단추가 탭에 깔려 안 눌렸다.
    높이를 탭만큼 올려 둔다(키보드가 올라오면 탭이 없어 `--tablift` 가 0 이라 저절로 제자리다). */
 .app.phone .tsheet { bottom:calc(var(--kbh, 0px) + var(--tablift)) }
+/* 🔴 **AL · 시트도 안전영역을 두 번 세고 있었다** (`docs/LAYOUT.md` 불변식 1). 탭 위로 올려 둔(`--tablift`)
+      시트가 제 `--sab` 를 또 더해, 시트 아래에 빈 띠가 남았다. 탭이 없을 때만 직접 센다. */
+.app.phone .tsheet { padding-bottom:22px }
+.app.phone.notabs .tsheet { padding-bottom:calc(var(--sab) + 22px) }
+
+/* ── AL · 「모델 선택」 시트 (Claude 앱 결 · 2026-09-24 Dave 캡처) ─────────────────────────────
+   카드 안에 줄을 담고 줄 사이는 머리카락 선. 고른 줄에는 강조색 체크. 맨 아래는 «왜 이 목록인가». */
+.msheet .sh { display:flex; align-items:center; justify-content:center; position:relative; padding:2px 0 14px }
+.msheet .sh b { font-size:17px; font-weight:600; color:var(--w) }
+.msheet .sh .x { position:absolute; left:6px; top:-2px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:var(--hair); color:var(--t2) }
+.msheet .card { background:var(--hair); border-radius:14px; overflow:hidden; margin:0 4px 10px }
+.msheet .mrow { display:flex; align-items:center; gap:12px; width:100%; min-height:60px; padding:12px 16px; text-align:left; color:inherit }
+.msheet .mrow + .mrow { border-top:1px solid var(--hair) }
+.msheet .mrow .t { flex:1; min-width:0; display:flex; flex-direction:column; gap:3px }
+.msheet .mrow .t b { font-size:17px; font-weight:500; color:var(--w) }
+.msheet .mrow .t small { font-size:13px; color:var(--t3) }
+.msheet .mrow .v { font-size:15px; color:var(--t3) }
+.msheet .mrow:active { background:rgba(255,255,255,.06) }
+.msheet .foot { display:flex; align-items:center; gap:8px; padding:2px 18px 0; font-size:12.5px; color:var(--t3) }
+/* ⚠ 판 글자가 길어도 **한 줄**로 둔다 — 넘치면 말줄임. 줄이 늘면 새로고침 단추가 화면 밖으로 밀린다(실측) */
+.msheet .foot .tx { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.msheet .foot .lnk { margin-left:auto; color:var(--run); font-size:12.5px }
+.msheet .foot .lnk:disabled { color:var(--t3) }
+.cpop .hint .lnk { color:var(--run) }
 .app.phone:not(.kb) .chat-foot { transition:bottom .2s ease-out }
 /* 「최근으로」 단추도 같이 올라온다 — 안 올리면 탭이 덮어 누를 수가 없다(실측) */
 .app.phone .tobot { bottom:calc(var(--footh) + 14px + var(--tablift)) }
@@ -631,7 +659,13 @@ b,strong { color:var(--w); font-weight:600 }
   .pfoot { padding:10px 18px calc(var(--sab) + 12px); font-size:14px }
   .doc .tabs { display:none } .dtb { padding:0 18px; height:38px; font-size:13px }
   .dbody { padding:16px 18px } .dbody .md { font-size:16px; line-height:1.7 }
-  .dfoot { display:flex; flex:none; gap:10px; align-items:center; padding:8px 16px calc(var(--sab) + 10px) } .dfoot .talk { height:44px; padding:0 18px; border-radius:22px; background:var(--box); border:1px solid var(--hair); display:inline-flex; align-items:center; font-size:14px; color:var(--t); margin-left:auto }
+  /* 🔴 **AL · 안전영역은 «한 곳에서만» 센다** (`docs/LAYOUT.md` 불변식 1 · 2026-09-24 Dave: «문서 부분에서
+        하단 탭과 문서 사이에 여백이 좀 많아»). 아래의 탭 바가 이미 `--tablift` 로 안전영역을 덮고 있는데
+        `.dfoot` 가 `--sab` 를 **또** 더해, 아무것도 없는 34pt 짜리 띠가 생겼다.
+     ⚠ 같은 종류의 버그가 이번이 네 번째다(채팅 입력칸·AD `.notabs`·AG-3 키보드·여기). 그래서 규칙을 문서로 뺐다.
+     ⚠ 탭이 없을 때(`.notabs`)만 `.dfoot` 가 안전영역을 직접 센다 — 그때는 얘가 화면 맨 아래다. */
+  .dfoot { display:flex; flex:none; gap:10px; align-items:center; padding:8px 16px 10px }
+  .app.phone.notabs .dfoot { padding-bottom:calc(var(--sab) + 10px) } .dfoot .talk { height:44px; padding:0 18px; border-radius:22px; background:var(--box); border:1px solid var(--hair); display:inline-flex; align-items:center; font-size:14px; color:var(--t); margin-left:auto }
   .todo .tools { display:none } .todo .mk { margin-top:4px } .todo .tt { font-size:16px } .todo .dsc { font-size:13.5px } .todo .ein { font-size:16px } .todo { padding:8px 84px 8px 18px } .pk .fl .hint { display:none }
   .modal, .sheet { left:8px; right:8px; top:calc(var(--sat) + 8px); bottom:calc(var(--sab) + 8px); width:auto; height:auto; max-height:none; transform:none; border-radius:16px }
   .modal-b { flex:1; min-height:0 } .modal-h { padding-top:18px }

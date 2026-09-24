@@ -388,6 +388,20 @@ try {
     if (r.status === 200 && !body.skipped) fail('🔴 AJ: 검사에서 실제로 CLI 를 올리려 했다 — QA 는 실 CLI 를 안 건드린다 ' + JSON.stringify(body))
     if (r.status !== 200 && !body.error) fail('AJ: 못 했으면 왜인지 말해야 한다 ' + JSON.stringify(body))
     ok(`AJ CLI 업데이트 길 — /api/agents 에 판 · POST update ${r.status}${body.skipped ? ' (QA 는 건너뜀)' : ''}`)
+    /**
+     * 🔴 **AL · 새로고침 길과 «안 고른 CLI»** (2026-09-24 실측한 사고).
+     *    Dave 의 맥에 `claude` 가 두 벌 있었고 호스트가 **낡은 쪽**을 집어, 그 번들에 없는 Opus 5.5 가
+     *    목록에 영영 안 떴다. 재시작으로도 안 고쳐졌다 — 고를 때 **판을 안 봤기** 때문이다.
+     */
+    {
+      const rr = await fetch(base + '/api/agents/refresh', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+      const rb = await rr.json()
+      if (rr.status !== 200 || !rb.ok) fail('🔴 AL: 새로고침 길이 없다(리프레시가 안 된다) ' + rr.status + ' ' + JSON.stringify(rb).slice(0, 200))
+      if (!rb.models || !('claude' in rb.models)) fail('AL: 새로고침이 모델을 안 돌려준다 ' + JSON.stringify(rb).slice(0, 200))
+      const cl2 = (rb.providers ?? []).find((x) => x.id === 'claude')
+      if (cl2 && !('others' in cl2)) fail('AL: 제공자에 «안 고른 CLI»(others) 가 없다 — 화면이 왜 이 판인지 못 말한다 ' + JSON.stringify(cl2))
+      ok(`AL 새로고침 — 후보 다시 훑기 · 모델 ${rb.models.claude.length}개${cl2?.others?.length ? ` · 안 고른 CLI ${cl2.others.length}벌` : ''}`)
+    }
   }
   const cands = await mcp('tools/call', { name: 'bots_candidates', arguments: {} }); if (!/제품_Rondo/.test(cands.result.content[0].text)) fail('mcp candidates')
   const sent = await mcp('tools/call', { name: 'bot_send', arguments: { bot: '재무_CFO', text: '숫자 검토' } })
@@ -1391,6 +1405,70 @@ try {
                 if (!pop.rows.some((r) => /카메라로 찍기/.test(r))) fail('AK: 카메라(진짜 1depth)는 남아 있어야 한다 ' + JSON.stringify(pop.rows))
                 await hp.keyboard.press('Escape'); await hp.fill('.composer .cin', ''); await wait(300)
                 ok(`AK 폰 — 대화 아래 여백 ${pad.pb}px(탭 ${pad.tab}) · + 팝업 안 잘림 · 메뉴 ${pop.rows.length}줄(사진·파일 한 줄)`)
+              }
+              /**
+               * 🔴 **AL · 안전영역을 두 곳에서 세지 않는다** (`docs/LAYOUT.md` 불변식 1 · 2026-09-24 Dave:
+               *    *«특정 모델뿐만 아니라 **어떤 환경에서도** 이런 불필요한 여백은 만들어지면 안 되거든»*).
+               * ⚠ **브라우저에는 안전영역이 없어서**(`env(safe-area-inset-bottom)` = 0) 이 버그는 검사에
+               *    한 번도 안 잡혔다 — 실기기에서만 빈 띠가 생겼다. 그래서 `--sab` 를 **한 토큰**으로 모아 두고
+               *    여기서 값을 갈아 끼워 실기기를 흉내 낸다.
+               * ⚠ 판정은 «안전영역을 키웠을 때 여백이 **같이 커지는가**» 하나다. 절대 여백은 못 쓴다 —
+               *    목록이 짧아 화면을 안 채우면 아래가 비는 게 정상이라 거짓 빨강이 난다.
+               * ⚠ 범위를 화면별로 좁힌다 — 채팅 입력칸은 어느 탭에서나 살아 있어 늘 그것이 잡힌다(실측).
+               */
+              {
+                /**
+                 * ⚠ **재는 것은 «바닥에 붙는 UI» 뿐이다.** 스크롤되는 목록(할 일·폴더)을 재면 탭 바가 올라간 만큼
+                 *    다른 줄이 드러나서 여백이 **한 줄 높이만큼 들쭉날쭉**해진다 — 거짓 빨강이다(실측 +10px).
+                 *    안전영역을 두 번 셀 위험이 있는 것은 애초에 **아래에 고정된 것**뿐이다.
+                 */
+                const SCOPE = { chat: '.chat-foot', doc: '.dfoot', files: '.pfoot' }
+                const gapOf = (sel) => hp.evaluate((s2) => {
+                  const tb = document.querySelector('.tabbar'); if (!tb) return null
+                  const top = tb.getBoundingClientRect().top
+                  const root = document.querySelector(s2); if (!root) return null
+                  let low = -1, who = ''
+                  for (const el of root.querySelectorAll('*')) {
+                    if (el.children.length) continue                       // 잎만 — 컨테이너 상자는 패딩을 품어 버그를 0 으로 보이게 한다
+                    if (el.closest('.tabbar') || el.closest('.drawer.left') || el.closest('.tsheet') || el.closest('.backdrop')) continue
+                    const st = getComputedStyle(el)
+                    if (st.visibility === 'hidden' || st.display === 'none' || Number(st.opacity) === 0) continue
+                    const r = el.getBoundingClientRect()
+                    if (r.width < 2 || r.height < 2 || r.bottom > top + 1 || r.bottom < 0) continue
+                    if (r.bottom > low) { low = r.bottom; who = el.className || el.tagName }
+                  }
+                  return low < 0 ? null : { gap: Math.round(top - low), who: String(who).slice(0, 24) }
+                }, sel)
+                const setSab = (v) => hp.evaluate((n) => document.documentElement.style.setProperty('--sab', `${n}px`), v)
+                const dead = [], why = []
+                let openedDoc = false     // ⚠ 내가 연 문서는 내가 닫는다 — 뒤 검사가 «열린 문서가 없을 때» 를 본다
+                if ((await view()) === 'list') { await hp.keyboard.press('Escape'); await wait(400) }
+                /* ⚠ **채팅에서 입력 중이면 탭 바가 숨는다**(AE 계약). 앞 검사가 입력칸에 초점을 두고 끝나면
+                      여기서 잴 탭 바가 없어 검사가 조용히 헛돈다 — 실제로 그랬다. 초점을 먼저 뗀다. */
+                await hp.evaluate(() => document.activeElement?.blur()); await wait(500)
+                for (const [id, sel] of Object.entries(SCOPE)) {
+                  const tab = await hp.$(`.tabbar [data-tab="${id}"]`)
+                  if (!tab) { why.push(`${id}: 탭 없음`); continue }
+                  await tab.click(); await wait(600)
+                  if (id === 'doc' && !(await hp.$('.dfoot'))) {           // 문서는 실제로 열어야 아래 줄이 생긴다
+                    const back = await hp.$('.tabbar [data-tab="files"]')
+                    if (back) { await back.click(); await wait(600); const f = await hp.$('.panel .secb button.trow:not(.dir)'); if (f) { await f.click(); await wait(900); openedDoc = true } }
+                    await tab.click(); await wait(600)
+                  }
+                  await setSab(0); await wait(200); const g0 = await gapOf(sel)
+                  await setSab(34); await wait(200); const g1 = await gapOf(sel)
+                  await setSab(0)
+                  if (!g0 || !g1) { why.push(`${id}: ${sel} 안에서 잴 잎이 없음`); continue }
+                  dead.push({ id, grow: g1.gap - g0.gap, gap: g1.gap, who: g1.who })
+                }
+                const twice = dead.filter((d) => d.grow > 2)
+                if (twice.length) fail('🔴 AL: 안전영역을 두 곳에서 세는 화면이 있다(그만큼 빈 띠가 생긴다) ' + JSON.stringify(twice))
+                if (!dead.some((d) => d.id === 'doc')) fail('AL: 문서 화면을 못 재 봤다 — 검사가 헛돌았다 ' + JSON.stringify({ dead, why, tabs: await hp.$$eval('.tabbar [data-tab]', (r) => r.map((x) => x.dataset.tab)).catch(() => null), view: await view() }))
+                /* ⚠ 다음 검사는 «열린 문서가 없고 채팅에서 시작» 을 전제한다 — **내가 바꾼 것은 내가 되돌린다.**
+                      안 되돌리면 뒤의 AD 검사가 «빈 문서 화면이 안 나온다» 로 엉뚱하게 빨개진다(실측). */
+                if (openedDoc) { const d = await hp.$('.tabbar [data-tab="doc"]'); if (d) { await d.click(); await wait(500); await hp.click('.col.doc'); await hp.keyboard.press('ControlOrMeta+w'); await wait(600) } }
+                const home = await hp.$('.tabbar [data-tab="chat"]'); if (home) { await home.click(); await wait(600) }
+                ok(`AL 죽은 여백 — ${dead.map((d) => `${d.id} ${d.gap}px(+${d.grow})`).join(' · ')}`)
               }
               // 아래 검사들은 «목록이 열린 채» 를 본다 — 도로 열어 둔다
               if ((await view()) !== 'list') { await drag(8, 500, 260, 505); await wait(400) }
