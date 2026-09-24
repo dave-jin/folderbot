@@ -1,5 +1,5 @@
 import type React from "react"
-import { unreadRing } from '../core/unread'
+import { badgeOn, unreadRing } from '../core/unread'
 import type { Holder } from '../core/waiting'
 import type { SessionState } from '../core/types'
 
@@ -59,7 +59,8 @@ export function FolderBot({ color, size = 36, mood = 'idle', mono = false, work,
       </g>
       {/* AN · 링은 «네가 볼 차례» 일 때만 — 도는 중(주황·청록)에는 원닷 하나. 규칙은 `core/unread` 의 `unreadRing` */}
       {unread && unreadRing(mood) ? <circle className="uring" cx="56" cy="56" r="11.5" fill="none" stroke={badge[mood] ?? 'var(--done)'} strokeWidth="3" opacity=".75" /> : null}
-      {badge[mood] ?? unread ? <circle className="badge" cx="56" cy="56" r="7" fill={badge[mood] ?? 'var(--done)'} stroke="var(--bg)" strokeWidth="3" /> : null}
+      {/* AU · 닷은 «돌고 있거나 기다리거나» «읽을 게 남았을» 때만 — 끝났고 봤으면 없다. 규칙은 `core/unread.badgeOn` */}
+      {badgeOn(mood, unread) ? <circle className="badge" cx="56" cy="56" r="7" fill={badge[mood] ?? 'var(--done)'} stroke="var(--bg)" strokeWidth="3" /> : null}
     </svg>
   )
 }
