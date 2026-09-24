@@ -34,3 +34,21 @@ export function shouldMarkRead(o: { atBottom: boolean; streaming: boolean; lastR
   if (!o.atBottom || o.streaming) return false
   return sessionUnread(o.lastReplyAt, o.readAt)
 }
+
+/**
+ * 🔴 **AN · 안 읽음 링은 「네가 볼 차례」일 때만 두른다** (2026-09-24 Dave: *«주황색 표시, 즉 안읽은게 있지만
+ *    끝나지 않은 상태에서는 더블링이 나오면 안돼 … 그냥 진행 중일때는 주황색 원닷으로만 가자»* ·
+ *    범위 확인 답: *«초록 + 노랑 + 빨강 처럼 **사람 확인이 필요한 모든 경우**에 링이 필요해»*).
+ *
+ * 배지는 두 겹이다 — 꽉 찬 원(안) + 안 읽었을 때 더해지는 얇은 링(밖). 종전에는 **상태와 무관하게** 안 읽기만 하면
+ * 링을 둘러서, 봇이 한창 돌고 있는 주황에도 링이 생겼다. 그 링은 「가서 봐라」는 뜻인데 그때는 볼 것이 없다.
+ *
+ * ⚠ 색 목록으로 적지 않는다 — **「사람 차례인가」** 하나로 가른다. 색이 바뀌어도 규칙은 안 낡는다.
+ *   · 볼 차례다 → `done`(끝남) · `wait`(네 차례) · `error`(오류) · 배지 없음(쉬는 중인데 안 읽은 답이 있다 = 끝난 것)
+ *   · 아직 도는 중 → `work`(봇이 일하는 중) · `hold`(남을 기다리는 중) → **원닷 하나만**
+ */
+export type BotMood = 'idle' | 'work' | 'hold' | 'wait' | 'done' | 'sleep' | 'error'
+const RUNNING: BotMood[] = ['work', 'hold']
+export function unreadRing(mood: BotMood): boolean {
+  return !RUNNING.includes(mood)
+}
