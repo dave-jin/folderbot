@@ -2796,6 +2796,29 @@ try {
             let fv = 0
             for (let i = 0; i < 40; i++) { fv = await pg.evaluate(() => document.querySelectorAll('.chat-body .md a img.fvic').length); if (fv) break; await wait(300) }
             if (!fv) fail('채팅: 답 속 링크에 파비콘 자리가 없다')
+            /**
+             * 🔴 **자리표시자 지구본은 보이고, 아이콘은 링크 글자와 한 줄에 선다** (2026-09-25 디자인 검수).
+             *    지구본 SVG 가 두 번 인코딩돼(`%2523666`) 선이 안 그려졌고 → 빈칸만 남았다. 또 아이콘 뒤에서 줄이 바뀌어
+             *    폰에서 아이콘(과 밑줄 토막)만 윗줄 끝에 남았다. 폭을 좁혀 가며 아이콘과 첫 글자의 줄을 잰다.
+             */
+            const fvx = await pg.evaluate(async () => {
+              const a = [...document.querySelectorAll('.chat-body .md a')].find((x) => x.querySelector('img.fvic'))
+              const img = a.querySelector('img.fvic')
+              const svg = img.src.startsWith('data:image/svg') ? decodeURIComponent(img.src.split(',')[1]) : ''
+              const wrap = img.closest('.fvw'), md = a.closest('.md'), w0 = md.style.width, out = []
+              for (let w = 140; w <= 420; w += 7) {
+                md.style.width = w + 'px'
+                const t = wrap ? [...wrap.childNodes].find((n) => n.nodeType === 3) : null
+                if (!t) break
+                const r = document.createRange(); r.setStart(t, 0); r.setEnd(t, 1)
+                if (Math.abs(r.getBoundingClientRect().top - img.getBoundingClientRect().top) > 8) out.push(w)
+              }
+              md.style.width = w0
+              return { wrap: !!wrap, head: wrap?.textContent ?? '', svgBad: svg && !/stroke="#666"/.test(svg), split: out }
+            })
+            if (!fvx.wrap || fvx.head.length !== 1) fail('🔴 채팅 링크: 아이콘이 첫 글자와 묶이지 않았다 · ' + JSON.stringify(fvx))
+            if (fvx.svgBad) fail('🔴 채팅 링크: 자리표시자 지구본 색이 깨졌다(두 번 인코딩) · ' + JSON.stringify(fvx))
+            if (fvx.split.length) fail('🔴 채팅 링크: 아이콘과 링크 글자가 다른 줄로 갈라진다 · 폭 ' + fvx.split.join(','))
             await pg.fill('.composer .cin', ''); await wait(300)
             ok('링크 파비콘 — 채팅 · 문서 · 입력창이 같은 캐시를 본다')
           }

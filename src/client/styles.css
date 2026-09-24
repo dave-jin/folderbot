@@ -929,6 +929,7 @@ b,strong { color:var(--w); font-weight:600 }
 .fvic { width:13px; height:13px; border-radius:2.5px; vertical-align:-2px; margin-right:5px; object-fit:contain; flex:none; display:inline-block }
 .md a { text-decoration:none; border-bottom:1px solid var(--line2) } .md a:hover { border-bottom-color:var(--t3) }
 .mded .fvic { margin-right:4px }
+.fvw { white-space:nowrap }   /* 아이콘 + 링크 첫 글자 — 둘 사이에서 줄이 안 바뀐다 (favicons.ts keepWithText) */
 /* 2026-09-17 Dave: «문서의 링크도 파비콘 + 바로 클릭, 표 안에서도». 본문 표식(.lp-xl)은 마크라 글자를 안 바꾸고,
    표 칸의 링크(.lp-cl)는 칸에 들어가면 원문으로 풀린다 (MdEditor `xlink` · `cellNodes`) */
 .mded .lp-xl { cursor:pointer }

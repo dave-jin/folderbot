@@ -51,9 +51,13 @@ export function onFavicon(url: string, cb: (d: string | null) => void): () => vo
   return () => { set?.delete(cb) }
 }
 
-/** 지구본 — 아이콘이 오기 전에도, 끝내 없어도 이 자리가 유지된다 */
+/**
+ * 지구본 — 아이콘이 오기 전에도, 끝내 없어도 이 자리가 유지된다.
+ * ⚠ 색은 `#666` 그대로 쓴다 — `encodeURIComponent` 가 알아서 `%23` 으로 바꾼다. 종전에는 `%23666` 을 넣어 **두 번** 인코딩돼
+ *    SVG 가 `stroke="%23666"`(틀린 색)을 받았고, 선이 안 그려져 **빈칸**만 남았다(2026-09-25 디자인 검수 실측).
+ */
 export const GLOBE = 'data:image/svg+xml;utf8,' + encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="%23666" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M2.2 8h11.6M8 2.2c3 3.4 3 8.2 0 11.6M8 2.2c-3 3.4-3 8.2 0 11.6"/></svg>'
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="#666" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M2.2 8h11.6M8 2.2c3 3.4 3 8.2 0 11.6M8 2.2c-3 3.4-3 8.2 0 11.6"/></svg>'
 )
 
 /**
@@ -71,6 +75,28 @@ export function decorateLinks(root: HTMLElement): void {
     const now = faviconNow(a.href)
     img.src = now ?? GLOBE
     a.insertBefore(img, a.firstChild)
+    keepWithText(a, img)
     if (now === undefined) onFavicon(a.href, (d) => { if (d) img.src = d })
   }
+}
+
+/**
+ * 🔴 **아이콘은 링크 글자와 같은 줄에 선다** (2026-09-25 디자인 검수 · 폰 채팅 실측). 그림과 글자 사이는 줄이 바뀔 수 있는 자리라,
+ *    링크가 줄 끝에 걸리면 아이콘(과 밑줄 한 토막)만 윗줄 끝에 남고 주소는 아랫줄로 떨어졌다.
+ *    아이콘과 **첫 글자 하나**만 줄바꿈 없는 묶음에 넣는다 — 링크 전체를 묶으면 긴 주소가 폰 폭을 뚫는다.
+ * ⚠ U+2060(단어 결합 문자)은 그림 옆에서 안 먹는다(Chromium 실측) — 그래서 묶음을 쓴다.
+ */
+function keepWithText(a: HTMLElement, img: HTMLImageElement): void {
+  const w = document.createTreeWalker(a, NodeFilter.SHOW_TEXT)
+  let t = w.nextNode() as Text | null
+  while (t && !t.data.trim()) t = w.nextNode() as Text | null
+  if (!t) return
+  const lead = t.data.length - t.data.trimStart().length
+  const first = Array.from(t.data.slice(lead))[0] ?? ''
+  t.splitText(lead + first.length)          // t 에는 «앞 공백 + 첫 글자» 만 남는다
+  const head = t.data.slice(lead)
+  t.data = t.data.slice(0, lead)
+  const span = document.createElement('span'); span.className = 'fvw'
+  span.append(img, head)
+  t.parentNode?.insertBefore(span, t.nextSibling)
 }
