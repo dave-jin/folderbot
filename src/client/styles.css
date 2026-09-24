@@ -297,6 +297,13 @@ b,strong { color:var(--w); font-weight:600 }
 /* 컴포저 팝업 — 슬래시 · @ · 모드 · 모델 · 노력 · 컨텍스트 · + 메뉴 */
 .cpop { position:absolute; bottom:calc(100% + 8px); left:0; width:min(440px, 100%); background:var(--box); border:1px solid var(--line2); border-radius:10px; box-shadow:0 14px 40px rgba(0,0,0,.55); padding:6px; z-index:8; display:flex; flex-direction:column; gap:1px; max-height:min(420px, 60vh); overflow:auto }
 .cpop.r { left:auto; right:0; width:300px } .cpop.plus { width:270px }
+/* 🔴 **AK · 입력창이 길어지면 팝업 윗줄이 화면 밖으로 잘려 못 눌렀다** (2026-09-24 Dave: *«채팅창 공간이
+      너무 길어지면 플러스 버튼이 잘려서 선택이 안 돼»*). 팝업은 입력창 위에 붙어 **위로** 자라는데
+      `max-height` 가 `60vh` 고정이라, 입력창이 화면의 절반을 먹으면 팝업 머리가 화면 위로 넘어갔다.
+      스크롤이 있어도 넘어간 부분은 **손이 닿지 않는다.**
+   ⚠ 남은 공간은 CSS 로 셀 수 없다(입력창 높이가 글자 수에 따라 변한다) — `App.tsx` 가 제 위치를 재서
+      `--popmax` 로 내려 준다. 값이 없으면 종전 그대로. */
+.cpop { max-height:min(420px, 60vh, var(--popmax, 100vh)) }
 .cpop .h { font-size:10.5px; color:var(--t3); padding:5px 10px 2px } .cpop hr { border:0; border-top:1px solid var(--line); margin:4px 0; width:100% }
 .prow2 { display:flex; align-items:center; gap:10px; padding:6px 10px; border-radius:6px; width:100%; min-height:32px; color:var(--t) } .prow2:hover, .prow2.on { background:var(--sel) } .prow2 .t { flex:1; min-width:0; display:flex; flex-direction:column } .prow2 .t b { font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .prow2 .t small { font-size:11.5px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .prow2 .k { font-family:var(--mono); font-size:11px; color:var(--t3); flex:none } .prow2 .p { font-size:11.5px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
 .cpop .hint { display:flex; gap:12px; padding:7px 10px 3px; font-size:11px; color:var(--t3); border-top:1px solid var(--line); margin-top:4px } .cpop .hint .sp { flex:1 }
@@ -1150,6 +1157,13 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .app.phone .chat-hdr.hdr { position:relative; height:calc(44px + var(--sat)); min-height:calc(44px + var(--sat)); padding:var(--sat) 6px 0; gap:4px; border-bottom:0; background:var(--bg) }
 .app.phone .chat-hdr .hb-menu { flex:none } .app.phone .chat-hdr .hname { flex:1; min-width:0; display:flex; align-items:center } .app.phone .chat-hdr .hnb { display:flex; align-items:center; gap:8px; min-width:0; max-width:100%; height:40px; padding:0 6px; border-radius:10px; font-size:16px; color:var(--w) } .app.phone .chat-hdr .hnb .bname { min-width:0 } .app.phone .chat-hdr .hnb .dn { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .app.phone .chat-hdr .hnb .dot { flex:none }
 .app.phone .chat-body { padding-top:12px }
+/* 🔴 **AK · 폰에서 대화의 맨 아래가 탭 바 뒤로 숨었다** (2026-09-24 Dave: *«대기 화면이 나오면 채팅의 맨 아래
+      화면까지 안 보이는 버그»*). 폰의 `.chat-foot` 은 `bottom:var(--tablift)` 로 **탭 바만큼 떠 있는데**
+      아래 여백은 `--footh` 만 비워 뒀다 — 그래서 늘 탭 바 높이만큼 모자랐다. 대기 줄이 마지막 줄이라 그 때
+      제일 크게 티가 났을 뿐, 평소에도 마지막 한 줄이 가려지고 있었다.
+   ⚠ 바로 옆 `.tobot` 은 이미 `+ var(--tablift)` 를 더하고 있었다 — **둘이 같은 셈을 써야 한다.**
+   ⚠ 탭이 숨으면(`.notabs`) `--tablift` 가 0 이라 저절로 제자리다 — 키보드가 올라왔을 때를 따로 안 센다. */
+.app.phone .chat-body { padding-bottom:calc(var(--footh) + 10px + var(--tablift) + var(--settle, 0px)) }
 /* Q-2 · 폰 고정 질문은 라운드 유리 알약(.pinq) — 헤더(44px+sat, 흐름 안) 바로 아래 · 키보드로 헤더가 숨으면 맨 위 · 페이드는 글을 가리지 않게 10px */
 .app.phone .pinq { top:calc(var(--sat) + 44px + 8px); width:calc(100% - 32px); border-radius:14px; padding:9px 14px; font-size:14.5px; box-shadow:0 6px 18px rgba(0,0,0,.4) }
 .app.phone.kb .pinq { top:8px }

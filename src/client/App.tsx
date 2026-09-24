@@ -1186,7 +1186,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
    */
   const stickBottom = () => { const el = scRef.current; if (!el) return; const go = () => { el.scrollTop = el.scrollHeight }; go(); setTimeout(go, 120); setTimeout(go, 400); setTimeout(go, 800) }
   const [draft, setDraft] = useState<{ model?: string; effort?: string; permissionMode?: PermissionMode }>({})
-  const fileRef = useRef<HTMLInputElement>(null); const photoRef = useRef<HTMLInputElement>(null); const camRef = useRef<HTMLInputElement>(null); const endRef = useRef<HTMLDivElement>(null); const taRef = useRef<InlineInputHandle>(null); const scRef = useRef<HTMLDivElement>(null); const footRef = useRef<HTMLDivElement>(null); const colRef = useRef<HTMLDivElement>(null); const lastUserRef = useRef<HTMLDivElement | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null); const camRef = useRef<HTMLInputElement>(null); const endRef = useRef<HTMLDivElement>(null); const taRef = useRef<InlineInputHandle>(null); const scRef = useRef<HTMLDivElement>(null); const footRef = useRef<HTMLDivElement>(null); const colRef = useRef<HTMLDivElement>(null); const lastUserRef = useRef<HTMLDivElement | null>(null)
   const state = cur?.state ?? 'idle'; const running = state === 'running'
   /** AB · 지금 대화에서 **누가 공을 들고 있나** — 헤더·얼굴·대기 줄이 이 값 하나를 같이 쓴다 */
   const chatHolder: Holder = holderOf(state, cur?.inflight, Date.now(), cur?.bg ?? 0)
@@ -1238,7 +1238,8 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   // 컴포저 높이 → 본문 아래 여백 (유리 뒤로 글이 지나가되 가려지진 않게)
   // I-2 · 컴포저가 자라면(줄이 늘면) 본문 아래 여백(--footh)이 커진다 — 맨 아래를 보고 있었으면 **그 자리에서 따라 붙는다.**
   //   위의 스크롤 컨테이너 ResizeObserver 는 «상자 크기» 만 보므로 패딩만 커지는 이 경우를 못 본다(실측: 마지막 메시지가 52px 가려짐).
-  useEffect(() => { const el = footRef.current, col = colRef.current; if (!el || !col) return; const ro = new ResizeObserver(() => { col.style.setProperty('--footh', `${el.offsetHeight}px`); if (atBottomRef.current) followBottom() }); ro.observe(el); return () => ro.disconnect() }, [collapsed]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { const el = footRef.current, col = colRef.current; if (!el || !col) return; const ro = new ResizeObserver(() => { col.style.setProperty('--footh', `${el.offsetHeight}px`); if (atBottomRef.current) followBottom() }); ro.observe(el); return () => ro.disconnect() }, [collapsed])
+ // eslint-disable-line react-hooks/exhaustive-deps
   // 스크롤 위치 → ↓ 버튼(맨 아래가 아닐 때) · 직전 질문 고정(원래 메시지가 헤더 위로 사라졌을 때)
   /**
    * O · **따라가기는 부드럽게, 맨 아래일 때만** (2026-09-19 실측: 토큰마다 `scrollTop = scrollHeight` 로 한 줄 반씩 «툭» 붙었다 — 폰 12회·데스크톱 7회).
@@ -1509,7 +1510,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
       <div className="hint"><span>바꾸면 이 세션을 이어서 재시작해요 (대화 유지)</span></div></div>
     : pop === 'effort' ? <div className="cpop r"><div className="effort"><div className="top"><span style={{ color: 'var(--t3)', fontSize: 12.5 }}>노력</span><b>{effortLabel(cfg.effort, vend)}</b></div><div className="lbl"><span>더 빠르게</span><span>더 스마트하게</span></div><input type="range" min={0} max={effortList.length - 1} step={1} value={Math.max(0, effortList.findIndex((e) => e.v === cfg.effort))} onChange={(e) => { const v = effortList[Number(e.target.value)].v; if (v !== cfg.effort) void (async () => { if (cur) { try { await api(`/sessions/${cur.id}/settings`, { body: { effort: v } }) } catch (er) { say((er as Error).message) } } else setDraft((d) => ({ ...d, effort: v })) })() }} /><div className="steps">{effortList.map((e) => <span key={e.v}>{e.t}</span>)}</div></div><div className="hint"><span>다음 턴부터 적용 · 기본값은 설정에서</span></div></div>
     : pop === 'ctx' ? <div className="cpop r ctxpop"><div className={`big ${pct >= 80 ? 'hot' : ''}`}><Ring pct={pct} size={40} stroke={3} /><div><b>컨텍스트 {ctx ? `${pct}%` : '—'}</b><small>{ctx ? `${fmtK(ctx.used)} / ${fmtK(ctx.window)} 토큰 · 이 세션` : '첫 답이 오면 잽니다'}</small></div></div><hr /><button className="prow2" onClick={() => { setPop(''); void sendText('/compact') }}><div className="t"><b>/compact 압축</b><small>대화를 요약해 컨텍스트를 줄여요</small></div></button><div className="hint"><span>80% 를 넘으면 링이 주황</span></div></div>
-    : pop === 'plus' ? <div className="cpop plus">{phone ? <><button className="prow2" onClick={() => { setPop(''); camRef.current?.click() }}><span className="ic-cam" /><div className="t"><b>카메라로 찍기</b></div></button><button className="prow2" onClick={() => { setPop(''); photoRef.current?.click() }}><Icon n="file" size={14} color="var(--t3)" /><div className="t"><b>사진에서 고르기</b><small>여러 장 · 보관함 바로 열림</small></div></button></> : null}{bot.orchestrator ? null : <button className="prow2" onClick={() => { setPop(''); openRoutine() }}><Icon n="clock" size={14} color="var(--t3)" /><div className="t"><b>루틴으로 만들기</b><small>{routinePeek()}</small></div></button>}<button className="prow2" onClick={() => { setPop(''); fileRef.current?.click() }}><Icon n="phone" size={14} color="var(--t3)" /><div className="t"><b>이 기기에서 파일 올리기</b></div><span className="k">→ 첨부/</span></button><button className="prow2" onClick={() => { setPop(''); setPickOpen(true) }}><Icon n="folder" size={14} color="var(--t3)" /><div className="t"><b>{bot.orchestrator ? '볼트' : '이 폴더'}에서 고르기</b></div></button>{docTabs.length ? <button className="prow2" onClick={() => { setPop(''); for (const rel of docTabs) addAtt({ rel, abs: `${bot.abs}/${rel}` }) }}><Icon n="doc" size={14} color="var(--t3)" /><div className="t"><b>열린 문서 첨부 ({docTabs.length})</b></div></button> : null}<hr /><button className="prow2" onClick={() => { setPop(''); setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}@`); setCaret(text.length + 1); taRef.current?.focus() }}><span className="mono" style={{ width: 14, textAlign: 'center', color: 'var(--t3)' }}>@</span><div className="t"><b>@ 로 이름 쳐서 넣기</b></div></button><div className="hint"><span>{phone ? '사진 앱에서 복사한 이미지는 길게 눌러 붙여넣기' : '스크린샷은 ⌘V 로 붙여 넣으면 첨부/ 에 저장'}</span></div></div>
+    : pop === 'plus' ? <div className="cpop plus">{phone ? <button className="prow2" onClick={() => { setPop(''); camRef.current?.click() }}><span className="ic-cam" /><div className="t"><b>카메라로 찍기</b></div></button> : null}<button className="prow2" onClick={() => { setPop(''); fileRef.current?.click() }}><Icon n="phone" size={14} color="var(--t3)" /><div className="t"><b>{phone ? '사진·파일 고르기' : '이 기기에서 파일 올리기'}</b>{phone ? <small>사진 보관함 · 파일 앱</small> : null}</div><span className="k">→ 첨부/</span></button>{bot.orchestrator ? null : <button className="prow2" onClick={() => { setPop(''); openRoutine() }}><Icon n="clock" size={14} color="var(--t3)" /><div className="t"><b>루틴으로 만들기</b><small>{routinePeek()}</small></div></button>}<button className="prow2" onClick={() => { setPop(''); setPickOpen(true) }}><Icon n="folder" size={14} color="var(--t3)" /><div className="t"><b>{bot.orchestrator ? '볼트' : '이 폴더'}에서 고르기</b></div></button>{docTabs.length ? <button className="prow2" onClick={() => { setPop(''); for (const rel of docTabs) addAtt({ rel, abs: `${bot.abs}/${rel}` }) }}><Icon n="doc" size={14} color="var(--t3)" /><div className="t"><b>열린 문서 첨부 ({docTabs.length})</b></div></button> : null}<hr /><button className="prow2" onClick={() => { setPop(''); setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}@`); setCaret(text.length + 1); taRef.current?.focus() }}><span className="mono" style={{ width: 14, textAlign: 'center', color: 'var(--t3)' }}>@</span><div className="t"><b>@ 로 이름 쳐서 넣기</b></div></button><div className="hint"><span>{phone ? '사진 앱에서 복사한 이미지는 길게 눌러 붙여넣기' : '스크린샷은 ⌘V 로 붙여 넣으면 첨부/ 에 저장'}</span></div></div>
     : slashQ !== null && slashList.length ? <div className="cpop">{(['skill', 'cli'] as const).map((grp) => { const l = slashList.filter((c) => (grp === 'skill' ? c.kind !== 'cli' : c.kind === 'cli')); return l.length ? <div key={grp}><div className="h">{grp === 'skill' ? '스킬 · 이 폴더' : '명령'}</div>{l.map((c) => { const i = slashList.indexOf(c); return <button key={c.name} className={`prow2 ${i === sel ? 'on' : ''}`} onMouseEnter={() => setSel(i)} onClick={() => pickSlash(c)}><div className="t"><b>/{c.name}</b>{c.desc ? <small>{c.desc}</small> : null}</div>{i === sel ? <span className="k">⏎</span> : c.scope !== 'cli' && c.scope !== 'folder' ? <span className="k">{c.scope}</span> : null}</button> })}</div> : null })}<div className="hint"><span>↑↓ 이동</span><span>Tab · ⏎ 선택</span><span>⎋ 닫기</span><span className="sp" /><span>{slashList.length}개</span></div></div>
     : atQ !== null && atList.length ? <div className="cpop"><div className="h">{docTabs.length ? '열린 문서 먼저 · ' : ''}이 폴더{atQ ? ` · «${atQ}»` : ''}</div>{atList.map((f, i) => { const name = f.rel.split('/').pop() ?? f.rel; const dir = f.rel.includes('/') ? f.rel.slice(0, f.rel.lastIndexOf('/')) + '/' : ''; return <button key={f.rel} className={`prow2 ${i === sel ? 'on' : ''}`} onMouseEnter={() => setSel(i)} onClick={() => pickAt(f)}><Icon n={f.dir ? 'folder' : 'doc'} size={14} color="var(--t3)" /><div className="t"><b>{name}</b><small>{f.dir ? `폴더째${dir ? ` · ${dir}` : ''}` : dir || (docTabs.includes(f.rel) ? '열림' : '')}</small></div>{i === sel ? <span className="k">⏎</span> : null}</button> })}<div className="hint"><span>↑↓ 이동</span><span>⏎ 넣기</span><span className="sp" /><span>이름 · 경로로 찾음</span></div></div>
     : null
@@ -1518,6 +1519,30 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
    *    있었고, 대화 위에 놓으면 아무 일도 없었다(창 밖으로 떠나거나). 들어오는 순간 점선과 안내 카드가 뜬다.
    * ⚠ dragenter/leave 는 자식으로 옮길 때마다 짝으로 온다 — 세어서(`dragN`) 0 이 될 때만 걷는다. 안 세면 깜빡인다.
    */
+  /**
+   * 🔴 **AK · 입력창이 길어지면 팝업 머리가 화면 밖으로 넘어가 못 눌렀다** (2026-09-24 Dave: *«채팅창 공간이
+   *    너무 길어지면 플러스 버튼이 잘려서 선택이 안 돼»*). 팝업은 입력창 **위에** 붙어 위로 자라는데 높이 상한이
+   *    `60vh` 고정이라, 입력창이 화면 절반을 먹는 순간 위쪽 줄(카메라·사진)이 화면 위로 밀려났다.
+   *    안에 스크롤이 있어도 **화면 밖으로 나간 부분은 손이 닿지 않는다** — 그래서 «잘려서 선택이 안 된다».
+   * ⚠ 남은 공간은 CSS 만으로 못 센다(입력창 높이가 글자 수마다 변한다). 열린 뒤 **제 위치를 재서** 넘친 만큼만
+   *    깎아 `--popmax` 로 내려 준다. 천장은 헤더 아래 8px — 헤더를 덮지 않는다.
+   * ⚠ 팝업 자신을 ResizeObserver 로 보면 «깎는다 → 줄어든다 → 다시 잰다» 로 돈다. **입력창(foot)만** 본다.
+   */
+  useEffect(() => {
+    const col = colRef.current, foot = footRef.current; if (!col || !foot) return
+    const el = col.querySelector('.cpop') as HTMLElement | null
+    if (!el) { col.style.removeProperty('--popmax'); return }
+    const fit = () => {
+      col.style.removeProperty('--popmax')
+      const hdr = col.querySelector('.chat-hdr') as HTMLElement | null
+      const ceil = (hdr ? hdr.getBoundingClientRect().bottom : col.getBoundingClientRect().top) + 8
+      const over = ceil - el.getBoundingClientRect().top
+      if (over > 0) col.style.setProperty('--popmax', `${Math.max(160, el.offsetHeight - over)}px`)
+    }
+    fit()
+    const ro = new ResizeObserver(fit); ro.observe(foot)
+    return () => { ro.disconnect(); col.style.removeProperty('--popmax') }
+  }, [pop, slashQ, atQ, moreOpen])
   const dragKind = (dt: DataTransfer): '' | 'tree' | 'files' => (dt.types.includes('text/x-fb-rel') ? 'tree' : dt.types.includes('Files') ? 'files' : '')
   const dropHere = (e: React.DragEvent) => {
     dragN.current = 0; setDrop('')
@@ -1600,8 +1625,15 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
           그리고 «이 주소가 맞나» 를 보내기 전에 확인할 수 있다. */}
       {draftLinks.length ? <div className="files lchips">{draftLinks.map((u) => <LinkChip key={u} url={u} />)}</div> : null}
       <input ref={fileRef} type="file" multiple hidden onChange={(e) => void upload(Array.from(e.target.files ?? []))} />
-      {/* N-4 · 📷 사진(여러 장) · 카메라로 찍기 — 둘 다 폰만. 사진은 2단계로 끝난다 */}
-      <input ref={photoRef} type="file" accept="image/*" multiple hidden onChange={(e) => { void upload(Array.from(e.target.files ?? [])); e.target.value = '' }} />
+      {/**
+       * 🔴 **AK · 「사진에서 고르기」 줄을 없앴다** (2026-09-24 Dave: *«플러스 → 사진에서 고르기 를 눌렀을 때
+       *    세 개의 메뉴가 뜨는 대신 바로 사진첩이 열렸으면 좋겠어 … 무조건 다 1depth 로»*).
+       * ⚠ **그 세 줄짜리 시트는 우리 것이 아니라 iOS 것이다** — 웹앱이 `<input type=file>` 을 열면 사파리가
+       *    «사진 보관함 / 사진 또는 비디오 찍기 / 파일 선택» 을 반드시 한 번 띄우고, 이걸 건너뛰는 속성은 없다
+       *    (`accept="image/*"` 를 줘도 그대로 뜬다). 그러니 **우리가 없앨 수 있는 겹은 우리 줄뿐이다.**
+       * ⇒ 사진과 파일이 어차피 같은 시트로 가므로 두 줄을 **한 줄로 합쳤다**(「사진·파일 고르기」).
+       *    카메라는 `capture` 가 있어 진짜 1depth 라 그대로 남긴다.
+       */}
       <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { void upload(Array.from(e.target.files ?? [])); e.target.value = '' }} />
       {phone ? <div className="cchips">{modeBtn}{modelBtn}{effortBtn}</div> : null}
       <div className={`composer glassb ${text.includes('\n') || text.length > (phone ? 24 : 40) ? 'multi' : ''} ${phone ? 'ph' : ''}`}

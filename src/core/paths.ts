@@ -81,15 +81,35 @@ export function candidatePaths(text: string, max = 20): string[] {
       for (const e of exts.reverse()) push(e)
       push(core); if (out.length >= max) break; continue
     }
-    // 왼쪽으로 두 낱말까지 — `Area/…` → `3. Area/…`
+    /**
+     * 🔴 **AK · 파일 이름의 공백을 넘어 이어 붙인다** (2026-09-24 Dave: *«파일명에 띄어쓰기가 되어 있거나 한글이
+     *    있을 때 파일 칩이 제대로 안 보인다»*). 한글은 애초에 통과했고 — 막던 것은 **공백**이었다:
+     *    `첨부/스크린샷 2026-09-23.png` 는 `첨부/스크린샷` 에서 끊겨, 있지도 않은 파일을 가리키는 칩이 됐다.
+     *    절대 경로는 이미 오른쪽으로 넓히고 있었는데(바로 위) **상대 경로만 빠져 있었다.**
+     * ⚠ 아무 낱말이나 삼키지 않는다 — 이어 붙일 조각이 **확장자로 끝날 때만**(`… .png`) 잇는다.
+     */
+    let rend = -1
+    if (!/\.[A-Za-z0-9]{1,8}$/.test(core)) {
+      let end = at + m[0].length
+      for (let n = 0; n < 3; n++) {
+        const tail = /^ ([^\s/`"'()\[\]]+)/.exec(masked.slice(end))
+        if (!tail) break
+        end += tail[0].length
+        if (/\.[A-Za-z0-9]{1,8}$/.test(tail[1])) { rend = end; break }
+      }
+    }
+    // 왼쪽으로 두 낱말까지 — `Area/…` → `3. Area/…`. **오른쪽으로 넓힌 끝과 조합한다** (둘 다 필요한 것이
+    //   `2. Projects/…/01_기획 초안.md` 다 — 왼쪽엔 `2. `, 오른쪽엔 ` 초안.md` 가 붙는다). 긴 것부터 낸다.
     const left = masked.slice(0, at)
     const words = left.split(/(?<=\s)/).slice(-2).map((w) => w.trimStart())
-    for (let n = words.length; n >= 1; n--) {
-      const pre = words.slice(-n).join('')
-      if (!pre.trim() || /[/`"'()\[\]]/.test(pre) || pre.length > 40) continue
-      push(text.slice(at - pre.length, at + core.length))
+    for (const e of rend > 0 ? [rend, at + core.length] : [at + core.length]) {
+      for (let n = words.length; n >= 1; n--) {
+        const pre = words.slice(-n).join('')
+        if (!pre.trim() || /[/`"'()\[\]]/.test(pre) || pre.length > 40) continue
+        push(text.slice(at - pre.length, e).replace(/[.,;:!?…]+$/, ''))
+      }
+      push(text.slice(at, e).replace(/[.,;:!?…]+$/, ''))
     }
-    push(core)
     if (out.length >= max) break
   }
   return out.slice(0, max)

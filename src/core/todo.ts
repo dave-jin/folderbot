@@ -139,3 +139,34 @@ export const TODO_RULES_PROMPT = `이 폴더의 todo.md 는 사람과 봇이 같
 3. 사용자가 해야 할 일이 생기면 한 줄로 적고 대화에서 알린다. 네가 다음 세션에서 할 일도 적을 수 있다.
 4. 한 줄 = "- [ ] 제목: 설명" 이고, 네가 적는 줄 끝에는 " <!-- bot -->" 을 붙인다. 완료한 항목은 "- [x]" 로 바꾼다.
 5. 중첩·우선순위·기한 문법을 만들지 않는다. 필요하면 설명에 쓴다.`
+
+/**
+ * 🔴 **AK · 안 끝난 일이 맨 위에 온다** (2026-09-24 Dave: *«아직 끝내지 않은 항목이 맨 상단에 떠야 돼.
+ *    지금 완료된 게 굳이 너무 많이 나와서 아직 안 끝낸 리스트가 뭔지 파악하기가 너무 어려워»*).
+ * 종전 차례는 **파일 순서 그대로**였다. 「완료」 절 하나는 접혀 있었지만, 절 안에서 그 자리에 체크한 항목은
+ *   (완료 절이 없는 파일에서는 `toggleAndMove` 가 제자리에 둔다) 안 끝난 일 사이에 그대로 섞여 있었다.
+ * ⚠ **파일은 건드리지 않는다.** 이건 보여 주는 차례일 뿐이라, todo.md 를 다른 도구로 열면 쓴 그대로다.
+ */
+export const DONE_PEEK = 3
+
+/** 한 절 안 — 안 끝난 것이 위, 끝난 것이 아래. 각 무리 안 차례는 **파일 그대로** (끌어 옮긴 순서를 지킨다) */
+export function orderItems<T extends { done: boolean }>(list: T[]): T[] {
+  return [...list.filter((t) => !t.done), ...list.filter((t) => t.done)]
+}
+
+/** 절 차례 — 안 끝난 일이 하나라도 있는 절이 먼저. 그 안에서는 파일 순서 그대로 */
+export function orderSections<T extends { done: boolean }>(secs: [string, T[]][]): [string, T[]][] {
+  const live = (l: T[]) => l.some((t) => !t.done)
+  return [...secs.filter(([, l]) => live(l)), ...secs.filter(([, l]) => !live(l))]
+}
+
+/**
+ * 끝난 것은 **최근 몇 개만** 보이고 나머지는 「더보기」 뒤로.
+ * ⚠ 완료 시각은 파일에 없다 — 지어내지 않는다. 대신 `toggleAndMove` 가 체크한 줄을 **완료 절 끝**으로 보내므로
+ *    **파일에서 뒤에 있는 것이 최근**이다. 그래서 «마지막 `peek` 개» 를 보여 준다.
+ */
+export function peekDone<T extends { done: boolean }>(list: T[], peek = DONE_PEEK, all = false): { rows: T[]; hidden: number } {
+  const done = list.filter((t) => t.done)
+  if (all || done.length <= peek) return { rows: done, hidden: 0 }
+  return { rows: done.slice(done.length - peek), hidden: done.length - peek }
+}

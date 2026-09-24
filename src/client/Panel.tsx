@@ -4,7 +4,7 @@ import { copyImageWhy, copySay } from './clip'
 import { copyFiles } from './fileCopy'
 import { copyIntent } from '../core/copyIntent'
 import { api } from './api'
-import { isDoneSection } from '../core/todo'
+import { isDoneSection, orderItems, orderSections, peekDone } from '../core/todo'
 import { ACT_COLOR, ACT_ICON, ACT_LABEL, LONG, actOf, buzz, slotOf, useSwipeCfg, type SwipeAct } from './swipe'
 import { HOLD_MS, decide, dropIndex } from './gesture'
 import { FolderBot, Icon, Mid } from './FolderBot'
@@ -205,6 +205,8 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
   const [edit, setEdit] = useState<number | null>(null); const [draft, setDraft] = useState('')
   const [openRows, setOpenRows] = useState<Set<number>>(() => new Set())
   const [openSecs, setOpenSecs] = useState<Record<string, boolean>>({})
+  /** AK · 절마다 «끝난 것 더보기» 를 폈나 — 기본은 최근 몇 개만 */
+  const [allDone, setAllDone] = useState<Record<string, boolean>>({})
   const [drag, setDrag] = useState<number | null>(null); const [over, setOver] = useState<number | null>(null)
   const [cfg] = useSwipeCfg()
   const [sw, setSw] = useState<{ line: number; dx: number; w: number } | null>(null); const swRef = useRef<{ line: number; x0: number; y0: number; w: number; on: boolean; last: SwipeAct | null } | null>(null)
@@ -220,7 +222,8 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
   const secs = useMemo(() => {
     const m = new Map<string, TodoItem[]>()
     for (const t of items) { const k = t.section; (m.get(k) ?? m.set(k, []).get(k)!).push(t) }
-    return [...m.entries()]
+    // AK · 안 끝난 일이 있는 절이 먼저 (차례만 바꾼다 — 파일은 그대로)
+    return orderSections([...m.entries()])
   }, [items])
   const left = items.filter((t) => !t.done).length
   const doneN = items.filter((t) => t.done).length
@@ -434,7 +437,13 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
       {secs.map(([name, list]) => <div key={name || '_'}>
         {name ? <button className="tsec" onClick={() => setOpenSecs({ ...openSecs, [name]: !secOpen(name) })}><Icon n={secOpen(name) ? 'chevd' : 'chev'} size={9} /><span>{name}</span><span className="c">{list.length}</span></button> : null}
         {secOpen(name) ? <>
-          {list.map(row)}
+          {/* 🔴 AK · 안 끝난 것이 위, 끝난 것은 **최근 몇 개**만 (2026-09-24 Dave). 차례 규칙은 `core/todo` */}
+          {orderItems(list).filter((t) => !t.done).map(row)}
+          {(() => { const { rows, hidden } = peekDone(list, undefined, !!allDone[name]); return <>
+            {rows.map(row)}
+            {hidden ? <button className="todo addbtn more" onClick={() => setAllDone({ ...allDone, [name]: true })}><span className="bx ghost" /><span>끝난 일 {hidden}개 더보기</span></button>
+              : allDone[name] && rows.length > 3 ? <button className="todo addbtn more" onClick={() => setAllDone({ ...allDone, [name]: false })}><span className="bx ghost" /><span>끝난 일 접기</span></button> : null}
+          </> })()}
           {adding === name ? <div className="todo add"><span className="bx ghost" /><input autoFocus className="ein" placeholder="제목: 설명 (Enter)" value={line} onChange={(e) => setLine(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void add(name); if (e.key === 'Escape') { setAdding(null); setLine('') } }} onBlur={() => { if (!line.trim()) setAdding(null) }} /></div>
             : !isDoneSection(name) ? <button className={`todo addbtn ${phone ? 'ph' : ''}`} onClick={() => (phone ? setESheet({ line: -1, title: '', desc: '', section: name }) : setAdding(name))}><span className="bx ghost dash" /><span>새 할 일</span></button> : null}
         </> : null}
