@@ -712,15 +712,22 @@ export class Gateway {
         const b = await body()
         // 🔴 질문(AskUserQuestion)은 «허용» 으로 닫지 않는다 — 답은 `/ask` 로 온다. 허용을 받아 주면 답 없이 넘어가거나(보통 질문)
         //    질문이 취소된다(미뤄진 질문). 거부(취소)는 그대로 받는다 (2026-09-25 디자인 검수)
-        if (b.allow && h.sessions.pendingOf(r.id).find((x) => x.requestId === String(b.requestId))?.ask) return json(400, { error: '질문은 허용이 아니라 답으로 보내 주세요' })
-        h.sessions.respondPermission(r, String(b.requestId), !!b.allow, !!b.always); return json(200, { ok: true })
+        // ⚠ allow 는 불리언만 — `"false"` 같은 글자가 참으로 읽혀 허용이 나가면 안 된다 (리뷰 · Codex)
+        const allow = b.allow === true
+        if (allow && h.sessions.pendingOf(r.id).find((x) => x.requestId === String(b.requestId))?.ask) return json(400, { error: '질문은 허용이 아니라 답으로 보내 주세요' })
+        h.sessions.respondPermission(r, String(b.requestId), allow, b.always === true); return json(200, { ok: true })
       }
       /**
        * S · 여기까지 읽었다 (2026-09-21 Dave) — 화면이 맨 아래에 닿고 턴이 끝나면 한 번 부른다.
        * ⚠ 같이 그 세션의 **알림도 읽음**으로 넘긴다 — 대화를 다 읽었는데 🔔 에 같은 건이 남아 있으면 배지가 거짓말을 한다(실제로 50 이 쌓였다).
        */
       if (sub === 'read' && m === 'POST') { const b = await body(); h.sessions.markRead(r.id, typeof b.at === 'number' ? b.at : undefined); h.notifier.markReadBySession(r.id); return json(200, { ok: true }) }
-      if (sub === 'ask' && m === 'POST') { const b = await body(); h.sessions.respondAsk(r, String(b.requestId), (b.answers ?? {}) as Record<string, string>); return json(200, { ok: true }) }
+      if (sub === 'ask' && m === 'POST') {
+        const b = await body()
+        // 🔴 답은 **질문에만** 간다 — 종전에는 Bash·Edit 같은 권한 요청 id 를 넣어도 받아서 «허용» 을 보냈다(위 허용 가드를 옆길로 우회 · 리뷰 · Codex)
+        if (!h.sessions.pendingOf(r.id).find((x) => x.requestId === String(b.requestId))?.ask) return json(400, { error: '기다리는 질문이 아니에요' })
+        h.sessions.respondAsk(r, String(b.requestId), (b.answers ?? {}) as Record<string, string>); return json(200, { ok: true })
+      }
       if (sub === 'interrupt' && m === 'POST') { h.sessions.interrupt(r); return json(200, { ok: true }) }
       if (sub === 'ack' && m === 'POST') { h.sessions.acknowledge(r); return json(200, { ok: true }) }
       if (sub === 'rename' && m === 'POST') { const b = await body(); h.sessions.rename(r.id, String(b.name)); return json(200, { ok: true }) }

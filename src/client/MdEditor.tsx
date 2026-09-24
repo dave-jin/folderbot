@@ -135,6 +135,8 @@ const MDLINK_RE = /\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g
  */
 const FVW = Decoration.mark({ class: 'fvw', inclusiveStart: true })
 const firstLen = (t: string): number => (Array.from(t)[0] ?? '').length || 1
+/** 링크 글 맨 앞의 서식 기호 길이 — 숨겨지는 글자라 이것만 묶으면 아이콘이 보이는 첫 글자와 떨어진다 (리뷰 · Codex) */
+const lead = (t: string): number => /^[*_~`]*/.exec(t)?.[0].length ?? 0
 
 /**
  * 바깥 링크는 바깥에서 연다 (2026-09-17 Dave: «문서의 링크도 … 바로 클릭이 가능해야 해»).
@@ -809,7 +811,7 @@ function build(state: EditorState): { deco: DecorationSet; atoms: Atom[] } {
       const at = line.from + m.index + 1
       marks.push(Decoration.widget({ widget: new FavWidget(m[2]), side: 1 }).range(at))
       marks.push(xlink(m[2], line.from + m.index, line.from + m.index + m[0].length).range(at, at + m[1].length))
-      marks.push(FVW.range(at, at + firstLen(m[1])))
+      marks.push(FVW.range(at, at + lead(m[1]) + firstLen(m[1].slice(lead(m[1])))))   // ⚠ `[**글**](…)` 는 숨은 `**` 뒤의 첫 글자까지 묶는다
     }
     const bare = new RegExp(BARE_URL_RE.source, 'g')
     for (let m = bare.exec(text); m; m = bare.exec(text)) {

@@ -2760,6 +2760,9 @@ try {
               const r = await fetch(base + `/api/sessions/${sidQ}/permission`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: reqQ, allow: true }) })
               if (r.status !== 400) fail('🔴 호스트: 질문에 온 «허용» 을 받아 줬다 · ' + r.status)
               if (!(await pg.$('.card .opt input'))) fail('🔴 호스트: 질문에 «허용» 이 오자 질문 카드가 사라졌다')
+              // 🔴 답(/ask)은 질문에만 (리뷰 · Codex) — 질문이 아닌 id 에 답을 보내면 400
+              const r2 = await fetch(base + `/api/sessions/${sidQ}/ask`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: 'not-a-question', answers: { a: 'b' } }) })
+              if (r2.status !== 400) fail('🔴 호스트: 질문이 아닌 id 에도 답을 받아 줬다(허용 가드 우회) · ' + r2.status)
               ok('질문에는 [허용] 이 없다 — 타일은 [답하기] · 호스트는 질문에 온 허용을 400 으로 거절')
               // 🔴 타일 부제목은 말줄임표로 끝나고 단추 밑으로 안 들어간다 · 제목은 안 눌린다 (2026-09-25 디자인 검수)
               const tl = await pg.evaluate(() => [...document.querySelectorAll('.mcards button')].map((b) => {

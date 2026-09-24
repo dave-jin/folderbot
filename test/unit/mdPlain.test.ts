@@ -20,6 +20,11 @@ describe('mdPlain — 알림 미리보기는 글자만', () => {
   it('줄 맨 앞의 연도는 번호 목록이 아니다', () => {
     expect(mdPlain('2026. 9. 25 회의록\n1. 첫 안건')).toBe('2026. 9. 25 회의록 첫 안건')
   })
+  it('줄 가운데 ``` 는 펜스가 아니다 · 주소 속 괄호', () => {
+    expect(mdPlain('Use ```npm run qa``` now')).toBe('Use npm run qa now')
+    expect(mdPlain('[문서](https://x.test/a_(b)) 끝')).toBe('문서 끝')
+    expect(mdPlain('[제목](https://x.test "설명") 과')).toBe('제목 과')
+  })
   it('위키링크는 별칭을, 없으면 이름을', () => {
     expect(mdPlain('[[문서|별칭]] 과 [[다른 문서]]')).toBe('별칭 과 다른 문서')
   })
