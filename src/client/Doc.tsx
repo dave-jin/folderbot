@@ -200,7 +200,8 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
   const vaultRel = rel ? vaultRelOf(bot.rel, rel) : ''
   return <div className="col doc" style={{ flex: wide ? 3 : 1.15 }}>
     <div className="hdr" style={phone ? undefined : { paddingLeft: 10 }}>
-      {phone ? <><button className="rb glassb" onClick={onBack} title="뒤로"><Icon n="back" size={20} /></button><span className="ttl"><Mid s={name || '문서'} /></span><span className="sp" /></> : null}
+      {/* AG · **좌상단은 네 화면이 같다** (2026-09-24 Dave: «왼쪽 위 폴더봇으로 가는 버튼이 문서와 다르다 · 통일») */}
+      {phone ? <><button className="rb glassb" onClick={onBack} title="봇 목록"><Icon n="list" size={20} /></button><span className="ttl"><Mid s={name || '문서'} /></span><span className="sp" /></> : null}
       <div className="tabs">{docs.tabs.slice(0, 6).map((t) => <button key={t.rel} className={`tab ${t.rel === docs.active ? 'on' : ''} ${t.pinned ? '' : 'pv'}`} onClick={() => docs.setActive(t.rel)} onDoubleClick={() => docs.pin(t.rel)} title={t.rel}>{t.rel.split('/').pop()}<span className="x" onClick={(e) => { e.stopPropagation(); docs.close(t.rel) }}><Icon n="x" size={9} /></span></button>)}{docs.tabs.length > 6 ? <span className="more">+{docs.tabs.length - 6}</span> : null}</div>
       <div className="acts"><button className={`ib ${wide ? 'on' : ''}`} onClick={onWide} title="넓게"><Icon n="expand" size={13} /></button><button className="ib" onClick={onHide} title="문서 열 접기 (⌘⇧D)"><Icon n="x" size={13} /></button></div>
     </div>

@@ -269,6 +269,15 @@ function Main() {
   const setView = (p: Page) => setNav((n) => goTo(n, p))
   /** AD · **모든 화면의 좌상단·👉 = 봇 목록** (2026-09-23 Dave: *«무조건 폴더 리스트로 가도록 통일»*) */
   const toList = () => setView('list')
+  /**
+   * 🔴 **AG · 봇 목록은 «있던 화면» 위로 미끄러진다** (2026-09-24 Dave: *«왼쪽 슬라이딩 메뉴는 그 위치에서 나와야 하는데
+   *    지금은 채팅창에서 슬라이딩이 나온다»*). `view` 가 하나뿐이라 목록으로 가는 순간 문서·폴더 서랍이 **먼저 사라지고**
+   *    그 밑의 채팅이 드러난 뒤 목록이 덮였다 — 눈에는 «엉뚱한 화면으로 한 번 갔다 오는» 것으로 보인다.
+   *    그래서 **밑에 깔린 화면**(`under`)을 따로 들고 있다가 목록이 열려도 그대로 둔다.
+   */
+  const underRef = useRef<'chat' | 'panel' | 'doc'>('chat')
+  if (view !== 'list') underRef.current = view
+  const under = view === 'list' ? underRef.current : view
   /** 어두워진 채팅 탭 · Esc · [접기] — «채팅으로 돌아가기». 「뒤로」와 갈라 둔다(봇 목록은 뒤로 열고 폴더·문서는 앞으로 열기 때문) */
   const navDismiss = () => setNav(dismiss)
   const [lay, setLay] = useState<Layout>(() => { try { return { ...DEF, ...JSON.parse(localStorage.getItem('fb:layout') ?? '') } } catch { return DEF } })
@@ -840,9 +849,9 @@ function Main() {
       {stage === 'wide' ? (rpOpen ? rpwrapEl : stripRightEl) : null}
 
       {/* ── H · 중간·좁음의 서랍 — 채팅을 밀지 않고 덮는다. 끌리는 동안(dragSide) 미리 붙여 손가락을 따라온다 ── */}
-      {narrow && (view !== 'chat' || dragSide) ? <div className="scrim" ref={scrimRef} onClick={navDismiss} /> : null}
+      {narrow && (view !== 'chat' || dragSide) ? <div className={`scrim ${view === 'list' ? 'over' : ''}`} ref={scrimRef} onClick={navDismiss} /> : null}
       {narrow && (view === 'list' || dragSide === 'left') ? <div className={`drawer left ${view === 'list' ? 'open' : ''}`} ref={leftRef}>{phone ? homeEl : sidebarEl}</div> : null}
-      {narrow && (view === 'panel' || view === 'doc' || dragSide === 'right') ? <div className={`drawer right ${view === 'panel' || view === 'doc' ? 'open' : ''}`} ref={rightRef}>{view === 'doc' ? (showDoc ? docwrapEl : docEmptyEl) : rpwrapEl}</div> : null}
+      {narrow && (under === 'panel' || under === 'doc' || dragSide === 'right') ? <div className={`drawer right ${under === 'panel' || under === 'doc' ? 'open' : ''}`} ref={rightRef}>{under === 'doc' ? (showDoc ? docwrapEl : docEmptyEl) : rpwrapEl}</div> : null}
       {/* H-4 · 알약 독 — 채팅 오른쪽 가장자리에 세로로. 📄 문서(없으면 흐리게) · ☑ 할 일 · 📁 파일 · ↗ 외부에서 열기(문서가 열려 있을 때). 이모지 대신 앱 아이콘 */}
       {mid && view === 'chat' && !kb ? <div className={`dock ${dockDrag ? 'dragging' : ''}`} ref={dockRef} style={{ translate: `0 ${dockY}px` }}
         onPointerDown={dockDown}>

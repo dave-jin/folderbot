@@ -36,6 +36,11 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
   useEffect(() => { try { setOpen(JSON.parse(localStorage.getItem(`fb:secs:${bot.id}`) ?? '')) } catch { setOpen({ sessions: true, todo: true, files: true, routines: false }) } }, [bot.id])
   useEffect(() => { localStorage.setItem(`fb:secs:${bot.id}`, JSON.stringify(open)) }, [open, bot.id])
   const tog = (k: string) => setOpen({ ...open, [k]: !open[k] })
+  /**
+   * AG · **탭이 곧 그 절이면 늘 펼쳐져 있다** — 접는 손잡이(∨)와 실제로 보이는 것이 **같은 값**을 쓴다.
+   * 「할 일」 탭의 세션은 접을 수 있되 기본이 펼침이다(여러 세션이 보여야 한다는 것이 이 탭의 요점이라).
+   */
+  const secOn = (k: 'sessions' | 'todo' | 'files') => (only === k ? true : only === 'todo' && k === 'sessions' ? open.sessions !== false : !!open[k])
   // 아이콘 열에서 누른 섹션은 펼쳐진 채로 온다
   useEffect(() => { if (focusSec) setOpen((o) => ({ ...o, [focusSec.sec]: true })) }, [focusSec?.n])
   const [routines, setRoutines] = useState(false); const [menu, setMenu] = useState<Anchor | null>(null)
@@ -88,10 +93,14 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
   const dragY = (k: 'sessions' | 'todo') => (e: React.PointerEvent) => { e.preventDefault(); onDragY(true); const y0 = e.clientY; const h0 = secH[k]; const panel = (e.currentTarget as HTMLElement).closest('.panel'); const room = panel ? panel.getBoundingClientRect().height - (secH.sessions + secH.todo - h0) - 260 : 420; /* 파일 트리 160 + 헤더·루틴·푸터 100 는 남긴다 */ const cap = Math.max(56, Math.min(420, room)); const mv = (ev: PointerEvent) => onSecH({ ...secH, [k]: Math.max(56, Math.min(cap, h0 + ev.clientY - y0)) }); const up = () => { onDragY(false); window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up) }; window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up) }
   return <div className="col side panel" style={{ width: '100%' }}>
     <div className="hdr">{phone ? <button className="rb glassb" onClick={onBack} title="봇 목록"><Icon n="list" size={20} /></button> : null}<span className="ttl">{only === 'todo' ? '할 일' : only === 'files' ? '폴더' : bot.orchestrator ? '이 볼트에서' : '이 폴더에서'}</span><span className="sp" />{!phone ? <div className="acts"><button className="ib on" onClick={onCollapse} title="패널 접기 (⌘⇧B)"><Icon n="panelr" size={14} /></button></div> : null}</div>
-    {/* 세션 — 폰의 「할 일」·「폴더」 탭에는 없다(세션은 채팅 헤더의 봇 이름에서 고른다) */}
-    {only ? null : <div className={`sec ${open.sessions ? 'fix' : 'fix'}`} style={open.sessions ? { height: secH.sessions } : undefined}>
-      <button className="sech" onClick={() => tog('sessions')}><Icon n={open.sessions ? 'chevd' : 'chev'} size={9} /><span>세션</span><span className="c">{sessions.length}</span><span className="tools on"><span className="ib nsb" title="새 세션" onClick={(e) => { e.stopPropagation(); if (provs.length > 1) { setPick(anchorOf(e.currentTarget as HTMLElement)); setOpen((o) => ({ ...o, sessions: true })) } else void newSession() }}><Icon n="plus" size={12} /></span></span></button>
-      {open.sessions ? <div className="secb" style={{ padding: '0 0 6px' }}>{sessions.map((x) => ren?.id === x.id
+    {/**
+      * AG · **세션은 「할 일」 탭 위에 같이 산다** (2026-09-24 Dave: *«세션 리스트는 할 일 위에 두고, 세션과 할 일 둘 다
+      * 보여줘서 여러 개의 세션이 보일 수 있게»*). AD 에서 폰의 패널을 쪼개며 세션이 통째로 사라졌던 것을 되돌린다 —
+      * 「폴더」 탭에는 여전히 없다(거기는 파일만 본다).
+      */}
+    {only === 'files' ? null : <div className="sec fix" style={{ height: secH.sessions }}>
+      <button className="sech" onClick={() => tog('sessions')}><Icon n={secOn('sessions') ? 'chevd' : 'chev'} size={9} /><span>세션</span><span className="c">{sessions.length}</span><span className="tools on"><span className="ib nsb" title="새 세션" onClick={(e) => { e.stopPropagation(); if (provs.length > 1) { setPick(anchorOf(e.currentTarget as HTMLElement)); setOpen((o) => ({ ...o, sessions: true })) } else void newSession() }}><Icon n="plus" size={12} /></span></span></button>
+      {secOn('sessions') ? <div className="secb" style={{ padding: '0 0 6px' }}>{sessions.map((x) => ren?.id === x.id
           ? <div key={x.id} className="srow edit"><span className="dot none" /><input autoFocus className="rin" value={ren.v} onChange={(e) => setRen({ id: x.id, v: e.target.value })}
               onFocus={(e) => e.currentTarget.select()} onBlur={() => void saveRen()}
               onKeyDown={(e) => { if (e.nativeEvent.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); void saveRen() } else if (e.key === 'Escape') { e.preventDefault(); setRen(null) } }} /></div>
@@ -102,15 +111,15 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
         {!sessions.length ? <button className="kv sempty" onClick={(e) => { if (provs.length > 1) setPick(anchorOf(e.currentTarget as HTMLElement)); else void newSession() }}><Icon n="plus" size={11} /><span>{provs.length > 1 ? 'Claude 나 ChatGPT 로 시작' : '세션 시작'}</span></button> : null}
         {pick ? <Float at={pick} onClose={() => setPick(null)}>{provs.map((pv) => <button key={pv.id} onClick={() => void newSession(pv.id)}><Mark id={pv.id} size={14} /><span>{PROVIDER_LABEL[pv.id]}</span></button>)}<hr /><button onClick={() => setPick(null)}><span>취소</span></button></Float> : null}</div> : null}
     </div>}
-    {only ? null : <div className="divy" onPointerDown={dragY('sessions')} onDoubleClick={() => onSecH({ ...secH, sessions: 112 })} />}
+    {only === 'files' ? null : <div className="divy" onPointerDown={dragY('sessions')} onDoubleClick={() => onSecH({ ...secH, sessions: 112 })} />}
     {/* 할 일 / Inbox — `only='todo'` 면 이 절 하나가 화면을 다 쓴다 */}
     {only === 'files' ? null : <div className={only === 'todo' ? 'sec grow' : 'sec fix'} style={!only && open.todo ? { height: secH.todo } : undefined}>
-      {bot.orchestrator ? <InboxSec open={only === 'todo' || !!open.todo} tog={() => tog('todo')} onSend={onTalk} /> : <TodoSec bot={bot} items={todos} open={only === 'todo' || !!open.todo} tog={() => tog('todo')} onDelegate={(t) => onTalk(`${t.title}${t.desc ? ` — ${t.desc}` : ''}`)} onOpenFile={onOpenFile} reload={() => loadTodo(bot.id)} phone={phone} />}
+      {bot.orchestrator ? <InboxSec open={secOn('todo')} tog={() => tog('todo')} onSend={onTalk} /> : <TodoSec bot={bot} items={todos} open={secOn('todo')} tog={() => tog('todo')} onDelegate={(t) => onTalk(`${t.title}${t.desc ? ` — ${t.desc}` : ''}`)} onOpenFile={onOpenFile} reload={() => loadTodo(bot.id)} phone={phone} />}
     </div>}
     {only ? null : <div className="divy" onPointerDown={dragY('todo')} onDoubleClick={() => onSecH({ ...secH, todo: 84 })} />}
     {/* 파일 — `only='files'` 면 이 절 하나가 화면을 다 쓴다 */}
     {only === 'todo' ? null : <div className="sec grow">
-      <Tree bot={bot} phone={phone} open={only === 'files' || !!open.files} tog={() => tog('files')} onOpen={onOpenFile} onAttach={onAttach} onMention={onMention} onStartAt={onStartAt} onNewFolderAt={onNewFolderAt} touched={touched} tick={filesTick} say={say} active={activeDoc} />
+      <Tree bot={bot} phone={phone} open={secOn('files')} tog={() => tog('files')} onOpen={onOpenFile} onAttach={onAttach} onMention={onMention} onStartAt={onStartAt} onNewFolderAt={onNewFolderAt} touched={touched} tick={filesTick} say={say} active={activeDoc} />
     </div>}
     {only ? null : <div className="divy" style={{ cursor: 'default' }} />}
     {/* 지침 · 하네스 — 폴더에 딸린 것의 집 (V25). 설정의 «하네스» 칸은 훑는 표일 뿐이다 */}

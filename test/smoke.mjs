@@ -1329,12 +1329,27 @@ try {
               pane = await paneOf()
               if (pane.ttl !== '할 일') fail('🔴 AD: 「할 일」 탭이 「폴더」 탭과 같은 화면이다 ' + JSON.stringify(pane))
               if (pane.tree) fail('🔴 AD: 「할 일」 탭에 파일 트리가 보인다 — 둘이 똑같으면 의미가 없다 ' + JSON.stringify(pane))
+              // 🔴 AG(2026-09-24 Dave) · 세션은 **할 일 위에** 같이 보인다 — AD 에서 통째로 사라졌던 것을 되돌렸다
+              if (!pane.secs.includes('세션')) fail('🔴 AG: 「할 일」 탭에 세션 목록이 없다 ' + JSON.stringify(pane))
+              const sessTop = await hp.evaluate(() => { const ss = document.querySelector('.drawer.right .sech'); const secs = [...document.querySelectorAll('.drawer.right .sech')].map((x) => x.textContent?.trim().slice(0, 4)); const rows = document.querySelectorAll('.drawer.right .srow').length; return { first: ss?.textContent?.trim().slice(0, 4) ?? null, secs, rows } })
+              if (!/세션/.test(sessTop.first ?? '')) fail('🔴 AG: 세션이 할 일보다 위에 있어야 한다 ' + JSON.stringify(sessTop))
+              if (!sessTop.rows) fail('AG: 세션 줄이 하나도 안 보인다 ' + JSON.stringify(sessTop))
               if (pane.foot) fail('AD: 지우기·은퇴는 할 일 탭에는 없어야 한다 ' + JSON.stringify(pane))
               if (pane.on !== 'todo') fail('AD: 탭 표시가 «할 일» 이어야 한다 ' + JSON.stringify(pane))
 
               /** 🔴 AD · 모든 화면의 좌상단 = 봇 목록 (화면마다 다른 데로 가지 않는다) */
               const topLeft = async (what) => { await hp.click('.drawer.right .hdr .rb.glassb'); await wait(400); if ((await view()) !== 'list') fail(`🔴 AD: ${what} 의 좌상단이 봇 목록으로 안 간다 · ` + (await view())); await hp.keyboard.press('Escape'); await wait(300) }
-              await topLeft('할 일')
+              /**
+               * 🔴 **AG · 봇 목록은 «있던 화면» 위로 미끄러진다** (2026-09-24 Dave: «채팅창에서 슬라이딩이 나온다»).
+               *    종전에는 목록으로 가는 순간 오른쪽 서랍이 먼저 사라져 **채팅이 드러난 뒤** 목록이 덮였다.
+               */
+              await hp.click('.drawer.right .hdr .rb.glassb'); await wait(450)
+              const kept = await hp.evaluate(() => ({ view: document.querySelector('.app').dataset.view, right: !!document.querySelector('.drawer.right.open'), left: !!document.querySelector('.drawer.left.open'), ttl: document.querySelector('.drawer.right .hdr .ttl')?.textContent ?? null }))
+              if (kept.view !== 'list' || !kept.left) fail('AG: 좌상단이 봇 목록을 안 연다 ' + JSON.stringify(kept))
+              if (!kept.right || kept.ttl !== '할 일') fail('🔴 AG: 목록을 여는 순간 있던 화면이 사라졌다(채팅이 드러난다) ' + JSON.stringify(kept))
+              const zs = await hp.evaluate(() => { const z = (q) => { const e = document.querySelector(q); return e ? +getComputedStyle(e).zIndex : null }; return { left: z('.drawer.left'), scrim: z('.scrim'), right: z('.drawer.right') } })
+              if (!(zs.left > zs.scrim && zs.scrim > zs.right)) fail('AG: 목록 > 스크림 > 있던 화면 차례가 아니다 ' + JSON.stringify(zs))
+              await hp.keyboard.press('Escape'); await wait(350)
               await tapNav(hp, 'files'); await wait(400); await topLeft('폴더')
 
               /** 🔴 AD · 문서 탭은 **비어 있어도 눌린다** — 흐린 단추는 「고장」 으로 읽힌다 */
@@ -1353,6 +1368,22 @@ try {
               /** 🔴 AD · 입력칸과 탭 사이 여백 — 안전영역을 두 번 빼지 않는다(«여백이 너무 많다») */
               const gap = await hp.evaluate(() => { const c = document.querySelector('.composer').getBoundingClientRect(); const b = document.querySelector('.tabbar').getBoundingClientRect(); return Math.round(b.top - c.bottom) })
               if (gap < 0 || gap > 14) fail('🔴 AD: 입력칸과 하단 탭 사이 여백이 적절하지 않다 · ' + gap + 'px')
+              /** 🔴 AG · 네 화면의 **머리말 글씨와 좌상단 아이콘**이 같다 (2026-09-24 Dave) */
+              const hdrOf = async () => hp.evaluate(() => {
+                const h = document.querySelector('.drawer.right .hdr') ?? document.querySelector('.chat-hdr')
+                const t = h?.querySelector('.ttl') ?? h?.querySelector('.hnb')
+                const b = h?.querySelector('button')
+                return { size: t ? Math.round(parseFloat(getComputedStyle(t).fontSize)) : null, icon: b?.querySelector('svg path')?.getAttribute('d')?.slice(0, 12) ?? null }
+              })
+              await tapNav(hp, 'chat'); await wait(400); const hChat = await hdrOf()
+              await tapNav(hp, 'todo'); await wait(400); const hTodo = await hdrOf()
+              await tapNav(hp, 'files'); await wait(400); const hFiles = await hdrOf()
+              await tapNav(hp, 'doc'); await wait(450); const hDoc = await hdrOf()
+              const sizes = [hChat.size, hTodo.size, hFiles.size, hDoc.size]
+              if (new Set(sizes).size !== 1) fail('🔴 AG: 상단 머리말 글씨 크기가 화면마다 다르다 ' + JSON.stringify({ sizes, hChat, hTodo, hFiles, hDoc }))
+              const icons = [hChat.icon, hTodo.icon, hFiles.icon, hDoc.icon]
+              if (new Set(icons).size !== 1) fail('🔴 AG: 좌상단 버튼이 화면마다 다르다 ' + JSON.stringify(icons))
+              await tapNav(hp, 'chat'); await wait(350)
               await hp.screenshot({ path: 'test/tmp/ad-phone.png' })
               // ☰ 로도 레일 · 어두워진 채팅(스크림) 탭 → 닫힘
               await hp.click('.chat-hdr .hb-menu'); await wait(400); if ((await view()) !== 'list') fail('H 좁음: ☰ → 레일')
@@ -3718,6 +3749,18 @@ try {
         // iOS 26 이 키보드를 내린 뒤 시각 뷰포트를 60px 덜 돌려줘도(입력 중 아님) 루트는 전체 높이를 유지한다 — 아래 빈 띠 없음
         await pg.evaluate(() => window.__kb(60)); await wait(300)
         const stuck = await pg.evaluate(() => ({ rootH: document.querySelector('#root').getBoundingClientRect().height, ih: innerHeight, compBottom: document.querySelector('.composer').getBoundingClientRect().bottom }))
+        /**
+         * 🔴 **AG · 키보드가 올라오면 안전영역을 비우지 않는다** (2026-09-24 Dave: «키보드랑 채팅창 사이에도 여백이 있다»).
+         *    `--sab`(홈 인디케이터 34pt)는 **이미 키보드가 덮은 자리**다 — 한 번 더 비우면 입력칸과 키보드 사이가 통째로 뜬다.
+         *    ⚠ 헤드리스에서는 `env(safe-area-inset-bottom)` 이 0 이라 계산값으로 잰다.
+         */
+        {
+          await pg.evaluate(() => { document.documentElement.style.setProperty('--sab', '34px') })
+          await pg.evaluate(() => window.__kb(336)); await wait(400)
+          const padKb = await pg.evaluate(() => Math.round(parseFloat(getComputedStyle(document.querySelector('.chat-foot')).paddingBottom)))
+          if (padKb > 10) fail('🔴 AG: 키보드가 올라왔는데 아래 여백이 남아 있다 · ' + padKb + 'px')
+          await pg.evaluate(() => { window.__kb(0); document.activeElement?.blur?.(); document.documentElement.style.removeProperty('--sab') }); await wait(300)
+        }
         // Z(2026-09-22 「B · 하단 탭」) 뒤로 입력칸은 **탭 위**에 앉는다 — 바닥까지 56px(탭) + 여백이 남는 것이 제자리다
         if (Math.abs(stuck.rootH - stuck.ih) > 2 || stuck.ih - stuck.compBottom > 24 + 56) fail('phone: stale visual viewport left a bottom gap ' + JSON.stringify(stuck))
         // ⚠ 키보드가 올라와 있으면 헤더는 일부러 숨는다(`.app.kb .chat-hdr{display:none}`) — 누르기 전에 확실히 내린다
