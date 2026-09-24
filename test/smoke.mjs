@@ -1927,7 +1927,7 @@ try {
           const rel = 'churn.md'
           const abs = join(root, '3. Area/제품_Rondo', rel)
           // ⚠ 제목이 **둘** 이어야 목차 단추가 나온다(하나짜리 문서에 목차는 자리만 먹는다)
-          const src = ['---', 'type: reference', 'tags: [PARA, 지침]', '---', '', '# 제목', '', '**굵게** 와 *기울임* 과 `코드`.', '', '- [ ] 할 일', '- 항목', '', '## 두 번째 제목', '', '---', '', '> 인용', '', '> [!note] 콜아웃 줄', '', '[[위키링크]] 와 https://example.com', '', '[예시 링크](https://example.com/page) 옆 글', '', '| 가 | 나 |', '|---|---|', '| 1 | 2 |', ''].join('\n')
+          const src = ['---', 'type: reference', 'tags: [PARA, 지침]', '---', '', '# 제목', '', '**굵게** 와 *기울임* 과 `코드`.', '', '- [ ] 할 일', '- 항목', '', '## 두 번째 제목', '', '---', '', '> 인용', '', '> [!note] 콜아웃 줄', '', '[[위키링크]] 와 https://example.com', '', '[예시 링크](https://example.com/page) 옆 글', '', '| 가 | 나 |', '|---|---|', '| 1 | 2 |', '', '```bash', 'npm run qa', '---', '- [ ] 코드 속 줄', '```', ''].join('\n')
           // ⚠ API 로 만든다 — 파일을 직접 쓰면 호스트가 모르고 트리가 안 새로 그려진다
           await api(`/bots/${bot.id}/file`, { rel, text: src })
           const before = readFileSync(abs)
@@ -2225,6 +2225,23 @@ try {
           }
           // 콜아웃 — `> [!note]` 는 표시를 숨기고 줄에 색을 준다
           if (!(await pg.$('.mded .lp-cal'))) fail('콜아웃이 안 그려졌다')
+          /**
+           * 🔴 **코드는 코드처럼** (2026-09-25 디자인 검수) — 펜스(```)를 숨기는 규칙 탓에 코드 블록이 본문 줄처럼 흩어졌고,
+           *    코드 안의 `---`·`- [ ]` 가 가로줄·눌리는 체크박스로 바뀌었다. 상자(바탕)가 있고, 코드 줄은 그대로여야 한다.
+           */
+          {
+            const cb = await pg.evaluate(() => {
+              const lines = [...document.querySelectorAll('.mded .cm-line.lp-code')]
+              return { n: lines.length, bg: lines[0] ? getComputedStyle(lines[0]).backgroundColor : '', info: document.querySelector('.mded .lp-codeinfo')?.textContent ?? '', ic: !!document.querySelector('.mded .lp-ic'),
+                inHr: lines.some((l) => l.querySelector('.lp-hr') || l.classList.contains('lp-hr')), inCheck: lines.some((l) => l.querySelector('.lp-check')), text: lines.map((l) => l.textContent).join('|') }
+            })
+            if (cb.n < 4) fail('문서 코드 블록: 줄마다 상자 클래스가 안 붙었다 · ' + JSON.stringify(cb))
+            if (!cb.bg || cb.bg === 'rgba(0, 0, 0, 0)') fail('문서 코드 블록: 바탕이 없다 · ' + JSON.stringify(cb))
+            if (cb.info !== 'bash') fail('문서 코드 블록: 언어 이름이 표식으로 안 붙었다 · ' + JSON.stringify(cb))
+            if (!cb.ic) fail('문서 인라인 코드: 바탕 표식(lp-ic)이 없다')
+            if (cb.inHr || cb.inCheck || !/---/.test(cb.text) || !/\[ \]/.test(cb.text)) fail('🔴 문서 코드 블록: 코드 안의 --- · - [ ] 가 가로줄·체크박스로 바뀌었다 · ' + JSON.stringify(cb))
+            ok('문서 — 코드 블록은 상자·언어 표식 · 코드 속 --- 와 - [ ] 는 글자 그대로 · 인라인 코드 바탕')
+          }
           // ⚠ 열어 둔 채로 파일을 지우면 문서 열이 다시 읽으며 404 를 낸다 — 먼저 다른 파일로 옮긴다
           await pg.evaluate(() => { const t = [...document.querySelectorAll('.trow')].find((x) => /todo\.md/.test(x.textContent ?? '')); t?.click() })
           await wait(700)

@@ -680,9 +680,22 @@ function build(state: EditorState): { deco: DecorationSet; atoms: Atom[] } {
   }
   const tree = syntaxTree(state)
   let link: { from: number; to: number } | null = null
+  /**
+   * 🔴 **코드는 코드처럼 보인다** (2026-09-25 디자인 검수). 서식 기호(`CodeMark`)를 늘 숨기는 규칙이 펜스의 ``` 까지
+   *    숨겨서, 코드 블록이 «`js` 한 줄 + 본문 같은 줄들» 로 흩어져 보였다 — 인라인 코드도 바탕 없이 글자체만 바뀌었다.
+   *    채팅(`.md pre`·`.md code`)과 같은 바탕·모서리를 **줄 단위 클래스**로 준다(펜스 줄이 곧 상자의 위·아래 여백이 된다).
+   * ⚠ 코드 줄은 아래의 줄 스캔(가로줄·체크박스·링크)에서 뺀다 — 코드 안의 `---` 가 가로줄로, `- [ ]` 가 눌리는 체크박스로 바뀌었다.
+   */
+  const codeLines = new Set<number>()
   tree.iterate({
     enter: (n) => {
       if (skip.has(state.doc.lineAt(n.from).number)) return false
+      if (n.name === 'FencedCode') {
+        const a = state.doc.lineAt(n.from).number, z = state.doc.lineAt(n.to).number
+        for (let l = a; l <= z; l++) { codeLines.add(l); marks.push(Decoration.line({ class: `lp-code${l === a ? ' lp-code-a' : ''}${l === z ? ' lp-code-z' : ''}` }).range(state.doc.line(l).from)) }
+      }
+      if (n.name === 'CodeInfo' && n.to > n.from) marks.push(Decoration.mark({ class: 'lp-codeinfo' }).range(n.from, n.to))
+      if (n.name === 'InlineCode' && n.to > n.from) marks.push(Decoration.mark({ class: 'lp-ic' }).range(n.from, n.to))
       if (n.name === 'Link') link = { from: n.from, to: n.to }
       // 제목 크기는 **줄 단위 클래스**로 준다 — 토큰에 걸면 «# » 를 치는 순간에는 아직 안 커진다
       const h = /^ATXHeading([1-6])$/.exec(n.name)
@@ -747,7 +760,7 @@ function build(state: EditorState): { deco: DecorationSet; atoms: Atom[] } {
   // ── 파서가 모르는 것들은 줄을 직접 훑는다 (위키링크·체크박스·단독 이미지) ──
   // ⚠ lezer 는 `[[ ]]` 를 모르고, 체크박스는 한 글자만 갈아야 해서 줄 스캔이 더 정확하다.
   for (let n = 1; n <= state.doc.lines; n++) {
-    if (skip.has(n)) continue
+    if (skip.has(n) || codeLines.has(n)) continue
     const line = state.doc.line(n)
     const text = line.text
 

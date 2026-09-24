@@ -993,6 +993,12 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 /* 🔴 블록 위젯에 margin 을 주지 않는다 (2026-09-16) — CodeMirror 는 위젯 높이를 rect 로 재는데 margin 은 rect 밖이라 줄 높이 지도가
    그만큼 어긋난다. `---`·표 아래를 누르면 **다음 줄**에 캐럿이 서던 원인(실측: 인용 줄을 눌렀는데 그 아래 빈 줄로). 여백은 padding 으로 */
 .mded .lp-hr { display:block; padding:10px 0; cursor:default } .mded .lp-hr::after { content:''; display:block; height:1px; background:var(--line2) }
+/* 코드 — 채팅(.md pre·.md code)과 같은 바탕·모서리. 펜스 줄(```)은 숨겨진 채 상자의 위·아래 여백이 된다 (2026-09-25 디자인 검수) */
+.mded .cm-line.lp-code { background:var(--box); font-family:var(--mono); font-size:.86em; line-height:1.75; padding:0 14px }
+.mded .cm-line.lp-code-a { border-radius:8px 8px 0 0; padding-top:6px; margin-top:4px }
+.mded .cm-line.lp-code-z { border-radius:0 0 8px 8px; padding-bottom:6px; margin-bottom:4px }
+.mded .lp-codeinfo { font-size:.85em; color:var(--t3); letter-spacing:.3px }
+.mded .lp-ic { font-family:var(--mono); font-size:.86em; background:var(--box); padding:1px 5px; border-radius:4px }
 .mded .lp-quote { padding-left:12px; border-left:2px solid var(--line2); color:var(--t2) }
 
 /* 편집기 위젯 — 체크박스 · 위키링크 · 단독 이미지 */
