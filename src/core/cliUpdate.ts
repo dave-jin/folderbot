@@ -70,3 +70,33 @@ export function pickNewestCli<T extends { bin: string; version: string | null }>
 export function cliVersionShort(v?: string | null): string {
   return /\d+(?:\.\d+)+/.exec(String(v ?? ''))?.[0] ?? ''
 }
+
+/**
+ * 🔴 **AS · 「지금 판」도 오류 글에서 읽는다** (2026-09-25 Dave 신고 · 스크린샷_046).
+ *
+ * CLI 가 뱉는 글에는 **두 판이 다 들어 있다** — `Claude Code 2.1.278 does not support this model;
+ * version 2.1.280 or newer is required`. 그런데 화면은 「요구 판」만 여기서 읽고 **「지금 판」은 따로
+ * `/api/agents` 에 물어보고 있었다. 그 물음이 비면(`version: null`) `cliTooOld` 가 **조용히 false** 가 되어
+ * **업데이트 띠가 아예 안 뜬다** — 정작 CLI 는 자기 판을 또박또박 말해 줬는데도.
+ * ⇒ 오류 글이 제일 믿을 만한 출처다(CLI 가 자기 자신을 말한 것이다). 물어본 값이 없으면 이것을 쓴다.
+ */
+export function currentCliVersion(text?: string | null): string | null {
+  return /Claude Code\s+(\d+(?:\.\d+)+)/i.exec(String(text ?? ''))?.[1] ?? null
+}
+
+/**
+ * 🔴 **AS · 띠를 띄울지 한 곳에서 정한다** (2026-09-25).
+ * 종전에는 이 판단이 화면 컴포넌트 안에 흩어져 있어 **검사가 볼 수 없었다** — 그래서 「물어본 판이 비면
+ * 띠가 조용히 사라진다」는 고장이 배포까지 갔다. 판단을 순수 함수로 내려 검사가 잠근다.
+ * @param apiVersion `/api/agents` 가 준 지금 판 (없으면 null)
+ * @param texts 최근 글·오류 글 (새 것부터)
+ */
+export function cliNeedsUpdate(apiVersion: string | null | undefined, texts: (string | null | undefined)[]): { old: boolean; now: string | null; need: string | null } {
+  for (const t of texts) {
+    const need = requiredCliVersion(t)
+    if (!need) continue
+    const now = apiVersion ?? currentCliVersion(t)      // 물어본 값이 먼저 · 없으면 CLI 가 제 입으로 말한 값
+    return { old: cliTooOld(now, need), now: now ?? null, need }
+  }
+  return { old: false, now: apiVersion ?? null, need: null }
+}

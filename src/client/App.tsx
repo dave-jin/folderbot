@@ -3,7 +3,7 @@ import type { Bot, ChatItem, NotifyEvent, PermissionMode, PermissionRequest, Rou
 import { api, setToken, token, uploadFile } from './api'
 import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
 import { holdHeader, holdLine, holderOf, type Holder } from '../core/waiting'
-import { cliTooOld, cliVersionShort, cliUpdateLine, requiredCliVersion } from '../core/cliUpdate'
+import { cliNeedsUpdate, cliVersionShort, cliUpdateLine } from '../core/cliUpdate'
 import { AskHost, ConfirmHost, DiffHost, FolderPicker, Md, NotifyCenter, Onboarding, Pairing, RoutineSheet, Settings, askConfirm, askName, showDiff, useToast } from './Sheets'
 import { AgentPickHost, pickAgent } from './AgentPick'
 import type { SecId } from './Settings'
@@ -1244,14 +1244,19 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   useEffect(() => { void loadCli() }, [])
   const streaming = !!(last && (last.kind === 'assistant' || last.kind === 'thinking') && last.streaming)
   /** 마지막 몇 줄에서 «몇 판이 필요하다» 를 읽는다 — CLI 가 정확히 말해 주므로 밖에 물으러 가지 않는다 */
-  const cliNeed = useMemo(() => {
-    for (const it of items.slice(-6).reverse()) {
-      const t = (it as { text?: string; error?: string }).text ?? (it as { error?: string }).error ?? ''
-      const v = requiredCliVersion(t); if (v) return v
-    }
-    return null
-  }, [items])
-  const cliOld = cliTooOld(cliV, cliNeed)
+  /** 최근 글·오류 글(새 것부터) — 판정은 `core/cliUpdate.cliNeedsUpdate` 한 곳이 한다 */
+  const cliTexts = useMemo(() => items.slice(-6).reverse().map((it) => (it as { text?: string; error?: string }).text ?? (it as { error?: string }).error ?? ''), [items])
+  const cliSays = useMemo(() => cliNeedsUpdate(cliV, cliTexts), [cliV, cliTexts])
+  const cliNeed = cliSays.need
+  /**
+   * 🔴 **AS · 「지금 판」이 없어도 띠는 뜬다** (2026-09-25 Dave 신고 · 스크린샷_046 — 미니에서 Opus 5.5 를
+   *    고르자 `400 Claude Code 2.1.278 does not support this model` 이 났는데 **업데이트 띠가 안 떴다**).
+   * ⚠ 종전에는 「지금 판」을 `/api/agents` 에만 물었고, 그 답이 비면(`version: null`) `cliTooOld` 가
+   *    **조용히 false** 가 되어 띠가 통째로 사라졌다 — 고칠 방법을 화면이 안 알려 주니 매 턴 같은 400 만 났다.
+   * ⇒ **오류 글에 두 판이 다 들어 있다.** 물어본 값이 있으면 그것을 쓰고, 없으면 CLI 가 제 입으로 말한 값을 쓴다.
+   */
+  const cliNow = cliSays.now
+  const cliOld = cliSays.old
   /**
    * S · **맨 아래까지 봤으면 읽음** (2026-09-21 Dave 확정). 판정은 `core/unread.shouldMarkRead` 한 곳 —
    * 화면은 «맨 아래인가 · 아직 자라는가» 만 알려 주고, 적을지 말지는 순수 함수가 정한다.
@@ -1652,7 +1657,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
         {/* AJ · CLI 가 낡았을 때만 뜬다 — 누르면 호스트에서 바로 올린다 */}
         {cliOld ? <div className="live cliold">
           <Icon n="warn" size={14} color="var(--wait)" />
-          <span className="tx">{cliUpdateLine(cliV, cliNeed)}</span>
+          <span className="tx">{cliUpdateLine(cliNow, cliNeed)}</span>
           <span className="sp" />
           <button className="hact" disabled={cliBusy} onClick={async () => {
             setCliBusy(true)
