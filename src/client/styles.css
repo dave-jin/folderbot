@@ -39,7 +39,7 @@ b,strong { color:var(--w); font-weight:600 }
 .btn.primary { background:var(--w); color:var(--onAccent); border-color:var(--w); font-weight:600 } .btn.primary:hover { opacity:.86 }
 .btn.ghost { border-color:transparent; color:var(--t3) } .btn.ghost:hover { color:var(--t2) }
 .btn:disabled { opacity:.45; cursor:default }
-.chip { display:inline-flex; align-items:center; gap:5px; font-family:var(--mono); font-size:11.5px; color:var(--t2); border:1px solid var(--line2); border-radius:5px; padding:1px 7px; max-width:100%; cursor:pointer } .chip:hover { color:var(--w); border-color:var(--t3) } .chip span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.chip { vertical-align:middle; display:inline-flex; align-items:center; gap:5px; font-family:var(--mono); font-size:11.5px; color:var(--t2); border:1px solid var(--line2); border-radius:5px; padding:1px 7px; max-width:100%; cursor:pointer } .chip:hover { color:var(--w); border-color:var(--t3) } .chip span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .hdr { height:var(--hh); flex:none; display:flex; align-items:center; gap:8px; padding:0 14px; border-bottom:1px solid var(--line); font-size:13px; min-width:0 } .hdr .ttl { color:var(--w); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 } .hdr .sp { flex:1 } .hdr .acts { display:flex; gap:2px; flex:none }
 .menu { position:absolute; background:var(--box); border:1px solid var(--line2); border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,.5); padding:5px; display:flex; flex-direction:column; gap:1px; z-index:30; font-size:12.5px; min-width:190px }
 .menu button { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:5px; width:100%; min-height:30px; color:var(--t) } .menu button:hover { background:var(--sel) } .menu button.on { color:var(--w) } .menu button.warn { color:var(--wait) } .menu .k { margin-left:auto; font-family:var(--mono); font-size:10.5px; color:var(--t3) } .menu .h { font-size:10.5px; color:var(--t3); padding:4px 8px 2px } .menu hr { border:0; border-top:1px solid var(--line); margin:4px 0 }
@@ -306,13 +306,25 @@ b,strong { color:var(--w); font-weight:600 }
 /* 입력창 — contenteditable. 글 속에 칩(.ichip)이 선다 (InlineInput.tsx 머리말) */
 .composer .cin { position:relative; flex:1; min-width:0; min-height:26px; max-height:180px; overflow:auto; padding:2px 0; color:var(--w); font-size:13.5px; line-height:1.6; white-space:pre-wrap; word-break:break-word; outline:0; cursor:text }
 /* 안내글은 흐름 밖(absolute)에 둔다 — 흐름 안에 두면 캐럿이 안내글 **뒤**에 선다(2026-09-17 Dave 실측). 누르거나 치면 사라진다(:focus) */
-.composer .cin[data-value=""]:not(:focus)::before { content:attr(data-placeholder); position:absolute; left:0; top:2px; color:var(--t3); pointer-events:none; white-space:nowrap; overflow:hidden; max-width:100%; text-overflow:ellipsis }
-.ichip { display:inline-flex; align-items:center; gap:5px; height:22px; padding:0 8px 0 7px; margin:0 2px; border:1px solid var(--line2); border-radius:6px; background:var(--box); color:var(--t); font-family:var(--mono); font-size:12px; vertical-align:-5px; max-width:260px; white-space:nowrap; user-select:none; cursor:pointer }
+/* 🔴 **AM · 안내 글을 입력칸 세로 가운데로** (2026-09-24 Dave: *«'보내면 대기열에 들어갑니다' 부분이 채팅창의
+      중앙정렬이 안되어 있어»*). 종전에는 «맨 위에서 2px» 로 박혀 있었는데, 그 2px 는 **데스크톱의 안쪽 여백**이다.
+      폰은 안쪽 여백이 8px 이라(누르기 좋게 칸을 키웠다) 안내 글만 6px 위로 떠서 단추 가운데선과 어긋났다.
+   ⚠ 여백 값을 폰용으로 또 적지 않는다 — 두 벌이 되면 한쪽이 낡는다. **가운데 기준**이면 여백이 몇이든 맞는다.
+   ⚠ 안내 글은 «빈 칸일 때만» 보이므로 늘 한 줄이고, 그 한 줄은 안쪽 여백 덕에 이미 가운데다 — 커서와도 어긋나지 않는다. */
+.composer .cin[data-value=""]:not(:focus)::before { content:attr(data-placeholder); position:absolute; left:0; top:50%; translate:0 -50%; color:var(--t3); pointer-events:none; white-space:nowrap; overflow:hidden; max-width:100%; text-overflow:ellipsis }
+/* 🔴 **AM · 글줄 속 칩은 글자 가운데선에 맞춘다** (2026-09-24 Dave: *«칩이 약간 내려간것 처럼 되어 있는데»*).
+      `inline-flex` 는 기본이 **밑선(baseline) 맞춤**인데, 칩에는 테두리와 안쪽 여백이 있어 밑선을 맞추면
+      상자가 통째로 아래로 처진다(실측 데스크톱 **+7~8px**). 가운데 맞춤이면 글자 크기가 바뀌어도 따라온다. */
+.ichip { vertical-align:middle; display:inline-flex; align-items:center; gap:5px; height:22px; padding:0 8px 0 7px; margin:0 2px; border:1px solid var(--line2); border-radius:6px; background:var(--box); color:var(--t); font-family:var(--mono); font-size:12px; max-width:260px; white-space:nowrap; user-select:none; cursor:pointer }
 .ichip:hover { border-color:var(--t3) } .ichip .nm { overflow:hidden; text-overflow:ellipsis; min-width:0 }
 .ichip .fb { flex:none; font-family:var(--ui); font-size:10px; line-height:16px; color:var(--t3); background:var(--bg); border-radius:3px; padding:0 5px }
 .ichip.busy { border-color:#3a2a1f } .ichip .spin { border-top-color:var(--run) }
-.cbar .acount { font-size:11px; color:var(--t3); margin-left:8px; white-space:nowrap }
-.cbar { display:flex; align-items:center; gap:2px; font-size:12.5px; color:var(--t2) } .cbar .sp { flex:1 }
+.cbar .acount { font-size:11px; color:var(--t3); margin-left:8px; white-space:nowrap; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis }
+/* 🔴 **AM · 좁아지면 «줄어도 되는 것»이 먼저 줄어든다** (2026-09-24 Dave: *«보내기 버튼이 밖으로 튀어나가네»*).
+      이 줄의 항목이 **하나도 안 줄어서**(전부 줄바꿈 금지) 폭이 모자라면 줄 전체가 넘치고, 상자는 넘친 것을
+      잘라 내지 않는다 — 실측 채팅 칸 361px 에서 **85px 넘침**(= 보내기 단추가 밖으로 나간 거리 그대로).
+   ⇒ 늘 필요한 것(모드·＋·모델·노력·보내기)은 그대로 두고, **설명인 「첨부 N개…」가 먼저 줄어들게** 한다. */
+.cbar { display:flex; align-items:center; gap:2px; font-size:12.5px; color:var(--t2); min-width:0 } .cbar .sp { flex:1 }
 .cbtn { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:6px; font-size:12.5px; color:var(--t2); white-space:nowrap; position:relative } .cbtn:hover { color:var(--w); background:var(--hover) } .cbtn.on { color:var(--w); background:var(--sel) } .cbtn .chev { color:var(--t3) }
 /* 모드 칩 «적용 중» — 옛 모드 워커가 턴을 끝낼 때까지 (host autoAllow 가 그 사이를 맡는다) */
 .cbtn .pend { font-size:10px; line-height:14px; padding:0 5px; border-radius:7px; border:1px solid var(--hair); color:var(--t3); margin-left:2px } .cpop .hint.pend { display:block; border-top:0; padding-top:2px; white-space:normal; line-height:1.4 }
@@ -632,7 +644,7 @@ b,strong { color:var(--w); font-weight:600 }
   .cchips { display:flex; gap:6px; padding:0 22px 8px; width:100%; overflow-x:auto; scrollbar-width:none } .cchips::-webkit-scrollbar { display:none } .cchips .cbtn { padding:5px 11px; border-radius:15px; border:1px solid var(--hair); font-size:12.5px; background:var(--box); flex:none }
   .composer { margin:0 16px; width:calc(100% - 32px); max-width:none; min-height:60px; border-radius:30px; padding:8px 10px 8px 8px; gap:0; justify-content:center; box-shadow:0 10px 30px rgba(0,0,0,.45) } .composer.multi { border-radius:22px }
   .composer .crow { align-items:center; gap:10px }
-  .composer .cin { font-size:17px; min-height:24px; padding:6px 0; max-height:140px } .ichip { height:26px; font-size:14px; vertical-align:-7px; max-width:220px }
+  .composer .cin { font-size:17px; min-height:24px; padding:6px 0; max-height:140px } .ichip { height:26px; font-size:14px; vertical-align:middle; max-width:220px }   /* AM · 손으로 맞춘 -7px 대신 같은 규칙으로 */
   .composer .plusb { width:40px; height:40px; border-radius:50%; background:rgba(255,255,255,.06); display:inline-flex; align-items:center; justify-content:center; color:var(--t); flex:none }
   .sendb { width:36px; height:36px } .sendb.mic { background:transparent; color:var(--t2) }
   .cpop { left:0; right:0; width:auto; border-radius:20px; padding:6px; bottom:calc(100% + 10px) } .cpop.r { width:auto } .prow2 { min-height:52px; padding:10px 14px; border-radius:12px } .prow2 .t b { font-size:16px } .prow2 .t small { font-size:13px }
@@ -1166,9 +1178,15 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .dbody.imgbody { padding:0; overflow:hidden; display:flex }
 .imgv { position:relative; flex:1; min-height:0; overflow:hidden; touch-action:none; user-select:none; cursor:grab; background:var(--bg) } .imgv.zoomed { cursor:grab } .imgv:active { cursor:grabbing }
 .imgv img { position:absolute; left:0; top:0; transform-origin:0 0; max-width:none; will-change:transform; border-radius:0 }
-.imgv .zbar { position:absolute; left:50%; bottom:12px; translate:-50% 0; display:flex; align-items:center; gap:2px; padding:4px 6px; border-radius:20px; background:var(--box); border:1px solid var(--hair); box-shadow:0 6px 20px rgba(0,0,0,.35); font-size:12px; z-index:2 }
+/* 🔴 **AM · 이 바는 줄내림이 없다** (2026-09-24 Dave: *«맞춤/원본/복사 … 줄내림이 되면 안돼»*).
+      종전에는 최대 폭도, 줄바꿈 금지도 없어서 폰처럼 좁으면 글자가 단추 **안에서** 「맞/춤」 으로 쪼개졌다.
+   ⚠ 화면 폭을 넘지 않게 상한을 두고, 그래도 좁으면 글자를 감추고 **아이콘만** 남긴다(아래 `.lb`). */
+.imgv .zbar { max-width:calc(100% - 24px); white-space:nowrap; position:absolute; left:50%; bottom:12px; translate:-50% 0; display:flex; align-items:center; gap:2px; padding:4px 6px; border-radius:20px; background:var(--box); border:1px solid var(--hair); box-shadow:0 6px 20px rgba(0,0,0,.35); font-size:12px; z-index:2 }
 .imgv .zbar button { min-width:26px; height:24px; padding:0 8px; border-radius:12px; color:var(--t2); display:inline-flex; align-items:center; gap:4px } .imgv .zbar button:hover { background:var(--sel); color:var(--w) } .imgv .zbar button.on { color:var(--w); background:var(--sel) } .imgv .zbar .cp { color:var(--w) }
 .imgv .zbar .pct { font-family:var(--mono); font-size:11.5px; color:var(--w); min-width:42px; text-align:center }
+.imgv .zbar button .lb { white-space:nowrap }
+/* 좁은 화면에서는 아이콘만 — 글자는 지우지 않고 감춘다(읽는 프로그램에는 남는다) */
+@media (max-width: 760px) { .imgv .zbar button .lb { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%) } .imgv .zbar button { min-width:30px; padding:0 6px } }
 
 /* ── 복사 진행 띠 (M-4) · 캐시 줄 ── */
 .cprog { position:fixed; left:50%; bottom:calc(var(--sab, 0px) + 18px); translate:-50% 0; z-index:60; display:flex; align-items:center; gap:10px; padding:8px 10px 8px 12px; border-radius:12px; background:var(--box); border:1px solid var(--hair); box-shadow:0 10px 30px rgba(0,0,0,.4); font-size:12px; color:var(--t2); max-width:min(92vw, 520px) }
@@ -1210,7 +1228,13 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .md .openb { white-space:pre-wrap; overflow-wrap:anywhere; margin:0 } .md .openb:empty { min-height:0 }
 .md .scaret { display:inline-block; width:2px; height:1em; vertical-align:text-bottom; background:var(--w); margin-left:2px; animation:caret 1s steps(1) infinite }
 .md.streaming > :last-child::after { content:none }   /* 커서는 .scaret 하나뿐 — ::after 가 목록·코드 끝에 붙어 줄 높이를 흔들던 것을 뗀다 */
-.live { height:24px; min-height:24px; margin-top:-8px; font-variant-numeric:tabular-nums } .live .el { font-variant-numeric:tabular-nums; min-width:4.5em }
+/* 🔴 **AM · 점선 상자만은 높이를 박지 않는다** (2026-09-24 Dave: *«알람 켜기 부분 버튼이 전체 라인을 넘어가»*).
+      `.live` 의 `height:24px` 는 **한 줄짜리 진행 표시**에 맞춘 값이다. 그런데 대기 줄(`.hold`)은 위아래 8px
+      안쪽 여백에 테두리, 그리고 26px 짜리 단추까지 품는다 — 24px 에 가두면 **단추가 점선을 뚫고 나간다**
+      (실측: 줄 24px · 단추 26px · 단추 top −1px). 그 줄만 제 내용만큼 자라게 둔다.
+   ⚠ `min-height` 는 남긴다 — 단추가 없을 때도 줄 높이가 들쭉날쭉하지 않게. */
+.live { height:24px; min-height:24px; margin-top:-8px; font-variant-numeric:tabular-nums }
+.live.hold { height:auto } .live .el { font-variant-numeric:tabular-nums; min-width:4.5em }
 .chat-body { gap:16px } .chat-body > .live { margin-top:-8px }
 .tobot.newc { width:auto; padding:0 12px 0 10px; border-radius:16px; gap:4px; font-size:12px; color:var(--w) } .tobot .nc { white-space:nowrap }
 .chat-scroll { overflow-anchor:none }   /* O · 따라가기는 우리가 한다 — 브라우저 앵커링이 끼어들면 프레임당 10px 계약이 깨진다 */

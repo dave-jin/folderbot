@@ -76,9 +76,15 @@ export function ImageView({ src, alt, onCopy, copyLabel = '복사' }: { src: str
       <button onClick={() => to(v.s / 1.25)} title="축소 (⌘−)">−</button>
       <span className="pct">{Math.round(v.s * 100)}%</span>
       <button onClick={() => to(v.s * 1.25)} title="확대 (⌘+)">+</button>
-      <button onClick={() => toFit()} title="맞춤 (⌘9)" className={Math.abs(v.s - fit) < 1e-6 ? 'on' : ''}>맞춤</button>
-      <button onClick={() => to(1)} title="원본 (⌘0)" className={Math.abs(v.s - 1) < 1e-6 ? 'on' : ''}>원본</button>
-      {onCopy ? <button onClick={onCopy} title="이미지를 클립보드에" className="cp"><Icon n="copy" size={12} />{copyLabel}</button> : null}
+      {/**
+        * 🔴 **AM · 좁으면 아이콘, 넓으면 글자** (2026-09-24 Dave: *«맞춤/원본/복사 부분이 줄내림이 되어서 예쁘지 않아.
+        *    줄내림이 되면 안돼. 글씨가 너무 작아지면 아이콘으로 대체해줘»*).
+        * ⚠ 글자는 **지우지 않고 감춘다**(`.lb`) — 읽는 프로그램에는 그대로 남고, 넓은 화면에서는 다시 보인다.
+        *    아이콘만 남는 자리에서도 `title` 이 뜻을 말한다(⌘ 단축키까지).
+        */}
+      <button onClick={() => toFit()} title="맞춤 (⌘9)" aria-label="맞춤" className={Math.abs(v.s - fit) < 1e-6 ? 'on' : ''}><Icon n="fit" size={13} /><span className="lb">맞춤</span></button>
+      <button onClick={() => to(1)} title="원본 (⌘0)" aria-label="원본" className={Math.abs(v.s - 1) < 1e-6 ? 'on' : ''}><Icon n="actual" size={13} /><span className="lb">원본</span></button>
+      {onCopy ? <button onClick={onCopy} title="이미지를 클립보드에" aria-label={copyLabel} className="cp"><Icon n="copy" size={12} /><span className="lb">{copyLabel}</span></button> : null}
     </div>
   </div>
 }
