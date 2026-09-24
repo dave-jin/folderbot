@@ -3,6 +3,7 @@ import type { Bot, ChatItem, NotifyEvent, PermissionMode, PermissionRequest, Rou
 import { api, setToken, token, uploadFile } from './api'
 import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
 import { holdHeader, holdLine, holderOf, type Holder } from '../core/waiting'
+import { cliTooOld, cliUpdateLine, requiredCliVersion } from '../core/cliUpdate'
 import { AskHost, ConfirmHost, DiffHost, FolderPicker, Md, NotifyCenter, Onboarding, Pairing, RoutineSheet, Settings, askConfirm, askName, showDiff, useToast } from './Sheets'
 import { AgentPickHost, pickAgent } from './AgentPick'
 import type { SecId } from './Settings'
@@ -248,7 +249,15 @@ function UpdateChip({ version, st, onCheck, onApply }: { version: string; st: Up
 function Main() {
   const { s, refresh, loadChat, loadTodo } = useStore()
   const [hash, setHash] = useHash()
-  const botId = hash.bot || 'orch'
+  /**
+   * 🔴 **AJ · 해시가 비어도 오케스트레이터로 떨어지지 않는다** (2026-09-24 Dave: *«CCAF 폴더를 보다가 폴더봇
+   *    리스트를 잠깐 열었다 닫으면 CCAF 가 그대로 나와야 하는데 지금 오케스트레이터로 간다»*).
+   *    `hash.bot` 이 비는 길은 여럿이다 — 브라우저 뒤로(가장자리 쓸기와 겹친다) · 해시 없는 링크 · 되살아난 탭.
+   *    어느 길이든 **보던 봇이 있으면 그리로 돌아간다.** 오케스트레이터는 사람이 고를 때만 나온다.
+   */
+  const lastBot = useRef('')
+  if (hash.bot) lastBot.current = hash.bot
+  const botId = hash.bot || lastBot.current || 'orch'
   const bot = s.bots.find((b) => b.id === botId) ?? s.bots[0]
   const sessions = s.sessionsByBot[bot?.id ?? ''] ?? []
   const sessionId = hash.s && sessions.some((x) => x.id === hash.s) ? hash.s : sessions[0]?.id
@@ -413,6 +422,8 @@ function Main() {
     const [b, sid] = h.list[j].split('|')
     setHashSelf(sid ? { bot: b, s: sid } : { bot: b }); setView('chat')
   }
+  /** AJ · 해시가 비었는데 보던 봇이 있으면 **주소도 도로 채운다** — 화면과 주소가 갈리면 다음 되돌리기가 또 튄다 */
+  useEffect(() => { if (!hash.bot && lastBot.current) setHashSelf({ bot: lastBot.current }) }, [hash.bot])
   const restored = useRef(false)
   useEffect(() => {
     if (restored.current || !s.bots.length) return
@@ -659,6 +670,11 @@ function Main() {
      *    남은 선택보다 이쪽이 이긴다 — 가장자리 24px 에는 고를 글도 거의 없다.
      */
     if (selecting) { try { window.getSelection()?.removeAllRanges() } catch { /* */ } }
+    /**
+     * AJ · **목록을 끌어 오면 키보드는 내려간다** (2026-09-24 Dave). 목록을 보겠다는 것은 «지금 쓰던 글은 잠시 두겠다»
+     * 는 뜻이라, 키보드가 반쯤 화면을 덮은 채 목록이 열리면 볼 수 있는 폴더가 절반으로 준다.
+     */
+    try { (document.activeElement as HTMLElement | null)?.blur?.() } catch { /* */ }
     if (!canStartSwipe({ coarse, selecting: false, inInput, consumeX: false })) return
     gref.current = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: performance.now(), lock: '', side: null, dir: 'r', mode: 'open', next: null, target: t, dead: false }
   }
@@ -1190,7 +1206,25 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const lastUser = useMemo(() => { for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === 'user') return items[i] as Extract<ChatItem, { kind: 'user' }>; return null }, [items])
   const pinnedItem = useMemo(() => (pinnedId ? (items.find((x) => x.id === pinnedId && x.kind === 'user') as Extract<ChatItem, { kind: 'user' }> | undefined) ?? null : null), [items, pinnedId])
   const lastAssistant = useMemo(() => { for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === 'assistant') return items[i].id; return null }, [items])
+  /**
+   * 🔴 **AJ · CLI 가 낡아서 나는 고장은 화면이 먼저 말한다** (2026-09-24 Dave). 앱은 **호스트의 CLI** 로 도는데
+   *    그게 낡으면 새 모델이 400 으로 죽고, 그 사정은 **오류 글 안에만** 있었다 — 사람이 어느 기계에 들어가
+   *    무엇을 쳐야 하는지 스스로 알아내야 했다. 이제 띠가 뜨고 **거기서 바로** 올린다(폰·데스크톱 같다).
+   */
+  const [cliV, setCliV] = useState<string | null>(null)
+  const [cliBusy, setCliBusy] = useState(false)
+  const loadCli = async () => { try { const a = await api<{ id: string; version: string | null }[]>('/agents'); setCliV(a.find((x) => x.id === 'claude')?.version ?? null) } catch { /* 못 물어봤으면 조용히 */ } }
+  useEffect(() => { void loadCli() }, [])
   const streaming = !!(last && (last.kind === 'assistant' || last.kind === 'thinking') && last.streaming)
+  /** 마지막 몇 줄에서 «몇 판이 필요하다» 를 읽는다 — CLI 가 정확히 말해 주므로 밖에 물으러 가지 않는다 */
+  const cliNeed = useMemo(() => {
+    for (const it of items.slice(-6).reverse()) {
+      const t = (it as { text?: string; error?: string }).text ?? (it as { error?: string }).error ?? ''
+      const v = requiredCliVersion(t); if (v) return v
+    }
+    return null
+  }, [items])
+  const cliOld = cliTooOld(cliV, cliNeed)
   /**
    * S · **맨 아래까지 봤으면 읽음** (2026-09-21 Dave 확정). 판정은 `core/unread.shouldMarkRead` 한 곳 —
    * 화면은 «맨 아래인가 · 아직 자라는가» 만 알려 주고, 적을지 말지는 순수 함수가 정한다.
@@ -1535,6 +1569,20 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
         {/* O · 본문과 상태 줄 사이는 8px 고정 — 남는 공간은 상태 줄 **뒤**로 보낸다(종전엔 스페이서가 앞에 있어 큰 빈 공간이 생겼다) */}
         {/* AB · 🔴 턴이 끝나도 `bg` 가 남아 있으면 대기 줄은 남는다 — 사라지는 순간이 「끝났나?」의 정체였다 */}
         {cur && (running || state === 'awaiting_input' || (cur.bg ?? 0) > 0) ? <Live cur={cur} state={state} color={bot.color} /> : null}
+        {/* AJ · CLI 가 낡았을 때만 뜬다 — 누르면 호스트에서 바로 올린다 */}
+        {cliOld ? <div className="live cliold">
+          <Icon n="warn" size={14} color="var(--wait)" />
+          <span className="tx">{cliUpdateLine(cliV, cliNeed)}</span>
+          <span className="sp" />
+          <button className="hact" disabled={cliBusy} onClick={async () => {
+            setCliBusy(true)
+            try {
+              const r = await api<{ before: string | null; after: string | null; changed: boolean }>('/agents/claude/update', { method: 'POST', body: {} })
+              await loadCli()
+              say(r.changed ? `Claude CLI 를 ${r.after} 로 올렸어요 — 다시 보내 보세요` : `이미 최신이에요 (${r.after ?? r.before ?? '?'})`)
+            } catch (e) { say(`못 올렸어요 — ${(e as Error).message}`) } finally { setCliBusy(false) }
+          }}>{cliBusy ? '올리는 중…' : '지금 업데이트'}</button>
+        </div> : null}
         <div style={{ flex: 1 }} />
         <div ref={endRef} />
       </div>
