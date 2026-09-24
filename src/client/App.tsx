@@ -56,7 +56,25 @@ function useHash(): [Record<string, string>, (p: Record<string, string>) => void
   const parse = () => Object.fromEntries(new URLSearchParams(location.hash.slice(1)))
   const [h, setH] = useState<Record<string, string>>(parse)
   useEffect(() => { const f = () => setH(parse()); window.addEventListener('hashchange', f); return () => window.removeEventListener('hashchange', f) }, [])
-  return [h, (p) => { location.hash = new URLSearchParams(p).toString() }]
+  /**
+   * 🔴 **AO · 화면을 옮겨도 «페이지 기록» 을 쌓지 않는다** (2026-09-24 Dave: *«왼쪽 혹은 오른쪽으로 쓸기에서
+   *    이전 혹은 다음 페이지로 이동하는 기능이 여전히 남아 있어. 이거 없애기로 했는데»*).
+   *
+   * 앱 안의 가로 쓸기는 이미 **봇 목록 하나**로 줄였는데(AD·AH·AI) 데스크톱에서는 그게 아니었다 —
+   * **맥 트랙패드의 두 손가락 쓸기는 시스템이 주는 «뒤로/앞으로»** 이고, 그건 우리 손짓 코드를 거치지 않는다.
+   * 걷어 갈 것이 있었던 이유는 `location.hash = …` 가 **옮길 때마다 기록을 한 칸씩 쌓았기** 때문이다
+   *    (실측: 봇 하나 옮기자 `history.length` 2 → 3).
+   * ⇒ **쌓지 않는다.** 같은 자리에 덮어쓰면 걷어 갈 기록이 없어 쓸기가 아무 일도 못 한다 —
+   *    손짓을 막는 것이 아니라 **갈 곳을 없애는** 쪽이라, 트랙패드·마우스·⌘[ 어디로 와도 똑같이 조용하다.
+   * ⚠ `replaceState` 는 `hashchange` 를 **안 쏜다** — 그래서 상태를 여기서 직접 민다(안 그러면 화면이 안 바뀐다).
+   * ⚠ 주소는 그대로 둔다 — 딥링크(알림 → 그 대화)와 «마지막에 보던 자리» 복원은 주소를 읽으므로 그대로 산다.
+   */
+  return [h, (p) => {
+    const next = new URLSearchParams(p).toString()
+    if (next === location.hash.replace(/^#/, '')) return
+    history.replaceState(null, '', next ? `#${next}` : location.pathname + location.search)
+    setH(parse())
+  }]
 }
 function useMedia(q: string): boolean { const [m, setM] = useState(() => window.matchMedia(q).matches); useEffect(() => { const mq = window.matchMedia(q); const f = () => setM(mq.matches); mq.addEventListener('change', f); return () => mq.removeEventListener('change', f) }, [q]); return m }
 /** 폰 키보드 — visualViewport 가 창보다 훨씬 낮아지면 열린 것 */

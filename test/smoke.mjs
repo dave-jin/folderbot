@@ -517,6 +517,29 @@ try {
       if (name === 'desktop') {
         const txt = await pg.textContent('.chat-body'); if (!/스텁이 처리했습니다/.test(txt)) fail('ui chat missing')
         const rows = await pg.$$eval('.brow', (r) => r.length); if (rows < 3) fail(`ui rows ${rows}`)
+        /**
+         * 🔴 **AO · 화면을 옮겨도 「페이지 기록」이 안 쌓인다** (2026-09-24 Dave: *«왼쪽 혹은 오른쪽으로 쓸기에서
+         *    이전 혹은 다음 페이지로 이동하는 기능이 여전히 남아 있어. 이거 없애기로 했는데»*).
+         * ⚠ 앱 안의 가로 쓸기는 이미 봇 목록 하나로 줄였지만, **맥 트랙패드의 두 손가락 쓸기는 시스템이 주는
+         *    «뒤로/앞으로»** 라 우리 손짓 코드를 안 거친다. 막는 길은 **걷어 갈 기록을 안 만드는 것**이다.
+         * ⚠ 그래서 재는 것도 손짓이 아니라 **기록의 길이**다 — 손짓은 기기마다 다르지만 기록은 어디서나 같다.
+         */
+        {
+          /* ⚠ 해시를 직접 쓰면 **브라우저를 재는 것**이지 앱을 재는 게 아니다(그건 당연히 쌓인다).
+                앱이 쓰는 길 — **진짜 클릭** — 으로 옮겨야 `useHash` 를 지나간다. */
+          /* ⚠ 뒤 검사는 «지금 보던 봇» 을 전제한다 — 옮겨 다녔으면 **원래 봇으로 되돌려 놓고** 나간다(실측으로 깨졌다) */
+          const was = await pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('bot'))
+          const brows = await pg.$$eval('.brow[data-id]', (r) => r.map((x) => x.dataset.id))
+          if (brows.length < 2) fail('AO: 옮겨 다닐 봇이 둘 미만이라 검사가 헛돈다 ' + JSON.stringify(brows))
+          await pg.click(`.brow[data-id="${brows[0]}"]`); await wait(500)
+          const len0 = await pg.evaluate(() => history.length)
+          for (const id of [brows[1], brows[0], brows[1], brows[0]]) { await pg.click(`.brow[data-id="${id}"]`); await wait(400) }
+          const len1 = await pg.evaluate(() => history.length)
+          if (was) { await pg.click(`.brow[data-id="${was}"]`).catch(() => {}); await wait(600) }
+          if (len1 > len0) fail(`🔴 AO: 화면을 옮겼더니 페이지 기록이 ${len0} → ${len1} 로 쌓였다 — 트랙패드 쓸기가 그걸 걷는다`)
+          ok(`AO 페이지 기록 — 봇을 네 번 오가도 ${len1} 그대로(쓸기가 걷어 갈 곳이 없다)`)
+        }
+
         if (!(await pg.$('.sub'))) fail('ui subagent line missing'); if (!(await pg.$('.todow'))) fail('ui todo widget missing')
         if (!(await pg.$('.panel .trow'))) fail('ui tree missing')
         if (!(await pg.$('.chat-hdr.glass')) || !(await pg.$('.composer .cbar')) || !(await pg.$('.ring'))) fail('ui composer bar / glass header missing')
