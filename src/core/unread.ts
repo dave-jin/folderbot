@@ -52,3 +52,18 @@ const RUNNING: BotMood[] = ['work', 'hold']
 export function unreadRing(mood: BotMood): boolean {
   return !RUNNING.includes(mood)
 }
+
+/**
+ * 🔴 **AU · 배지는 「무슨 일이 있을 때」만 뜬다** (2026-09-25 Dave 승인: *«기다리는 중이 아니고 읽지 않은 상태가
+ *    아닌 경우에는 닷 자체를 없애고 싶어 … 끝난 화면에 초록색 배지를 없애줘 … 링이 다 있으니깐 현재 작업 중인
+ *    링이 뭔지 너무 헷갈려»*).
+ * 종전에는 **끝났고 이미 읽은** 봇에도 초록 닷이 남아, 화면에 닷이 너무 많았다. 그 사이에서 정작 **지금 돌고
+ * 있는 주황 닷**(숨쉬는 것)이 묻혔다.
+ * ⇒ 닷을 그리는 경우는 둘뿐이다 — ① 지금 돌고 있거나 누군가를 기다린다(`work`·`hold`·`wait`·`error`)
+ *    ② 읽을 것이 남았다. 끝났고 봤으면(`done`) · 시작 안 했으면(`idle`) · 잠들었으면(`sleep`) **아무것도 없다.**
+ * ⚠ 노랑(네 차례)·빨강(오류)은 읽은 뒤에도 남긴다 — 끝난 게 아니라 **멈춰서 사람을 기다리는** 상태다(Dave 승인안).
+ */
+const LIVE: BotMood[] = ['work', 'hold', 'wait', 'error']
+export function badgeOn(mood: BotMood, unread: boolean): boolean {
+  return unread || LIVE.includes(mood)
+}
