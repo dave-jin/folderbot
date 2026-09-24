@@ -9,7 +9,7 @@ import { homedir } from 'node:os'
 import { transition, shouldNotify } from '../core/stateMachine'
 import { assistantText, closeOpenItems, contextOf, itemId, modelOf, toolSummary, touchedPath, type StreamLine } from '../core/chat'
 import { CodexWorker } from './codex'
-import { fitsProvider, sameModel } from '../core/agents'
+import { fitsProvider, modelParts, sameModel } from '../core/agents'
 import { CODEX_LOCAL, parseLocalSlash } from '../core/slashLocal'
 import { isAutoSessionName, titleFromText } from '../core/sessionTitle'
 import { isModelRejected } from '../core/codexMap'
@@ -515,7 +515,12 @@ export class SessionManager extends EventEmitter {
   private noteModel(r: SessionRec, line: StreamLine): void {
     if (line.parent_tool_use_id) return
     const m = modelOf(line)
-    if (!m || sameModel(m, r.model)) return
+    /**
+     * 🔴 **모델 이름이 아닌 것은 안 받는다** (AI · 2026-09-24 Dave 스크린샷). 오류 턴에서 CLI 가
+     *    `"model":"<synthetic>"` 을 보내는데, 그걸 그대로 받아 **칩에 «<synthetic>» 이 박혔다.**
+     *    모양이 `claude-<종류>-<판>` 이 아니면 그건 기계가 쓴 표식이지 사람이 고를 모델이 아니다.
+     */
+    if (!m || !modelParts(m) || sameModel(m, r.model)) return
     r.model = m
     this.persist(r); this.emit('sessions', r.botId)
   }

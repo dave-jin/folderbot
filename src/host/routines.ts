@@ -64,6 +64,37 @@ export class Routines {
   static describe(cron: string): string { return describeCron(cron) }
 }
 
+/**
+ * 🔴 **루틴의 기본은 «묻지 않고 바로 실행» 이다** (AI · 2026-09-24 Dave: *«일반적인 루틴 같은 경우에는
+ * 권한 요청 없이 처음부터 끝까지 물어보지 않고 바로 실행되는 방식으로»*).
+ *
+ * 루틴은 **사람이 없을 때 도는 것**이라, 중간에 묻는 순간 그 회차는 그냥 멈춰 선다 — 물어볼 사람이 없다.
+ * ⚠ 이건 권한을 **올리는** 결정이다(`bypassPermissions`). 그래서 ① 화면의 승인 수준 칸에 무슨 뜻인지 계속 적어 두고
+ *    ② 루틴마다 낮출 수 있게 두고 ③ **봇은 이 값을 못 바꾼다**(AA-5 · MCP 도구에 `approve` 가 없다).
+ */
+export const DEFAULT_ROUTINE_APPROVE: NonNullable<RoutineDef['approve']> = 'always'
 export function approveToMode(a: RoutineDef['approve']): PermissionMode {
-  return a === 'always' ? 'bypassPermissions' : a === 'folder' ? 'acceptEdits' : 'plan'
+  const v = a ?? DEFAULT_ROUTINE_APPROVE
+  return v === 'always' ? 'bypassPermissions' : v === 'folder' ? 'acceptEdits' : 'plan'
+}
+
+/**
+ * AI · **루틴 세션은 둘까지만 남긴다** (2026-09-24 Dave: *«바로 직전 루틴까지만 남기고, 루틴 세션은 두 개 이상
+ * 가져가지 않는»*). 루틴이 돌 때마다 새 세션이 생기므로 그냥 두면 목록이 루틴 기록으로 덮인다.
+ *
+ * 🔴 **도는 중이거나 확인을 기다리는 것은 걷지 않는다.** 그걸 지우면 ① 하던 일이 중간에 끊기고
+ *    ② 아직 안 읽은 답이 사라진다. 그래서 «끝난 것» 중에서 오래된 것부터 걷는다 — 그 결과 도는 것이 많으면
+ *    한동안 둘을 넘을 수 있는데, **일을 죽이는 것보다 낫다.**
+ * @param sessions 그 봇의 루틴 세션들 (새로 만든 것 포함 · 최근 활동 순서는 상관없다)
+ */
+export const ROUTINE_KEEP = 2
+export function routinesToDrop(
+  sessions: { id: string; routine?: string; state: string; lastActivity: number }[],
+  keep = ROUTINE_KEEP,
+): string[] {
+  const mine = sessions.filter((s) => s.routine)
+  const busy = (s: { state: string }) => s.state === 'running' || s.state === 'awaiting_input'
+  const idle = mine.filter((s) => !busy(s)).sort((a, b) => b.lastActivity - a.lastActivity)
+  const room = Math.max(0, keep - mine.filter(busy).length)
+  return idle.slice(room).map((s) => s.id)
 }

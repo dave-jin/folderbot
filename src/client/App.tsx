@@ -696,8 +696,12 @@ function Main() {
     if (!g.next) { setDragSide(''); return }                            // 갈 데가 없던 쓸기 — 선택만 치우고 끝낸다
     const dx = e.clientX - g.x0, dt = performance.now() - g.t0
     let ok = swipeVerdict(dx, dt, window.innerWidth)
-    // 드릴인(서브에이전트) 안에서의 👉 는 먼저 드릴에서 나온다 — Chat 이 fb:nav 를 받아 preventDefault 하면 서랍은 안 연다
-    if (ok && g.dir === 'r' && view === 'chat') { const ev = new CustomEvent('fb:nav', { cancelable: true, detail: 'back' }); window.dispatchEvent(ev); if (ev.defaultPrevented) ok = false }
+    /**
+     * 🔴 **AI · 오른쪽 쓸기는 «봇 목록 보기» 하나뿐이다** (2026-09-24 Dave: *«뒤로 가기 같은 것도 되던데,
+     *    그 액션에서 뒤로 가기는 완전히 없애 주면 좋겠습니다 · 단일 용도로만»*).
+     *    종전에는 드릴인(서브에이전트) 안에서 👉 가 «드릴에서 나오기» 로 먼저 먹혔다 — 같은 손짓이 자리에 따라
+     *    다른 뜻이 되면 못 배운다. 드릴에서 나오는 길은 헤더의 ‹ 하나다.
+     */
     if (ok && g.next) setNav(g.next)
     if (g.side) settle(g.side)
     else setDragSide('')
