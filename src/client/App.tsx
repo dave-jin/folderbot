@@ -1830,14 +1830,28 @@ function Item({ it, bot, items, onFile, onReveal, onDrill, state, say, isLastAss
       const { body, files } = splitAttach(it.text)
       const relOfAbs = (abs: string) => (abs.startsWith(bot.abs + '/') ? abs.slice(bot.abs.length + 1) : abs === bot.abs ? '' : null)
       const openRef = (f: { abs: string; dir: boolean }) => { if (f.dir) { const r = relOfAbs(f.abs); if (r !== null) onReveal(r) } else onFile(f.abs) }
-      const chipOf = (f: { abs: string; dir: boolean; name: string }, k: string) => <button key={k} type="button" className={`pchip ${f.dir ? 'dir' : ''}`} title={f.abs} onClick={() => openRef(f)} ref={f.dir ? undefined : (el) => { const r = relOfAbs(f.abs); if (el && r) hoverable(el, { kind: 'file', botId: bot.id, rel: r }) }}>{f.dir ? <Icon n="folder" size={11} /> : null}<span>{f.name}</span></button>
+      /**
+       * 🔴 **AW · 같은 파일은 한 번, 하단 칩 디자인으로** (2026-09-25 Dave: *«구지 칩이 두번 보일 필요 있나? 그리고 하단 칩
+       *    디자인이 더 마음에 들어. 디자인은 하단 칩 디자인으로 하고, 하단에 첨부만 따로 모아서 칩을 보여줄 필요는 없을것 같아»*).
+       *    종전엔 글 속 `@이름` 은 단순한 알약(`.pchip`)으로, 그 아래에 같은 파일이 `FileChip`(아이콘·이름·폴더) 줄로 **또** 나왔다.
+       * ⇒ 글 속 자리에 **`FileChip` 을 그대로** 세우고, 아래 줄에는 **글 속에 안 나온 첨부만** 남긴다.
+       * ⚠ 아래 줄을 통째로 없애지 않는 이유 — `+` 로 붙이고 글에는 `@` 로 안 부른 첨부도 있다. 그걸 지우면 **무엇을
+       *    붙였는지가 화면에서 사라진다.** 보통은(전부 글 속에 있으면) 아래 줄이 아예 안 생긴다.
+       */
       const parts: ReactNode[] = []
+      const inline = new Set<string>()
       if (files.length) {
         const re = /@([^\s@]+)/g; let last = 0; let m: RegExpExecArray | null
-        while ((m = re.exec(body))) { const f = files.find((x) => x.name === m![1]); if (!f) continue; parts.push(body.slice(last, m.index)); parts.push(chipOf(f, `m${m.index}`)); last = m.index + m[0].length }
+        while ((m = re.exec(body))) {
+          const f = files.find((x) => x.name === m![1]); if (!f) continue
+          parts.push(body.slice(last, m.index))
+          parts.push(<FileChip key={`m${m.index}`} abs={f.abs} dir={f.dir} botAbs={bot.abs} botId={bot.id} onClick={() => openRef(f)} />)
+          inline.add(f.abs); last = m.index + m[0].length
+        }
         parts.push(body.slice(last))
       }
-      return <div className={`umsg ${isLastUser ? 'last' : ''}`} data-id={it.id} ref={isLastUser ? userRef : undefined}>{/* J-4 · 어느 기기에서 보냈나 — 호스트가 아닌 기기만 표시 */}{it.from && !it.from.main ? <span className="dev" title={`${it.from.device} 에서 보냄`}><Icon n={it.from.tier === 'phone' ? 'phone' : 'panel'} size={10} />{it.from.tier === 'phone' ? '폰' : '원격'} · {it.from.device}</span> : null}{files.length ? parts : it.text}{files.length ? <div className="files uatt">{files.map((f, i) => <FileChip key={`a${i}`} abs={f.abs} dir={f.dir} botAbs={bot.abs} botId={bot.id} onClick={() => openRef(f)} />)}</div> : null}</div>
+      const rest = files.filter((f) => !inline.has(f.abs))
+      return <div className={`umsg ${isLastUser ? 'last' : ''}`} data-id={it.id} ref={isLastUser ? userRef : undefined}>{/* J-4 · 어느 기기에서 보냈나 — 호스트가 아닌 기기만 표시 */}{it.from && !it.from.main ? <span className="dev" title={`${it.from.device} 에서 보냄`}><Icon n={it.from.tier === 'phone' ? 'phone' : 'panel'} size={10} />{it.from.tier === 'phone' ? '폰' : '원격'} · {it.from.device}</span> : null}{files.length ? parts : it.text}{rest.length ? <div className="files uatt">{rest.map((f, i) => <FileChip key={`a${i}`} abs={f.abs} dir={f.dir} botAbs={bot.abs} botId={bot.id} onClick={() => openRef(f)} />)}</div> : null}</div>
     }
     case 'assistant': return <div className="amsg"><Md text={it.text || ' '} streaming={!!it.streaming} botId={bot.id} onPath={onFile} onDir={onReveal} />{/* 답 아래 줄 — 🔴 **아이콘만** (2026-09-13 Dave: «복사 및 기능들을 아이콘으로»). 글자를 빼면
             답과 답 사이가 조용해지고, 무엇을 하는지는 툴팁이 말한다. ⚠ 시각은 남긴다(언제 온 답인지) */}
