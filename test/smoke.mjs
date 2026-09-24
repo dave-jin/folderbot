@@ -1185,12 +1185,6 @@ try {
           await ph.evaluate(() => { for (const b of document.querySelectorAll('.achips .achip .x')) b.click() }); await wait(200)
           await ph.evaluate((b64) => { const bin = atob(b64); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); const dt = new DataTransfer(); dt.items.add(new File([u8], 'paste.png', { type: 'image/png' })); const ev = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }); document.querySelector('.composer.ph .cin').dispatchEvent(ev) }, png.split(',')[1]); await wait(1500)
           const pasted = await ph.$$eval('.achips .achip .nm', (r) => r.map((x) => x.textContent)); if (!pasted.some((n) => /스크린샷_/.test(n ?? ''))) fail('N-4: 붙여넣은 그림이 칩으로 안 붙었다 ' + JSON.stringify(pasted))
-          await ph.close(); await fetch(base + `/api/sessions/${sidN}`, { method: 'DELETE' })
-          // 🔴 폰 목록용 `.mrow { min-height:70px }` 가 메뉴 줄(문서 ⋯ 의 「글자 크기」)까지 늘렸다 · −/+ 는 정사각 (2026-09-25 디자인 검수 · Codex)
-          {
-            const mr = await ph.evaluate(() => { const m = document.createElement('div'); m.className = 'menu'; m.style.cssText = 'position:fixed;left:0;top:0'; m.innerHTML = '<div class="mrow"><span>글자 크기</span><button class="mb">−</button><b>14</b><button class="mb">+</button></div>'; document.body.append(m); const r = m.querySelector('.mrow').getBoundingClientRect(), b = m.querySelector('.mb').getBoundingClientRect(); m.remove(); return { h: r.height, bw: b.width, bh: b.height } })
-            if (mr.h > 60 || Math.abs(mr.bw - mr.bh) > 4) fail('🔴 폰 메뉴 줄: 목록 규칙이 새서 늘어나거나 −/+ 가 길쭉하다 · ' + JSON.stringify(mr))
-          }
           // 🔴 손가락 기기에는 키 안내를 안 쓴다 — 일하는 중의 안내가 «(⌘⏎)» 였다(⌘ 키가 없다 · 2026-09-25 디자인 검수)
           {
             await api(`/sessions/${sidN}/send`, { text: '긴스트리밍 해 줘' })
@@ -1200,6 +1194,12 @@ try {
             if (/[⌘⏎↩]/.test(phq)) fail('🔴 폰 입력창: 손가락 기기에 키 안내가 떴다 · ' + JSON.stringify(phq))
             await api(`/sessions/${sidN}/interrupt`, {}); await wait(800)
           }
+          // 🔴 폰 목록용 `.mrow { min-height:70px }` 가 메뉴 줄(문서 ⋯ 의 「글자 크기」)까지 늘렸다 · −/+ 는 정사각 (2026-09-25 디자인 검수 · Codex)
+          {
+            const mr = await ph.evaluate(() => { const m = document.createElement('div'); m.className = 'menu'; m.style.cssText = 'position:fixed;left:0;top:0'; m.innerHTML = '<div class="mrow"><span>글자 크기</span><button class="mb">−</button><b>14</b><button class="mb">+</button></div>'; document.body.append(m); const r = m.querySelector('.mrow').getBoundingClientRect(), b = m.querySelector('.mb').getBoundingClientRect(); m.remove(); return { h: r.height, bw: b.width, bh: b.height } })
+            if (mr.h > 60 || Math.abs(mr.bw - mr.bh) > 4) fail('🔴 폰 메뉴 줄: 목록 규칙이 새서 늘어나거나 −/+ 가 길쭉하다 · ' + JSON.stringify(mr))
+          }
+          await ph.close(); await fetch(base + `/api/sessions/${sidN}`, { method: 'DELETE' })
           ok('N 폰 입력창 — H-5 헤더 · 본문과 같은 글자 · 질문 헤더(흐름 안 · 펼침) · 6줄 첫 줄 보임·전폭·버튼 하단 · 3장 칩(썸네일·링·✕) · 11개째 거절 · _2 · 📷 · 카메라 · ⌘V 없음 · 붙여넣기 files')
         }
         /**
@@ -1941,7 +1941,7 @@ try {
           const rel = 'churn.md'
           const abs = join(root, '3. Area/제품_Rondo', rel)
           // ⚠ 제목이 **둘** 이어야 목차 단추가 나온다(하나짜리 문서에 목차는 자리만 먹는다)
-          const src = ['---', 'type: reference', 'tags: [PARA, 지침]', '---', '', '# 제목', '', '**굵게** 와 *기울임* 과 `코드`.', '', '- [ ] 할 일', '- 항목', '', '## 두 번째 제목', '', '---', '', '> 인용', '', '> [!note] 콜아웃 줄', '', '[[위키링크]] 와 https://example.com', '', '[예시 링크](https://example.com/page) 옆 글', '', '| 가 | 나 |', '|---|---|', '| 1 | 2 |', '', '```bash', 'npm run qa', '---', '- [ ] 코드 속 줄', '```', ''].join('\n')
+          const src = ['---', 'type: reference', 'tags: [PARA, 지침]', '---', '', '# 제목', '', '**굵게** 와 *기울임* 과 `코드`.', '', '- [ ] 할 일', '- 항목', '', '## 두 번째 제목', '', '---', '', '> 인용', '', '> [!note] 콜아웃 줄', '', '[[위키링크]] 와 https://example.com', '', '[예시 링크](https://example.com/page) 옆 글', '', '| 가 | 나 |', '|---|---|', '| 1 | 2 |', '', '```bash', 'npm run qa', '---', '- [ ] 코드 속 줄', '```', '', '```md', '| 코드 | 표 |', '|---|---|', '| a | b |', '```', '', '주소는 `https://api.example.com/v1` 처럼 코드로', ''].join('\n')
           // ⚠ API 로 만든다 — 파일을 직접 쓰면 호스트가 모르고 트리가 안 새로 그려진다
           await api(`/bots/${bot.id}/file`, { rel, text: src })
           const before = readFileSync(abs)
@@ -2254,6 +2254,10 @@ try {
             if (cb.info !== 'bash') fail('문서 코드 블록: 언어 이름이 표식으로 안 붙었다 · ' + JSON.stringify(cb))
             if (!cb.ic) fail('문서 인라인 코드: 바탕 표식(lp-ic)이 없다')
             if (cb.inHr || cb.inCheck || !/---/.test(cb.text) || !/\[ \]/.test(cb.text)) fail('🔴 문서 코드 블록: 코드 안의 --- · - [ ] 가 가로줄·체크박스로 바뀌었다 · ' + JSON.stringify(cb))
+            // 🔴 펜스 안의 표는 코드 그대로(표 위젯 아님) · 인라인 코드 속 주소엔 아이콘·링크 없음 (리뷰 · Claude 적대 검토)
+            const cb2 = await pg.evaluate(() => ({ tblInCode: [...document.querySelectorAll('.mded .cm-line.lp-code')].some((l) => /\| 코드 \| 표 \|/.test(l.textContent ?? '')), widgetHasCode: [...document.querySelectorAll('.mded .lp-tblw')].some((w) => /코드/.test(w.textContent ?? '')), icIcon: !!document.querySelector('.mded .lp-ic img.fvic, .mded .lp-ic .lp-xl') }))
+            if (!cb2.tblInCode || cb2.widgetHasCode) fail('🔴 문서: 펜스 안의 표가 표 위젯으로 접혔다 · ' + JSON.stringify(cb2))
+            if (cb2.icIcon) fail('🔴 문서: 인라인 코드 속 주소에 아이콘·링크가 붙었다')
             ok('문서 — 코드 블록은 상자·언어 표식 · 코드 속 --- 와 - [ ] 는 글자 그대로 · 인라인 코드 바탕')
           }
           // 🔴 한국어는 띄어쓰기에서 줄을 바꾼다 — 「무|언가가」 처럼 낱말 가운데가 끊겼다 (2026-09-25 디자인 검수)

@@ -93,7 +93,9 @@ function keepWithText(a: HTMLElement, img: HTMLImageElement): void {
   // ⚠ 첫 글자가 `<code>`·`<strong>` 같은 요소 안이면 묶지 않는다 — 아이콘이 그 요소 안으로 들어가 코드 바탕을 입는다
   if (!t || t.parentNode !== a) return
   const lead = t.data.length - t.data.trimStart().length
-  const first = Array.from(t.data.slice(lead))[0] ?? ''
+  // 첫 **글자**(grapheme) — 코드 포인트로 자르면 이모지·NFD 한글이 묶음 경계에서 둘로 갈린다 (리뷰)
+  const body = t.data.slice(lead)
+  const first = (typeof Intl !== 'undefined' && 'Segmenter' in Intl ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(body)[Symbol.iterator]().next().value?.segment : Array.from(body)[0]) ?? ''
   t.splitText(lead + first.length)          // t 에는 «앞 공백 + 첫 글자» 만 남는다
   const head = t.data.slice(lead)
   t.data = t.data.slice(0, lead)

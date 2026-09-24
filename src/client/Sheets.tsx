@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Bot, NotifyEvent, RoutineDef } from '../core/types'
-import { mdPlain } from '../core/mdPlain'
+import { notePlain } from '../core/mdPlain'
 import { api, setToken, subscribePush } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { hitRange, rank } from '../core/search'
@@ -374,7 +374,7 @@ export function NotifyCenter({ onClose, onJump }: { onClose: () => void; onJump:
       {/* ⛔ 높이를 여기서 인라인으로 묶지 않는다 — 폰에서 `.modal-b { flex:1 }` 을 «55vh» 가 이겨
           목록이 화면 중간에서 끊기고 그 아래가 통째로 비었다(2026-09-13 Dave). 상한은 데스크톱 전용 규칙으로. */}
       <div className="modal-b">
-        {list.length ? list.map((n) => { const b = botOf(n.botId); return <button key={n.id} className={`nrow ${n.read ? '' : 'unread'}`} onClick={() => onJump(n)}><FolderBot color={b?.color ?? '#e08850'} size={28} mood={n.kind === 'awaiting' ? 'wait' : n.kind === 'done' ? 'done' : n.kind === 'error' ? 'error' : 'idle'} /><div className="t"><div className="l1"><b>{n.title}</b><time>{fmtTime(n.t)}</time></div><div className="l2">{mdPlain(n.body)}</div></div></button> }) : <div className="empty">알림이 없어요</div>}
+        {list.length ? list.map((n) => { const b = botOf(n.botId); return <button key={n.id} className={`nrow ${n.read ? '' : 'unread'}`} onClick={() => onJump(n)}><FolderBot color={b?.color ?? '#e08850'} size={28} mood={n.kind === 'awaiting' ? 'wait' : n.kind === 'done' ? 'done' : n.kind === 'error' ? 'error' : 'idle'} /><div className="t"><div className="l1"><b>{n.title}</b><time>{fmtTime(n.t)}</time></div><div className="l2">{notePlain(n)}</div></div></button> }) : <div className="empty">알림이 없어요</div>}
       </div>
       <div className="modal-f"><button className="btn" onClick={readAll}>모두 읽음</button><span className="sp" /><button className="btn" onClick={enablePush}>{pushOn === true ? '폰 푸시 켜짐' : pushOn === false ? '푸시 실패 (HTTPS·홈 화면 설치 필요)' : '이 기기에 푸시 켜기'}</button><button className="btn" onClick={() => api('/push/test', { body: {} })}>푸시 테스트</button></div>
     </div>

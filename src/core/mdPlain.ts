@@ -25,3 +25,12 @@ export function mdPlain(md: string): string {
     .replace(/\s+/g, ' ')
     .trim()
 }
+
+/**
+ * 알림 한 건의 미리보기 글 — **답(done·routine)만** 평문으로 편다.
+ * ⚠ 승인 대기(`awaiting`)의 본문은 **승인할 명령 그 자체**다(`Bash: rm -rf ~/tmp/*`). 마크다운으로 읽으면 `*`·`__`·`|` 가 지워져
+ *    사람이 보는 명령과 실제 명령이 달라진다 — 원문 그대로 둔다 (리뷰 · Claude 적대 검토).
+ */
+export function notePlain(n: { kind: string; body: string }): string {
+  return n.kind === 'done' || n.kind === 'routine' ? mdPlain(n.body) : n.body
+}

@@ -4,7 +4,7 @@ import { api, setToken, token, uploadFile } from './api'
 import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
 import { holdHeader, holdLine, holderOf, type Holder } from '../core/waiting'
 import { cliNeedsUpdate, cliVersionShort, cliUpdateLine } from '../core/cliUpdate'
-import { mdPlain } from '../core/mdPlain'
+import { notePlain } from '../core/mdPlain'
 import { AskHost, ConfirmHost, DiffHost, FolderPicker, Md, NotifyCenter, Onboarding, Pairing, RoutineSheet, Settings, askConfirm, askName, showDiff, useToast } from './Sheets'
 import { AgentPickHost, pickAgent } from './AgentPick'
 import type { SecId } from './Settings'
@@ -970,7 +970,7 @@ function HoverCard({ b, sum, top, left }: { b: Bot; sum: ReturnType<typeof botSu
   const lastN = s.notifications.find((n) => n.botId === b.id)
   const pct = topS?.ctx?.window ? Math.round((topS.ctx.used / topS.ctx.window) * 100) : 0
   const y = Math.max(8, Math.min(top - 8, (typeof window !== 'undefined' ? window.innerHeight : 800) - 230))
-  const say = lastMsg ? `${lastMsg.kind === 'user' ? '나' : '봇'}: ${lastMsg.text.replace(/\s+/g, ' ').slice(0, 140)}` : lastN ? `${lastN.title}: ${mdPlain(lastN.body)}`.slice(0, 140) : ''
+  const say = lastMsg ? `${lastMsg.kind === 'user' ? '나' : '봇'}: ${lastMsg.text.replace(/\s+/g, ' ').slice(0, 140)}` : lastN ? `${lastN.title}: ${notePlain(lastN)}`.slice(0, 140) : ''
   return <div className="hcard" style={{ top: y, left }}>
     <div className="hh"><FolderBot color={b.color} size={28} mood={sum.mood} mono /><b title={b.name}><Mid s={b.displayName} /></b><span className={`dot ${stateDot(sum.state ?? undefined)}`} /></div>
     <div className="hp mono">{b.rel || '볼트 (오케스트레이터)'}</div>
@@ -1010,7 +1010,7 @@ function botSummary(bot: Bot, sessions: SessionInfo[], notif: NotifyEvent[]) {
   const holder: Holder = top ? holderOf(top.state, top.inflight, Date.now(), top.bg ?? 0) : 'none'
   const text = wait ? `확인해 주세요 · ${wait.pending[0]?.displayName ?? wait.name}`
     : holder === 'other' ? `${holdHeader(holder, top?.inflight, top?.bg ?? 0)} · ${top?.inflight?.summary || top?.name || ''}`
-      : run ? `일하는 중 · ${run.activity || run.name}` : last ? mdPlain(last.body) : top ? `${top.name}${top.hibernated ? ' · 절전' : ''}` : '메시지를 보내 보세요'
+      : run ? `일하는 중 · ${run.activity || run.name}` : last ? notePlain(last) : top ? `${top.name}${top.hibernated ? ' · 절전' : ''}` : '메시지를 보내 보세요'
   return { state, text, unread, holder, t: Math.max(top?.lastActivity ?? bot.startedAt, last?.t ?? 0), mood: moodOf(state, !!top?.hibernated && !run && !wait, holder) }
 }
 
@@ -1079,7 +1079,7 @@ function ActionTiles({ go, setModal, onTodo, say, compact }: { go: (b: string, s
     <button onClick={() => (last ? go(last.botId, last.sessionId) : setModal('notify'))}>
       <Icon n="check" size={compact ? 16 : 22} color={last?.kind === 'error' ? 'var(--err)' : 'var(--done)'} />
       <span className="n">마지막 결과<span>{last ? fmtTime(last.t) : ''}</span></span>
-      <span className="sub">{last ? `${nameOf(last.botId)} · ${mdPlain(last.body)}` : '아직 없어요'}</span>
+      <span className="sub">{last ? `${nameOf(last.botId)} · ${notePlain(last)}` : '아직 없어요'}</span>
     </button>
   </div>
 }
@@ -1946,7 +1946,9 @@ function PermCard({ p, sid }: { p: PermissionRequest; sid: string }) {
    *    ⚠ 「기타」 도 갈린다 — 여럿이면 고른 것들 **뒤에 덧붙고**, 하나면 종전처럼 고른 것을 **대신한다**.
    */
   const [pick, setPick] = useState<Record<string, string[]>>({}); const [other, setOther] = useState<Record<string, string>>({})
-  const act = async (body: Record<string, unknown>, path: 'permission' | 'ask') => { setBusy(true); try { await api(`/sessions/${sid}/${path}`, { body: { requestId: p.requestId, ...body } }); setSent(true) } finally { setBusy(false) } }
+  /* ⚠ 실패는 카드 안에서 말한다 — 워커가 다시 떠 기다리던 질문이 사라지면 호스트가 400 을 준다. 종전에는 catch 가 없어 카드만 말없이 남았다 (리뷰) */
+  const [err, setErr] = useState('')
+  const act = async (body: Record<string, unknown>, path: 'permission' | 'ask') => { setBusy(true); setErr(''); try { await api(`/sessions/${sid}/${path}`, { body: { requestId: p.requestId, ...body } }); setSent(true) } catch (e) { setErr((e as Error).message || '보내지 못했어요') } finally { setBusy(false) } }
   if (sent) return <div className="meta"><Icon n="check" size={11} color="var(--done)" /><span>보냈어요</span></div>
   if (p.ask) {
     const qs = (p.input.questions as { question?: string; header?: string; options?: { label?: string; description?: string }[]; multiSelect?: boolean }[] | undefined) ?? []
@@ -1958,11 +1960,11 @@ function PermCard({ p, sid }: { p: PermissionRequest; sid: string }) {
     const ready = qs.every((q, i) => !!answerOf(q, i))
     return <div className="card"><div className="lab">에이전트의 질문{qs[0]?.header ? ` · ${qs[0].header}` : ''}</div>
       {qs.map((q, i) => { const key = keyOf(q, i); const multi = !!q.multiSelect; const on = (label: string) => picksOf(key).includes(label); return <div key={i} style={{ display: 'flex', flexDirection: 'column' }}><div className="q">{q.question}{multi ? <span className="mhint">여러 개 고를 수 있어요</span> : null}</div>{(q.options ?? []).map((o) => <button key={o.label} className={`opt ${on(o.label ?? '') ? 'on' : ''}`} onClick={() => toggle(key, o.label ?? '', multi)}><span className={`r ${multi ? 'sq' : ''}`}>{multi && on(o.label ?? '') ? <Icon n="check" size={9} color="var(--bg)" /> : null}</span><div><div>{o.label}</div>{o.description ? <div className="d">{o.description}</div> : null}</div></button>)}<div className={`opt ${(other[key] ?? '').trim() ? 'on' : ''}`}><span className={`r ${multi ? 'sq' : ''}`} style={{ marginTop: 7 }}>{multi && (other[key] ?? '').trim() ? <Icon n="check" size={9} color="var(--bg)" /> : null}</span><input placeholder={multi ? '기타 — 직접 입력해 덧붙이기…' : '기타 — 직접 입력…'} value={other[key] ?? ''} onChange={(e) => setOther({ ...other, [key]: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter' && ready) void act({ answers: answers() }, 'ask') }} /></div></div> })}
-      <div className="btns"><button className="btn ghost" disabled={busy} onClick={() => act({ allow: false }, 'permission')}>취소 ⎋</button><span style={{ flex: 1 }} /><button className="btn primary" disabled={busy || !ready} onClick={() => act({ answers: answers() }, 'ask')}>보내기</button></div></div>
+      {err ? <div className="meta perr" role="alert">{err}</div> : null}<div className="btns"><button className="btn ghost" disabled={busy} onClick={() => act({ allow: false }, 'permission')}>취소 ⎋</button><span style={{ flex: 1 }} /><button className="btn primary" disabled={busy || !ready} onClick={() => act({ answers: answers() }, 'ask')}>보내기</button></div></div>
   }
   const i = p.input; const cmd = typeof i.command === 'string' ? i.command : typeof i.file_path === 'string' ? i.file_path : typeof i.url === 'string' ? i.url : JSON.stringify(i).slice(0, 400)
   const human = p.description || (typeof i.command === 'string' ? `명령을 실행합니다` : typeof i.file_path === 'string' ? `파일을 ${/Write|Edit/.test(p.toolName) ? '고칩니다' : '읽습니다'} — ${String(i.file_path).split('/').pop()}` : `${p.displayName} 를 씁니다`)
   return <div className="card"><div className="lab">권한 · {p.displayName}</div><div className="q">{human}</div><div className="cmd">{cmd}</div>
-    <div className="btns"><button className="btn primary" disabled={busy} onClick={() => act({ allow: true }, 'permission')}>허용</button>{p.suggestions.length ? <button className="btn" disabled={busy} title={rulesLabel(p.suggestions)} onClick={() => act({ allow: true, always: true }, 'permission')}>이 세션에서 항상 허용</button> : null}<button className="btn ghost" disabled={busy} onClick={() => act({ allow: false }, 'permission')}>거부</button></div>
+    {err ? <div className="meta perr" role="alert">{err}</div> : null}<div className="btns"><button className="btn primary" disabled={busy} onClick={() => act({ allow: true }, 'permission')}>허용</button>{p.suggestions.length ? <button className="btn" disabled={busy} title={rulesLabel(p.suggestions)} onClick={() => act({ allow: true, always: true }, 'permission')}>이 세션에서 항상 허용</button> : null}<button className="btn ghost" disabled={busy} onClick={() => act({ allow: false }, 'permission')}>거부</button></div>
     {p.suggestions.length ? <div className="meta rule">항상 허용 = {rulesLabel(p.suggestions) || '이 도구'}</div> : null}</div>
 }

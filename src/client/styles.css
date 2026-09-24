@@ -1008,8 +1008,11 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .mded .lp-hr { display:block; padding:10px 0; cursor:default } .mded .lp-hr::after { content:''; display:block; height:1px; background:var(--line2) }
 /* 코드 — 채팅(.md pre·.md code)과 같은 바탕·모서리. 펜스 줄(```)은 숨겨진 채 상자의 위·아래 여백이 된다 (2026-09-25 디자인 검수) */
 .mded .cm-line.lp-code { background:var(--box); font-family:var(--mono); font-size:.86em; line-height:1.75; padding:0 14px }
-.mded .cm-line.lp-code-a { border-radius:8px 8px 0 0; padding-top:6px; margin-top:4px }
-.mded .cm-line.lp-code-z { border-radius:0 0 8px 8px; padding-bottom:6px; margin-bottom:4px }
+/* ⚠ 위아래 띄움은 margin 이 아니라 투명 border — CodeMirror 는 줄 높이를 getBoundingClientRect 로 재서 margin 을 못 센다.
+   margin 을 쓰면 코드 상자마다 높이 지도가 8px 씩 어긋나 «누른 줄의 윗줄에 캐럿» 이 된다(리뷰 · Claude 적대 검토) */
+.mded .cm-line.lp-code { background-clip:padding-box }
+.mded .cm-line.lp-code-a { border-radius:12px 12px 0 0; padding-top:6px; border-top:4px solid transparent }
+.mded .cm-line.lp-code-z { border-radius:0 0 12px 12px; padding-bottom:6px; border-bottom:4px solid transparent }
 .mded .lp-codeinfo { font-size:.85em; color:var(--t3); letter-spacing:.3px }
 .mded .lp-ic { font-family:var(--mono); font-size:.86em; background:var(--box); padding:1px 5px; border-radius:4px }
 .mded .lp-quote { padding-left:12px; border-left:2px solid var(--line2); color:var(--t2) }
@@ -1369,5 +1372,8 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 
 /* 🔴 한국어는 **띄어쓰기에서** 줄을 바꾼다 (2026-09-25 디자인 검수). 기본값은 음절 사이마다 줄을 바꿔서
    「무|언가가」 「링|크」 처럼 낱말 한가운데가 끊겼다. keep-all 로 낱말을 지키고, 한 줄보다 긴 낱말(주소·긴 영문)은
-   overflow-wrap:anywhere 가 받아 준다 — 칸을 뚫지 않는다. ⚠ 입력창(.cin)은 뺀다: 치는 도중 줄이 통째로 튄다. */
+   overflow-wrap:anywhere 가 받아 준다 — 칸을 뚫지 않는다. ⚠ 입력창(.cin)은 뺀다: 한 줄짜리 말을 치는 자리라 낱말이 튀면 거슬린다.
+   문서 편집기(.mded)는 넣는다 — 보기와 편집의 줄바꿈이 같아야 하고, 한국 워드프로세서(한글·Word)도 어절 단위가 기본이다. */
 .md, .umsg, .todo .dsc, .ptodo .tt, .ptodo .dsc, .mded .cm-content.cm-lineWrapping { word-break:keep-all; overflow-wrap:anywhere }
+
+.meta.perr { color:var(--err); margin:4px 0 6px }   /* 질문·권한 카드의 보내기 실패 (리뷰) */

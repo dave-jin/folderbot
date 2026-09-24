@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mdPlain } from '../../src/core/mdPlain'
+import { mdPlain, notePlain } from '../../src/core/mdPlain'
 
 /** 2026-09-25 디자인 검수 — 알림 미리보기에 `## 증상 정리 **증상**: …` 처럼 마크다운 기호가 그대로 나왔다 */
 describe('mdPlain — 알림 미리보기는 글자만', () => {
@@ -27,5 +27,10 @@ describe('mdPlain — 알림 미리보기는 글자만', () => {
   })
   it('위키링크는 별칭을, 없으면 이름을', () => {
     expect(mdPlain('[[문서|별칭]] 과 [[다른 문서]]')).toBe('별칭 과 다른 문서')
+  })
+  it('승인 대기 알림은 명령 원문 그대로 · 답 알림만 평문', () => {
+    expect(notePlain({ kind: 'awaiting', body: 'Bash: rm -rf ~/tmp/* ~/x/*' })).toBe('Bash: rm -rf ~/tmp/* ~/x/*')
+    expect(notePlain({ kind: 'error', body: '__init__.py 없음' })).toBe('__init__.py 없음')
+    expect(notePlain({ kind: 'done', body: '## 끝 **완료**' })).toBe('끝 완료')
   })
 })

@@ -131,10 +131,13 @@ function favImg(url: string): HTMLImageElement {
 const MDLINK_RE = /\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g
 /**
  * 아이콘 + 링크 첫 글자를 한 묶음으로 — 그 사이에서 줄이 바뀌면 아이콘만 윗줄 끝에 남는다(2026-09-25 디자인 검수 · 채팅의 `.fvw` 와 같은 뜻).
- * `inclusiveStart` 라야 바로 앞(side -1)의 아이콘 위젯까지 같은 묶음에 들어간다.
+ * 아이콘 위젯은 링크 시작 자리의 **뒤쪽**(side 1)에 두고, 이 마크와 링크 마크(`xlink`)를 `inclusiveStart` 로 해야
+ * 위젯이 두 마크 안으로 들어가 첫 글자와 한 묶음이 된다(side -1 이면 마크 밖에 선다 — 실측).
  */
 const FVW = Decoration.mark({ class: 'fvw', inclusiveStart: true })
-const firstLen = (t: string): number => (Array.from(t)[0] ?? '').length || 1
+/** 첫 **글자**(grapheme)의 길이 — 코드 포인트로 자르면 이모지·NFD 한글이 묶음 경계에서 둘로 갈린다 */
+const SEG = typeof Intl !== 'undefined' && 'Segmenter' in Intl ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null
+const firstLen = (t: string): number => (SEG ? SEG.segment(t)[Symbol.iterator]().next().value?.segment : Array.from(t)[0])?.length || 1
 /** 링크 글 맨 앞의 서식 기호 길이 — 숨겨지는 글자라 이것만 묶으면 아이콘이 보이는 첫 글자와 떨어진다 (리뷰 · Codex) */
 const lead = (t: string): number => /^[*_~`]*/.exec(t)?.[0].length ?? 0
 
@@ -679,15 +682,18 @@ function build(state: EditorState): { deco: DecorationSet; atoms: Atom[] } {
   const active = activeLines(state)
   const marks: Range<Decoration>[] = []
   const atoms: Atom[] = []
-  // ── 표는 제일 먼저 — 접은 표 안에는 다른 데코레이션이 겹치면 안 된다(겹친 replace 는 예외를 던진다) ──
+  const tree = syntaxTree(state)
+  // ── 펜스 줄을 제일 먼저 — 펜스 안의 `| 가 | 나 |` 는 표가 아니라 코드다(표 위젯으로 접으면 칸을 고칠 때 코드 원문이 다시 쓰였다 · 리뷰) ──
+  const codeLines = new Set<number>()
+  tree.iterate({ enter: (n) => { if (n.name !== 'FencedCode') return; const a = state.doc.lineAt(n.from).number, z = state.doc.lineAt(n.to).number; for (let l = a; l <= z; l++) codeLines.add(l); return false } })
+  // ── 표는 그다음 — 접은 표 안에는 다른 데코레이션이 겹치면 안 된다(겹친 replace 는 예외를 던진다) ──
   const skip = new Set<number>()
   for (const tb of findTables(state)) {
-    if (tb.lines.some((n) => active.has(n))) continue    // 커서가 안에 있으면 원문 그대로
+    if (tb.lines.some((n) => active.has(n) || codeLines.has(n))) continue    // 커서가 안에 있으면 원문 그대로 · 펜스 안이면 코드
     for (const n of tb.lines) skip.add(n)
     marks.push(Decoration.replace({ widget: new TableWidget(tb, `${tb.from}:${state.doc.sliceString(tb.from, tb.to)}`), block: true }).range(tb.from, tb.to))
     atoms.push({ from: tb.from, to: tb.to, block: true })
   }
-  const tree = syntaxTree(state)
   let link: { from: number; to: number } | null = null
   /**
    * 🔴 **코드는 코드처럼 보인다** (2026-09-25 디자인 검수). 서식 기호(`CodeMark`)를 늘 숨기는 규칙이 펜스의 ``` 까지
@@ -695,16 +701,16 @@ function build(state: EditorState): { deco: DecorationSet; atoms: Atom[] } {
    *    채팅(`.md pre`·`.md code`)과 같은 바탕·모서리를 **줄 단위 클래스**로 준다(펜스 줄이 곧 상자의 위·아래 여백이 된다).
    * ⚠ 코드 줄은 아래의 줄 스캔(가로줄·체크박스·링크)에서 뺀다 — 코드 안의 `---` 가 가로줄로, `- [ ]` 가 눌리는 체크박스로 바뀌었다.
    */
-  const codeLines = new Set<number>()
+  const inlineCode: [number, number][] = []   // 인라인 코드 속 주소에는 아이콘·링크를 안 단다(코드는 글자 그대로 · 리뷰)
   tree.iterate({
     enter: (n) => {
       if (skip.has(state.doc.lineAt(n.from).number)) return false
       if (n.name === 'FencedCode') {
         const a = state.doc.lineAt(n.from).number, z = state.doc.lineAt(n.to).number
-        for (let l = a; l <= z; l++) { codeLines.add(l); marks.push(Decoration.line({ class: `lp-code${l === a ? ' lp-code-a' : ''}${l === z ? ' lp-code-z' : ''}` }).range(state.doc.line(l).from)) }
+        for (let l = a; l <= z; l++) marks.push(Decoration.line({ class: `lp-code${l === a ? ' lp-code-a' : ''}${l === z ? ' lp-code-z' : ''}` }).range(state.doc.line(l).from))
       }
       if (n.name === 'CodeInfo' && n.to > n.from) marks.push(Decoration.mark({ class: 'lp-codeinfo' }).range(n.from, n.to))
-      if (n.name === 'InlineCode' && n.to > n.from) marks.push(Decoration.mark({ class: 'lp-ic' }).range(n.from, n.to))
+      if (n.name === 'InlineCode' && n.to > n.from) { marks.push(Decoration.mark({ class: 'lp-ic' }).range(n.from, n.to)); inlineCode.push([n.from, n.to]) }
       if (n.name === 'Link') link = { from: n.from, to: n.to }
       // 제목 크기는 **줄 단위 클래스**로 준다 — 토큰에 걸면 «# » 를 치는 순간에는 아직 안 커진다
       const h = /^ATXHeading([1-6])$/.exec(n.name)
@@ -732,6 +738,9 @@ function build(state: EditorState): { deco: DecorationSet; atoms: Atom[] } {
        */
       if (n.name === 'HeaderMark') { if (state.doc.sliceString(n.to, n.to + 1) !== ' ') return; hide(n.to + 1); return }
       if (n.name === 'QuoteMark') { hide(state.doc.sliceString(n.to, n.to + 1) === ' ' ? n.to + 1 : n.to); return }
+      /* ⚠ 펜스의 ``` 는 커서가 그 줄에 있으면 드러낸다 — 펜스 줄은 펜스뿐이라 다른 글자가 밀리지 않고,
+         안 보이면 닫는 펜스를 빠뜨린 것(아래 문서 전체가 코드 상자가 된다)을 알아챌 길이 없다 (리뷰) */
+      if (n.name === 'CodeMark' && n.node.parent?.name === 'FencedCode' && active.has(line.number)) return
       if (n.name === 'EmphasisMark' || n.name === 'StrikethroughMark' || n.name === 'CodeMark') { hide(n.to); return }
       /**
        * ⛔ **맨 URL 은 숨기면 글자가 통째로 사라진다.** `[글](주소)` 의 주소는 숨겨도 «글» 이 남지만,
@@ -807,16 +816,19 @@ function build(state: EditorState): { deco: DecorationSet; atoms: Atom[] } {
     // 링크 앞 파비콘 — `[글](주소)` 는 글 앞에, 맨 URL 은 그 앞에
     // 링크 앞 파비콘 + 누르면 열리는 표식(`xlink`) — `[글](주소)` 는 글에, 맨 URL 은 주소 그 자체에
     MDLINK_RE.lastIndex = 0
+    const inIc = (f: number, t: number) => inlineCode.some(([a, z]) => f < z && t > a)
     for (let m = MDLINK_RE.exec(text); m; m = MDLINK_RE.exec(text)) {
+      if (inIc(line.from + m.index, line.from + m.index + m[0].length)) continue
       const at = line.from + m.index + 1
       marks.push(Decoration.widget({ widget: new FavWidget(m[2]), side: 1 }).range(at))
       marks.push(xlink(m[2], line.from + m.index, line.from + m.index + m[0].length).range(at, at + m[1].length))
-      marks.push(FVW.range(at, at + lead(m[1]) + firstLen(m[1].slice(lead(m[1])))))   // ⚠ `[**글**](…)` 는 숨은 `**` 뒤의 첫 글자까지 묶는다
+      marks.push(FVW.range(at, at + Math.min(m[1].length, lead(m[1]) + firstLen(m[1].slice(lead(m[1]))))))   // ⚠ `[**글**](…)` 는 숨은 `**` 뒤의 첫 글자까지 · 링크 글 밖으로는 안 나간다
     }
     const bare = new RegExp(BARE_URL_RE.source, 'g')
     for (let m = bare.exec(text); m; m = bare.exec(text)) {
       if (text[m.index - 1] === '(') continue          // `[글](주소)` 의 주소 — 위에서 이미 달았다
       const from = line.from + m.index, to = from + m[0].length
+      if (inIc(from, to)) continue
       marks.push(Decoration.widget({ widget: new FavWidget(m[0]), side: 1 }).range(from))
       marks.push(xlink(m[0], from, to).range(from, to))
       marks.push(FVW.range(from, from + firstLen(m[0])))
