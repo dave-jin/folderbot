@@ -19,7 +19,8 @@
     "start": "node bin/folderbot.mjs start",
     "dev:host": "node --enable-source-maps dist/host/index.mjs",
     "pack": "node scripts/pack.mjs",
-    "qa": "npm run typecheck && npm test && npm run build && node test/smoke.mjs",
+    "qa": "npm run typecheck && npm test && npm run build && node test/smoke.mjs && node test/fit.mjs",
+    "fit": "node test/fit.mjs",
     "qa:mac": "node test/mac-qa.mjs"
   },
   "dependencies": {

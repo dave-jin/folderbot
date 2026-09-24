@@ -103,6 +103,10 @@ export const I = {
   panelr: <><rect x="2" y="3" width="12" height="10" rx="1.5" /><path d="M10 3v10" /></>,
   sub: <path d="M4 3v6a2 2 0 0 0 2 2h6M9 8l3 3-3 3" />,
   expand: <><path d="M9 3h4v4M3 13l10-10M7 13H3V9" /></>,
+  /* AM · 이미지 뷰어용 둘 (2026-09-24 Dave: 폰에서 「맞춤·원본·복사」 글자가 세로로 쪼개져 아이콘으로 바꿈).
+     맞춤 = 테두리 안으로 모이는 네 화살표 · 원본 = 바깥 테두리 안에 실제 크기 네모(1:1). 뜻은 `title` 이 함께 말한다. */
+  fit: <><rect x="2.5" y="3.5" width="11" height="9" rx="1.5" /><path d="M5 6.5h2v-2M11 6.5H9v-2M5 9.5h2v2M11 9.5H9v2" /></>,
+  actual: <><rect x="2.5" y="3.5" width="11" height="9" rx="1.5" /><rect x="6" y="6.5" width="4" height="3" rx="0.5" /></>,
   list: <><path d="M5 4h8M5 8h8M5 12h8" /><circle cx="2.5" cy="4" r=".8" /><circle cx="2.5" cy="8" r=".8" /><circle cx="2.5" cy="12" r=".8" /></>,
   sort: <path d="M3 4h10M3 8h7M3 12h4" />,
   eye: <><path d="M1.5 8s2.5-4 6.5-4 6.5 4 6.5 4-2.5 4-6.5 4S1.5 8 1.5 8z" /><circle cx="8" cy="8" r="2" /></>,
