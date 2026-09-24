@@ -3417,7 +3417,7 @@ try {
               if (bl.some((b, i) => b.order !== i) || bl[1].orderedBy !== 'user' || bl[0].orderedBy !== 'orchestrator') fail('A: bots_list order/orderedBy ' + JSON.stringify(bl.map((b) => [b.order, b.orderedBy])))
               await wait(600)
               const sortOn = await pg.evaluate(() => document.querySelector('.sortbar button.on')?.textContent)
-              if (sortOn !== '직접') fail('A: 재정렬이 왔는데 정렬이 «직접» 으로 안 바뀌었다 · ' + sortOn)
+              if (sortOn !== '사용자') fail('A: 재정렬이 왔는데 정렬이 «사용자»(구 «직접») 로 안 바뀌었다 · ' + sortOn)
               const shown = await pg.evaluate(() => [...document.querySelectorAll('.sb-list .brow')].map((e) => e.dataset.id || e.getAttribute('data-id')).filter(Boolean))
               // 레일은 섹션(PARA)을 지키므로 **섹션 안의 상대 차례**만 본다
               for (const sec of new Set(got.map((b) => b.section))) { const inSec = (id) => got.find((b) => b.id === id)?.section === sec; if (JSON.stringify(shown.filter(inSec)) !== JSON.stringify(want.filter(inSec))) fail('A: 레일이 새 차례를 안 그린다 · ' + sec + ' ' + JSON.stringify({ shown: shown.filter(inSec), want: want.filter(inSec) })) }
@@ -3435,7 +3435,7 @@ try {
               ok('A bots_reorder — 없는 rel 실패·그대로 · 끌어 놓은 자리 유지 · bots_list order/orderedBy · 정렬 «직접» 자동 · 순서 고정 해제 · restore')
             }
           }
-          await pg.click('.sortbar button:has-text("직접")'); await wait(400)
+          await pg.click('.sortbar button:has-text("사용자")'); await wait(400)
           if (!(await namesOf()).length) fail('직접 정렬: 목록이 비었다')
           if (JSON.stringify(await secsOf()) !== JSON.stringify(before)) fail('직접 정렬이 PARA 섹션을 흩었다')
           await pg.click('.sortbar button:has-text("이름")'); await wait(300)
@@ -4240,6 +4240,17 @@ try {
          */
         {
           const rowSel = '.mhome .swwrap .swrow'
+          // 🔴 AZ · 폰 홈에도 정렬 단추 — 이름 · 사용자 · 상태(레일과 같은 값). 누르면 켜짐이 옮고, 맥 레일과 같은 저장값을 쓴다 (2026-09-25 Dave)
+          {
+            const sb = await pg.$$eval('.mhome .sortbar button', (b) => b.map((x) => ({ t: x.textContent, on: x.classList.contains('on'), h: x.getBoundingClientRect().height })))
+            if (sb.map((x) => x.t).join() !== '이름,사용자,상태') fail('🔴 폰 홈: 정렬 단추가 없거나 라벨이 다르다 · ' + JSON.stringify(sb))
+            if (sb.some((x) => x.h < 32)) fail('폰 홈: 정렬 단추가 손가락에 작다 · ' + JSON.stringify(sb))
+            const was = await pg.evaluate(() => localStorage.getItem('fb:railsort'))
+            await pg.evaluate(() => [...document.querySelectorAll('.mhome .sortbar button')].find((x) => x.textContent === '상태').click()); await wait(250)
+            const st = await pg.evaluate(() => ({ on: document.querySelector('.mhome .sortbar button.on')?.textContent, saved: localStorage.getItem('fb:railsort') }))
+            if (st.on !== '상태' || st.saved !== 'state') fail('폰 홈: 「상태」 를 눌렀는데 안 바뀐다 · ' + JSON.stringify(st))
+            await pg.evaluate((w) => [...document.querySelectorAll('.mhome .sortbar button')].find((x) => x.textContent === ({ name: '이름', manual: '사용자', state: '상태' })[w || 'name']).click(), was); await wait(250)
+          }
           // 🔴 밀 수 있는 행도 서랍과 같은 바탕 — 종전에는 그 행들만 다른 색 띠로 떠 보였다(라이트에서 흰 띠 · 2026-09-25 디자인 검수)
           {
             const bgs = await pg.evaluate(() => { const d = getComputedStyle(document.querySelector('.drawer.left')).backgroundColor; return { d, rows: [...document.querySelectorAll('.mhome .mrow')].map((r) => getComputedStyle(r).backgroundColor) } })

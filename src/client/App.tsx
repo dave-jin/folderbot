@@ -25,7 +25,7 @@ import { attachRoom } from '../core/attach'
 import { applyViewport, planViewport } from '../core/viewport'
 import { canStartSwipe, dragProgress, fromLeftEdge, lockOf, scrollableEats, stageOf, swipeVerdict } from '../core/drawer'
 import { curOf, dismiss, goTo, navInit, type Nav, type Page } from '../core/navstack'
-import { botUnread, shouldMarkRead } from '../core/unread'
+import { botUnread, shouldMarkRead, MOOD_RANK, type BotMood } from '../core/unread'
 import { clampDockOffset, isDockDrag, readDockOffset } from '../core/dock'
 import { tabActive } from '../core/tabbar'
 import { SwipeRow } from './SwipeRow'
@@ -569,7 +569,7 @@ function Main() {
     const top = (a: string) => (a === '관제' ? 0 : a === '고정' ? 1 : 2)
     const secs = [...m.entries()].sort(([a], [b]) => top(a) - top(b) || cmp(a, b))
     const byName = (a: typeof items[0], c: typeof items[0]) => cmp(c.b.name, a.b.name) // 이름 내림차순 — 날짜 접두 폴더가 최신부터
-    const rank = (x: typeof items[0]) => MOOD_RANK[x.sum.mood] ?? 9
+    const rank = (x: typeof items[0]) => MOOD_RANK[x.sum.mood as BotMood] ?? 9
     for (const [, list] of secs) {
       list.sort((a, c) => {
         if (a.b.orchestrator !== c.b.orchestrator) return a.b.orchestrator ? -1 : 1
@@ -816,7 +816,7 @@ function Main() {
     return off
   }, [bot?.id, sessions.length])
   // H · 같은 부품을 세 단계가 나눠 쓴다 — 넓음은 흐름 안, 중간·좁음은 서랍 안. 데이터(순서·표시 이름·확인 대기 점)는 한 곳(rows)
-  const homeEl = <Home rows={rows} bot={bot} go={go} setModal={setModal} waiting={waiting} unread={unread} onAsk={() => { go('orch'); setFocusReq(Date.now()) }} onTodo={goTodo} say={say} />
+  const homeEl = <Home rows={rows} bot={bot} go={go} setModal={setModal} waiting={waiting} unread={unread} onAsk={() => { go('orch'); setFocusReq(Date.now()) }} onTodo={goTodo} say={say} railSort={railSort} setRailSort={setRailSort} />
   const sidebarEl = <div className="col side left" style={{ width: stage === 'wide' ? fit.sb : undefined }}>
         <div className="hdr"><FolderBot color="#e08850" size={16} mood={waiting ? 'wait' : 'idle'} mono /><span className="ttl">Folder Bot</span><span className="sp" /><div className="acts"><button className="ib" onClick={closeSb} title="목록 접기 (⌘B)"><Icon n="panel" size={14} /></button></div></div>
         <div style={{ padding: '10px 8px 0' }}>
@@ -827,8 +827,8 @@ function Main() {
         {/* 🔴 **폰과 같은 네 칸을 레일 맨 위에** (2026-09-15 Dave: «이 메뉴가 데스크탑 화면에서도 좌측
             상단에 있으면 좋겠어»). 같은 컴포넌트를 `compact` 로 쓴다 — 두 화면이 갈리지 않게. */}
         <div className="sbtiles"><ActionTiles go={go} setModal={setModal} onTodo={goTodo} say={say} compact /></div>
-        {/* 정렬 갈래 — 이름 · 직접(끌어 놓기) · 상태. ⚠ 끌어 놓으면 «직접» 으로 알아서 넘어간다 */}
-        <div className="sortbar"><span className="lb">정렬</span>{(Object.keys(RAIL_SORT_LABEL) as RailSort[]).map((k) => <button key={k} className={railSort === k ? 'on' : ''} onClick={() => setRailSort(k)} title={RAIL_SORT_HINT[k]}>{RAIL_SORT_LABEL[k]}</button>)}</div>
+        {/* 정렬 갈래 — 이름 · 사용자(끌어 놓기, 구 «직접») · 상태. ⚠ 끌어 놓으면 «사용자» 로 알아서 넘어간다 */}
+        <SortBar k={railSort} set={setRailSort} />
         <div className="sb-list">
           {rows.map(([sec, list]) => <div key={sec}>
             <div className="secl">{sec === '관제' ? '관제' : sec}</div>
@@ -991,10 +991,14 @@ function MrBadge() { const { s } = useStore(); return s.device.main ? <span clas
    섹션(PARA)은 늘 그대로다 — 여기서 정하는 것은 **한 섹션 안의 차례**뿐이다. */
 type RailSort = 'name' | 'manual' | 'state'
 const RAIL_SORT_KEY = 'fb:railsort'
-const RAIL_SORT_LABEL: Record<RailSort, string> = { name: '이름', manual: '직접', state: '상태' }
-const RAIL_SORT_HINT: Record<RailSort, string> = { name: '날짜 접두 폴더가 최신부터', manual: '끌어다 놓은 차례 (볼트에 남아요)', state: '확인 대기 → 일하는 중 → 문제 → 쉬는 중' }
+// AZ (2026-09-25 Dave) · «직접» → «사용자» — 사람이 끌어다 놓은 차례라는 뜻이 이름에 드러나게. 값(`manual`)은 그대로 둔다(저장된 선택이 안 풀린다)
+const RAIL_SORT_LABEL: Record<RailSort, string> = { name: '이름', manual: '사용자', state: '상태' }
+const RAIL_SORT_HINT: Record<RailSort, string> = { name: '날짜 접두 폴더가 최신부터', manual: '끌어다 놓은 차례 (볼트에 남아요)', state: '확인 대기 → 일하는 중 → 대기 → 문제 → 끝남 → 유휴' }
+/** 정렬 갈래 단추 — 레일(맥)과 폰 홈이 **같은 부품**을 쓴다. 두 벌이면 한쪽 라벨만 바뀐다 */
+function SortBar({ k: cur, set }: { k: RailSort; set: (k: RailSort) => void }) {
+  return <div className="sortbar" role="group" aria-label="정렬"><span className="lb">정렬</span>{(Object.keys(RAIL_SORT_LABEL) as RailSort[]).map((k) => <button key={k} className={cur === k ? 'on' : ''} aria-pressed={cur === k} onClick={() => set(k)} title={RAIL_SORT_HINT[k]}>{RAIL_SORT_LABEL[k]}</button>)}</div>
+}
 /** ⚠ 값은 `moodOf` 의 갈래 그대로다 — 한쪽만 늘리면 새 상태가 조용히 맨 뒤로 간다 */
-const MOOD_RANK: Record<string, number> = { wait: 0, work: 1, error: 2, done: 3, idle: 4, sleep: 5 }
 
 function botSummary(bot: Bot, sessions: SessionInfo[], notif: NotifyEvent[]) {
   const wait = sessions.find((x) => x.state === 'awaiting_input'); const run = sessions.find((x) => x.state === 'running')
@@ -1111,7 +1115,7 @@ function BotName({ b, chip = true }: { b: Bot; chip?: boolean }) {
   return <span ref={ref} className="bname" title={b.name}><b className="dn">{b.displayName}</b>{b.kind && !hideTag ? <span className="tag">{b.kind}</span> : null}{due ? <span className={`due ${due.tone}`}>{due.text}</span> : null}</span>
 }
 
-function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say }: { rows: Row[]; bot: Bot; go: (b: string, sid?: string) => void; setModal: (m: 'picker' | 'notify' | 'settings') => void; waiting: number; unread: number; onAsk: () => void; onTodo: (botId: string) => void; say: (m: string) => void }) {
+function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say, railSort, setRailSort }: { railSort: RailSort; setRailSort: (k: RailSort) => void; rows: Row[]; bot: Bot; go: (b: string, sid?: string) => void; setModal: (m: 'picker' | 'notify' | 'settings') => void; waiting: number; unread: number; onAsk: () => void; onTodo: (botId: string) => void; say: (m: string) => void }) {
   const usage = useUsage() // 폰 홈 맨 위 — 한 줄 띠. 누르면 카드가 시트로 올라온다
   const [uSheet, setUSheet] = useState(false)
   const { s, refresh } = useStore()
@@ -1139,6 +1143,8 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say }: 
       <div className="msub"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} style={{ width: 7, height: 7 }} />{s.hostName}<MrBadge /><span>· 봇 {s.bots.length} · 후보 {cands}</span></div>
       {usage && usage.tools.length ? <div style={{ padding: '0 16px 12px' }}><UsageStrip u={usage} onOpen={() => setUSheet(true)} /></div> : null}
       <ActionTiles go={go} setModal={setModal} onTodo={onTodo} say={say} />
+      {/* AZ (2026-09-25 Dave: «모바일에서도 데스크톱처럼 정렬 버튼») — 레일과 **같은 값**(`fb:railsort`)을 쓴다. 폰에서 고르면 맥 레일도 그 차례다(이 기기 기준) */}
+      <SortBar k={railSort} set={setRailSort} />
       {rows.map(([sec, list]) => <div key={sec}>
         <div className="secl">{sec}</div>
         {list.map(({ b, sum }) => {
