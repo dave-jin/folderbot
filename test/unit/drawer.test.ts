@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canStartSwipe, dragProgress, lockOf, scrollableEats, stageOf, swipeVerdict } from '../../src/core/drawer'
+import { EDGE_PX, canStartSwipe, dragProgress, fromLeftEdge, lockOf, scrollableEats, stageOf, swipeVerdict } from '../../src/core/drawer'
 describe('H · 반응형 3단계 + 세 칸 띠', () => {
   it('단계는 창 폭으로만 — 1400 넓음 · 900 중간 · 500 좁음 · 경계 1200/768', () => {
     expect([1400, 1200, 1199, 900, 768, 767, 500, 320].map(stageOf)).toEqual(['wide', 'wide', 'mid', 'mid', 'mid', 'narrow', 'narrow', 'narrow'])
@@ -32,5 +32,14 @@ describe('H · 반응형 3단계 + 세 칸 띠', () => {
   it('끌리는 동안 — 여는 중 0→1 · 닫는 중 1→0 · 범위 밖은 자른다', () => {
     expect(dragProgress(true, 'left', 150, 300)).toBe(0.5); expect(dragProgress(true, 'right', -150, 300)).toBe(0.5); expect(dragProgress(true, 'left', -50, 300)).toBe(0)
     expect(dragProgress(false, 'left', -150, 300)).toBe(0.5); expect(dragProgress(false, 'right', 150, 300)).toBe(0.5); expect(dragProgress(false, 'right', 900, 300)).toBe(0)
+  })
+})
+
+describe('AH · 쓸기는 맨 왼쪽 가장자리에서만 (2026-09-24 Dave)', () => {
+  it('가장자리 안에서 잡으면 시작하고, 안쪽에서 잡으면 안 시작한다', () => {
+    expect(fromLeftEdge(0)).toBe(true)
+    expect(fromLeftEdge(EDGE_PX)).toBe(true)
+    expect(fromLeftEdge(EDGE_PX + 1)).toBe(false)
+    expect(fromLeftEdge(200)).toBe(false)   // 할 일·폴더의 쓸리는 행이 사는 자리 — 여기서 다투면 안 된다
   })
 })

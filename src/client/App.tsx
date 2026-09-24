@@ -21,7 +21,7 @@ import { ACT_ICON, FOLDER_SWIPE, type SwipeAct } from './swipe'
 import { CopyProgressHost } from './fileCopy'
 import { attachRoom } from '../core/attach'
 import { applyViewport, planViewport } from '../core/viewport'
-import { canStartSwipe, dragProgress, lockOf, scrollableEats, stageOf, swipeVerdict } from '../core/drawer'
+import { canStartSwipe, dragProgress, fromLeftEdge, lockOf, scrollableEats, stageOf, swipeVerdict } from '../core/drawer'
 import { curOf, dismiss, goTo, navInit, type Nav, type Page } from '../core/navstack'
 import { botUnread, shouldMarkRead } from '../core/unread'
 import { clampDockOffset, isDockDrag, readDockOffset } from '../core/dock'
@@ -280,6 +280,11 @@ function Main() {
   const under = view === 'list' ? underRef.current : view
   /** 어두워진 채팅 탭 · Esc · [접기] — «채팅으로 돌아가기». 「뒤로」와 갈라 둔다(봇 목록은 뒤로 열고 폴더·문서는 앞으로 열기 때문) */
   const navDismiss = () => setNav(dismiss)
+  /**
+   * AH · **목록을 도로 넣으면 «있던 화면» 으로 돌아간다** (2026-09-24 Dave: *«할 일 화면에서 집어넣으면 할 일 상태가
+   *    그대로 유지되어야 하는데 항상 채팅 화면으로 가더라»*). 목록은 덮개일 뿐이라 걷으면 밑에 있던 것이 나와야 한다.
+   */
+  const navClose = () => { if (view === 'list') setView(underRef.current); else setNav(dismiss) }
   const [lay, setLay] = useState<Layout>(() => { try { return { ...DEF, ...JSON.parse(localStorage.getItem('fb:layout') ?? '') } } catch { return DEF } })
   useEffect(() => { localStorage.setItem('fb:layout', JSON.stringify(lay)) }, [lay])
   const [docOpen, setDocOpen] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem('fb:docopen') ?? '{}') } catch { return {} } })
@@ -645,7 +650,16 @@ function Main() {
     const t = e.target as HTMLElement
     const inInput = !!t.closest?.('textarea, input, select, [contenteditable="true"], .cchips, .chat-foot, .composer, .menu, .cpop, .modal, .modal-w, .tsheet, .swrow, .swwrap, .dock, .zbar')
     const sel = window.getSelection(); const selecting = !!sel && !sel.isCollapsed
-    if (!canStartSwipe({ coarse, selecting, inInput, consumeX: false })) return
+    // AH · 🔴 **맨 왼쪽 가장자리에서 잡았을 때만** — 안쪽에서 잡히면 쓸리는 행(할 일·폴더)과 손가락을 두고 다툰다
+    if (!fromLeftEdge(e.clientX)) return
+    /**
+     * 🔴 **가장자리에서 시작하면 남아 있던 글 선택은 치운다** (AH · 실측). 가장자리 밖에서 글 위를 끌면
+     *    브라우저가 선택을 남기는데, 그 선택 때문에 **바로 다음 가장자리 쓸기가 통째로 막혔다**
+     *    (Z-2 에서 본 것과 같은 부류다). 가장자리를 잡는 것은 «이제 목록을 보겠다» 는 분명한 뜻이라
+     *    남은 선택보다 이쪽이 이긴다 — 가장자리 24px 에는 고를 글도 거의 없다.
+     */
+    if (selecting) { try { window.getSelection()?.removeAllRanges() } catch { /* */ } }
+    if (!canStartSwipe({ coarse, selecting: false, inInput, consumeX: false })) return
     gref.current = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: performance.now(), lock: '', side: null, dir: 'r', mode: 'open', next: null, target: t, dead: false }
   }
   const swMove = (e: React.PointerEvent) => {
@@ -689,7 +703,7 @@ function Main() {
     else setDragSide('')
   }
   const swCancel = () => { const g = gref.current; gref.current = null; if (g?.side) settle(g.side) }
-  useEffect(() => { if (!narrow) return; const f = (e: KeyboardEvent) => { if (e.key === 'Escape' && view !== 'chat' && !modal && !document.querySelector('.modal-w, .tsheet, .menu')) navDismiss() }; window.addEventListener('keydown', f); return () => window.removeEventListener('keydown', f) }, [narrow, view, modal])
+  useEffect(() => { if (!narrow) return; const f = (e: KeyboardEvent) => { if (e.key === 'Escape' && view !== 'chat' && !modal && !document.querySelector('.modal-w, .tsheet, .menu')) navClose() }; window.addEventListener('keydown', f); return () => window.removeEventListener('keydown', f) }, [narrow, view, modal])
   const stripBots = rows.flatMap(([, it]) => it)
   // 펼친 목록의 행 호버 → 상세 카드 (접힌 스트립의 .fly 와 같은 정보 + 세션·할 일·마지막 메시지)
   const [hov, setHov] = useState<{ id: string; top: number } | null>(null); const hovT = useRef<number | undefined>(undefined)
@@ -849,7 +863,7 @@ function Main() {
       {stage === 'wide' ? (rpOpen ? rpwrapEl : stripRightEl) : null}
 
       {/* ── H · 중간·좁음의 서랍 — 채팅을 밀지 않고 덮는다. 끌리는 동안(dragSide) 미리 붙여 손가락을 따라온다 ── */}
-      {narrow && (view !== 'chat' || dragSide) ? <div className={`scrim ${view === 'list' ? 'over' : ''}`} ref={scrimRef} onClick={navDismiss} /> : null}
+      {narrow && (view !== 'chat' || dragSide) ? <div className={`scrim ${view === 'list' ? 'over' : ''}`} ref={scrimRef} onClick={navClose} /> : null}
       {narrow && (view === 'list' || dragSide === 'left') ? <div className={`drawer left ${view === 'list' ? 'open' : ''}`} ref={leftRef}>{phone ? homeEl : sidebarEl}</div> : null}
       {narrow && (under === 'panel' || under === 'doc' || dragSide === 'right') ? <div className={`drawer right ${under === 'panel' || under === 'doc' ? 'open' : ''}`} ref={rightRef}>{under === 'doc' ? (showDoc ? docwrapEl : docEmptyEl) : rpwrapEl}</div> : null}
       {/* H-4 · 알약 독 — 채팅 오른쪽 가장자리에 세로로. 📄 문서(없으면 흐리게) · ☑ 할 일 · 📁 파일 · ↗ 외부에서 열기(문서가 열려 있을 때). 이모지 대신 앱 아이콘 */}

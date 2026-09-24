@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, openSync, readFileSync, readSync, closeSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { authVerdict } from '../core/authVerdict'
@@ -178,6 +178,44 @@ function helpOf(bin: string, args: string[]): string {
   try { return String(execFileSync(bin, args, { encoding: 'utf8', timeout: 6000, env: cleanClaudeEnv({ noToken: true }) })) } catch { return '' }
 }
 
+/**
+ * AH · **모델 목록의 정본은 CLI 다** (2026-09-24 Dave: *«시작하기 전에 모델 리프레시 기능 같은 게 있어서
+ * 전체 모델 반영이 가능하도록»*). 종전에는 `claude --help` 만 긁었는데 **도움말에는 모델 목록이 없다**
+ * (예시 한두 개뿐) — 그래서 새 모델이 나와도 「더 많은 모델」에 영영 안 떴다.
+ *
+ * 🔴 **CLI 실행파일 안에 이름·별칭·표시 이름이 그대로 들어 있다**(2026-09-23 실측). 200MB 가 넘으므로
+ *    **통째로 읽지 않고** 4MB 씩 흘려 읽으며 줍는다(토막 경계에서 이름이 잘리지 않게 64바이트 겹쳐 읽는다).
+ * ⚠ 한 번 읽은 결과는 **판(경로·크기·수정시각)으로 캐시**한다 — CLI 를 올리기 전에는 다시 안 읽는다.
+ * ⚠ 못 주우면 빈 배열이다 — 그러면 화면은 골라 둔 목록 그대로다(빈 칸보다 낫다).
+ */
+const BIN_CHUNK = 4 * 1024 * 1024, BIN_OVERLAP = 64, BIN_CAP = 80
+const binCache = new Map<string, string[]>()
+export function modelsFromBinary(bin: string): string[] {
+  let key = bin
+  try { const real = realpathSync(bin); const st = statSync(real); key = `${real}:${st.size}:${st.mtimeMs}` } catch { return [] }
+  const hit = binCache.get(key); if (hit) return hit
+  const found = new Set<string>()
+  let fd = -1
+  try {
+    fd = openSync(key.split(':')[0] || bin, 'r')
+    const buf = Buffer.alloc(BIN_CHUNK)
+    let pos = 0, tail = ''
+    const re = /claude-(?:opus|sonnet|haiku|fable|mythos)-[0-9]+(?:-[0-9]+)*/g
+    for (;;) {
+      const n = readSync(fd, buf, 0, BIN_CHUNK, pos)
+      if (n <= 0) break
+      const text = tail + buf.toString('latin1', 0, n)
+      for (const m of text.matchAll(re)) { found.add(m[0]); if (found.size >= BIN_CAP) break }
+      if (found.size >= BIN_CAP) break
+      tail = text.slice(-BIN_OVERLAP)
+      pos += n
+    }
+  } catch { /* 못 읽으면 빈손 */ } finally { if (fd >= 0) try { closeSync(fd) } catch { /* */ } }
+  const out = [...found].sort()
+  binCache.set(key, out)
+  return out
+}
+
 export function agentModels(): { claude: string[]; codex: string[] } {
   const ps = providers()
   const out = { claude: [] as string[], codex: [] as string[] }
@@ -198,6 +236,7 @@ export function agentModels(): { claude: string[]; codex: string[] } {
    * ⚠ Codex 는 다르다 — `models_cache.json` 은 **진짜 모델 캐시**라 긁는 값이 있다.
    */
   const cl = ps.find((p) => p.id === 'claude')
-  if (cl?.bin) out.claude = modelsFromHelp(helpOf(cl.bin, ['--help']), MODEL_RE.claude)
+  // AH · 도움말(예시 한두 개) + **실행파일에서 주운 전체 목록**. 둘 다 골라 둔 목록에는 안 섞이고 「더 많은 모델」로 간다
+  if (cl?.bin) out.claude = [...new Set([...modelsFromHelp(helpOf(cl.bin, ['--help']), MODEL_RE.claude), ...modelsFromBinary(cl.bin)])]
   return out
 }

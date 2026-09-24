@@ -10,6 +10,15 @@ export type Stage = 'wide' | 'mid' | 'narrow'
 export const WIDE_MIN = 1200, MID_MIN = 768
 export function stageOf(width: number): Stage { return width >= WIDE_MIN ? 'wide' : width >= MID_MIN ? 'mid' : 'narrow' }
 
+/**
+ * AH · **쓸기는 맨 왼쪽 가장자리에서만 시작한다** (2026-09-24 Dave: *«할 일 같은 경우에는 슬라이드가 조금 겹치는
+ * 동작이 있어 · 정말 맨 왼쪽 끝에서 잡아서 당겼을 때만 동작하게»*). 화면 어디서나 잡히면 **쓸리는 행**(할 일 · 폴더 행)과
+ * 손가락을 두고 다툰다 — 둘 다 가로로 끌기 때문이다. 가장자리는 그 다툼이 없는 유일한 자리다.
+ * ⚠ iOS Safari 의 왼쪽 가장자리는 브라우저 «뒤로 가기» 라 ☰ 이 보험이다(홈 화면 앱으로 띄우면 안 겹친다).
+ */
+export const EDGE_PX = 24
+export function fromLeftEdge(x: number): boolean { return x <= EDGE_PX }
+
 /** 첫 10px 로 방향을 잠근다 — **가로가 세로의 2배**를 넘어야 쓸기(H-3 ②). 아직 모르면 null */
 export const LOCK_PX = 10, H_DOMINANCE = 2
 export function lockOf(dx: number, dy: number): 'h' | 'v' | null {

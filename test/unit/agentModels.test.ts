@@ -45,3 +45,28 @@ describe('AF · 모델 목록은 깔려 있는 CLI 가 정본이다 (2026-09-23)
     expect(unknown, `CLI 가 모르는 모델: ${unknown.join(', ')}`).toEqual([])
   })
 })
+
+describe('AH · 모델 이름표와 목록 주워 오기 (2026-09-24)', () => {
+  it('🔴 날짜 꼬리표가 붙어도 제 이름표를 단다 — 종전엔 소문자 대체 이름(「opus 5」)이 떴다', async () => {
+    const { modelLabel } = await import('../../src/client/consts')
+    expect(modelLabel('claude-opus-5-5')).toBe('Opus 5.5')
+    expect(modelLabel('claude-opus-5-5-20260401')).toBe('Opus 5.5')
+    expect(modelLabel('claude-fable-5-1-20260501')).toBe('Fable 5.1')
+    expect(modelLabel('claude-opus-5')).toBe('Opus 5')            // 「더 많은 모델」의 것도 제 이름표
+    expect(modelLabel('claude-opus-5-20260101')).toBe('Opus 5')
+    // 🔴 5 와 5.5 는 **다른 모델**이다 — 앞자리가 겹친다고 같아지면 안 된다
+    expect(modelLabel('claude-opus-5')).not.toBe(modelLabel('claude-opus-5-5'))
+  })
+
+  it('CLI 실행파일에서 모델 이름을 주워 온다 (CLI 가 없으면 건너뜀)', async () => {
+    const { execSync } = await import('node:child_process')
+    let bin = ''
+    try { bin = execSync('command -v claude', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { /* 없음 */ }
+    if (!bin) { console.log('  (건너뜀) claude CLI 없음'); return }
+    const { modelsFromBinary } = await import('../../src/host/auth')
+    const found = modelsFromBinary(bin)
+    expect(found.length, '실행파일에서 하나도 못 주웠다').toBeGreaterThan(3)
+    expect(found).toContain('claude-opus-5-5')                    // 도움말만 긁던 종전 방식으로는 안 나오던 것
+    expect(modelsFromBinary(bin)).toBe(found)                     // 두 번째는 캐시 (200MB 를 다시 안 읽는다)
+  })
+})
