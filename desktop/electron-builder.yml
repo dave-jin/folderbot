@@ -17,6 +17,7 @@ files:
   - trayIcon.js
   - winBounds.js
   - nav.js
+  - notes.js
   - localfs.js
   - clip-core.js
   - tray-preload.js

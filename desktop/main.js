@@ -21,6 +21,9 @@ const { pickBounds } = require('./winBounds')
  */
 app.commandLine.appendSwitch('disable-features', 'OverscrollHistoryNavigation')
 const { navHash, withHash } = require('./nav')
+const { createNoteKeeper } = require('./notes')
+const notes = createNoteKeeper()   // 띄운 알림을 눌리거나 닫힐 때까지 붙잡는다 — GC 가 클릭 처리기를 가져가던 버그(notes.js 머리말)
+if (process.env.FOLDERBOT_QA) global.__fbNotes = notes   // QA 손잡이 — 검사가 «붙잡혔나» 를 직접 본다
 const clipCore = require('./clip-core')
 
 // 🔴 QA 격리 — macOS 의 userData 는 `$HOME` 을 **무시한다**(NSSearchPath 가 passwd 의 홈을 쓴다 · 2026-09-22 실측). 그래서 임시 HOME 만으로는
@@ -568,7 +571,12 @@ function recount() { let w = 0, work = 0; for (const s of states.values()) { if 
 function notify(n) {
   if (!Notification.isSupported()) return
   const no = new Notification({ title: n.title, body: n.body, silent: false })
-  no.on('click', () => { const h = navHash(n); if (h) navigate(`#${h}`); else showWin() })
+  no.on('click', () => { notes.release(no); const h = navHash(n); if (h) navigate(`#${h}`); else showWin() })
+  /* ⚠ 'close' 에서 놓지 않는다 — macOS 는 배너가 화면에서 걷혀 **알림 센터로 들어갈 때도** close 를 쏜다(실측). 그 배너는
+     알림 센터에서 여전히 누를 수 있으니, 여기서 놓으면 GC 가 처리기를 가져가 원래 버그로 돌아간다. 놓는 때는 클릭·하루·개수·종료뿐 */
+  if (QA) { no.on('close', () => { global.__fbNoteEv = (global.__fbNoteEv || []).concat('close') }); no.on('failed', (_e, err) => { global.__fbNoteEv = (global.__fbNoteEv || []).concat('failed:' + err) }) }
+  // 🔴 붙잡아 둔다 — 안 그러면 GC 가 이 객체와 click 처리기를 가져가, 나중에 누른 배너는 앱만 앞으로 가져온다(엉뚱한 세션)
+  for (const old of notes.keep(no)) { try { old.close() } catch {} }
   no.show()
 }
 
@@ -587,4 +595,8 @@ app.whenReady().then(async () => {
   if (!QA) updater.start({ isHost: () => settings.mode === 'host', isBusy: () => busyCount() > 0, busyCount, onChange: () => { pushTrayState(); try { win?.webContents.send('fb:update', updater.state()) } catch {} } })
 })
 app.on('window-all-closed', () => { /* 메뉴바에 남는다 */ })
-app.on('before-quit', () => { try { hostRun?.stop() } catch {} })
+app.on('before-quit', () => {
+  // 붙잡은 배너는 알림 센터에서 걷는다 — 다음 프로세스(업데이트 재시작 포함)는 옛 배너의 클릭을 못 받는다. 누를 곳 없는 배너를 남기지 않는다
+  for (const n of notes.all()) { try { n.close() } catch {} }
+  try { hostRun?.stop() } catch {}
+})
