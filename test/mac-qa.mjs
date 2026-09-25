@@ -100,7 +100,8 @@ ok(`픽스처 · 볼트 ${root} · HOME ${home} · 포트 ${PORT}`)
 // ── ④ 앱 띄우기 (Playwright _electron · 실 번들) ──────────────────────────────
 const base = `http://127.0.0.1:${PORT}`
 // ⚠ `electron .` 은 이 맥(외장 디스크 · 경로에 공백)에서 아무 말 없이 exit 0 이었다 — main.js 를 직접 준다
-app = await _electron.launch({ executablePath: electronBin, args: ['main.js'], cwd: desktop, env, timeout: 60000 })
+// `--expose-gc` — ⑪ 이 «알림이 GC 를 견디는가» 를 재려고(알림 객체가 치워지면 배너 클릭이 엉뚱한 세션으로 갔다 · 2026-09-25)
+app = await _electron.launch({ executablePath: electronBin, args: ['--js-flags=--expose-gc', 'main.js'], cwd: desktop, env, timeout: 60000 })
 app.process().stderr?.on('data', (d) => { appErr += d }); app.process().stdout?.on('data', (d) => { appErr += d })
 page = await app.firstWindow({ timeout: 60000 })
 const errs = []; page.on('pageerror', (e) => errs.push(String(e)))
@@ -199,6 +200,26 @@ ok(`봇 화면 · ${bot.name} · 스크린샷 test/tmp/mac-qa-app.png`)
   const h = await page.evaluate(() => location.hash)
   if (!h.includes(`bot=${bot.id}`)) await fail(`딥링크 뒤 hash 가 다르다 — ${h}`)
   ok(`딥링크 → ${h}`)
+}
+
+// ── ⑪ 알림은 GC 를 견딘다 → 한참 뒤 눌러도 그 세션 (2026-09-25 Dave: «원격에서 알람을 클릭하면 이상한 세션») ──
+// 셸이 알림 객체를 안 붙잡아서 GC 한 번에 click 처리기가 사라졌고, 뒤늦게 누른 배너는 앱만 앞으로 가져왔다.
+// 실제 셸 코드(`notify`)가 띄운 알림을 약한 참조로만 지켜보고, GC 를 강제로 돌린 뒤 클릭한다.
+{
+  await app.evaluate(({ Notification }) => { global.__weak = []; const show = Notification.prototype.show; Notification.prototype.show = function () { global.__weak.push(new WeakRef(this)); return show.call(this) } })
+  const s1 = await api(`/bots/${bot.id}/sessions`, { name: '알림 대상' })
+  await api(`/sessions/${s1.id}/send`, { text: '되읊어: 알림 대상 답' })
+  let got = 0; for (let i = 0; i < 40 && !got; i++) { got = await app.evaluate(() => global.__weak.length); if (!got) await wait(250) }
+  if (!got) await fail('⑪ 셸이 알림을 안 띄웠다(검사 전제 깨짐)')
+  const s2 = await api(`/bots/${bot.id}/sessions`, { name: '딴 세션' })
+  await page.evaluate((h) => { location.hash = h }, `bot=${bot.id}&s=${s2.id}`); await wait(600)
+  await app.evaluate(async () => { for (let i = 0; i < 5; i++) { global.gc(); await new Promise((r) => setTimeout(r, 150)) } })
+  const alive = await app.evaluate(() => global.__weak.map((w) => !!w.deref()))
+  if (!alive.at(-1)) await fail('🔴 ⑪ 알림 객체가 GC 로 사라졌다 — 뒤늦게 누른 배너는 앱만 앞으로 가져온다(엉뚱한 세션)')
+  await app.evaluate(() => { const n = global.__weak.findLast((w) => w.deref())?.deref(); n?.emit('click') }); await wait(900)
+  const h = await page.evaluate(() => location.hash)
+  if (!h.includes(`s=${s1.id}`)) await fail(`🔴 ⑪ GC 뒤 알림 클릭이 그 세션으로 안 갔다 — ${h} (기대 s=${s1.id})`)
+  ok('알림 — GC 를 견디고, 뒤늦게 눌러도 그 세션으로')
 }
 
 if (errs.length) console.log('  ⚠ pageerror:', errs.join(' | ').slice(0, 500))
