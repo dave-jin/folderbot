@@ -65,7 +65,13 @@ function navigate(hash) {
      화면에는 직접 알린다(`replaceState` 는 `hashchange` 를 안 쏜다). */
   win.webContents.executeJavaScript(`(()=>{const h=${JSON.stringify(hash.replace(/^#/, ''))};history.replaceState(null,'',h?'#'+h:location.pathname+location.search);dispatchEvent(new HashChangeEvent('hashchange'))})()`).catch(() => {})
 }
-function showWin() { if (!win) createWin(); if (win.isMinimized()) win.restore(); win.show(); win.focus(); if (app.dock) app.dock.show(); try { updater.checkOnFocus() } catch {} }
+/**
+ * ⚠ **Dock 은 숨겨져 있을 때만 `show()` 한다** (2026-09-25 Dave · 스크린샷_2010: 알림을 누르자 Dock 이 확대된 채 멈춰 있었다).
+ *    이 앱은 Dock 아이콘을 숨기는 곳이 없어 종전 `app.dock.show()` 는 늘 «이미 보이는 아이콘을 다시 보이기» 였다. macOS 는 그때
+ *    앱을 전면 앱으로 다시 바꾸며(TransformProcessType) Dock 을 새로 배치하는데, 확대(magnification)를 켠 Dock 은 그 틈에
+ *    확대된 채로 굳는다. BA 로 알림 클릭이 셸까지 제대로 닿으면서(종전엔 GC 로 끊겨 이 줄까지 못 왔다) 드러났다.
+ */
+function showWin() { if (!win) createWin(); if (win.isMinimized()) win.restore(); win.show(); win.focus(); if (app.dock && !app.dock.isVisible()) app.dock.show(); try { updater.checkOnFocus() } catch {} }
 
 /**
  * 🔴 **창도 마지막 모습으로 뜬다** (2026-09-15 Dave: «마지막으로 작업했던 프로젝트도 기억하고 그 창에서
