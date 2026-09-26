@@ -2,7 +2,7 @@
 
 - **범위:** Windows 배포물에 호스트와 클라이언트를 모두 묶는다. 검증된 호스트는 기존 Apple Silicon Mac이고, Windows 네이티브 호스트는 실험 단계다. Windows CI는 호스트/클라이언트를 빌드해 `desktop/host`로 복사하고, 패키지 안에 두 파일 트리가 있는지 검사한다.
 - **형식:** electron-builder 26의 NSIS x64 설치 파일을 만든다. 기존 `build/icon.png`(1024px)를 Windows 아이콘 소스로 사용한다. 인증서가 없어 설치 파일은 미서명이다.
-- **배포:** PR, `main` 푸시, 수동 실행에서 Windows CI가 테스트하고 설치 파일과 SHA-256을 14일 보관 아티팩트로 올린다. Windows 워크플로에는 릴리스 발행 단계가 없다. macOS `desktop-v*` 릴리스 워크플로는 그대로 둔다.
+- **배포:** PR, `main`·`feat/windows-*` 푸시, 수동 실행에서 Windows CI가 테스트하고 설치 파일과 SHA-256을 14일 보관 아티팩트로 올린다. Windows 워크플로에는 릴리스 발행 단계가 없다. macOS `desktop-v*` 릴리스 워크플로는 그대로 둔다.
 - **검증:** Windows 러너에서 타입 검사, Windows 경로 관련 단위 검사와 운영체제에 의존하지 않는 데스크톱 단위 검사, 번들 소스 빌드, NSIS 패키징, ASAR 필수 파일/호스트 포함 검사, 설치 파일 크기/체크섬 검사를 한다. Linux ARM64에서 Windows x64 압축 해제형 패키지와 ASAR 내용은 확인했으나, NSIS 실행 파일 생성은 해당 Linux의 `makensis` 바이너리가 ARM64에서 실행되지 않아 Windows CI에서 검증해야 한다. CI 검사는 Windows 11 GUI에서의 실제 실행 검사를 대신하지 않는다.
 - **에이전트 CLI:** Windows 호스트는 [Claude Code 공식 네이티브 설치](https://code.claude.com/docs/en/setup#set-up-on-windows)의 `claude.exe`를 사용한다. 호스트가 셸 없이 프로세스를 실행하므로 Claude와 Codex 모두 npm의 `.cmd`/`.bat` 래퍼는 지원하지 않는다. Codex를 쓰려면 네이티브 `.exe` 경로가 필요하며 Windows Codex 실행은 아직 검증하지 않았다. WSL의 Claude는 Windows 앱과 별도 환경이다.
 - **남은 한계:** Windows 자동 업데이트, 코드 서명과 실제 Windows 11 설치·호스트 세션·페어링·알림·트레이·로컬 파일 열기 수동 검증은 아직 지원/검증 범위 밖이다. 새 버전은 설치 파일을 다시 받는다. `.sha256`은 전송 중 파일 무결성 확인용이며 게시자 신원을 증명하지 않는다.
