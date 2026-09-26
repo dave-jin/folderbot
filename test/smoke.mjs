@@ -1213,7 +1213,7 @@ try {
           const op = await br.newPage({ viewport: vp, deviceScaleFactor: 1, ...(mobile ? { hasTouch: true, isMobile: true } : {}) })
           await op.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
           await op.goto(base + `/#bot=${bot.id}&s=${sidO}`); await op.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(600)
-          await op.evaluate(() => { const sc = document.querySelector('.chat-scroll'); sc.scrollTop = sc.scrollHeight; window.__steps = []; window.__liveH = new Set(); window.__gaps = new Set(); let prev = sc.scrollTop; const f = () => { const d = sc.scrollTop - prev; if (d !== 0 && !window.__pause) window.__steps.push(Math.round(d)); prev = sc.scrollTop; const live = document.querySelector('.live'); if (live) { window.__liveH.add(Math.round(live.getBoundingClientRect().height)); if (live.previousElementSibling) window.__gaps.add(Math.round(live.getBoundingClientRect().top - live.previousElementSibling.getBoundingClientRect().bottom)) } requestAnimationFrame(f) }; requestAnimationFrame(f) })
+          await op.evaluate(() => { const sc = document.querySelector('.chat-scroll'); const room = sc.scrollHeight - sc.clientHeight; if (room < 440) sc.style.paddingTop = `${440 - room}px`; sc.scrollTop = sc.scrollHeight; window.__steps = []; window.__liveH = new Set(); window.__gaps = new Set(); let prev = sc.scrollTop; const f = () => { const d = sc.scrollTop - prev; if (d !== 0 && !window.__pause) window.__steps.push(Math.round(d)); prev = sc.scrollTop; const live = document.querySelector('.live'); if (live) { window.__liveH.add(Math.round(live.getBoundingClientRect().height)); if (live.previousElementSibling) window.__gaps.add(Math.round(live.getBoundingClientRect().top - live.previousElementSibling.getBoundingClientRect().bottom)) } requestAnimationFrame(f) }; requestAnimationFrame(f) })
           await api(`/sessions/${sidO}/send`, { text: '마크다운스트리밍' })
           // 스트리밍 중간 — 제목은 렌더된 채, 열린 블록은 원문, 가로 넘침 없음
           await op.waitForSelector('.md.streaming', { timeout: 5000 }); await wait(1800)
@@ -1226,7 +1226,8 @@ try {
           if (Math.abs(stB - stA) > 1 || !nc || nc.off || !/새 내용/.test(nc.text)) fail(`O ${label}: 올려 보는 동안 끌려 내려가거나 「↓ 새 내용」 이 없다 ` + JSON.stringify({ stA, stB, nc }))
           await op.evaluate(() => { window.__pause = true }); await op.click('.tobot'); await wait(900); await op.evaluate(() => { window.__pause = false })   // 사람이 누른 「↓ 새 내용」 은 브라우저의 smooth 스크롤 — 자동 따라가기 계약(≤10px/프레임) 밖
           for (let i = 0; i < 40 && (await op.$('.md.streaming')); i++) await wait(200)
-          await wait(400)
+          // 짧은 답도 900px 창에서 위로 올려볼 수 있게 하고, 마지막 rAF 추적이 끝날 때까지 최대 2초만 기다린다.
+          for (let i = 0; i < 20; i++) { const dist = await op.evaluate(() => { const sc = document.querySelector('.chat-scroll'); return sc.scrollHeight - sc.scrollTop - sc.clientHeight }); if (dist <= 2) break; await wait(100) }
           const end = await op.evaluate(() => { const sc = document.querySelector('.chat-scroll'); const md = [...document.querySelectorAll('.amsg .md')].pop(); return { dist: sc.scrollHeight - sc.scrollTop - sc.clientHeight, steps: window.__steps, liveH: [...window.__liveH], gaps: [...window.__gaps], mdH: md.getBoundingClientRect().height, preScroll: (() => { const p = md.querySelector('pre'); return p ? p.scrollWidth > p.clientWidth : null })(), overflow: md.scrollWidth > md.clientWidth + 1, ih: innerHeight } })
           const maxStep = Math.max(0, ...end.steps.filter((d) => d > 0)); const bigDown = end.steps.filter((d) => d < -10)
           if (maxStep > 10) fail(`O ${label}: 따라가기가 프레임당 10px 를 넘었다 ` + JSON.stringify({ maxStep, steps: end.steps.slice(0, 40) }))

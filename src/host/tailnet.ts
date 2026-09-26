@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { networkInterfaces } from 'node:os'
+import { networkInterfaces, platform } from 'node:os'
+import { join } from 'node:path'
 
 const CGNAT = /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./
 export function bindAddresses(): string[] {
@@ -11,11 +12,13 @@ export function bindAddresses(): string[] {
 }
 export interface TailnetInfo { state: 'absent' | 'stopped' | 'needs-login' | 'running' | 'unknown'; ip?: string; dnsName?: string; version?: string }
 export function tailnetInfo(): Promise<TailnetInfo> {
-  const bin = ['/usr/local/bin/tailscale', '/Applications/Tailscale.app/Contents/MacOS/Tailscale', '/opt/homebrew/bin/tailscale'].find((p) => existsSync(p))
+  const bin = platform() === 'win32'
+    ? [process.env.ProgramFiles && join(process.env.ProgramFiles, 'Tailscale', 'tailscale.exe'), 'tailscale.exe'].find((p) => p && (p === 'tailscale.exe' || existsSync(p)))
+    : ['/usr/local/bin/tailscale', '/Applications/Tailscale.app/Contents/MacOS/Tailscale', '/opt/homebrew/bin/tailscale'].find((p) => existsSync(p))
   if (!bin) return Promise.resolve({ state: 'absent' })
   return new Promise((resolve) => {
     execFile(bin, ['status', '--json'], { timeout: 8000 }, (err, stdout) => {
-      if (err) return resolve({ state: 'unknown' })
+      if (err) return resolve({ state: (err as NodeJS.ErrnoException).code === 'ENOENT' ? 'absent' : 'unknown' })
       try {
         const j = JSON.parse(stdout) as { BackendState?: string; Self?: { TailscaleIPs?: string[]; DNSName?: string }; Version?: string }
         const st = j.BackendState

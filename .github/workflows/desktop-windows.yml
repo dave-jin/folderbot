@@ -1,0 +1,76 @@
+name: desktop (Windows x64)
+on:
+  pull_request:
+    paths: ['desktop/**', 'src/**', 'scripts/**', 'test/**', 'package.json', 'package-lock.json', '.github/workflows/desktop-windows.yml', 'README.md', 'docs/INSTALL.md', 'docs/WINDOWS.md']
+  push:
+    branches: [main, 'feat/windows-*']
+    paths: ['desktop/**', 'src/**', 'scripts/**', 'test/**', 'package.json', 'package-lock.json', '.github/workflows/desktop-windows.yml', 'README.md', 'docs/INSTALL.md', 'docs/WINDOWS.md']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - name: Install root dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Windows-safe host and desktop unit tests
+        run: >-
+          npm test --
+          test/unit/cliResolve.test.ts
+          test/unit/clipCore.test.ts
+          test/unit/desktopBridge.test.ts
+          test/unit/hostWindowsPaths.test.ts
+          test/unit/nav.test.ts
+          test/unit/notesKeeper.test.ts
+          test/unit/paths.test.ts
+          test/unit/perm-core.test.ts
+          test/unit/platformOps.test.ts
+          test/unit/registry.test.ts
+          test/unit/rootPath.test.ts
+          test/unit/trayIcon.test.ts
+          test/unit/update-pick.test.ts
+          test/unit/winBounds.test.ts
+          test/unit/windowsUi.test.ts
+      - name: Build bundled host and client
+        env: { BUNDLE_ALL: '1' }
+        run: |
+          npm run build
+          New-Item -ItemType Directory -Force 'desktop/host' | Out-Null
+          Copy-Item -Path 'dist/host' -Destination 'desktop/host/' -Recurse -Force
+          Copy-Item -Path 'dist/client' -Destination 'desktop/host/' -Recurse -Force
+          Copy-Item -Path 'package.json' -Destination 'desktop/host/package.json' -Force
+          if (-not (Test-Path 'desktop/host/host/index.mjs')) { throw 'Missing bundled host' }
+          if (-not (Test-Path 'desktop/host/client/index.html')) { throw 'Missing bundled client' }
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci --no-audit --no-fund
+      - name: Package Windows app (NSIS x64, unsigned)
+        working-directory: desktop
+        env: { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }
+        run: |
+          npm run dist:win
+      - name: Verify installer and packaged app
+        working-directory: desktop
+        run: |
+          $installers = @(Get-ChildItem -Path dist -Filter 'Folder.Bot-*-x64-setup.exe' -File)
+          if ($installers.Count -ne 1) { throw "Expected one Windows x64 installer, found $($installers.Count)" }
+          if ($installers[0].Length -lt 1MB) { throw 'Installer is unexpectedly small' }
+          if (-not (Test-Path 'dist/win-unpacked/Folder Bot.exe')) { throw 'Missing unpacked Windows executable' }
+          node -e "const asar=require('@electron/asar'); const p='dist/win-unpacked/resources/app.asar'; const files=asar.listPackage(p).map(x=>x.replaceAll(String.fromCharCode(92), '/').replace(/^\/+/, '')); for(const f of ['main.js','preload.js','connect.html','updater.js','package.json','host/host/index.mjs','host/client/index.html','host/package.json']) if(!files.includes(f)) throw Error('Missing packaged file: '+f);"
+          $sha = (Get-FileHash -LiteralPath $installers[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$sha  $($installers[0].Name)" | Set-Content -LiteralPath "$($installers[0].FullName).sha256" -Encoding ascii
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: folderbot-windows-x64-${{ github.run_id }}
+          path: |
+            desktop/dist/Folder.Bot-*-x64-setup.exe
+            desktop/dist/Folder.Bot-*-x64-setup.exe.sha256
+          if-no-files-found: error
+          retention-days: 14

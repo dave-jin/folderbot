@@ -8,7 +8,7 @@ const { app, Notification, shell } = require('electron')
 const { closeSync, openSync, readFileSync, readdirSync, writeFileSync, mkdirSync } = require('node:fs')
 const { homedir } = require('node:os')
 const { join } = require('node:path')
-const { fdaVerdict, permsSatisfied } = require('./perm-core')
+const { fdaVerdict, permsSatisfied, permissionRows } = require('./perm-core')
 
 // 어느 맥에나 있고, 전체 디스크 접근으로만 열리는 자리. 내용은 읽지도 보관하지도 않는다 — 목록만 훑고 닫는다.
 const FDA_PROBES = [
@@ -39,7 +39,11 @@ const PANE = {
   'full-disk': ['x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles'],
   notifications: ['x-apple.systempreferences:com.apple.Notifications-Settings.extension', 'x-apple.systempreferences:com.apple.preference.notifications']
 }
-async function openPane(id) { for (const u of PANE[id] || []) { try { await shell.openExternal(u); return { ok: true } } catch {} } return { ok: false } }
+async function openPane(id) {
+  const urls = process.platform === 'win32' ? (id === 'notifications' ? ['ms-settings:notifications'] : []) : PANE[id] || []
+  for (const u of urls) { try { await shell.openExternal(u); return { ok: true } } catch {} }
+  return { ok: false }
+}
 
 /**
  * 지금 이 순간의 권한 현황. 순서가 곧 화면 순서 — 막는 것(필수)을 먼저.
@@ -49,13 +53,7 @@ async function openPane(id) { for (const u of PANE[id] || []) { try { await shel
  */
 function list(opts) {
   const gate = app.isPackaged; const ack = readAck(); const host = !!(opts && opts.host)
-  const rows = [
-    { id: 'full-disk', required: gate && host, probeable: true, status: fullDiskStatus() },
-    { id: 'notifications', required: gate, probeable: false, status: ack.notifications === true ? 'granted' : ack.notifications === false ? 'missing' : 'unknown' }
-  ]
-  // 원격 기기에만 — «이 기기에서 파일 열기» 를 어디서 할지(동기화 볼트 / 호스트에서 받기). 고르면 끝난 것이다(E)
-  if (!host) rows.push({ id: 'local-open', required: gate, probeable: false, status: opts && opts.openMode ? 'granted' : 'unknown' })
-  return rows
+  return permissionRows({ os: process.platform, packaged: gate, host, openMode: opts && opts.openMode, ack, diskStatus: fullDiskStatus() })
 }
 function satisfied(opts) { return permsSatisfied(list(opts)) }
 // macOS 는 이미 뜬 프로세스에 전체 디스크 접근을 소급 적용하지 않는다 — 켰는데도 꺼짐이면 다시 시작이 답이다

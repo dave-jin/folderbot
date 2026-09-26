@@ -17,13 +17,25 @@
  */
 const OS_FMT = /^electron application\/osclipboard;format="(.*)"$/
 /** `file://` URL — 공백·한글은 encodeURI, `?`·`#` 은 따로(encodeURI 가 안 건드린다) */
-function fileUri(p) { return 'file://' + encodeURI(String(p)).replace(/[?#]/g, encodeURIComponent) }
+function fileUri(p) {
+  const path = String(p).replace(/\\/g, '/')
+  const prefix = /^[A-Za-z]:\//.test(path) ? 'file:///' : path.startsWith('//') ? 'file:' : 'file://'
+  return prefix + encodeURI(path).replace(/[?#]/g, encodeURIComponent)
+}
 /** `text/uri-list` 본문 — RFC 2483 은 CRLF */
 function uriList(paths) { return paths.map(fileUri).join('\r\n') }
 /** 되읽은 MIME 목록에서 OS 형식 이름만 남긴다 */
 function shortTypes(types) { return (types || []).map((t) => { const m = OS_FMT.exec(t); return m ? m[1] : t }) }
 /** Finder·카톡이 파일로 읽을 수 있는 형식이 하나라도 있나 */
-function hasFile(types) { return shortTypes(types).some((t) => /NSFilenamesPboardType|public\.file-url|0x6675726C|^text\/uri-list$/i.test(t)) }
+function hasFile(types) { return shortTypes(types).some((t) => /NSFilenamesPboardType|public\.file-url|0x6675726C|CF_HDROP|FileNameW|^text\/uri-list$/i.test(t)) }
 /** 메모·카톡이 그림으로 붙일 수 있는 형식이 하나라도 있나 */
 function hasImage(types) { return shortTypes(types).some((t) => /^image\/(png|tiff)$|Apple PNG|TIFF/i.test(t)) }
-module.exports = { fileUri, uriList, shortTypes, hasFile, hasImage }
+/** Windows 탐색기의 파일 붙여넣기 형식(CF_HDROP). 경로는 스크립트가 아닌 환경 데이터로 전달한다. */
+function windowsFileDropCommand(paths) {
+  const script = 'Add-Type -AssemblyName System.Windows.Forms; $paths = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:FOLDERBOT_CLIP_FILES)) | ConvertFrom-Json; $files = New-Object System.Collections.Specialized.StringCollection; foreach ($p in $paths) { [void]$files.Add([string]$p) }; [System.Windows.Forms.Clipboard]::SetFileDropList($files); if (-not [System.Windows.Forms.Clipboard]::ContainsFileDropList()) { exit 3 }'
+  return {
+    bin: 'powershell.exe', args: ['-NoProfile', '-NonInteractive', '-STA', '-Command', script],
+    env: { ...process.env, FOLDERBOT_CLIP_FILES: Buffer.from(JSON.stringify(paths), 'utf8').toString('base64') }
+  }
+}
+module.exports = { fileUri, uriList, shortTypes, hasFile, hasImage, windowsFileDropCommand }

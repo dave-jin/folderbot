@@ -4,7 +4,7 @@ import { mdPlain } from '../core/mdPlain'   // 알림 미리보기는 글자만 
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { hostname } from 'node:os'
-import { join, relative, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { TODO_RULES_PROMPT } from '../core/todo'
 import type { AuthState, Bot, Frame, PermissionMode, PermissionRequest, RoutineDef, SessionState } from '../core/types'
 import { STATE_LABEL } from '../core/types'
@@ -16,7 +16,7 @@ import { ORCH_ID, Registry, canon } from './registry'
 import { Routines, approveToMode, routinesToDrop } from './routines'
 import { SessionManager, setOauthToken, setKeychainLogin, AUTH_ERROR, type SessionRec } from './session'
 import { readTodo, todoAdd, todoContext } from './todoStore'
-import { recent as recentFiles, tree as fileTree } from './files'
+import { portableRelative, recent as recentFiles, tree as fileTree } from './files'
 
 /** 호스트 — 모든 부품을 묶고, 화면으로 나갈 프레임을 만든다 */
 const PERM_MODES: PermissionMode[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions', 'dontAsk']
@@ -271,7 +271,7 @@ export class Host {
       for (const name of names) {
         if (name.startsWith('.') || name === 'node_modules') continue
         const abs = join(dir, name); let st; try { st = statSync(abs) } catch { continue }
-        const rel = relative(this.registry.root, abs)
+        const rel = portableRelative(this.registry.root, abs)
         if (rel.toLowerCase().includes(q)) out.push({ rel: rel + (st.isDirectory() ? '/' : ''), m: st.mtimeMs })
         if (st.isDirectory() && d > 0 && out.length < limit * 5) walk(abs, d - 1)
       }

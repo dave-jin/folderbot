@@ -22,4 +22,12 @@ function pickBounds(saved, displays) {
   })
   return ok ? { ...size, x, y } : size
 }
-module.exports = { pickBounds, DEF }
+/** 트레이가 위(macOS)나 아래(Windows)에 있을 때 패널을 화면 안에 붙인다. */
+function trayPanelPosition(tray, work, width, height, os) {
+  const x = Math.round(Math.min(Math.max(work.x + 4, tray.x + tray.width / 2 - width / 2), work.x + work.width - width - 4))
+  const below = tray.y + tray.height + 2
+  const above = tray.y - height - 2
+  const y = os === 'win32' ? above : below
+  return { x, y: Math.round(Math.min(Math.max(work.y + 4, y), work.y + work.height - height - 4)) }
+}
+module.exports = { pickBounds, trayPanelPosition, DEF }

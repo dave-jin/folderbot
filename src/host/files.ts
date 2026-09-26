@@ -1,10 +1,21 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync, statSync, createReadStream, renameSync , openSync, readSync, closeSync } from 'node:fs'
 import { dirname, basename } from 'node:path'
-import { join, extname, relative, resolve, sep } from 'node:path'
+import { join, extname, parse, relative, resolve, win32, posix } from 'node:path'
 import { atomicWrite } from './paths'
 
 export interface TreeNode { name: string; rel: string; dir: boolean; size?: number; mtime: number; children?: TreeNode[]; harness?: boolean; botId?: string; role?: 'inbox' | 'active' | 'reference' | 'archive' }
+
+/** API와 볼트 상태의 상대 경로는 OS에 관계없이 `/`를 쓴다. */
+export function portableRelative(base: string, abs: string, paths: Pick<typeof win32, 'relative' | 'sep'> = process.platform === 'win32' ? win32 : posix): string {
+  return paths.relative(base, abs).split(paths.sep).join('/')
+}
+
+/** Native path containment, including case-insensitive Windows drives and UNC shares. */
+export function withinPath(root: string, abs: string, paths: Pick<typeof win32, 'relative' | 'isAbsolute' | 'sep'> = process.platform === 'win32' ? win32 : posix): boolean {
+  const rel = paths.relative(root.normalize('NFC'), abs.normalize('NFC'))
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${paths.sep}`) && !paths.isAbsolute(rel))
+}
 
 const SKIP = new Set(['node_modules', '.git', '.DS_Store', '.folderbot', '.projectbot', 'dist', '.next'])
 const TEXT_EXT = new Set(['.md', '.txt', '.yml', '.yaml', '.json', '.ts', '.tsx', '.js', '.mjs', '.py', '.sh', '.css', '.html', '.csv', '.toml', '.env.example', '.canvas'])
@@ -13,8 +24,8 @@ const IMG_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'])
 /** 허용 루트(볼트·연결 리포) 안인지 — 밖이면 던진다 */
 export function guard(roots: string[], abs: string): string {
   // ⚠ 비교만 NFC 로 하고, 돌려주는 경로는 원문 그대로 — NFC 로 바꿔 돌려주면 NFD 로 저장된 파일(맥 파일명·Dropbox·리눅스)이 ENOENT 가 난다 (스모크 실측)
-  const a = resolve(abs); const an = a.normalize('NFC')
-  for (const r of roots) { const rr = resolve(r).normalize('NFC'); if (an === rr || an.startsWith(rr + sep)) return a }
+  const a = resolve(abs)
+  for (const r of roots) if (withinPath(resolve(r), a)) return a
   throw new Error('허용된 폴더 밖이에요')
 }
 
@@ -29,7 +40,7 @@ export function tree(base: string, depth = 2, max = 400): TreeNode[] {
       if (++count > max) break
       const abs = join(dir, name)
       let st; try { st = statSync(abs) } catch { continue }
-      const node: TreeNode = { name, rel: relative(base, abs), dir: st.isDirectory(), size: st.isDirectory() ? undefined : st.size, mtime: st.mtimeMs }
+      const node: TreeNode = { name, rel: portableRelative(base, abs), dir: st.isDirectory(), size: st.isDirectory() ? undefined : st.size, mtime: st.mtimeMs }
       if (node.dir && d > 1) node.children = walk(abs, d - 1)
       out.push(node)
     }
@@ -82,7 +93,7 @@ export function listDir(base: string, rel: string, all = false): TreeNode[] {
     const abs = join(dir, name)
     let st; try { st = statSync(abs) } catch { continue }
     const bundle = /\.(app|key|numbers|pages|bundle|framework)$/i.test(name)
-    out.push({ name, rel: relative(base, abs), dir: st.isDirectory() && !bundle, size: st.isDirectory() ? undefined : st.size, mtime: st.mtimeMs })
+    out.push({ name, rel: portableRelative(base, abs), dir: st.isDirectory() && !bundle, size: st.isDirectory() ? undefined : st.size, mtime: st.mtimeMs })
   }
   return out.sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name, 'ko') : a.dir ? -1 : 1))
 }
@@ -98,7 +109,7 @@ export function recent(base: string, limit = 12): TreeNode[] {
       const abs = join(dir, name)
       let st; try { st = statSync(abs) } catch { continue }
       if (st.isDirectory()) { if (d > 0) walk(abs, d - 1) }
-      else out.push({ name, rel: relative(base, abs), dir: false, size: st.size, mtime: st.mtimeMs })
+      else out.push({ name, rel: portableRelative(base, abs), dir: false, size: st.size, mtime: st.mtimeMs })
     }
   }
   walk(base, 3)
@@ -175,7 +186,7 @@ export function exists(abs: string): boolean { return existsSync(abs) }
  */
 export function resolveNFDeep(base: string, rel: string): string {
   let cur = base
-  for (const seg of rel.split('/').filter(Boolean)) {
+  for (const seg of rel.split(/[\\/]/).filter(Boolean)) {
     if (seg === '..') { cur = dirname(cur); continue }
     if (seg === '.') continue
     const direct = join(cur, seg)
@@ -184,6 +195,11 @@ export function resolveNFDeep(base: string, rel: string): string {
     cur = join(cur, alt ?? seg)
   }
   return cur
+}
+/** 드라이브/UNC 루트도 보존하면서 NFD/NFC 파일 이름을 찾는다. */
+export function resolveNFAbsolute(abs: string): string {
+  const root = parse(abs).root
+  return resolveNFDeep(root, relative(root, abs))
 }
 export function resolveNF(abs: string): string {
   if (existsSync(abs)) return abs

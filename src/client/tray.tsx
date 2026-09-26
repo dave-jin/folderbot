@@ -19,9 +19,9 @@ import { setToken, token } from './api'
 import './styles.css'
 
 type TrayState = {
-  waiting: number; mood: string; mode: string; hostLabel: string; root: string
+  waiting: number; mood: string; mode: string; hostLabel: string; root: string; platform?: string
   pairing: { code: string; expiresAt: number } | null
-  update: { current: string; downloading?: boolean; staged?: { ready?: boolean; version?: string; progress?: number } | null }
+  update: { current: string; supported?: boolean; downloading?: boolean; staged?: { ready?: boolean; version?: string; progress?: number } | null }
   loginItem: boolean
 }
 type Bridge = { on: (f: (s: TrayState) => void) => void; act: (id: string) => void; size: (h: number) => void }
@@ -52,7 +52,7 @@ function Panel() {
     <Row id="notify" label="알림 센터" />
     <hr />
     {host ? <>
-      <Row label={`이 맥이 호스트 · ${st?.root ?? ''}`} />
+      <Row label={`이 기기가 호스트 · ${st?.root ?? ''}`} />
       <Row id="pairing" label={st?.pairing && Date.now() < st.pairing.expiresAt ? `페어링 코드 ${st.pairing.code} (클릭해 복사)` : '페어링 코드 만들기'} />
       <Row id="pairing-new" label="새 페어링 코드" />
       <Row id="copy-addr" label="폰에서 열 주소 복사" />
@@ -62,14 +62,16 @@ function Panel() {
       <Row id="change-host" label="호스트 바꾸기…" />
     </>}
     <hr />
-    {up?.staged?.ready
+    {up?.supported === false
+      ? <Row label={`v${up.current} · 새 설치 파일로 업데이트`} />
+      : up?.staged?.ready
       ? <Row id="update-apply" label={`v${up.staged.version} 업데이트 적용 (재시작)`} />
       : up?.downloading
         ? <Row label={`업데이트 받는 중 ${Math.round((up.staged?.progress ?? 0) * 100)}%`} />
         : <Row id="update-check" label={`업데이트 확인 (v${up?.current ?? ''})`} />}
     <Row id="login-toggle" label="로그인 시 자동 실행" on={!!st?.loginItem} />
     <hr />
-    <Row id="quit" label="종료" hint="⌘Q" />
+    <Row id="quit" label="종료" hint={st?.platform === 'darwin' ? '⌘Q' : undefined} />
   </div>
 }
 

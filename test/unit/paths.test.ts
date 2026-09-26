@@ -35,6 +35,11 @@ describe('candidatePaths', () => {
     expect(c).toContain('/Users/dave/PARA/3')
     expect(c.some((x) => x.startsWith('정본은'))).toBe(false)
   })
+  it('Windows 절대 경로도 문장 앞말 없이 집는다', () => {
+    const c = candidatePaths('정본은 C:\\Users\\dave\\PARA\\memo.md 에 있어요')
+    expect(c).toContain('C:/Users/dave/PARA/memo.md')
+    expect(c.some((x) => x.startsWith('정본은'))).toBe(false)
+  })
   it('문장 끝 부호와 끝 슬래시는 뗀다', () => {
     expect(candidatePaths('a/b.md. 그리고 c/d/ 를 봐')).toEqual(expect.arrayContaining(['a/b.md', 'c/d']))
   })
@@ -57,6 +62,11 @@ describe('relUnder', () => {
   it('밖이면 null', () => { expect(relUnder('/v/bot', '/v/other/a.md')).toBeNull() })
   it('NFD 로 와도 맞춘다', () => {
     expect(relUnder('/v/제품'.normalize('NFC'), '/v/제품/a.md'.normalize('NFD'))).toBe('a.md')
+  })
+  it('Windows 경로는 슬래시 종류와 드라이브 대소문자를 맞춘다', () => {
+    expect(relUnder('C:\\Vault\\Bot', 'c:/Vault/Bot/docs/a.md')).toBe('docs/a.md')
+    expect(relUnder('C:\\Vault\\Bot', 'C:\\Vault\\Bots\\a.md')).toBeNull()
+    expect(botRelOf('C:\\Vault\\Bot', 'C:\\Vault', 'c:\\Vault\\Other\\a.md')).toBe('../Other/a.md')
   })
 })
 

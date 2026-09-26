@@ -9,7 +9,7 @@ const updater = require('./updater')
 const perms = require('./perms')
 const localfs = require('./localfs')
 const { folderIcon } = require('./trayIcon')
-const { pickBounds } = require('./winBounds')
+const { pickBounds, trayPanelPosition } = require('./winBounds')
 
 /**
  * 🔴 **AO · 두 손가락 쓸기로 앞뒤 페이지에 가지 않는다** (2026-09-24 Dave: *«왼쪽 혹은 오른쪽으로 쓸기에서
@@ -84,7 +84,7 @@ function savedBounds() {
   return pickBounds(settings.win, screen.getAllDisplays())
 }
 function createWin() {
-  win = new BrowserWindow({ ...savedBounds(), minWidth: 720, minHeight: 520, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 16 } /* 헤더 44px 의 중앙(12px 버튼) — 제목과 높이를 맞춘다 */, backgroundColor: '#141414', show: false, webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, sandbox: false } })
+  win = new BrowserWindow({ ...savedBounds(), minWidth: 720, minHeight: 520, ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 16 } } : {}), backgroundColor: '#141414', show: false, webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, sandbox: false } })
   win.once('ready-to-show', () => { win.show(); if (pendingNav) { navigate(pendingNav); pendingNav = null } })
   // ⚠ 창을 움직이는 동안 매 픽셀마다 파일을 쓰지 않는다 — 멈춘 뒤 한 번만
   let bt = null
@@ -268,7 +268,14 @@ ipcMain.handle('fb:local-copy-files', async (_e, paths) => {
   const list = all.filter((p) => existsSync(p))
   if (!list.length) return { ok: false, why: all.length ? `파일이 그 자리에 없어요 — ${all[0]}` : '복사할 파일이 없어요' }
   try {
-    if (process.platform !== 'darwin') { await clipboard.writeText(list.join('\n')); return { ok: true, why: '맥이 아니라 경로 글자로 복사했어요' } }
+    if (process.platform === 'win32') {
+      const c = clipCore.windowsFileDropCommand(list)
+      const error = await new Promise((resolve) => execFile(c.bin, c.args, { env: c.env, timeout: 8000, windowsHide: true }, (e) => resolve(e)))
+      if (!error) return { ok: true, formats: clipCore.shortTypes(await clipTypes()) }
+      await clipboard.writeText(list.join('\n'))
+      return { ok: false, why: `파일 복사에 실패해 경로 글자만 복사했어요 — ${error.message}` }
+    }
+    if (process.platform !== 'darwin') { await clipboard.writeText(list.join('\n')); return { ok: false, why: '파일 대신 경로 글자만 복사했어요' } }
     // ① 파일 URL 목록 — 실측: public.file-url + NSFilenamesPboardType 이 함께 올라간다(Finder ⌘V·카톡 첨부가 읽는 형식).
     //    ⛔ text/plain 을 같이 싣지 않는다 — 같이 실으면 파일 URL 이 폴더까지만 남는다(실측)
     await clipboard.write([new ClipboardItem({ 'text/uri-list': clipCore.uriList(list) })])
@@ -290,7 +297,12 @@ ipcMain.handle('fb:copy-diag', async (_e, p) => {
   await step('복사 전 형식', async () => `[${clipCore.shortTypes(await clipTypes()).join(', ') || '없음'}]`)
   if (path && existsSync(path)) {
     await step('파일 URL 올리기(text/uri-list)', async () => { await clipboard.write([new ClipboardItem({ 'text/uri-list': clipCore.uriList([path]) })]); const t = await clipTypes(); return `${clipCore.hasFile(t) ? '파일 ✅' : '파일 ❌'} [${clipCore.shortTypes(t).join(', ') || '없음'}]` })
-    await step('osascript 파일 하나', async () => { const ok = await osa(`set the clipboard to POSIX file "${qq(path)}"`); const t = await clipTypes(); return `${ok} · ${clipCore.hasFile(t) ? '파일 ✅' : '파일 ❌'} [${clipCore.shortTypes(t).join(', ') || '없음'}]` })
+    if (process.platform === 'win32') await step('Windows 파일 드롭', async () => {
+      const c = clipCore.windowsFileDropCommand([path])
+      const error = await new Promise((resolve) => execFile(c.bin, c.args, { env: c.env, timeout: 8000, windowsHide: true }, (e) => resolve(e)))
+      return error ? `파일 ❌ · ${error.message}` : `파일 ✅ [${clipCore.shortTypes(await clipTypes()).join(', ') || 'OS 확인'}]`
+    })
+    else if (process.platform === 'darwin') await step('osascript 파일 하나', async () => { const ok = await osa(`set the clipboard to POSIX file "${qq(path)}"`); const t = await clipTypes(); return `${ok} · ${clipCore.hasFile(t) ? '파일 ✅' : '파일 ❌'} [${clipCore.shortTypes(t).join(', ') || '없음'}]` })
     if (/\.(png|jpe?g|gif|webp)$/i.test(path)) {
       await step('그림 읽기', async () => { const img = nativeImage.createFromPath(path); return img.isEmpty() ? '비었음 ❌' : `${img.getSize().width}x${img.getSize().height}` })
       await step('그림 올리기(image/png)', async () => { const img = nativeImage.createFromPath(path); if (img.isEmpty()) return '건너뜀'; await clipboard.write([new ClipboardItem({ 'image/png': new Blob([img.toPNG()], { type: 'image/png' }) })]); const t = await clipTypes(); return `${clipCore.hasImage(t) ? '그림 ✅' : '그림 ❌'} [${clipCore.shortTypes(t).join(', ') || '없음'}]` })
@@ -326,6 +338,10 @@ ipcMain.on('fb:token', (_e, token) => { if (typeof token === 'string' && token !
  * ⚠ 사용량을 아직 모르면 예전 그림(`build/trayTemplate.png`)으로 떨어진다.
  */
 function trayIcon() {
+  if (process.platform === 'win32') {
+    const p = app.isPackaged ? join(process.resourcesPath, 'icon.png') : join(__dirname, 'build', 'icon.png')
+    return nativeImage.createFromPath(p).resize({ width: 32, height: 32 })
+  }
   const pct = usage && typeof usage.left === 'number' ? usage.left : null
   if (pct === null) { const img = nativeImage.createFromPath(join(__dirname, 'build', 'trayTemplate.png')); img.setTemplateImage(true); return img }
   const img = nativeImage.createFromBuffer(folderIcon(pct, 44), { scaleFactor: 2 })
@@ -408,7 +424,7 @@ function trayPanel() {
     skipTaskbar: true, alwaysOnTop: true, backgroundColor: '#00000000',
     webPreferences: { preload: join(__dirname, 'tray-preload.js'), contextIsolation: true, sandbox: false }
   })
-  panel.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  if (process.platform === 'darwin') panel.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   // ⛔ 링크는 패널 안에서 열지 않는다 — 여기는 창이 아니라 «메뉴» 다
   panel.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' } })
   panel.on('blur', () => { if (panel && !panel.isDestroyed()) panel.hide() })
@@ -421,20 +437,24 @@ function trayState() {
     waiting, mood, mode: settings.mode, root: settings.root,
     hostLabel: settings.hostUrl ? settings.hostUrl.replace(/^https?:\/\//, '') : '',
     pairing: pairing && Date.now() < pairing.expiresAt ? { code: pairing.code, expiresAt: pairing.expiresAt } : null,
-    update: { current: u.current, downloading: u.downloading, staged: u.staged ?? null },
+    update: { current: u.current, supported: u.supported, downloading: u.downloading, staged: u.staged ?? null },
+    platform: process.platform,
     loginItem: settings.loginItem
   }
 }
 function pushTrayState() { try { if (panel && !panel.isDestroyed()) panel.webContents.send('fb:tray-state', trayState()) } catch {} }
+function positionTrayPanel(height) {
+  const b = tray.getBounds(); const { screen } = require('electron')
+  const area = screen.getDisplayMatching(b).workArea
+  return trayPanelPosition(b, area, TRAY_W, height, process.platform)
+}
 function toggleTrayPanel() {
   const url = trayPanelUrl()
   if (!url) { tray.popUpContextMenu(trayMenu()); return } // 연결 전에는 그릴 화면이 없다
   const w = trayPanel()
   if (w.isVisible()) { w.hide(); return }
-  const b = tray.getBounds(); const { screen } = require('electron')
-  const area = screen.getDisplayMatching(b).workArea
-  const x = Math.round(Math.min(Math.max(area.x + 4, b.x + b.width / 2 - TRAY_W / 2), area.x + area.width - TRAY_W - 4))
-  w.setPosition(x, Math.round(b.y + b.height + 2), false)
+  const { x, y } = positionTrayPanel(w.getBounds().height)
+  w.setPosition(x, y, false)
   if (w.webContents.getURL().split('#')[0] !== url.split('#')[0]) w.loadURL(url).catch(() => {})
   w.showInactive(); w.focus(); pushTrayState()
 }
@@ -443,11 +463,12 @@ ipcMain.on('fb:tray-size', (_e, h) => {
   if (!panel || panel.isDestroyed() || !h) return
   const b = tray.getBounds(); const { screen } = require('electron')
   const max = screen.getDisplayMatching(b).workArea.height - 40
-  panel.setBounds({ ...panel.getBounds(), height: Math.max(120, Math.min(max, h + 2)) })
+  const height = Math.max(120, Math.min(max, h + 2))
+  panel.setBounds({ ...panel.getBounds(), ...positionTrayPanel(height), height })
 })
 ipcMain.on('fb:tray-act', (_e, id) => {
   const hide = () => { try { panel?.hide() } catch {} }
-  const copyPair = (p) => { if (!p) return; clipboard.writeText(p.code); new Notification({ title: 'Folder Bot 페어링 코드', body: `${p.code} · 2분 안에 폰·맥북에서 입력` }).show() }
+  const copyPair = (p) => { if (!p) return; clipboard.writeText(p.code); new Notification({ title: 'Folder Bot 페어링 코드', body: `${p.code} · 2분 안에 연결할 기기에서 입력` }).show() }
   if (id === 'open') { hide(); showWin(); return }
   // ⚠ 알림 센터는 **명령**으로 연다 — 해시를 갈아 열면 보던 폴더를 잃는다(화면이 되돌리긴 하지만, 두 번 흔들린다)
   if (id === 'notify') { hide(); showWin(); try { win.webContents.send('fb:cmd', 'notify') } catch { navigate('#notify=1') } return }
@@ -456,8 +477,8 @@ ipcMain.on('fb:tray-act', (_e, id) => {
   if (id === 'copy-addr') { const urls = hostRun ? hostRun.urls.filter((u) => !u.includes('127.0.0.1')) : []; clipboard.writeText(urls[0] || settings.hostUrl); new Notification({ title: 'Folder Bot', body: urls[0] ? `${urls[0]} 복사됨 (같은 Tailscale)` : 'Tailscale 주소가 아직 없어요 — Tailscale 을 켜세요' }).show(); hide(); return }
   if (id === 'change-root') { hide(); void chooseRootAndStart(); return }
   if (id === 'change-host') { hide(); settings.mode = ''; settings.hostUrl = ''; settings.token = ''; save(); stopSse(); showWin(); loadHome(); return }
-  if (id === 'update-check') { void updater.check(true); pushTrayState(); return }
-  if (id === 'update-apply') { hide(); updater.apply(); return }
+  if (id === 'update-check' && updater.state().supported) { void updater.check(true); pushTrayState(); return }
+  if (id === 'update-apply' && updater.state().supported) { hide(); updater.apply(); return }
   if (id === 'login-toggle') { settings.loginItem = !settings.loginItem; save(); app.setLoginItemSettings({ openAtLogin: settings.loginItem, openAsHidden: true }); pushTrayState(); return }
   if (id === 'quit') { app.quit(); return }
 })
@@ -470,8 +491,8 @@ function trayMenu() {
     { label: '알림 센터', click: () => { showWin(); try { win.webContents.send('fb:cmd', 'notify') } catch { navigate('#notify=1') } } },
     { type: 'separator' },
     ...(settings.mode === 'host' ? [
-      { label: `이 맥이 호스트 · ${settings.root}`, enabled: false },
-      { label: pairing && Date.now() < pairing.expiresAt ? `페어링 코드 ${pairing.code} (클릭해 복사)` : '페어링 코드 만들기', click: () => { const p = pairing && Date.now() < pairing.expiresAt ? pairing : newPairing(); if (p) { clipboard.writeText(p.code); new Notification({ title: 'Folder Bot 페어링 코드', body: `${p.code} · 2분 안에 폰·맥북에서 입력` }).show() } } },
+      { label: `이 기기가 호스트 · ${settings.root}`, enabled: false },
+      { label: pairing && Date.now() < pairing.expiresAt ? `페어링 코드 ${pairing.code} (클릭해 복사)` : '페어링 코드 만들기', click: () => { const p = pairing && Date.now() < pairing.expiresAt ? pairing : newPairing(); if (p) { clipboard.writeText(p.code); new Notification({ title: 'Folder Bot 페어링 코드', body: `${p.code} · 2분 안에 연결할 기기에서 입력` }).show() } } },
       { label: '새 페어링 코드', click: () => { const p = newPairing(); if (p) { clipboard.writeText(p.code); new Notification({ title: 'Folder Bot 페어링 코드', body: `${p.code} · 복사됨` }).show() } } },
       { label: '폰에서 열 주소 복사', click: () => { const urls = hostRun ? hostRun.urls.filter((u) => !u.includes('127.0.0.1')) : []; clipboard.writeText(urls[0] || settings.hostUrl); new Notification({ title: 'Folder Bot', body: urls[0] ? `${urls[0]} 복사됨 (같은 Tailscale)` : 'Tailscale 주소가 아직 없어요 — Tailscale 을 켜세요' }).show() } },
       { label: '루트 폴더 바꾸기…', click: () => { void chooseRootAndStart() } }
@@ -480,7 +501,7 @@ function trayMenu() {
       { label: '호스트 바꾸기…', click: () => { settings.mode = ''; settings.hostUrl = ''; settings.token = ''; save(); stopSse(); showWin(); loadHome() } }
     ]),
     { type: 'separator' },
-    ...(() => { const u = updater.state(); return u.staged?.ready ? [{ label: `v${u.staged.version} 업데이트 적용 (재시작)`, click: () => updater.apply() }] : u.downloading ? [{ label: `업데이트 받는 중 ${Math.round((u.staged?.progress || 0) * 100)}%`, enabled: false }] : [{ label: `업데이트 확인 (v${u.current})`, click: () => void updater.check(true) }] })(),
+    ...(() => { const u = updater.state(); return !u.supported ? [{ label: `v${u.current} · 새 설치 파일로 업데이트`, enabled: false }] : u.staged?.ready ? [{ label: `v${u.staged.version} 업데이트 적용 (재시작)`, click: () => updater.apply() }] : u.downloading ? [{ label: `업데이트 받는 중 ${Math.round((u.staged?.progress || 0) * 100)}%`, enabled: false }] : [{ label: `업데이트 확인 (v${u.current})`, click: () => void updater.check(true) }] })(),
     { label: '로그인 시 자동 실행', type: 'checkbox', checked: settings.loginItem, click: (mi) => { settings.loginItem = mi.checked; save(); app.setLoginItemSettings({ openAtLogin: mi.checked, openAsHidden: true }) } },
     { type: 'separator' },
     { label: '종료', role: 'quit' }
@@ -532,7 +553,7 @@ function refreshTray() {
   //    없는 정보다 — 배터리처럼 «얼마나 남았나» 만 보이면 된다(`trayIcon.js`).
   //    ⚠ 확인 대기 수만 글자로 남긴다 — 그건 잔량이 아니라 **지금 사람을 기다리는 일**의 개수다.
   tray.setImage(trayIcon())
-  tray.setTitle(waiting ? String(waiting) : '', { fontType: 'monospacedDigit' })
+  if (process.platform === 'darwin') tray.setTitle(waiting ? String(waiting) : '', { fontType: 'monospacedDigit' })
   tray.setToolTip(waiting ? `Folder Bot · 확인 대기 ${waiting}` : 'Folder Bot')
   if (app.dock) app.dock.setBadge(waiting ? String(waiting) : '')
   pushTrayState() // ⚠ 패널이 떠 있으면 «한가함 → 일하는 중» 이 그 자리에서 바뀌어야 한다
@@ -588,6 +609,7 @@ function notify(n) {
 
 app.whenReady().then(async () => {
   process.env.FOLDERBOT_DESKTOP_VERSION = app.getVersion()
+  if (process.platform === 'win32') app.setAppUserModelId('com.dave.folderbot')
   session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => cb(perm === 'notifications' || perm === 'clipboard-read' || perm === 'clipboard-sanitized-write'))
   createTray()
   if (settings.mode === 'host' && settings.root) {

@@ -95,8 +95,9 @@ export function bareFileNames(text: string, max = 20): string[] {
 
 export function candidatePaths(text: string, max = 20): string[] {
   if (!text) return []
-  if (!text.includes('/')) return bareFileNames(text, max)
-  let masked = text
+  if (!text.includes('/') && !text.includes('\\')) return bareFileNames(text, max)
+  // Windows 에이전트의 C:\\... 경로도 같은 후보 규칙으로 읽는다. 길이를 바꾸지 않아 원문 인덱스는 유지된다.
+  let masked = text.replace(/\\/g, '/')
   for (const re of SKIP) masked = masked.replace(re, (m) => ' '.repeat(m.length))
   const out: string[] = []
   const seen = new Set<string>()
@@ -111,7 +112,7 @@ export function candidatePaths(text: string, max = 20): string[] {
     if (!core.startsWith('/') && !/\.[A-Za-z0-9]{1,8}$/.test(core)) { const segs = core.split('/'); if (segs.every((g) => /^\d+[^\s/]{0,2}$/.test(g))) continue }
     // ⚠ 절대 경로는 왼쪽이 아니라 **오른쪽**으로 넓힌다 — 앞의 낱말은 문장이고, 뒤의 낱말이 «3. Area» 의 나머지다.
     //   `/Users/…/PARA/3. Area/x.md` 는 공백에서 끊기므로 다음 낱말을 최대 세 번 이어 붙인 변형을 **긴 것부터** 낸다.
-    if (core.startsWith('/')) {
+    if (core.startsWith('/') || /^[A-Za-z]:\//.test(core)) {
       const exts: string[] = []
       let end = at + m[0].length
       for (let n = 0; n < 3; n++) {
@@ -160,10 +161,13 @@ export function candidatePaths(text: string, max = 20): string[] {
 
 /** 절대 경로를 볼트(또는 봇 폴더) 기준 상대 경로로 — 밖이면 null */
 export function relUnder(base: string, p: string): string | null {
-  const b = base.replace(/\/+$/, '').normalize('NFC')
-  const q = p.normalize('NFC')
-  if (q === b) return ''
-  if (q.startsWith(b + '/')) return q.slice(b.length + 1)
+  const b = base.replace(/\\/g, '/').replace(/\/+$/, '').normalize('NFC')
+  const q = p.replace(/\\/g, '/').normalize('NFC')
+  const win = /^[A-Za-z]:\//.test(b) || b.startsWith('//')
+  const a = win ? b.toLowerCase() : b
+  const z = win ? q.toLowerCase() : q
+  if (z === a) return ''
+  if (z.startsWith(a + '/')) return q.slice(b.length + 1)
   return null
 }
 

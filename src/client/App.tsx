@@ -183,13 +183,27 @@ const CHAT_MIN = 360
 const DOC_MIN = 380, SIDE_MIN = 200, STRIP_W = 45
 function useWinW(): number { const [w, setW] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1440)); useEffect(() => { const f = () => setW(window.innerWidth); window.addEventListener('resize', f); return () => window.removeEventListener('resize', f) }, []); return w }
 const DEF: Layout = { sb: 250, rp: 290, doc: 520, sbOpen: true, rpOpen: true, sbPin: false, rpPin: false, secH: { sessions: 120, todo: 128 } }
-interface UpdState { lastCheck: number; current: string; staged: { version: string; ready: boolean; progress: number; notes: string } | null; downloading: boolean; checking: boolean; lastError: string; deferred: boolean; busy: number; host: boolean }
+interface UpdState { lastCheck: number; current: string; staged: { version: string; ready: boolean; progress: number; notes: string } | null; downloading: boolean; checking: boolean; lastError: string; deferred: boolean; busy: number; host: boolean; supported?: boolean }
 /**
  * 단축키 표 — 🔴 **여기가 정본이고 ⌘/ 가 이걸 그대로 보여 준다.**
  *    표를 따로 쓰면 실제 동작과 갈리고, 갈린 표는 없느니만 못하다.
  * ⚠ 맥 표기(⌘·⇧)로 적되, 윈도·리눅스에서도 같은 키가 ⌃ 로 돈다(핸들러가 둘 다 받는다).
  */
-export const KEYS: { k: string; t: string; d?: string }[] = [
+export const isWin = typeof navigator !== 'undefined' && (/Windows|Win32|Win64/i.test(navigator.userAgent) || /Win/i.test(navigator.platform || ''))
+
+export function toPlatformShortcut(k: string, win = isWin): string {
+  if (!win) return k
+  return k
+    .replace(/⌥⌘/g, 'Alt+Ctrl+')
+    .replace(/⌘⇧/g, 'Ctrl+Shift+')
+    .replace(/⌘/g, 'Ctrl+')
+    .replace(/⌥/g, 'Alt+')
+    .replace(/⇧/g, 'Shift+')
+    .replace(/↩/g, 'Enter')
+    .replace(/⎋/g, 'Esc')
+}
+
+export const MAC_KEYS: { k: string; t: string; d?: string }[] = [
   { k: '⌘,', t: '설정' },
   { k: '⌘/', t: '단축키 보기' },
   { k: '⌘P', t: '명령 팔레트', d: '폴더 · 문서 · 세션 · 명령' },
@@ -212,15 +226,42 @@ export const KEYS: { k: string; t: string; d?: string }[] = [
   { k: '⌘F', t: '문서에서 찾기', d: '편집기 기본' }
 ]
 
+export const WIN_KEYS: { k: string; t: string; d?: string }[] = [
+  { k: 'Ctrl+,', t: '설정' },
+  { k: 'Ctrl+/', t: '단축키 보기' },
+  { k: 'Ctrl+P', t: '명령 팔레트', d: '폴더 · 문서 · 세션 · 명령' },
+  { k: 'Ctrl+K', t: '폴더 고르기 · 시작' },
+  { k: 'Ctrl+N', t: '새 세션', d: '지금 폴더' },
+  { k: 'Ctrl+Shift+N', t: '새 폴더에서 시작' },
+  { k: 'Ctrl+1…9', t: 'n번째 폴더로' },
+  { k: 'Ctrl+[ Ctrl+]', t: '뒤로 · 앞으로', d: '방문한 폴더·세션 순서대로 — 알림·칩으로 뛴 뒤 돌아오기' },
+  { k: 'Alt+Ctrl+[ Alt+Ctrl+]', t: '이전 · 다음 폴더', d: '레일 순서대로' },
+  { k: 'Ctrl+B', t: '폴더 목록 접기' },
+  { k: 'Ctrl+Shift+B', t: '오른쪽 패널 접기' },
+  { k: 'Ctrl+Shift+D', t: '문서 열 접기' },
+  { k: 'Ctrl+Shift+U', t: '알림' },
+  { k: 'Ctrl+W', t: '문서 탭 닫기' },
+  { k: 'Enter', t: '보내기', d: '자판이 있는 기기에서 — 폰에서는 줄 바꾸기(보내기는 단추)' },
+  { k: 'Shift+Enter', t: '줄 바꾸기' },
+  { k: 'Ctrl+Enter', t: '보내기', d: '어디서나 — 폰에 외장 자판을 붙였을 때도' },
+  { k: 'Esc', t: '닫기 · 편집 끝내기' },
+  { k: 'Ctrl+Z', t: '실행 취소', d: 'Windows 기본 — 우리가 안 가로챈다' },
+  { k: 'Ctrl+F', t: '문서에서 찾기', d: '편집기 기본' }
+]
+
+export const getKeys = (win = isWin) => (win ? WIN_KEYS : MAC_KEYS)
+export const KEYS: { k: string; t: string; d?: string }[] = getKeys()
+
 function KeysSheet({ onClose }: { onClose: () => void }) {
+  const list = getKeys(isWin)
   return <div className="modal-w" onClick={onClose}><div className="modal keys" onClick={(e) => e.stopPropagation()}>
     <div className="modal-h"><b>단축키</b><span className="sp" /><button className="ib" onClick={onClose}><Icon n="x" size={13} /></button></div>
-    <div className="modal-b">{KEYS.map((x) => <div className="krow" key={x.k}><span className="kk mono">{x.k}</span><span className="kt">{x.t}</span>{x.d ? <span className="kd">{x.d}</span> : null}</div>)}</div>
+    <div className="modal-b">{list.map((x) => <div className="krow" key={x.k}><span className="kk mono">{x.k}</span><span className="kt">{x.t}</span>{x.d ? <span className="kd">{x.d}</span> : null}</div>)}</div>
   </div></div>
 }
 
 interface DesktopBridge { version?: string; onCmd?: (cb: (c: string) => void) => () => void; pathOf?: (f: File) => string; update?: { state: () => Promise<UpdState>; check: () => Promise<UpdState>; apply: () => void; onChange: (cb: (st: UpdState) => void) => () => void } }
-const desk = (window as unknown as { folderbotDesktop?: DesktopBridge }).folderbotDesktop
+const desk = typeof window !== 'undefined' ? (window as unknown as { folderbotDesktop?: DesktopBridge }).folderbotDesktop : undefined
 const isDesktop = typeof desk !== 'undefined'
 
 /** 자기 업데이트 — 셸(Electron)이 받아 두고, 여기서는 상태를 보여 주고 «재시작» 만 누른다 */
@@ -242,14 +283,27 @@ function useUpdate(say: (m: string) => void): [UpdState | null, () => void, () =
   }, [])
   const check = () => {
     const u = desk?.update
-    if (!u) { say('업데이트는 Mac 앱(호스트)이 스스로 받아요 — 이 화면은 호스트가 새 버전을 적용하면 함께 바뀝니다'); return }
+    if (!u) {
+      say(isWin
+        ? '업데이트는 호스트 앱에서 직접 확인해요 — 호스트가 새 버전을 적용하면 이 화면도 함께 바뀝니다'
+        : '업데이트는 Mac 앱(호스트)이 스스로 받아요 — 이 화면은 호스트가 새 버전을 적용하면 함께 바뀝니다')
+      return
+    }
+    if (st?.supported === false || (isWin && st && !st.supported)) {
+      say(st.lastError || 'Windows 앱 업데이트는 새 설치 파일로 진행해 주세요.')
+      return
+    }
     setSt((x) => (x ? { ...x, checking: true } : x)); say('업데이트 확인 중…')
     void u.check().then((n) => {
       setSt(n)
+      if (!n || n.supported === false) {
+        say(n?.lastError || 'Windows 앱 업데이트는 새 설치 파일로 진행해 주세요.')
+        return
+      }
       say(n.lastError ? `확인 실패 — ${n.lastError}` : n.staged?.ready ? `v${n.staged.version} 준비됨 — 버전 칩을 눌러 재시작` : n.downloading || n.staged ? `v${n.staged?.version} 받는 중 — 다 받으면 알려 드려요` : `최신 버전이에요 (v${n.current})`)
     }).catch((e: unknown) => say(`확인 실패 — ${e instanceof Error ? e.message : String(e)}`))
   }
-  const apply = () => { const u = desk?.update; if (!u || !st?.staged?.ready) return; setAsk(''); u.apply() }
+  const apply = () => { const u = desk?.update; if (!u || !st?.staged?.ready || st.supported === false) return; setAsk(''); u.apply() }
   return [st, check, apply, ask, setAsk]
 }
 /** 버전 칩 위 팝업 — «받아 뒀어요, 적용할까요?» 한 장. 돌고 있는 세션 수는 여기서 말한다(적용하면 끊긴다) */
@@ -257,7 +311,7 @@ function UpdateAsk({ st, onApply, onLater }: { st: UpdState; onApply: () => void
   // ⚠ 레일은 overflow 로 잘린다 — 팝업은 칩 자리를 재서 **화면 좌표(fixed)** 로 띄운다 (오늘 아침 미리보기 카드와 같은 교훈)
   const [pos, setPos] = useState<{ left: number; bottom: number }>({ left: 12, bottom: 48 })
   useEffect(() => { const el = document.querySelector('.sb-foot .bd.upd'); if (el) { const r = el.getBoundingClientRect(); setPos({ left: Math.max(8, r.left), bottom: Math.max(8, window.innerHeight - r.top + 8) }) } }, [])
-  if (!st.staged?.ready) return null
+  if (!st.staged?.ready || st.supported === false) return null
   return <div className="updask" role="dialog" style={{ position: 'fixed', left: pos.left, bottom: pos.bottom }}>
     <div className="t"><b>v{st.staged.version} 을 받아 두었어요</b><small>지금 v{st.current}</small></div>
     {st.staged.notes ? <div className="notes">{st.staged.notes.split('\n').slice(0, 4).join('\n')}</div> : null}
@@ -267,6 +321,10 @@ function UpdateAsk({ st, onApply, onLater }: { st: UpdState; onApply: () => void
 }
 function UpdateChip({ version, st, onCheck, onApply }: { version: string; st: UpdState | null; onCheck: () => void; onApply: () => void }) {
   if (!isDesktop || !st) return <button className="bd mono upd" onClick={onCheck} title={isDesktop ? '업데이트 확인' : '호스트 버전'}>v{version}</button>
+  // Windows 환경이거나 자동 업데이트 미지원(supported === false)인 경우 수동 업데이트 상태 표시
+  if (st.supported === false || (isWin && isDesktop && !st.supported)) {
+    return <button className="bd mono upd" onClick={onCheck} title={st.lastError || 'Windows 수동 업데이트 · 새 설치 파일로 진행'}>v{st.current || version}</button>
+  }
   // ⚠ 준비된 칩을 누르면 **묻는 팝업**이 뜬다 — 바로 갈아끼우지 않는다 (2026-09-15 Dave)
   if (st.staged?.ready) return <button className="bd upd" style={{ color: 'var(--done)' }} onClick={onApply} title={`v${st.staged.version} 준비됨 — 눌러서 적용할지 정하기`}><span className="dot done" style={{ width: 5, height: 5 }} />v{st.staged.version} · 적용</button>
   if (st.downloading) return <span className="bd" title="조용히 받는 중 — 다 받으면 알려 드려요">v{st.staged?.version} 받는 중 {Math.round((st.staged?.progress ?? 0) * 100)}%</span>
@@ -863,7 +921,7 @@ function Main() {
           <div className="r2"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} /><span className="hn">{s.hostName}</span><MrBadge />{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<UpdateChip version={s.version} st={upd} onCheck={updCheck} onApply={() => { if (upd?.staged?.ready) setUpdAsk(upd.staged.version) }} />{updAsk && upd ? <UpdateAsk st={upd} onApply={updApply} onLater={() => setUpdAsk('')} /> : null}</div>
         </div>
       </div>
-  const stripEl = <div className="strip left" onClick={(e) => { if (mid && e.target === e.currentTarget) setView('list') }}><button className="ib" onClick={openSb} title={mid ? '봇 목록 (덮여서 열림)' : '목록 펼치기 (⌘B)'}><Icon n="panel" size={14} /></button><div className="gap" />
+  const stripEl = <div className="strip left" onClick={(e) => { if (mid && e.target === e.currentTarget) setView('list') }}><button className="ib" onClick={openSb} title={mid ? '봇 목록 (덮여서 열림)' : (isWin ? '목록 펼치기 (Ctrl+B)' : '목록 펼치기 (⌘B)')}><Icon n="panel" size={14} /></button><div className="gap" />
         <button className="ib" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span className="fly"><b>폴더 선택 · 시작</b><span>후보 {s.candidates.filter((c) => !c.active).length}</span></span></button>
         <button className="ib" onClick={() => setModal('notify')}><Icon n="bell" size={14} />{unread ? <span className="bd">{unread}</span> : null}<span className="fly"><b>알림</b><span>{unread ? `읽지 않음 ${unread}` : '없음'}</span></span></button>
         <div className="gap" />
@@ -882,17 +940,17 @@ function Main() {
     </div>
   </div>
   const rpwrapEl = <div className="rpwrap" style={{ width: narrow ? '100%' : fit.rp, flex: 'none', display: 'flex', minWidth: 0 }}><Panel bot={bot} sessions={sessions} sessionId={sessionId} go={go} onOpenFile={(rel, pin) => openInDocPane(rel, { pin })} onTalk={(t) => { setPrefill(t); if (phone) setView('chat') }} onAttach={(rel, dir) => addAttach({ rel, abs: `${bot.abs}/${rel}`, dir })} onMention={(rel) => { setMentionReq((m) => [...m, rel]); if (phone) setView('chat') }} onStartAt={startAt} onNewFolderAt={newFolderAt} touched={touched} filesTick={s.filesTick[bot.id]} secH={lay.secH} onSecH={(h) => setLay({ ...lay, secH: h })} onCollapse={closeRp} focusSec={focusSec} say={say} refresh={refresh} activeDoc={showDoc ? docs.active : null} onDragY={(on) => setDrag(on ? 'y' : '')} phone={phone} onBack={toList} only={phone ? panelTab : undefined} /></div>
-  const stripRightEl = <div className="strip right"><button className="ib" onClick={() => openRp()} title="패널 펼치기 (⌘⇧B)"><Icon n="panelr" size={14} /></button>
+  const stripRightEl = <div className="strip right"><button className="ib" onClick={() => openRp()} title={isWin ? '패널 펼치기 (Ctrl+Shift+B)' : '패널 펼치기 (⌘⇧B)'}><Icon n="panelr" size={14} /></button>
     {/* S-3 · 패널을 접어 둬도 **새 세션 +** 는 우측 상단에 남는다 (2026-09-21 Dave: «상시 노출») — 펼친 패널 「세션」 줄의 + 와 같은 일 */}
-    <button className="ib nsb" onClick={() => { void newSession(); openRp('sessions') }} title="새 세션 (⌘N)"><Icon n="plus" size={14} /><span className="fly"><b>새 세션</b><span>이 폴더에서</span></span></button><div className="gap" />
+    <button className="ib nsb" onClick={() => { void newSession(); openRp('sessions') }} title={isWin ? '새 세션 (Ctrl+N)' : '새 세션 (⌘N)'}><Icon n="plus" size={14} /><span className="fly"><b>새 세션</b><span>이 폴더에서</span></span></button><div className="gap" />
         <button className="ib" onClick={() => openRp('sessions')}><Icon n="clock" size={14} />{sessions.some((x) => x.state === 'running') ? <span className="dot run" style={{ position: 'absolute', right: 2, top: 2 }} /> : null}<span className="fly"><b>세션</b><span>{sessions.length}개</span></span></button>
         <button className="ib" onClick={() => openRp('todo')}><Icon n="list" size={14} />{(s.todos[bot.id] ?? []).filter((t) => !t.done).length ? <span className="bd">{(s.todos[bot.id] ?? []).filter((t) => !t.done).length}</span> : null}<span className="fly"><b>{bot.orchestrator ? 'Inbox' : '할 일'}</b><span>{bot.orchestrator ? `${s.inbox}개` : `미완료 ${(s.todos[bot.id] ?? []).filter((t) => !t.done).length}`}</span></span></button>
         <button className="ib" onClick={() => openRp('files')}><Icon n="folder" size={14} /><span className="fly"><b>파일</b><span>{bot.rel || '볼트'}</span></span></button>
         <button className="ib" onClick={() => openRp('routines')}><Icon n="cal" size={14} /><span className="fly"><b>루틴</b><span>{bot.routines.length}개</span></span></button>
       </div>
-  return <div className={`app ${isDesktop ? 'desktop' : ''} ${phone ? 'phone' : ''} ${mid ? 'smid' : ''} ${kb ? 'kb' : ''} ${drag === 'x' ? 'dragx' : drag === 'y' ? 'dragy' : ''} ${phone && !tabsHere ? 'notabs' : ''}`} data-view={view === 'doc' && !showDoc && !phone ? 'panel' : view} data-nav={`${nav.stack.join('>')}${nav.fwd.length ? ' |' + [...nav.fwd].reverse().join('>') : ''}`}>
+  return <div className={`app ${isDesktop ? 'desktop' : ''} ${isWin ? 'win' : 'mac'} ${phone ? 'phone' : ''} ${mid ? 'smid' : ''} ${kb ? 'kb' : ''} ${drag === 'x' ? 'dragx' : drag === 'y' ? 'dragy' : ''} ${phone && !tabsHere ? 'notabs' : ''}`} data-view={view === 'doc' && !showDoc && !phone ? 'panel' : view} data-nav={`${nav.stack.join('>')}${nav.fwd.length ? ' |' + [...nav.fwd].reverse().join('>') : ''}`}>
     {s.online === 'off' ? <div className="offline">{s.hostName || '호스트'} 와 다시 연결하는 중…</div> : null}
-    {s.auth.verdict === 'unreadable' || s.auth.verdict === 'loggedout' ? <div className="banner"><span className="dot wait" /><span><b>{s.hostName} 에서 Claude 로그인이 필요해요.</b> 호스트 맥에서 <span className="mono">claude</span> → <span className="mono">/login</span>, 또는 설정 › Claude 토큰. 보낸 지시는 대기열에 두었다가 복구되면 이어서 해요.</span><span style={{ marginLeft: 'auto' }} /><button className="btn" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button></div> : null}
+    {s.auth.verdict === 'unreadable' || s.auth.verdict === 'loggedout' ? <div className="banner"><span className="dot wait" /><span><b>{s.hostName} 에서 Claude 로그인이 필요해요.</b> 호스트에서 <span className="mono">claude</span> → <span className="mono">/login</span>, 또는 설정 › Claude 토큰. 보낸 지시는 대기열에 두었다가 복구되면 이어서 해요.</span><span style={{ marginLeft: 'auto' }} /><button className="btn" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button></div> : null}
     <div className={`cols ${dragSide ? 'dragging' : ''}`} ref={colsRef} onPointerDown={swDown} onPointerMove={swMove} onPointerUp={swUp} onPointerCancel={swCancel}>
       {/* ── 왼쪽 (폰은 홈 화면) ── */}
       {/* H-1 · 넓음: 이름 있는 레일 또는 아이콘 띠(접었을 때) · 중간: 아이콘 띠(52px)만, 레일은 서랍으로 · 좁음: 아무것도 없음(☰ · 쓸기) */}
@@ -1567,7 +1625,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
         {moreList.length && !moreOpen ? <div className="card"><button className="mrow" onClick={() => setMoreOpen(true)}><div className="t"><b>더 많은 모델</b><small>{moreList.length}개</small></div><Icon n="chev" size={13} color="var(--t3)" /></button></div> : null}
         <div className="card"><button className="mrow" onClick={() => setPop('effort')}><div className="t"><b>노력</b></div><span className="v">{effortLabel(cfg.effort, vend)}</span><Icon n="chev" size={13} color="var(--t3)" /></button></div>
         <div className="foot">
-          <span className="tx">{cliVersionShort(cliV) ? `Claude CLI ${cliVersionShort(cliV)}` : '이 맥의 Claude CLI'} 가 아는 목록</span>
+          <span className="tx">{cliVersionShort(cliV) ? `Claude CLI ${cliVersionShort(cliV)}` : (isWin ? '이 PC의 Claude CLI' : '이 맥의 Claude CLI')} 가 아는 목록</span>
           <button className="lnk" disabled={mRef} onClick={async () => { setMRef(true); try { await hardRefreshModels() } finally { setMRef(false) } }}>{mRef ? '읽는 중…' : '새로고침'}</button>
         </div>
       </div></>
@@ -1579,7 +1637,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
       <div className="hint"><span>바꾸면 이 세션을 이어서 재시작해요 (대화 유지)</span><span className="sp" /><button className="lnk" onClick={() => void hardRefreshModels()}>새로고침</button></div></div>)
     : pop === 'effort' ? <div className="cpop r"><div className="effort"><div className="top"><span style={{ color: 'var(--t3)', fontSize: 12.5 }}>노력</span><b>{effortLabel(cfg.effort, vend)}</b></div><div className="lbl"><span>더 빠르게</span><span>더 스마트하게</span></div><input type="range" min={0} max={effortList.length - 1} step={1} value={Math.max(0, effortList.findIndex((e) => e.v === cfg.effort))} onChange={(e) => { const v = effortList[Number(e.target.value)].v; if (v !== cfg.effort) void (async () => { if (cur) { try { await api(`/sessions/${cur.id}/settings`, { body: { effort: v } }) } catch (er) { say((er as Error).message) } } else setDraft((d) => ({ ...d, effort: v })) })() }} /><div className="steps">{effortList.map((e) => <span key={e.v}>{e.t}</span>)}</div></div><div className="hint"><span>다음 턴부터 적용 · 기본값은 설정에서</span></div></div>
     : pop === 'ctx' ? <div className="cpop r ctxpop"><div className={`big ${pct >= 80 ? 'hot' : ''}`}><Ring pct={pct} size={40} stroke={3} /><div><b>컨텍스트 {ctx ? `${pct}%` : '—'}</b><small>{ctx ? `${fmtK(ctx.used)} / ${fmtK(ctx.window)} 토큰 · 이 세션` : '첫 답이 오면 잽니다'}</small></div></div><hr /><button className="prow2" onClick={() => { setPop(''); void sendText('/compact') }}><div className="t"><b>/compact 압축</b><small>대화를 요약해 컨텍스트를 줄여요</small></div></button><div className="hint"><span>80% 를 넘으면 링이 주황</span></div></div>
-    : pop === 'plus' ? <div className="cpop plus">{phone ? <button className="prow2" onClick={() => { setPop(''); camRef.current?.click() }}><span className="ic-cam" /><div className="t"><b>카메라로 찍기</b></div></button> : null}<button className="prow2" onClick={() => { setPop(''); fileRef.current?.click() }}><Icon n="phone" size={14} color="var(--t3)" /><div className="t"><b>{phone ? '사진·파일 고르기' : '이 기기에서 파일 올리기'}</b>{phone ? <small>사진 보관함 · 파일 앱</small> : null}</div><span className="k">→ 첨부/</span></button>{bot.orchestrator ? null : <button className="prow2" onClick={() => { setPop(''); openRoutine() }}><Icon n="clock" size={14} color="var(--t3)" /><div className="t"><b>루틴으로 만들기</b><small>{routinePeek()}</small></div></button>}<button className="prow2" onClick={() => { setPop(''); setPickOpen(true) }}><Icon n="folder" size={14} color="var(--t3)" /><div className="t"><b>{bot.orchestrator ? '볼트' : '이 폴더'}에서 고르기</b></div></button>{docTabs.length ? <button className="prow2" onClick={() => { setPop(''); for (const rel of docTabs) addAtt({ rel, abs: `${bot.abs}/${rel}` }) }}><Icon n="doc" size={14} color="var(--t3)" /><div className="t"><b>열린 문서 첨부 ({docTabs.length})</b></div></button> : null}<hr /><button className="prow2" onClick={() => { setPop(''); setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}@`); setCaret(text.length + 1); taRef.current?.focus() }}><span className="mono" style={{ width: 14, textAlign: 'center', color: 'var(--t3)' }}>@</span><div className="t"><b>@ 로 이름 쳐서 넣기</b></div></button><div className="hint"><span>{phone ? '사진 앱에서 복사한 이미지는 길게 눌러 붙여넣기' : '스크린샷은 ⌘V 로 붙여 넣으면 첨부/ 에 저장'}</span></div></div>
+    : pop === 'plus' ? <div className="cpop plus">{phone ? <button className="prow2" onClick={() => { setPop(''); camRef.current?.click() }}><span className="ic-cam" /><div className="t"><b>카메라로 찍기</b></div></button> : null}<button className="prow2" onClick={() => { setPop(''); fileRef.current?.click() }}><Icon n="phone" size={14} color="var(--t3)" /><div className="t"><b>{phone ? '사진·파일 고르기' : '이 기기에서 파일 올리기'}</b>{phone ? <small>사진 보관함 · 파일 앱</small> : null}</div><span className="k">→ 첨부/</span></button>{bot.orchestrator ? null : <button className="prow2" onClick={() => { setPop(''); openRoutine() }}><Icon n="clock" size={14} color="var(--t3)" /><div className="t"><b>루틴으로 만들기</b><small>{routinePeek()}</small></div></button>}<button className="prow2" onClick={() => { setPop(''); setPickOpen(true) }}><Icon n="folder" size={14} color="var(--t3)" /><div className="t"><b>{bot.orchestrator ? '볼트' : '이 폴더'}에서 고르기</b></div></button>{docTabs.length ? <button className="prow2" onClick={() => { setPop(''); for (const rel of docTabs) addAtt({ rel, abs: `${bot.abs}/${rel}` }) }}><Icon n="doc" size={14} color="var(--t3)" /><div className="t"><b>열린 문서 첨부 ({docTabs.length})</b></div></button> : null}<hr /><button className="prow2" onClick={() => { setPop(''); setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}@`); setCaret(text.length + 1); taRef.current?.focus() }}><span className="mono" style={{ width: 14, textAlign: 'center', color: 'var(--t3)' }}>@</span><div className="t"><b>@ 로 이름 쳐서 넣기</b></div></button><div className="hint"><span>{phone ? '사진 앱에서 복사한 이미지는 길게 눌러 붙여넣기' : (isWin ? '스크린샷은 Ctrl+V 로 붙여 넣으면 첨부/ 에 저장' : '스크린샷은 ⌘V 로 붙여 넣으면 첨부/ 에 저장')}</span></div></div>
     : slashQ !== null && slashList.length ? <div className="cpop">{(['skill', 'cli'] as const).map((grp) => { const l = slashList.filter((c) => (grp === 'skill' ? c.kind !== 'cli' : c.kind === 'cli')); return l.length ? <div key={grp}><div className="h">{grp === 'skill' ? '스킬 · 이 폴더' : '명령'}</div>{l.map((c) => { const i = slashList.indexOf(c); return <button key={c.name} className={`prow2 ${i === sel ? 'on' : ''}`} onMouseEnter={() => setSel(i)} onClick={() => pickSlash(c)}><div className="t"><b>/{c.name}</b>{c.desc ? <small>{c.desc}</small> : null}</div>{i === sel ? <span className="k">⏎</span> : c.scope !== 'cli' && c.scope !== 'folder' ? <span className="k">{c.scope}</span> : null}</button> })}</div> : null })}<div className="hint"><span>↑↓ 이동</span><span>Tab · ⏎ 선택</span><span>⎋ 닫기</span><span className="sp" /><span>{slashList.length}개</span></div></div>
     : atQ !== null && atList.length ? <div className="cpop"><div className="h">{docTabs.length ? '열린 문서 먼저 · ' : ''}이 폴더{atQ ? ` · «${atQ}»` : ''}</div>{atList.map((f, i) => { const name = f.rel.split('/').pop() ?? f.rel; const dir = f.rel.includes('/') ? f.rel.slice(0, f.rel.lastIndexOf('/')) + '/' : ''; return <button key={f.rel} className={`prow2 ${i === sel ? 'on' : ''}`} onMouseEnter={() => setSel(i)} onClick={() => pickAt(f)}><Icon n={f.dir ? 'folder' : 'doc'} size={14} color="var(--t3)" /><div className="t"><b>{name}</b><small>{f.dir ? `폴더째${dir ? ` · ${dir}` : ''}` : dir || (docTabs.includes(f.rel) ? '열림' : '')}</small></div>{i === sel ? <span className="k">⏎</span> : null}</button> })}<div className="hint"><span>↑↓ 이동</span><span>⏎ 넣기</span><span className="sp" /><span>이름 · 경로로 찾음</span></div></div>
     : null
@@ -1647,7 +1705,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
             {chatHolder === 'other' ? <span className="hstate"><i />{holdHeader(chatHolder, cur?.inflight, cur?.bg ?? 0)}</span> : null}
             <span style={{ position: 'relative', flex: 'none' }}><button onClick={() => setSessMenu(!sessMenu)} style={{ color: 'var(--t3)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}>{cur?.name ?? '새 대화'} <Icon n="chevd" size={10} /></button>{sessMenuEl}</span>
             <span className={`dot ${stateDot(state)}`} /><span className="sp" />
-            <div className="acts"><button className={`ib ${docOn ? 'on' : ''}`} onClick={onDocToggle} title="문서 열 (⌘⇧D)"><Icon n="doc" size={14} />{!docOn && docBadge ? <span className="bd">{docBadge}</span> : null}</button></div></>}
+            <div className="acts"><button className={`ib ${docOn ? 'on' : ''}`} onClick={onDocToggle} title={isWin ? '문서 열 (Ctrl+Shift+D)' : '문서 열 (⌘⇧D)'}><Icon n="doc" size={14} />{!docOn && docBadge ? <span className="bd">{docBadge}</span> : null}</button></div></>}
     </div>
     {routineDraft ? <RoutineSheet bot={bot} draft={routineDraft} onClose={() => setRoutineDraft(null)} /> : null}
     {/* Q-2 (2026-09-19 Dave: «이전처럼 라운드 칩이 더 좋았다 · 바로 위 질문이 항상 상단 고정 · 더 올리면 그 이전 질문») — N-2 의 흐름 안 헤더(.qhdr)는 폐기. 폰·데스크톱 모두 유리 알약 하나, 탭하면 그 질문으로 */}

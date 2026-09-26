@@ -50,6 +50,15 @@ mac:
   extendInfo:
     LSUIElement: false
     NSUserNotificationAlertStyle: alert
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.png
+  artifactName: Folder.Bot-${version}-x64-setup.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
 dmg:
   sign: false
   contents:

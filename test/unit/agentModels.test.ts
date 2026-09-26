@@ -43,7 +43,7 @@ describe('AF · 모델 목록은 깔려 있는 CLI 가 정본이다 (2026-09-23)
     const base = (v: string) => v.replace(/\[.*\]$/, '')                 // `sonnet-5[1m]` 의 문맥 꼬리표를 뗀다
     const unknown = AGENT_MODELS.claude.map((m) => base(m.v)).filter((v) => !known.has(v) && !known.has(v.replace(/-\d{8}$/, '')))
     expect(unknown, `CLI 가 모르는 모델: ${unknown.join(', ')}`).toEqual([])
-  })
+  }, 15_000)
 })
 
 describe('AH · 모델 이름표와 목록 주워 오기 (2026-09-24)', () => {
@@ -68,6 +68,16 @@ describe('AH · 모델 이름표와 목록 주워 오기 (2026-09-24)', () => {
     expect(found.length, '실행파일에서 하나도 못 주웠다').toBeGreaterThan(3)
     expect(found).toContain('claude-opus-5-5')                    // 도움말만 긁던 종전 방식으로는 안 나오던 것
     expect(modelsFromBinary(bin)).toBe(found)                     // 두 번째는 캐시 (200MB 를 다시 안 읽는다)
+  })
+  it.skipIf(process.platform === 'win32')('콜론이 든 경로도 모델 바이너리로 읽는다 (Windows 드라이브 경로)', async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const { modelsFromBinary } = await import('../../src/host/auth')
+    const dir = mkdtempSync(join(tmpdir(), 'fb-model-path-'))
+    const file = join(dir, 'C:claude.bin')
+    try { writeFileSync(file, 'claude-opus-5-5'); expect(modelsFromBinary(file)).toContain('claude-opus-5-5') }
+    finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })
 

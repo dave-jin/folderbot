@@ -1,5 +1,5 @@
 /* Folder Bot — V4 컴포저 · V7 모바일 · V9 유리. 바탕 #141414 사다리(커서 실측) · 색은 상태 점 4개와 흰 버튼뿐 · 떠 있는 것만 유리 */
-:root { --bg:#141414; --bg2:#181818; --sb:#111111; --line:#232323; --line2:#2c2c2c; --box:#1c1c1c; --sel:#222222; --hover:#1a1a1a; --w:#ededed; --t:#d6d6d6; --t2:#9a9a9a; --t3:#666666; --run:#e08850; --hold:#4aa8c7; --wait:#e2a33b; --done:#4fbf87; --err:#e5534b; --ui:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',system-ui,sans-serif; --mono:'JetBrains Mono','SF Mono',Menlo,monospace; --hh:44px;
+:root { --bg:#141414; --bg2:#181818; --sb:#111111; --line:#232323; --line2:#2c2c2c; --box:#1c1c1c; --sel:#222222; --hover:#1a1a1a; --w:#ededed; --t:#d6d6d6; --t2:#9a9a9a; --t3:#666666; --run:#e08850; --hold:#4aa8c7; --wait:#e2a33b; --done:#4fbf87; --err:#e5534b; --ui:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Segoe UI Variable','Segoe UI','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif; --mono:'JetBrains Mono','Cascadia Code','SF Mono',Menlo,Consolas,monospace; --hh:44px;
   --glassA:rgba(20,20,20,.70); --glassB:rgba(28,28,28,.68); --hair:rgba(255,255,255,.07); --blur:blur(22px) saturate(1.4); --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
   /* 페이드·단색 유리 — 라이트 테마에서 통째로 갈린다 */
   --fade0:rgba(20,20,20,0); --fadeA:rgba(20,20,20,.88); --fadeB:rgba(24,24,24,.96); --solid:#1a1a1a; --hover0:rgba(26,26,26,0); --shadow:rgba(0,0,0,.45); --onAccent:#111 }
@@ -169,11 +169,15 @@ b,strong { color:var(--w); font-weight:600 }
 /* 펼친 목록의 행 호버 카드 — 스트립 .fly 의 큰 판. 고정 위치라 목록 스크롤에 안 잘린다 */
 .hcard { position:fixed; width:300px; z-index:80; background:var(--box); border:1px solid var(--line2); border-radius:10px; padding:10px 12px 11px; font-size:12px; color:var(--t2); box-shadow:0 14px 40px rgba(0,0,0,.55); pointer-events:none; display:flex; flex-direction:column; gap:5px } .hcard .hh { display:flex; align-items:center; gap:7px; color:var(--w); font-size:13px } .hcard .hh b { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .hcard .hp { font-size:11px; color:var(--t3); word-break:break-all } .hcard .hs { color:var(--t) } .hcard .hk { display:flex; flex-direction:column; gap:3px; padding-top:5px; border-top:1px solid var(--line) } .hcard .hl { color:var(--t2); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden } .hcard .t3 { color:var(--t3) }
 .strip .ib:hover .fly, .strip .bot:hover .fly { display:flex }
-/* 데스크톱 앱 — 왼쪽 위 신호등 자리를 비우고 헤더로 창을 끈다 */
+/* 데스크톱 앱 — 헤더로 창을 끈다 */
 .app.desktop .hdr { -webkit-app-region:drag } .app.desktop .hdr button, .app.desktop .hdr .tabs, .app.desktop .hdr .acts, .app.desktop .hdr span[style] { -webkit-app-region:no-drag }
-.app.desktop .col.side.left .hdr { padding-left:84px }
-.app.desktop .strip.left { padding-top:40px }
+/* macOS: 왼쪽 위 신호등 자리 확보 */
+.app.desktop:not(.win) .col.side.left .hdr, .app.desktop.mac .col.side.left .hdr { padding-left:84px }
+.app.desktop:not(.win) .strip.left, .app.desktop.mac .strip.left { padding-top:40px }
 .app.desktop .cols > .col.chat:first-child .hdr, .app.desktop .cols > .strip.left + .divx + .col.chat .hdr { padding-left:14px }
+/* Windows 11: 기본 창 프레임이 제목 표시줄을 담당하므로 신호등 여백만 제거 */
+.app.desktop.win .col.side.left .hdr { padding-left:14px }
+
 
 /* ── 왼쪽 목록 ── */
 .nav { display:flex; align-items:center; gap:10px; padding:5px 12px; font-size:13px; color:var(--t2); border-radius:6px; width:100%; min-height:30px } .nav:hover { color:var(--t); background:var(--hover) } .nav .bd { margin-left:auto; font-size:11px; color:var(--t3) }

@@ -9,9 +9,15 @@ const { homedir } = require('node:os')
 const { execFile } = require('node:child_process')
 
 /** 호스트 루트의 꼬리 1~3조각 — `…/CloudStorage/Dropbox/PARA` → `PARA` · `Dropbox/PARA` · `CloudStorage/Dropbox/PARA` */
-function tails(hostRoot) { const p = String(hostRoot).split('/').filter(Boolean); const out = []; for (let n = 1; n <= 3 && n <= p.length; n++) out.push(p.slice(p.length - n).join('/')); return out }
+function tails(hostRoot) { const p = String(hostRoot).split(/[\\/]/).filter(Boolean); const out = []; for (let n = 1; n <= 3 && n <= p.length; n++) out.push(p.slice(p.length - n).join('/')); return out }
 /** 표준 동기화 자리 — `~/Library/CloudStorage/Dropbox*`(있는 것만) · 옛 `~/Dropbox` · iCloud Drive */
-function syncRoots(home, entries) { return [...entries.filter((e) => /^Dropbox/.test(e)).map((e) => join(home, 'Library/CloudStorage', e)), join(home, 'Dropbox'), join(home, 'Library/Mobile Documents/com~apple~CloudDocs')] }
+function syncRoots(home, entries, os = process.platform, env = process.env) {
+  if (os === 'win32') return [...new Set([
+    ...entries.filter((e) => /^(?:Dropbox|OneDrive)(?:\b|\s|$)/i.test(e)).map((e) => join(home, e)),
+    env.OneDrive, env.OneDriveCommercial, env.OneDriveConsumer, join(home, 'Dropbox')
+  ].filter(Boolean))]
+  return [...entries.filter((e) => /^Dropbox/.test(e)).map((e) => join(home, 'Library/CloudStorage', e)), join(home, 'Dropbox'), join(home, 'Library/Mobile Documents/com~apple~CloudDocs')]
+}
 /** 파일 수 — 깊이 3 · 2000개에서 끊는다(순위만 매기면 된다) · 점 폴더는 안 센다 */
 function countFiles(dir, depth = 3, budget = { n: 0 }) {
   if (depth < 0 || budget.n >= 2000) return budget.n
@@ -33,8 +39,8 @@ function rank(found) {
   return [...byReal.values()].sort((a, b) => b.files - a.files || a.path.length - b.path.length).map((f) => ({ ...f, shell: f.files === 0 || (max > 0 && f.files * 10 < max) }))
 }
 /** 이 기기에서 호스트 볼트의 사본 후보 — 표준 자리 × 꼬리 */
-function detect(hostRoot, home = homedir()) {
-  let entries = []; try { entries = readdirSync(join(home, 'Library/CloudStorage')) } catch {}
+function detect(hostRoot, home = homedir(), os = process.platform, env = process.env) {
+  let entries = []; try { entries = readdirSync(os === 'win32' ? home : join(home, 'Library/CloudStorage')) } catch {}
   const found = []
   /**
    * 🔴 홈 자체가 심링크 아래면(맥의 `tmpdir()` = `/var/…` → `/private/var/…`) **어느 후보도 `path === real` 이 아니다** —
@@ -43,7 +49,7 @@ function detect(hostRoot, home = homedir()) {
    */
   let realHome = home; try { realHome = realpathSync(home) } catch {}
   const tryDir = (p) => { try { if (!statSync(p).isDirectory()) return } catch { return } let real = p; try { real = realpathSync(p) } catch {} const canon = real === (p.startsWith(home) ? join(realHome, p.slice(home.length)) : p); found.push({ path: p, real, canon, files: countFiles(p) }) }
-  for (const root of syncRoots(home, entries)) {
+  for (const root of syncRoots(home, entries, os, env)) {
     // 팀 Dropbox 는 한 단계 아래(`Dropbox-회사/이름/PARA`)에 있기도 하다 — 직계 자식 폴더까지만 본다
     let kids = []; try { kids = readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => join(root, e.name)) } catch {}
     for (const base of [root, ...kids]) for (const t of tails(hostRoot)) tryDir(join(base, t))

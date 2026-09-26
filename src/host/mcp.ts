@@ -2,9 +2,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Registry } from './registry'
 import { ORCH_ID } from './registry'
 import type { Host } from './host'
-import { isAbsolute, join, relative, resolve } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 import { relUnder } from '../core/paths'
+import { portableRelative } from './files'
 import { stripRuntime, type RoutineDef } from '../core/types'
 import { confirmLine, describeCron, formatNext, parseWhen } from '../core/when'
 
@@ -37,7 +38,7 @@ const COMMON: Tool[] = [
   { name: 'rules_get', description: '폴더 규칙(역할·naming·하네스 판정)을 돌려준다.', inputSchema: obj({}) },
   // 문서 창 (C · 2026-09-19) — 사용자가 보고 있는 화면의 문서 창에 연다 / 그 기기의 Finder 로 보여 준다. ⚠ 한 턴에 한 번만 먹는다(화면이 억제)
   { name: 'rondo_open', description: '사용자 화면의 문서 창에 파일을 연다(pdf·이미지·md). path 는 이 봇 폴더 기준 상대 경로 또는 볼트 안 절대 경로. 한 턴에 한 번만 열린다.', inputSchema: obj({ path: { type: 'string' } }, ['path']) },
-  { name: 'rondo_reveal', description: '사용자가 보고 있는 기기의 Finder 에서 파일 위치를 보여 준다(호스트가 아니라 그 기기). path 는 봇 폴더 기준 상대 경로 또는 볼트 안 절대 경로.', inputSchema: obj({ path: { type: 'string' } }, ['path']) },
+  { name: 'rondo_reveal', description: '사용자가 보고 있는 기기의 파일 관리자에서 파일 위치를 보여 준다(호스트가 아니라 그 기기). path 는 봇 폴더 기준 상대 경로 또는 볼트 안 절대 경로.', inputSchema: obj({ path: { type: 'string' } }, ['path']) },
   /**
    * AA-5 · 루틴 도구 (2026-09-22 Dave). 봇은 자기 폴더에 어떤 루틴이 걸렸는지조차 몰랐다.
    * 🔴 **approve 는 일부러 없다.** `approve: always` 는 `approveToMode()` 를 거쳐 `bypassPermissions` 가 된다 —
@@ -115,10 +116,10 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       const abs = resolve(isAbsolute(raw) ? raw : join(b.abs, raw))
       if (relUnder(reg.root, abs) === null && !(b.repo && relUnder(b.repo, abs) !== null)) throw new Error('볼트 밖 경로예요 — 문서 창은 볼트 안 파일만 열어요')
       if (!existsSync(abs)) throw new Error(`없는 파일: ${raw}`)
-      const rel = relative(b.abs, abs)
+      const rel = portableRelative(b.abs, abs)
       const turn = host.sessions.get(sid)?.turnStartedAt ?? 0
       host.broadcast({ ev: 'doc', botId: b.id, sid, rel, action: name === 'rondo_open' ? 'open' : 'reveal', turn, device: host.sessions.get(sid)?.lastClient?.device })   // J-3 · 요청이 온 기기만 연다
-      return name === 'rondo_open' ? `문서 창에 열었어요: ${rel}` : `기기의 Finder 로 보여 드렸어요: ${rel}`
+      return name === 'rondo_open' ? `문서 창에 열었어요: ${rel}` : `기기의 파일 관리자로 보여 드렸어요: ${rel}`
     }
     /* ── AA-5 · 루틴 (2026-09-22) ─────────────────────────────────────────
        🔴 저장 경로는 **기존 그대로** `.bot.yml` 이고, 저장 뒤 `afterBotsChanged()` 로 스케줄을 다시 건다.

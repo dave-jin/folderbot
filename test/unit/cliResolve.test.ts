@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { providerBin, forgetProviders } from '../../src/host/providers'
 import { claudeBin } from '../../src/host/session'
@@ -26,24 +26,31 @@ afterEach(() => {
   if (saved.cands === undefined) delete process.env.FOLDERBOT_CLAUDE_CANDIDATES; else process.env.FOLDERBOT_CLAUDE_CANDIDATES = saved.cands
 })
 
-describe('AT · 확인하는 claude = 실행하는 claude', () => {
+describe.skipIf(process.platform === 'win32')('AT · 확인하는 claude = 실행하는 claude', () => {
   it('🔴 낡은 판이 먼저 있어도 턴은 새 판으로 띄운다 — 미니에서 난 400 그대로', () => {
     const old = fake('local', '2.1.278'), neu = fake('npm', '2.1.281')
-    process.env.FOLDERBOT_CLAUDE_CANDIDATES = [old, neu].join(':')      // 종전 순서: ~/.local 이 먼저
+    process.env.FOLDERBOT_CLAUDE_CANDIDATES = [old, neu].join(delimiter) // 종전 순서: ~/.local 이 먼저
     expect(providerBin('claude')).toBe(neu)
     expect(claudeBin()).toBe(neu)                                         // 종전: old 를 집었다
   })
   it('새 판이 먼저 있으면 그것 — 둘은 언제나 같은 파일', () => {
     const neu = fake('local', '2.1.290'), old = fake('npm', '2.1.278')
-    process.env.FOLDERBOT_CLAUDE_CANDIDATES = [neu, old].join(':')
+    process.env.FOLDERBOT_CLAUDE_CANDIDATES = [neu, old].join(delimiter)
     expect(claudeBin()).toBe(providerBin('claude'))
     expect(claudeBin()).toBe(neu)
   })
   it('사람이 정해 준 경로(설정·환경변수)는 그대로 이긴다', () => {
     const a = fake('a', '2.1.278'), b = fake('b', '2.1.281')
-    process.env.FOLDERBOT_CLAUDE_CANDIDATES = [a, b].join(':')
+    process.env.FOLDERBOT_CLAUDE_CANDIDATES = [a, b].join(delimiter)
     expect(claudeBin(a)).toBe(a)
     process.env.FOLDERBOT_CLI_BIN = a
     expect(claudeBin()).toBe(a)
   })
+})
+
+it.skipIf(process.platform !== 'win32')('Windows rejects a .cmd override that spawn cannot run directly', () => {
+  const cmd = join(dir, 'claude.cmd')
+  writeFileSync(cmd, '@echo off\r\n')
+  process.env.FOLDERBOT_CLI_BIN = cmd
+  expect(providerBin('claude')).toBeNull()
 })
