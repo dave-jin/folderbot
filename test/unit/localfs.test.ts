@@ -5,8 +5,8 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 const lf = createRequire(import.meta.url)('../../desktop/localfs.js') as {
-  tails: (r: string) => string[]; syncRoots: (h: string, e: string[]) => string[]; rank: (f: { path: string; real: string; files: number }[]) => { path: string; shell: boolean }[]
-  detect: (hostRoot: string, home: string) => { path: string; real: string; files: number; shell: boolean }[]
+  tails: (r: string) => string[]; syncRoots: (h: string, e: string[], os?: string, env?: Record<string, string>) => string[]; rank: (f: { path: string; real: string; files: number }[]) => { path: string; shell: boolean }[]
+  detect: (hostRoot: string, home: string, os?: string, env?: Record<string, string>) => { path: string; real: string; files: number; shell: boolean }[]
   stat: (p: string) => { exists: boolean; size?: number; head?: string; placeholder?: boolean }; headHash: (p: string) => string
   waitFor: (p: string, want: { size: number; head: string }, ms: number) => Promise<boolean>; cachePath: (u: string, h: string, r: string) => string; placeholderName: (p: string) => string
 }
@@ -16,6 +16,18 @@ describe('tails · syncRoots · rank', () => {
   it('꼬리 1~3조각 · 표준 자리', () => {
     expect(lf.tails('/Users/mini/Library/CloudStorage/Dropbox/PARA')).toEqual(['PARA', 'Dropbox/PARA', 'CloudStorage/Dropbox/PARA'])
     expect(lf.syncRoots('/h', ['Dropbox', 'Dropbox-Cbsjin', 'OneDrive'])).toEqual(['/h/Library/CloudStorage/Dropbox', '/h/Library/CloudStorage/Dropbox-Cbsjin', '/h/Dropbox', '/h/Library/Mobile Documents/com~apple~CloudDocs'])
+  })
+  it('Windows 호스트 경로와 OneDrive·Dropbox 후보를 읽는다', () => {
+    expect(lf.tails('C:\\Users\\mini\\OneDrive - Team\\PARA')).toEqual(['PARA', 'OneDrive - Team/PARA', 'mini/OneDrive - Team/PARA'])
+    expect(lf.syncRoots('/h', ['OneDrive - Team', 'Dropbox', 'Music'], 'win32', { OneDrive: '/h/OneDrive - Team' })).toEqual(['/h/OneDrive - Team', '/h/Dropbox'])
+    const home = mkdtempSync(join(tmpdir(), 'fb-win-home-'))
+    const root = join(home, 'OneDrive - Team', 'PARA')
+    mkdirSync(root, { recursive: true }); writeFileSync(join(root, 'a.md'), 'a')
+    try {
+      const out = lf.detect('C:\\Users\\mini\\OneDrive - Team\\PARA', home, 'win32', {})
+      expect(out[0].path).toBe(root)
+      expect(out[0].files).toBe(1)
+    } finally { rmSync(home, { recursive: true, force: true }) }
   })
   it('같은 실체는 정본 자리 하나로 · 파일 많은 쪽 먼저 · 껍데기 표시', () => {
     const out = lf.rank([

@@ -191,13 +191,13 @@ function helpOf(bin: string, args: string[]): string {
 const BIN_CHUNK = 4 * 1024 * 1024, BIN_OVERLAP = 64, BIN_CAP = 80
 const binCache = new Map<string, string[]>()
 export function modelsFromBinary(bin: string): string[] {
-  let key = bin
-  try { const real = realpathSync(bin); const st = statSync(real); key = `${real}:${st.size}:${st.mtimeMs}` } catch { return [] }
+  let key = bin, real = bin
+  try { real = realpathSync(bin); const st = statSync(real); key = JSON.stringify([real, st.size, st.mtimeMs]) } catch { return [] }
   const hit = binCache.get(key); if (hit) return hit
   const found = new Set<string>()
   let fd = -1
   try {
-    fd = openSync(key.split(':')[0] || bin, 'r')
+    fd = openSync(real, 'r')
     const buf = Buffer.alloc(BIN_CHUNK)
     let pos = 0, tail = ''
     const re = /claude-(?:opus|sonnet|haiku|fable|mythos)-[0-9]+(?:-[0-9]+)*/g

@@ -13,6 +13,8 @@ import { LocalOpenPicker, localBridge, useLocalSettings } from './localOpen'
 import { EFFORTS, MODES, modelsFor, moreModelsFor, setFoundModels } from './consts'
 import { norm } from '../core/search'
 
+export const isWin = typeof navigator !== 'undefined' && (/Windows|Win32|Win64/i.test(navigator.userAgent) || /Win/i.test(navigator.platform || ''))
+
 /**
  * 설정 — 2026-09-17 «1안» (Dave: «설정 메뉴가 엉망진창임 … 종류별로 정리가 필요함»).
  *
@@ -135,7 +137,7 @@ export const INDEX: { sec: SecId; t: string; d: string }[] = [
   { sec: 'host', t: '주소', d: '포트 접속 같은 망' },
   { sec: 'host', t: 'Tailscale', d: '밖에서 원격 접속 tailnet' },
   { sec: 'host', t: '깔린 CLI', d: 'Claude Code Codex 버전 에이전트' },
-  { sec: 'host', t: 'macOS 권한', d: '전체 디스크 접근 알림 보안' },
+  { sec: 'host', t: '시스템 권한', d: 'macOS Windows 전체 디스크 접근 알림 보안' },
   { sec: 'devices', t: '이 기기 이름', d: '기기마다 따로' },
   { sec: 'devices', t: '연결된 기기', d: '페어링 끊기 목록' },
   { sec: 'devices', t: '새 기기 연결', d: '페어링 코드 폰 맥북' },
@@ -212,11 +214,11 @@ function GeneralPane() {
   const save = async (body: { hostName?: string }) => { try { await api('/names', { body }); await refresh(); setMsg('저장했어요') } catch (e) { setMsg((e as Error).message) } }
   return <>
     <p className="lead">지금 이 화면은 {s.device.main ? <><b>메인</b> ({s.hostName}) 에서</> : <><b>원격 · {s.device.name}</b> 에서 <b>{s.hostName}</b> 를</>} 보고 있어요.{msg ? ` · ${msg}` : ''} 줄의 <span className="scp at-main">메인</span> 은 모든 기기에 같이 보이는 값, <span className="scp at-dev">이 기기</span> 는 여기에만 남는 값이에요.</p>
-    <Row t="메인(호스트) 이름" d="봇이 사는 맥의 이름. 모든 기기에 같이 보여요." at="main">
+    <Row t="메인(호스트) 이름" d="봇이 사는 호스트 기기의 이름. 모든 기기에 같이 보여요." at="main">
       <input className="sin" value={host} onChange={(e) => setHost(e.target.value)} onBlur={() => { if (host.trim() !== s.hostName) void save({ hostName: host }) }} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} />
     </Row>
     <Group t="화면" />
-    <Row t="테마" d="시스템을 고르면 맥의 밝기 설정을 따라갑니다." at="dev">
+    <Row t="테마" d={isWin ? "시스템을 고르면 Windows 의 밝기 설정을 따라갑니다." : "시스템을 고르면 맥의 밝기 설정을 따라갑니다."} at="dev">
       <span className="seg">{([['auto', '시스템'], ['light', '라이트'], ['dark', '다크']] as [Theme, string][]).map(([v, l]) => <button key={v} className={theme === v ? 'on' : ''} onClick={() => setTheme(v)}>{l}</button>)}</span>
     </Row>
     <Row t="폴더봇 크기" d="목록의 폴더봇 크기예요. 마우스를 올리면 한 번 더 커져서 표정이 보여요." at="dev">
@@ -256,10 +258,10 @@ function RootRow() {
     </Row>
     {open ? <div className="rootp">
       <div className="rp-h">
-        <input className="sin mono" value={path} placeholder="/Users/이름/PARA" onChange={(e) => setPath(e.target.value)}
+        <input className="sin mono" value={path} placeholder={isWin ? 'C:\\Users\\이름\\PARA' : '/Users/이름/PARA'} onChange={(e) => setPath(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') void load((e.target as HTMLInputElement).value) }} />
         <button className="btn ghost" onClick={() => void load(path)}>열기</button>
-        {desk?.hostMode ? <button className="btn ghost" onClick={() => desk.hostMode?.()}>Finder…</button> : null}
+        {desk?.hostMode ? <button className="btn ghost" onClick={() => desk.hostMode?.()}>{isWin ? '파일 탐색기…' : 'Finder…'}</button> : null}
       </div>
       <div className="rp-l">
         {at?.parent ? <button className="rp-i up" onClick={() => void load(at.parent as string)}>↑ 상위 폴더</button> : null}
@@ -296,7 +298,7 @@ function HostPane({ onClose, providers }: { onClose: () => void; providers: Prov
     </div>)}
     {!providers.length ? <Row t="깔린 에이전트가 없어요" d="Claude Code 를 먼저 설치하세요 — 여기 보이는 것만 폴더를 시작할 때 고를 수 있어요." /> : null}
     <p className="note">여기 보이는 것만 폴더를 시작할 때 고를 수 있어요. 각 CLI 의 로그인·기본값은 왼쪽의 <b>Claude</b>·<b>Codex</b> 칸에서.</p>
-    {hasPerms ? <><Group t="macOS" /><Row t="macOS 권한" d="전체 디스크 접근 · 알림. 볼트를 읽으려면 필요해요." at="main"><button className="btn" onClick={() => { onClose(); window.dispatchEvent(new Event('fb:perm-gate')) }}>다시 확인</button></Row></> : null}
+    {hasPerms ? <><Group t="운영체제" /><Row t="시스템 권한" d={isWin ? "알림 및 백그라운드 접근 권한이에요." : "전체 디스크 접근 · 알림. 볼트를 읽으려면 필요해요."} at="main"><button className="btn" onClick={() => { onClose(); window.dispatchEvent(new Event('fb:perm-gate')) }}>다시 확인</button></Row></> : null}
   </>
 }
 
@@ -304,16 +306,16 @@ function HostPane({ onClose, providers }: { onClose: () => void; providers: Prov
 function LocalOpenRows() {
   const { s } = useStore(); const [cfg, set] = useLocalSettings()
   return <>
-    <Row t="이 기기에서 파일 열기" d="«Finder 에서 보기»·«열기» 가 이 기기에서 열립니다. 동기화 볼트가 있으면 그 파일을(신선도 확인 뒤), 없으면 호스트에서 받은 사본을 열어요." at="dev">
+    <Row t="이 기기에서 파일 열기" d={isWin ? "«파일 탐색기에서 보기»·«열기» 가 이 기기에서 열립니다. 동기화 볼트가 있으면 그 파일을(신선도 확인 뒤), 없으면 호스트에서 받은 사본을 열어요." : "«Finder 에서 보기»·«열기» 가 이 기기에서 열립니다. 동기화 볼트가 있으면 그 파일을(신선도 확인 뒤), 없으면 호스트에서 받은 사본을 열어요."} at="dev">
       <span className="seg"><button className={cfg?.openMode === 'sync' ? 'on' : ''} onClick={() => void set({ openMode: 'sync' })}>동기화 볼트</button><button className={cfg?.openMode === 'download' || !cfg?.openMode ? 'on' : ''} onClick={() => void set({ openMode: 'download' })}>호스트에서 받기</button></span>
     </Row>
-    <Row t="동기화 볼트 위치" d={cfg?.vaultLocal ? cfg.vaultLocal : '아직 안 정했어요 — 찾기를 누르면 Dropbox·iCloud 에서 같은 볼트를 찾아요.'} at="dev">
+    <Row t="동기화 볼트 위치" d={cfg?.vaultLocal ? cfg.vaultLocal : (isWin ? '아직 안 정했어요 — 찾기를 누르면 Dropbox·OneDrive 등에서 같은 볼트를 찾아요.' : '아직 안 정했어요 — 찾기를 누르면 Dropbox·iCloud 에서 같은 볼트를 찾아요.')} at="dev">
       <LocalOpenPicker root={s.root} compact />
     </Row>
     <Row t="받은 사본 캐시" d="호스트에서 받아 연 파일·복사한 파일의 사본. 상한(2GB)을 넘으면 오래 안 쓴 것부터 지워요." at="dev">
       <CacheRow />
     </Row>
-    <Row t="복사 진단" d="파일 하나를 골라 클립보드에 올려 보고, 맥이 그걸 파일로 받았는지 되읽어 알려줘요. 복사가 안 될 때 이 글을 그대로 보내 주세요." at="dev">
+    <Row t="복사 진단" d={isWin ? "파일 하나를 골라 클립보드에 올려 보고, PC가 그걸 파일로 받았는지 되읽어 알려줘요. 복사가 안 될 때 이 글을 그대로 보내 주세요." : "파일 하나를 골라 클립보드에 올려 보고, 맥이 그걸 파일로 받았는지 되읽어 알려줘요. 복사가 안 될 때 이 글을 그대로 보내 주세요."} at="dev">
       <CopyDiagRow />
     </Row>
   </>
@@ -327,7 +329,7 @@ function LocalOpenRows() {
 function CopyDiagRow() {
   const [out, setOut] = useState(''); const [busy, setBusy] = useState(false)
   const b = localBridge()
-  if (!b?.copyDiag) return <span className="hint">맥 앱에서만 돼요 (앱을 최신으로 올려 주세요)</span>
+  if (!b?.copyDiag) return <span className="hint">{isWin ? '데스크톱 앱에서만 돼요 (앱을 최신으로 올려 주세요)' : '맥 앱에서만 돼요 (앱을 최신으로 올려 주세요)'}</span>
   const run = async () => {
     setBusy(true)
     try { const p = await b.pick(); if (!p) { setBusy(false); return } setOut(await b.copyDiag!(p)) } catch (e) { setOut(`진단 실패 — ${(e as Error).message}`) } finally { setBusy(false) }
@@ -356,7 +358,7 @@ function DevicesPane() {
     {s.devices.map((d) => <Row key={d.id} t={d.name} d={`마지막 접속 ${fmtTime(d.lastSeen)}`}><button className="btn ghost" onClick={() => api('/devices/revoke', { body: { id: d.id } }).then(refresh)}>끊기</button></Row>)}
     {!s.devices.length ? <Row t="연결된 기기" d="아직 붙은 기기가 없어요." /> : null}
     {/* ⛔ 페어링은 루프백에서만 열린다(호스트가 그렇게 막는다) — 원격에서는 줄 자체를 안 그린다 */}
-    {isLocal ? <Row t="새 기기 연결" d="폰이나 다른 맥에서 이 코드를 넣으면 붙어요 (2분)." at="main">
+    {isLocal ? <Row t="새 기기 연결" d={isWin ? "폰이나 다른 PC·노트북에서 이 코드를 넣으면 붙어요 (2분)." : "폰이나 다른 맥에서 이 코드를 넣으면 붙어요 (2분)."} at="main">
       {pair ? <span className="pcode mono">{pair.code}</span> : null}<button className="btn" onClick={async () => setPair(await api('/pairing', { body: {} }))}>페어링 코드</button>
     </Row> : null}
     <Row t="이 기기 로그아웃" d="이 기기의 연결을 끊습니다. 다시 붙으려면 페어링 코드가 필요해요." danger at="dev">
@@ -367,8 +369,8 @@ function DevicesPane() {
 
 const VERDICT_T: Record<string, string> = { loggedin: '로그인됨', loggedout: '로그아웃', unreadable: '못 읽음', unknown: '확인 전' }
 const VERDICT_D: Record<string, string> = {
-  loggedin: '키체인 로그인이 읽혀요.',
-  loggedout: '호스트 맥 터미널에서 claude → /login 을 해 주세요.',
+  loggedin: isWin ? '자격 증명 로그인이 읽혀요.' : '키체인 로그인이 읽혀요.',
+  loggedout: isWin ? '호스트 터미널에서 claude → /login 을 해 주세요.' : '호스트 맥 터미널에서 claude → /login 을 해 주세요.',
   unreadable: '로그인은 있는데 이 문맥에서 못 읽어요 — 호스트를 GUI 터미널에서 띄우거나 장기 토큰을 넣으세요.',
   unknown: '아직 확인하지 않았어요.'
 }
@@ -377,7 +379,7 @@ const VERDICT_D: Record<string, string> = {
 /** Claude — 인증 → 새 채팅 기본값 → 다시 연결 → (맨 아래) 위험한 것 */
 function ClaudePane() {
   const { s, refresh } = useStore()
-  const main = s.device.main     // 터미널은 호스트 맥에서만 열린다
+  const main = s.device.main     // 터미널은 호스트 기기에서만 열린다
   const [model, setModel] = useState(s.defaults.model || DEFAULT_MODEL.claude); const [effort, setEffort] = useState(s.defaults.effort || DEFAULT_EFFORT.claude)
   const [tok, setTok] = useState(''); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(''); const [diag, setDiag] = useState('')
   /**
@@ -401,8 +403,8 @@ function ClaudePane() {
     } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) }
   }
   const loginD = main
-    ? <span>누르면 호스트 맥에 터미널이 열립니다. <span className="mono">claude</span> 가 뜨면 <span className="mono">/login</span> 을 치고 브라우저에서 마치세요 — 그러면 <b>claude.ai 커넥터도 함께 붙습니다</b>.</span>
-    : <span>로그인은 <b>호스트 맥</b>({s.hostName})에서 해야 해요. 그 맥의 Folder Bot 설정에서 누르거나, 터미널에서 <span className="mono">claude</span> → <span className="mono">/login</span>.</span>
+    ? <span>누르면 호스트에 터미널이 열립니다. <span className="mono">claude</span> 가 뜨면 <span className="mono">/login</span> 을 치고 브라우저에서 마치세요 — 그러면 <b>claude.ai 커넥터도 함께 붙습니다</b>.</span>
+    : <span>로그인은 <b>호스트</b>({s.hostName})에서 해야 해요. 그 기기의 Folder Bot 설정에서 누르거나, 터미널에서 <span className="mono">claude</span> → <span className="mono">/login</span>.</span>
   const perm = s.defaults.permissionMode ?? 'default'
   return <>
     <p className="lead">Claude Code 세션이 어떻게 붙고 어떤 값으로 뜨는지. 커넥터·스킬 목록은 <b>참고</b> 칸에, 폴더마다 다른 지침은 그 폴더 패널에 있어요.{msg ? ` · ${msg}` : ''}</p>
@@ -412,14 +414,14 @@ function ClaudePane() {
       <button className="btn ghost" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button>
     </Row>
     <Row t="쓰는 인증" d={s.auth.mode === 'token'
-      ? <>장기 토큰으로 붙어 있어요. ⚠ <b>이 모드에서는 claude.ai 계정에 연결해 둔 커넥터가 안 붙습니다</b> — 토큰 스코프에 <span className="mono">user:mcp_servers</span> 가 없어요. 호스트 맥 터미널에서 <span className="mono">claude</span> → <span className="mono">/login</span> 을 하고 토큰을 지우면 키체인 로그인으로 돌아갑니다.</>
-      : <>키체인 로그인으로 붙어 있어요 — <b>이 맥에 설치된 MCP 커넥터·스킬과 claude.ai 계정 커넥터를 그대로 씁니다</b>. (장기 토큰이 저장돼 있어도 키체인이 읽히면 그쪽을 씁니다.)</>} at="main">
-      <span className="sv" style={{ color: s.auth.mode === 'token' ? 'var(--wait)' : 'var(--done)' }}>{s.auth.mode === 'token' ? '장기 토큰' : '키체인 로그인'}</span>
+      ? <>장기 토큰으로 붙어 있어요. ⚠ <b>이 모드에서는 claude.ai 계정에 연결해 둔 커넥터가 안 붙습니다</b> — 토큰 스코프에 <span className="mono">user:mcp_servers</span> 가 없어요. 호스트 터미널에서 <span className="mono">claude</span> → <span className="mono">/login</span> 을 하고 토큰을 지우면 CLI 로그인으로 돌아갑니다.</>
+      : <>CLI 로그인으로 붙어 있어요 — <b>호스트에 설치된 MCP 커넥터·스킬과 claude.ai 계정 커넥터를 그대로 씁니다</b>. (장기 토큰이 저장돼 있어도 CLI 로그인을 읽으면 그쪽을 씁니다.)</>} at="main">
+      <span className="sv" style={{ color: s.auth.mode === 'token' ? 'var(--wait)' : 'var(--done)' }}>{s.auth.mode === 'token' ? '장기 토큰' : 'CLI 로그인'}</span>
     </Row>
     <Row t="Claude Code 로그인" d={loginD}>
       <button className="btn on" disabled={busy || !main} onClick={() => void openLogin()}>터미널에서 로그인</button>
     </Row>
-    <Row t="장기 토큰" d={<>키체인 로그인을 못 읽는 상황(헤드리스·SSH)이면 씁니다. 터미널에 <span className="mono">claude setup-token</span> 을 치고 나온 토큰을 넣으세요 (1년). ⚠ 토큰 모드에선 claude.ai 커넥터가 안 붙어요.</>} at="main">
+    <Row t="장기 토큰" d={<>CLI 로그인을 못 읽는 상황(헤드리스·SSH)이면 씁니다. 터미널에 <span className="mono">claude setup-token</span> 을 치고 나온 토큰을 넣으세요 (1년). ⚠ 토큰 모드에선 claude.ai 커넥터가 안 붙어요.</>} at="main">
       <input className="sin mono" placeholder="sk-ant-oat01-…" value={tok} onChange={(e) => setTok(e.target.value)} />
       <button className="btn" disabled={busy || !tok.trim()} onClick={() => saveT(tok)}>저장</button>
     </Row>
@@ -441,7 +443,7 @@ function ClaudePane() {
       <button className="btn" disabled={busy} onClick={async () => { setBusy(true); try { const r = await api<{ text: string }>('/auth/diagnose'); setDiag(r.text) } catch (e) { setDiag((e as Error).message) } finally { setBusy(false) } }}>진단</button>
       {diag ? <button className="btn ghost" onClick={() => void copySay(diag, setMsg, '진단을 복사했어요')}>복사</button> : null}
     </Row>
-    {s.auth.mode === 'token' ? <Row t="토큰 지우기" d="키체인 로그인 모드로 돌아갑니다." danger at="main"><button className="btn danger" disabled={busy} onClick={() => saveT('')}>지우기</button></Row> : null}
+    {s.auth.mode === 'token' ? <Row t="토큰 지우기" d="CLI 로그인 모드로 돌아갑니다." danger at="main"><button className="btn danger" disabled={busy} onClick={() => saveT('')}>지우기</button></Row> : null}
   </>
 }
 
@@ -467,8 +469,8 @@ function CodexPane() {
   }
   const cxAuth = s.defaults.codex?.auth
   const cxLoginD = main
-    ? <span>누르면 호스트 맥에 터미널이 열리고 <span className="mono">codex login</span> 이 돌아갑니다. 브라우저에서 마치고 [다시 연결] 을 누르세요.</span>
-    : <span>로그인은 <b>호스트 맥</b>({s.hostName})에서 해야 해요.</span>
+    ? <span>{isWin ? '누르면 호스트에 터미널이 열리고' : '누르면 호스트 맥에 터미널이 열리고'} <span className="mono">codex login</span> 이 돌아갑니다. 브라우저에서 마치고 [다시 연결] 을 누르세요.</span>
+    : <span>로그인은 <b>호스트</b>({s.hostName})에서 해야 해요.</span>
   return <>
     <p className="lead">Codex 세션이 어떻게 붙고 어떤 값으로 뜨는지. 🔴 Codex 는 <b>우리가 승인 화면을 못 띄웁니다</b>(stdio 권한 프로토콜이 없어요) — 그래서 «샌드박스» 가 곧 권한 정책이에요.{msg ? ` · ${msg}` : ''}</p>
     <Group t="인증" />
@@ -579,7 +581,7 @@ function RefPane() {
   useEffect(() => { void api<typeof gh>('/harness/global').then(setGh).catch(() => setGh(null)) }, [])
   const cut = (xs: HarnessItem[]) => (all ? xs : xs.slice(0, 4))
   return <>
-    <p className="lead">모든 봇이 함께 쓰는 것들이에요. <b>이 맥에 설치된 MCP 커넥터와 스킬을 그대로 씁니다</b> — Folder Bot 이 따로 설치하거나 바꾸지 않아요. 여기서는 보기만 하고, 폴더마다 다른 것은 그 폴더의 «이 폴더에서» 패널에서 고쳐요.</p>
+    <p className="lead">모든 봇이 함께 쓰는 것들이에요. <b>이 {isWin ? '호스트' : '맥'}에 설치된 MCP 커넥터와 스킬을 그대로 씁니다</b> — Folder Bot 이 따로 설치하거나 바꾸지 않아요. 여기서는 보기만 하고, 폴더마다 다른 것은 그 폴더의 «이 폴더에서» 패널에서 고쳐요.</p>
     <Group t={`커넥터 (MCP)${gh ? ` · ${gh.mcp.length}` : ''}`} right={gh && gh.mcp.length > 4 ? <button className="lk" onClick={() => setAll(!all)}>{all ? '접기' : '모두 보기'}</button> : undefined} />
     {cut(gh?.mcp ?? []).map((i) => <div className="hitem" key={`m${i.name}`}>
       <span className="ic"><Icon n="plug" size={14} /></span>
@@ -630,4 +632,3 @@ function HarnessTable() {
     <p className="note"><b>CLAUDE.md</b> 는 Claude Code 가, <b>AGENTS.md</b> 는 Codex 가 읽는 지침이에요. <b>스킬</b>·<b>MCP</b> 는 그 폴더에서 실제로 쓸 수 있는 수(사용자 것 + 볼트 것 + 폴더 것)입니다.</p>
   </>
 }
-

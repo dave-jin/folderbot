@@ -2,11 +2,12 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { execFile } from 'node:child_process'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join, extname, normalize, relative, resolve, sep } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, normalize, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { spawn } from 'node:child_process'
+import { windowsLoginCommand, windowsOpenCommand, zipCommand } from './platformOps'
 /** zip 을 표준 출력으로 — 숨김 파일(.folderbot 등)은 뺀다 */
-function spawnZip(cwd: string, name: string) { return spawn('zip', ['-r', '-q', '-', name, '-x', '*/.*', '.*'], { cwd }) }
+function spawnZip(cwd: string, name: string) { const c = zipCommand(process.platform, name); return spawn(c.bin, c.args, { cwd }) }
 import type { Frame, RoutineDef } from '../core/types'
 import { stripRuntime } from '../core/types'
 import { WHEN_EXAMPLES, confirmLine, cronOk, describeCron, parseWhen } from '../core/when'
@@ -48,7 +49,7 @@ const LOCAL_DEVICE = 'this-mac'
 
 function inBot(botAbs: string, rel: string): string {
   const abs = resolve(botAbs, rel)
-  if (abs !== botAbs && !abs.startsWith(botAbs + sep)) throw new Error('이 폴더 밖에는 만들 수 없어요')
+  if (!withinPath(botAbs, abs)) throw new Error('이 폴더 밖에는 만들 수 없어요')
   return abs
 }
 
@@ -66,7 +67,7 @@ function freeName(botAbs: string, dir: string, name: string): string {
 import { favicon } from './favicon'
 import { preview } from './preview'
 import { hookState, setBudget, setHook, usageReport } from './usage'
-import { allDirs, findFiles, guard, headHash, kindOf, mime, readText, recent, resolveNF, resolveNFDeep, stream, tree, writeText, exists, listDir, renameEntry } from './files'
+import { allDirs, findFiles, guard, headHash, kindOf, mime, portableRelative, readText, recent, resolveNF, resolveNFAbsolute, stream, tree, writeText, exists, listDir, renameEntry, withinPath } from './files'
 import { readTodo, todoDelete, todoEdit, todoMove, todoToggle } from './todoStore'
 import { globParents, roleOf } from '../core/rules'
 import { createCommand, listCommandFiles, slashCommands } from './slash'
@@ -251,7 +252,7 @@ export class Gateway {
     if (p === '/api/root' && m === 'POST') {
       const b = await body()
       const abs = normalizeRootInput(String(b.path ?? ''), homedir())
-      if (!abs) return json(400, { error: '절대 경로를 넣어 주세요 (예: /Users/이름/PARA)' })
+      if (!abs) return json(400, { error: process.platform === 'win32' ? '절대 경로를 넣어 주세요 (예: C:\\Users\\이름\\PARA)' : '절대 경로를 넣어 주세요 (예: /Users/이름/PARA)' })
       let dir = false
       try { dir = statSync(abs).isDirectory() } catch { dir = false }
       if (!dir) return json(400, { error: `그런 폴더가 없어요: ${abs}` })
@@ -308,7 +309,7 @@ export class Gateway {
     if (p === '/api/bots/start' && m === 'POST') { const b = await body(); const bot = reg.start(String(b.rel), b.provider === 'codex' ? 'codex' : b.provider === 'claude' ? 'claude' : undefined); h.afterBotsChanged(); return json(200, bot) }
     if (p === '/api/harness' && m === 'GET') {
       const rel = url.searchParams.get('rel')
-      if (rel !== null) { const abs = join(reg.root, rel); if (!abs.startsWith(reg.root)) return json(400, { error: '루트 밖' }); return json(200, harnessDetail(rel, rel.split('/').pop() ?? rel, rel.includes('/') ? rel.split('/')[0] : '', abs, reg.root)) }
+      if (rel !== null) { const abs = join(reg.root, rel); if (!withinPath(reg.root, abs)) return json(400, { error: '루트 밖' }); return json(200, harnessDetail(rel, rel.split('/').pop() ?? rel, rel.includes('/') ? rel.split('/')[0] : '', abs, reg.root)) }
       const rows = [...reg.bots().filter((b) => !b.orchestrator).map((b) => ({ rel: b.rel, name: b.name, section: b.section, abs: b.abs })),
         ...reg.candidates().filter((c) => !c.active).map((c) => ({ rel: c.rel, name: c.name, section: c.section, abs: join(reg.root, c.rel) }))]
       return json(200, rows.map((r) => harnessRow(r.rel, r.name, r.section, r.abs, reg.root)))
@@ -357,11 +358,15 @@ export class Gateway {
      */
     if (p === '/api/auth/login-terminal' && m === 'POST') {
       const b = await body()
-      if (!who.main) return json(400, { error: '호스트 맥에서 눌러 주세요 — 터미널은 그쪽에 떠야 해요' })
-      if (process.platform !== 'darwin') return json(400, { error: '맥에서만 열 수 있어요' })
+      if (!who.main) return json(400, { error: '호스트에서 눌러 주세요 — 터미널은 그쪽에 떠야 해요' })
       const cmd = b.agent === 'codex' ? 'codex login' : 'claude'
-      const script = `cd ${JSON.stringify(reg.root)}; clear; ${cmd}`
-      execFile('/usr/bin/osascript', ['-e', `tell application "Terminal" to do script ${JSON.stringify(script)}`, '-e', 'tell application "Terminal" to activate'], () => {})
+      if (process.platform === 'darwin') {
+        const script = `cd ${JSON.stringify(reg.root)}; clear; ${cmd}`
+        execFile('/usr/bin/osascript', ['-e', `tell application "Terminal" to do script ${JSON.stringify(script)}`, '-e', 'tell application "Terminal" to activate'], () => {})
+      } else if (process.platform === 'win32') {
+        const c = windowsLoginCommand(reg.root, b.agent === 'codex' ? 'codex' : 'claude')
+        const p = spawn(c.bin, c.args, { env: c.env, detached: true, stdio: 'ignore' }); p.on('error', (e) => h.log(`로그인 터미널 실패: ${e.message}`)); p.unref()
+      } else return json(400, { error: '이 호스트에서는 터미널을 자동으로 열 수 없어요' })
       return json(200, { ok: true, cmd })
     }
     // 진단 — 사람이 전령이 되지 않게. ⛔ 토큰·이메일·키 값은 안 들어간다(`auth.diagnose` 머리말)
@@ -402,13 +407,13 @@ export class Gateway {
       if (sub === 'send' && m === 'POST') { const b = await body(); const sid = h.sendToBot(bot, String(b.text), b.sessionId ? String(b.sessionId) : undefined, b.name ? String(b.name) : undefined, undefined, { model: b.model ? String(b.model) : undefined, effort: b.effort ? String(b.effort) : undefined, permissionMode: b.permissionMode ? (String(b.permissionMode) as never) : undefined, vendor: b.vendor === 'codex' || b.vendor === 'claude' ? b.vendor : undefined, client: clientOf(who, b.client) }); return json(200, { sessionId: sid }) }
       // ⚠ 목록은 **그 세션의 벤더**로 정한다 — Claude 의 명령을 Codex 에 보여 주면 그 글자가 프롬프트로 들어간다
       /** 슬래시 명령 관리 (루프 8/10) — 목록은 파일 그대로, 만들기는 파일 하나. `rel` 은 봇 폴더 기준(루트 것은 `../`), 사용자 것은 문서 열 밖이라 rel 이 없다 */
-      if (sub === 'commands' && m === 'GET') return json(200, listCommandFiles(bot.abs, reg.root).map((c) => ({ name: c.name, desc: c.desc, scope: c.scope, rel: c.scope === 'user' ? null : relative(bot.abs, c.abs) })))
+      if (sub === 'commands' && m === 'GET') return json(200, listCommandFiles(bot.abs, reg.root).map((c) => ({ name: c.name, desc: c.desc, scope: c.scope, rel: c.scope === 'user' ? null : portableRelative(bot.abs, c.abs) })))
       if (sub === 'commands' && m === 'POST') {
         const b = await body()
         try {
           const abs = createCommand(b.scope === 'root' ? reg.root : bot.abs, String(b.name ?? '').trim(), typeof b.desc === 'string' ? b.desc : '')
           h.broadcast({ ev: 'files', botId: bot.id })
-          return json(200, { rel: relative(bot.abs, abs) })
+          return json(200, { rel: portableRelative(bot.abs, abs) })
         } catch (e) { return json(400, { error: (e as Error).message }) }
       }
       if (sub === 'slash') { const sid = url.searchParams.get('sid') ?? ''; const v = sid ? h.sessions.get(sid)?.vendor : undefined; return json(200, slashCommands(bot.abs, reg.root, sid ? h.sessions.slashOf(sid) : [], v === 'codex' ? 'codex' : 'claude')) }
@@ -429,7 +434,7 @@ export class Gateway {
         const depth = Math.min(8, Math.max(1, Number(url.searchParams.get('depth') ?? 6)))
         return json(200, allDirs(bot.abs, depth).map((n) => { const vrel = bot.rel ? `${bot.rel}/${n.rel}` : n.rel; return { ...n, harness: reg.hasHarness(join(bot.abs, n.rel)), botId: reg.botByRel(vrel)?.id, role: vrel.includes('/') ? undefined : (globParents(reg.rules.roles.active).includes(vrel) ? 'active' : roleOf(reg.rules, vrel) ?? undefined) } }))
       }
-      if (sub === 'rename' && m === 'POST') { const b = await body(); const abs = guard(roots(bot), join(bot.abs, String(b.rel))); const to = renameEntry(abs, String(b.name)); h.broadcast({ ev: 'files', botId: bot.id }); return json(200, { rel: relative(bot.abs, to) }) }
+      if (sub === 'rename' && m === 'POST') { const b = await body(); const abs = guard(roots(bot), join(bot.abs, String(b.rel))); const to = renameEntry(abs, String(b.name)); h.broadcast({ ev: 'files', botId: bot.id }); return json(200, { rel: portableRelative(bot.abs, to) }) }
       if (sub === 'upload' && m === 'POST') {
         // 원격 기기에서 올린 파일 — <봇 폴더>/첨부/ 에 저장 (덮어쓰지 않음, 25MB 상한)
         const chunks: Buffer[] = []; let total = 0
@@ -459,7 +464,7 @@ export class Gateway {
       if (sub === 'peek' && m === 'GET') {
         const rel = url.searchParams.get('rel') ?? ''
         let abs: string
-        try { abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, rel)).slice(1)) } catch { return json(200, { kind: 'none' }) }
+        try { abs = resolveNFAbsolute(guard(roots(bot), join(bot.abs, rel))) } catch { return json(200, { kind: 'none' }) }
         if (!exists(abs)) return json(200, { kind: 'none' })
         const kind = kindOf(abs)
         const st = statSync(abs)
@@ -471,7 +476,7 @@ export class Gateway {
       }
       if (sub === 'file' && m === 'GET') {
         // ⚠ 한글 이름은 NFC/NFD 두 벌로 산다 — **있는 쪽**을 찾아 준다(`resolveNF` 머리말)
-        const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')).slice(1))
+        const abs = resolveNFAbsolute(guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')))
         if (!exists(abs)) return json(404, { error: '없는 파일' })
         const kind = kindOf(abs)
         // ⚠ 캔버스도 **글로 내려보낸다** — 화면이 JSON 을 읽어 노드를 그린다(원문으로 그리지는 않는다)
@@ -500,23 +505,23 @@ export class Gateway {
         const p = url.searchParams.get('abs') ?? ''
         const sid = url.searchParams.get('s') ?? ''
         let abs: string
-        try { abs = resolveNFDeep('/', guard(roots(bot), p.startsWith('/') ? p : join(bot.abs, p)).slice(1)) } catch { return json(404, { error: '루트 밖' }) }
+        try { abs = resolveNFAbsolute(guard(roots(bot), isAbsolute(p) ? p : join(bot.abs, p))) } catch { return json(404, { error: '루트 밖' }) }
         const after = exists(abs) && kindOf(abs) === 'text' ? readText(abs).text : exists(abs) ? undefined : null
         const before = h.sessions.before(sid, abs)
-        return json(200, { rel: relative(bot.abs, abs), before, after, known: before !== undefined })
+        return json(200, { rel: portableRelative(bot.abs, abs), before, after, known: before !== undefined })
       }
       if (sub === 'exists' && m === 'POST') {
         const b = await body()
         const rels = (Array.isArray(b.rels) ? b.rels : []).slice(0, 40).map(String)
         const out: Record<string, { rel: string; dir: boolean; matches?: string[] } | false> = {}
         for (const c of rels) {
-          const tries = c.startsWith('/') ? [c] : [join(bot.abs, c), join(reg.root, c)]
+          const tries = isAbsolute(c) ? [c] : [join(bot.abs, c), join(reg.root, c)]
           out[c] = false
           for (const t of tries) {
             try {
-              const abs = resolveNFDeep('/', guard(roots(bot), t).slice(1))
+              const abs = resolveNFAbsolute(guard(roots(bot), t))
               if (!exists(abs)) continue
-              out[c] = { rel: relative(bot.abs, abs), dir: statSync(abs).isDirectory() }
+              out[c] = { rel: portableRelative(bot.abs, abs), dir: statSync(abs).isDirectory() }
               break
             } catch { /* 루트 밖 — 다음 갈래 */ }
           }
@@ -526,7 +531,7 @@ export class Gateway {
             // K-1 · 위키링크 `[[노트]]` 는 확장자를 안 쓴다 — 이름 그대로 없으면 `노트.md` 로도 찾는다
             const names = extname(c) ? [c] : [c, `${c}.md`]
             for (const base of [bot.abs, ...(bot.repo ? [bot.repo] : []), reg.root]) { for (const n of names) for (const f of findFiles(base, n)) if (!found.includes(f)) found.push(f); if (found.length) break }
-            if (found.length) out[c] = { rel: relative(bot.abs, found[0]), dir: false, matches: found.map((f) => relative(bot.abs, f)) }
+            if (found.length) out[c] = { rel: portableRelative(bot.abs, found[0]), dir: false, matches: found.map((f) => portableRelative(bot.abs, f)) }
           }
         }
         return json(200, out)
@@ -541,8 +546,9 @@ export class Gateway {
         const b = await body()
         const abs = guard(roots(bot), join(bot.abs, String(b.rel ?? '')))
         if (!exists(abs)) return json(404, { error: '없는 파일' })
-        if (process.platform !== 'darwin') return json(400, { error: '메인이 맥일 때만 열 수 있어요' })
-        execFile('/usr/bin/open', [abs], () => {})
+        if (process.platform === 'darwin') execFile('/usr/bin/open', [abs], () => {})
+        else if (process.platform === 'win32') { const c = windowsOpenCommand(abs); spawn(c.bin, c.args, { env: c.env, windowsHide: true }).on('error', (e) => h.log(`파일 열기 실패: ${e.message}`)) }
+        else return json(400, { error: '이 호스트에서는 파일을 자동으로 열 수 없어요' })
         return json(200, { ok: true })
       }
       /**
@@ -554,8 +560,9 @@ export class Gateway {
         const b = await body()
         const abs = guard(roots(bot), join(bot.abs, String(b.rel ?? '')))
         if (!exists(abs)) return json(404, { error: '없는 파일' })
-        if (process.platform !== 'darwin') return json(400, { error: '메인이 맥일 때만 열 수 있어요' })
-        execFile('/usr/bin/open', ['-R', abs], () => {})
+        if (process.platform === 'darwin') execFile('/usr/bin/open', ['-R', abs], () => {})
+        else if (process.platform === 'win32') { const c = windowsOpenCommand(abs, true); spawn(c.bin, c.args, { windowsHide: true }).on('error', (e) => h.log(`파일 위치 열기 실패: ${e.message}`)) }
+        else return json(400, { error: '이 호스트에서는 파일 위치를 자동으로 열 수 없어요' })
         return json(200, { ok: true })
       }
       /**
@@ -608,7 +615,7 @@ export class Gateway {
         if (!rels.length) return json(400, { error: '고른 것이 없어요' })
         const to: string[] = []; const failed: string[] = []
         for (const rel of rels) {
-          try { inBot(bot.abs, rel); to.push(reg.trashPath(relative(reg.root, join(bot.abs, rel)))) } catch { failed.push(rel) }
+          try { inBot(bot.abs, rel); to.push(reg.trashPath(portableRelative(reg.root, join(bot.abs, rel)))) } catch { failed.push(rel) }
         }
         h.broadcast({ ev: 'files', botId: bot.id })
         return json(200, { to, failed })
@@ -628,10 +635,10 @@ export class Gateway {
         for (const rel of rels) {
           try {
             const from = inBot(bot.abs, rel)
-            if (dirAbs === from || dirAbs.startsWith(from + sep)) throw new Error('자기 안으로는 못 옮겨요')
+            if (withinPath(from, dirAbs)) throw new Error('자기 안으로는 못 옮겨요')
             if (join(from, '..') === dirAbs) { moved.push({ from: rel, to: rel }); continue }
             const to = freeName(bot.abs, dir, rel.split('/').pop() ?? rel)
-            reg.movePath(relative(reg.root, from), relative(reg.root, inBot(bot.abs, to)))
+            reg.movePath(portableRelative(reg.root, from), portableRelative(reg.root, inBot(bot.abs, to)))
             moved.push({ from: rel, to })
           } catch { failed.push(rel) }
         }
@@ -641,14 +648,14 @@ export class Gateway {
       // 원격 기기가 «내 사본이 호스트와 같은가» 를 재는 자 — 크기 · 앞 64KB 해시 (E · desktop/localfs.js 와 같은 식)
       // 참조 폴더 (D) — 폴더 밖 문서를 보다가 «이 Folderbot 에 참조 폴더로 추가». 빈 path 면 푼다
       if (sub === 'repo' && m === 'POST') { const b = await body(); try { const nb = reg.setRepo(bot.id, String(b.path ?? '')); h.afterBotsChanged(); return json(200, { ok: true, repo: nb.repo ?? null }) } catch (e) { return json(400, { error: (e as Error).message }) } }
-      if (sub === 'stat' && m === 'GET') { const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')).slice(1)); if (!exists(abs)) return json(404, { error: '없는 파일' }); const st = statSync(abs); return json(200, { size: st.size, mtime: st.mtimeMs, head: headHash(abs), vaultRel: relative(reg.root, abs) }) }
+      if (sub === 'stat' && m === 'GET') { const abs = resolveNFAbsolute(guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? ''))); if (!exists(abs)) return json(404, { error: '없는 파일' }); const st = statSync(abs); return json(200, { size: st.size, mtime: st.mtimeMs, head: headHash(abs), vaultRel: portableRelative(reg.root, abs) }) }
       /**
        * M-3 · 파일 목록(재귀) — 원격 기기가 «폴더째 받기» 전에 개수·용량을 알고 확인창을 띄우고, 사본이 신선한지(size+head) 대조한다.
        * 폴더가 아니면 그 파일 하나. 5000개에서 자른다(`truncated`) — 그보다 크면 폴더째 복사가 아니라 압축이 맞다.
        */
       if (sub === 'manifest' && m === 'GET') {
         const relQ = url.searchParams.get('rel') ?? ''
-        const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, relQ)).slice(1)); if (!exists(abs)) return json(404, { error: '없는 파일' })
+        const abs = resolveNFAbsolute(guard(roots(bot), join(bot.abs, relQ))); if (!exists(abs)) return json(404, { error: '없는 파일' })
         const out: { rel: string; size: number; mtime: number; head: string }[] = []; let truncated = false
         const walk = (dir: string, r: string) => { for (const e of readdirSync(dir, { withFileTypes: true })) { if (out.length >= 5000) { truncated = true; return } if (e.name.startsWith('.')) continue; const a = join(dir, e.name); const rr = r ? `${r}/${e.name}` : e.name; if (e.isDirectory()) walk(a, rr); else { const st = statSync(a); out.push({ rel: rr, size: st.size, mtime: st.mtimeMs, head: headHash(a) }) } } }
         const st = statSync(abs)
@@ -658,13 +665,13 @@ export class Gateway {
       /** M-3 · 폴더를 zip 으로 — 폰의 «공유…» 와 브라우저 내려받기. macOS·Linux 의 /usr/bin/zip 을 스트리밍한다(디스크에 안 남긴다) */
       if (sub === 'zip' && m === 'GET') {
         const relQ = url.searchParams.get('rel') ?? ''
-        const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, relQ)).slice(1)); if (!exists(abs)) return json(404, { error: '없는 폴더' })
+        const abs = resolveNFAbsolute(guard(roots(bot), join(bot.abs, relQ))); if (!exists(abs)) return json(404, { error: '없는 폴더' })
         const name = basename(abs)
         res.writeHead(200, { 'content-type': 'application/zip', 'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(name)}.zip`, 'cache-control': 'no-store' })
         const z = spawnZip(dirname(abs), name); z.stdout.pipe(res); z.on('error', () => { try { res.end() } catch { /* */ } }); req.on('close', () => { try { z.kill() } catch { /* */ } })
         return
       }
-      if (sub === 'raw') { const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')).slice(1)); if (!exists(abs)) return json(404, { error: 'none' }); res.writeHead(200, { 'content-type': mime(abs), 'cache-control': 'no-store' }); stream(abs).pipe(res); return }
+      if (sub === 'raw') { const abs = resolveNFAbsolute(guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? ''))); if (!exists(abs)) return json(404, { error: 'none' }); res.writeHead(200, { 'content-type': mime(abs), 'cache-control': 'no-store' }); stream(abs).pipe(res); return }
       // AA-1 · 목록에는 **사람 말 · 다음 실행 · 오류**가 함께 간다 — 원시 cron 만 보여 주던 것이 사고를 못 보게 했다
       if (sub === 'routines' && !seg[4] && m === 'GET') return json(200, h.routines.decorate(bot.id, bot.routines).map((r) => ({ ...r, when: describeCron(r.cron) })))
       /**
@@ -741,10 +748,10 @@ export class Gateway {
     let rel = normalize(decodeURIComponent(p)).replace(/^(\.\.[/\\])+/, '')
     if (rel === '/' || rel === '') rel = '/index.html'
     let f = join(this.webRoot, rel)
-    if (!f.startsWith(this.webRoot) || !existsSync(f) || statSync(f).isDirectory()) f = join(this.webRoot, 'index.html')
+    if (!withinPath(this.webRoot, f) || !existsSync(f) || statSync(f).isDirectory()) f = join(this.webRoot, 'index.html')
     if (!existsSync(f)) { res.writeHead(404); res.end('client not built'); return }
     const e = extname(f)
-    const immutable = f.includes('/assets/')
+    const immutable = portableRelative(this.webRoot, f).startsWith('assets/')
     res.writeHead(200, { 'content-type': mime(f) === 'application/octet-stream' ? ({ '.webmanifest': 'application/manifest+json', '.ico': 'image/x-icon', '.woff2': 'font/woff2' } as Record<string, string>)[e] ?? 'application/octet-stream' : mime(f), 'cache-control': immutable ? 'public, max-age=31536000, immutable' : 'no-store', 'service-worker-allowed': '/' })
     res.end(readFileSync(f))
   }

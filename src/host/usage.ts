@@ -125,7 +125,11 @@ export function appendUsage(e: UsageEvent): void {
  */
 const HOOK_SH = join(DIR, 'usage-hook.mjs')
 const SETTINGS = join(CLAUDE_DIR, 'settings.json')
-const HOOK_CMD = `node ${HOOK_SH}`
+/** Claude hooks run through a shell; both Windows user profiles and macOS homes can contain spaces. */
+export function usageHookCommand(script: string, os: NodeJS.Platform = process.platform): string {
+  return os === 'win32' ? `node "${script}"` : `node '${script.replace(/'/g, "'\\''")}'`
+}
+const HOOK_CMD = usageHookCommand(HOOK_SH)
 
 const HOOK_SRC = `#!/usr/bin/env node
 // Folder Bot 사용량 훅 — 턴이 끝날 때 이번 턴의 usage 를 ~/.folderbot/usage.jsonl 에 한 줄 남긴다.

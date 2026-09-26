@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs'
 import { homedir, platform } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, posix, resolve, win32 } from 'node:path'
 import { DEFAULT_PORT, type PermissionMode } from '../core/types'
 
 export interface HostConfig {
@@ -38,10 +38,12 @@ export interface HostConfig {
   hostName?: string
 }
 
-export function dataDir(): string {
-  if (process.env.FOLDERBOT_DATA) return process.env.FOLDERBOT_DATA
-  if (platform() === 'darwin') return join(homedir(), 'Library', 'Application Support', 'folderbot')
-  return join(homedir(), '.folderbot')
+export function dataDir(opts: { platform?: NodeJS.Platform; home?: string; appData?: string; override?: string } = {}): string {
+  if (opts.override ?? process.env.FOLDERBOT_DATA) return (opts.override ?? process.env.FOLDERBOT_DATA)!
+  const os = opts.platform ?? platform(), home = opts.home ?? homedir()
+  if (os === 'darwin') return posix.join(home, 'Library', 'Application Support', 'folderbot')
+  if (os === 'win32') return win32.join(opts.appData ?? process.env.APPDATA ?? win32.join(home, 'AppData', 'Roaming'), 'folderbot')
+  return posix.join(home, '.folderbot')
 }
 
 export function ensureDir(p: string): string {

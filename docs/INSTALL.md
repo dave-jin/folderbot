@@ -1,13 +1,13 @@
-# Folder Bot 설치 가이드 — Mac mini(호스트) · 원격 맥(클라이언트) · 폰
+# Folder Bot 설치 가이드 — Mac mini/Windows(호스트) · 원격 기기 · 폰
 
-> v0.3.0 · 2026-09-12. 짧은 요약: **미니와 맥북에 같은 앱을 설치**한다. 미니에서는 「이 맥에서 호스트 실행」, 맥북에서는 미니 주소를 넣고 6자리 코드로 연결. 폰은 브라우저로 같은 주소.
+> 짧은 요약: **Apple Silicon Mac이 검증된 호스트**다. 원격 맥이나 Windows 11 x64 PC에서는 클라이언트 앱에 호스트 주소와 6자리 페어링 코드를 넣는다. Windows 11 x64 자체를 호스트로 쓰는 기능은 실험 단계다. 폰은 브라우저로 같은 주소에 연결한다.
 
 ```
 ┌────────────── Mac mini (항상 켜 둠) ──────────────┐
 │ Folder Bot.app  ─ 호스트 모드 ─ Claude Code 워커들 │
 │   └ 루트 = Dropbox/PARA  (봇 = 폴더 하나 + 에이전트) │
 └──────────────┬────── Tailscale ──────────┬────────┘
-        맥북 Folder Bot.app            iPhone/Android 브라우저
+   맥북 Folder Bot.app · Windows PC       iPhone/Android 브라우저
         (미니 주소 + 페어링 코드)         (같은 주소 + 코드 · 홈 화면 추가)
 ```
 
@@ -30,7 +30,7 @@
    ```
    자동 업데이트로 받은 빌드는 앱이 알아서 뗍니다.
 3. 앱은 ad-hoc 서명입니다(빌드가 `codesign --sign -` 로 서명). 서명이 있어야 macOS 알림 센터에 등록되어 알림이 옵니다 — 설정 › 알림 목록에 Folder Bot 이 보이면 정상입니다.
-4. 처음 열면 **권한 화면**이 먼저 뜹니다 — 호스트 맥이면 **전체 디스크 접근**(Dropbox·문서·데스크탑 폴더를 읽고 저장), 어느 맥이든 **알림**(확인 요청·완료를 알려 줌). [시스템 설정 열기] 로 해당 설정을 열어 Folder Bot 을 켜고 이 창으로 돌아오면 자동으로 확인합니다. 알림은 [테스트 알림 보내기] → 보였으면 [보였어요]. 필수가 다 켜져야 [계속] 이 열립니다. ⚠ 업데이트로 앱 서명이 바뀌면 전체 디스크 접근이 풀리므로 그때 이 화면이 다시 뜹니다(알림은 유지). 설정 › macOS 권한 › [권한 다시 확인] 으로 언제든 다시 볼 수 있습니다.
+4. 처음 열면 **권한 화면**이 먼저 뜹니다 — 호스트 맥이면 **전체 디스크 접근**(Dropbox·문서·데스크탑 폴더를 읽고 저장), 어느 맥이든 **알림**(확인 요청·완료를 알려 줌). [시스템 설정 열기] 로 해당 설정을 열어 Folder Bot 을 켜고 이 창으로 돌아오면 자동으로 확인합니다. 알림은 [테스트 알림 보내기] → 보였으면 [보였어요]. 필수가 다 켜져야 [계속] 이 열립니다. ⚠ 업데이트로 앱 서명이 바뀌면 전체 디스크 접근이 풀리므로 그때 이 화면이 다시 뜹니다(알림은 유지). 설정 › 시스템 권한 › [다시 확인] 으로 언제든 다시 볼 수 있습니다.
 3. 첫 화면 아래 **「이 맥에서 호스트 실행」 › [루트 폴더 고르고 시작]** → PARA 루트 선택.
    - 루트 `CLAUDE.md` 에 `## 폴더 규칙` 절이 덧붙고(있는 내용은 안 건드림) 호스트가 뜹니다.
    - 로그인 항목이 자동으로 켜집니다. 재부팅 뒤 사람이 로그인만 하면 다시 뜹니다(자동 로그인을 켜 두면 전원만).
@@ -56,6 +56,50 @@ folderbot start        # Jump Desktop 으로 들어가 GUI 에서 새로 연 Ter
 
 맥북에는 호스트가 없습니다. 미니가 꺼져 있으면 「Mac mini 와 다시 연결하는 중…」 이 뜨고 저장된 대화만 보입니다.
 
+## 2′. Windows 11 x64 — 앱 설치 (미리보기)
+
+1. 원격 클라이언트로 쓸 경우 Windows PC에도 [Tailscale](https://tailscale.com)을 설치하고 호스트와 같은 네트워크에 로그인합니다.
+2. [Windows CI 실행 목록](https://github.com/dave-jin/folderbot/actions/workflows/desktop-windows.yml)에서 **성공한 PR 또는 `main` 실행**을 열고 `folderbot-windows-x64-<run_id>` 아티팩트를 받습니다. 압축을 풀면 `Folder.Bot-<버전>-x64-setup.exe`와 같은 이름의 `.sha256` 파일이 있습니다. 아티팩트는 14일 보관됩니다. Windows 설치 파일은 현재 GitHub Releases에 올라가지 않습니다.
+3. PowerShell에서 설치 파일의 SHA-256을 확인하고 `.sha256` 파일의 첫 값과 비교한 뒤 설치 파일을 실행합니다:
+   ```powershell
+   Get-ChildItem .\Folder.Bot-*-x64-setup.exe | Get-FileHash -Algorithm SHA256
+   ```
+   이 빌드는 코드 서명 인증서가 없어 Windows에서 게시자 확인/SmartScreen 경고가 나올 수 있습니다. 다운로드한 CI 실행과 해시를 확인한 경우에만 설치를 진행합니다.
+4. **원격 클라이언트**로 쓰려면 앱에 `http://<미니 Tailscale IP>:7373` 또는 호스트의 HTTPS 주소를 넣고 연결한 다음, 호스트에서 복사한 **6자리 페어링 코드**를 입력합니다. 이 경우 호스트가 켜져 있어야 합니다.
+5. 알림이 보이지 않으면 Windows **설정 › 시스템 › 알림**에서 Folder Bot 알림을 확인합니다. 새 버전은 Windows CI 아티팩트에서 직접 받아 다시 설치합니다. Windows용 자동 업데이트는 아직 없습니다.
+
+### Windows를 호스트로 쓰기 (실험 단계)
+
+Windows 호스트에는 Windows에서 직접 실행되는 **네이티브 Claude Code `claude.exe`**가 필요합니다. [Claude Code 공식 Windows 설치 안내](https://code.claude.com/docs/en/setup#set-up-on-windows)에 따라 PowerShell에서 설치하고 새 PowerShell 창에서 로그인과 실행 파일을 확인합니다:
+
+```powershell
+irm https://claude.ai/install.ps1 | iex
+# 새 PowerShell 창을 연 뒤
+Get-Command claude.exe
+claude --version
+claude
+```
+
+앱에서 **이 PC에서 호스트 실행**을 선택하고 Windows 로컬 폴더를 루트로 고릅니다. npm 전역 설치가 만드는 `claude.cmd`/`claude.bat` 래퍼는 현재 Folder Bot 호스트의 직접 프로세스 실행 경로에서 지원되지 않습니다. `Get-Command claude.exe`가 실패하면 네이티브 설치를 확인하세요. Codex를 에이전트로 선택할 때도 `.cmd`/`.bat` 래퍼는 실행되지 않으며 네이티브 `.exe` 경로가 필요합니다. Windows Codex 실행은 아직 검증하지 않았습니다. WSL의 `claude`는 별도 Linux 환경에 있으므로 Windows 앱이 그대로 실행하지 않습니다; WSL에서 별도 호스트를 실행해 원격으로 연결하는 방식은 대안입니다.
+
+로컬 빌드는 깨끗한 체크아웃의 리포 루트에서 PowerShell로 호스트와 클라이언트를 먼저 묶고 설치 파일을 만듭니다. 결과는 `desktop/dist/`에 생성됩니다.
+
+```powershell
+npm ci
+$env:BUNDLE_ALL = '1'
+npm run build
+New-Item -ItemType Directory -Force 'desktop/host' | Out-Null
+Copy-Item -Path 'dist/host' -Destination 'desktop/host/' -Recurse -Force
+Copy-Item -Path 'dist/client' -Destination 'desktop/host/' -Recurse -Force
+Copy-Item -Path 'package.json' -Destination 'desktop/host/package.json' -Force
+Push-Location desktop
+npm ci
+npm run dist:win
+Pop-Location
+```
+
+지원 범위와 남은 검증은 [Windows 결정 기록](WINDOWS.md)에 있습니다.
+
 ## 3. 폰 (iPhone · Android)
 
 1. Tailscale 앱 켜기 → Safari/Chrome 에서 미니 주소 → 6자리 코드.
@@ -68,14 +112,15 @@ folderbot start        # Jump Desktop 으로 들어가 GUI 에서 새로 연 Ter
 
 - 홈화면 앱에서 상태바는 시스템이 그립니다(불투명·앱 배경색). 화면은 그 아래에서 시작하고, 아래는 홈 인디케이터 위에 바짝 붙습니다. 키보드가 뜨면 화면이 그만큼 줄어 입력칸이 키보드 바로 위에 옵니다.
 
-## 4. 자동 업데이트 — 앱이 스스로 받아 재시작
+## 4. macOS 업데이트 — 다운로드는 자동, 적용은 직접
 
 - 앱이 부팅 15초 뒤 + **30분마다**, 그리고 창을 띄울 때(10분에 한 번) 이 리포의 릴리스(`desktop-v*`, 공개)를 보고 **조용히 받아 둡니다**. 토큰·시크릿 필요 없음. 안 되는 것 같으면 `~/Library/Application Support/Folder Bot/updates/log.txt` 에 이유가 적혀 있어요.
 - 왼쪽 아래 **버전 칩(v0.2.x)** 을 누르면 바로 확인하고 결과(최신 · 받는 중 · 준비됨 · 실패 이유)를 화면 안 토스트로 알려 줍니다. 브라우저·폰 화면에서 누르면 «호스트가 스스로 받는다» 안내만 뜹니다.
 - **맥북(클라이언트)**: 다 받으면 확인창 하나 — [지금 재시작해서 적용] / [나중에]. 화면 왼쪽 아래 **버전 칩**(`v0.2.8 재시작해서 적용`)이나 메뉴바 › 업데이트 적용으로도 됩니다. 칩을 누르면 수동 확인.
-- **미니(호스트)**: 진행 중 세션이 있으면 **전부 유휴가 되는 순간 자동 적용**(세션을 죽이지 않음). 칩에 「세션 N개 끝나면 적용」이 보입니다. 없으면 바로 재시작.
+- **미니(호스트)**: 새 버전을 받아도 자동 재시작하지 않습니다. 버전 칩의 안내에서 적용을 선택하세요. 진행 중인 세션이 있다면 끝난 뒤 적용하세요.
 - 교체는 앱이 완전히 종료된 뒤 분리된 스크립트가 zip 을 풀어 `/Applications/Folder Bot.app` 을 갈아 끼우고 다시 엽니다(`ditto --noqtn` — 검역 딱지를 떼므로 Gatekeeper 가 다시 묻지 않음). `/Applications` 밖에 있으면 자동 교체 대신 받아 둔 zip 을 열어 줍니다.
 - ⚠ **desktop-v7 이하**는 옛 주소(비공개 리포)를 보고 있어 스스로 못 받습니다. **v8 을 한 번만 DMG 로 설치**하면 그다음부터는 자동입니다.
+- Windows 앱은 이 macOS ZIP 업데이트를 사용하지 않습니다. 새 Windows 설치 파일은 §2′의 CI 아티팩트에서 직접 받아 설치합니다.
 
 ## 5. 로그인이 안 될 때 (`Not logged in` · `OAuth session expired`)
 

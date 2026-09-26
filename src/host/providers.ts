@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { homedir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 
@@ -13,8 +13,8 @@ import type { Provider, ProviderId } from '../core/agents'
 import { pickNewestCli } from '../core/cliUpdate'
 
 const CANDIDATES: Record<ProviderId, string[]> = {
-  claude: [join(homedir(), '.local/bin/claude'), '/opt/homebrew/bin/claude', '/usr/local/bin/claude'],
-  codex: [join(homedir(), '.local/bin/codex'), '/opt/homebrew/bin/codex', '/usr/local/bin/codex', join(homedir(), '.codex/bin/codex')]
+  claude: process.platform === 'win32' ? [join(homedir(), '.local', 'bin', 'claude.exe')] : [join(homedir(), '.local/bin/claude'), '/opt/homebrew/bin/claude', '/usr/local/bin/claude'],
+  codex: process.platform === 'win32' ? [join(homedir(), '.local', 'bin', 'codex.exe'), join(homedir(), '.codex', 'bin', 'codex.exe')] : [join(homedir(), '.local/bin/codex'), '/opt/homebrew/bin/codex', '/usr/local/bin/codex', join(homedir(), '.codex/bin/codex')]
 }
 const ENV_OVERRIDE: Record<ProviderId, string> = { claude: 'FOLDERBOT_CLI_BIN', codex: 'FOLDERBOT_CODEX_BIN' }
 
@@ -26,13 +26,19 @@ const ENV_OVERRIDE: Record<ProviderId, string> = { claude: 'FOLDERBOT_CLI_BIN', 
  * ⚠ 판을 읽으려면 프로세스를 띄워야 한다. 그래서 **후보가 둘 이상일 때만** 전부 재고, 하나면 그대로 쓴다.
  */
 function candidates(id: ProviderId): string[] {
+  // .cmd/.bat 는 execFile·spawn 으로 직접 실행할 수 없다. 셸을 켜서 사용자 프롬프트를 넘기면 명령 주입이 생긴다.
+  const runnable = (p: string) => existsSync(p) && (process.platform !== 'win32' || !/\.(?:cmd|bat)$/i.test(p))
   const ov = process.env[ENV_OVERRIDE[id]]
-  if (ov) return existsSync(ov) ? [ov] : []
+  if (ov) return runnable(ov) ? [ov] : []
   // 검사용 — 후보 목록을 통째로 갈아 끼운다(`test/unit/cliResolve.test.ts`). 있으면 이 목록만 본다
   const list = process.env[`FOLDERBOT_${id.toUpperCase()}_CANDIDATES`]
-  if (list) return list.split(':').filter((p) => p && existsSync(p))
-  const out = CANDIDATES[id].filter((p) => existsSync(p))
-  try { const p = execFileSync('which', [id], { encoding: 'utf8' }).trim(); if (p && existsSync(p) && !out.includes(p)) out.push(p) } catch { /* 없으면 없는 대로 */ }
+  if (list) return list.split(delimiter).filter(runnable)
+  const out = CANDIDATES[id].filter(runnable)
+  try {
+    const cmd = process.platform === 'win32' ? 'where.exe' : 'which'
+    const found = execFileSync(cmd, [id], { encoding: 'utf8' }).trim().split(/\r?\n/)
+    for (const p of found) if (runnable(p) && !out.includes(p)) out.push(p)
+  } catch { /* 없으면 없는 대로 */ }
   return out
 }
 function resolve(id: ProviderId): { bin: string; version: string | null; others: { bin: string; version: string | null }[] } | null {

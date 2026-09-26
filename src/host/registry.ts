@@ -1,11 +1,13 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, renameSync, realpathSync } from 'node:fs'
-import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
+import { homedir } from 'node:os'
 import { parse as parseYaml, stringify } from 'yaml'
 import { EventEmitter } from 'node:events'
 import { applyNaming, globMatch, globParents, isSectionRoot, PARA_PRESET, JD_PRESET, parseRules, rulesSection, roleOf } from '../core/rules'
 import type { Bot, BotConfig, Candidate, FolderRules, RoutineDef } from '../core/types'
 import { BOT_COLORS, ORCH_COLOR } from '../core/types'
 import { atomicWrite } from './paths'
+import { portableRelative, withinPath } from './files'
 import { DEFAULT_TYPES, parseFolderName } from '../core/botName'
 import { DEVICE_RULES_MD } from '../core/clientCtx'
 
@@ -243,7 +245,7 @@ export class Registry extends EventEmitter {
     const abs = join(this.root, a.rel)
     if (!existsSync(abs)) return null
     const cfg = this.botConfig(abs)
-    return { id: a.id, rel: a.rel, abs, name: this.botName(a), ...this.display(a, abs), section: a.rel.split('/')[0] === a.rel ? '' : a.rel.split('/')[0], color: cfg.color ?? a.color, orchestrator: false, startedAt: a.startedAt, vendor: a.vendor ?? cfg.vendor ?? 'claude', repo: cfg.repo ? resolve(abs, cfg.repo.replace(/^~/, process.env.HOME ?? '')) : undefined, routines: cfg.routines ?? [], pinned: a.pinned, orderedBy: a.orderedBy }
+    return { id: a.id, rel: a.rel, abs, name: this.botName(a), ...this.display(a, abs), section: a.rel.split('/')[0] === a.rel ? '' : a.rel.split('/')[0], color: cfg.color ?? a.color, orchestrator: false, startedAt: a.startedAt, vendor: a.vendor ?? cfg.vendor ?? 'claude', repo: cfg.repo ? resolve(abs, cfg.repo.replace(/^~/, homedir())) : undefined, routines: cfg.routines ?? [], pinned: a.pinned, orderedBy: a.orderedBy }
   }
   bot(id: string): Bot | undefined { return this.bots().find((b) => b.id === id) }
   botByRel(rel: string): Bot | undefined { return this.bots().find((b) => b.rel === rel) }
@@ -256,7 +258,7 @@ export class Registry extends EventEmitter {
     rel = rel.replace(/^\/+|\/+$/g, '').normalize('NFC')
     const abs = join(this.root, rel)
     if (!existsSync(abs) || !statSync(abs).isDirectory()) throw new Error(`폴더가 없어요: ${rel}`)
-    if (!abs.startsWith(this.root + sep)) throw new Error('루트 밖 폴더는 시작할 수 없어요')
+    if (abs === this.root || !withinPath(this.root, abs)) throw new Error('루트 밖 폴더는 시작할 수 없어요')
     /**
      * 🔴 **칸(섹션) 자체에는 봇을 붙이지 않는다** (AC · 2026-09-23 Dave 스크린샷 056 — `4. Resources` 가 통째로 봇이 됐다).
      *    `2. Projects`·`3. Area` 는 글롭의 부모라 자연히 막혀 있었지만 `4. Resources`·`5. Archive`·`1. Inbox` 는 통과했다.
@@ -379,10 +381,10 @@ export class Registry extends EventEmitter {
     const dest = join(this.root, archive, basename(b.rel))
     if (existsSync(dest)) throw new Error(`Archive 에 같은 이름이 있어요: ${basename(b.rel)}`)
     mkdirSync(dirname(dest), { recursive: true })
-    this.snapshot({ op: 'move', from: b.rel, to: relative(this.root, dest) })
+    this.snapshot({ op: 'move', from: b.rel, to: portableRelative(this.root, dest) })
     renameSync(b.abs, dest)
     this.stop(id)
-    return relative(this.root, dest)
+    return portableRelative(this.root, dest)
   }
   /**
    * 휴지통 — 볼트 안 경로 하나를 `.folderbot/trash/<시각>_<이름>` 으로 **옮긴다**.
@@ -397,14 +399,14 @@ export class Registry extends EventEmitter {
     rel = rel.replace(/^\/+|\/+$/g, '').normalize('NFC')
     if (!rel) throw new Error('루트는 치울 수 없어요')
     const abs = join(this.root, rel)
-    if (!abs.startsWith(this.root + sep)) throw new Error('루트 밖은 치울 수 없어요')
+    if (abs === this.root || !withinPath(this.root, abs)) throw new Error('루트 밖은 치울 수 없어요')
     if (!existsSync(abs)) throw new Error(`없는 경로: ${rel}`)
     const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 13)
     const dest = join(this.root, '.folderbot', 'trash', `${stamp}_${basename(rel)}`)
     mkdirSync(dirname(dest), { recursive: true })
-    this.snapshot({ op: 'move', from: rel, to: relative(this.root, dest) })
+    this.snapshot({ op: 'move', from: rel, to: portableRelative(this.root, dest) })
     renameSync(abs, dest)
-    return relative(this.root, dest)
+    return portableRelative(this.root, dest)
   }
   /**
    * 볼트 안에서 경로 하나를 옮긴다 — 되돌리기 기록(`snapshot`)을 함께 남긴다.
@@ -412,7 +414,7 @@ export class Registry extends EventEmitter {
    */
   movePath(fromRel: string, toRel: string): void {
     const from = join(this.root, fromRel); const to = join(this.root, toRel)
-    if (!from.startsWith(this.root + sep) || !to.startsWith(this.root + sep)) throw new Error('루트 밖으로는 못 옮겨요')
+    if (from === this.root || to === this.root || !withinPath(this.root, from) || !withinPath(this.root, to)) throw new Error('루트 밖으로는 못 옮겨요')
     mkdirSync(dirname(to), { recursive: true })
     this.snapshot({ op: 'move', from: fromRel, to: toRel })
     renameSync(from, to)
@@ -422,7 +424,7 @@ export class Registry extends EventEmitter {
     const parents = globParents(this.rules.roles.active)
     section = section.replace(/^\/+|\/+$/g, '').normalize('NFC')
     const parentAbs = section ? join(this.root, section) : this.root
-    if (!parentAbs.startsWith(this.root) || !existsSync(parentAbs) || !statSync(parentAbs).isDirectory()) throw new Error(`폴더가 없어요: ${section}`)
+    if (!withinPath(this.root, parentAbs) || !existsSync(parentAbs) || !statSync(parentAbs).isDirectory()) throw new Error(`폴더가 없어요: ${section}`)
     const clean = name.replace(/[\/\\:\u0000-\u001f]/g, '_').trim()
     if (!clean) throw new Error('이름이 비었어요')
     const folderName = section === parents[0] ? applyNaming(this.rules.naming.project, clean) : clean
@@ -459,7 +461,7 @@ export class Registry extends EventEmitter {
   /** 루트 안 이동 (되돌리기 스냅샷 동반) */
   move(fromRel: string, toRel: string): void {
     const from = join(this.root, fromRel), to = join(this.root, toRel)
-    if (!from.startsWith(this.root + sep) || !to.startsWith(this.root + sep)) throw new Error('루트 밖으로는 옮길 수 없어요')
+    if (from === this.root || to === this.root || !withinPath(this.root, from) || !withinPath(this.root, to)) throw new Error('루트 밖으로는 옮길 수 없어요')
     if (!existsSync(from)) throw new Error(`없어요: ${fromRel}`)
     if (existsSync(to)) throw new Error(`이미 있어요: ${toRel}`)
     mkdirSync(dirname(to), { recursive: true })

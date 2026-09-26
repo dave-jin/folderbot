@@ -5,7 +5,7 @@ import { createInterface } from 'node:readline'
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { homedir } from 'node:os'
 import { transition, shouldNotify } from '../core/stateMachine'
 import { assistantText, closeOpenItems, contextOf, itemId, modelOf, toolSummary, touchedPath, type StreamLine } from '../core/chat'
@@ -40,7 +40,7 @@ export function cleanClaudeEnv(opts: { noToken?: boolean } = {}): Record<string,
   for (const k of Object.keys(env)) if (/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_EFFORT)/.test(k)) delete env[k]
   if (oauthToken && !keychainOk && !opts.noToken) env.CLAUDE_CODE_OAUTH_TOKEN = oauthToken
   // GUI 앱(Electron)에서 띄우면 셸 PATH 가 없다 — claude 가 부르는 node·git 이 보이게
-  env.PATH = [env.PATH, '/opt/homebrew/bin', '/usr/local/bin', `${process.env.HOME ?? ''}/.local/bin`].filter(Boolean).join(':')
+  if (process.platform !== 'win32') env.PATH = [env.PATH, '/opt/homebrew/bin', '/usr/local/bin', join(homedir(), '.local', 'bin')].filter(Boolean).join(delimiter)
   return env
 }
 export const AUTH_ERROR = /Failed to authenticate|Not logged in|Please run \/login|Login expired|OAuth session expired|Invalid authentication|authentication_error/i

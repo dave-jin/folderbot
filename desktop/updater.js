@@ -53,6 +53,12 @@ async function latest() {
 }
 
 async function check(manual = false) {
+  if (process.platform !== 'darwin') {
+    lastError = 'Windows 앱 업데이트는 새 설치 파일로 진행해 주세요.'
+    hooks.onChange()
+    if (manual) try { new Notification({ title: 'Folder Bot', body: lastError }).show() } catch {}
+    return null
+  }
   if (checking) return staged
   checking = true; lastError = ''; hooks.onChange()
   try {
@@ -148,7 +154,7 @@ function start(h) {
   timer = setInterval(() => void check(), CHECK_EVERY)
 }
 /** 창을 띄우거나 트레이를 누를 때 — 10분에 한 번만 */
-function checkOnFocus() { if (Date.now() - lastFocusCheck < FOCUS_EVERY) return; lastFocusCheck = Date.now(); void check() }
-function state() { return { current: app.getVersion(), staged: staged ? { version: staged.version, ready: !!staged.zip, progress: staged.progress ?? 0, notes: staged.notes || '' } : null, downloading: !!downloading, checking, lastCheck, lastError, deferred: deferred && !!staged?.zip, busy: hooks.busyCount(), host: hooks.isHost() } }
+function checkOnFocus() { if (process.platform !== 'darwin' || Date.now() - lastFocusCheck < FOCUS_EVERY) return; lastFocusCheck = Date.now(); void check() }
+function state() { return { current: app.getVersion(), supported: process.platform === 'darwin', staged: staged ? { version: staged.version, ready: !!staged.zip, progress: staged.progress ?? 0, notes: staged.notes || '' } : null, downloading: !!downloading, checking, lastCheck, lastError, deferred: deferred && !!staged?.zip, busy: hooks.busyCount(), host: hooks.isHost() } }
 
 module.exports = { start, check, apply, state, offer, checkOnFocus }

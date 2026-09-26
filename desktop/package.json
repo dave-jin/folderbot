@@ -1,9 +1,13 @@
 {
   "name": "folderbot-desktop",
   "version": "0.1.0",
-  "description": "Folder Bot — Mac mini 호스트에 붙는 macOS 셸",
+  "description": "Folder Bot — 로컬 호스트와 원격 클라이언트용 데스크톱 앱",
   "private": true,
   "main": "main.js",
-  "scripts": { "start": "electron .", "dist": "electron-builder --mac --arm64 --publish never" },
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --mac --arm64 --publish never",
+    "dist:win": "electron-builder --win --x64 --publish never"
+  },
   "devDependencies": { "electron": "44.3.0", "electron-builder": "26.15.3" }
 }

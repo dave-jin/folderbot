@@ -15,4 +15,13 @@ function fdaVerdict(codes) {
 function permsSatisfied(items) { if (!items.length) return true; return items.every((p) => !p.required || p.status === 'granted') }
 /** 사용자가 지금 할 일이 남았나 — 권장 항목의 «모른다» 는 할 일로 치지 않는다 */
 function permsActionable(items) { return items.some((p) => p.status === 'missing' || (p.required && p.status !== 'granted')) }
-module.exports = { fdaVerdict, permsSatisfied, permsActionable }
+/** macOS 의 전체 디스크 접근 관문을 다른 OS에 잘못 보여 주지 않는다. */
+function permissionRows({ os, packaged, host, openMode, ack, diskStatus }) {
+  const rows = [
+    ...(os === 'darwin' ? [{ id: 'full-disk', required: packaged && host, probeable: true, status: diskStatus }] : []),
+    { id: 'notifications', required: packaged, probeable: false, status: ack.notifications === true ? 'granted' : ack.notifications === false ? 'missing' : 'unknown' }
+  ]
+  if (!host) rows.push({ id: 'local-open', required: packaged, probeable: false, status: openMode ? 'granted' : 'unknown' })
+  return rows
+}
+module.exports = { fdaVerdict, permsSatisfied, permsActionable, permissionRows }

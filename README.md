@@ -1,8 +1,8 @@
 # Folder Bot
 
-**폴더마다 AI 동료 하나.** 내 Mac 위의 폴더(프로젝트·영역·자료)에 Claude Code 에이전트를 하나씩 붙이고, 맥북과 아이폰 어디서든 메신저처럼 시킵니다. 오케스트레이터 봇이 인박스를 정리하고 어느 폴더에 봇을 둘지 제안합니다.
+**폴더마다 AI 동료 하나.** 내 컴퓨터의 폴더(프로젝트·영역·자료)에 Claude Code 에이전트를 하나씩 붙이고, 맥북·Windows PC·아이폰 어디서든 메신저처럼 시킵니다. 오케스트레이터 봇이 인박스를 정리하고 어느 폴더에 봇을 둘지 제안합니다.
 
-> *A folder-native AI teammate for people who work in folders, not repos.* Runs on your own Mac (host), reachable from your laptop and phone.
+> *A folder-native AI teammate for people who work in folders, not repos.* Runs on your own computer (host), reachable from your laptop and phone. Windows host mode is experimental.
 
 <p align="center"><img src="docs/img/desktop.png" alt="Folder Bot 데스크톱 — 왼쪽 봇 목록 · 가운데 대화 · 오른쪽 이 폴더의 세션·할 일·파일" width="900"></p>
 
@@ -26,7 +26,7 @@
 
 ## 설치 (5분)
 
-요구 사항: **Apple Silicon Mac** (호스트) · [Claude Code CLI](https://claude.ai/code) 로그인(Claude 구독 또는 API 키) · 아이폰/맥북은 같은 [Tailscale](https://tailscale.com) 네트워크(권장)
+요구 사항: **Apple Silicon Mac** (검증된 호스트) · [Claude Code CLI](https://claude.ai/code) 로그인(Claude 구독 또는 API 키) · 원격 기기는 같은 [Tailscale](https://tailscale.com) 네트워크(권장). **Windows 11 x64** 데스크톱 앱도 호스트와 원격 클라이언트로 빌드되지만 호스트 모드는 실험 단계입니다.
 
 1. [Releases](https://github.com/dave-jin/folderbot/releases) 에서 최신 `Folder.Bot-<버전>-arm64.dmg` 를 받아 **Applications** 로 끌어 놓습니다.
 2. 처음 열 때 «확인되지 않은 개발자/손상됨» 이 뜨면(개발자 인증서 없이 ad-hoc 서명이라서) 터미널에 한 줄:
@@ -38,9 +38,9 @@
 
 <p align="center"><img src="docs/img/perms.png" alt="첫 실행 권한 화면 — 전체 디스크 접근 · 알림" width="640"></p>
 
-5. **맥북**에서는 같은 앱을 설치하고 호스트 주소와 페어링 코드를 넣습니다. **아이폰**은 Safari 로 호스트 주소를 열고 «홈 화면에 추가» — 앱처럼 실행되고 푸시를 받습니다.
+5. **맥북**에서는 같은 앱을 설치하고 호스트 주소와 페어링 코드를 넣습니다. **Windows 11 x64**에서는 [Windows CI 설치 파일](https://github.com/dave-jin/folderbot/actions/workflows/desktop-windows.yml)을 받아 연결하거나, 네이티브 `claude.exe`를 설치한 뒤 실험적 호스트 모드를 사용할 수 있습니다. **아이폰**은 Safari 로 호스트 주소를 열고 «홈 화면에 추가» — 앱처럼 실행되고 푸시를 받습니다.
 
-자세한 절차와 문제 해결: **[docs/INSTALL.md](docs/INSTALL.md)** · 호스트 런북: [docs/RUNBOOK-mini.md](docs/RUNBOOK-mini.md)
+자세한 절차와 문제 해결: **[docs/INSTALL.md](docs/INSTALL.md)** · Windows 지원 범위: [docs/WINDOWS.md](docs/WINDOWS.md) · 호스트 런북: [docs/RUNBOOK-mini.md](docs/RUNBOOK-mini.md)
 
 ## 쓰는 법
 
@@ -48,18 +48,20 @@
 
   <img src="docs/img/picker.png" alt="폴더 선택 — PARA 트리, 활성·참조·보관 배지" width="640">
 
-- **대화** — `/` 로 스킬·명령, `@` 로 파일 참조, Finder 에서 파일을 끌어 첨부. 모델·생각 레벨·권한 모드는 컴포저 아래 한 줄에서 세션마다 바꿉니다.
+- **대화** — `/` 로 스킬·명령, `@` 로 파일 참조, Finder/파일 탐색기에서 파일을 끌어 첨부. 모델·생각 레벨·권한 모드는 컴포저 아래 한 줄에서 세션마다 바꿉니다.
 - **오른쪽 패널** — 이 폴더의 세션 · 할 일(`todo.md`, 제목을 눌러 편집) · 파일 트리(우클릭: 여기서 에이전트 시작 · 이름 바꾸기 · 폴더째 첨부) · 루틴(cron).
-- **알림** — 봇이 승인을 기다리거나 일을 끝내면 맥 알림 + 폰 푸시. 알림을 누르면 그 대화로 갑니다.
-- **자동 업데이트** — 앱이 이 리포의 릴리스를 30분마다 보고 조용히 받아 둡니다. 세션이 전부 쉬는 순간 «재시작해서 적용» 을 물어봅니다. 왼쪽 아래 버전 칩을 누르면 바로 확인합니다.
+- **알림** — 봇이 승인을 기다리거나 일을 끝내면 데스크톱 알림 + 폰 푸시. 알림을 누르면 그 대화로 갑니다.
+- **자동 업데이트(macOS)** — 앱이 이 리포의 릴리스를 30분마다 보고 조용히 받아 둡니다. 왼쪽 아래 버전 칩에서 적용할 수 있습니다. Windows 설치 파일은 CI 아티팩트에서 새 버전을 직접 받아 설치합니다.
 
 ## 어떻게 생겼나
 
 ```
 아이폰(PWA) ─┐                           ┌─ 봇 A (2. Projects/…)  Claude Code 세션
-맥북(앱)   ─┼── HTTPS/SSE ──▶ 호스트(Mac) ─┼─ 봇 B (3. Area/…)      Claude Code 세션
+맥북/Windows 앱 ┼── HTTPS/SSE ──▶ 호스트(Mac/Windows*) ─┼─ 봇 B (3. Area/…) Claude Code 세션
 호스트 자신 ─┘        (Tailscale)          └─ 오케스트레이터 (볼트 루트) + MCP(봇 간 위임)
 ```
+
+\* Windows 호스트는 실험 단계입니다.
 
 ```
 src/core     순수 TS — 타입 · 폴더 규칙 · todo.md 파서 · 스트림 해석 · 상태 머신 (Electron/DOM 의존 없음)
@@ -80,12 +82,13 @@ npm run build && node bin/folderbot.mjs init <볼트 루트> && node bin/folderb
 ```
 
 - 실제 `claude` 를 띄우지 않고 검사합니다 — `FOLDERBOT_CLI_BIN=test/fixtures/stub-claude.mjs`.
-- 데스크톱 앱은 `desktop/` 에서 `npx electron-builder --mac --arm64`. `main` 에 푸시하면 CI 가 `desktop-v<n>` 릴리스를 만듭니다.
+- macOS 데스크톱 앱은 `desktop/` 에서 `npm run dist`. `main` 에 푸시하면 기존 CI 가 `desktop-v<n>` 릴리스를 만듭니다.
+- Windows 11 x64 앱은 [docs/INSTALL.md](docs/INSTALL.md)의 로컬 빌드 절차로 호스트와 클라이언트를 함께 묶습니다. Windows CI 는 PR·`main` 푸시에서 테스트하고 서명되지 않은 NSIS 설치 파일을 14일 보관 아티팩트로 올립니다. GitHub 릴리스에는 올리지 않습니다.
 - 기획과 결정 기록: [docs/PRD.md](docs/PRD.md) · 사용 시나리오: [docs/SCENARIOS.md](docs/SCENARIOS.md)
 
 ## 상태와 한계
 
-- 초기 버전입니다. macOS Apple Silicon 호스트만 지원하고, 앱은 개발자 인증서 없이 ad-hoc 서명됩니다(첫 실행 시 검역 해제 필요).
+- 초기 버전입니다. 검증된 호스트는 macOS Apple Silicon이고 Windows 호스트는 실험 단계입니다. Windows에서 호스트를 실행하려면 네이티브 `claude.exe`가 필요합니다. Claude/Codex의 npm `.cmd`/`.bat` 래퍼는 현재 지원하지 않으며 Windows Codex 실행은 검증하지 않았습니다. macOS 앱은 개발자 인증서 없이 ad-hoc 서명됩니다(첫 실행 시 검역 해제 필요). Windows 앱은 미서명 빌드이며 Windows 자동 업데이트가 없습니다.
 - Claude Code CLI 의 headless 출력은 생각(thinking) 본문을 주지 않습니다 — 생각 중임은 상태줄로만 보입니다.
 - 한국어 UI 가 기본입니다. 영어는 곧.
 

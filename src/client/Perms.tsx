@@ -13,12 +13,40 @@ export const permBridge = (): PermBridge | undefined => (window as unknown as { 
 
 export const permsSatisfied = (items: PermRow[]): boolean => items.every((p) => !p.required || p.status === 'granted')
 
+export const isWin = typeof navigator !== 'undefined' && (/Windows|Win32|Win64/i.test(navigator.userAgent) || /Win/i.test(navigator.platform || ''))
+
+export const getPermMeta = (win = isWin): Record<PermRow['id'], { title: string; why: string; icon: 'folder' | 'bell' | 'open'; how: string[] }> => ({
+  'local-open': {
+    title: '이 기기에서 파일 열기',
+    icon: 'open',
+    why: win
+      ? '«파일 탐색기에서 보기»·«열기» 를 누르면 메인 호스트가 아니라 지금 앉아 있는 이 PC에서 열려요. Dropbox·OneDrive 등으로 같은 볼트가 이 PC에도 있으면 그 파일을, 없으면 호스트에서 받아서 엽니다.'
+      : '«Finder 에서 보기»·«열기» 를 누르면 메인 맥이 아니라 지금 앉아 있는 이 기기에서 열려요. Dropbox·iCloud 로 같은 볼트가 이 기기에도 있으면 그 파일을, 없으면 호스트에서 받아서 엽니다.',
+    how: ['아래에서 하나를 고르세요 — 나중에 설정 › 기기 에서 바꿀 수 있어요']
+  },
+  'full-disk': {
+    title: win ? '파일 및 폴더 접근' : '전체 디스크 접근',
+    icon: 'folder',
+    why: win
+      ? '바탕화면·문서·OneDrive·Dropbox·외장 드라이브의 파일을 읽고 저장하려면 필요해요. 권한이 없으면 폴더가 열리기는 해도 저장·정리가 실패할 수 있습니다.'
+      : '데스크탑·문서·iCloud·Dropbox·외장 폴더의 파일을 읽고 저장하려면 필요해요. 없으면 폴더가 열리기는 해도 저장·정리가 조용히 실패합니다.',
+    how: win
+      ? ['아래 [설정 열기] 를 눌러 폴더 및 파일 접근 권한을 확인하세요', '이 창으로 돌아오면 자동으로 확인합니다']
+      : ['아래 [시스템 설정 열기] 를 누르면 «개인정보 보호 › 전체 디스크 접근» 이 열립니다', '목록에서 Folder Bot 을 찾아 스위치를 켜세요 (없으면 + 로 응용 프로그램에서 추가)', '이 창으로 돌아오면 자동으로 확인합니다 — 켰는데도 꺼짐이면 [다시 시작]']
+  },
+  notifications: {
+    title: '알림',
+    icon: 'bell',
+    why: '봇이 확인을 기다리거나 일을 끝내면 알려 드려요. 없으면 다른 창에 있는 동안 아무 소식도 못 받습니다.',
+    how: win
+      ? ['아래 [테스트 알림 보내기] 를 누르세요', '화면 오른쪽 아래에 알림이 보이면 [보였어요]', '안 보이면 [설정 열기] → 시스템 › 알림에서 Folder Bot 을 «켬» 으로']
+      : ['아래 [테스트 알림 보내기] 를 누르세요', '화면 오른쪽 위에 알림이 보이면 [보였어요]', '안 보이면 [시스템 설정 열기] → 알림 › Folder Bot 을 «허용» 으로']
+  }
+})
+
 /** 권한 문구 한 벌 — 관문과 설정이 같은 걸 읽는다 */
-const META: Record<PermRow['id'], { title: string; why: string; icon: 'folder' | 'bell' | 'open'; how: string[] }> = {
-  'local-open': { title: '이 기기에서 파일 열기', icon: 'open', why: '«Finder 에서 보기»·«열기» 를 누르면 메인 맥이 아니라 지금 앉아 있는 이 기기에서 열려요. Dropbox·iCloud 로 같은 볼트가 이 기기에도 있으면 그 파일을, 없으면 호스트에서 받아서 엽니다.', how: ['아래에서 하나를 고르세요 — 나중에 설정 › 기기 에서 바꿀 수 있어요'] },
-  'full-disk': { title: '전체 디스크 접근', icon: 'folder', why: '데스크탑·문서·iCloud·Dropbox·외장 폴더의 파일을 읽고 저장하려면 필요해요. 없으면 폴더가 열리기는 해도 저장·정리가 조용히 실패합니다.', how: ['아래 [시스템 설정 열기] 를 누르면 «개인정보 보호 › 전체 디스크 접근» 이 열립니다', '목록에서 Folder Bot 을 찾아 스위치를 켜세요 (없으면 + 로 응용 프로그램에서 추가)', '이 창으로 돌아오면 자동으로 확인합니다 — 켰는데도 꺼짐이면 [다시 시작]'] },
-  notifications: { title: '알림', icon: 'bell', why: '봇이 확인을 기다리거나 일을 끝내면 알려 드려요. 없으면 다른 창에 있는 동안 아무 소식도 못 받습니다.', how: ['아래 [테스트 알림 보내기] 를 누르세요', '화면 오른쪽 위에 알림이 보이면 [보였어요]', '안 보이면 [시스템 설정 열기] → 알림 › Folder Bot 을 «허용» 으로'] }
-}
+export const META: Record<PermRow['id'], { title: string; why: string; icon: 'folder' | 'bell' | 'open'; how: string[] }> = getPermMeta(false)
+
 
 /**
  * 권한 관문 — 처음 실행 · 업데이트 뒤(서명이 바뀌어 전체 디스크 접근이 풀린다) 필수가 빠져 있으면 화면 전체로 뜬다.
@@ -41,29 +69,41 @@ export function usePerms(): { items: PermRow[] | null; open: boolean; setOpen: (
 
 export function PermGate({ items, onDone, refresh }: { items: PermRow[]; onDone: () => void; refresh: () => Promise<void> }) {
   const b = permBridge()
+  const meta = getPermMeta(isWin)
   const [msg, setMsg] = useState(''); const [tested, setTested] = useState(false)
   const ok = permsSatisfied(items); const anyRequired = items.some((p) => p.required)
-  const openPane = async (id: PermRow['id']) => { await b?.open(id); setMsg('목록에서 Folder Bot 을 켠 뒤 이 창으로 돌아오세요 — 돌아오면 자동으로 확인해요') }
-  const ack = async (id: PermRow['id'], v: boolean) => { await b?.ack(id, v); await refresh(); setMsg(v ? '알림 준비 끝' : '시스템 설정 › 알림에서 Folder Bot 을 허용으로 바꿔 주세요') }
-  const test = async () => { const r = await b?.test(); setTested(true); setMsg(r?.ok ? '방금 알림을 보냈어요 — 오른쪽 위에 보였나요?' : '이 시스템에서는 알림을 보낼 수 없어요') }
+  const openPane = async (id: PermRow['id']) => {
+    await b?.open(id)
+    setMsg(isWin ? '설정에서 Folder Bot 알림을 켠 뒤 이 창으로 돌아오세요 — 돌아오면 자동으로 확인해요' : '목록에서 Folder Bot 을 켠 뒤 이 창으로 돌아오세요 — 돌아오면 자동으로 확인해요')
+  }
+  const ack = async (id: PermRow['id'], v: boolean) => {
+    await b?.ack(id, v)
+    await refresh()
+    setMsg(v ? '알림 준비 끝' : (isWin ? '설정 › 시스템 › 알림에서 Folder Bot 을 켬으로 바꿔 주세요' : '시스템 설정 › 알림에서 Folder Bot 을 허용으로 바꿔 주세요'))
+  }
+  const test = async () => {
+    const r = await b?.test()
+    setTested(true)
+    setMsg(r?.ok ? (isWin ? '방금 알림을 보냈어요 — 오른쪽 아래에 보였나요?' : '방금 알림을 보냈어요 — 오른쪽 위에 보였나요?') : '이 시스템에서는 알림을 보낼 수 없어요')
+  }
   return <div className="pair perm-gate"><div className="box" style={{ width: 'min(640px,100%)', alignItems: 'stretch', textAlign: 'left' }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><FolderBot color="#e08850" size={32} mood="wait" /><b style={{ fontSize: 18, color: 'var(--w)' }}>Folder Bot 이 일하려면 권한이 필요해요</b></div>
-    <div style={{ color: 'var(--t2)' }}>지금 한 번에 켜 두면 쓰는 중에 다시 묻지 않습니다. macOS 가 앱마다 따로 묻는 것이라 Folder Bot 이 대신 켤 수는 없어요 — 설정 창을 열어 드릴게요.</div>
+    <div style={{ color: 'var(--t2)' }}>{isWin ? '지금 한 번에 켜 두면 쓰는 중에 다시 묻지 않습니다. Windows 가 앱마다 따로 묻는 것이라 Folder Bot 이 대신 켤 수는 없어요 — 설정 창을 열어 드릴게요.' : '지금 한 번에 켜 두면 쓰는 중에 다시 묻지 않습니다. macOS 가 앱마다 따로 묻는 것이라 Folder Bot 이 대신 켤 수는 없어요 — 설정 창을 열어 드릴게요.'}</div>
     <div className="perm-rows">
-      {items.map((p) => { const m = META[p.id]; const done = p.status === 'granted'; return <div key={p.id} className={`perm-row ${p.status}`}>
+      {items.map((p) => { const m = meta[p.id]; const done = p.status === 'granted'; return <div key={p.id} className={`perm-row ${p.status}`}>
         <div className="ph"><Icon n={m.icon} size={14} color={done ? 'var(--done)' : 'var(--t2)'} /><b>{m.title}</b><span className="tag">{p.required ? '필수' : '권장'}</span><span className={`badge ${p.status}`}>{done ? '✓ 허용됨' : p.status === 'missing' ? '꺼짐' : '확인 필요'}</span></div>
         {!done ? <>
           <p className="why">{m.why}</p>
           <ol className="how">{m.how.map((h, i) => <li key={i}>{h}</li>)}</ol>
           {p.id === 'local-open' ? <LocalOpenPicker root={useStore().s.root} onDone={() => void refresh()} /> : <div className="acts">
             {p.probeable ? <>
-              <button className="btn" onClick={() => void openPane(p.id)}>시스템 설정 열기 ↗</button>
+              <button className="btn" onClick={() => void openPane(p.id)}>{isWin ? '설정 열기 ↗' : '시스템 설정 열기 ↗'}</button>
               <button className="btn" onClick={() => void refresh()}>다시 확인</button>
-              {p.status === 'missing' ? <button className="btn" onClick={() => b?.relaunch()} title="macOS 는 이미 뜬 앱에 새 권한을 적용하지 않아요">켰는데도 꺼짐 — 다시 시작</button> : null}
+              {p.status === 'missing' ? <button className="btn" onClick={() => b?.relaunch()} title={isWin ? 'Windows 는 이미 실행 중인 앱에 새 권한을 적용하지 않을 수 있어요' : 'macOS 는 이미 뜬 앱에 새 권한을 적용하지 않아요'}>켰는데도 꺼짐 — 다시 시작</button> : null}
             </> : <>
               <button className="btn" onClick={() => void test()}>테스트 알림 보내기</button>
               {tested || p.status === 'missing' ? <><button className="btn on" onClick={() => void ack(p.id, true)}>보였어요</button><button className="btn" onClick={() => void ack(p.id, false)}>안 보여요</button></> : null}
-              <button className="btn" onClick={() => void openPane(p.id)}>시스템 설정 열기 ↗</button>
+              <button className="btn" onClick={() => void openPane(p.id)}>{isWin ? '설정 열기 ↗' : '시스템 설정 열기 ↗'}</button>
             </>}
           </div>}
         </> : null}
@@ -115,8 +155,10 @@ function AgentConn() {
       <div className="ph"><Mark id="claude" size={14} /><b>Claude Code</b><span className="tag">필요</span><span className={`badge ${claudeOn ? 'granted' : 'missing'}`}>{!has('claude') ? '안 깔림' : claudeOn ? '✓ 연결됨' : '로그인 필요'}</span></div>
       {!claudeOn ? <>
         <p className="why">{!has('claude')
-          ? 'Claude Code 가 안 깔려 있어요. 터미널에서 설치한 뒤 [다시 확인] 을 누르세요.'
-          : '아래 [터미널에서 로그인] 을 누르면 이 맥에 터미널이 열려요. claude 가 뜨면 /login 을 치고 브라우저에서 마치세요 — 로그인으로 붙으면 이 맥에 설치된 MCP 커넥터와 스킬, 그리고 claude.ai 계정에 연결해 둔 커넥터를 그대로 씁니다.'}</p>
+          ? (isWin ? '네이티브 claude.exe 가 안 보여요. PowerShell에서 설치와 로그인을 마친 뒤 [다시 확인] 을 누르세요. npm의 claude.cmd 래퍼는 사용할 수 없어요.' : 'Claude Code 가 안 깔려 있어요. 터미널에서 설치한 뒤 [다시 확인] 을 누르세요.')
+          : (isWin
+            ? '아래 [터미널에서 로그인] 을 누르면 이 PC에 터미널이 열려요. claude 가 뜨면 /login 을 치고 브라우저에서 마치세요 — 로그인으로 붙으면 이 PC에 설치된 MCP 커넥터와 스킬, 그리고 claude.ai 계정에 연결해 둔 커넥터를 그대로 씁니다.'
+            : '아래 [터미널에서 로그인] 을 누르면 이 맥에 터미널이 열려요. claude 가 뜨면 /login 을 치고 브라우저에서 마치세요 — 로그인으로 붙으면 이 맥에 설치된 MCP 커넥터와 스킬, 그리고 claude.ai 계정에 연결해 둔 커넥터를 그대로 씁니다.')}</p>
         <ol className="how">{(!has('claude')
           ? ['터미널에서 Claude Code 를 설치하세요', '설치 뒤 [연결 확인]']
           : ['터미널에서 claude 를 치고 /login', '브라우저에서 로그인을 마치세요', '이 창으로 돌아와 [연결 확인]']).map((h, i) => <li key={i}>{h}</li>)}</ol>

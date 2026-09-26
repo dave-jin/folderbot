@@ -12,10 +12,24 @@ export function normalizeRootInput(raw: string, home: string): string | null {
   let s = (raw ?? '').trim()
   if (!s) return null
   if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) s = s.slice(1, -1).trim()
-  if (s.startsWith('file://')) { try { s = decodeURIComponent(s.slice('file://'.length)) } catch { return null } }
-  s = s.replace(/\\ /g, ' ').trim()
+  const windows = /^[A-Za-z]:[\\/]/.test(home) || /^\\\\/.test(home)
+  if (s.startsWith('file://')) {
+    try {
+      const u = new URL(s)
+      s = decodeURIComponent(u.pathname)
+      if (windows) s = u.hostname ? `\\\\${u.hostname}${s.replace(/\//g, '\\')}` : s.replace(/^\/(?=[A-Za-z]:)/, '').replace(/\//g, '\\')
+    } catch { return null }
+  }
+  if (!windows) s = s.replace(/\\ /g, ' ')
+  s = s.trim()
   if (s === '~') s = home
-  else if (s.startsWith('~/')) s = home + s.slice(1)
+  else if (s.startsWith('~/') || (windows && s.startsWith('~\\'))) s = home + s.slice(1)
+  if (windows) {
+    // 드라이브 문자 없는 \foo 와 C:foo 는 현재 드라이브에 의존하므로 루트가 될 수 없다.
+    if (!/^(?:[A-Za-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+)/.test(s)) return null
+    const root = /^[A-Za-z]:[\\/]$/.test(s)
+    return root ? s.replace('/', '\\') : s.replace(/[\\/]+$/, '').replace(/\//g, '\\')
+  }
   if (!s.startsWith('/')) return null
   s = s.replace(/\/+$/, '')
   return s || '/'

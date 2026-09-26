@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
+import { parse as parseYaml } from 'yaml'
 
 /**
  * 🔴 **패키징 목록이 실제 require 를 다 덮는가** (2026-09-13 실사고).
@@ -25,6 +26,11 @@ function listed(): string[] {
     out.push(m[1].trim())
   }
   return out
+}
+
+function copiedResources(): Set<string> {
+  const yml = parseYaml(readFileSync(join(DESK, 'electron-builder.yml'), 'utf8')) as { extraResources?: { from: string }[] }
+  return new Set((yml.extraResources ?? []).map((r) => r.from))
 }
 
 /**
@@ -55,11 +61,13 @@ function localDeps(entry: string): Set<string> {
 describe('데스크톱 패키징 목록', () => {
   it('main.js 가 부르는 로컬 파일이 전부 files 에 있다', () => {
     const files = listed()
+    const resources = copiedResources()
     const globbed = files.filter((f) => f.includes('*')).map((f) => f.replace(/\/?\*\*?.*$/, ''))
     const missing: string[] = []
     for (const dep of localDeps(join(DESK, 'main.js'))) {
       const rel = relative(DESK, dep)
       if (files.includes(rel)) continue
+      if (resources.has(rel)) continue
       if (globbed.some((g) => rel === g || rel.startsWith(`${g}/`))) continue
       missing.push(rel)
     }
