@@ -109,6 +109,10 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
         {/* 🔴 **세션이 없을 때도 여기서 시작한다** (2026-09-13 Dave). 종전 「메시지를 보내면 생겨요」 는
             **막다른 안내**였다 — 누가 이 폴더를 맡을지(Claude / ChatGPT) 고를 자리가 어디에도 없었다.
             ⚠ 깔린 에이전트가 하나면 묻지 않는다 — 고를 게 없는데 묻는 건 문턱만 하나 더 만드는 것이다. */}
+        {/* BG · **목록 끝에도 ＋** (2026-09-27 Dave · 스크린샷_1721: «플러스 버튼이 세션 한단에도 + 로 나와 있으면 어떨까»).
+            머리의 ＋ 는 절 머리를 훑어야 보이고 폭이 좁으면 작다 — 방금 본 세션 줄 바로 아래에서 이어 누르게 한다.
+            파일 트리 끝 «참조 폴더 더하기»(BC) 와 같은 말투·모양이다(흐린 글 · 새 색 없음). 머리 ＋ 와 똑같이 움직인다 */}
+        {sessions.length ? <button className="srow sadd" onClick={(e) => { if (provs.length > 1) setPick(anchorOf(e.currentTarget as HTMLElement)); else void newSession() }}><Icon n="plus" size={11} color="var(--t3)" /><span className="n">새 세션</span></button> : null}
         {!sessions.length ? <button className="kv sempty" onClick={(e) => { if (provs.length > 1) setPick(anchorOf(e.currentTarget as HTMLElement)); else void newSession() }}><Icon n="plus" size={11} /><span>{provs.length > 1 ? 'Claude 나 ChatGPT 로 시작' : '세션 시작'}</span></button> : null}
         {pick ? <Float at={pick} onClose={() => setPick(null)}>{provs.map((pv) => <button key={pv.id} onClick={() => void newSession(pv.id)}><Mark id={pv.id} size={14} /><span>{PROVIDER_LABEL[pv.id]}</span></button>)}<hr /><button onClick={() => setPick(null)}><span>취소</span></button></Float> : null}</div> : null}
     </div>}

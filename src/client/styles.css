@@ -958,6 +958,8 @@ b,strong { color:var(--w); font-weight:600 }
 .lchips { display:flex; gap:6px; flex-wrap:wrap }
 .lchip { cursor:default } .lchip span { max-width:200px }
 .sempty { display:flex; align-items:center; gap:6px; color:var(--t3); width:100% } .sempty:hover { color:var(--t2) }
+/* BG · 세션 목록 끝 «＋ 새 세션» — 참조 폴더 더하기(.trefadd)와 같은 흐린 줄. 아이콘은 세션 점 자리(8px)에 맞춘다 */
+.srow.sadd { gap:7px } .srow.sadd .n { color:var(--t3); font-size:12px } .srow.sadd:hover .n { color:var(--t2) }
 .vmk { display:inline-flex; align-items:center; justify-content:center; flex:none; opacity:.9 }
 
 /* 답변 속 경로 칩 — 눌러서 문서로 (A 안: 색이 아니라 아주 옅은 바탕 하나로만 가른다) */

@@ -1781,6 +1781,23 @@ try {
           const ns = await pg.evaluate(() => { const b = [...document.querySelectorAll('.rpwrap .sech')].find((x) => /세션/.test(x.textContent ?? ''))?.querySelector('.ib[title="새 세션"]'); if (!b) return null; const st = getComputedStyle(b); const r = b.getBoundingClientRect(); return { op: Number(st.opacity), vis: st.visibility, w: r.width, h: r.height } })
           if (!ns) fail('새 세션 +: 단추가 없다')
           if (ns.op < 1 || ns.vis !== 'visible' || ns.w < 8 || ns.h < 8) fail('🔴 새 세션 +: 마우스를 안 올리면 안 보인다 ' + JSON.stringify(ns))
+          // BG · 목록 끝에도 «＋ 새 세션» — 마지막 세션 줄 바로 아래 · 누르면 세션이 하나 는다 (2026-09-27 Dave · 스크린샷_1721)
+          {
+            const hashBg = await pg.evaluate(() => location.hash)
+            const row = await pg.evaluate(() => { const b = document.querySelector('.rpwrap .secb .srow.sadd'); if (!b) return null; const rows = [...b.parentElement.querySelectorAll('.srow')]; const st = getComputedStyle(b); return { last: rows[rows.length - 1] === b, text: b.textContent, op: Number(st.opacity), h: Math.round(b.getBoundingClientRect().height) } })
+            if (!row) fail('BG: 세션 목록 끝에 «＋ 새 세션» 줄이 없다')
+            else {
+              if (!row.last || !/새 세션/.test(row.text) || row.op < 1 || row.h < 20) fail('BG: «＋ 새 세션» 줄이 목록 끝에 제대로 안 보인다 ' + JSON.stringify(row))
+              const n0 = (await api(`/bots/${bot.id}/sessions`)).length
+              await pg.click('.rpwrap .secb .srow.sadd'); await wait(900)
+              const n1 = (await api(`/bots/${bot.id}/sessions`)).length
+              if (n1 !== n0 + 1) fail('BG: 목록 끝 ＋ 를 눌렀는데 세션이 안 늘었다 ' + n0 + '→' + n1)
+              const madeBg = (await api(`/bots/${bot.id}/sessions`)).find((x) => !x.lastReplyAt && x.id !== (new URLSearchParams(hashBg.slice(1)).get('s')))
+              if (madeBg) await fetch(base + `/api/sessions/${madeBg.id}`, { method: 'DELETE' })
+              await pg.evaluate((h) => { location.hash = h }, hashBg); await wait(700)
+              ok('BG 세션 목록 끝 «＋ 새 세션» — 마지막 줄 아래 · 누르면 세션이 는다')
+            }
+          }
           // S-3 · 패널을 **접어 둬도** 우측 띠에 + 가 남는다 — 눌러서 세션이 늘어나는지까지
           // ⚠ 새 세션을 만들면 화면이 **그 빈 세션**으로 옮겨 간다 — 뒤 검사들이 보던 대화를 잃지 않게 있던 자리를 적어 두고 되돌린다
           const hashBeforeNs = await pg.evaluate(() => location.hash)
