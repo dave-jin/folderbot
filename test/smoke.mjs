@@ -4559,7 +4559,11 @@ try {
           if (!ub || ub.tokens < 3000) fail('L: 턴이 끝났는데 봇별 내역에 이 봇이 없다 ' + JSON.stringify(ub))
           let rows = []; for (let i = 0; i < 20 && !rows.some((n) => /제품_Rondo|Rondo/.test(n)); i++) { await wait(500); if (!(await pg.$('.tsheet.usheet'))) { await pg.click('.mhome .ustrip'); await wait(400) } rows = await pg.$$eval('.tsheet.usheet .ucard .ub .n', (r) => r.map((x) => x.textContent)) }
           if (!rows.some((n) => /제품_Rondo|Rondo/.test(n))) fail('L: 카드에 봇별 줄이 없다(턴 끝 신호로 다시 물어야 한다) ' + JSON.stringify(rows))
-          if (!/내 예산\((설정|기본값)\)/.test((await pg.textContent('.tsheet.usheet .ucard .un')) ?? '')) fail('L: 예산 출처 표시가 없다')
+          // BD · 실제 한도를 받았으면 카드의 기준 줄은 «실제 한도» 이고, 달러 대신 5시간·이번 주 % 가 보인다
+          const un = (await pg.textContent('.tsheet.usheet .ucard .un')) ?? ''
+          if (!/Claude 가 알려 준 실제 한도/.test(un)) fail('BD: 카드 기준 줄이 실제 한도가 아니다 · ' + un)
+          const uf = (await pg.textContent('.tsheet.usheet .ucard .uf')) ?? ''
+          if (!/5시간 남은\s*75%/.test(uf) || !/이번 주 남은\s*32%/.test(uf)) fail('BD: 카드 아래 칸에 5시간·이번 주 남은 % 가 없다 · ' + uf)
           await pg.screenshot({ path: 'test/tmp/phone-usage-bybot.png' })
           await pg.evaluate(() => document.querySelector('.backdrop').click()); await wait(300)
           await fetch(base + `/api/sessions/${sL.id}`, { method: 'DELETE' })
@@ -4822,13 +4826,16 @@ try {
 
   // ── 사용량 — 남은 양 · 훅 설치 · 예산 (V23) ──
   {
-    const u = await api('/usage')
+    // BD · 실제 요금제 한도 — 호스트가 켜질 때 CLI(가짜: 5시간 25% · 주간 68%)에게 물어 둔다. 늦으면 잠깐 기다린다
+    let u = await api('/usage'); for (let i = 0; i < 20 && !u.plan; i++) { await wait(500); u = await api('/usage') }
     if (!u.tools.length) fail('사용량: 픽스처를 못 읽었다')
+    if (!u.plan?.available || u.plan.five?.used !== 25 || u.plan.week?.used !== 68) fail('BD: CLI 에게 물은 실제 한도가 없다 ' + JSON.stringify(u.plan))
     if (u.tools.some((t) => t.tool === 'codex')) fail('사용량: 안 쓴 Codex 가 줄로 나왔다')   // Dave: 없으면 아예 안 보여야 해
     const c = u.tools[0]
-    if (c.left !== Math.max(0, Math.min(100, Math.round((c.leftCost / c.budget) * 100)))) fail('사용량: 남은 %가 남은 금액과 안 맞는다 ' + JSON.stringify(c))
+    if (c.left !== 32) fail('BD: Claude 의 남은 %는 더 빠듯한 창(주간 68% 씀 → 32%)이어야 한다 — 예산 추정이 아니라 ' + JSON.stringify(c))
     if (!(c.leftCost <= c.budget)) fail('사용량: 남은 금액이 예산을 넘는다 ' + JSON.stringify(c))
     if (!u.resetAt || u.resetAt <= u.now) fail('사용량: 다시 채워지는 시각이 과거다 ' + JSON.stringify({ resetAt: u.resetAt, now: u.now }))
+    if (u.resetAt !== u.plan.week.resetsAt) fail('BD: 다시 채워짐은 더 빠듯한 창(주간)의 시각이어야 한다 ' + JSON.stringify({ r: u.resetAt, w: u.plan.week }))
     if (u.left !== Math.min(...u.tools.map((t) => t.left))) fail('사용량: 대표 숫자가 가장 빠듯한 도구가 아니다')
     // 예산을 바꾸면 남은 %도 함께 바뀐다 (뺄셈은 호스트 한 곳에서만)
     // L · 봇별 내역 · 예산 출처 · 주간 예산 0 → null(«—») (2026-09-19)
@@ -4837,7 +4844,7 @@ try {
     await api('/usage/budget', { week: 100 })
     await api('/usage/budget', { window: 1000 })
     const u2 = await api('/usage')
-    if (u2.tools[0].left <= c.left) fail('사용량: 예산을 키웠는데 남은 %가 안 늘었다 ' + JSON.stringify({ a: c.left, b: u2.tools[0].left }))
+    if (u2.tools[0].left !== c.left) fail('BD: 실제 한도가 있으면 내 예산을 바꿔도 남은 %는 그대로여야 한다 ' + JSON.stringify({ a: c.left, b: u2.tools[0].left }))
     await api('/usage/budget', { window: 6.4 })
     // 훅 설치·제거 — settings.json 을 합쳐 쓰고 백업을 남긴다
     const before = existsSync(join(fbHome, '.claude/settings.json')) ? readFileSync(join(fbHome, '.claude/settings.json'), 'utf8') : ''
@@ -4851,7 +4858,7 @@ try {
     const j2 = JSON.parse(readFileSync(join(fbHome, '.claude/settings.json'), 'utf8'))
     if (JSON.stringify(j2.hooks.Stop).includes('usage-hook')) fail('사용량: 제거했는데 훅이 남았다')
     void before
-    ok('사용량 — 남은 양 · 예산 반영 · 훅 설치/제거')
+    ok('사용량 — 실제 한도(CLI get_usage · 더 빠듯한 창 · 예산과 무관) · 예산 설정 · 훅 설치/제거')
   // ── 절전 시간 설정 (루프 4/10) — 0 은 «안 재움», 상태에 실려 화면이 읽는다 ──
   {
     if ((await api('/state')).defaults.idleMinutes !== 60) fail('절전: 기본이 60분이 아니다')

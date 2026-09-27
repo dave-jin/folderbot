@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, readdirSync, statSync } from 'node:fs'
 import { join, dirname, basename } from 'node:path'
 import { homedir } from 'node:os'
-import { DEFAULT_BUDGET, parseEvent, report, type Budget, type UsageEvent, type UsageReport } from '../core/usage'
+import { DEFAULT_BUDGET, parseEvent, report, type Budget, type PlanUsage, type UsageEvent, type UsageReport } from '../core/usage'
 
 /**
  * 사용량 모으기 — 훅이 쌓아 둔 줄을 읽어 창별로 접는다.
@@ -102,7 +102,7 @@ export function events(now = Date.now()): UsageEvent[] {
 }
 
 /** `botOf` 는 CLI 세션 id → 봇 — 호스트가 세션 목록으로 넘긴다(봇별 내역 · L). 30초 캐시는 `events()` 안에 있다 */
-export function usageReport(now = Date.now(), botOf?: (sid: string) => { botId: string; name: string } | undefined): UsageReport { return report(events(now), now, budget(), { budgetSource: budgetSource(), botOf }) }
+export function usageReport(now = Date.now(), botOf?: (sid: string) => { botId: string; name: string } | undefined, plan?: PlanUsage | null): UsageReport { return report(events(now), now, budget(), { budgetSource: budgetSource(), botOf, plan }) }
 /** 훅·기록이 새로 들어왔을 때 캐시를 비운다 — 턴이 끝나면 60초 안에 원격 패널이 바뀌어야 한다 (L) */
 export function invalidateUsage(): void { cache = null }
 

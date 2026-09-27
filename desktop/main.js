@@ -519,8 +519,12 @@ function usageItems() {
   if (!usage) return []
   const money = (n) => `$${n < 10 ? n.toFixed(2) : Math.round(n)}`
   const out = [{ label: `사용량 ${gauge(usage.left)}  ${usage.left}% 남음${usage.resetAt ? ` · ${leftTxt(usage.resetAt, usage.now)} 뒤` : ''}`, enabled: false }]
-  for (const t of usage.tools) out.push({ label: `   ${(t.tool === 'claude' ? 'Claude' : 'Codex').padEnd(6)} ${gauge(t.left)}  ${t.left}% · ${money(t.leftCost)}`, enabled: false })
-  out.push({ label: `   오늘   ${money(usage.day.left)} 남음 · 이번 주 ${money(usage.week.left)} 남음`, enabled: false })
+  // BD · 실제 요금제 한도가 있으면 달러 추정 대신 5시간·이번 주 % 를 적는다
+  const plan = usage.plan && usage.plan.available ? usage.plan : null
+  for (const t of usage.tools) out.push({ label: `   ${(t.tool === 'claude' ? 'Claude' : 'Codex').padEnd(6)} ${gauge(t.left)}  ${t.left}%${t.tool === 'claude' && plan ? '' : ` · ${money(t.leftCost)}`}`, enabled: false })
+  out.push({ label: plan
+    ? `   5시간 ${plan.five ? 100 - plan.five.used : '—'}% 남음 · 이번 주 ${plan.week ? 100 - plan.week.used : '—'}% 남음`
+    : `   오늘   ${money(usage.day.left)} 남음 · 이번 주 ${money(usage.week.left)} 남음`, enabled: false })
   out.push({ type: 'separator' })
   return out
 }

@@ -66,6 +66,7 @@ function freeName(botAbs: string, dir: string, name: string): string {
 import { favicon } from './favicon'
 import { preview } from './preview'
 import { hookState, setBudget, setHook, usageReport } from './usage'
+import { planNow } from './planUsage'
 import { allDirs, findFiles, guard, headHash, kindOf, mime, readText, recent, resolveNF, resolveNFDeep, stream, tree, writeText, exists, listDir, renameEntry } from './files'
 import { readTodo, todoDelete, todoEdit, todoMove, todoToggle } from './todoStore'
 import { globParents, roleOf } from '../core/rules'
@@ -222,7 +223,8 @@ export class Gateway {
       // 봇별 내역 — 세션의 CLI 세션 id 가 곧 기록 파일 이름이다 (L)
       const bySid = new Map<string, { botId: string; name: string }>()
       for (const r of h.sessions.all()) if (r.cliSessionId) { const b = reg.bot(r.botId); bySid.set(r.cliSessionId, { botId: r.botId, name: b?.displayName ?? b?.name ?? r.botId }) }
-      return json(200, { ...usageReport(Date.now(), (sid) => bySid.get(sid)), hook: hookState().installed })
+      // BD · 실제 요금제 한도 — CLI 에게 물어 둔 값(오래됐으면 뒤에서 새로 묻는다 · 기다리지 않는다)
+      return json(200, { ...usageReport(Date.now(), (sid) => bySid.get(sid), planNow(h.sessions.bin)), hook: hookState().installed })
     }
     if (p === '/api/usage/hook' && m === 'POST') { const b = await body(); return json(200, setHook(!!b.on)) }
     if (p === '/api/usage/budget' && m === 'POST') { const b = await body(); return json(200, setBudget({ window: b.window === undefined ? undefined : Number(b.window), day: b.day === undefined ? undefined : Number(b.day), week: b.week === undefined ? undefined : Number(b.week) } as never)) }

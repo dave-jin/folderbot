@@ -32,6 +32,19 @@ let pendingReq = null, pendingAsk = null, pendingDeferred = null
 rl.on('line', (raw) => {
   let msg; try { msg = JSON.parse(raw) } catch { return }
   /**
+   * BD · **실제 요금제 한도** — 진짜 CLI 의 stream-json 제어 요청 `get_usage` 와 같은 모양으로 답한다(2.1.283 실측).
+   *    `STUB_PLAN=off` 면 옛 CLI 처럼 모르는 요청이라고 거절한다. 값은 `STUB_PLAN_FIVE`·`STUB_PLAN_WEEK`(사용 %).
+   */
+  if (msg.type === 'control_request' && msg.request?.subtype === 'get_usage') {
+    if (process.env.STUB_PLAN === 'off') { say({ type: 'control_response', response: { subtype: 'error', request_id: msg.request_id, error: 'Unknown control request subtype: get_usage' } }); return }
+    const five = Number(process.env.STUB_PLAN_FIVE ?? 25), week = Number(process.env.STUB_PLAN_WEEK ?? 68)
+    say({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response: {
+      subscription_type: 'max', rate_limits_available: true,
+      rate_limits: { five_hour: { utilization: five, resets_at: new Date(Date.now() + 2 * 3600e3).toISOString() }, seven_day: { utilization: week, resets_at: new Date(Date.now() + 30 * 3600e3).toISOString() } }
+    } } })
+    return
+  }
+  /**
    * 🔴 **질문 카드(AskUserQuestion)** — 답이 **어느 질문에 붙어서** 돌아오는지까지 재려고 그대로 되읊는다.
    *    (2026-09-15 Dave: «AskUserQuestion 에서 추가 Text를 입력하면 위에 전체에 나오네» — 화면의
    *    「기타」 칸이 하나뿐이라 모든 질문에 같은 글이 떴고, 보낼 때도 **첫 질문의 답**으로 갔다.)

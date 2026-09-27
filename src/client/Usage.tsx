@@ -18,6 +18,9 @@ const headLeft = (l: number): string => (l > 40 ? '아직 넉넉해요' : l > 20
 const money = (n: number): string => `$${n < 10 ? n.toFixed(2) : Math.round(n)}`
 export const tokens = (n: number): string => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M` : n >= 1000 ? `${Math.round(n / 1000)}K` : String(n))
 const clock = (ms: number): string => { const d = new Date(ms); const h = d.getHours(); return `${h < 12 ? '오전' : '오후'} ${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')}` }
+const dayClock = (ms: number): string => `${'일월화수목금토'[new Date(ms).getDay()]} ${clock(ms)}`
+/** 몇 분 전에 받은 값인가 — 실제 한도는 3분마다 새로 묻는다 */
+const ago = (t: number, now: number): string => { const m = Math.max(0, Math.round((now - t) / 60000)); return m < 1 ? '방금' : m < 60 ? `${m}분 전` : `${Math.round(m / 60)}시간 전` }
 export function until(ms: number, now: number): string {
   const s = Math.max(0, Math.round((ms - now) / 1000))
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60)
@@ -46,6 +49,8 @@ function LeftBar({ left, color }: { left: number; color: string }) {
 
 export function UsageCard({ u, compact }: { u: UsageReport; compact?: boolean }) {
   const c = colorLeft(u.left)
+  // BD · 서버가 알려 준 실제 한도 — 있으면 달러 추정 대신 이것을 그린다(자리는 그대로)
+  const plan = u.plan?.available ? u.plan : null
   return <div className={`ucard ${compact ? 'sm' : ''}`}>
     <div className="uh">
       <FolderBot color={c} size={compact ? 36 : 44} mood={moodLeft(u.left)} mono />
@@ -58,17 +63,26 @@ export function UsageCard({ u, compact }: { u: UsageReport; compact?: boolean })
       <div className="n"><span className="dot" style={{ background: TOOL_TINT[t.tool] }} /><b>{TOOL_LABEL[t.tool] ?? t.tool}</b>
         <span className="pc" style={{ color: colorLeft(t.left) }}>{t.left}%</span><span className="lb">남음</span></div>
       <LeftBar left={t.left} color={colorLeft(t.left)} />
-      <div className="m"><b>{money(t.leftCost)}</b> 남음<span className="sl">/</span><span className="bg">{money(t.budget)}</span><span className="sp" />쓴 <span className="tk">{tokens(t.tokens)}</span></div>
+      {t.tool === 'claude' && plan
+        ? <div className="m">5시간 <b>{plan.five?.used ?? '—'}%</b> 씀<span className="sl">·</span>이번 주 <b>{plan.week?.used ?? '—'}%</b> 씀<span className="sp" />쓴 <span className="tk">{tokens(t.tokens)}</span></div>
+        : <div className="m"><b>{money(t.leftCost)}</b> 남음<span className="sl">/</span><span className="bg">{money(t.budget)}</span><span className="sp" />쓴 <span className="tk">{tokens(t.tokens)}</span></div>}
       {t.byModel.length ? <div className="by">{t.byModel.slice(0, 3).map((m) => `${m.model.replace(/^claude-/, '').replace(/-\d+$/, '')} ${tokens(m.tokens)}`).join(' · ')}</div> : null}
     </div>)}
     <div className="uf">
       {/* 예산이 없으면(0) «—» — 0 으로 그리면 «다 썼다» 처럼 읽힌다(스크린샷 1238 · L) */}
-      <span><i>오늘 남은</i><b>{u.day.left === null ? '—' : money(u.day.left)}</b><small>쓴 {money(u.day.cost)}</small></span>
-      <span><i>이번 주 남은</i><b>{u.week.left === null ? '—' : money(u.week.left)}</b><small>{u.week.left === null ? `쓴 ${money(u.week.cost)} · 예산 없음` : '월 09:00 초기화'}</small></span>
+      {plan ? <>
+        <span><i>5시간 남은</i><b>{plan.five ? `${100 - plan.five.used}%` : '—'}</b><small>{plan.five?.resetsAt ? `${clock(plan.five.resetsAt)} 초기화` : '5시간 창'}</small></span>
+        <span><i>이번 주 남은</i><b>{plan.week ? `${100 - plan.week.used}%` : '—'}</b><small>{plan.week?.resetsAt ? `${dayClock(plan.week.resetsAt)} 초기화` : '주간 창'}</small></span>
+      </> : <>
+        <span><i>오늘 남은</i><b>{u.day.left === null ? '—' : money(u.day.left)}</b><small>쓴 {money(u.day.cost)}</small></span>
+        <span><i>이번 주 남은</i><b>{u.week.left === null ? '—' : money(u.week.left)}</b><small>{u.week.left === null ? `쓴 ${money(u.week.cost)} · 예산 없음` : '월 09:00 초기화'}</small></span>
+      </>}
       <span><i>다시 채워짐</i><b style={{ color: c }}>{u.resetAt ? clock(u.resetAt) : '—'}</b><small>{u.resetAt ? `${until(u.resetAt, u.now)} 뒤` : '5시간 창'}</small></span>
     </div>
-    {u.byBot && u.byBot.length ? <div className="ubots">{u.byBot.slice(0, compact ? 3 : 6).map((b) => <div className="ub" key={b.botId}><span className="n">{b.name}</span><span className="c">{money(b.cost)}</span><span className="t">{tokens(b.tokens)} · {b.turns}턴</span></div>)}</div> : null}
-    <div className="un"><Icon n="clock" size={10} />남은 양은 <b>내 예산</b>{u.budgetSource === 'settings' ? '(설정)' : '(기본값)'} 기준 · 비용·시각 추정</div>
+    {u.byBot && u.byBot.length ? <div className="ubots">{u.byBot.slice(0, compact ? 3 : 6).map((b) => <div className="ub" key={b.botId}><span className="n">{b.name}</span><span className="c">{plan ? '' : money(b.cost)}</span><span className="t">{tokens(b.tokens)} · {b.turns}턴</span></div>)}</div> : null}
+    {plan
+      ? <div className="un"><Icon n="clock" size={10} />남은 양은 <b>Claude 가 알려 준 실제 한도</b> · {ago(plan.fetchedAt, u.now)}{plan.error ? ' · 새로 묻지 못해 마지막 값' : ''}</div>
+      : <div className="un"><Icon n="clock" size={10} />남은 양은 <b>내 예산</b>{u.budgetSource === 'settings' ? '(설정)' : '(기본값)'} 기준 · 비용·시각 추정{u.plan && !u.plan.available ? ' (이 계정은 요금제 한도가 없어요)' : ''}</div>}
   </div>
 }
 
