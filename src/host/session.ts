@@ -259,6 +259,12 @@ export class SessionManager extends EventEmitter {
   private turnAt = new Map<string, number>()
   private dir = ensureDir(join(dataDir(), 'sessions'))
   idleTtlMs = 60 * 60 * 1000
+  /**
+   * 동시에 살려 두는 워커 상한 (BE · 2026-09-27 Dave) — 넘치면 **가장 오래 안 쓴** 쉬는 워커부터 재운다(LRU 절전).
+   * 재운 세션은 기록·id 가 그대로라 다음 메시지에 `--resume` 으로 이어진다. 종전엔 새 세션 «만들 때» 만 12 로 막아
+   * 잠든 세션을 깨울 때는 안 걸렸다(실측 13개 · 워커 평균 207MB · 맥미니 메모리 압박 «경고»).
+   */
+  maxLive = 15
   mcpUrl: (sid: string, botId: string) => string | undefined = () => undefined
   systemPromptFor: (bot: Bot) => string = () => ''
   bin?: string
@@ -436,6 +442,7 @@ export class SessionManager extends EventEmitter {
   ensureWorker(r: SessionRec, bot: Bot): Worker {
     const existing = this.workers.get(r.id)
     if (existing?.alive) return existing
+    this.makeRoom(r.id)   // BE · 상한(15)이 차 있으면 가장 오래 안 쓴 쉬는 워커를 먼저 재운다 — 새로 만들든 깨우든 같은 길
     // 🔴 **세션이 벤더를 정한다** — 봇의 값은 «안 고른 세션» 의 폴백일 뿐이다(한 폴더에 둘이 섞인다)
     const w: Worker = (r.vendor ?? bot.vendor) === 'codex'
       // ⚠ 모델 이름은 CLI 마다 다르다 — Claude 이름(claude-opus-5)을 Codex 에 넘기면 그 자리에서 죽는다.
@@ -736,15 +743,43 @@ export class SessionManager extends EventEmitter {
   acknowledge(r: SessionRec): void { this.setState(r, { kind: 'acknowledged' }) }
   pendingOf(id: string): PermissionRequest[] { return [...(this.workers.get(id)?.pending.values() ?? [])] }
 
+  /**
+   * 재워도 되는 워커인가 — 🔴 일하는 중·확인 대기·권한 질문이 걸린 것·백그라운드 에이전트가 도는 것은 **절대 안 재운다**
+   * (죽이면 턴·답·결과가 사라진다). 쉬고 있는 것만.
+   */
+  private sleepable(id: string, w: Worker): boolean {
+    const r = this.recs.get(id); if (!r || !w.alive) return false
+    if (w.pending.size) return false
+    if (r.state === 'running' || r.state === 'awaiting_input') return false
+    if (r.items.some((it) => it.kind === 'subagent' && it.bg && it.status === 'run')) return false
+    return true
+  }
   /** 절전 — 유휴 TTL 넘긴 워커를 내린다(기록·id 유지) */
   private reclaim(): void {
     const now = Date.now()
     for (const [id, w] of this.workers) {
-      const r = this.recs.get(id); if (!r) continue
-      if (w.pending.size) continue
-      if (r.state === 'running' || r.state === 'awaiting_input') continue
-      if (r.items.some((it) => it.kind === 'subagent' && it.bg && it.status === 'run')) continue // 백그라운드 에이전트가 돌면 워커를 죽이지 않는다 — 죽이면 결과가 사라진다
+      const r = this.recs.get(id); if (!r || !this.sleepable(id, w)) continue
       if (now - r.lastActivity > this.idleTtlMs) { w.kill(); this.workers.delete(id); this.emit('sessions', r.botId) }
+    }
+  }
+  /**
+   * LRU 절전 (BE) — 새 워커를 띄우기 전에 자리가 없으면 **가장 오래 안 쓴 쉬는 워커**를 재운다. `only` 는 봇 하나 안에서 고를 때.
+   * 재울 게 없으면(전부 일하는 중) null — 부른 쪽이 사람에게 말한다.
+   */
+  sleepLru(except?: string, only?: string): SessionRec | null {
+    let pick: { id: string; r: SessionRec; w: Worker } | null = null
+    for (const [id, w] of this.workers) {
+      if (id === except || !this.sleepable(id, w)) continue
+      const r = this.recs.get(id)!; if (only && r.botId !== only) continue
+      if (!pick || r.lastActivity < pick.r.lastActivity) pick = { id, r, w }
+    }
+    if (!pick) return null
+    pick.w.kill(); this.workers.delete(pick.id); this.emit('sessions', pick.r.botId)
+    return pick.r
+  }
+  private makeRoom(except: string): void {
+    while (this.liveCount() >= this.maxLive) {
+      if (!this.sleepLru(except)) throw new Error(`워커 ${this.maxLive}개가 모두 일하는 중이에요 — 하나가 끝나면 이어서 할게요.`)
     }
   }
   /**

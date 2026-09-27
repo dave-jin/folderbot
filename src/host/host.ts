@@ -130,8 +130,9 @@ export class Host {
       const list = this.sessions.list(bot.id)
       if (!name && list.length && !from) r = this.sessions.get(list[0].id)
       if (!r) {
-        if (this.sessions.liveCountFor(bot.id) >= 4) throw new Error(`${bot.name} 은 이미 세션 4개가 돌고 있어요. 하나 끝나면 이어서 하세요.`)
-        if (this.sessions.liveCount() >= 12) throw new Error('호스트 세션 상한(12)에 닿았어요.')
+        // BE · 봇당 4개도 같은 규칙 — 넘치면 그 봇의 가장 오래 안 쓴 쉬는 워커를 재운다. 전부 일하는 중일 때만 거절한다.
+        //    호스트 전체 상한(15)은 워커를 띄우는 자리(`sessions.ensureWorker`)가 지킨다 — 새로 만들 때도, 잠든 세션을 깨울 때도
+        if (this.sessions.liveCountFor(bot.id) >= 4 && !this.sessions.sleepLru(undefined, bot.id)) throw new Error(`${bot.name} 은 세션 4개가 모두 일하는 중이에요. 하나 끝나면 이어서 하세요.`)
         r = this.sessions.create(bot, name ?? (from ? `위임 · ${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : '메인'), opts)
       }
     }
