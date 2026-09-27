@@ -13,7 +13,7 @@ import { checkAuth } from './auth'
 import { FolderWatch } from './watch'
 import { Notifier } from './notify'
 import { type HostConfig, absRoot, saveConfig } from './paths'
-import { ORCH_ID, Registry, canon } from './registry'
+import { ORCH_ID, Registry, canon, ORCH_REQUEST_RULES_MD, ORCH_ASK_HINT } from './registry'
 import { Routines, approveToMode, routinesToDrop } from './routines'
 import { SessionManager, setOauthToken, setKeychainLogin, AUTH_ERROR, type SessionRec } from './session'
 import { readTodo, todoAdd, todoContext } from './todoStore'
@@ -119,8 +119,9 @@ export class Host {
 
   systemPrompt(bot: Bot): string {
     const parts: string[] = []
-    if (bot.orchestrator) parts.push(this.registry.orchestratorPrompt())
-    else parts.push(`너는 Folder Bot 의 봇이다. 폴더 "${bot.rel}" 안에서 일한다. 산출물은 이 폴더에 둔다.`)
+    // BH · orch_ask — 볼트의 orchestrator.md·폴더 CLAUDE.md 가 옛 판이어도 규칙이 닿게 시스템 프롬프트로도 준다(DEVICE_RULES_MD 와 같은 이유)
+    if (bot.orchestrator) { const op = this.registry.orchestratorPrompt(); parts.push(op); if (!op.includes('봇이 보낸 요청')) parts.push(ORCH_REQUEST_RULES_MD) }
+    else parts.push(`너는 Folder Bot 의 봇이다. 폴더 "${bot.rel}" 안에서 일한다. 산출물은 이 폴더에 둔다.\n${ORCH_ASK_HINT}`)
     parts.push(TODO_RULES_PROMPT)
     parts.push(DEVICE_RULES_MD)   // J-2 · 볼트 CLAUDE.md 에도 같은 글이 있지만, 옛 볼트에는 없으므로 시스템 프롬프트로도 준다
     const ctx = todoContext(bot.abs)
@@ -145,7 +146,8 @@ export class Host {
         // BE · 봇당 4개도 같은 규칙 — 넘치면 그 봇의 가장 오래 안 쓴 쉬는 워커를 재운다. 전부 일하는 중일 때만 거절한다.
         //    호스트 전체 상한(15)은 워커를 띄우는 자리(`sessions.ensureWorker`)가 지킨다 — 새로 만들 때도, 잠든 세션을 깨울 때도
         if (this.sessions.liveCountFor(bot.id) >= 4 && !this.sessions.sleepLru(undefined, bot.id)) throw new Error(`${bot.name} 은 세션 4개가 모두 일하는 중이에요. 하나 끝나면 이어서 하세요.`)
-        r = this.sessions.create(bot, name ?? (from ? `위임 · ${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : '메인'), opts)
+        // BH · 위임으로 새로 연 세션은 출처를 남긴다 — `orch_ask` 가 이것으로 «되묻기 고리» 를 막는다
+        r = this.sessions.create(bot, name ?? (from ? `위임 · ${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : '메인'), { ...opts, ...(from ? { delegatedFrom: from } : {}) })
       }
     }
     if (this.auth.verdict === 'unreadable' || this.auth.verdict === 'loggedout') {

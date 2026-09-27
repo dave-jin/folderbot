@@ -33,7 +33,7 @@ export function moodOf(state?: SessionState | null, hibernated = false, holder?:
  * ⛔ 깜빡이지 않는다 — 맥동은 이미 «일하는 중»(주황)의 언어라, 안 읽음까지 깜빡이면 색만 다른 같은 움직임이 둘이 된다.
  *    안 읽음은 **행 강조(굵은 제목 · 밝은 미리보기)** 와 이 링으로 말한다.
  */
-export function FolderBot({ color, size = 36, mood = 'idle', mono = false, work, unread = false }: { color: string; size?: number; mood?: Mood; mono?: boolean; work?: 'think' | 'file' | 'type'; unread?: boolean }) {
+export function FolderBot({ color, size = 36, mood = 'idle', mono = false, work, unread = false, recent = false }: { color: string; size?: number; mood?: Mood; mono?: boolean; work?: 'think' | 'file' | 'type'; unread?: boolean; /** BH · 방금 끝난 최신 3(2시간 안) — 읽었어도 초록 원닷 */ recent?: boolean }) {
   const d = mono ? '#000' : 'rgba(0,0,0,.6)'
   const eyes: Record<Mood, React.ReactNode> = {
     idle: <g className="eyes"><rect x="20" y="30" width="6" height="10" rx="3" fill={d} /><rect x="38" y="30" width="6" height="10" rx="3" fill={d} /></g>,
@@ -59,8 +59,8 @@ export function FolderBot({ color, size = 36, mood = 'idle', mono = false, work,
       </g>
       {/* AN · 링은 «네가 볼 차례» 일 때만 — 도는 중(주황·청록)에는 원닷 하나. 규칙은 `core/unread` 의 `unreadRing` */}
       {unread && unreadRing(mood) ? <circle className="uring" cx="56" cy="56" r="11.5" fill="none" stroke={badge[mood] ?? 'var(--done)'} strokeWidth="3" opacity=".75" /> : null}
-      {/* AU · 닷은 «돌고 있거나 기다리거나» «읽을 게 남았을» 때만 — 끝났고 봤으면 없다. 규칙은 `core/unread.badgeOn` */}
-      {badgeOn(mood, unread) ? <circle className="badge" cx="56" cy="56" r="7" fill={badge[mood] ?? 'var(--done)'} stroke="var(--bg)" strokeWidth="3" /> : null}
+      {/* AU · 닷은 «돌고 있거나 기다리거나» «읽을 게 남았을» 때만 — 끝났고 봤으면 없다. BH · 단 «방금 끝난 최신 3(2시간 안)» 은 초록 원닷을 남긴다. 규칙은 `core/unread.badgeOn`·`recentDone` */}
+      {badgeOn(mood, unread, recent) ? <circle className="badge" cx="56" cy="56" r="7" fill={badge[mood] ?? 'var(--done)'} stroke="var(--bg)" strokeWidth="3" /> : null}
     </svg>
   )
 }

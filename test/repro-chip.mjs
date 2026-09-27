@@ -55,7 +55,7 @@ try {
   await pg.evaluate(() => [...document.querySelectorAll('.amsg .pchip')].find((e) => /바깥\.md/.test(e.textContent))?.click()); await wait(900)
   st = await state(); out.open_outsideClick = { tabs: st.tabs }
   // 4. 트리에서 pdf 를 직접 열면 뷰어가 뜨나 (ⓐ 판정)
-  await api(`/bots/${bot.id}/file`, { rel: 'files/메모.md', text: '# 메모\n' })
+  await api(`/bots/${bot.id}/file`, { rel: 'files/메모.md', text: '# 메모\n', force: true })
   await pg.evaluate(() => { const d = [...document.querySelectorAll('.panel .trow.dir')].find((e) => /^files/.test(e.textContent.trim())); d?.click() }); await wait(600)
   await pg.evaluate(() => { const b = [...document.querySelectorAll('.panel .trow')].find((e) => /설명서\.pdf/.test(e.textContent)); b?.click() }); await wait(1200)
   st = await state(); out.tree_pdfOpen = { tabs: st.tabs, iframe: st.iframe, empty: st.empty }

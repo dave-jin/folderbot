@@ -74,16 +74,31 @@ class WikiWidget extends WidgetType {
  *    자리를 미리 잡아 두면 도착해도 아무것도 안 움직인다.
  */
 const imgH = new Map<string, number>()
+/**
+ * 그림 한 줄. BI · **링크를 두른 그림**(`[![](그림)](주소)` — X·유튜브 썸네일에 흔하다)도 그림으로 그린다
+ * (2026-09-27 Dave · 스크린샷_2123: «왜 이미지 안보이지?» — 당근메일 초안의 Grok Bot 게시물 썸네일이 원문으로 보였다).
+ * 누르면 그 주소가 바깥에서 열린다(본문 링크와 같은 `.lp-xl` 길) · 아래에 «↗ 도메인» 한 줄로 어디로 가는지 보인다.
+ * 원문을 고치려면 그 줄로 커서를 옮긴다(↑↓ · 줄 끝 클릭) — 그림·링크와 같은 커서 규칙이다.
+ */
 class ImgWidget extends WidgetType {
-  constructor(readonly src: string, readonly alt: string) { super() }
-  eq(o: ImgWidget) { return o.src === this.src }
+  constructor(readonly src: string, readonly alt: string, readonly href?: string) { super() }
+  eq(o: ImgWidget) { return o.src === this.src && o.href === this.href }
   toDOM() {
     const w = document.createElement('span'); w.className = 'lp-img'
     const known = imgH.get(this.src)
     if (known) w.style.minHeight = `${known}px`
     const img = document.createElement('img'); img.src = this.src; img.alt = this.alt; img.loading = 'lazy'
     img.onload = () => { const h = Math.round(img.getBoundingClientRect().height); if (h > 8) { imgH.set(this.src, h); w.style.minHeight = '' } }
-    w.appendChild(img); return w
+    if (!this.href) { w.appendChild(img); return w }
+    const a = document.createElement('span'); a.className = 'lp-xl lp-imglink'; a.dataset.href = this.href; a.title = this.href
+    // ⚠ 위젯 안의 이벤트는 편집기가 안 받는다(`ignoreEvent` 기본값) — 본문 링크의 `linkClick` 이 못 보므로 여기서 연다
+    const href = this.href
+    a.onmousedown = (e) => { if (e.button !== 0 || e.metaKey || e.altKey || e.shiftKey || e.ctrlKey) return; e.preventDefault(); e.stopPropagation(); openExt(href) }
+    a.appendChild(img)
+    const cap = document.createElement('span'); cap.className = 'lp-imgcap'
+    let host = this.href; try { host = new URL(this.href).hostname.replace(/^www\./, '') } catch { /* 주소 그대로 */ }
+    cap.textContent = `↗ ${host}`
+    a.appendChild(cap); w.appendChild(a); return w
   }
 }
 
@@ -596,6 +611,8 @@ const HR_RE = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/
 const TASK_RE = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]\s/
 const WIKI_RE = /\[\[([^\]|]+)(\|[^\]]*)?\]\]/g
 const IMG_LINE_RE = /^!\[([^\]]*)\]\(([^)\s]+)\)\s*$/
+/** BI · 링크를 두른 그림 한 줄 — `[![글](그림)](주소)` */
+const IMG_LINK_LINE_RE = /^\[!\[([^\]]*)\]\(([^)\s]+)\)\]\((https?:\/\/[^)\s]+)\)\s*$/
 
 /**
  * 🔴 **마우스를 누르고 있는 동안은 아무것도 드러내지 않는다** (Rondo 라운드 324 `dragFreeze` 이식, 2026-09-16 Dave:
@@ -809,10 +826,11 @@ function build(state: EditorState): { deco: DecorationSet; atoms: Atom[] } {
       continue
     }
 
-    const img = IMG_LINE_RE.exec(text)
+    const im = IMG_LINE_RE.exec(text); const lim = im ? null : IMG_LINK_LINE_RE.exec(text)
+    const img = im ? { alt: im[1], src: im[2], href: undefined as string | undefined } : lim ? { alt: lim[1], src: lim[2], href: lim[3] } : null
     if (img && !touches(state, line.from, line.to) && opts.rawUrl) {
-      const src = opts.rawUrl(img[2])
-      if (src) { marks.push(Decoration.replace({ widget: new ImgWidget(src, img[1]), block: false }).range(line.from, line.to)); atoms.push({ from: line.from, to: line.to }); continue }
+      const src = opts.rawUrl(img.src)
+      if (src) { marks.push(Decoration.replace({ widget: new ImgWidget(src, img.alt, img.href), block: false }).range(line.from, line.to)); atoms.push({ from: line.from, to: line.to }); continue }
     }
 
     const task = TASK_RE.exec(text)
@@ -1055,7 +1073,14 @@ export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, 
         v.focus()
       }
     })
-    view.focus()
+    /**
+     * 🔴 BJ · **열릴 때 포커스를 가져가지 않는다** (2026-09-27 Dave: «문서 저장 뒤바뀜 — 진지하게 다시 리서치해서 원인 해결»).
+     *    종전엔 편집기가 뜨자마자 `view.focus()` 했다. 편집기는 사람이 모르는 새에도 뜬다 — 봇이 `rondo_open` 으로 문서를 띄울 때,
+     *    봇을 바꿀 때(BF 뒤로는 봇+파일마다 새로 뜬다), 탭이 바뀔 때. 그 순간 채팅 입력칸에서 치던 글자가 **문서 맨 앞**으로 들어가 저장됐다.
+     *    9/27 에 파일 머리에 붙은 「ㅏㅁ은」「기존 ㅔ」「깨」「 혅」「ㅏㄴ보」가 전부 이것이다(v164 뒤 21:24 에도 났다).
+     *    v161 까지는 그 글이 딴 경로로 저장돼 파일째 뒤바뀌었고(BF 가 막았다), 뒤로는 제 파일 머리에 박혔다.
+     * ⇒ 편집기는 **사람이 누를 때만** 포커스를 받는다(목차 «그 줄로» 처럼 사람이 부른 것은 그대로 준다).
+     */
     return () => {
       // ⚠ 떠나기 전에 못 낸 저장을 낸다 — 안 그러면 «쓰고 탭을 닫으면 사라진다».
       //    BF · **사람이 고친 게 남아 있을 때만** 낸다. 어디로 가는지는 부모가 이 편집기에 묶어 준 문서(봇·파일)다 —

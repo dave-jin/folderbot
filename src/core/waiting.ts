@@ -27,7 +27,7 @@ export const HOLD_MID_MS = 30_000, HOLD_LONG_MS = 120_000
 
 const DELEGATING: { re: RegExp; kind: HoldKind }[] = [
   { re: /^(Task|Agent)$/i, kind: 'bot' },                       // 서브에이전트
-  { re: /bot_send|bot_start|SendMessage/i, kind: 'bot' },        // 다른 폴더봇에게 맡김
+  { re: /bot_send|bot_start|SendMessage|orch_ask/i, kind: 'bot' },        // 다른 폴더봇에게 맡김 · BH orch_ask(오케스트레이터에게 요청) 도 남을 기다리는 중
   { re: /aside|browse|browser|playwright|orca|computer[-_]?use/i, kind: 'web' },
   { re: /draw[-_]?image|image|gamma|figma|render|export/i, kind: 'tool' },
 ]

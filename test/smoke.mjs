@@ -257,7 +257,7 @@ try {
   ok('empty CLI suggestions → host-made prefix rules → sent as updatedPermissions')
   // 파일 시트
   const f = await api(`/bots/${bot.id}/file?rel=stub-output.md`); if (!/스텁 산출물/.test(f.text)) fail('file read')
-  await api(`/bots/${bot.id}/file`, { rel: 'stub-output.md', text: f.text + '\n추가\n' })
+  await api(`/bots/${bot.id}/file`, { rel: 'stub-output.md', text: f.text + '\n추가\n', force: true })
   if (!readFileSync(join(root, '3. Area/제품_Rondo/stub-output.md'), 'utf8').endsWith('추가\n')) fail('file write'); ok('file read/write')
   try { await api(`/bots/${bot.id}/file?rel=../../../../../../etc/hostname`); fail('path guard') } catch (e) { if (!/밖/.test(e.message)) fail('guard msg ' + e.message); ok('path guard') }
   // 지연 트리 · 이름 바꾸기
@@ -428,6 +428,45 @@ try {
   const sent2 = await mcp('tools/call', { name: 'bot_send', arguments: { bot: '재무_CFO', text: '숫자 검토', name: '위임 · 숫자 검토' } }); if (!/보냈어요/.test(sent2.result.content[0].text)) fail('mcp bot_send')
   await wait(800)
   const cfo = (await api('/bots')).find((b) => b.name === '재무_CFO'); const cs = await api(`/bots/${cfo.id}/sessions`); if (cs[0].state !== 'done') fail('delegated session state ' + cs[0].state); ok('mcp bot_start + bot_send → delegated session done')
+  /**
+   * 🔴 BH · orch_ask — 폴더 봇이 오케스트레이터에게 직접 요청하고, 답은 원래 세션으로 돌아온다 (2026-09-27 Dave)
+   *    받는 쪽은 오케스트레이터로 고정 · 위임 세션·오케스트레이터 자신은 못 쓴다
+   */
+  {
+    const orchAsk = async (b, sid, text) => (await (await fetch(base + `/mcp/${b}?sid=${sid}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'orch_ask', arguments: { text } } }) })).json())
+    const botTools = (await (await fetch(base + `/mcp/${bot.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) })).json()).result.tools.map((t) => t.name)
+    if (!botTools.includes('orch_ask') || botTools.includes('bot_send')) fail('BH orch_ask: 폴더 봇 도구 목록 — orch_ask 는 있고 bot_send 는 없어야 한다 ' + JSON.stringify(botTools))
+    const mine = await api(`/bots/${bot.id}/send`, { text: '되읊어: 요청을 보낼 세션', name: 'BH 요청 세션' }); await wait(900)
+    const r = await orchAsk(bot.id, mine.sessionId, '재무_CFO 에게 이번 달 숫자를 물어봐 줘')
+    if (r.error || r.result?.isError || !/오케스트레이터에게 보냈어요/.test(r.result?.content?.[0]?.text ?? '')) fail('BH orch_ask: 보내기 실패 ' + JSON.stringify(r))
+    await wait(900)
+    const os = (await api('/bots/orch/sessions')).find((x) => x.name === `요청 ← ${bot.name}`)
+    if (!os) fail('BH orch_ask: 오케스트레이터에 «요청 ← ' + bot.name + '» 세션이 안 생겼다 ' + JSON.stringify((await api('/bots/orch/sessions')).map((x) => x.name)))
+    const first = (await api(`/sessions/${os.id}/chat`)).items.find((x) => x.kind === 'user')
+    if (!first?.text?.startsWith(`[요청 ← ${bot.name} · ${bot.id} · ${mine.sessionId}]\n재무_CFO 에게`)) fail('BH orch_ask: 본문 앞 요청 줄이 없다 ' + JSON.stringify(first?.text))
+    // 오케스트레이터가 요청 줄의 봇 id·세션 id 로 답을 돌려보낸다 → 원래 세션에 쌓인다
+    const back = await mcp('tools/call', { name: 'bot_send', arguments: { bot: bot.id, text: '되읊어: 오케스트레이터의 답 — 숫자는 12', session: mine.sessionId } })
+    if (!/보냈어요/.test(back.result.content[0].text)) fail('BH orch_ask: 오케스트레이터 답 보내기 실패 ' + JSON.stringify(back))
+    await wait(1200)
+    const mc = (await api(`/sessions/${mine.sessionId}/chat`)).items
+    if (!mc.some((x) => x.kind === 'user' && /오케스트레이터의 답 — 숫자는 12/.test(x.text))) fail('BH orch_ask: 원래 세션에 오케스트레이터의 답이 안 쌓였다')
+    if ((await api(`/bots/${bot.id}/sessions`)).filter((x) => x.name === 'BH 요청 세션').length !== 1) fail('BH orch_ask: 답이 새 세션으로 갔다(원래 세션에 이어 붙어야 한다)')
+    // 가드 — 위임받은 세션(오케스트레이터의 bot_send 로 새로 열린 CFO 세션)은 되묻지 못한다
+    const deleg = (await api(`/bots/${cfo.id}/sessions`)).find((x) => x.name === '위임 · 숫자 검토')
+    const rd = await orchAsk(cfo.id, deleg.id, '다시 물어볼게')
+    if (!rd.result?.isError || !rd.result.content[0].text.includes('위임받은 세션에서는 오케스트레이터에게 다시 요청할 수 없어요')) fail('BH orch_ask: 위임 세션에서 거절돼야 한다 ' + JSON.stringify(rd))
+    // 가드 — 오케스트레이터 자신
+    const ro = await orchAsk('orch', os.id, 'x')
+    if (!ro.result?.isError || !/오케스트레이터는 orch_ask 를 쓸 수 없어요/.test(ro.result.content[0].text)) fail('BH orch_ask: 오케스트레이터 자신은 거절돼야 한다 ' + JSON.stringify(ro))
+    // 가드 — 한 세션 한 시간 3건
+    await orchAsk(bot.id, mine.sessionId, '둘째'); await orchAsk(bot.id, mine.sessionId, '셋째')
+    const r4 = await orchAsk(bot.id, mine.sessionId, '넷째')
+    if (!r4.result?.isError || !/3건까지/.test(r4.result.content[0].text)) fail('BH orch_ask: 한 시간 4번째는 거절돼야 한다 ' + JSON.stringify(r4))
+    await wait(1500)
+    // 치우기 — 이 봇의 «가장 최근 세션» 이 뒤 화면 검사의 전제다(스텁 답이 보여야 한다). 오케스트레이터의 «요청 ←» 세션은 화면 검사에 쓰려고 남긴다
+    await api(`/sessions/${mine.sessionId}`, undefined, 'DELETE')
+    ok('BH orch_ask — 폴더 봇 → 오케스트레이터 «요청 ← 봇» 세션 · 요청 줄 · 답은 원래 세션으로 · 위임 세션·오케스트레이터·4번째는 거절')
+  }
   const ib = await mcp('tools/call', { name: 'inbox_list', arguments: {} }); if (!/예시랩/.test(ib.result.content[0].text)) fail('inbox')
   await mcp('tools/call', { name: 'folder_move', arguments: { from: '1. Inbox/예시랩_자문자료.txt', to: '3. Area/재무_CFO/자료/예시랩_자문자료.txt' } })
   if (!existsSync(join(root, '3. Area/재무_CFO/자료/예시랩_자문자료.txt'))) fail('move')
@@ -1080,9 +1119,10 @@ try {
           // ⌘C — 트리 줄에 초점이 있으면 파일 복사, ⌥⌘C 는 경로 복사
           await hp.focus('.panel .trow:has-text("설명서.pdf")'); await hp.keyboard.press('ControlOrMeta+C'); await wait(300)
           c = await calls(hp); if (c.filter((x) => x[0] === 'copyFiles').length < 2) fail('M-3: 트리에서 ⌘C 가 파일 복사여야 한다 ' + JSON.stringify(c))
-          // Y · md 한 개 — 누르면 편집기가 초점을 가져가지만, 문서 창을 안 만졌으면 ⌘C 는 여전히 파일 복사(Dave: «md 한 개만 안 된다»)
+          // Y · md 한 개 — 문서 창을 안 만졌으면 ⌘C 는 여전히 파일 복사(Dave: «md 한 개만 안 된다»)
+          // BJ(2026-09-27) · 편집기는 열릴 때 초점을 가져가지 않는다 — 초점은 누른 트리 줄에 남는다(종전 전제 «편집기가 가져간다» 는 뒤집혔다)
           await clickRow(hp, '메모.md'); await hp.waitForSelector('.col.doc .cm-content', { timeout: 5000 }); await wait(300)
-          if (!(await hp.evaluate(() => document.activeElement?.closest('.col.doc .cm-content')))) fail('Y: md 를 누르면 편집기가 초점을 가져간다는 전제가 깨졌다 — 검사 자체를 다시 봐야 한다')
+          if (await hp.evaluate(() => document.activeElement?.closest('.col.doc .cm-content'))) fail('BJ/Y: md 를 눌렀더니 편집기가 초점을 가져갔다 — 채팅칸에서 치던 글자가 문서로 샌다')
           let n0 = (await calls(hp)).filter((x) => x[0] === 'copyFiles').length
           await hp.keyboard.press('ControlOrMeta+C'); await wait(300)
           c = await calls(hp); if (!c.slice(-1).some((x) => x[0] === 'copyFiles' && x[1][0] === `${bot.abs}/files/메모.md`) || c.filter((x) => x[0] === 'copyFiles').length !== n0 + 1) fail('Y: md 를 누른 직후 ⌘C 가 그 md 를 파일로 복사해야 한다 ' + JSON.stringify(c.slice(-2)))
@@ -1995,7 +2035,7 @@ try {
           // ⚠ 제목이 **둘** 이어야 목차 단추가 나온다(하나짜리 문서에 목차는 자리만 먹는다)
           const src = ['---', 'type: reference', 'tags: [PARA, 지침]', '---', '', '# 제목', '', '**굵게** 와 *기울임* 과 `코드`.', '', '- [ ] 할 일', '- 항목', '', '## 두 번째 제목', '', '---', '', '> 인용', '', '> [!note] 콜아웃 줄', '', '[[위키링크]] 와 https://example.com', '', '[예시 링크](https://example.com/page) 옆 글', '', '| 가 | 나 |', '|---|---|', '| 1 | 2 |', '', '```bash', 'npm run qa', '---', '- [ ] 코드 속 줄', '```', '', '```md', '| 코드 | 표 |', '|---|---|', '| a | b |', '```', '', '주소는 `https://api.example.com/v1` 처럼 코드로', ''].join('\n')
           // ⚠ API 로 만든다 — 파일을 직접 쓰면 호스트가 모르고 트리가 안 새로 그려진다
-          await api(`/bots/${bot.id}/file`, { rel, text: src })
+          await api(`/bots/${bot.id}/file`, { rel, text: src, force: true })
           const before = readFileSync(abs)
           await wait(900)
           const opened = await pg.evaluate((r) => { const hit = [...document.querySelectorAll('.trow')].find((x) => (x.textContent ?? '').includes(r)); if (hit) { hit.click(); return true } return false }, rel)
@@ -2345,7 +2385,7 @@ try {
             edges: [{ id: '3333333333333333', fromNode: '1111111111111111', toNode: '2222222222222222', toEnd: 'arrow' }],
             myExt: { keep: true }
           }, null, '\t')
-          await api(`/bots/${bot.id}/file`, { rel, text: src })
+          await api(`/bots/${bot.id}/file`, { rel, text: src, force: true })
           await wait(900)
           const opened = await pg.evaluate((r) => { const hit = [...document.querySelectorAll('.trow')].find((x) => (x.textContent ?? '').includes(r)); if (hit) { hit.click(); return true } return false }, rel)
           if (!opened) fail('캔버스: 트리에 안 나타난다')
@@ -2377,7 +2417,7 @@ try {
           const rel = 'tbl.md'
           const abs = join(root, '3. Area/제품_Rondo', rel)
           const src = ['# 표', '', '| 이름 | 값 |', '| --- | ---: |', '| 가 | 1 |', '| 나 | 2 |', ''].join('\n')
-          await api(`/bots/${bot.id}/file`, { rel, text: src })
+          await api(`/bots/${bot.id}/file`, { rel, text: src, force: true })
           await wait(900)
           const opened = await pg.evaluate((r) => { const hit = [...document.querySelectorAll('.trow')].find((x) => (x.textContent ?? '').includes(r)); if (hit) { hit.click(); return true } return false }, rel)
           if (!opened) fail('표: 트리에 새 파일이 안 나타난다')
@@ -2486,7 +2526,7 @@ try {
           const rel = 'lnk.md'
           const abs = join(root, '3. Area/제품_Rondo', rel)
           const src = ['# 링크', '', '본문 https://example.com/a 와 [루마](https://luma.com/x) 가 있다', '', '| 무엇 | 링크 |', '| --- | --- |', '| 등록 | [루마](https://luma.com/x) |', '| 안내 | https://ai-guide.vercel.app |', ''].join('\n')
-          await api(`/bots/${bot.id}/file`, { rel, text: src })
+          await api(`/bots/${bot.id}/file`, { rel, text: src, force: true })
           await wait(900)
           const opened = await pg.evaluate((r) => { const hit = [...document.querySelectorAll('.trow')].find((x) => (x.textContent ?? '').includes(r)); if (hit) { hit.click(); return true } return false }, rel)
           if (!opened) fail('링크: 트리에 새 파일이 안 나타난다')
@@ -2527,6 +2567,35 @@ try {
           await wait(400)
         }
         /**
+         * 🔴 BI · **링크를 두른 그림**(`[![](그림)](주소)`)도 그림으로 보인다 (2026-09-27 Dave · 스크린샷_2123: «왜 이미지 안보이지?»)
+         *    그림을 누르면 주소가 바깥에서 열리고, 파일은 한 바이트도 안 바뀐다
+         */
+        {
+          const rel = 'lnkimg.md'
+          const abs = join(root, '3. Area/제품_Rondo', rel)
+          const px = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+          const src = ['# 그림 링크', '', '위 글', '', `[![썸네일](${px})](https://x.com/bot/status/1)`, '', '아래 글', ''].join('\n')
+          await api(`/bots/${bot.id}/file`, { rel, text: src, force: true })
+          await wait(900)
+          const opened = await pg.evaluate((r) => { const hit = [...document.querySelectorAll('.trow')].find((x) => (x.textContent ?? '').includes(r)); if (hit) { hit.click(); return true } return false }, rel)
+          if (!opened) fail('BI 그림 링크: 트리에 새 파일이 안 나타난다')
+          await pg.waitForSelector('.mded .cm-content', { timeout: 9000 }); await wait(500)
+          await pg.click('.mded .cm-line >> nth=0'); await wait(200)
+          const shape = await pg.evaluate(() => { const w = document.querySelector('.mded .lp-img .lp-imglink'); return w ? { href: w.dataset.href, img: !!w.querySelector('img'), cap: w.querySelector('.lp-imgcap')?.textContent ?? '' } : null })
+          if (!shape || !shape.img || shape.href !== 'https://x.com/bot/status/1' || !/x\.com/.test(shape.cap)) fail('BI 그림 링크: 링크를 두른 그림이 그림으로 안 그려졌다 ' + JSON.stringify(shape))
+          await pg.evaluate(() => { window.__opened = []; window.open = (u) => { window.__opened.push(String(u)); return null } })
+          await pg.click('.mded .lp-imglink img'); await wait(300)
+          const op = await pg.evaluate(() => window.__opened)
+          if (op.join() !== 'https://x.com/bot/status/1') fail('BI 그림 링크: 그림을 눌러도 주소가 안 열린다 ' + JSON.stringify(op))
+          await wait(1200)
+          if (readFileSync(abs, 'utf8') !== src) fail('BI 그림 링크: 보기만 했는데 파일이 바뀌었다')
+          ok('BI 링크를 두른 그림 — 그림으로 보이고 · 누르면 주소가 열리고 · 파일은 그대로')
+          await pg.evaluate(() => { const t = [...document.querySelectorAll('.trow')].find((x) => /todo\.md/.test(x.textContent ?? '')); t?.click() })
+          await wait(700)
+          try { rmSync(abs) } catch {}
+          await wait(400)
+        }
+        /**
          * 🔴 BF · **문서 창은 연 파일에만, 사람이 고친 것만, 연 판 위에만 쓴다** (2026-09-27 Dave · 저장 뒤바뀜 세 번)
          *    ① 읽기·클릭만 하면 파일은 mtime 까지 그대로 ② 봇을 바꿔도(같은 이름 파일) 친 글은 원래 파일로
          *    ③ 치는 사이 다른 곳이 바꾸면 원본은 그대로 · 내 글은 «충돌 사본» · 배너 · «지금 파일 유지» 면 사본은 휴지통
@@ -2537,7 +2606,7 @@ try {
           // ① 읽기만 — 열고, 글줄·표 칸·링크 밖을 누르고, 다른 문서로 갔다 온다
           {
             const rel = 'bf-read.md'; const abs = join(dirR, rel)
-            await api(`/bots/${bot.id}/file`, { rel, text: '# 읽기만\n\n본문 한 줄과 [링크](https://example.com/x) \\| 파이프\n\n| 가 | 나 |\n|---|---|\n| [루마](https://luma.com/x) | a \\| b |\n' })
+            await api(`/bots/${bot.id}/file`, { rel, text: '# 읽기만\n\n본문 한 줄과 [링크](https://example.com/x) \\| 파이프\n\n| 가 | 나 |\n|---|---|\n| [루마](https://luma.com/x) | a \\| b |\n', force: true })
             await wait(900)
             const m0 = statSync(abs).mtimeMs; const t0 = readFileSync(abs, 'utf8')
             if (!(await pick(rel))) fail('BF 읽기: 트리에 새 파일이 안 보인다')
@@ -2558,8 +2627,8 @@ try {
             if (!other) fail('BF 봇 전환: 옆 봇이 없다')
             else {
               const rel = 'bf-same.md'
-              await api(`/bots/${bot.id}/file`, { rel, text: '# 이 봇\n여기 글\n' })
-              await api(`/bots/${other.id}/file`, { rel, text: '# 옆 봇\n옆 글\n' })
+              await api(`/bots/${bot.id}/file`, { rel, text: '# 이 봇\n여기 글\n', force: true })
+              await api(`/bots/${other.id}/file`, { rel, text: '# 옆 봇\n옆 글\n', force: true })
               await wait(900)
               // 실제로 난 모양 그대로 — 옆 봇에서도 같은 이름 파일을 문서 창에 열어 둔다(두 봇 모두 문서 창이 열려 있다)
               await pg.click(`.brow[data-id="${other.id}"]`); await wait(900)
@@ -2584,7 +2653,7 @@ try {
           // ③ 충돌 — 치는 사이(0.8초 안) 다른 곳이 파일을 바꾼다
           {
             const rel = 'bf-clash.md'; const abs = join(dirR, rel)
-            await api(`/bots/${bot.id}/file`, { rel, text: '# 충돌\n처음 글\n' })
+            await api(`/bots/${bot.id}/file`, { rel, text: '# 충돌\n처음 글\n', force: true })
             await wait(900)
             if (!(await pick(rel))) fail('BF 충돌: 트리에 새 파일이 안 보인다')
             await pg.waitForSelector('.mded .cm-content', { timeout: 9000 }); await wait(400)
@@ -2615,6 +2684,39 @@ try {
             await pick('todo.md'); await wait(600)
             try { rmSync(abs) } catch {}
             ok('BF 충돌 — 원본은 그대로 · 내 글은 «충돌 사본» · 배너로 알림 · «지금 파일 유지»/«내 글로 바꾸기» 뒤 사본은 휴지통')
+          }
+          /**
+           * ④ 🔴 BJ · **채팅칸에서 치는 중에 봇이 문서를 띄워도 글자는 채팅칸에 남는다** (2026-09-27 · 파일 머리의 「ㅏㄴ보」 등)
+           *    종전엔 편집기가 뜨자마자 포커스를 가져가, 나머지 글자가 문서 맨 앞에 들어가 저장됐다
+           */
+          {
+            const rel = 'bj-focus.md'; const abs = join(dirR, rel)
+            const backHash = await pg.evaluate(() => location.hash)
+            await api(`/bots/${bot.id}/file`, { rel, text: '# 포커스\n본문\n', force: true }); await wait(900)
+            const sidF = (await api(`/bots/${bot.id}/sessions`, { name: 'bj-focus' })).id
+            await pg.evaluate((h) => { location.hash = h }, `bot=${bot.id}&s=${sidF}`); await wait(700)
+            await api(`/sessions/${sidF}/send`, { text: '되읊어: 준비' }); await wait(1300)   // 새 턴 — rondo_open 은 턴마다 한 번 먹는다
+            await pg.click('.composer .cin'); await pg.keyboard.type('안녕')
+            const ro = await (await fetch(base + `/mcp/${bot.id}?sid=${sidF}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'rondo_open', arguments: { path: rel } } }) })).json()
+            if (ro.result?.isError) fail('BJ: rondo_open 실패(검사 전제) ' + JSON.stringify(ro))
+            await wait(1000)
+            await pg.keyboard.type('하세요'); await wait(1700)
+            const opened = await pg.evaluate(() => document.querySelector('.docwrap .dtb .nm')?.textContent ?? '')
+            const cin = await pg.$eval('.composer .cin', (e) => e.value ?? e.textContent ?? '')
+            const disk = readFileSync(abs, 'utf8')
+            if (opened !== rel) fail('BJ: 봇이 띄운 문서가 안 열렸다(검사 전제) · ' + JSON.stringify(opened))
+            if (disk !== '# 포커스\n본문\n') fail('🔴 BJ: 채팅칸에서 치던 글자가 문서에 들어가 저장됐다 · ' + JSON.stringify(disk))
+            if (!/안녕하세요/.test(cin)) fail('BJ: 채팅칸 글이 도중에 끊겼다 · ' + JSON.stringify(cin))
+            await pg.fill('.composer .cin', ''); await wait(200)
+            await pick('todo.md'); await wait(600)
+            try { rmSync(abs) } catch {}
+            await pg.evaluate((h) => { location.hash = h }, backHash); await wait(600)
+            await api(`/sessions/${sidF}`, undefined, 'DELETE'); await wait(400)
+            // BJ · 판(base) 없는 저장은 거절 — 호스트를 올린 뒤에도 옛 화면이 판 없이 덮어쓰던 길
+            { const r = await fetch(base + `/api/bots/${bot.id}/file`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rel: 'todo.md', text: '옛 화면이 덮으려는 글' }) })
+              if (r.status !== 428) fail('🔴 BJ: 판 없는 저장이 거절되지 않았다 · ' + r.status)
+              if (/옛 화면이 덮으려는 글/.test(readFileSync(join(dirR, 'todo.md'), 'utf8'))) fail('🔴 BJ: 판 없는 저장이 파일을 덮었다') }
+            ok('BJ 채팅칸에서 치는 중에 봇이 문서를 띄워도 — 글자는 채팅칸에 · 문서는 그대로 · 판 없는 저장은 거절')
           }
           await wait(400)
         }
@@ -2890,6 +2992,34 @@ try {
             await pg.evaluate((h) => { location.hash = h }, backHash); await wait(600)
             await pg.focus('.composer .cin')   // ⚠ 뒤 검사들이 «입력칸에 포커스» 를 전제로 ⌘⏎ 를 친다
             ok('알림을 누르면 그 폴더의 그 세션이 열린다')
+          }
+          /**
+           * 🔴 BH · **화면 줄이 늦은 채(맥이 자고 깬 직후) 배너가 새 세션을 가리켜도 그 세션으로** (2026-09-27 Dave · 스크린샷_1759)
+           *    배너는 셸의 이벤트 줄로 뜨고 화면의 줄은 늦을 수 있다 — 화면 목록에 없는 세션이면 조용히 첫 세션으로 떨어졌다.
+           *    `__fbHoldFrames` 로 화면 줄을 멈춘 채 새 세션을 만들고, 셸과 같은 길(replaceState + hashchange)로 옮긴다.
+           */
+          {
+            const backHash = await pg.evaluate(() => location.hash)
+            await pg.evaluate(() => { window.__fbHoldFrames = true }); await wait(200)
+            const late = await api(`/bots/${bot.id}/sessions`, { name: '늦게 온 세션' })
+            await api(`/sessions/${late.id}/send`, { text: '되읊어: 늦게 온 답' }); await wait(1200)
+            await pg.evaluate((h) => { window.__fbNavVia = Date.now(); history.replaceState(null, '', '#' + h); dispatchEvent(new HashChangeEvent('hashchange')) }, `bot=${bot.id}&s=${late.id}`)
+            await wait(900)
+            const head = await pg.textContent('.chat-hdr')
+            await pg.evaluate(() => { window.__fbHoldFrames = false })
+            if (!/늦게 온 세션/.test(head ?? '')) fail('BH 알림 점프: 화면 목록에 없던 세션인데 첫 세션으로 떨어졌다 · ' + JSON.stringify(head))
+            await api(`/sessions/${late.id}`, undefined, 'DELETE')
+            // orch_ask 로 생긴 오케스트레이터 세션이 화면에서 «요청 ← …» 이름으로 보인다
+            await pg.evaluate(() => { location.hash = 'bot=orch' }); await wait(900)
+            const orchNames = await pg.$$eval('.rpwrap .srow .n', (r) => r.map((x) => x.textContent))
+            if (!orchNames.some((n) => /^요청 ← /.test(n ?? ''))) fail('BH orch_ask: 오케스트레이터 세션 목록에 «요청 ← …» 가 안 보인다 ' + JSON.stringify(orchNames))
+            await pg.evaluate((h) => { location.hash = h }, backHash); await wait(700)
+            // 치우기 — 오케스트레이터의 최근 줄에 «요청 ← 제품_Rondo» 가 남으면 뒤 검사가 봇 이름으로 행을 찾다가 관제 행을 집는다.
+            // ⚠ 화면을 먼저 옮기고 지운다 — 보고 있는 세션을 지우면 읽음 표시·대화 받기가 404 를 낸다(«페이지 오류 0»)
+            for (const x of (await api('/bots/orch/sessions')).filter((x) => /^요청 ← /.test(x.name))) await api(`/sessions/${x.id}`, undefined, 'DELETE')
+            await wait(500)
+            await pg.focus('.composer .cin')
+            ok('BH 알림 점프 — 화면 줄이 늦어도 그 세션으로 · 오케스트레이터에 «요청 ← …» 세션이 보인다')
           }
           /**
            * 🔴 **질문 카드의 「기타」는 질문마다 따로다** (2026-09-15 Dave: *«AskUserQuestion 에서 추가
@@ -4229,7 +4359,7 @@ try {
           for (const want of ['확인 대기', '일하는 중', '할 일', '마지막 결과']) if (!labels.some((l) => l.includes(want))) fail(`폰 홈 4칸: «${want}» 가 없다 · ` + JSON.stringify(labels))
           // ⚠ 뒤 검사들은 **대화 화면**을 전제로 한다 — 홈으로 나왔으면 다시 들어가 둔다
           if (back) {
-            await pg.evaluate((n) => { const r = [...document.querySelectorAll('.mhome .mrow')].find((x) => x.textContent?.includes(n)); r?.click() }, wasName)
+            await pg.evaluate((n) => { const r = [...document.querySelectorAll('.mhome .mrow')].find((x) => x.querySelector('.l1')?.textContent?.includes(n)); r?.click() }, wasName)   // ⚠ 이름 줄(.l1)로만 찾는다 — 다른 봇의 미리보기 줄에 이 이름이 섞일 수 있다(BH «요청 ← 봇 이름»)
             await pg.waitForSelector('.composer .cin', { timeout: 8000 }); await wait(400)
             const now = await pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('bot'))
             if (now !== wasBot) fail('폰 홈 4칸: 검사 뒤 원래 폴더로 안 돌아왔다 · ' + JSON.stringify([wasBot, now]))
@@ -4741,7 +4871,7 @@ try {
 
   // ── HTML 은 제 갈래로 · 외부 앱 열기는 루트 밖을 막는다 ──
   {
-    await api(`/bots/${bot.id}/file`, { rel: 'report.html', text: '<!doctype html><h1>리포트</h1>' })
+    await api(`/bots/${bot.id}/file`, { rel: 'report.html', text: '<!doctype html><h1>리포트</h1>', force: true })
     const d = await api(`/bots/${bot.id}/file?rel=report.html`)
     if (d.kind !== 'html') fail('HTML: 원문 텍스트로 떨어졌다 — 브라우저처럼 못 본다 · kind=' + d.kind)
     let blocked = false

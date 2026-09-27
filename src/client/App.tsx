@@ -25,7 +25,7 @@ import { attachRoom } from '../core/attach'
 import { applyViewport, planViewport } from '../core/viewport'
 import { canStartSwipe, dragProgress, fromLeftEdge, lockOf, scrollableEats, stageOf, swipeVerdict } from '../core/drawer'
 import { curOf, dismiss, goTo, navInit, type Nav, type Page } from '../core/navstack'
-import { botUnread, shouldMarkRead, MOOD_RANK, type BotMood } from '../core/unread'
+import { botUnread, shouldMarkRead, MOOD_RANK, recentDone, type BotMood } from '../core/unread'
 import { clampDockOffset, isDockDrag, readDockOffset } from '../core/dock'
 import { tabActive } from '../core/tabbar'
 import { SwipeRow } from './SwipeRow'
@@ -288,6 +288,22 @@ function Main() {
   const bot = s.bots.find((b) => b.id === botId) ?? s.bots[0]
   const sessions = s.sessionsByBot[bot?.id ?? ''] ?? []
   const sessionId = hash.s && sessions.some((x) => x.id === hash.s) ? hash.s : sessions[0]?.id
+  /**
+   * 🔴 **BH · 알림이 가리키는 세션이 화면 목록에 없으면 목록을 곧바로 새로 받는다** (2026-09-27 Dave · 스크린샷_1759:
+   *    *«알림을 클릭하면 해당 폴더봇으로는 가는데, 세션이 여러 개 있을 때 특정 세션으로는 이동을 못해»* — 맥 배너).
+   *    배너는 **셸**(메인 프로세스)의 이벤트 줄로 뜨는데, 화면(렌더러)의 줄은 맥이 자고 깨거나 창이 오래 숨어 있으면 늦는다.
+   *    그래서 배너가 가리키는 새 세션이 화면 목록에 아직 없고, 위 줄이 **조용히 첫 세션으로** 떨어졌다 — 폴더는 맞고 세션은 틀리다.
+   *    목록을 그 자리에서 받아 오면 `hash.s` 는 그대로라 곧바로 그 세션이 선다. 같은 id 로는 한 번만 묻는다(정말 지워진 세션이면 첫 세션에 남는다).
+   * ⚠ 받아 오는 동안 «세션 없음» 으로 두지 않는다 — 그 틈에 치면 새 세션이 생긴다(`post` 는 `cur` 가 없으면 새로 연다).
+   */
+  const askedFor = useRef('')
+  useEffect(() => {
+    if (!hash.s || !s.loaded || sessions.some((x) => x.id === hash.s) || askedFor.current === hash.s) return
+    askedFor.current = hash.s
+    const w = window as unknown as { __fbNavVia?: number }; const via = w.__fbNavVia && Date.now() - w.__fbNavVia < 5000 ? '맥 배너' : '주소'; w.__fbNavVia = undefined
+    const want = hash.s, bid = hash.bot
+    void refresh().then(() => { void api('/client-log', { body: { msg: `${via} → ${bid}/${want} · 화면 목록에 없어 새로 받음` } }).catch(() => {}) })
+  }, [hash.s, hash.bot, sessions, s.loaded])
   /**
    * H · 어느 단계인지는 **창 폭으로만** 정한다(2026-09-19 Dave 시안 확정) — 넓음 ≥1200 · 중간 768–1199 · 좁음 <768. 「폰이냐」는 안 따진다.
    * 중간·좁음에서 양쪽 패널은 채팅을 **밀지 않고 덮는다**(overlay) — 밀면 글이 다시 흘러 B 같은 흔들림이 또 난다.
@@ -559,8 +575,14 @@ function Main() {
    *    «내가 옮긴 게 어디 갔지» 가 된다. 그래서 이 갈래만 호스트 목록 순서를 그대로 쓴다.
    * ⚠ 관제는 늘 맨 위이고 끌 수 없다.
    */
+  /** BH · «2시간 안» 이 저절로 지나가게 — 1분마다 레일을 다시 매긴다(다른 상태가 안 바뀌어도 초록이 꺼진다) */
+  const [minute, setMinute] = useState(0)
+  useEffect(() => { const t = window.setInterval(() => setMinute((m) => m + 1), 60_000); return () => window.clearInterval(t) }, [])
   const rows = useMemo(() => {
     const items = s.bots.map((b, i) => ({ b, i, sum: botSummary(b, s.sessionsByBot[b.id] ?? [], s.notifications) }))
+    // BH · «방금 끝난 최신 3(2시간 안)» — 봇 사이에서 겨루므로 여기서 한 번에 매긴다(레일·띠·폰 홈이 같은 값을 쓴다)
+    const fresh = recentDone(items.map(({ b, sum }) => ({ id: b.id, mood: sum.mood as BotMood, doneAt: sum.doneAt })), Date.now())
+    for (const it of items) it.sum.recent = fresh.has(it.b.id)
     // 섹션: 관제 → PARA 번호 오름차순(2 → 3 → 4)
     const cmp = (a: string, b: string) => a.localeCompare(b, 'ko', { numeric: true, sensitivity: 'base' })
     const m = new Map<string, typeof items>()
@@ -579,7 +601,7 @@ function Main() {
       })
     }
     return secs
-  }, [s.bots, s.sessionsByBot, s.notifications, railSort])
+  }, [s.bots, s.sessionsByBot, s.notifications, railSort, minute])
   if (!bot) return <div className="app"><div className="empty">봇이 없어요</div></div>
   const items = sessionId ? (s.chats[sessionId] ?? []) : []
   const pending = sessionId ? (s.pending[sessionId] ?? []) : []
@@ -839,7 +861,7 @@ function Main() {
               onDragOver={(e) => { if (!dragBot || b.orchestrator || dragBot === b.id) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOverBot(b.id) }}
               onDragLeave={() => setOverBot((x) => (x === b.id ? null : x))}
               onDrop={(e) => { e.preventDefault(); void dropBot(b.id) }}
-              onContextMenu={(e) => { e.preventDefault(); hovOut(); if (!b.orchestrator) setRailCtx({ x: e.clientX, y: e.clientY, id: b.id, name: b.name }) }} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={ICON_PX[iconSz]} mood={sum.mood} unread={sum.unread} mono /><span className="n"><BotName b={b} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span>{b.due ? null : <time>{fmtTime(sum.t)}</time>}</button>)}
+              onContextMenu={(e) => { e.preventDefault(); hovOut(); if (!b.orchestrator) setRailCtx({ x: e.clientX, y: e.clientY, id: b.id, name: b.name }) }} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={ICON_PX[iconSz]} mood={sum.mood} unread={sum.unread} recent={sum.recent} mono /><span className="n"><BotName b={b} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span>{b.due ? null : <time>{fmtTime(sum.t)}</time>}</button>)}
           </div>)}
         </div>
         {hovRow ? <HoverCard b={hovRow.b} sum={hovRow.sum} top={hov!.top} left={fit.sb + 6} /> : null}
@@ -867,7 +889,7 @@ function Main() {
         <button className="ib" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span className="fly"><b>폴더 선택 · 시작</b><span>후보 {s.candidates.filter((c) => !c.active).length}</span></span></button>
         <button className="ib" onClick={() => setModal('notify')}><Icon n="bell" size={14} />{unread ? <span className="bd">{unread}</span> : null}<span className="fly"><b>알림</b><span>{unread ? `읽지 않음 ${unread}` : '없음'}</span></span></button>
         <div className="gap" />
-        {stripBots.map(({ b, sum }) => <button key={b.id} className={`bot ${b.id === bot.id ? 'on' : ''} ${sum.unread ? 'unread' : ''}`} onClick={() => go(b.id)}><FolderBot color={b.color} size={17} mood={sum.mood} unread={sum.unread} mono /><span className="fly"><b><Mid s={b.displayName} /></b><span><span className={`dot ${stateDot(sum.state ?? undefined)}`} style={{ marginRight: 5 }} />{sum.text}</span><span className="t3">{b.section} · {fmtTime(sum.t)}</span></span></button>)}
+        {stripBots.map(({ b, sum }) => <button key={b.id} className={`bot ${b.id === bot.id ? 'on' : ''} ${sum.unread ? 'unread' : ''}`} onClick={() => go(b.id)}><FolderBot color={b.color} size={17} mood={sum.mood} unread={sum.unread} recent={sum.recent} mono /><span className="fly"><b><Mid s={b.displayName} /></b><span><span className={`dot ${stateDot(sum.state ?? undefined)}`} style={{ marginRight: 5 }} />{sum.text}</span><span className="t3">{b.section} · {fmtTime(sum.t)}</span></span></button>)}
       </div>
   const docwrapEl = showDoc ? <div className="docwrap" style={{ width: wide || narrow ? undefined : fit.doc, flex: wide ? 3 : 'none', display: 'flex', minWidth: 0 }}><DocPane bot={bot} docs={docs} filesTick={s.filesTick[bot.id]} onTalk={(rel) => { setPrefill(`${rel} 파일 봐 줘: `); if (phone) setView('chat') }} onHide={() => setDocOpen((d) => ({ ...d, [bot.id]: false }))} wide={wide} onWide={() => setWide(!wide)} onAttach={(rel) => addAttach({ rel, abs: `${bot.abs}/${rel}` })} say={say} phone={phone} onBack={toList} /></div> : null
   /**
@@ -1015,7 +1037,9 @@ function botSummary(bot: Bot, sessions: SessionInfo[], notif: NotifyEvent[]) {
   const text = wait ? `확인해 주세요 · ${wait.pending[0]?.displayName ?? wait.name}`
     : holder === 'other' ? `${holdHeader(holder, top?.inflight, top?.bg ?? 0)} · ${top?.inflight?.summary || top?.name || ''}`
       : run ? `일하는 중 · ${run.activity || run.name}` : last ? notePlain(last) : top ? `${top.name}${top.hibernated ? ' · 절전' : ''}` : '메시지를 보내 보세요'
-  return { state, text, unread, holder, t: Math.max(top?.lastActivity ?? bot.startedAt, last?.t ?? 0), mood: moodOf(state, !!top?.hibernated && !run && !wait, holder) }
+  /** BH · 이 봇이 마지막으로 끝낸 시각 — 가장 최근에 봇이 낸 말(`lastReplyAt`). 도는 세션은 아직 안 끝났으므로 뺀다 */
+  const doneAt = Math.max(0, ...sessions.filter((x) => x.state !== 'running' && x.state !== 'awaiting_input').map((x) => x.lastReplyAt ?? 0)) || undefined
+  return { state, text, unread, holder, t: Math.max(top?.lastActivity ?? bot.startedAt, last?.t ?? 0), mood: moodOf(state, !!top?.hibernated && !run && !wait, holder), doneAt, recent: false }
 }
 
 /**
@@ -1148,7 +1172,7 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say, ra
       {rows.map(([sec, list]) => <div key={sec}>
         <div className="secl">{sec}</div>
         {list.map(({ b, sum }) => {
-          const row = <button key={b.id} className={`mrow ${sum.unread ? 'unread' : ''}`} onClick={() => go(b.id)}><span className="av"><FolderBot color={b.color} size={46} mood={sum.mood} unread={sum.unread} mono /></span><span className="t"><span className="l1"><BotName b={b} chip={false} />{b.due ? (() => { const d = dueChip(b.due.date, b.due.precision); return d ? <span className={`due ${d.tone}`}>{d.text}</span> : null })() : <time>{fmtTime(sum.t)}</time>}</span><span className="l2">{sum.text}</span></span></button>
+          const row = <button key={b.id} className={`mrow ${sum.unread ? 'unread' : ''}`} onClick={() => go(b.id)}><span className="av"><FolderBot color={b.color} size={46} mood={sum.mood} unread={sum.unread} recent={sum.recent} mono /></span><span className="t"><span className="l1"><BotName b={b} chip={false} />{b.due ? (() => { const d = dueChip(b.due.date, b.due.precision); return d ? <span className={`due ${d.tone}`}>{d.text}</span> : null })() : <time>{fmtTime(sum.t)}</time>}</span><span className="l2">{sum.text}</span></span></button>
           // 관제(오케스트레이터)는 고정·지우기·은퇴의 대상이 아니다 — 쓸리지 않는다
           return b.orchestrator ? row : <SwipeRow key={b.id} cfg={FOLDER_SWIPE} labelFor={(a) => (a === 'pin' && b.pinned ? '고정 풀기' : undefined)} onAct={(a) => void folderAct(b, a)}>{row}</SwipeRow>
         })}

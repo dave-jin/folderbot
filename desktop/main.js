@@ -61,9 +61,10 @@ function openDeepLink(url) {
 function navigate(hash) {
   if (!win) { pendingNav = hash; showWin(); return }
   showWin()
-  /* AQ · `location.hash=` 는 기록을 한 칸 쌓는다(뒤로 쓸기가 걷어 갈 곳이 생긴다) — 같은 자리에 덮어쓰고
+  /* BH · `__fbNavVia` — 배너로 옮겼다는 표식. 화면은 가리킨 세션이 목록에 없으면 호스트 로그에 발자국을 남긴다
+     AQ · `location.hash=` 는 기록을 한 칸 쌓는다(뒤로 쓸기가 걷어 갈 곳이 생긴다) — 같은 자리에 덮어쓰고
      화면에는 직접 알린다(`replaceState` 는 `hashchange` 를 안 쏜다). */
-  win.webContents.executeJavaScript(`(()=>{const h=${JSON.stringify(hash.replace(/^#/, ''))};history.replaceState(null,'',h?'#'+h:location.pathname+location.search);dispatchEvent(new HashChangeEvent('hashchange'))})()`).catch(() => {})
+  win.webContents.executeJavaScript(`(()=>{const h=${JSON.stringify(hash.replace(/^#/, ''))};window.__fbNavVia=Date.now();history.replaceState(null,'',h?'#'+h:location.pathname+location.search);dispatchEvent(new HashChangeEvent('hashchange'))})()`).catch(() => {})
 }
 /**
  * ⚠ **Dock 은 숨겨져 있을 때만 `show()` 한다** (2026-09-25 Dave · 스크린샷_2010: 알림을 누르자 Dock 이 확대된 채 멈춰 있었다).

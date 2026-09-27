@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { execFile } from 'node:child_process'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
@@ -81,8 +82,13 @@ const PAIR_TTL = 2 * 60 * 1000
 export class Gateway {
   private servers: Server[] = []
   private clients = new Set<Client>()
+  /** BH · 화면 발자국(`/api/client-log`) 분당 상한 */
+  private clogs: number[] = []
   pairing: { code: string; expiresAt: number } | null = null
   addrs: string[] = []
+  /** BJ · 화면 판 — 호스트가 내보내는 `index.html` 의 지문. 화면은 이것이 바뀌면 스스로 다시 읽는다(옛 코드가 계속 돌지 않게) */
+  private build: string | null = null
+  clientBuild(): string { if (this.build === null) { try { this.build = createHash('sha256').update(readFileSync(join(this.webRoot, 'index.html'))).digest('hex').slice(0, 12) } catch { this.build = '' } } return this.build }
   constructor(private host: Host, private webRoot: string) {
     host.broadcast = (f) => this.broadcastFrame(f)
   }
@@ -177,7 +183,7 @@ export class Gateway {
 
     if (p === '/api/events') {
       res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no' })
-      res.write(`data: ${JSON.stringify({ ev: 'hello', version: h.version, serverTime: Date.now() } satisfies Frame)}\n\n`)
+      res.write(`data: ${JSON.stringify({ ev: 'hello', version: h.version, serverTime: Date.now(), build: this.clientBuild() } satisfies Frame)}\n\n`)
       const c: Client = { res, device }; this.clients.add(c)
       req.on('close', () => this.clients.delete(c))
       return
@@ -368,6 +374,15 @@ export class Gateway {
       return json(200, { ok: true, cmd })
     }
     // 진단 — 사람이 전령이 되지 않게. ⛔ 토큰·이메일·키 값은 안 들어간다(`auth.diagnose` 머리말)
+    /**
+     * BH · 화면이 남기는 발자국 — 알림 배너로 옮겼는데 가리킨 세션이 화면 목록에 없던 일을 **호스트 로그**에 적는다.
+     * 원격 맥북의 일은 그 맥에서만 보여 재현이 어려웠다(2026-09-27). 길이는 300자, 분당 20줄에서 자른다.
+     */
+    if (p === '/api/client-log' && m === 'POST') {
+      const now = Date.now(); this.clogs = this.clogs.filter((t) => now - t < 60_000)
+      if (this.clogs.length < 20) { this.clogs.push(now); const b = await body(); h.log(`화면(${who.main ? '호스트' : who.device}): ${String(b.msg ?? '').replace(/\s+/g, ' ').slice(0, 300)}`) }
+      return json(200, { ok: true })
+    }
     if (p === '/api/auth/diagnose' && m === 'GET') return json(200, { text: await diagnose({ claudeBin: h.cfg.claudeBin, openaiApiKey: h.cfg.openaiApiKey, tokenSet: !!h.cfg.claudeOauthToken }) })
     if (p === '/api/auth/reconnect' && m === 'POST') {
       const b = await body()
@@ -490,6 +505,12 @@ export class Gateway {
         const b = await body(); const rel = String(b.rel ?? '')
         // ⚠ 한글 이름은 NFC/NFD 두 벌로 산다 — 읽을 때와 **같은 파일**에 쓴다(안 그러면 판이 늘 «없음» 이라 매번 충돌이 난다)
         const abs = resolveNFDeep('/', inBot(bot.abs, rel).slice(1))
+        /**
+         * 🔴 BJ · **판(`base`) 없는 저장은 거절한다** — 스크립트·검사만 `force:true` 로 쓴다.
+         *    BF(v163)는 새 화면이 판을 보내게 했지만, 호스트를 올려도 **이미 떠 있던 화면은 옛 코드 그대로** 돌며 판 없이 썼다.
+         *    그 화면들이 막히지 않으면 호스트를 올린 뒤에도 뒤바뀜이 난다. 옛 화면은 이제 «저장 실패» 를 보고, 다시 읽으면(BJ 자동 새로고침) 새 코드가 된다.
+         */
+        if (typeof b.base !== 'string' && b.force !== true) return json(428, { error: '화면이 옛 판이라 저장하지 않았어요 — 새로고침하면 새 판으로 저장돼요' })
         const r = saveDoc({ botId: bot.id, botAbs: bot.abs, rel, abs, text: String(b.text ?? ''), base: typeof b.base === 'string' ? b.base : undefined, book: h.clashes })
         if (!(r.ok && r.same)) h.broadcast({ ev: 'files', botId: bot.id })
         // ⚠ 충돌은 **오류가 아니라 상태**로 답한다(200) — 409 를 주면 브라우저 콘솔에 끌 수 없는 빨간 줄이 남는다(`peek` 과 같은 이유)

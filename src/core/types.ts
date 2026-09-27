@@ -236,7 +236,7 @@ export interface NotifyEvent {
 
 /** SSE 프레임 */
 export type Frame =
-  | { ev: 'hello'; version: string; serverTime: number }
+  | { ev: 'hello'; version: string; serverTime: number; /** BJ · 화면 판 지문 */ build?: string }
   | { ev: 'bots'; bots: Bot[]; /** A · 오케스트레이터가 순서를 바꿨다 → 그 기기의 레일 정렬을 «직접» 으로 */ reorderedBy?: 'orchestrator' }
   | { ev: 'sessions'; botId: string; sessions: SessionInfo[] }
   | { ev: 'chat'; sessionId: string; item: ChatItem; replace?: boolean }

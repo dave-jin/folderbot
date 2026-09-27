@@ -64,8 +64,24 @@ export function unreadRing(mood: BotMood): boolean {
  * ⚠ 노랑(네 차례)·빨강(오류)은 읽은 뒤에도 남긴다 — 끝난 게 아니라 **멈춰서 사람을 기다리는** 상태다(Dave 승인안).
  */
 const LIVE: BotMood[] = ['work', 'hold', 'wait', 'error']
-export function badgeOn(mood: BotMood, unread: boolean): boolean {
-  return unread || LIVE.includes(mood)
+export function badgeOn(mood: BotMood, unread: boolean, recent = false): boolean {
+  return unread || LIVE.includes(mood) || recent
+}
+
+/**
+ * 🔴 **BH · 방금 끝난 봇은 읽은 뒤에도 초록 원닷 하나를 남긴다** (2026-09-27 Dave: *«초록색 불을 읽고 난 뒤에 더블링은 없애고,
+ *    가장 방금 끝난 최신 친구들만 초록색으로 남겨 주면 안될까? … 최신 3개만 남기거나. 기준은 함께 정하고 넘어가자»* →
+ *    답: **최신 3개 + 2시간 안**).
+ * AU 뒤로 끝났고 읽은 봇에는 아무 표시가 없어서, «방금 누가 끝냈지» 가 목록에서 사라졌다. 그렇다고 끝난 봇을 다 켜면 AU 전의
+ * «닷이 너무 많다» 로 돌아간다. 그래서 끝난 시각이 가장 최근인 것부터 **3개까지**, 그중 **2시간 안**에 끝난 것만 켠다 —
+ * 화면에 초록이 셋을 넘지 않고, 밤새 초록이 남아 있지도 않다.
+ * ⚠ 링은 여전히 «안 읽음» 만의 것이다(읽으면 링이 걷히고, 최신이면 원닷이 남는다). 도는 중·기다림·오류는 이미 제 닷이 있어 후보가 아니다.
+ * ⚠ 안 읽은 봇도 «최신 3» 의 자리를 차지한다 — 초록이 셋을 넘지 않는다는 약속을 지키려고.
+ */
+export const RECENT_MAX = 3
+export const RECENT_MS = 2 * 60 * 60 * 1000
+export function recentDone(xs: { id: string; mood: BotMood; doneAt?: number }[], now: number, max = RECENT_MAX, windowMs = RECENT_MS): Set<string> {
+  return new Set(xs.filter((x) => !LIVE.includes(x.mood) && !!x.doneAt && now - x.doneAt <= windowMs).sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0)).slice(0, max).map((x) => x.id))
 }
 
 /* ── 레일 «상태» 정렬 차례 (App 레일·폰 홈이 같이 쓴다) ── */

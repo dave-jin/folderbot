@@ -192,6 +192,8 @@ export type Worker = ClaudeWorker | CodexWorker
 
 /** 세션 하나의 정본 (호스트가 소유) */
 export interface SessionRec {
+  /** BH · 오케스트레이터의 `bot_send` 로 새로 열린 세션이면 보낸 봇 id — 이 세션은 `orch_ask` 로 되묻지 못한다(고리 막기) */
+  delegatedFrom?: string
   /** J · 마지막 메시지가 온 기기 — rondo_open/reveal 이 그 기기에만 간다 */
   lastClient?: ClientCtx
   id: string
@@ -324,9 +326,9 @@ export class SessionManager extends EventEmitter {
   }
   items(id: string): ChatItem[] { return this.recs.get(id)?.items ?? [] }
 
-  create(bot: Bot, name: string, opts: { permissionMode?: PermissionMode; model?: string; effort?: string; routine?: string; vendor?: 'claude' | 'codex' } = {}): SessionRec {
+  create(bot: Bot, name: string, opts: { permissionMode?: PermissionMode; model?: string; effort?: string; routine?: string; vendor?: 'claude' | 'codex'; delegatedFrom?: string } = {}): SessionRec {
     const id = `s_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-    const r: SessionRec = { id, botId: bot.id, name, cwd: bot.repo ?? bot.abs, cliSessionId: null, state: 'idle', createdAt: Date.now(), lastActivity: Date.now(), items: [], routine: opts.routine, permissionMode: opts.permissionMode ?? ((opts.vendor ?? bot.vendor) === 'codex' ? undefined : this.defaultPermissionMode), vendor: opts.vendor ?? bot.vendor, model: opts.model ?? this.defaults[opts.vendor ?? bot.vendor].model, effort: opts.effort ?? this.defaults[opts.vendor ?? bot.vendor].effort }
+    const r: SessionRec = { id, botId: bot.id, name, cwd: bot.repo ?? bot.abs, cliSessionId: null, state: 'idle', createdAt: Date.now(), lastActivity: Date.now(), items: [], routine: opts.routine, ...(opts.delegatedFrom ? { delegatedFrom: opts.delegatedFrom } : {}), permissionMode: opts.permissionMode ?? ((opts.vendor ?? bot.vendor) === 'codex' ? undefined : this.defaultPermissionMode), vendor: opts.vendor ?? bot.vendor, model: opts.model ?? this.defaults[opts.vendor ?? bot.vendor].model, effort: opts.effort ?? this.defaults[opts.vendor ?? bot.vendor].effort }
     this.recs.set(id, r)
     this.persist(r)
     this.emit('sessions', bot.id)
