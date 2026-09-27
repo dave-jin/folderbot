@@ -36,6 +36,8 @@ export interface CodexSpec {
   sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access'
   /** `codex login` 을 못 쓰는 문맥의 대안 — 워커 환경에만 넣는다(파일로 안 쓴다) */
   apiKey?: string
+  /** 참조 폴더 등 작업 폴더 밖에서 읽을 폴더 (BC) — 이 판의 CLI 가 `--add-dir` 을 알 때만 넘긴다 */
+  addDirs?: string[]
 }
 
 /** Codex 가 아는 노력 값만 넘긴다 — Claude 의 `xhigh`·`max` 를 넘기면 그 자리에서 죽는다 */
@@ -53,7 +55,7 @@ const CODEX_EFFORT = new Set(['minimal', 'low', 'medium', 'high'])
  * ⚠ 못 읽으면 **다 있다고 본다** — 못 읽었다고 빼면 멀쩡한 판에서 샌드박스가 통째로 빠진다.
  */
 const flagCache = new Map<string, Set<string>>()
-const WANT = ['--json', '--sandbox', '--skip-git-repo-check', '--model', '-c']
+const WANT = ['--json', '--sandbox', '--skip-git-repo-check', '--model', '-c', '--add-dir']
 export function codexFlags(bin: string, sub: 'exec' | 'resume' = 'exec'): Set<string> {
   const hit = flagCache.get(sub)
   if (hit) return hit
@@ -101,6 +103,7 @@ export class CodexWorker extends EventEmitter {
     if (flags.has('--json')) args.push('--json')
     if (flags.has('--sandbox')) args.push('--sandbox', this.spec.sandbox ?? 'read-only')
     if (flags.has('--skip-git-repo-check')) args.push('--skip-git-repo-check')
+    if (flags.has('--add-dir')) for (const d of this.spec.addDirs ?? []) args.push('--add-dir', d)
     if (this.spec.model && !this.dropModel && flags.has('--model')) args.push('--model', this.spec.model)
     // ⚠ 노력은 `-c` 로 준다 — Codex 에는 `--effort` 플래그가 없고 설정 키(`model_reasoning_effort`)다.
     //    ⛔ 아는 값만 넘긴다. Claude 의 `xhigh`·`max` 를 그대로 넘기면 CLI 가 그 자리에서 죽는다.

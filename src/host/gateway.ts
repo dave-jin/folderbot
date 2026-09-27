@@ -171,7 +171,7 @@ export class Gateway {
     const m = req.method ?? 'GET'
     const seg = p.split('/').filter(Boolean) // ['api', ...]
     const botOf = (id: string) => { const b = reg.bot(id); if (!b) throw new Error('그런 봇이 없어요'); return b }
-    const roots = (b: ReturnType<typeof botOf>) => [reg.root, ...(b.repo ? [b.repo] : [])]
+    const roots = (b: ReturnType<typeof botOf>) => [reg.root, ...(b.repo ? [b.repo] : []), ...(b.refs ?? [])]
 
     if (p === '/api/events') {
       res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no' })
@@ -639,7 +639,12 @@ export class Gateway {
         return json(200, { moved, failed })
       }
       // 원격 기기가 «내 사본이 호스트와 같은가» 를 재는 자 — 크기 · 앞 64KB 해시 (E · desktop/localfs.js 와 같은 식)
-      // 참조 폴더 (D) — 폴더 밖 문서를 보다가 «이 Folderbot 에 참조 폴더로 추가». 빈 path 면 푼다
+      /**
+       * 참조 폴더 (BC · 2026-09-27) — 파일 영역 «＋참조 폴더» · 문서 띠 «참조 폴더로 추가» 가 쓴다. `{ path }` 는 더하기,
+       * `{ path, remove: true }` 는 빼기. 🔴 세션 작업 폴더는 안 바뀐다(`--add-dir` 로만 붙는다) — 아래 `/repo` 와 다르다.
+       */
+      if (sub === 'refs' && m === 'POST') { const b = await body(); try { const p2 = String(b.path ?? ''); const nb = b.remove ? reg.removeRef(bot.id, p2) : reg.addRef(bot.id, p2); h.afterBotsChanged(); return json(200, { ok: true, refs: nb.refs ?? [] }) } catch (e) { return json(400, { error: (e as Error).message }) } }
+      // 코드 리포 (`.bot.yml repo` = 코드 세션의 cwd) — D 가 한때 참조 폴더로 썼던 길. 빈 path 면 푼다
       if (sub === 'repo' && m === 'POST') { const b = await body(); try { const nb = reg.setRepo(bot.id, String(b.path ?? '')); h.afterBotsChanged(); return json(200, { ok: true, repo: nb.repo ?? null }) } catch (e) { return json(400, { error: (e as Error).message }) } }
       if (sub === 'stat' && m === 'GET') { const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')).slice(1)); if (!exists(abs)) return json(404, { error: '없는 파일' }); const st = statSync(abs); return json(200, { size: st.size, mtime: st.mtimeMs, head: headHash(abs), vaultRel: relative(reg.root, abs) }) }
       /**

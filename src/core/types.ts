@@ -37,7 +37,13 @@ export interface Candidate {
 
 export interface BotConfig {
   vendor?: Vendor
+  /** 코드 세션의 작업 폴더(cwd) — 볼트 밖 `~/dev/…` 를 가리킨다. 참조 폴더와 다르다(BC) */
   repo?: string
+  /**
+   * 참조 폴더 (BC · 2026-09-27) — 볼트 기준 상대 경로 목록, 최대 5개. 봇이 **읽으려고** 붙이는 폴더다.
+   * 🔴 작업 폴더(cwd)는 바꾸지 않고 `--add-dir` 로만 붙인다. 예전 D 는 `repo` 를 재사용해 cwd 가 옮겨갔다.
+   */
+  refs?: string[]
   candidate?: boolean
   color?: string
   routines?: RoutineDef[]
@@ -85,6 +91,8 @@ export interface Bot {
   startedAt: number
   vendor: Vendor
   repo?: string
+  /** 참조 폴더의 절대 경로 (BC) — `.bot.yml refs` 를 볼트 루트 기준으로 푼 것 */
+  refs?: string[]
   routines: RoutineDef[]
   /** 레일 맨 위 「고정」 칸에 두는 봇 — 최대 3개 (루프 3/10) */
   pinned?: boolean

@@ -181,8 +181,52 @@ export class Registry extends EventEmitter {
     this.emit('bots', this.bots())
     return this.bot(botId)!
   }
+  /**
+   * 참조 폴더 (BC · 2026-09-27) — 봇이 **읽으려고** 붙이는 볼트 안 폴더. `.bot.yml refs` 에 볼트 기준 상대 경로로 둔다
+   * (두 맥의 볼트 경로가 달라도 풀린다). 세션 작업 폴더는 그대로 두고 `--add-dir` 로만 붙인다.
+   * 🔴 D 는 `repo`(코드 cwd)를 재사용해서 «참조 폴더로 추가» 를 누르면 작업 자리가 그 폴더로 옮겨갔다 — 그래서 칸을 뗐다.
+   */
+  static readonly MAX_REFS = 5
+  private refsOf(cfg: BotConfig): string[] | undefined {
+    const list = (cfg.refs ?? []).map((r) => resolve(this.root, String(r))).filter((d) => existsSync(d))
+    return list.length ? list : undefined
+  }
+  addRef(botId: string, absDir: string): Bot {
+    const b = this.bot(botId); if (!b) throw new Error('봇을 못 찾았어요')
+    const cfg = this.botConfig(b.abs)
+    const dir = resolve(absDir); const c = canon(dir); const root = canon(this.root)
+    const inVault = c.startsWith(root + sep)
+    if (!inVault || !existsSync(dir) || !statSync(dir).isDirectory()) throw new Error('볼트 안 폴더만 참조 폴더로 둘 수 있어요')
+    const me = canon(b.abs)
+    if (c === me || c.startsWith(me + sep)) throw new Error('이미 이 봇의 폴더 안이에요')
+    if (me.startsWith(c + sep)) throw new Error('이 봇 폴더를 품은 상위 폴더는 참조로 둘 수 없어요 — 더 안쪽 폴더를 고르세요')
+    const cur = (cfg.refs ?? []).map((r) => resolve(this.root, String(r)))
+    for (const r of cur) {
+      const rc = canon(r)
+      if (rc === c) throw new Error('이미 참조 중인 폴더예요')
+      if (c.startsWith(rc + sep)) throw new Error(`이미 참조 중인 ${basename(r)} 안의 폴더예요`)
+    }
+    if (cur.length >= Registry.MAX_REFS) throw new Error(`참조 폴더는 ${Registry.MAX_REFS}개까지예요 — 하나를 빼고 더하세요`)
+    // 새 것이 기존 참조를 품으면 기존 것을 흡수한다(겹쳐 붙이지 않는다)
+    // ⚠ 상대 경로는 **정규화한 경로끼리** 잰다 — 맥의 /var ↔ /private/var 처럼 한쪽만 풀리면 `../../..` 로 볼트를 빠져나간다(유닛이 잡았다)
+    const keep = cur.filter((r) => !canon(r).startsWith(c + sep)).map((r) => relative(root, canon(r)))
+    this.saveBotConfig(b.abs, { ...cfg, refs: [...keep, relative(root, c)] })
+    this.emit('bots', this.bots())
+    return this.bot(botId)!
+  }
+  removeRef(botId: string, absDir: string): Bot {
+    const b = this.bot(botId); if (!b) throw new Error('봇을 못 찾았어요')
+    const cfg = this.botConfig(b.abs)
+    const c = canon(resolve(this.root, absDir))
+    const next = (cfg.refs ?? []).filter((r) => canon(resolve(this.root, String(r))) !== c)
+    if (next.length === (cfg.refs ?? []).length) throw new Error('참조 목록에 없는 폴더예요')
+    const { refs: _r, ...rest } = cfg
+    this.saveBotConfig(b.abs, next.length ? { ...rest, refs: next } : rest)
+    this.emit('bots', this.bots())
+    return this.bot(botId)!
+  }
   saveBotConfig(abs: string, cfg: BotConfig): void {
-    atomicWrite(join(abs, '.bot.yml'), stringify(cfg))
+    atomicWrite(join(abs, '.bot.yml'), stringify(cfg, { lineWidth: 0 }))   // 긴 경로를 접지 않는다
   }
 
   // ── 활성 봇 ──────────────────────────────────────────────────────────────
@@ -243,7 +287,7 @@ export class Registry extends EventEmitter {
     const abs = join(this.root, a.rel)
     if (!existsSync(abs)) return null
     const cfg = this.botConfig(abs)
-    return { id: a.id, rel: a.rel, abs, name: this.botName(a), ...this.display(a, abs), section: a.rel.split('/')[0] === a.rel ? '' : a.rel.split('/')[0], color: cfg.color ?? a.color, orchestrator: false, startedAt: a.startedAt, vendor: a.vendor ?? cfg.vendor ?? 'claude', repo: cfg.repo ? resolve(abs, cfg.repo.replace(/^~/, process.env.HOME ?? '')) : undefined, routines: cfg.routines ?? [], pinned: a.pinned, orderedBy: a.orderedBy }
+    return { id: a.id, rel: a.rel, abs, name: this.botName(a), ...this.display(a, abs), section: a.rel.split('/')[0] === a.rel ? '' : a.rel.split('/')[0], color: cfg.color ?? a.color, orchestrator: false, startedAt: a.startedAt, vendor: a.vendor ?? cfg.vendor ?? 'claude', repo: cfg.repo ? resolve(abs, cfg.repo.replace(/^~/, process.env.HOME ?? '')) : undefined, refs: this.refsOf(cfg), routines: cfg.routines ?? [], pinned: a.pinned, orderedBy: a.orderedBy }
   }
   bot(id: string): Bot | undefined { return this.bots().find((b) => b.id === id) }
   botByRel(rel: string): Bot | undefined { return this.bots().find((b) => b.rel === rel) }

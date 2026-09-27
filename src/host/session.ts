@@ -33,6 +33,16 @@ import { atomicWrite, dataDir, ensureDir } from './paths'
  */
 let oauthToken = ''
 let keychainOk = false
+
+/**
+ * 세션에 `--add-dir` 로 붙이는 폴더 (BC · 2026-09-27) — 참조 폴더(`refs`)는 **읽으려고** 붙이고, 코드 리포(`repo`)가 있으면
+ * 작업 폴더가 리포로 가므로 봇 폴더를 붙인다. 🔴 참조 폴더는 작업 폴더(cwd)를 바꾸지 않는다.
+ */
+export function extraDirs(bot: Pick<Bot, 'abs' | 'repo' | 'refs'>): string[] | undefined {
+  const dirs = [...(bot.refs ?? []), ...(bot.repo ? [bot.abs] : [])]
+  return dirs.length ? dirs : undefined
+}
+
 export function setOauthToken(t: string | undefined): void { oauthToken = (t ?? '').trim() }
 export function setKeychainLogin(ok: boolean): void { keychainOk = ok }
 export function cleanClaudeEnv(opts: { noToken?: boolean } = {}): Record<string, string> {
@@ -430,8 +440,8 @@ export class SessionManager extends EventEmitter {
     const w: Worker = (r.vendor ?? bot.vendor) === 'codex'
       // ⚠ 모델 이름은 CLI 마다 다르다 — Claude 이름(claude-opus-5)을 Codex 에 넘기면 그 자리에서 죽는다.
       //    Codex 것처럼 보이는 이름만 넘기고 아니면 CLI 의 기본값에 맡긴다.
-      ? new CodexWorker({ cwd: r.cwd, resume: r.cliSessionId, model: fitsProvider('codex', r.model) ? r.model : undefined, effort: r.effort, sandbox: this.codexSandbox, apiKey: this.openaiApiKey })
-      : new ClaudeWorker({ cwd: r.cwd, resume: r.cliSessionId, permissionMode: r.permissionMode, addDirs: bot.repo ? [bot.abs] : undefined, mcpConfig: this.mcpUrl(r.id, bot.id), model: r.model, effort: r.effort, name: `${bot.name}-${r.name}`, appendSystemPrompt: this.systemPromptFor(bot) || undefined, bin: this.bin })
+      ? new CodexWorker({ cwd: r.cwd, resume: r.cliSessionId, model: fitsProvider('codex', r.model) ? r.model : undefined, effort: r.effort, sandbox: this.codexSandbox, apiKey: this.openaiApiKey, addDirs: extraDirs(bot) })
+      : new ClaudeWorker({ cwd: r.cwd, resume: r.cliSessionId, permissionMode: r.permissionMode, addDirs: extraDirs(bot), mcpConfig: this.mcpUrl(r.id, bot.id), model: r.model, effort: r.effort, name: `${bot.name}-${r.name}`, appendSystemPrompt: this.systemPromptFor(bot) || undefined, bin: this.bin })
     this.workers.set(r.id, w)
     w.on('line', (line: StreamLine) => this.onLine(r, line))
     w.on('permission', (p: PermissionRequest) => {

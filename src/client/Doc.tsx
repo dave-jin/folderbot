@@ -50,13 +50,13 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
   const [lcfg] = useLocalSettings()
   /**
    * 폴더 밖 문서 (D · 2026-09-19) — rel 이 `../` 로 시작하면 이 봇 폴더 밖·볼트 안이다. **읽기로만** 열고(호스트도 쓰기는 봇 폴더
-   * 안으로 막는다) 「폴더 외 문서」 띠에 볼트 기준 경로와 «참조 폴더로 추가» 를 둔다. 참조 폴더는 봇당 하나라 비어 있을 때만.
+   * 안으로 막는다) 「폴더 외 문서」 띠에 볼트 기준 경로와 «참조 폴더로 추가» 를 둔다. BC(2026-09-27)부터 `refs` 에 더한다(최대 5 · cwd 그대로).
    */
   const [repoMsg, setRepoMsg] = useState('')
   const addRepo = async () => {
     const dir = vaultRel.includes('/') ? vaultRel.slice(0, vaultRel.lastIndexOf('/')) : ''
     if (!dir) { setRepoMsg('볼트 루트 바로 아래 파일은 참조 폴더로 둘 수 없어요'); return }
-    try { await api(`/bots/${bot.id}/repo`, { body: { path: `${root}/${dir}` } }); await refresh(); setRepoMsg('참조 폴더로 추가했어요 — 이 봇이 그 폴더를 읽을 수 있어요') } catch (e) { setRepoMsg((e as Error).message) }
+    try { await api(`/bots/${bot.id}/refs`, { body: { path: `${root}/${dir}` } }); await refresh(); setRepoMsg('참조 폴더로 추가했어요 — 새 세션부터 이 봇이 그 폴더를 읽어요') } catch (e) { setRepoMsg((e as Error).message) }
   }
   const openHere = () => void openOnThisDevice(bot, rel!, 'open', { main, hostName, phone: !!phone, say })
   const rel = docs.active
