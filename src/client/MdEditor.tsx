@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { EditorSelection, EditorState, StateEffect, StateField, type Extension, type Range } from '@codemirror/state'
+import { EditorSelection, EditorState, StateEffect, StateField, Transaction, type Extension, type Range } from '@codemirror/state'
 import { EditorView, Decoration, ViewPlugin, WidgetType, keymap, type DecorationSet } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { search, searchKeymap } from '@codemirror/search'
@@ -46,7 +46,7 @@ class CheckWidget extends WidgetType {
     b.setAttribute('role', 'checkbox'); b.setAttribute('aria-checked', String(this.on))
     b.onmousedown = (e) => {
       e.preventDefault()
-      view.dispatch({ changes: { from: this.pos, to: this.pos + 1, insert: this.on ? ' ' : 'x' } })
+      view.dispatch({ changes: { from: this.pos, to: this.pos + 1, insert: this.on ? ' ' : 'x' }, userEvent: 'input.toggle' })
     }
     return b
   }
@@ -327,12 +327,21 @@ function setCellText(el: HTMLElement, text: string): void {
   el.insertBefore(document.createTextNode(text), el.firstChild)
 }
 
+/** 원문을 칸에 그렸을 때 **보이는 글** — 사람이 안 고쳤으면 떠날 때 칸의 글이 이것과 같다 */
+function shownCell(raw: string): string { const s = document.createElement('span'); for (const n of cellNodes(raw)) s.appendChild(n); return cellText(s) }
+/**
+ * 🔴 BF · **눌렀다 떠나기만 한 칸은 문서를 안 바꾼다** (2026-09-27 Dave: «읽기만 하고 마우스 클릭 정도만 한 거를 저장하지 마»).
+ *    종전엔 떠날 때 칸의 글을 다시 이스케이프해 원문과 견줬다 — 링크·`\|`·공백처럼 한 바퀴 돌면 모양이 달라지는 칸은
+ *    **누르기만 해도** 원문이 바뀌어 저장됐다. 이제 «그렸을 때의 글» 과 같으면 사람이 안 고친 것으로 본다.
+ */
 function commitCell(view: EditorView, cell: Cell, el: HTMLElement): boolean {
   if (el.dataset.done) return false
-  const next = escCell(cellText(el))
+  const typed = cellText(el)
+  if (typed === shownCell(cell.text)) return false
+  const next = escCell(typed)
   if (next === cell.text) return false
   el.dataset.done = '1'
-  view.dispatch({ changes: { from: cell.from, to: cell.to, insert: next } })
+  view.dispatch({ changes: { from: cell.from, to: cell.to, insert: next }, userEvent: 'input.cell' })
   return true
 }
 
@@ -486,7 +495,7 @@ function delCol(view: EditorView, t: Tbl, c: number): void {
   if (t.head.cells.length <= 1) return
   const changes = allRows(t).map((r) => colCut(r, c)).filter((x): x is { from: number; to: number } => !!x)
   pendFocus = { r: 0, c: Math.max(0, c - 1) }
-  view.dispatch({ changes })
+  view.dispatch({ changes, userEvent: 'input.table' })
 }
 
 /** `c` 자리에 빈 열을 끼운다(그 칸의 **왼쪽**). 순수 insert — 기존 글자는 안 옮긴다 */
@@ -498,7 +507,7 @@ function insCol(view: EditorView, t: Tbl, c: number): void {
     return { from: at, insert: i === 1 ? ' --- |' : '  |' }
   })
   pendFocus = { r: 0, c }
-  view.dispatch({ changes })
+  view.dispatch({ changes, userEvent: 'input.table' })
 }
 
 /** 두 열을 맞바꾼다 — 줄마다 칸 두 개의 글자만 서로 넣는다 */
@@ -511,7 +520,7 @@ function swapCol(view: EditorView, t: Tbl, a: number, b: number): void {
     changes.push({ from: x.from, to: x.to, insert: y.text }, { from: y.from, to: y.to, insert: x.text })
   }
   pendFocus = { r: 0, c: b }
-  view.dispatch({ changes })
+  view.dispatch({ changes, userEvent: 'input.table' })
 }
 
 /** 정렬 — **구분줄의 그 칸 하나만** 바꾼다 */
@@ -519,14 +528,14 @@ function setAlign(view: EditorView, t: Tbl, c: number, a: '' | 'c' | 'r'): void 
   const cell = t.sep.cells[c]
   if (!cell) return
   const dash = cell.text.replace(/:/g, '') || '---'
-  view.dispatch({ changes: { from: cell.from, to: cell.to, insert: a === 'c' ? `:${dash}:` : a === 'r' ? `${dash}:` : dash } })
+  view.dispatch({ changes: { from: cell.from, to: cell.to, insert: a === 'c' ? `:${dash}:` : a === 'r' ? `${dash}:` : dash }, userEvent: 'input.table' })
 }
 
 /** 행 지우기 — 줄 하나와 그 앞 줄바꿈. ⛔ 머리줄·구분줄은 못 지운다(표가 아니게 된다) */
 function delRow(view: EditorView, t: Tbl, bi: number): void {
   const r = t.body[bi]
   if (!r) return
-  view.dispatch({ changes: { from: r.lineFrom - 1, to: r.lineTo } })   // 앞 `\n` 까지
+  view.dispatch({ changes: { from: r.lineFrom - 1, to: r.lineTo }, userEvent: 'input.table' })   // 앞 `\n` 까지
 }
 
 /** 빈 행을 `bi` 자리에 끼운다(그 행의 **위**). `bi === body.length` 면 맨 아래 */
@@ -535,7 +544,7 @@ function insRow(view: EditorView, t: Tbl, bi: number): void {
   const prev = bi === 0 ? t.sep : t.body[bi - 1]
   const at = bi >= t.body.length ? (t.body.length ? t.body[t.body.length - 1].lineTo : t.sep.lineTo) : prev.lineTo
   pendFocus = { r: bi + 1, c: 0 }
-  view.dispatch({ changes: { from: at, insert: '\n' + line } })
+  view.dispatch({ changes: { from: at, insert: '\n' + line }, userEvent: 'input.table' })
 }
 
 /** 두 본문 행을 맞바꾼다 — 줄 글자를 서로 넣는다(칸 수가 달라도 안전하다) */
@@ -545,7 +554,7 @@ function swapRow(view: EditorView, t: Tbl, a: number, b: number): void {
   const tx = view.state.doc.sliceString(x.lineFrom, x.lineTo)
   const ty = view.state.doc.sliceString(y.lineFrom, y.lineTo)
   pendFocus = { r: b + 1, c: 0 }
-  view.dispatch({ changes: [{ from: x.lineFrom, to: x.lineTo, insert: ty }, { from: y.lineFrom, to: y.lineTo, insert: tx }] })
+  view.dispatch({ changes: [{ from: x.lineFrom, to: x.lineTo, insert: ty }, { from: y.lineFrom, to: y.lineTo, insert: tx }], userEvent: 'input.table' })
 }
 
 /**
@@ -644,12 +653,12 @@ function imageDrop(): Extension {
     if (!up) return
     for (const f of files) {
       const mark = `![올리는 중… ${f.name}]()`
-      view.dispatch({ changes: { from: at, insert: mark }, selection: { anchor: at + mark.length } })
+      view.dispatch({ changes: { from: at, insert: mark }, selection: { anchor: at + mark.length }, userEvent: 'input.paste' })
       const rel = await up(f).catch(() => null)
       const cur = view.state.doc.toString().indexOf(mark)
       if (cur < 0) continue                            // 사람이 그 사이에 지웠다 — 건드리지 않는다
       const done = rel ? `![${f.name.replace(/\.[^.]+$/, '')}](${rel})` : ''
-      view.dispatch({ changes: { from: cur, to: cur + mark.length, insert: done } })
+      view.dispatch({ changes: { from: cur, to: cur + mark.length, insert: done }, userEvent: 'input.paste' })
       at = cur + done.length
     }
   }
@@ -975,6 +984,8 @@ export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, 
   useEffect(() => {
     const el = box.current; if (!el) return
     let timer = 0
+    /** 사람이 고쳤는데 아직 저장으로 안 보낸 글이 있다 — 떠날 때 이것만 낸다 */
+    let pending = false
     const ext: Extension[] = [
       /**
        * ⏎ 는 목록·체크박스·인용을 **이어 쓴다**, 빈 항목에서 ⏎ 는 목록을 끝낸다 (`markdownKeymap`, 2026-09-16).
@@ -998,12 +1009,21 @@ export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, 
       frozenField, dragFreeze, lpField, atomic, caretGuard, linkClick,
       EditorView.lineWrapping,
       EditorView.editable.of(!readOnly),
+      /**
+       * 🔴 BF · **사람이 고친 것만 저장으로 보낸다** (2026-09-27 Dave: «읽기만 하고 마우스 클릭 정도만 한 거를 저장하지 마»).
+       *    사람의 손은 언제나 `userEvent` 를 달고 온다 — 타자·IME(`input.type*`)·지우기(`delete*`)·붙여넣기·끌어 옮기기(`move*`)·
+       *    되돌리기(`undo`/`redo`)·서식 단추(`input.format`)·체크박스(`input.toggle`)·표(`input.cell`·`input.table`).
+       *    밖에서 넣은 글(문서 열기·봇이 고친 것 받기)은 `userEvent` 가 없다 — 종전엔 그것까지 0.8초 뒤 **되써서**,
+       *    읽기만 해도 파일이 바뀌었고, 봇이 그새 또 고쳤으면 봇의 새 글을 옛 글로 덮었다.
+       */
       EditorView.updateListener.of((u) => {
         if (!u.docChanged) return
+        if (!u.transactions.some((tr) => tr.docChanged && tr.annotation(Transaction.userEvent) !== undefined)) return
         const text = u.state.doc.toString()
         changeRef.current?.(text)
+        pending = true
         window.clearTimeout(timer)
-        timer = window.setTimeout(() => commitRef.current(eol.current === '\r\n' ? text.replace(/\n/g, '\r\n') : text), 800)
+        timer = window.setTimeout(() => { pending = false; commitRef.current(eol.current === '\r\n' ? text.replace(/\n/g, '\r\n') : text) }, 800)
       })
     ]
     /**
@@ -1037,10 +1057,12 @@ export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, 
     })
     view.focus()
     return () => {
-      // ⚠ 떠나기 전에 못 낸 저장을 낸다 — 안 그러면 «쓰고 탭을 닫으면 사라진다»
+      // ⚠ 떠나기 전에 못 낸 저장을 낸다 — 안 그러면 «쓰고 탭을 닫으면 사라진다».
+      //    BF · **사람이 고친 게 남아 있을 때만** 낸다. 어디로 가는지는 부모가 이 편집기에 묶어 준 문서(봇·파일)다 —
+      //    이 편집기는 문서 하나에만 산다(`key` = 봇+파일).
       window.clearTimeout(timer)
       const text = view.state.doc.toString()
-      if (text !== initial.current.replace(/\r\n/g, '\n')) commitRef.current(eol.current === '\r\n' ? text.replace(/\n/g, '\r\n') : text)
+      if (pending) commitRef.current(eol.current === '\r\n' ? text.replace(/\n/g, '\r\n') : text)
       view.destroy(); viewRef.current = null
     }
   }, [readOnly])
@@ -1051,7 +1073,9 @@ export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, 
     const next = value.replace(/\r\n/g, '\n')
     if (next === v.state.doc.toString()) return
     initial.current = value; eol.current = eolOf(value)
-    v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: next } })
+    // BF · 밖에서 온 글이다 — `userEvent` 없이(저장 안 함) · 되돌리기 기록에도 안 남긴다(⌘Z 가 봇의 새 글을 옛 글로 되돌려 저장하지 않게)
+    // 커서는 제자리 근처에 둔다 — 봇의 새 글을 받을 때 읽던 자리가 맨 앞으로 튀지 않게
+    v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: next }, selection: { anchor: Math.min(v.state.selection.main.head, next.length) }, annotations: Transaction.addToHistory.of(false) })
   }, [value])
 
   return <div className="mded" ref={box} />

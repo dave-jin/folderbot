@@ -18,6 +18,7 @@ import { Routines, approveToMode, routinesToDrop } from './routines'
 import { SessionManager, setOauthToken, setKeychainLogin, AUTH_ERROR, type SessionRec } from './session'
 import { readTodo, todoAdd, todoContext } from './todoStore'
 import { recent as recentFiles, tree as fileTree } from './files'
+import { ConflictBook, sweep as sweepCopies } from './docSave'
 
 /** 호스트 — 모든 부품을 묶고, 화면으로 나갈 프레임을 만든다 */
 const PERM_MODES: PermissionMode[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions', 'dontAsk']
@@ -26,6 +27,8 @@ export class Host {
   readonly version: string
   readonly registry: Registry
   readonly sessions = new SessionManager()
+  /** BF · 문서 창 충돌 사본 장부 — 필요 없어진 사본은 `sweepClashes` 가 스스로 휴지통에 넣는다 */
+  readonly clashes = new ConflictBook()
   readonly notifier: Notifier
   readonly routines: Routines
   auth: AuthState = { verdict: 'unknown', checkedAt: 0 }
@@ -71,6 +74,15 @@ export class Host {
     void this.refreshAuth()
     setInterval(() => void this.refreshAuth(), 30 * 60 * 1000).unref()
     setInterval(() => this.watchInbox(), 60 * 1000).unref()
+    this.sweepClashes(); setInterval(() => this.sweepClashes(), 60 * 60 * 1000).unref()
+  }
+
+  /** BF · 충돌 사본 치우기 — 원본과 같아졌거나 7일 지난 것만. 사람이 고친 사본은 그 사람 것이라 두고 장부에서만 뺀다 */
+  sweepClashes(): void {
+    try {
+      const r = sweepCopies(this.clashes, (id) => this.registry.bot(id)?.abs ?? null, (id, rel) => { const b = this.registry.bot(id); if (b) { this.registry.trashPath(relative(this.registry.root, join(b.abs, rel))); this.broadcast({ ev: 'files', botId: id }) } })
+      if (r.trashed.length) this.log(`충돌 사본 ${r.trashed.length}개를 휴지통으로: ${r.trashed.join(', ')}`)
+    } catch (e) { this.log(`충돌 사본 정리 실패: ${(e as Error).message}`) }
   }
 
   private wire(): void {

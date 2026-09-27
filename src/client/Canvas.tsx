@@ -188,7 +188,7 @@ export default function Canvas({ text, onCommit, onOpenFile, raw, readOnly }: {
           {n.type === 'text' ? (edit?.id === n.id
             ? <textarea className="cvs-ta" autoFocus value={edit.v} onChange={(ev) => setEdit({ id: n.id, v: ev.target.value })}
                 onPointerDown={(ev) => ev.stopPropagation()}
-                onBlur={() => { commit(doc.nodes.map((x) => (x.id === n.id ? { ...x, text: edit.v } : x)), doc.edges); setEdit(null) }} />
+                onBlur={() => { /* BF · 들어갔다 나오기만 했으면 저장하지 않는다 */ if (edit.v !== (n.text ?? '')) commit(doc.nodes.map((x) => (x.id === n.id ? { ...x, text: edit.v } : x)), doc.edges); setEdit(null) }} />
             : <div className="cvs-md"><Md text={String(n.text ?? '') || '…'} /></div>) : null}
 
           {n.type === 'file' && n.file ? <FileNode file={n.file} raw={raw} onOpen={() => onOpenFile(n.file!)} /> : null}

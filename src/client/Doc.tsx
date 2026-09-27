@@ -22,11 +22,21 @@ import { openOnThisDevice, useLocalSettings, vaultRelOf } from './localOpen'
 export interface DocTab { rel: string; pinned: boolean }
 export interface DocsApi { tabs: DocTab[]; active: string | null; open: (rel: string, pin?: boolean) => void; close: (rel: string) => void; pin: (rel: string) => void; setActive: (rel: string) => void }
 
+type DocsSt = { key: string; tabs: DocTab[]; active: string | null }
+const readDocs = (key: string): DocsSt => { try { const j = JSON.parse(localStorage.getItem(key) ?? ''); return { key, tabs: Array.isArray(j?.tabs) ? j.tabs : [], active: j?.active ?? null } } catch { return { key, tabs: [], active: null } } }
+/**
+ * 🔴 BF · **봇을 바꾸는 그 렌더에도 탭은 그 봇 것이다** (2026-09-27 저장 뒤바뀜).
+ *    종전엔 탭 상태가 봇과 따로 놀아, 봇을 바꾼 **첫 렌더 한 번** 동안 «새 봇 + 옛 봇의 열린 파일» 이 짝지어졌다.
+ *    그 틈에 옛 편집기가 떠나며 낸 저장이 새 봇의 같은 이름 파일(state.md)로 갔고, 새 키에 옛 탭이 한 번 써지기도 했다.
+ *    이제 상태에 키를 달고, 키가 다르면 그 자리에서 새 봇 것을 읽는다.
+ */
 export function useDocs(botId: string): DocsApi {
   const key = `fb:docs:${botId}`
-  const [st, setSt] = useState<{ tabs: DocTab[]; active: string | null }>(() => { try { return JSON.parse(localStorage.getItem(key) ?? '') } catch { return { tabs: [], active: null } } })
-  useEffect(() => { try { setSt(JSON.parse(localStorage.getItem(key) ?? '')) } catch { setSt({ tabs: [], active: null }) } }, [key])
-  useEffect(() => { try { localStorage.setItem(key, JSON.stringify(st)) } catch { /* */ } }, [key, st])
+  const [st0, setSt0] = useState<DocsSt>(() => readDocs(key))
+  const st = st0.key === key ? st0 : readDocs(key)
+  const setSt = (f: (s: { tabs: DocTab[]; active: string | null }) => { tabs: DocTab[]; active: string | null }) => setSt0((s) => ({ key, ...f(s.key === key ? s : readDocs(key)) }))
+  useEffect(() => { if (st0.key !== key) setSt0(readDocs(key)) }, [key])
+  useEffect(() => { if (st0.key === key) try { localStorage.setItem(key, JSON.stringify({ tabs: st0.tabs, active: st0.active })) } catch { /* */ } }, [key, st0])
   return useMemo(() => ({
     tabs: st.tabs, active: st.active,
     open: (rel, pin = false) => setSt((s) => {
@@ -39,10 +49,14 @@ export function useDocs(botId: string): DocsApi {
     close: (rel) => setSt((s) => { const i = s.tabs.findIndex((t) => t.rel === rel); const tabs = s.tabs.filter((t) => t.rel !== rel); const active = s.active === rel ? (tabs[Math.min(i, tabs.length - 1)]?.rel ?? null) : s.active; return { tabs, active } }),
     pin: (rel) => setSt((s) => ({ ...s, tabs: s.tabs.map((t) => (t.rel === rel ? { ...t, pinned: true } : t)) })),
     setActive: (rel) => setSt((s) => ({ ...s, active: rel }))
-  }), [st])
+  }), [st, key])
 }
 
-interface DocData { kind: string; text?: string; size?: number; mtime?: number; truncated?: boolean }
+interface DocData { kind: string; text?: string; size?: number; mtime?: number; truncated?: boolean; ver?: string; clashes?: string[] }
+/** 받은 문서 + **어느 봇의 어느 파일인지** — 화면의 «지금 봇·지금 탭» 이 아니라 이것이 저장의 주소다 (BF) */
+type OpenDoc = DocData & { botId: string; rel: string }
+type DocId = { botId: string; rel: string }
+const keyOf = (id: DocId) => `${id.botId}\u0000${id.rel}`
 
 /** 문서 열 — 헤더(탭) · 툴바(폴더/파일 · 위치 · ⋯) · 본문. 편집은 자동 저장, 봇이 고치면 한 줄 배너 */
 export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, onAttach, say, phone, onBack }: { bot: Bot; docs: DocsApi; filesTick?: number; onTalk: (rel: string) => void; onHide: () => void; wide: boolean; onWide: () => void; onAttach: (rel: string) => void; say: (m: string) => void; phone?: boolean; onBack?: () => void }) {
@@ -60,7 +74,11 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
   }
   const openHere = () => void openOnThisDevice(bot, rel!, 'open', { main, hostName, phone: !!phone, say })
   const rel = docs.active
-  const [doc, setDoc] = useState<DocData | null>(null)
+  const [doc0, setDoc] = useState<OpenDoc | null>(null)
+  /** 🔴 BF · 화면이 그리는 문서는 **지금 봇·지금 탭과 짝이 맞을 때만** 있다 — 옛 문서를 새 자리에 그리는 틈을 없앤다 */
+  const doc = doc0 && doc0.botId === bot.id && doc0.rel === rel ? doc0 : null
+  const want = useRef<DocId | null>(null); want.current = rel ? { botId: bot.id, rel } : null
+  const isCur = (id: DocId) => want.current?.botId === id.botId && want.current?.rel === id.rel
   const [err, setErr] = useState('')
   /**
    * 🔴 **보는 화면이 곧 고치는 화면이다** (2026-09-13 Dave: «rondo 와 같이 보기화면과 편집화면이 완벽하게 싱크»).
@@ -70,7 +88,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
    *    ⚠ **잘려서 받은 파일(`truncated`)만 예외로 읽기 전용**이다 — 앞부분만 들고 저장하면 뒷부분이 날아간다.
    */
   const [draft, setDraft] = useState(''); const [saveSt, setSaveSt] = useState<'' | 'saving' | 'saved' | 'fail'>('')
-  const [conflict, setConflict] = useState(false); const [botTouched, setBotTouched] = useState<number | null>(null)
+  const [botTouched, setBotTouched] = useState<number | null>(null)
   const [menu, setMenu] = useState<Anchor | null>(null)
   const [sibs, setSibs] = useState<string[]>([])
   /**
@@ -95,21 +113,71 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
     void run()
     return () => { live = false }
   }, [printHtml])
-  const mtimeRef = useRef<number>(0); const saveT = useRef<number | undefined>(undefined)
-  /** 「고치는 중」이 아니라 **「아직 안 낸 글이 있다」** — 봇이 같은 파일을 건드렸을 때 덮어쓸지 물을 근거다 */
+  /** 「고치는 중」이 아니라 **「아직 안 낸 글이 있다」** — 봇이 같은 파일을 바꿨을 때 새로 받을지 판단하는 근거다 */
   const dirtyRef = useRef(false)
+  /**
+   * 🔴 BF · **저장은 «연 판» 위에만 한다** (2026-09-27 · 문서 창이 남의 파일을 덮었다 — `host/docSave.ts` 머리말).
+   *    문서마다(봇+파일) 연 판(`ver`)과 그때의 글을 쥐고, 저장은 그 판을 `base` 로 함께 보낸다. 디스크가 그새 바뀌었으면
+   *    호스트가 원본을 두고 내 글을 «충돌 사본» 으로 옆에 둔다. 글이 연 판과 같으면(읽기만 했다) 아예 보내지 않는다.
+   *    같은 문서의 저장은 줄을 세운다 — 두 저장이 같은 `base` 로 겹치면 뒤엣것이 제 앞엣것과 충돌한다.
+   */
+  const bases = useRef(new Map<string, string>()); const lastText = useRef(new Map<string, string>())
+  const chain = useRef(new Map<string, Promise<void>>()); const blocked = useRef(new Set<string>())
   const raw = (r: string) => `/api/bots/${bot.id}/raw?rel=${encodeURIComponent(r)}&token=${encodeURIComponent(localStorage.getItem('folderbot:token') ?? '')}`
   const load = async (r: string, silent = false) => {
-    try { const d = await api<DocData>(`/bots/${bot.id}/file?rel=${encodeURIComponent(r)}`); setDoc(d); setDraft(d.text ?? ''); mtimeRef.current = d.mtime ?? 0; setErr(''); if (!silent) { dirtyRef.current = false; setSaveSt(''); setConflict(false); setBotTouched(null) } }
-    catch (e) { setErr((e as Error).message) }
+    const id: DocId = { botId: bot.id, rel: r }
+    try {
+      const d = await api<DocData>(`/bots/${id.botId}/file?rel=${encodeURIComponent(r)}`)
+      if (!isCur(id)) return                                   // 그새 다른 문서로 갔다 — 늦게 온 답을 새 자리에 두지 않는다
+      const k = keyOf(id)
+      if (d.ver) { bases.current.set(k, d.ver); lastText.current.set(k, d.text ?? '') }
+      blocked.current.delete(k)
+      setDoc({ ...d, ...id }); setDraft(d.text ?? ''); setErr('')
+      if (!silent) { dirtyRef.current = false; setSaveSt(''); setBotTouched(null) }
+    } catch (e) { if (isCur(id)) setErr((e as Error).message) }
   }
+  const saveTo = (id: DocId, text: string): Promise<void> => {
+    const k = keyOf(id)
+    const run = async () => {
+      const base = bases.current.get(k)
+      if (base === undefined || blocked.current.has(k)) return        // 판을 모르는 문서엔 안 쓴다
+      if (lastText.current.get(k) === text) { if (isCur(id)) dirtyRef.current = false; return }   // 연 글 그대로 — 쓸 것이 없다
+      if (isCur(id)) setSaveSt('saving')
+      let r: { ok: boolean; ver?: string; conflict?: { copy: string; ver: string } }
+      try { r = await api(`/bots/${id.botId}/file`, { body: { rel: id.rel, text, base } }) } catch { if (isCur(id)) setSaveSt('fail'); return }
+      if (r.ok && r.ver) {
+        bases.current.set(k, r.ver); lastText.current.set(k, text)
+        if (isCur(id)) { setSaveSt('saved'); dirtyRef.current = false }
+      } else if (r.conflict) {
+        const c = r.conflict
+        // 원본은 남(봇·다른 기기)의 것이 이겼다. 내 글은 사본에 있다 — 새 판을 받을 때까지 이 문서엔 더 쓰지 않는다
+        blocked.current.add(k)
+        say(`충돌 — ${id.rel.split('/').pop()} 이 다른 곳에서 먼저 바뀌어, 내 글은 「${c.copy.split('/').pop()}」 에 따로 저장했어요`)
+        if (isCur(id)) { setSaveSt(''); dirtyRef.current = false; await load(id.rel, true) }
+      } else if (isCur(id)) setSaveSt('fail')
+    }
+    const p = (chain.current.get(k) ?? Promise.resolve()).then(run, run)
+    chain.current.set(k, p)
+    return p
+  }
+  /** 충돌 사본 정리 — «내 글로 바꾸기»(mine) · «지금 파일 유지»(theirs). 사본은 호스트가 휴지통으로 보낸다 */
+  const resolveClash = async (copy: string, action: 'mine' | 'theirs') => {
+    if (!rel) return
+    try { await api(`/bots/${bot.id}/clash`, { body: { copy, action } }); say(action === 'mine' ? '내 글로 바꿨어요 — 사본은 휴지통으로' : '지금 파일을 두고 사본은 휴지통으로 보냈어요'); await load(rel) }
+    catch (e) { say((e as Error).message) }
+  }
+  /** 마크다운이 아닌 글(textarea) — 0.8초 모아 낸다. 떠날 때 남은 것은 **그 글의 문서로** 낸다 */
+  const rawPend = useRef<{ id: DocId; text: string } | null>(null); const rawT = useRef<number | undefined>(undefined)
+  const flushRaw = () => { window.clearTimeout(rawT.current); const x = rawPend.current; rawPend.current = null; if (x) void saveTo(x.id, x.text) }
+  const typeRaw = (id: DocId, v: string) => { setDraft(v); dirtyRef.current = true; rawPend.current = { id, text: v }; window.clearTimeout(rawT.current); rawT.current = window.setTimeout(flushRaw, 800) }
+  useEffect(() => () => flushRaw(), [bot.id, rel])
   /**
    * 🔴 **문서를 옮기면 편집을 먼저 닫는다.** 안 그러면 «떠날 때 못 낸 저장» 이 **새 문서에 실린다** —
    *    `onCommit` 은 매 렌더에 새로 묶이는데, `rel` 이 먼저 바뀌고 `edit` 은 `load` 가 끝난 뒤에야
    *    꺼지기 때문이다. 실제로 스모크가 **todo.md 가 표 문서로 덮인 것**으로 잡았다(2026-09-13).
    *    아래 `key={rel}` 과 짝이다 — 이쪽은 창을 닫고, 저쪽은 «옛 문서의 편집기» 를 옛 채로 보낸다.
    */
-  useEffect(() => { if (rel) { dirtyRef.current = false; void load(rel) } else { setDoc(null); setDraft('') } }, [bot.id, rel])
+  useEffect(() => { if (rel) { dirtyRef.current = false; setErr(''); void load(rel) } else { setDoc(null); setDraft('') } }, [bot.id, rel])
   // 같은 폴더의 형제 — 위치(2/4)와 ↑↓ 이동
   useEffect(() => {
     if (!rel) return
@@ -127,10 +195,14 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
    */
   useEffect(() => {
     if (!rel || !filesTick) return
-    void api<{ kind: string; mtime?: number }>(`/bots/${bot.id}/peek?rel=${encodeURIComponent(rel)}`).then(async (p) => {
+    const id: DocId = { botId: bot.id, rel }
+    void api<{ kind: string; mtime?: number; ver?: string }>(`/bots/${bot.id}/peek?rel=${encodeURIComponent(rel)}`).then(async (p) => {
+      if (!isCur(id)) return
       if (p.kind === 'none') { setErr('이 파일이 사라졌어요 (이름이 바뀌었거나 치워졌어요)'); return }
-      if ((p.mtime ?? 0) <= mtimeRef.current) return
-      if (dirtyRef.current) { setConflict(true); return }
+      // BF · 판으로 잰다 — mtime 은 동기화가 바꾸고, 내 저장도 바꾼다
+      if (!p.ver || p.ver === bases.current.get(keyOf(id))) return
+      // 아직 안 낸 내 글이 있으면 받지 않는다 — 그 글이 저장될 때 판이 달라 «충돌 사본» 으로 간다(글은 안 잃는다)
+      if (dirtyRef.current) return
       /**
        * 🔴 **손가락이 편집기 안에 있으면 덮지 않는다** (2026-09-15 — 표 스모크가 드물게 빨개지던 진짜 이유).
        *    `dirtyRef` 는 «문서가 바뀌었다» 로만 켜진다. 그런데 **표 칸은 `contentEditable`** 이라,
@@ -139,9 +211,10 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
        * ⚠ 조용히 건너뛴다(배너도 안 띄운다) — 아직 아무것도 안 쓴 사람에게 충돌을 물을 이유가 없다.
        *    칸을 떠나 글이 문서에 들어가는 순간부터는 위의 `dirtyRef` 길로 들어온다.
        */
-      if (document.activeElement?.closest?.('.mded')) return
-      const d = await api<DocData>(`/bots/${bot.id}/file?rel=${encodeURIComponent(rel)}`)
-      setDoc(d); setDraft(d.text ?? ''); mtimeRef.current = d.mtime ?? 0; setBotTouched(d.mtime ?? Date.now())
+      // BF · 막는 것은 **표 칸**뿐이다 — 글줄에 커서만 두고 읽는 사람까지 막으면 봇의 새 글을 영영 못 받고, 옛 판 위에 쓰다 충돌이 난다
+      if ((document.activeElement as HTMLElement | null)?.closest?.('.mded .lp-tbl')) return
+      await load(rel, true)
+      if (isCur(id)) setBotTouched(Date.now())
     }).catch(() => {})
   }, [filesTick])
   useEffect(() => {
@@ -179,8 +252,6 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
   const pasteImage = useCallback(async (f: File) => {
     try { const r = await uploadFile(bot.id, f); return r.rel } catch { return null }
   }, [bot.id])
-  const save = async (text: string) => { if (!rel) return; setSaveSt('saving'); try { await api(`/bots/${bot.id}/file`, { body: { rel, text } }); setSaveSt('saved'); dirtyRef.current = false; const d = await api<DocData>(`/bots/${bot.id}/file?rel=${encodeURIComponent(rel)}`); mtimeRef.current = d.mtime ?? 0 } catch { setSaveSt('fail') } }
-  const onDraft = (v: string) => { setDraft(v); dirtyRef.current = true; window.clearTimeout(saveT.current); saveT.current = window.setTimeout(() => void save(v), 800) }
   /**
    * 목차 (B4) · 글자 크기 · 폭 (B9) — 셋 다 **이 기기에만** 남는다(localStorage).
    * ⚠ 문서마다 다르게 두지 않는다 — 「내가 읽기 편한 크기」는 문서의 성질이 아니라 사람의 성질이다.
@@ -236,7 +307,10 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
       </span></div> : null}
     {outside && rel ? <div className="outband"><Icon n="folder" size={12} /><span className="p">폴더 외 문서 · <span className="mono">{vaultRel}</span> · 읽기만</span><span className="sp" />{bot.repo ? <span className="h">참조 폴더는 하나뿐이에요 (지금: {bot.repo.split('/').pop()})</span> : <button className="btn" onClick={() => void addRepo()}>이 Folderbot 에 참조 폴더로 추가</button>}{repoMsg ? <span className="h">{repoMsg}</span> : null}</div> : null}
     {printHtml ? createPortal(<div className="printdoc md" dangerouslySetInnerHTML={{ __html: printHtml }} />, document.body) : null}
-    {conflict ? <div className="dbanner"><span className="dot wait" /><span>봇이 이 파일을 바꿨어요 — 아직 안 낸 내 글과 다릅니다</span><button onClick={() => { setConflict(false); void save(draft) }}>내 것 유지</button><button onClick={() => { setConflict(false); dirtyRef.current = false; if (rel) void load(rel) }}>봇 것 받기</button></div>
+    {/* 🔴 BF · 충돌 — 저장하려던 사이 다른 곳(봇·다른 기기)이 먼저 바꿨다. 원본은 그대로, 내 글은 옆 «충돌 사본» 에 있다.
+        고르기 전까지 매번 연다(다른 기기에서 열어도 뜬다 — 호스트 장부). 고르지 않은 사본은 7일 뒤 호스트가 휴지통에 넣는다. */}
+    {doc?.clashes?.length ? <div className="dbanner clash"><span className="dot wait" /><span>충돌 — 다른 곳에서 먼저 바뀌어, 내 글은 <b>{doc.clashes[0].split('/').pop()}</b> 에 따로 저장했어요{doc.clashes.length > 1 ? ` (사본 ${doc.clashes.length}개)` : ''}</span>
+        <button onClick={() => docs.open(doc.clashes![0], true)}>사본 열기</button><button onClick={() => void resolveClash(doc.clashes![0], 'mine')}>내 글로 바꾸기</button><button onClick={() => void resolveClash(doc.clashes![0], 'theirs')}>지금 파일 유지</button></div>
       : botTouched ? <div className="dbanner"><span className="dot run" /><span>봇이 {fmtTime(botTouched)} 수정</span><button onClick={() => setBotTouched(null)}>닫기</button></div> : null}
     {!rel ? <div className="empty">오른쪽 파일에서 열거나, 대화의 파일 칩을 누르세요</div>
       : err ? <div className="empty">{err}</div>
@@ -250,19 +324,20 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
                 원문이 곧 정답이다.
                 ⚠ 편집기는 **지연 로드**한다: 문서를 한 번도 안 연 폰이 마크다운 파서를 받으면 안 된다. */}
             <Suspense fallback={<div className="dbody"><div className="skel" style={{ width: '70%' }} /></div>}>
-              {/* ⛔ `key={rel}` 을 빼지 마라 — 문서마다 편집기를 따로 둬야 떠날 때의 저장이 옛 문서로 간다
-                  (되돌리기 기록이 문서를 넘나드는 것도 함께 막는다). */}
-              <MdEditor key={rel} value={draft} onChange={onDraft} onCommit={(t) => { onDraft(t); void save(t) }} onOpen={(target) => docs.open(target.endsWith('.md') ? target : `${target}.md`)} rawUrl={(p) => (/^(https?:|data:)/.test(p) ? p : raw(p.replace(/^\.\//, '')))}
+              {/* ⛔ `key` 를 빼지 마라 — 문서(**봇+파일**)마다 편집기를 따로 둬야 떠날 때의 저장이 옛 문서로 간다
+                  (되돌리기 기록이 문서를 넘나드는 것도 함께 막는다). BF · 종전 `key={rel}` 은 봇만 바꾸면(같은 state.md)
+                  편집기가 그대로 남아 옛 봇의 글을 새 봇의 파일에 냈다. 저장 주소도 화면이 아니라 이 문서(`doc`)에서 온다. */}
+              <MdEditor key={keyOf(doc)} value={doc.text ?? ''} onChange={(v) => { setDraft(v); dirtyRef.current = true }} onCommit={(t) => void saveTo({ botId: doc.botId, rel: doc.rel }, t)} onOpen={(target) => docs.open(target.endsWith('.md') ? target : `${target}.md`)} rawUrl={(p) => (/^(https?:|data:)/.test(p) ? p : raw(p.replace(/^\.\//, '')))}
                 files={wikiFiles} onPasteImage={pasteImage} onReady={(a) => { edApi.current = a }} />
             </Suspense>
           </div>
         : doc.truncated || outside
           ? <div className="dbody">{isMd ? <Md text={doc.text ?? ''} /> : <pre className="raw">{doc.text}</pre>}{doc.truncated ? <div style={{ color: 'var(--t3)', fontSize: 12, marginTop: 12 }}>큰 파일이라 앞부분만 보여요 — 그래서 여기서는 못 고쳐요</div> : null}</div>
-          : <div className="dbody edit"><textarea value={draft} onChange={(e) => onDraft(e.target.value)} spellCheck={false} /></div>)
+          : <div className="dbody edit"><textarea key={keyOf(doc)} value={draft} onChange={(e) => typeRaw({ botId: doc.botId, rel: doc.rel }, e.target.value)} spellCheck={false} /></div>)
       : doc.kind === 'canvas' ? <div className="dbody cvswrap">
           {/* Obsidian 의 `.canvas` — 보기만이 아니라 **고치기까지** (2026-09-13 Dave 확정) */}
           <Suspense fallback={<div className="dbody"><div className="skel" style={{ width: '70%' }} /></div>}>
-            <Canvas key={rel} text={doc.text ?? ''} onCommit={(t) => { onDraft(t); void save(t) }} onOpenFile={(f) => docs.open(f)} raw={(f) => raw(f.replace(/^\.\//, ''))} readOnly={!!doc.truncated} />
+            <Canvas key={keyOf(doc)} text={doc.text ?? ''} onCommit={(t) => { setDraft(t); void saveTo({ botId: doc.botId, rel: doc.rel }, t) }} onOpenFile={(f) => docs.open(f)} raw={(f) => raw(f.replace(/^\.\//, ''))} readOnly={!!doc.truncated} />
           </Suspense>
         </div>
       : doc.kind === 'image' ? <div className="dbody imgbody"><ImageView src={raw(rel)} alt={name} onCopy={() => void copyImageWhy(raw(rel), main ? `${bot.abs}/${rel}` : undefined).then((r) => say(r.ok ? '이미지를 복사했어요 — 메모·슬랙에 ⌘V' : r.why ?? '이 환경에서는 이미지 복사를 못 해요 — «이 기기에서 열기» 로 여세요'))} /></div>

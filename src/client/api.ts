@@ -4,7 +4,7 @@ const KEY = 'folderbot:token'
 export function token(): string { try { return localStorage.getItem(KEY) ?? '' } catch { return '' } }
 export function setToken(t: string): void { try { if (t) localStorage.setItem(KEY, t); else localStorage.removeItem(KEY) } catch { /* */ } }
 
-export class ApiError extends Error { constructor(public status: number, msg: string) { super(msg) } }
+export class ApiError extends Error { constructor(public status: number, msg: string, public data?: unknown) { super(msg) } }
 
 export async function api<T = unknown>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
   const r = await fetch(`/api${path}`, { method: opts.method ?? (opts.body ? 'POST' : 'GET'), headers: { 'content-type': 'application/json', authorization: `Bearer ${token()}` }, body: opts.body ? JSON.stringify(opts.body) : undefined })
@@ -12,7 +12,7 @@ export async function api<T = unknown>(path: string, opts: { method?: string; bo
   const text = await r.text()
   let j: unknown = null
   try { j = text ? JSON.parse(text) : null } catch { j = null }
-  if (!r.ok) throw new ApiError(r.status, (j as { error?: string })?.error ?? `HTTP ${r.status}`)
+  if (!r.ok) throw new ApiError(r.status, (j as { error?: string })?.error ?? `HTTP ${r.status}`, j)
   return j as T
 }
 

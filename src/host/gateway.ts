@@ -67,6 +67,7 @@ import { favicon } from './favicon'
 import { preview } from './preview'
 import { hookState, setBudget, setHook, usageReport } from './usage'
 import { planNow } from './planUsage'
+import { saveDoc, fileVer } from './docSave'
 import { allDirs, findFiles, guard, headHash, kindOf, mime, readText, recent, resolveNF, resolveNFDeep, stream, tree, writeText, exists, listDir, renameEntry } from './files'
 import { readTodo, todoDelete, todoEdit, todoMove, todoToggle } from './todoStore'
 import { globParents, roleOf } from '../core/rules'
@@ -469,7 +470,7 @@ export class Gateway {
         const meta = { kind, mtime: st.mtimeMs, size: st.size }
         if (kind !== 'text' && kind !== 'canvas') return json(200, meta)
         const r = readText(abs)
-        return json(200, { ...meta, text: r.text.slice(0, 4096) })
+        return json(200, { ...meta, ver: fileVer(abs), text: r.text.slice(0, 4096) })
       }
       if (sub === 'file' && m === 'GET') {
         // ⚠ 한글 이름은 NFC/NFD 두 벌로 산다 — **있는 쪽**을 찾아 준다(`resolveNF` 머리말)
@@ -477,10 +478,36 @@ export class Gateway {
         if (!exists(abs)) return json(404, { error: '없는 파일' })
         const kind = kindOf(abs)
         // ⚠ 캔버스도 **글로 내려보낸다** — 화면이 JSON 을 읽어 노드를 그린다(원문으로 그리지는 않는다)
-        if (kind === 'text' || kind === 'canvas') { const r = readText(abs); return json(200, { kind, rel: url.searchParams.get('rel'), text: r.text, truncated: r.truncated, size: statSync(abs).size, mtime: statSync(abs).mtimeMs }) }
+        if (kind === 'text' || kind === 'canvas') { const r = readText(abs); const q = url.searchParams.get('rel') ?? ''; return json(200, { kind, rel: q, text: r.text, truncated: r.truncated, size: statSync(abs).size, mtime: statSync(abs).mtimeMs, ver: fileVer(abs), clashes: h.clashes.of(bot.id, q).map((c) => c.copy) }) }
         return json(200, { kind, rel: url.searchParams.get('rel'), size: statSync(abs).size, mtime: statSync(abs).mtimeMs })
       }
-      if (sub === 'file' && m === 'POST') { const b = await body(); const abs = guard(roots(bot), join(bot.abs, String(b.rel))); writeText(abs, String(b.text)); h.broadcast({ ev: 'files', botId: bot.id }); return json(200, { ok: true }) }
+      /**
+       * 저장 (BF) — 문서 창은 연 판(`base`)을 함께 보낸다. 디스크가 그새 바뀌었으면 원본은 그대로 두고 내 글을 «충돌 사본» 으로
+       * 옆에 두고 `{ ok:false, conflict }` 로 알린다. 글이 디스크와 같으면 쓰지 않는다(`docSave.ts` 머리말).
+       * ⚠ 쓰기는 **봇 폴더 안만** — 참조 폴더·폴더 밖 문서는 읽기만이다(`inBot`).
+       */
+      if (sub === 'file' && m === 'POST') {
+        const b = await body(); const rel = String(b.rel ?? '')
+        // ⚠ 한글 이름은 NFC/NFD 두 벌로 산다 — 읽을 때와 **같은 파일**에 쓴다(안 그러면 판이 늘 «없음» 이라 매번 충돌이 난다)
+        const abs = resolveNFDeep('/', inBot(bot.abs, rel).slice(1))
+        const r = saveDoc({ botId: bot.id, botAbs: bot.abs, rel, abs, text: String(b.text ?? ''), base: typeof b.base === 'string' ? b.base : undefined, book: h.clashes })
+        if (!(r.ok && r.same)) h.broadcast({ ev: 'files', botId: bot.id })
+        // ⚠ 충돌은 **오류가 아니라 상태**로 답한다(200) — 409 를 주면 브라우저 콘솔에 끌 수 없는 빨간 줄이 남는다(`peek` 과 같은 이유)
+        return json(200, r)
+      }
+      /**
+       * 충돌 사본 정리 (BF) — 배너의 «내 글로 바꾸기»(mine) · «지금 파일 유지»(theirs). 장부에 있는 사본만 받는다.
+       * mine 은 사람이 충돌을 보고 고른 것이라 판을 묻지 않고 쓴다. 쓰고 나면 사본은 휴지통으로.
+       */
+      if (sub === 'clash' && m === 'POST') {
+        const b = await body(); const c = h.clashes.find(bot.id, String(b.copy ?? ''))
+        if (!c) return json(404, { error: '이미 정리된 사본이에요' })
+        const copyAbs = inBot(bot.abs, c.copy); let ver: string | undefined
+        if (b.action === 'mine') { if (!exists(copyAbs)) return json(404, { error: '사본이 없어요' }); const t = readFileSync(copyAbs, 'utf8'); writeText(inBot(bot.abs, c.rel), t); ver = fileVer(inBot(bot.abs, c.rel)) }
+        if (exists(copyAbs)) reg.trashPath(relative(reg.root, copyAbs))
+        h.clashes.drop(c); h.broadcast({ ev: 'files', botId: bot.id })
+        return json(200, { ok: true, ver })
+      }
       /**
        * 어느 경로가 실제로 있나 — 채팅 답변의 «경로처럼 보이는 글자» 를 칩으로 만들기 전에 묻는다.
        * 🔴 확인 없이 칩을 만들면 죽은 링크가 대화에 쌓이고, 한 번 눌러 본 사람은 다시 안 누른다.

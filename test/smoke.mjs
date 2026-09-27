@@ -2,7 +2,7 @@
 import { deflateSync as zlibDeflate } from 'node:zlib'
 import { execSync, spawn } from 'node:child_process'
 import { createServer } from 'node:net'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync, readdirSync, realpathSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -2507,6 +2507,98 @@ try {
           await pg.evaluate(() => { const t = [...document.querySelectorAll('.trow')].find((x) => /todo\.md/.test(x.textContent ?? '')); t?.click() })
           await wait(700)
           try { rmSync(abs) } catch {}
+          await wait(400)
+        }
+        /**
+         * 🔴 BF · **문서 창은 연 파일에만, 사람이 고친 것만, 연 판 위에만 쓴다** (2026-09-27 Dave · 저장 뒤바뀜 세 번)
+         *    ① 읽기·클릭만 하면 파일은 mtime 까지 그대로 ② 봇을 바꿔도(같은 이름 파일) 친 글은 원래 파일로
+         *    ③ 치는 사이 다른 곳이 바꾸면 원본은 그대로 · 내 글은 «충돌 사본» · 배너 · «지금 파일 유지» 면 사본은 휴지통
+         */
+        {
+          const dirR = join(root, '3. Area/제품_Rondo')
+          const pick = (r) => pg.evaluate((x) => { const hit = [...document.querySelectorAll('.trow')].find((t) => (t.textContent ?? '').includes(x)); if (hit) { hit.click(); return true } return false }, r)
+          // ① 읽기만 — 열고, 글줄·표 칸·링크 밖을 누르고, 다른 문서로 갔다 온다
+          {
+            const rel = 'bf-read.md'; const abs = join(dirR, rel)
+            await api(`/bots/${bot.id}/file`, { rel, text: '# 읽기만\n\n본문 한 줄과 [링크](https://example.com/x) \\| 파이프\n\n| 가 | 나 |\n|---|---|\n| [루마](https://luma.com/x) | a \\| b |\n' })
+            await wait(900)
+            const m0 = statSync(abs).mtimeMs; const t0 = readFileSync(abs, 'utf8')
+            if (!(await pick(rel))) fail('BF 읽기: 트리에 새 파일이 안 보인다')
+            await pg.waitForSelector('.mded .lp-tbl', { timeout: 9000 }); await wait(300)
+            await pg.click('.mded .cm-line >> nth=2'); await wait(150)
+            await pg.click('.mded .lp-tbl tr:nth-child(2) td:nth-child(2)', { position: { x: 4, y: 8 } }); await wait(250)
+            await pg.click('.mded .cm-line >> nth=0'); await wait(1600)
+            await pick('todo.md'); await wait(600); await pick(rel); await wait(1600)
+            if (readFileSync(abs, 'utf8') !== t0) fail('BF 읽기: 읽고 누르기만 했는데 글이 바뀌었다\n' + JSON.stringify(readFileSync(abs, 'utf8')))
+            if (statSync(abs).mtimeMs !== m0) fail('BF 읽기: 읽고 누르기만 했는데 파일을 다시 썼다(mtime 이 바뀌었다)')
+            await pick('todo.md'); await wait(600)
+            try { rmSync(abs) } catch {}
+            ok('BF 읽기만 — 열고 글줄·표 칸을 누르고 다른 문서를 오가도 파일은 mtime 까지 그대로')
+          }
+          // ② 봇을 바꿔도 친 글은 원래 파일로 — 두 봇에 같은 이름 파일을 두고, 치자마자(0.8초 안) 옆 봇으로 간다
+          {
+            const other = (await api('/bots')).find((b) => b.id !== bot.id && !b.orchestrator && b.abs)
+            if (!other) fail('BF 봇 전환: 옆 봇이 없다')
+            else {
+              const rel = 'bf-same.md'
+              await api(`/bots/${bot.id}/file`, { rel, text: '# 이 봇\n여기 글\n' })
+              await api(`/bots/${other.id}/file`, { rel, text: '# 옆 봇\n옆 글\n' })
+              await wait(900)
+              // 실제로 난 모양 그대로 — 옆 봇에서도 같은 이름 파일을 문서 창에 열어 둔다(두 봇 모두 문서 창이 열려 있다)
+              await pg.click(`.brow[data-id="${other.id}"]`); await wait(900)
+              if (!(await pick(rel))) fail('BF 봇 전환: 옆 봇 트리에 파일이 안 보인다')
+              await pg.waitForSelector('.mded .cm-content', { timeout: 9000 }); await wait(400)
+              await pg.click(`.brow[data-id="${bot.id}"]`); await wait(900)
+              if (!(await pick(rel))) fail('BF 봇 전환: 트리에 새 파일이 안 보인다')
+              await pg.waitForSelector('.mded .cm-content', { timeout: 9000 }); await wait(400)
+              await pg.click('.mded .cm-line >> nth=1'); await pg.keyboard.press(K.end); await pg.keyboard.type(' 타자')
+              await pg.click(`.brow[data-id="${other.id}"]`); await wait(2200)
+              const mine = readFileSync(join(bot.abs, rel), 'utf8'); const theirs = readFileSync(join(other.abs, rel), 'utf8')
+              if (theirs !== '# 옆 봇\n옆 글\n') fail('BF 봇 전환: 이 봇에서 친 글이 옆 봇의 같은 이름 파일을 덮었다\n' + JSON.stringify(theirs))
+              if (mine !== '# 이 봇\n여기 글 타자\n') fail('BF 봇 전환: 친 글이 원래 파일에 안 남았다\n' + JSON.stringify(mine))
+              // 치우기 — 지울 파일을 탭에 남기면 뒤 검사에서 404 가 난다(«페이지 오류 0»)
+              await pg.evaluate(() => { for (const x of document.querySelectorAll('.col.doc .tab .x')) x.click() }); await wait(400)
+              await pg.click(`.brow[data-id="${bot.id}"]`); await wait(900)
+              await pick('todo.md'); await wait(600)
+              try { rmSync(join(bot.abs, rel)) } catch {}; try { rmSync(join(other.abs, rel)) } catch {}
+              ok('BF 봇 전환 — 같은 이름 파일이라도 친 글은 연 봇의 파일로 · 옆 봇 파일은 그대로')
+            }
+          }
+          // ③ 충돌 — 치는 사이(0.8초 안) 다른 곳이 파일을 바꾼다
+          {
+            const rel = 'bf-clash.md'; const abs = join(dirR, rel)
+            await api(`/bots/${bot.id}/file`, { rel, text: '# 충돌\n처음 글\n' })
+            await wait(900)
+            if (!(await pick(rel))) fail('BF 충돌: 트리에 새 파일이 안 보인다')
+            await pg.waitForSelector('.mded .cm-content', { timeout: 9000 }); await wait(400)
+            await pg.click('.mded .cm-line >> nth=1'); await pg.keyboard.press(K.end); await pg.keyboard.type(' 내 글')
+            writeFileSync(abs, '# 충돌\n봇이 쓴 글\n')
+            await wait(2500)
+            const copies = readdirSync(dirR).filter((f) => f.startsWith('bf-clash (충돌 사본'))
+            if (readFileSync(abs, 'utf8') !== '# 충돌\n봇이 쓴 글\n') fail('BF 충돌: 원본이 내 글로 덮였다 — 봇의 글이 사라졌다\n' + JSON.stringify(readFileSync(abs, 'utf8')))
+            if (copies.length !== 1) fail('BF 충돌: 충돌 사본이 하나 생겨야 한다 ' + JSON.stringify(readdirSync(dirR).filter((f) => f.startsWith('bf-clash'))))
+            else if (readFileSync(join(dirR, copies[0]), 'utf8') !== '# 충돌\n처음 글 내 글\n') fail('BF 충돌: 사본에 내 글이 없다 ' + JSON.stringify(readFileSync(join(dirR, copies[0]), 'utf8')))
+            const ban = await pg.evaluate(() => document.querySelector('.dbanner.clash')?.textContent ?? '')
+            if (!/충돌/.test(ban)) fail('BF 충돌: 충돌을 알리는 배너가 없다 ' + JSON.stringify(ban))
+            const shown = await pg.evaluate(() => document.querySelector('.mded .cm-content')?.textContent ?? '')
+            if (!shown.includes('봇이 쓴 글')) fail('BF 충돌: 화면이 지금 파일(봇의 글)로 안 바뀌었다 ' + JSON.stringify(shown))
+            await pg.click('.dbanner.clash button:has-text("지금 파일 유지")'); await wait(900)
+            if (readdirSync(dirR).some((f) => f.startsWith('bf-clash (충돌 사본'))) fail('BF 충돌: «지금 파일 유지» 뒤에도 사본이 남았다')
+            if (await pg.$('.dbanner.clash')) fail('BF 충돌: 정리했는데 배너가 남았다')
+            // 한 번 더 — 이번엔 «내 글로 바꾸기»: 사본의 글이 원본이 되고 사본은 휴지통
+            await pg.click('.mded .cm-line >> nth=1'); await pg.keyboard.press(K.end); await pg.keyboard.type(' 다시')
+            writeFileSync(abs, '# 충돌\n봇이 또 쓴 글\n')
+            await wait(2500)
+            if (!(await pg.$('.dbanner.clash'))) fail('BF 충돌: 두 번째 충돌에 배너가 없다')
+            else {
+              await pg.click('.dbanner.clash button:has-text("내 글로 바꾸기")'); await wait(900)
+              if (readFileSync(abs, 'utf8') !== '# 충돌\n봇이 쓴 글 다시\n') fail('BF 충돌: «내 글로 바꾸기» 뒤 원본이 내 글이 아니다 ' + JSON.stringify(readFileSync(abs, 'utf8')))
+              if (readdirSync(dirR).some((f) => f.startsWith('bf-clash (충돌 사본'))) fail('BF 충돌: «내 글로 바꾸기» 뒤에도 사본이 남았다')
+            }
+            await pick('todo.md'); await wait(600)
+            try { rmSync(abs) } catch {}
+            ok('BF 충돌 — 원본은 그대로 · 내 글은 «충돌 사본» · 배너로 알림 · «지금 파일 유지»/«내 글로 바꾸기» 뒤 사본은 휴지통')
+          }
           await wait(400)
         }
         // 🔴 답변 속 경로가 칩이 된다 — 있는 파일만 (2026-09-13 Dave: «채팅에서 문서 선택으로 바로 이동»)
