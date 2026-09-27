@@ -9,7 +9,7 @@ import { sessionUnread } from '../core/unread'
 import { ACT_COLOR, ACT_ICON, ACT_LABEL, LONG, actOf, buzz, slotOf, useSwipeCfg, type SwipeAct } from './swipe'
 import { HOLD_MS, decide, dropIndex } from './gesture'
 import { FolderBot, Icon, Mid } from './FolderBot'
-import { RoutineSheet, askName } from './Sheets'
+import { FolderPicker, RoutineSheet, askName } from './Sheets'
 import { refreshModels } from './consts'
 import { Mark, VendorMark, useProviders } from './Brand'
 import { Float, anchorOf, type Anchor } from './Float'
@@ -488,6 +488,7 @@ function InboxSec({ open, tog, onSend }: { open: boolean; tog: () => void; onSen
 /* ── 파일 트리 (게으른 로드) ── */
 function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFolderAt, touched, tick, say, active }: { bot: Bot; phone?: boolean; open: boolean; tog: () => void; onOpen: (rel: string, pin?: boolean) => void; onAttach: (rel: string, dir?: boolean) => void; onMention: (rel: string) => void; onStartAt: (vaultRel: string, botId?: string) => void; onNewFolderAt: (vaultRel: string) => void; touched: string[]; tick?: number; say: (m: string) => void; active: string | null }) {
   const [dirs, setDirs] = useState<Record<string, Node[]>>({})
+  const refRootsRef = useRef<string[]>([])   // 참조 폴더의 봇 기준 rel — loadDir 이 먼저 정의돼서 ref 로 넘긴다
   const [exp, setExp] = useState<Set<string>>(() => { try { return new Set(JSON.parse(localStorage.getItem(`fb:tree:${bot.id}`) ?? '[""]')) } catch { return new Set(['']) } })
   const [sort, setSort] = useState<'name' | 'mtime'>(() => (localStorage.getItem('fb:tsort') as 'name' | 'mtime') || 'name')
   const [filter, setFilter] = useState<string | null>(null)
@@ -504,7 +505,13 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
   const [hidden, setHidden] = useState(() => localStorage.getItem('fb:thidden') === '1')
   const [dropOn, setDropOn] = useState<string | null>(null)
   useEffect(() => { localStorage.setItem('fb:thidden', hidden ? '1' : '0') }, [hidden])
-  const loadDir = async (rel: string) => { try { const l = await api<Node[]>(`/bots/${bot.id}/ls?dir=${encodeURIComponent(rel)}${hidden ? '&all=1' : ''}`); setDirs((d) => ({ ...d, [rel]: l })) } catch { /* */ } }
+  /**
+   * ⚠ `../` 로 시작하는 폴더는 **지금 이 봇의 참조 폴더 안일 때만** 읽는다 (BC · 2026-09-27 스모크가 잡았다).
+   * 펼친 폴더 기억(`fb:tree:<봇>`)이 봇을 바꾸는 틈에 옆 봇으로 새는 일이 원래 있었는데, 참조 폴더 경로가 섞이자
+   * 오케스트레이터가 `../../3. Area/…` 를 읽으려다 볼트 밖이 되어 호스트가 500 을 냈다.
+   */
+  const isRefRel = (rel: string) => !rel.startsWith('../') || refRootsRef.current.some((r) => rel === r || rel.startsWith(r + '/'))
+  const loadDir = async (rel: string) => { if (!isRefRel(rel)) return; try { const l = await api<Node[]>(`/bots/${bot.id}/ls?dir=${encodeURIComponent(rel)}${hidden ? '&all=1' : ''}`); setDirs((d) => ({ ...d, [rel]: l })) } catch { /* */ } }
   useEffect(() => { setDirs({}); for (const d of exp) void loadDir(d) }, [hidden])
   useEffect(() => { setDirs({}); try { setExp(new Set(JSON.parse(localStorage.getItem(`fb:tree:${bot.id}`) ?? '[""]'))) } catch { setExp(new Set([''])) } }, [bot.id])
   useEffect(() => { localStorage.setItem(`fb:tree:${bot.id}`, JSON.stringify([...exp])); for (const d of exp) if (!dirs[d]) void loadDir(d) }, [exp, bot.id])
@@ -553,7 +560,32 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
    */
   // Finder 를 여는 주체는 **언제나 호스트**다 — 원격에서는 이름으로 그걸 먼저 말한다
   const store = useStore().s
+  const refreshStore = useStore().refresh
   const main = store.device.main, hostName = store.hostName
+  /**
+   * 참조 폴더 (BC · B안 · 2026-09-27 Dave 선택) — 파일 트리 **맨 아래에** 구분선 뒤로 잇는다. 🔴 **읽기만**:
+   * 파일은 「폴더 외 문서」 창으로 열리고(rel 이 `../` 로 시작), 끌어 옮기기·이름 바꾸기·지우기·여러 개 고르기에 끼지 않는다
+   * (내 파일 `rows` 와 따로 모은다 — 섞으면 ⇧ 고르기가 참조 파일까지 집어 지우기 메뉴에 올린다).
+   * ＋ 는 파일 머리 도구와 맨 아래 줄 둘 다. ⋯ 에 빼기 · Finder · 여기서 봇 시작.
+   */
+  const refRoots = useMemo(() => {
+    const root = store.root; const ups = bot.rel ? bot.rel.split('/').length : 0
+    return (bot.refs ?? []).filter((a) => !!root && a.startsWith(root + '/')).map((a) => {
+      const vrel = a.slice(root.length + 1)
+      return { abs: a, vrel, rel: `${'../'.repeat(ups)}${vrel}`, name: vrel.slice(vrel.lastIndexOf('/') + 1) }
+    })
+  }, [bot.refs, bot.rel, store.root])
+  refRootsRef.current = refRoots.map((r) => r.rel)
+  type RefRoot = (typeof refRoots)[number]
+  const [picking, setPicking] = useState(false)
+  const [refMenu, setRefMenu] = useState<{ x: number; y: number; r: RefRoot } | null>(null)
+  const addRef = async (vrel: string) => {
+    await api(`/bots/${bot.id}/refs`, { body: { path: `${store.root}/${vrel}` } })   // 실패하면 고르기 창이 그 말을 띄운다
+    await refreshStore(); setPicking(false); say('참조 폴더로 더했어요 — 새 세션부터 이 봇이 그 폴더를 읽어요')
+  }
+  const removeRef = async (r: RefRoot) => {
+    try { await api(`/bots/${bot.id}/refs`, { body: { path: r.abs, remove: true } }); await refreshStore(); say(`${r.name} 을(를) 참조에서 뺐어요`) } catch (e) { say((e as Error).message) }
+  }
   const dirOf = (n: Node) => (n.dir ? n.rel : n.rel.includes('/') ? n.rel.slice(0, n.rel.lastIndexOf('/')) : '')
   const makeNew = async (n: Node, kind: 'note' | 'folder') => {
     const name = await askName(kind === 'folder' ? '새 폴더 이름' : '새 노트 이름 (.md 는 자동)', kind === 'folder' ? '새 폴더' : '새 노트')
@@ -655,21 +687,27 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
     window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
   }, [exp, bot.id])
   useEffect(() => { if (!ctx) return; const off = () => setCtx(null); window.addEventListener('click', off); window.addEventListener('keydown', off); return () => { window.removeEventListener('click', off); window.removeEventListener('keydown', off) } }, [ctx])
-  const rows = useMemo(() => {
-    const out: { n: Node; depth: number }[] = []
+  const [rows, refRows] = useMemo(() => {
     const q = filter?.trim() ?? ''
-    const walk = (rel: string, depth: number) => {
+    const walk = (out: { n: Node; depth: number; root?: RefRoot }[], rel: string, depth: number) => {
       let list = dirs[rel] ?? []
       if (sort === 'mtime') list = [...list].sort((a, b) => (a.dir === b.dir ? b.mtime - a.mtime : a.dir ? -1 : 1))
       for (const n of list) {
         const hit = !q || scoreName(q, n.name, n.rel) > 0
-        if (n.dir) { if (q ? true : true) { const before = out.length; if (exp.has(n.rel) || q) { out.push({ n, depth }); walk(n.rel, depth + 1); if (q && out.length === before + 1 && !hit) out.pop() } else out.push({ n, depth }) } }
+        if (n.dir) { if (q ? true : true) { const before = out.length; if (exp.has(n.rel) || q) { out.push({ n, depth }); walk(out, n.rel, depth + 1); if (q && out.length === before + 1 && !hit) out.pop() } else out.push({ n, depth }) } }
         else if (hit) out.push({ n, depth })
       }
     }
-    walk('', 0)
-    return out
-  }, [dirs, exp, sort, filter])
+    const own: { n: Node; depth: number }[] = []
+    walk(own, '', 0)
+    // 참조 폴더 — 같은 정렬·거르기·접기를 따른다(B안의 대가로 적은 그대로). 뿌리 줄은 거르기와 무관하게 늘 보인다
+    const refs: { n: Node; depth: number; root?: RefRoot }[] = []
+    for (const r of refRoots) {
+      refs.push({ n: { name: r.name, rel: r.rel, dir: true, mtime: 0 } as Node, depth: 0, root: r })
+      if (exp.has(r.rel) || q) walk(refs, r.rel, 1)
+    }
+    return [own, refs] as const
+  }, [dirs, exp, sort, filter, refRoots])
   const vaultRel = (rel: string) => (bot.rel ? `${bot.rel}/${rel}` : rel)
   const toggleDir = (rel: string) => setExp((e) => { const n = new Set(e); if (n.has(rel)) n.delete(rel); else n.add(rel); return n })
   const rename = async (n: Node) => { const name = await askName(`${n.dir ? '폴더' : '파일'} 이름 바꾸기`, n.name); if (!name || name === n.name) return; try { const r = await api<{ rel: string }>(`/bots/${bot.id}/rename`, { body: { rel: n.rel, name } }); say(`→ ${r.rel}`); const parent = n.rel.includes('/') ? n.rel.slice(0, n.rel.lastIndexOf('/')) : ''; void loadDir(parent) } catch (e) { say((e as Error).message) } }
@@ -679,6 +717,7 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
         <span style={{ position: 'relative' }}><span className={`ib ${sort !== 'name' ? 'on' : ''}`} title="정렬" onClick={() => setSortMenu(!sortMenu)}><Icon n="sort" size={12} /></span>{sortMenu ? <div className="menu" style={{ right: 0, top: 26 }} onClick={() => setSortMenu(false)}><div className="h">정렬</div><button className={sort === 'name' ? 'on' : ''} onClick={() => setSort('name')}><span style={{ flex: 1 }}>이름 (폴더 먼저)</span>{sort === 'name' ? <Icon n="check" size={11} /> : null}</button><button className={sort === 'mtime' ? 'on' : ''} onClick={() => setSort('mtime')}><span style={{ flex: 1 }}>수정순 — 최근 변경</span>{sort === 'mtime' ? <Icon n="check" size={11} /> : null}</button><hr /><button className={hidden ? 'on' : ''} onClick={() => setHidden(!hidden)}><span style={{ flex: 1 }}>숨김 파일 보기</span>{hidden ? <Icon n="check" size={11} /> : null}</button></div> : null}</span>
         <span className={`ib ${filter !== null ? 'on' : ''}`} title="이름으로 거르기" onClick={() => setFilter(filter === null ? '' : null)}><Icon n="search" size={12} /></span>
         <span className="ib" title="모두 접기" onClick={() => setExp(new Set(['']))}><Icon n="collapse" size={12} style={{ transform: 'rotate(90deg)' }} /></span>
+        {bot.rel ? <span className="ib" title="참조 폴더 더하기 — 이 봇이 읽기만 하는 폴더" onClick={() => setPicking(true)}><Icon n="fplus" size={12} /></span> : null}
       </span></button>
     {open ? <>
       {filter !== null ? <div className="tfilter"><Icon n="search" size={12} /><input autoFocus placeholder="이름으로 거르기…" value={filter} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setFilter(null) }} /><span onClick={() => setFilter(null)} style={{ cursor: 'pointer' }}><Icon n="x" size={11} /></span></div> : null}
@@ -727,8 +766,32 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
           onDragOver={(e) => { if (!e.dataTransfer.types.includes('text/x-fb-rels')) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropOn('') }}
           onDragLeave={() => setDropOn((x) => (x === '' ? null : x))}
           onDrop={(e) => { setDropOn(null); const raw = e.dataTransfer.getData('text/x-fb-rels'); if (!raw) return; e.preventDefault(); try { void moveTo(JSON.parse(raw) as string[], '') } catch { /* */ } }}>여기로 끌면 맨 위로</div>
+        {bot.rel ? <>
+          <div className="trefsep" />
+          {refRows.map(({ n, depth, root }) => root
+            ? <button key={n.rel} className={`trow dir tref ${exp.has(n.rel) ? 'open' : ''}`} style={{ ['--pad' as string]: '10px' }} onClick={() => toggleDir(n.rel)} title={`참조 폴더 · ${root.vrel}`}
+                onContextMenu={(e) => { e.preventDefault(); setRefMenu({ x: e.clientX, y: e.clientY, r: root }) }}>
+                <span className="cv"><Icon n={exp.has(n.rel) ? 'chevd' : 'chev'} size={9} /></span><Icon n="folder" size={12} color="var(--t2)" /><span className="n"><Mid s={n.name} /></span>
+                <span className="trefro">읽기만</span>
+                <span className="trefmore" title="참조 폴더 메뉴" onClick={(e) => { e.stopPropagation(); setRefMenu({ x: e.clientX, y: e.clientY, r: root }) }}><Icon n="more" size={12} /></span>
+              </button>
+            : <button key={n.rel} className={`trow trefin ${n.dir ? 'dir' : ''} ${active === n.rel ? 'on' : ''}`} style={{ ['--pad' as string]: `${10 + depth * 14}px` }} title={n.rel.replace(/^(\.\.\/)+/, '')}
+                onClick={() => { if (n.dir) toggleDir(n.rel); else onOpen(n.rel) }}>
+                <span className="cv">{n.dir ? <Icon n={exp.has(n.rel) ? 'chevd' : 'chev'} size={9} /> : null}</span><Icon n={n.dir ? 'folder' : 'doc'} size={12} color="var(--t3)" /><span className="n"><Mid s={n.name} /></span>
+              </button>)}
+          <button className="trow trefadd" style={{ ['--pad' as string]: '10px' }} onClick={() => setPicking(true)}><span className="cv" /><Icon n="fplus" size={12} color="var(--t3)" /><span className="n">참조 폴더 더하기</span></button>
+        </> : null}
       </div>
     </> : null}
+    {refMenu ? <Float at={{ x: refMenu.x, y: refMenu.y }} onClose={() => setRefMenu(null)} className="menu ctx">
+      <div className="h">참조 · {refMenu.r.vrel}</div>
+      <button onClick={() => { void openOnThisDevice(bot, refMenu.r.rel, 'reveal', { main, hostName, phone: !!phone, say }); setRefMenu(null) }}><span style={{ flex: 1 }}>Finder 에서 보기</span></button>
+      <button onClick={() => { onStartAt(refMenu.r.vrel); setRefMenu(null) }}><span style={{ flex: 1 }}>여기서 봇 시작</span></button>
+      <hr />
+      <button className="warn" onClick={() => { void removeRef(refMenu.r); setRefMenu(null) }}><span style={{ flex: 1 }}>참조에서 빼기</span></button>
+    </Float> : null}
+    {picking ? <FolderPicker onClose={() => setPicking(false)} onStarted={() => setPicking(false)}
+      pick={{ title: '참조 폴더로 더할 폴더를 고르세요', sub: `이 봇이 읽기만 하는 폴더예요 — 작업 폴더는 그대로 · 최대 5개 · 지금 ${refRoots.length}개`, go: '참조 폴더로 더하기', onPick: addRef }} /> : null}
     {ctx ? <Float at={{ x: ctx.x, y: ctx.y }} onClose={() => setCtx(null)} className="menu ctx">
       {/* ⚠ 여럿을 고른 채 우클릭했으면 **몇 개를 다루는지** 를 먼저 말한다 — 되돌리기 어려운 항목이 아래 있다 */}
       {sel.has(ctx.n.rel) && sel.size > 1 ? <div className="h">{sel.size}개 고름</div> : null}

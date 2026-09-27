@@ -805,7 +805,7 @@ try {
         }
         /**
          * 🔴 **폴더 밖 문서** (D · 2026-09-19) — 볼트 안·봇 폴더 밖 파일은 `../` rel 로 열리고 「폴더 외」 배지 + 볼트 기준 경로 띠 + 읽기만.
-         *    «참조 폴더로 추가» 는 봇당 하나라 비어 있을 때만. 볼트 밖은 거부(C 의 rondo_open 검사 + botRelOf 유닛).
+         *    «참조 폴더로 추가» 는 BC(2026-09-27)부터 `refs` 에 더한다 — 작업 폴더(repo)는 안 건드린다. 볼트 밖은 거부(C 의 rondo_open 검사 + botRelOf 유닛).
          */
         {
           const hashBefore = await pg.evaluate(() => location.hash)
@@ -820,18 +820,53 @@ try {
           if (!band.includes('1. Inbox/예시랩_자문자료.txt') || !/읽기만/.test(band) || !/참조 폴더로 추가/.test(band)) fail('D: 띠에 볼트 기준 경로·읽기만·추가 단추가 있어야 한다 · ' + band)
           if (await pg.$('.docwrap .mded, .docwrap textarea')) fail('D: 폴더 밖 문서는 편집기가 아니라 읽기 전용이어야 한다')
           await pg.click('.docwrap .outband button:has-text("참조 폴더로 추가")'); await wait(700)
-          const rb = (await api('/bots')).find((b) => b.id === bot.id); if (!rb.repo || !rb.repo.endsWith('/1. Inbox')) fail('D: 참조 폴더가 .bot.yml 에 안 들어갔다 ' + JSON.stringify(rb.repo))
-          const band2 = (await pg.textContent('.docwrap .outband')) ?? ''; if (!/추가했어요|하나뿐/.test(band2)) fail('D: 추가 뒤 띠 문구 · ' + band2)
-          const again = await api(`/bots/${bot.id}/repo`, { path: join(root, '2. Projects') }).catch((e) => ({ error: String(e.message) })); if (!again.error || !/하나뿐/.test(again.error)) fail('D: 참조 폴더가 있으면 두 번째는 거부해야 한다 ' + JSON.stringify(again))
-          await api(`/bots/${bot.id}/repo`, { path: '' })   // 되돌린다 — 뒤 검사가 봇 설정을 믿는다
-          if ((await api('/bots')).find((b) => b.id === bot.id).repo) fail('D: 참조 폴더 풀기')
+          const rb = (await api('/bots')).find((b) => b.id === bot.id); if (!(rb.refs ?? []).some((r) => r.endsWith('/1. Inbox'))) fail('D: 참조 폴더가 .bot.yml refs 에 안 들어갔다 ' + JSON.stringify(rb.refs))
+          if (rb.repo) fail('D→BC: 참조 폴더가 작업 폴더(repo)를 건드렸다 ' + rb.repo)
+          const band2 = (await pg.textContent('.docwrap .outband')) ?? ''; if (!/추가했어요/.test(band2)) fail('D: 추가 뒤 띠 문구 · ' + band2)
+          const again = await api(`/bots/${bot.id}/refs`, { path: join(root, '3. Area') }).catch((e) => ({ error: String(e.message) })); if (!again.error || !/상위 폴더/.test(again.error)) fail('D→BC: 봇 폴더를 품은 상위는 거부돼야 한다 ' + JSON.stringify(again))
+          await api(`/bots/${bot.id}/refs`, { path: join(root, '1. Inbox'), remove: true })   // 되돌린다 — 뒤 검사가 봇 설정을 믿는다
+          if ((await api('/bots')).find((b) => b.id === bot.id).refs) fail('D: 참조 폴더 빼기')
           // 폴더 안 문서는 그대로 — 배지·띠 없음 + 편집기
           await pg.evaluate(() => { const b = [...document.querySelectorAll('.panel .trow')].find((x) => /CLAUDE\.md/.test(x.textContent ?? '')); b?.click() }); await wait(800)
           if (await pg.$('.docwrap .scp.out, .docwrap .outband')) fail('D: 폴더 안 문서에 폴더 외 표시가 붙었다')
           if (!(await pg.$('.docwrap .mded'))) fail('D: 폴더 안 문서의 편집기가 사라졌다')
           for (let i = 0; i < 3 && (await pg.$('.docwrap')); i++) { await pg.keyboard.press('Meta+Shift+D'); await wait(300) }
           await fetch(base + `/api/sessions/${sidD}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(800)
-          ok('폴더 밖 문서 — 칩 → 열림 · 「폴더 외」 배지 · 볼트 경로 띠 · 읽기만 · 참조 폴더 추가(하나뿐 · 두 번째 거부) · 폴더 안 문서 불변')
+          ok('폴더 밖 문서 — 칩 → 열림 · 「폴더 외」 배지 · 볼트 경로 띠 · 읽기만 · 참조 폴더 추가(refs · 작업 폴더 불변 · 상위 거부) · 폴더 안 문서 불변')
+        }
+        /**
+         * 🔴 **참조 폴더 · 파일 영역** (BC · B안 · 2026-09-27) — 트리 맨 아래 구분선 뒤로 참조 폴더가 잇는다. 읽기만(「폴더 외 문서」 창),
+         *    ⋯ 로 빼기. ＋ 는 폴더 창을 「고르기만」 으로 띄운다(새 폴더 줄 없음 · 시작 대신 더하기).
+         */
+        {
+          if (await pg.$('.panel .trow.tref')) fail('BC: 참조가 없는데 참조 줄이 있다')
+          if (!(await pg.$('.panel .trefadd'))) fail('BC: 트리 맨 아래 「참조 폴더 더하기」 줄이 없다')
+          await pg.click('.panel .trefadd'); await wait(700)
+          const pk = (await pg.textContent('.modal.pk').catch(() => '')) ?? ''
+          if (!pk.includes('참조 폴더로 더할 폴더를 고르세요')) fail('BC: 고르기만 모드 제목이 없다 · ' + pk.slice(0, 80))
+          if (/새 폴더 만들기/.test(pk)) fail('BC: 고르기만 모드에 새 폴더 줄이 보인다')
+          await pg.click('.modal.pk .trow.dir[data-rel="3. Area/재무_CFO"]'); await wait(200)
+          await pg.click('.modal.pk .modal-f .btn.primary:has-text("참조 폴더로 더하기")'); await wait(900)
+          if (await pg.$('.modal.pk')) fail('BC: 더한 뒤 고르기 창이 안 닫혔다')
+          const rb2 = (await api('/bots')).find((b) => b.id === bot.id)
+          if (!(rb2.refs ?? []).some((r) => r.endsWith('/3. Area/재무_CFO'))) fail('BC: 고른 폴더가 refs 에 없다 ' + JSON.stringify(rb2.refs))
+          if (rb2.repo) fail('BC: 참조를 더했는데 작업 폴더(repo)가 바뀌었다')
+          const refRow = await pg.$('.panel .trow.tref'); if (!refRow) fail('BC: 트리에 참조 줄이 안 생겼다')
+          const rt = (await refRow.textContent()) ?? ''; if (!rt.includes('재무_CFO') || !rt.includes('읽기만')) fail('BC: 참조 줄에 이름·읽기만이 없다 · ' + rt)
+          if (!(await pg.$('.panel .trefsep + .trow.tref'))) fail('BC: 참조 줄이 구분선 바로 뒤(트리 맨 아래)가 아니다')
+          await refRow.click(); await wait(800)
+          const inRow = await pg.$('.panel .trow.trefin:has-text("CLAUDE.md")'); if (!inRow) fail('BC: 참조 폴더를 펼쳤는데 안의 파일이 안 보인다')
+          await inRow.click(); await wait(800)
+          if (!(await pg.$('.docwrap .outband'))) fail('BC: 참조 폴더의 파일이 「폴더 외 문서」(읽기만)로 안 열렸다')
+          if (await pg.$('.docwrap .mded')) fail('BC: 참조 폴더의 파일이 편집기로 열렸다')
+          for (let i = 0; i < 3 && (await pg.$('.docwrap')); i++) { await pg.keyboard.press('Meta+Shift+D'); await wait(300) }
+          await pg.hover('.panel .trow.tref'); await pg.click('.panel .trow.tref .trefmore'); await wait(300)
+          const mt = (await pg.textContent('.menu.ctx').catch(() => '')) ?? ''
+          if (!/참조에서 빼기/.test(mt) || !/Finder 에서 보기/.test(mt) || !/여기서 봇 시작/.test(mt)) fail('BC: ⋯ 메뉴 항목 · ' + mt)
+          await pg.click('.menu.ctx button:has-text("참조에서 빼기")'); await wait(800)
+          if (await pg.$('.panel .trow.tref')) fail('BC: 뺐는데 참조 줄이 남았다')
+          if ((await api('/bots')).find((b) => b.id === bot.id).refs) fail('BC: 뺐는데 refs 가 남았다')
+          ok('참조 폴더 · 파일 영역 — 맨 아래 ＋ → 고르기만 창 → 트리 끝에 「참조 · 읽기만」 → 펼쳐 열면 폴더 외 문서 · ⋯ 빼기 · 작업 폴더 불변')
         }
         /**
          * 🔴 **채팅의 PDF 칩** (G · 2026-09-19) — 원인 ⓑ(칩 클릭이 경로 해석에서 버려짐 · 파일명만이면 칩이 안 생김). 이제 칩은 전부

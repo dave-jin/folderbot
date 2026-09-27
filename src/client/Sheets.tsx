@@ -179,7 +179,12 @@ function useIsPhone(): boolean {
 interface PNode { name: string; rel: string; dir: boolean; mtime: number; harness?: boolean; botId?: string; role?: 'inbox' | 'active' | 'reference' | 'archive' }
 const ROLE_T: Record<string, [string, string]> = { active: ['활성', 'var(--done)'], reference: ['참조', 'var(--t2)'], archive: ['보관', 'var(--t3)'], inbox: ['정리 대기', 'var(--wait)'] }
 const NEW_MARK = '/\u0000new'
-export function FolderPicker({ onClose, onStarted }: { onClose: () => void; onStarted: (bot: Bot) => void }) {
+/**
+ * 「고르기만」 모드 (BC · 2026-09-27) — 봇을 시작하지 않고 폴더 하나를 골라 돌려준다(참조 폴더 더하기).
+ * 새 폴더 만들기 줄은 숨기고, 제목·단추 글자만 바뀐다. 칸(섹션)은 여전히 고를 수 없다.
+ */
+export interface PickMode { title: string; sub: string; go: string; onPick: (rel: string) => Promise<void> | void }
+export function FolderPicker({ onClose, onStarted, pick }: { onClose: () => void; onStarted: (bot: Bot) => void; pick?: PickMode }) {
   const { s, refresh } = useStore()
   const activeParents = useMemo(() => (s.rules?.roles.active ?? []).map((g) => g.replace(/\/\*$/, '')), [s.rules])
   const [dirs, setDirs] = useState<Record<string, PNode[]>>({})
@@ -213,7 +218,7 @@ export function FolderPicker({ onClose, onStarted }: { onClose: () => void; onSt
     if (q.trim()) return rank(q, flat ?? [], (n) => ({ name: n.name, path: n.rel }), 200).map((n) => ({ n, depth: 0, kind: 'dir' as const }))
     const walk = (rel: string, depth: number) => {
       const list = dirs[rel] ?? []
-      if (rel && exp.has(rel)) out.push({ n: { name: '새 폴더 만들기', rel: `${rel}${NEW_MARK}`, dir: true, mtime: 0 }, depth, kind: 'new' })
+      if (rel && exp.has(rel) && !pick) out.push({ n: { name: '새 폴더 만들기', rel: `${rel}${NEW_MARK}`, dir: true, mtime: 0 }, depth, kind: 'new' })
       for (const n of list) {
         if (filter === 'active' && topRole(n.rel) !== 'active' && !n.rel.includes('/')) continue
         if (filter === 'free' && (n.botId || botOfRel(n.rel))) continue
@@ -234,6 +239,11 @@ export function FolderPicker({ onClose, onStarted }: { onClose: () => void; onSt
     setBusy(true); setErr('')
     try { const provider = await pickAgent(rel); if (!provider) return; const bot = await api<Bot>('/bots/start', { body: { rel, provider } }); await refresh(); onStarted(bot) } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
+  const runPick = async (rel: string) => {
+    if (busy || !pick) return
+    setBusy(true); setErr('')
+    try { await pick.onPick(rel) } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+  }
   const create = async () => {
     if (!newIn || !newName.trim() || busy) return
     setBusy(true); setErr('')
@@ -247,7 +257,7 @@ export function FolderPicker({ onClose, onStarted }: { onClose: () => void; onSt
     else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(vis[Math.max(0, i - 1)]?.n.rel ?? sel) }
     else if (e.key === 'ArrowRight' && sel) { e.preventDefault(); setExp((x) => new Set([...x, sel])) }
     else if (e.key === 'ArrowLeft' && sel) { e.preventDefault(); if (exp.has(sel)) toggle(sel); else if (sel.includes('/')) setSel(sel.slice(0, sel.lastIndexOf('/'))) }
-    else if (e.key === 'Enter' && sel) { e.preventDefault(); if (selBot) onStarted(selBot); else void start(sel) }
+    else if (e.key === 'Enter' && sel) { e.preventDefault(); if (pick) void runPick(sel); else if (selBot) onStarted(selBot); else void start(sel) }
     else if (e.key === 'Escape') onClose()
   }
   useEffect(() => { if (!sel) return; const el = listRef.current?.querySelector(`[data-rel="${CSS.escape(sel)}"]`); (el as HTMLElement | null)?.scrollIntoView({ block: 'nearest' }) }, [sel])
@@ -285,14 +295,14 @@ export function FolderPicker({ onClose, onStarted }: { onClose: () => void; onSt
             <Icon n="chev" size={11} />
           </button>)}
           {!kids.length ? <div className="empty">{q.trim() ? '찾는 폴더가 없어요' : cur ? '하위 폴더가 없어요 — 여기서 시작할 수 있어요' : '읽는 중…'}</div> : null}
-          {!q && cur ? (newIn === cur ? <div className="newbox"><input className="nm" autoFocus placeholder="새 폴더 이름" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void create(); if (e.key === 'Escape') setNewIn(null) }} /><div className="pv"><span className="mono">{cur}/{preview(cur, newName || '이름')}</span></div></div>
+          {!q && cur && !pick ? (newIn === cur ? <div className="newbox"><input className="nm" autoFocus placeholder="새 폴더 이름" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void create(); if (e.key === 'Escape') setNewIn(null) }} /><div className="pv"><span className="mono">{cur}/{preview(cur, newName || '이름')}</span></div></div>
             : <button className="ph-row new" onClick={() => { setNewIn(cur); setNewName('') }}><span className="ic"><Icon n="fplus" size={15} /></span><span className="n"><span className="nm">여기에 새 폴더</span></span></button>) : null}
         </div>
         <div className="ph-f">
           {err ? <div className="er">{err}</div> : null}
           <div className="pa"><Mid s={cur || 'PARA (루트)'} tail={14} /></div>
-          <button className="go" disabled={busy || !cur} onClick={() => (hereBot ? onStarted(hereBot) : cur ? void start(cur) : undefined)}>
-            {hereBot ? '이 폴더의 봇 열기' : here && topRole(cur) === 'archive' ? '보관 폴더지만 시작' : `여기서 시작`}</button>
+          <button className="go" disabled={busy || !cur} onClick={() => (pick ? (cur ? void runPick(cur) : undefined) : hereBot ? onStarted(hereBot) : cur ? void start(cur) : undefined)}>
+            {pick ? pick.go : hereBot ? '이 폴더의 봇 열기' : here && topRole(cur) === 'archive' ? '보관 폴더지만 시작' : `여기서 시작`}</button>
         </div>
       </div>
     </>
@@ -301,13 +311,13 @@ export function FolderPicker({ onClose, onStarted }: { onClose: () => void; onSt
   return <>
     <div className="backdrop" onClick={onClose} />
     <div className="modal pk" style={{ height: 'min(720px, calc(100% - 24px))' }} onKeyDown={onKey} tabIndex={-1}>
-      <div className="modal-h"><FolderBot color="#e08850" size={40} /><div className="t"><b>에이전트와 함께 일할 폴더를 선택하세요</b><small>PARA 어디든 됩니다 — 접었다 펴서 고르세요 · 활성 폴더가 먼저 · 새 폴더는 그 자리에서</small></div><button className="ib" onClick={onClose}><Icon n="x" size={14} /></button></div>
+      <div className="modal-h"><FolderBot color="#e08850" size={40} /><div className="t">{pick ? <><b>{pick.title}</b><small>{pick.sub}</small></> : <><b>에이전트와 함께 일할 폴더를 선택하세요</b><small>PARA 어디든 됩니다 — 접었다 펴서 고르세요 · 활성 폴더가 먼저 · 새 폴더는 그 자리에서</small></>}</div><button className="ib" onClick={onClose}><Icon n="x" size={14} /></button></div>
       <div className="search"><Icon n="search" size={14} /><input placeholder="폴더 이름으로 찾기 — 치면 트리가 펼쳐지며 걸러져요" value={q} onChange={(e) => setQ(e.target.value)} autoFocus /></div>
-      <div className="fl">{([['all', '전체'], ['active', '활성만'], ['free', '봇 없는 폴더만']] as const).map(([k, t]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{t}</button>)}<span className="hint">↑↓ 이동 · → 펼침 · ← 접음 · ⏎ 시작</span></div>
+      <div className="fl">{([['all', '전체'], ['active', '활성만'], ['free', '봇 없는 폴더만']] as const).map(([k, t]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{t}</button>)}<span className="hint">↑↓ 이동 · → 펼침 · ← 접음 · ⏎ {pick ? '고르기' : '시작'}</span></div>
       <div className="modal-b" style={{ flex: 1 }} ref={listRef}>
         {rows.map(({ n, depth, kind }) => kind === 'new' ? (newIn === n.rel.replace(NEW_MARK, '') ? <div key={n.rel} className="newbox" style={{ marginLeft: 18 + depth * 16 }}><div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5 }}><Icon n="fplus" size={14} />새 폴더 만들기</div><input className="nm" autoFocus placeholder="이름" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void create(); if (e.key === 'Escape') setNewIn(null) }} /><div className="pv"><Icon n="chev" size={12} /><span className="mono">{newIn}/{preview(newIn, newName || '이름')}</span><span>· 하네스 설치 · 바로 시작</span></div></div>
             : <button key={n.rel} className="trow" style={{ ['--pad' as string]: `${18 + depth * 16 + 19}px`, color: 'var(--t2)' }} onClick={() => { setNewIn(n.rel.replace(NEW_MARK, '')); setNewName('') }}><Icon n="fplus" size={13} color="var(--t3)" /><span className="n">새 폴더 만들기</span></button>)
-          : <button key={n.rel} data-rel={n.rel} className={`trow dir ${sel === n.rel ? 'on' : ''}`} style={{ ['--pad' as string]: `${18 + depth * 16}px`, minHeight: 32, opacity: topRole(n.rel) === 'archive' ? .7 : 1 }} onClick={() => setSel(n.rel)} onDoubleClick={() => (isSection(n) ? toggle(n.rel) : n.botId || botOfRel(n.rel) ? onStarted(botOfRel(n.rel)!) : void start(n.rel))} title={n.rel}>
+          : <button key={n.rel} data-rel={n.rel} className={`trow dir ${sel === n.rel ? 'on' : ''}`} style={{ ['--pad' as string]: `${18 + depth * 16}px`, minHeight: 32, opacity: topRole(n.rel) === 'archive' ? .7 : 1 }} onClick={() => setSel(n.rel)} onDoubleClick={() => (isSection(n) ? toggle(n.rel) : pick ? void runPick(n.rel) : n.botId || botOfRel(n.rel) ? onStarted(botOfRel(n.rel)!) : void start(n.rel))} title={n.rel}>
             <span className="cv" onClick={(e) => { e.stopPropagation(); toggle(n.rel) }} style={{ width: 14, padding: 4, margin: -4 }}>{q ? null : <Icon n={exp.has(n.rel) ? 'chevd' : 'chev'} size={10} />}</span><Icon n="folder" size={13} color="var(--t2)" />
             <span className="n" style={{ color: sel === n.rel ? 'var(--w)' : undefined }}>{q ? <span className="hitn"><span className="nm"><Hit s={n.name} q={q} /></span>{n.rel.includes('/') ? <span className="pth"><Mid s={n.rel.slice(0, n.rel.lastIndexOf('/'))} tail={10} /></span> : null}</span> : <Mid s={n.name} tail={8} />}</span>
             <span style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 'none' }}>
@@ -318,7 +328,7 @@ export function FolderPicker({ onClose, onStarted }: { onClose: () => void; onSt
           </button>)}
         {!rows.length ? <div className="empty">{q ? '찾는 폴더가 없어요' : '읽는 중…'}</div> : null}
       </div>
-      <div className="modal-f" style={{ flexWrap: 'nowrap', whiteSpace: 'nowrap' }}><span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--t2)', fontSize: 12, flex: 'none' }}><FolderBot color="#e08850" size={20} />또는 오케스트레이터에게 "X 폴더에서 시작해"</span><span className="crumb">{crumbs.length ? <span>{crumbs.slice(0, -1).map((c) => `${c} / `).join('')}<b>{crumbs[crumbs.length - 1]}</b></span> : <span style={{ color: 'var(--t3)' }}>폴더를 고르세요</span>}</span>{selIsSection && !err ? <span style={{ color: 'var(--t3)', fontSize: 12, flex: 'none' }}>칸이에요 — 그 안의 폴더를 고르세요</span> : null}{err ? <span className="err" style={{ color: 'var(--err)', fontSize: 12, flex: 'none' }}>{err}</span> : null}<button className="btn" onClick={onClose} style={{ flex: 'none' }}>취소</button><button className="btn primary" style={{ flex: 'none' }} disabled={busy || !sel || selIsSection} title={selIsSection ? '칸에는 봇을 만들지 않아요 — 그 안의 폴더를 고르세요' : ''} onClick={() => (selBot ? onStarted(selBot) : sel ? void start(sel) : undefined)}>{selBot ? '봇 열기' : selNode && topRole(sel!) === 'archive' ? '보관 폴더지만 시작' : '이 폴더에서 시작'}</button></div>
+      <div className="modal-f" style={{ flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>{pick ? null : <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--t2)', fontSize: 12, flex: 'none' }}><FolderBot color="#e08850" size={20} />또는 오케스트레이터에게 "X 폴더에서 시작해"</span>}<span className="crumb">{crumbs.length ? <span>{crumbs.slice(0, -1).map((c) => `${c} / `).join('')}<b>{crumbs[crumbs.length - 1]}</b></span> : <span style={{ color: 'var(--t3)' }}>폴더를 고르세요</span>}</span>{selIsSection && !err ? <span style={{ color: 'var(--t3)', fontSize: 12, flex: 'none' }}>칸이에요 — 그 안의 폴더를 고르세요</span> : null}{err ? <span className="err" style={{ color: 'var(--err)', fontSize: 12, flex: 'none' }}>{err}</span> : null}<button className="btn" onClick={onClose} style={{ flex: 'none' }}>취소</button><button className="btn primary" style={{ flex: 'none' }} disabled={busy || !sel || selIsSection} title={selIsSection ? '칸에는 봇을 만들지 않아요 — 그 안의 폴더를 고르세요' : ''} onClick={() => (pick ? (sel ? void runPick(sel) : undefined) : selBot ? onStarted(selBot) : sel ? void start(sel) : undefined)}>{pick ? pick.go : selBot ? '봇 열기' : selNode && topRole(sel!) === 'archive' ? '보관 폴더지만 시작' : '이 폴더에서 시작'}</button></div>
     </div>
   </>
 }

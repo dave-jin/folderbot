@@ -385,6 +385,13 @@ b,strong { color:var(--w); font-weight:600 }
 .srow:hover .del, .srow.on .del { opacity:1 } .srow .del:hover { color:var(--err); background:var(--hover) }
 .srow { display:flex; align-items:center; gap:8px; padding:4px 8px; border-radius:5px; font-size:12.5px; min-height:28px; margin:0 8px; width:calc(100% - 16px) } .srow.on { background:var(--sel) } .srow .n { flex:1; color:var(--t2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .srow.on .n { color:var(--w) } .srow .m { font-size:11px; color:var(--t3); font-family:var(--mono) } .srow:hover { background:var(--hover) } .srow.on:hover { background:var(--sel) }
 .trow { display:flex; align-items:center; gap:7px; padding:3px 12px 3px var(--pad,14px); font-size:12.5px; border-radius:5px; width:100%; min-height:26px; color:var(--t) } .trow:hover { background:var(--hover) } .trow.on { background:var(--sel) } .trow.flash { background:rgba(224,136,80,.14) } .trow .n { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .trow.dir .n { color:var(--t2) } .trow time { font-size:11px; color:var(--t3); visibility:hidden } .trow:hover time, .trow.flash time { visibility:visible } .trow .cv { width:9px; display:inline-flex; color:var(--t3) }
+/* BC · 참조 폴더(B안) — 파일 트리 맨 아래. 새 색 없이 명도·「읽기만」 표시로만 가른다 */
+.trefsep { height:1px; background:var(--line); margin:6px 10px }
+.trow.dir.tref .n { color:var(--t) }
+.trefro { font-size:10px; color:var(--t3); border:1px solid var(--line2); border-radius:4px; padding:0 5px; line-height:16px; flex:none }
+.trefmore { display:inline-flex; width:20px; height:20px; align-items:center; justify-content:center; border-radius:4px; color:var(--t3); flex:none; opacity:0 } .tref:hover .trefmore { opacity:1 } .trefmore:hover { color:var(--w); background:var(--sel) }
+.trefin .n, .trow.dir.trefin .n { color:var(--t2) }
+.trefadd .n { color:var(--t3); font-size:12px } .trefadd:hover .n { color:var(--t2) }
 .tfilter { display:flex; align-items:center; gap:8px; margin:2px 10px 6px; border:1px solid var(--line2); border-radius:6px; padding:4px 8px; font-size:12px; color:var(--t3) } .tfilter input { background:none; border:0; outline:0; flex:1; color:var(--t) }
 /* 할 일 2.0 (V15) — 목록은 제목 한 줄. 설명은 더블클릭(폰은 탭)으로 펼칠 때만. 편집은 한 칸에 «제목: 설명» */
 .tsec { display:flex; align-items:center; gap:6px; height:26px; padding:0 14px; margin-top:4px; width:100%; font-size:11px; color:var(--t3) } .tsec:hover { color:var(--t2) } .tsec .c { color:var(--t3) }
@@ -674,7 +681,7 @@ b,strong { color:var(--w); font-weight:600 }
   .rpwrap .hdr .ttl, .docwrap .hdr .ttl { font-size:16px; font-weight:600 }
   .rpwrap .hdr .ib.on, .docwrap .hdr .ib { display:none }
   .sech { font-size:13px; padding:12px 18px 6px; min-height:36px } .sech .tools { opacity:1 } .sech .tools .ib.mdb { width:auto; padding:0 10px; height:34px } .sech .tools .ib.mdb span { display:inline }
-  .trow { min-height:46px; font-size:16px; gap:12px; padding-left:calc(var(--pad,14px) + 6px) } .trow time { visibility:visible; font-size:13px } .trow .cv { width:13px }
+  .trow { min-height:46px; font-size:16px; gap:12px; padding-left:calc(var(--pad,14px) + 6px) } .trefmore { opacity:1; width:32px; height:32px } .trow time { visibility:visible; font-size:13px } .trow .cv { width:13px }
   .srow { min-height:44px; font-size:15px; margin:0 10px } .srow .del, .srow .ren { opacity:1; width:30px; height:30px } .srow.edit .rin { height:30px; font-size:15px } .kv { font-size:14px; min-height:36px }
   .sec.fix[style] { height:auto !important; max-height:240px }
   .pfoot { padding:10px 18px calc(var(--sab) + 12px); font-size:14px }
