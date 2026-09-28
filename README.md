@@ -28,6 +28,8 @@
 
 요구 사항: **Apple Silicon Mac** (호스트) · [Claude Code CLI](https://claude.ai/code) 로그인(Claude 구독 또는 API 키) · 아이폰/맥북은 같은 [Tailscale](https://tailscale.com) 네트워크(권장)
 
+(선택) [Codex CLI](https://github.com/openai/codex) 가 깔려 있으면 세션마다 Claude Code 대신 Codex 를 고를 수 있습니다(베타).
+
 1. [Releases](https://github.com/dave-jin/folderbot/releases) 에서 최신 `Folder.Bot-<버전>-arm64.dmg` 를 받아 **Applications** 로 끌어 놓습니다.
 2. 처음 열 때 «확인되지 않은 개발자/손상됨» 이 뜨면(개발자 인증서 없이 ad-hoc 서명이라서) 터미널에 한 줄:
    ```
@@ -87,6 +89,7 @@ npm run build && node bin/folderbot.mjs init <볼트 루트> && node bin/folderb
 
 - 초기 버전입니다. macOS Apple Silicon 호스트만 지원하고, 앱은 개발자 인증서 없이 ad-hoc 서명됩니다(첫 실행 시 검역 해제 필요).
 - Claude Code CLI 의 headless 출력은 생각(thinking) 본문을 주지 않습니다 — 생각 중임은 상태줄로만 보입니다.
+- Codex 세션은 베타입니다. 앱 안 승인 화면이 없어 권한은 Codex 샌드박스가 정합니다(기본 읽기 전용 · 설정에서 바꿈). Folder Bot 도구(문서 열기·오케스트레이터 요청 등)도 아직 Claude Code 세션에서만 씁니다.
 - 한국어 UI 가 기본입니다. 영어는 곧.
 
 ## 라이선스
