@@ -73,3 +73,31 @@ describe('installRules · J-2 기기 규칙', () => {
     rmSync(root, { recursive: true, force: true }); rmSync(root2, { recursive: true, force: true })
   })
 })
+
+describe('scaffold · 볼트 공통 지침(new-folder 블록)', () => {
+  const TG = '## 📣 루틴 결과는 텔레그램으로 보고한다\n\n- 끝날 때마다 `tg-report` 로 보낸다.'
+  it('루트 CLAUDE.md 의 ```md new-folder``` 블록을 새 폴더 CLAUDE.md 끝에 붙인다 · createFolder 와 start 둘 다', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fb-reg-tpl-'))
+    writeFileSync(join(root, 'CLAUDE.md'), `# 볼트\n\n\`\`\`md new-folder\n${TG}\n\`\`\`\n`)
+    mkdirSync(join(root, '2. Projects'), { recursive: true }); mkdirSync(join(root, '3. Area/b'), { recursive: true })
+    const reg = new Registry(root)
+    const rel = reg.createFolder('2. Projects', 'a')
+    const a = readFileSync(join(root, rel, 'CLAUDE.md'), 'utf8')
+    expect(a).toContain('orch_ask'); expect(a.trimEnd().endsWith('`tg-report` 로 보낸다.')).toBe(true)
+    reg.start('3. Area/b')
+    expect(readFileSync(join(root, '3. Area/b/CLAUDE.md'), 'utf8')).toContain('## 📣 루틴 결과는 텔레그램으로 보고한다')
+    rmSync(root, { recursive: true, force: true })
+  })
+  it('블록이 없으면 기본 틀 그대로 · 본문에 ``` 가 있으면 더 긴 울타리로 싼다', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fb-reg-tpl2-'))
+    writeFileSync(join(root, 'CLAUDE.md'), '# 볼트\n')
+    mkdirSync(join(root, '2. Projects'), { recursive: true })
+    const reg = new Registry(root)
+    const a = readFileSync(join(root, reg.createFolder('2. Projects', 'a'), 'CLAUDE.md'), 'utf8')
+    expect(a.trimEnd().endsWith('답은 이 세션으로 돌아온다.')).toBe(true)
+    writeFileSync(join(root, 'CLAUDE.md'), '# 볼트\n\n````markdown new-folder\n## 예\n\n```\ntg-report\n```\n````\n')
+    const b = readFileSync(join(root, reg.createFolder('2. Projects', 'b'), 'CLAUDE.md'), 'utf8')
+    expect(b).toContain('## 예\n\n```\ntg-report\n```')
+    rmSync(root, { recursive: true, force: true })
+  })
+})

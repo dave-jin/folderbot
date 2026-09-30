@@ -22,6 +22,17 @@ export const JD_PRESET: FolderRules = {
 
 const FENCE = /```yaml\s+folder-rules\s*\n([\s\S]*?)\n```/
 
+/**
+ * 새 폴더 CLAUDE.md 에 덧붙일 볼트 공통 지침 — 루트 CLAUDE.md 의 ```md new-folder``` 블록 본문.
+ * 제품은 사람마다 다른 규칙(알림 경로 등)을 모르므로 틀에 박지 않고, 볼트 주인이 이 블록에 적는다.
+ * 본문에 ``` 가 들어가야 하면 바깥 울타리를 ```` 처럼 더 길게 쓴다(같은 길이로 닫는다). 없거나 비면 null.
+ */
+export function parseFolderTemplate(md: string): string | null {
+  const m = /^(`{3,})(?:md|markdown)[ \t]+new-folder[ \t]*\n([\s\S]*?)\n\1[ \t]*$/m.exec(md)
+  const body = m?.[2].trim()
+  return body ? body : null
+}
+
 /** 루트 CLAUDE.md 본문에서 folder-rules 블록을 찾아 파싱한다. 없으면 null. */
 export function parseRules(md: string): FolderRules | null {
   const m = FENCE.exec(md)

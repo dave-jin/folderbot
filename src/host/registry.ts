@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { parse as parseYaml, stringify } from 'yaml'
 import { EventEmitter } from 'node:events'
-import { applyNaming, globMatch, globParents, isSectionRoot, PARA_PRESET, JD_PRESET, parseRules, rulesSection, roleOf } from '../core/rules'
+import { applyNaming, globMatch, globParents, isSectionRoot, PARA_PRESET, JD_PRESET, parseRules, parseFolderTemplate, rulesSection, roleOf } from '../core/rules'
 import type { Bot, BotConfig, Candidate, FolderRules, RoutineDef } from '../core/types'
 import { BOT_COLORS, ORCH_COLOR } from '../core/types'
 import { atomicWrite } from './paths'
@@ -478,9 +478,15 @@ export class Registry extends EventEmitter {
     this.emit('bots', this.bots())
     return rel
   }
+  /** 볼트 공통 지침(루트 CLAUDE.md 의 ```md new-folder``` 블록) — 스캐폴드 때마다 새로 읽는다 */
+  folderTemplate(): string | null {
+    const f = this.rulesFile()
+    try { return existsSync(f) ? parseFolderTemplate(readFileSync(f, 'utf8')) : null } catch { return null }
+  }
   scaffold(abs: string, title: string): void {
     const w = (f: string, s: string) => { const p = join(abs, f); if (!existsSync(p)) writeFileSync(p, s) }
-    w('CLAUDE.md', `# ${title}\n\n이 폴더의 봇을 위한 지침. 이 일이 무엇인지, 어떤 규칙으로 일하는지 적는다.\n\n- 산출물은 이 폴더 안에 둔다.\n- 할 일은 \`todo.md\` 에 \`- [ ] 제목: 설명\` 으로 적는다.\n${ORCH_ASK_HINT}\n`)
+    const extra = this.folderTemplate()
+    w('CLAUDE.md', `# ${title}\n\n이 폴더의 봇을 위한 지침. 이 일이 무엇인지, 어떤 규칙으로 일하는지 적는다.\n\n- 산출물은 이 폴더 안에 둔다.\n- 할 일은 \`todo.md\` 에 \`- [ ] 제목: 설명\` 으로 적는다.\n${ORCH_ASK_HINT}\n${extra ? `\n${extra}\n` : ''}`)
     w('readme.md', `# ${title}\n\n## 무엇을 왜\n\n(이 일의 목표·기간·산출물을 적어 두면 봇이 기억합니다)\n`)
     w('todo.md', `# todo\n\n- [ ] readme.md 채우기: 이 일이 무엇인지 한 문단\n\n## 완료\n`)
     const cd = join(abs, '.claude'); if (!existsSync(cd)) mkdirSync(cd)
