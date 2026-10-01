@@ -677,11 +677,14 @@ try {
         }
         // 버전 칩을 누르면 확인 — 브라우저 화면에선 안내 토스트
         await pg.click('.sb-foot .bd.upd'); await wait(200); const vt = await pg.textContent('.toast'); if (!/업데이트/.test(vt ?? '')) fail('ui version chip toast: ' + vt)
-        // 레일 순서 — 섹션은 관제 → 2 → 3 → 4, 행은 이름 내림차순(날짜 최신 먼저), 활동으로 자리가 안 바뀐다
+        // 레일 순서 — 섹션은 관제 → 2 → 3 → 4, 행은 마감일 오름차순(폴더명 날짜 · 연·월은 그 기간 끝날 · 날짜 없으면 뒤에 이름순), 활동으로 자리가 안 바뀐다
         const order = await pg.evaluate(() => Array.from(document.querySelectorAll('.sb-list > div')).map((sec) => ({ s: sec.querySelector('.secl')?.textContent, n: Array.from(sec.querySelectorAll('.brow .n .bname')).map((e) => e.getAttribute('title')) })))
         const secNames = order.map((o) => o.s); const sorted = [...secNames].sort((a, b) => (a === '관제' ? -1 : b === '관제' ? 1 : a.localeCompare(b, 'ko', { numeric: true })))
         if (JSON.stringify(secNames) !== JSON.stringify(sorted)) fail('ui section order ' + secNames.join(' | '))
-        for (const o of order) { const d = [...o.n].sort((a, b) => b.localeCompare(a, 'ko', { numeric: true, sensitivity: 'base' })); if (JSON.stringify(o.n) !== JSON.stringify(d)) fail(`ui row order in ${o.s}: ${o.n.join(' | ')}`) }
+        const dueKey = (n) => { const m = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?_./.exec(n ?? ''); if (!m) return null; const y = +m[1], mo = m[2] ? +m[2] : 12, d = m[3] ? +m[3] : new Date(y, mo, 0).getDate(); return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}` }
+        const byDueName = (a, b) => { const ka = dueKey(a), kb = dueKey(b); if (ka !== kb) return ka === null ? 1 : kb === null ? -1 : ka < kb ? -1 : 1; const pa = (/^\d{4}(-\d{2})?(-\d{2})?_/.exec(a) ?? [])[0]?.length ?? 0, pb = (/^\d{4}(-\d{2})?(-\d{2})?_/.exec(b) ?? [])[0]?.length ?? 0; if (pa !== pb) return pb - pa; return a.localeCompare(b, 'ko', { numeric: true, sensitivity: 'base' }) }
+        for (const o of order) { const d = [...o.n].sort(byDueName); if (JSON.stringify(o.n) !== JSON.stringify(d)) fail(`ui row order in ${o.s}: ${o.n.join(' | ')}`) }
+        if (!(await pg.$$eval('.sortbar button', (bs) => bs.map((b) => b.textContent))).includes('마감일')) fail('정렬 갈래에 «마감일» 이 없다')
         // NFD 파일명이 자모 분리 없이 합쳐져 보인다
         const nfdName = await pg.$$eval('.panel .trow .n', (els) => els.map((e) => e.textContent).find((t) => t && t.includes('_MAP_'))); if (!nfdName || nfdName !== nfdName.normalize('NFC') || !/전체구조/.test(nfdName)) fail('ui NFD name: ' + JSON.stringify(nfdName))
         // 트리 이름은 가운데 말줄임 — 꼬리(.mt)가 남아 있다 (레일은 F 로 «제목 끝 자르기» 가 됐다)
@@ -695,9 +698,10 @@ try {
             const dn = r.querySelector('.dn'), due = r.querySelector('.due'); const rr = r.getBoundingClientRect(), dr = due?.getBoundingClientRect()
             return { dn: dn?.textContent, tag: r.querySelector('.tag')?.textContent ?? null, due: due?.textContent ?? null, cls: due?.className ?? '', time: !!r.querySelector('time'), cut: dn ? dn.scrollWidth > dn.clientWidth + 1 : false, dueIn: dr ? dr.width > 0 && dr.right <= rr.right + 1 : null } }, folder)
           const now = new Date(); const pad = (n) => String(n).padStart(2, '0'); const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-          const a = await rowOf('2026-09_예시고객-자문')
-          const sepTone = now.getFullYear() > 2026 || (now.getFullYear() === 2026 && now.getMonth() + 1 > 9) ? 'past' : 'normal'
-          if (!a || a.dn !== '예시고객 자문' || a.tag !== null || a.due !== '9월' || !a.cls.includes(sepTone) || a.time) fail('F 예시: 2026-09_예시고객-자문 ' + JSON.stringify(a))
+          // ⚠ 이 폴더는 맨 위(`/folders` 예시고객-자문)에서 **오늘 달**로 만들어진다 — 이름을 박아 두면 달이 바뀌는 날 깨진다(2026-10-01 실제로 깨졌다)
+          const exName = `${now.getFullYear()}-${pad(now.getMonth() + 1)}_예시고객-자문`
+          const a = await rowOf(exName)
+          if (!a || a.dn !== '예시고객 자문' || a.tag !== null || a.due !== `${now.getMonth() + 1}월` || !a.cls.includes('normal') || a.time) fail('F 예시: ' + exName + ' ' + JSON.stringify(a))
           await mcp('tools/call', { name: 'bot_start', arguments: { rel: '2. Projects/2026-10_해커톤-제안' } }); await wait(600)
           const h = await rowOf('2026-10_해커톤-제안'); if (!h || h.dn !== '해커톤 제안' || h.tag !== null || h.due !== '10월') fail('F 예시: 2026-10_해커톤-제안 ' + JSON.stringify(h))
           const r0 = await rowOf('제품_Rondo'); if (!r0 || r0.dn !== '제품_Rondo' || r0.due !== null || !r0.time) fail('F 규칙 밖: 제품_Rondo 는 그대로 + 활동 시각 ' + JSON.stringify(r0))
@@ -3654,7 +3658,7 @@ try {
           if (!(await pg.$('.sortbar'))) fail('레일: 정렬 갈래 막대가 없다')
           await pg.click('.sortbar button:has-text("상태")'); await wait(300)
           if (JSON.stringify(await secsOf()) !== JSON.stringify(before)) fail('상태 정렬이 PARA 섹션을 흩었다 · ' + JSON.stringify(await secsOf()))
-          await pg.click('.sortbar button:has-text("이름")'); await wait(300)
+          await pg.click('.sortbar button:has-text("마감일")'); await wait(300)
           // 끌어 놓기는 API 로 잰다 — 화면 드래그는 붙였다 떼는 타이밍이 기기마다 달라 조용히 무른 검사가 된다
           const ids = (await api('/bots')).filter((b) => !b.orchestrator).map((b) => b.id)
           if (ids.length >= 2) {
@@ -3680,7 +3684,7 @@ try {
               const bad = await call({ order: [rels[0], '2. Projects/없는폴더'] })
               if (!bad.isError || !/없는폴더/.test(bad.content[0].text)) fail('A: 없는 rel 이 섞였는데 실패하지 않았다 ' + JSON.stringify(bad))
               if (JSON.stringify((await api('/bots')).filter((b) => !b.orchestrator).map((b) => b.id)) !== JSON.stringify(ids)) fail('A: 실패했는데 순서가 바뀌었다')
-              await pg.click('.sortbar button:has-text("이름")'); await wait(200)
+              await pg.click('.sortbar button:has-text("마감일")'); await wait(200)
               const rev = [...rels].reverse()
               const r1 = await call({ order: rev }); if (r1.isError) fail('A: bots_reorder ' + r1.content[0].text)
               const got = (await api('/bots')).filter((b) => !b.orchestrator)
@@ -3712,8 +3716,8 @@ try {
           await pg.click('.sortbar button:has-text("사용자")'); await wait(400)
           if (!(await namesOf()).length) fail('직접 정렬: 목록이 비었다')
           if (JSON.stringify(await secsOf()) !== JSON.stringify(before)) fail('직접 정렬이 PARA 섹션을 흩었다')
-          await pg.click('.sortbar button:has-text("이름")'); await wait(300)
-          ok('레일 차례 — 이름 · 직접(볼트에 남음) · 상태 · PARA 섹션은 그대로')
+          await pg.click('.sortbar button:has-text("마감일")'); await wait(300)
+          ok('레일 차례 — 마감일 · 직접(볼트에 남음) · 상태 · PARA 섹션은 그대로')
         }
         // 🔴 **레일 우클릭 — 지우기(연결 해지) · 은퇴** (2026-09-13 Dave 정정)
         //    ⛔ «지우기» 는 **폴더를 건드리지 않는다** — 레일에서만 덜어낸다. 폴더가 사라지면 회귀다.
@@ -4514,16 +4518,16 @@ try {
          */
         {
           const rowSel = '.mhome .swwrap .swrow'
-          // 🔴 AZ · 폰 홈에도 정렬 단추 — 이름 · 사용자 · 상태(레일과 같은 값). 누르면 켜짐이 옮고, 맥 레일과 같은 저장값을 쓴다 (2026-09-25 Dave)
+          // 🔴 AZ · 폰 홈에도 정렬 단추 — 마감일(2026-10-01 «이름» 대체) · 사용자 · 상태(레일과 같은 값). 누르면 켜짐이 옮고, 맥 레일과 같은 저장값을 쓴다 (2026-09-25 Dave)
           {
             const sb = await pg.$$eval('.mhome .sortbar button', (b) => b.map((x) => ({ t: x.textContent, on: x.classList.contains('on'), h: x.getBoundingClientRect().height })))
-            if (sb.map((x) => x.t).join() !== '이름,사용자,상태') fail('🔴 폰 홈: 정렬 단추가 없거나 라벨이 다르다 · ' + JSON.stringify(sb))
+            if (sb.map((x) => x.t).join() !== '마감일,사용자,상태') fail('🔴 폰 홈: 정렬 단추가 없거나 라벨이 다르다 · ' + JSON.stringify(sb))
             if (sb.some((x) => x.h < 32)) fail('폰 홈: 정렬 단추가 손가락에 작다 · ' + JSON.stringify(sb))
             const was = await pg.evaluate(() => localStorage.getItem('fb:railsort'))
             await pg.evaluate(() => [...document.querySelectorAll('.mhome .sortbar button')].find((x) => x.textContent === '상태').click()); await wait(250)
             const st = await pg.evaluate(() => ({ on: document.querySelector('.mhome .sortbar button.on')?.textContent, saved: localStorage.getItem('fb:railsort') }))
             if (st.on !== '상태' || st.saved !== 'state') fail('폰 홈: 「상태」 를 눌렀는데 안 바뀐다 · ' + JSON.stringify(st))
-            await pg.evaluate((w) => [...document.querySelectorAll('.mhome .sortbar button')].find((x) => x.textContent === ({ name: '이름', manual: '사용자', state: '상태' })[w || 'name']).click(), was); await wait(250)
+            await pg.evaluate((w) => [...document.querySelectorAll('.mhome .sortbar button')].find((x) => x.textContent === ({ due: '마감일', manual: '사용자', state: '상태' })[w || 'due']).click(), was); await wait(250)
           }
           // 🔴 밀 수 있는 행도 서랍과 같은 바탕 — 종전에는 그 행들만 다른 색 띠로 떠 보였다(라이트에서 흰 띠 · 2026-09-25 디자인 검수)
           {

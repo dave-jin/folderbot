@@ -29,7 +29,7 @@ import { botUnread, shouldMarkRead, MOOD_RANK, recentDone, type BotMood } from '
 import { clampDockOffset, isDockDrag, readDockOffset } from '../core/dock'
 import { tabActive } from '../core/tabbar'
 import { SwipeRow } from './SwipeRow'
-import { dueChip } from '../core/botName'
+import { byDue, dueChip } from '../core/botName'
 import { LocalOpenHost, localBridge, openOnThisDevice, useLocalSettings } from './localOpen'
 import { botRelOf } from '../core/paths'
 import { ICON_PX, useIconSize, useTheme } from './theme'
@@ -536,7 +536,8 @@ function Main() {
    * 레일 정렬 갈래 — 이 기기에만 남는다(어떤 차례로 **보고 싶은지**는 사람마다·기기마다 다르다).
    * ⚠ «직접» 차례 자체는 기기에 안 남는다 — 그건 볼트에 있다(`POST /bots/reorder`).
    */
-  const [railSort, setRailSort] = useState<RailSort>(() => { try { return (localStorage.getItem(RAIL_SORT_KEY) as RailSort) || 'name' } catch { return 'name' } })
+  // «이름» 갈래는 2026-10-01 에 «마감일» 로 바뀌었다 — 옛 값('name')·모르는 값은 마감일로 읽는다
+  const [railSort, setRailSort] = useState<RailSort>(() => { try { const v = localStorage.getItem(RAIL_SORT_KEY); return v && v in RAIL_SORT_LABEL ? (v as RailSort) : 'due' } catch { return 'due' } })
   useEffect(() => { try { localStorage.setItem(RAIL_SORT_KEY, railSort) } catch { /* */ } }, [railSort])
   // A · 오케스트레이터가 `bots_reorder` 로 순서를 바꾸면 **이 기기의 정렬을 «직접» 으로 자동 전환**한다 (2026-09-19 Dave 추천안 승인).
   //   안 그러면 기본값 «이름» 인 기기에서는 도구가 바꾼 차례가 **아예 안 보인다** — 도구는 성공했다는데 화면은 그대로.
@@ -567,10 +568,10 @@ function Main() {
    * *«각 폴더가 위아래로 드래그 드롭으로 소팅이 안돼. 그리고 상태별로도 소팅되면 좋겠어.
    * (상위 폴더 PARA는 유지)»*).
    *
-   * 세 갈래뿐이다 — **이름**(기본) · **직접**(끌어 놓은 차례) · **상태**.
+   * 세 갈래뿐이다 — **마감일**(기본 · 2026-10-01 Dave 지시로 «이름» 을 대체) · **직접**(끌어 놓은 차례) · **상태**.
    * 🔴 **«상태» 도 스스로 자리를 바꾸지 않는다.** 종전 규칙(«활동·상태로 자리를 바꾸지 않는다 —
    *    자리가 흔들리면 눈이 못 따라간다»)은 살아 있다. 다른 점은 **사람이 그 갈래를 고를 때만**
-   *    상태가 차례를 정한다는 것이다. 고르지 않으면 이름 차례 그대로다.
+   *    상태가 차례를 정한다는 것이다. 고르지 않으면 마감일 차례 그대로다.
    * ⚠ **직접** 차례는 볼트에 남는다(`POST /bots/reorder`) — 맥에서 맞춘 차례가 폰에서 딴판이면
    *    «내가 옮긴 게 어디 갔지» 가 된다. 그래서 이 갈래만 호스트 목록 순서를 그대로 쓴다.
    * ⚠ 관제는 늘 맨 위이고 끌 수 없다.
@@ -590,14 +591,13 @@ function Main() {
     for (const it of items) { const k = it.b.pinned ? '고정' : it.b.section; (m.get(k) ?? m.set(k, []).get(k)!).push(it) }
     const top = (a: string) => (a === '관제' ? 0 : a === '고정' ? 1 : 2)
     const secs = [...m.entries()].sort(([a], [b]) => top(a) - top(b) || cmp(a, b))
-    const byName = (a: typeof items[0], c: typeof items[0]) => cmp(c.b.name, a.b.name) // 이름 내림차순 — 날짜 접두 폴더가 최신부터
     const rank = (x: typeof items[0]) => MOOD_RANK[x.sum.mood as BotMood] ?? 9
     for (const [, list] of secs) {
       list.sort((a, c) => {
         if (a.b.orchestrator !== c.b.orchestrator) return a.b.orchestrator ? -1 : 1
         if (railSort === 'manual') return a.i - c.i           // 호스트가 쥔 차례 그대로
         if (railSort === 'state') { const d = rank(a) - rank(c); if (d) return d }
-        return byName(a, c)
+        return byDue(a.b, c.b)                                  // 마감이 가까운 것부터 · 날짜 없는 폴더는 뒤에 이름순
       })
     }
     return secs
@@ -849,7 +849,7 @@ function Main() {
         {/* 🔴 **폰과 같은 네 칸을 레일 맨 위에** (2026-09-15 Dave: «이 메뉴가 데스크탑 화면에서도 좌측
             상단에 있으면 좋겠어»). 같은 컴포넌트를 `compact` 로 쓴다 — 두 화면이 갈리지 않게. */}
         <div className="sbtiles"><ActionTiles go={go} setModal={setModal} onTodo={goTodo} say={say} compact /></div>
-        {/* 정렬 갈래 — 이름 · 사용자(끌어 놓기, 구 «직접») · 상태. ⚠ 끌어 놓으면 «사용자» 로 알아서 넘어간다 */}
+        {/* 정렬 갈래 — 마감일(2026-10-01 «이름» 대체) · 사용자(끌어 놓기, 구 «직접») · 상태. ⚠ 끌어 놓으면 «사용자» 로 알아서 넘어간다 */}
         <SortBar k={railSort} set={setRailSort} />
         <div className="sb-list">
           {rows.map(([sec, list]) => <div key={sec}>
@@ -1011,11 +1011,11 @@ function MrBadge() { const { s } = useStore(); return s.device.main ? <span clas
 
 /* ── 레일 정렬 (2026-09-13 Dave) ─────────────────────────────────────────────
    섹션(PARA)은 늘 그대로다 — 여기서 정하는 것은 **한 섹션 안의 차례**뿐이다. */
-type RailSort = 'name' | 'manual' | 'state'
+type RailSort = 'due' | 'manual' | 'state'
 const RAIL_SORT_KEY = 'fb:railsort'
 // AZ (2026-09-25 Dave) · «직접» → «사용자» — 사람이 끌어다 놓은 차례라는 뜻이 이름에 드러나게. 값(`manual`)은 그대로 둔다(저장된 선택이 안 풀린다)
-const RAIL_SORT_LABEL: Record<RailSort, string> = { name: '이름', manual: '사용자', state: '상태' }
-const RAIL_SORT_HINT: Record<RailSort, string> = { name: '날짜 접두 폴더가 최신부터', manual: '끌어다 놓은 차례 (볼트에 남아요)', state: '확인 대기 → 일하는 중 → 대기 → 문제 → 끝남 → 유휴' }
+const RAIL_SORT_LABEL: Record<RailSort, string> = { due: '마감일', manual: '사용자', state: '상태' }
+const RAIL_SORT_HINT: Record<RailSort, string> = { due: '마감이 가까운 것부터 (폴더명 날짜 · 지난 마감이 맨 위 · 날짜 없는 폴더는 뒤)', manual: '끌어다 놓은 차례 (볼트에 남아요)', state: '확인 대기 → 일하는 중 → 대기 → 문제 → 끝남 → 유휴' }
 /** 정렬 갈래 단추 — 레일(맥)과 폰 홈이 **같은 부품**을 쓴다. 두 벌이면 한쪽 라벨만 바뀐다 */
 function SortBar({ k: cur, set }: { k: RailSort; set: (k: RailSort) => void }) {
   return <div className="sortbar" role="group" aria-label="정렬"><span className="lb">정렬</span>{(Object.keys(RAIL_SORT_LABEL) as RailSort[]).map((k) => <button key={k} className={cur === k ? 'on' : ''} aria-pressed={cur === k} onClick={() => set(k)} title={RAIL_SORT_HINT[k]}>{RAIL_SORT_LABEL[k]}</button>)}</div>

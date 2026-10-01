@@ -58,3 +58,30 @@ export function dueChip(date: string, precision: Precision, today = new Date()):
   }
   return { text: String(y), tone: y < t0.getFullYear() ? 'past' : 'normal' }
 }
+
+/**
+ * 레일 «마감일» 정렬의 열쇠 (2026-10-01 Dave: *«'이름' 소팅 대신 '마감일' 소팅으로»*).
+ * 폴더명 날짜는 볼트 규칙상 **마감일**이다. 정밀도가 낮으면 그 기간의 **끝날**로 본다 —
+ * `2026-10` 은 10/31, `2026` 은 12/31. 그래야 «10월 중» 이 «10/5» 보다 뒤에 선다.
+ * 날짜가 없으면(Area 폴더·규칙 밖 이름) `null`.
+ */
+export function dueEnd(due?: { date: string; precision: Precision } | null): string | null {
+  if (!due || due.precision === 'none' || !due.date) return null
+  const [y, mo, d] = due.date.split('-').map(Number)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  if (due.precision === 'day') return `${y}-${pad(mo)}-${pad(d)}`
+  if (due.precision === 'month') return `${y}-${pad(mo)}-${pad(new Date(y, mo, 0).getDate())}`
+  return `${y}-12-31`
+}
+
+/**
+ * 마감이 가까운 것부터 — 지난 마감이 맨 위(아직 안 닫힌 일이다), 날짜 없는 폴더는 뒤에 이름순.
+ * 마감이 같으면 날이 박힌 쪽 → 이름순으로 묶어 자리가 흔들리지 않게 한다.
+ */
+export function byDue<T extends { name: string; due?: { date: string; precision: Precision } | null }>(a: T, b: T): number {
+  const ka = dueEnd(a.due), kb = dueEnd(b.due)
+  if (ka !== kb) { if (ka === null) return 1; if (kb === null) return -1; return ka < kb ? -1 : 1 }
+  const pr = { day: 0, month: 1, year: 2, none: 3 }   // 끝날이 같으면 날이 박힌 쪽이 먼저(10/31 이 «10월» 보다 앞)
+  const dp = pr[a.due?.precision ?? 'none'] - pr[b.due?.precision ?? 'none']; if (dp) return dp
+  return a.name.localeCompare(b.name, 'ko', { numeric: true, sensitivity: 'base' })
+}

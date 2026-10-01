@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseFolderName, dueChip, DEFAULT_TYPES } from '../../src/core/botName'
+import { parseFolderName, dueChip, dueEnd, byDue, DEFAULT_TYPES } from '../../src/core/botName'
 
 /**
  * 레일 이름 파생 (F · 2026-09-19 Dave 1안 확정) — 폴더명 `YYYY[-MM[-DD]]_[타입-]이름` 을 파싱만 한다.
@@ -59,5 +59,18 @@ describe('parseFolderName — 가장자리', () => {
   })
   it('타입 목록은 바꿀 수 있다', () => {
     expect(parseFolderName('2026-09_사업-이네이트', ['사업']).type).toBe('사업')
+  })
+})
+
+describe('byDue — 레일 «마감일» 정렬 (2026-10-01)', () => {
+  const b = (name: string) => { const p = parseFolderName(name); return { name, due: p.precision === 'none' ? undefined : { date: p.date, precision: p.precision } } }
+  it('마감이 가까운 것부터 · 지난 마감이 맨 위 · 월·연은 그 기간 끝날 · 날짜 없으면 뒤에 이름순', () => {
+    const names = ['제품_FolderBot', '2026_멘토링-디캠프', '2026-10_해커톤-제안', '2026-10-05_행사-발표', '2026-07_자격증-CCAF', '기반_워크스테이션', '2026-10-31_마감']
+    expect(names.map(b).sort(byDue).map((x) => x.name)).toEqual(['2026-07_자격증-CCAF', '2026-10-05_행사-발표', '2026-10-31_마감', '2026-10_해커톤-제안', '2026_멘토링-디캠프', '기반_워크스테이션', '제품_FolderBot'])
+  })
+  it('dueEnd — 정밀도별 끝날 · 2월 윤년', () => {
+    expect(dueEnd({ date: '2028-02', precision: 'month' })).toBe('2028-02-29')
+    expect(dueEnd({ date: '2026', precision: 'year' })).toBe('2026-12-31')
+    expect(dueEnd(undefined)).toBe(null)
   })
 })
