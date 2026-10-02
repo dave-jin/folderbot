@@ -1401,3 +1401,40 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .md, .umsg, .todo .dsc, .ptodo .tt, .ptodo .dsc, .mded .cm-content.cm-lineWrapping { word-break:keep-all; overflow-wrap:anywhere }
 
 .meta.perr { color:var(--err); margin:4px 0 6px }   /* 질문·권한 카드의 보내기 실패 (리뷰) */
+
+/* ── 검색 ⌘K (2026-10-02 · 시안 A) — 팔레트와 같은 몸, 봇 아래 세션이 들여 서고 맨 아래에 키 안내 ── */
+.modal.pal.srch .prow.bot .n { font-weight:600 }
+.modal.pal.srch .prow.sess { padding-left:33px; font-size:13px; color:var(--t2) }
+.modal.pal.srch .prow.sess.on { color:var(--w) }
+.modal.pal.srch .prow.sess .sb { text-align:right }
+.modal.pal.srch .prow.more { padding-left:33px; font-size:12px; color:var(--t3) }
+.modal.pal.srch .sgrp { font-size:11px; color:var(--t3); padding:10px 9px 4px }
+.modal.pal.srch .sfoot { display:flex; gap:14px; padding:7px 14px; border-top:1px solid var(--line); font-size:11px; color:var(--t3) }
+.nav .bd.kb { font-family:var(--mono); font-size:11px }
+
+/* ── 세션 정리 (2026-10-02 · 시안 B) — 넓은 창 · 거름 알약 · 표 · 잠긴 줄은 흐리게 · 되돌리기 띠 ── */
+.modal.clean { width:min(860px, calc(100% - 24px)); height:min(640px, calc(100% - 24px)) }
+.modal.clean .modal-h .cnt { font-size:12px; color:var(--t3) }
+.modal.clean .cbar { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:0 18px 10px }
+.modal.clean .pill { font-size:12px; padding:3px 10px; border-radius:999px; background:var(--line2); color:var(--t2) }
+.modal.clean .pill.on { background:var(--w); color:var(--onAccent, #111) }
+.modal.clean .cfold { background:var(--bg); color:var(--t); border:1px solid var(--line2); border-radius:7px; padding:3px 6px; font:inherit; font-size:12px; max-width:200px }
+.modal.clean .ctab { flex:1; min-height:0; overflow:auto; padding:0 12px }
+.modal.clean table { width:100%; border-collapse:collapse; font-size:13px }
+.modal.clean th { position:sticky; top:0; background:var(--sb); text-align:left; font-weight:500; font-size:12px; color:var(--t3); padding:7px 8px; border-bottom:1px solid var(--line) }
+.modal.clean td { padding:7px 8px; border-bottom:1px solid var(--line); color:var(--t); white-space:nowrap }
+.modal.clean td.sn { white-space:normal; max-width:260px; overflow-wrap:anywhere; color:var(--w) }
+.modal.clean tbody tr { cursor:pointer } .modal.clean tbody tr:hover { background:var(--hover) }
+.modal.clean tr.lock { cursor:default } .modal.clean tr.lock td { color:var(--t3) } .modal.clean tr.lock td.sn { color:var(--t3) } .modal.clean td.lk { color:var(--wait) }
+.modal.clean .ktag { font-size:11px; padding:1px 7px; border-radius:5px; background:var(--line2); color:var(--t2) }
+.modal.clean .ktag.k-bot { background:rgba(224,136,80,.14); color:var(--run) } .modal.clean .ktag.k-rt { background:rgba(127,176,255,.14); color:#7fb0ff }
+.modal.clean .ktag.k-comm { background:rgba(74,168,199,.14); color:var(--hold) } .modal.clean .ktag.k-me { background:rgba(79,191,135,.12); color:var(--done) }
+.modal.clean .cfoot { display:flex; align-items:center; gap:8px; padding:12px 18px; border-top:1px solid var(--line) }
+.modal.clean .cfoot .hint { font-size:12px; color:var(--t3) }
+.modal.clean .btn.danger:not(:disabled) { background:var(--err); color:#fff; border-color:var(--err) }
+.modal.clean .cundo { position:absolute; right:18px; bottom:64px; display:flex; align-items:center; gap:12px; background:var(--box); border:1px solid var(--line2); border-radius:10px; padding:8px 12px; color:var(--w); font-size:13px; box-shadow:0 10px 28px rgba(0,0,0,.4) }
+.modal.clean .cundo button { color:var(--run); font-weight:600 }
+
+/* ── 트리 위치 표시 (2026-10-02 · 시안 C) — 채팅·문서에서 고른 것을 주황 상자로. 다른 것을 고를 때까지 남는다 ── */
+.trow.box { background:rgba(224,136,80,.10); outline:1.5px solid var(--run); outline-offset:-1.5px }
+.trow.box .n, .trow.box.dir .n { color:var(--w) }

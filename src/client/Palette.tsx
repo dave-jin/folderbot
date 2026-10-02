@@ -47,7 +47,7 @@ export function Palette(p: PaletteProps) {
     const out: PalAct[] = []
     // ① 명령 — 늘 같은 자리에서 시작하도록 맨 앞
     const cmd = (id: string, icon: PalAct['icon'], label: string, hint: string, run: () => void) => out.push({ id, icon, label, hint, run })
-    cmd('c-picker', 'folder', '폴더 고르기 · 시작', '⌘K', () => p.setModal('picker'))
+    cmd('c-picker', 'folder', '폴더 고르기 · 시작', '⌘⇧N', () => p.setModal('picker'))
     cmd('c-new', 'plus', '새 세션', '⌘N', () => void p.newSession())
     cmd('c-notify', 'bell', '알림 센터', '⌘⇧U', () => p.setModal('notify'))
     cmd('c-set', 'gear', '설정', '⌘,', () => p.setModal('settings'))

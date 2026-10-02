@@ -524,14 +524,50 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
    * 채팅의 **폴더 칩**이 «이 폴더 보여 줘» 하고 쏜다(`fb:reveal` · App.tsx `reveal`). 조상을 다 펼치고,
    * 그 폴더 자체도 펼치고, 1.4초 비춘다 — 봇이 파일을 건드렸을 때와 같은 몸짓이다.
    */
+  /**
+   * 🔴 **고른 것의 자리를 상자로 남긴다** (2026-10-02 Dave: «특정 폴더나 파일을 채팅이나 문서에서 선택하면 폴더에서도 해당
+   *    폴더나 파일이 박싱이 되어서 위치를 표시해줘야 해» · 시안 C). 종전에는 폴더 칩만 1.4초 비추고 사라졌고, 파일 칩·문서 속
+   *    링크는 트리에 아무 표시가 없었다(열린 문서는 옅은 바탕뿐이라 조상이 접혀 있으면 안 보였다).
+   *  - 폴더 → 조상과 그 폴더를 펴고 상자 · 파일 → 조상만 펴고 상자 · 그 줄까지 스크롤
+   *  - 상자는 사라지지 않는다 — 다른 것을 고르거나 트리에서 직접 누를 때까지 남는다
+   * ⚠ `detail` 은 문자열(옛 폴더 칩 · 폴더로 본다) 또는 `{ rel, file }`.
+   */
+  const [box, setBox] = useState('')
+  // 스크롤 요청은 **1.5초만 산다** — 줄이 늦게 그려지면 그때 한 번. 남아 있다가 엉뚱한 때(우클릭 메뉴가 뜬 직후) 칸을 밀면
+  //  메뉴가 스크롤에 닫힌다(검사에서 실제로 그랬다)
+  const scrollTo = useRef<{ rel: string; until: number } | null>(null)
+  const showAt = (rel: string, file: boolean) => {
+    if (!rel || rel.startsWith('..')) return
+    const parts = rel.split('/').filter(Boolean)
+    setExp((x) => { const n = new Set(x); for (let i = 1; i <= parts.length - (file ? 1 : 0); i++) n.add(parts.slice(0, i).join('/')); return n })
+    setBox(rel); scrollTo.current = { rel, until: Date.now() + 1500 }
+  }
   useEffect(() => {
     const f = (e: Event) => {
-      const rel = String((e as CustomEvent).detail ?? '')
-      setExp((x) => { const n = new Set(x); const parts = rel.split('/').filter(Boolean); for (let i = 1; i <= parts.length; i++) n.add(parts.slice(0, i).join('/')); return n })
-      if (rel) { setFlash(new Set([rel])); window.setTimeout(() => setFlash(new Set()), 1400) }
+      const d = (e as CustomEvent).detail as string | { rel: string; file?: boolean } | undefined
+      if (typeof d === 'string') showAt(d, false); else if (d?.rel) showAt(d.rel, !!d.file)
     }
     window.addEventListener('fb:reveal', f); return () => window.removeEventListener('fb:reveal', f)
   }, [])
+  // 열린 문서 탭이 바뀌면 상자도 그 파일로 — «이 문서가 폴더 어디에 있나» 가 늘 보인다
+  useEffect(() => { if (active) showAt(active, true) }, [active])
+  // 상자 줄까지 스크롤 — 조상 폴더를 읽어 와 줄이 그려진 **뒤에** 한 번만(그 뒤로는 사람이 스크롤해도 끌어오지 않는다)
+  useEffect(() => {
+    const want = scrollTo.current; if (!want) return
+    if (Date.now() > want.until) { scrollTo.current = null; return }
+    if (document.querySelector('.menu.ctx')) return   // 우클릭 메뉴가 떠 있으면 칸을 밀지 않는다(메뉴가 스크롤에 닫힌다)
+    const el = document.querySelector(`.trow[data-rel="${CSS.escape(want.rel)}"]`) as HTMLElement | null
+    if (!el) return
+    scrollTo.current = null
+    // ⛔ `scrollIntoView` 를 쓰지 않는다 — 넘침을 숨긴 바깥 틀(앱 전체)까지 밀어 화면이 통째로 어긋난다(검사에서 다음 클릭이 빗나갔다).
+    //    줄을 품은 **가장 가까운 스크롤 칸** 하나만 움직인다
+    let sc = el.parentElement
+    while (sc && !(sc.scrollHeight > sc.clientHeight + 1 && /(auto|scroll)/.test(getComputedStyle(sc).overflowY))) sc = sc.parentElement
+    if (!sc) return
+    const er = el.getBoundingClientRect(), cr = sc.getBoundingClientRect()
+    if (er.top < cr.top) sc.scrollTop -= cr.top - er.top + 6
+    else if (er.bottom > cr.bottom) sc.scrollTop += er.bottom - cr.bottom + 6
+  })
   // 봇이 파일을 쓰면: 펼친 폴더는 다시 읽고, 건드린 파일의 조상을 펼쳐 1.4초 비춘다
   useEffect(() => { if (!tick) return; for (const d of exp) void loadDir(d) }, [tick])
   useEffect(() => {
@@ -726,7 +762,7 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
     {open ? <>
       {filter !== null ? <div className="tfilter"><Icon n="search" size={12} /><input autoFocus placeholder="이름으로 거르기…" value={filter} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setFilter(null) }} /><span onClick={() => setFilter(null)} style={{ cursor: 'pointer' }}><Icon n="x" size={11} /></span></div> : null}
       <div className="secb" style={{ padding: '0 6px 8px' }}>
-        {rows.map(({ n, depth }, ri) => <button key={n.rel} className={`trow ${n.dir ? 'dir' : ''} ${active === n.rel ? 'on' : ''} ${sel.has(n.rel) ? 'sel' : ''} ${dropOn === n.rel ? 'dover' : ''} ${flash.has(n.rel) ? 'flash' : ''}`} style={{ ['--pad' as string]: `${10 + depth * 14}px` }}
+        {rows.map(({ n, depth }, ri) => <button key={n.rel} data-rel={n.rel} onPointerDown={() => { if (box && box !== n.rel) setBox('') }} className={`trow ${n.dir ? 'dir' : ''} ${active === n.rel ? 'on' : ''} ${sel.has(n.rel) ? 'sel' : ''} ${dropOn === n.rel ? 'dover' : ''} ${flash.has(n.rel) ? 'flash' : ''} ${box === n.rel ? 'box' : ''}`} style={{ ['--pad' as string]: `${10 + depth * 14}px` }}
           /**
            * ⌘/⌃ 하나씩 더하기 · ⇧ 사이 채우기 · 맨 클릭은 **열기**(고른 것은 풀린다).
            * ⚠ 「고르기」와 「열기」를 같은 클릭에 태우면 파일을 고를 때마다 문서가 열려 탭이 쌓인다.

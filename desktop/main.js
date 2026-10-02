@@ -360,7 +360,10 @@ function appMenu() {
     ] }] : []),
     { label: '파일', submenu: [
       { label: '새 세션', accelerator: 'CmdOrCtrl+N', click: cmd('new-session') },
-      { label: '폴더 고르기 · 시작', accelerator: 'CmdOrCtrl+K', click: cmd('picker') },
+      // 2026-10-02 · ⌘K 는 검색(시안 A) — 폴더 고르기는 ⌘⇧N 으로 옮겼다
+      { label: '검색', accelerator: 'CmdOrCtrl+K', click: cmd('search') },
+      { label: '폴더 고르기 · 시작', accelerator: 'CmdOrCtrl+Shift+N', click: cmd('picker') },
+      { label: '세션 정리…', click: cmd('cleanup') },
       { label: '명령 팔레트', accelerator: 'CmdOrCtrl+P', click: cmd('palette') },
       { type: 'separator' },
       // ⚠ 맥에서는 ⏎ 가 보내기다(2026-09-15 Dave) — 이 ⌘⏎ 는 «어느 기기에서나» 도는 두 번째 길이다.

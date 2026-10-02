@@ -11,6 +11,9 @@ import type { SecId } from './Settings'
 import { VendorMark } from './Brand'
 import { Float } from './Float'
 import { DocPane, useDocs } from './Doc'
+import { Search } from './Search'
+import { Cleanup } from './Cleanup'
+import { cleanableCount } from '../core/cleanup'
 import { Elapsed, Panel, type SecH } from './Panel'
 import { machSummary } from '../core/chat'
 import { buildRows, type ChatRow } from '../core/chatRows'
@@ -193,9 +196,9 @@ export const KEYS: { k: string; t: string; d?: string }[] = [
   { k: '⌘,', t: '설정' },
   { k: '⌘/', t: '단축키 보기' },
   { k: '⌘P', t: '명령 팔레트', d: '폴더 · 문서 · 세션 · 명령' },
-  { k: '⌘K', t: '폴더 고르기 · 시작' },
+  { k: '⌘K', t: '검색', d: '폴더봇 · 세션 · 지난 대화' },
   { k: '⌘N', t: '새 세션', d: '지금 폴더' },
-  { k: '⌘⇧N', t: '새 폴더에서 시작' },
+  { k: '⌘⇧N', t: '폴더 고르기 · 시작' },
   { k: '⌘1…9', t: 'n번째 폴더로' },
   { k: '⌘[ ⌘]', t: '뒤로 · 앞으로', d: '방문한 폴더·세션 순서대로 — 알림·칩으로 뛴 뒤 돌아오기' },
   { k: '⌥⌘[ ⌥⌘]', t: '이전 · 다음 폴더', d: '레일 순서대로' },
@@ -343,7 +346,7 @@ function Main() {
   const [docOpen, setDocOpen] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem('fb:docopen') ?? '{}') } catch { return {} } })
   useEffect(() => { localStorage.setItem('fb:docopen', JSON.stringify(docOpen)) }, [docOpen])
   const [wide, setWide] = useState(false)
-  const [modal, setModal] = useState<'picker' | 'notify' | 'settings' | 'keys' | 'palette' | null>(null)
+  const [modal, setModal] = useState<'picker' | 'notify' | 'settings' | 'keys' | 'palette' | 'search' | 'cleanup' | null>(null)
   // «설정의 그 칸을 열어 줘» — 에이전트 고르기 화면의 «바꾸기» 가 이걸 쏜다 (V24)
   const [setSec, setSetSec] = useState<SecId | undefined>(undefined)
   useEffect(() => { const f = (e: Event) => { setSetSec((e as CustomEvent).detail as SecId); setModal('settings') }; window.addEventListener('fb:settings', f); return () => window.removeEventListener('fb:settings', f) }, [])
@@ -389,6 +392,8 @@ function Main() {
   const [queues, setQueues] = useState<Record<string, string[]>>({})
   const flushing = useRef<Set<string>>(new Set())
   const allSessions = useMemo(() => Object.values(s.sessionsByBot).flat(), [s.sessionsByBot])
+  // 메뉴 «세션 정리» 옆 숫자 — 정리 창을 기본 거름으로 열었을 때 체크될 수(core/cleanup). 1분마다 «7일» 문턱을 다시 잰다
+  const cleanable = useMemo(() => cleanableCount(allSessions), [allSessions, Math.floor(Date.now() / 60_000)])
   useEffect(() => {
     for (const [sid, list] of Object.entries(queues)) {
       if (!list.length || flushing.current.has(sid)) continue
@@ -512,6 +517,8 @@ function Main() {
     }
     if (o.source === 'agent' && o.turnKey) { if (agentOpenRef.current === o.turnKey) return; agentOpenRef.current = o.turnKey }
     openDoc(rel, o.pin)
+    // 시안 C · 같은 문서를 다시 골라도(탭이 안 바뀌어도) 트리에 자리를 다시 짚는다 — 탭이 바뀌면 트리가 스스로 짚는다
+    window.dispatchEvent(new CustomEvent('fb:reveal', { detail: { rel, file: true } }))
   }
   // 파일명만 적힌 칩이 여러 곳에 있을 때 — 고르기 (G)
   const [pickFile, setPickFile] = useState<{ name: string; rels: string[] } | null>(null)
@@ -801,14 +808,15 @@ function Main() {
       if (!(e.metaKey || e.ctrlKey)) return
       const key = e.key.toLowerCase()
       const hit = (want: string, shift = false) => key === want && e.shiftKey === shift && !e.altKey
-      // ⌘P — 명령 팔레트 (⌘K 는 이미 «폴더 고르기» 다). ⚠ 브라우저의 «인쇄» 를 덮으므로 반드시 막는다
+      // ⌘P — 명령 팔레트. ⚠ 브라우저의 «인쇄» 를 덮으므로 반드시 막는다
       if (hit('p')) { e.preventDefault(); setModal((m) => (m === 'palette' ? null : 'palette')); return }
       if (hit('b')) { e.preventDefault(); setLay((l) => ({ ...l, sbOpen: !l.sbOpen })); return }
       if (hit('b', true)) { e.preventDefault(); setLay((l) => ({ ...l, rpOpen: !l.rpOpen })); return }
       if (hit('d', true) && bot) { e.preventDefault(); setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] })); return }
       if (hit(',')) { e.preventDefault(); setModal('settings'); return }
       if (hit('/') || key === '?') { e.preventDefault(); setModal((m) => (m === 'keys' ? null : 'keys')); return }
-      if (hit('k')) { e.preventDefault(); setModal('picker'); return }
+      // ⌘K — 검색 (2026-10-02 Dave · 시안 A). 폴더 고르기는 ⌘⇧N 에 남는다
+      if (hit('k')) { e.preventDefault(); setModal((m) => (m === 'search' ? null : 'search')); return }
       if (hit('n')) { e.preventDefault(); void newSession(); return }
       if (hit('n', true)) { e.preventDefault(); setModal('picker'); return }
       if (hit('u', true)) { e.preventDefault(); setModal('notify'); return }
@@ -831,6 +839,8 @@ function Main() {
       else if (c === 'keys') setModal('keys')
       else if (c === 'palette') setModal('palette')
       else if (c === 'picker') setModal('picker')
+      else if (c === 'search') setModal('search')
+      else if (c === 'cleanup') setModal('cleanup')
       else if (c === 'notify') setModal('notify')
       else if (c === 'new-session') void newSession()
       // ⚠ 보내기는 **입력칸이 쥐고 있다** — 메뉴는 그 자리에 신호만 보낸다(같은 길을 두 벌 만들지 않는다)
@@ -843,8 +853,11 @@ function Main() {
   const sidebarEl = <div className="col side left" style={{ width: stage === 'wide' ? fit.sb : undefined }}>
         <div className="hdr"><FolderBot color="#e08850" size={16} mood={waiting ? 'wait' : 'idle'} mono /><span className="ttl">Folder Bot</span><span className="sp" /><div className="acts"><button className="ib" onClick={closeSb} title="목록 접기 (⌘B)"><Icon n="panel" size={14} /></button></div></div>
         <div style={{ padding: '10px 8px 0' }}>
+          {/* 🔴 검색은 맨 위 · 세션 정리는 넷째 줄 (2026-10-02 Dave · 시안 A·B) — 설정 안에 숨기지 않고 늘 보이는 자리 */}
+          <button className="nav nsearch" onClick={() => setModal('search')}><Icon n="search" size={14} /><span>검색</span><span className="bd kb">⌘K</span></button>
           <button className="nav" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span>폴더 선택 · 시작</span><span className="bd">후보 {s.candidates.filter((c) => !c.active).length}</span></button>
           <button className="nav" onClick={() => setModal('notify')}><Icon n="bell" size={14} /><span>알림</span>{unread ? <span className="bd" style={{ color: waiting ? 'var(--wait)' : undefined }}>{unread}</span> : null}</button>
+          <button className="nav nclean" onClick={() => setModal('cleanup')}><Icon n="trash" size={14} /><span>세션 정리</span>{cleanable ? <span className="bd">정리 가능 {cleanable}</span> : null}</button>
           <button className="nav" onClick={() => setModal('settings')}><Icon n="gear" size={14} /><span>설정</span></button>
         </div>
         {/* 🔴 **폰과 같은 네 칸을 레일 맨 위에** (2026-09-15 Dave: «이 메뉴가 데스크탑 화면에서도 좌측
@@ -962,6 +975,8 @@ function Main() {
     {modal === 'notify' ? <NotifyCenter onClose={() => setModal(null)} onJump={(n) => { setModal(null); api('/notifications/read', { body: { ids: [n.id] } }).then(refresh); go(n.botId, n.sessionId) }} /> : null}
     {modal === 'settings' ? <Settings onClose={() => { setModal(null); setSetSec(undefined) }} start={setSec} /> : null}
     {modal === 'keys' ? <KeysSheet onClose={() => setModal(null)} /> : null}
+    {modal === 'search' ? <Search go={(b, sid) => go(b, sid)} onClose={() => setModal(null)} /> : null}
+    {modal === 'cleanup' ? <Cleanup onClose={() => setModal(null)} say={say} /> : null}
     {/* 🔴 **명령 팔레트 (⌘P)** — 폴더 · 문서 · 세션 · 명령이 한 목록에 선다(Rondo 이식 D1).
         ⛔ 되돌리기 어려운 일(지우기·은퇴)은 여기 두지 않는다 — 손이 빠른 자리라 한 글자 잘못 치고
         ⏎ 를 누르면 그대로 실행된다. */}

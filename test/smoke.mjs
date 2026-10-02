@@ -853,6 +853,13 @@ try {
           await chip.click(); await wait(600)
           if (!(await pg.$('.docwrap'))) fail('C: 창이 닫힌 상태에서 칩을 눌렀는데 창이 안 열렸다')
           if ((await pg.textContent('.docwrap .dtb .nm')) !== '메모.md') fail('C: 열린 문서가 메모.md 가 아니다 · ' + (await pg.textContent('.docwrap .dtb .nm')))
+          // 🔴 시안 C (2026-10-02 Dave «채팅이나 문서에서 선택하면 폴더에서도 박싱») — 트리가 files 를 펴고 메모.md 에 상자를 남긴다
+          if (await pg.$('.panel .trow')) {
+            let bx = null
+            for (let i = 0; i < 20 && !bx; i++) { bx = await pg.$eval('.panel .trow.box', (e) => e.getAttribute('data-rel')).catch(() => null); if (!bx) await wait(150) }
+            if (bx !== 'files/메모.md') fail('🔴 C 트리 상자: 채팅에서 고른 파일 자리가 트리에 상자로 안 섰다 · ' + bx)
+            await wait(1600); if (!(await pg.$('.panel .trow.box[data-rel="files/메모.md"]'))) fail('C 트리 상자: 잠깐 비추고 사라졌다(남아 있어야 한다)')
+          }
           // 에이전트 rondo_open — 창 닫힘 → 열림 · 같은 턴 두 번째는 무시 · 볼트 밖 거부
           await closeDoc()
           const mcpBot = async (name, args) => (await (await fetch(base + `/mcp/${bot.id}?sid=${sidC}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) })).json()).result
@@ -1914,8 +1921,63 @@ try {
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
         await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면|🤝 소통/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)   // ⚠ 2026-10-02 · 오케스트레이터는 세션이 «🤝 소통» 하나뿐일 수 있다(«세션 N» 줄이 안 선다)
         await pg.mouse.move(700, 300); await wait(200); if (await pg.$('.hcard')) fail('ui hover card stuck')
+        /**
+         * 🔴 **검색 ⌘K** (2026-10-02 Dave · 시안 A) — 왼쪽 메뉴 맨 위 · 폴더봇이 먼저, 고른 봇 아래에 그 봇의 세션 · ⏎ 로 들어간다.
+         *    ⌘K 는 종전 «폴더 고르기» 였다 — 그건 ⌘⇧N 에 남는다.
+         */
+        {
+          const navs = await pg.$$eval('.col.side.left .nav > span:nth-child(2)', (r) => r.map((x) => x.textContent))
+          if (navs[0] !== '검색' || navs[3] !== '세션 정리') fail('🔴 메뉴: 검색이 맨 위 · 세션 정리가 넷째가 아니다 ' + JSON.stringify(navs))
+          const back = await pg.evaluate(() => location.hash)
+          await pg.keyboard.press('Meta+k'); await pg.waitForSelector('.modal.srch', { timeout: 3000 }).catch(() => {})
+          if (!(await pg.$('.modal.srch'))) fail('🔴 검색: ⌘K 로 안 열린다')
+          await pg.keyboard.type('재무'); await wait(500)   // ⚠ 초성 «ㅈㅁ» 은 «예시고객 자문» 에도 맞는다 — 순위 판정은 core/search 유닛이 잰다
+          const r1 = await pg.$$eval('.modal.srch .prow', (r) => r.map((x) => ({ c: x.className, t: x.querySelector('.n')?.textContent })))
+          if (!r1[0] || !/bot/.test(r1[0].c) || !/재무_CFO/.test(r1[0].t ?? '')) fail('검색: 봇이 맨 위에 안 왔다 ' + JSON.stringify(r1.slice(0, 4)))
+          if (!r1[1] || !/sess/.test(r1[1].c)) fail('🔴 검색: 고른 봇 아래에 세션이 안 펼쳐졌다 ' + JSON.stringify(r1.slice(0, 4)))
+          await pg.keyboard.press('ArrowDown'); await wait(120)
+          const want = await pg.$eval('.modal.srch .prow.on .n', (e) => e.textContent)
+          await pg.keyboard.press('Enter'); await wait(500)
+          const h = await pg.evaluate(() => Object.fromEntries(new URLSearchParams(location.hash.slice(1))))
+          const cfoS = await api(`/bots/${cfo.id}/sessions`)
+          if (await pg.$('.modal.srch') || h.bot !== cfo.id || cfoS.find((x) => x.id === h.s)?.name !== want) fail('검색: ⏎ 로 그 세션에 안 들어갔다 ' + JSON.stringify({ h, want }))
+          await pg.keyboard.press('Meta+Shift+n'); await wait(400)
+          if (!(await pg.$('.pk'))) fail('⌘⇧N 이 폴더 고르기를 안 연다'); await pg.keyboard.press('Escape'); await wait(200)
+          await pg.evaluate((x) => { location.hash = x }, back); await wait(500)
+          ok('검색 ⌘K — 메뉴 맨 위 · 봇 아래 세션 · ⏎ 로 그 세션 · 폴더 고르기는 ⌘⇧N')
+        }
+        /**
+         * 🔴 **세션 정리** (2026-10-02 Dave · 시안 B) — 메뉴 넷째 줄 · 모든 폴더의 세션 한 표 · 잠긴 줄은 못 고른다 · 지우고 10초 되돌리기.
+         */
+        {
+          const tmp = await api(`/bots/${cfo.id}/sessions`, { name: '정리 검사용' })
+          await pg.click('.col.side.left .nav.nclean'); await pg.waitForSelector('.modal.clean', { timeout: 3000 }).catch(() => {})
+          if (!(await pg.$('.modal.clean'))) fail('🔴 세션 정리: 메뉴로 안 열린다')
+          await pg.click('.modal.clean .pill:has-text("모든 세션")'); await wait(250)
+          const lock = await pg.$$eval('.modal.clean tbody tr.lock input', (r) => r.map((x) => x.disabled))
+          if (lock.some((d) => !d)) fail('세션 정리: 잠긴 줄의 체크 칸이 열려 있다')
+          // 모두 풀고 검사용 하나만 골라 지운다
+          // 머리 칸은 «보이는 것 모두» 다 — 덜 골라져 있으면 한 번 눌러 다 고른 뒤 다시 눌러 다 푼다
+          if (!(await pg.$eval('.modal.clean thead input', (e) => e.checked))) await pg.click('.modal.clean thead input')
+          await pg.click('.modal.clean thead input'); await wait(100)
+          if (await pg.$$eval('.modal.clean tbody input:checked', (r) => r.length)) fail('세션 정리: 머리 칸으로 다 풀리지 않는다')
+          // ⚠ 이름이 아니라 id 로 고른다 — 앞서 실패한 검사가 같은 이름의 세션을 남겨 둘 수 있다(실제로 그 옛 것을 지웠다)
+          await pg.click(`.modal.clean tbody tr[data-id="${tmp.id}"]`); await wait(150)
+          const n = await pg.$eval('.modal.clean .cfoot .btn.danger', (e) => e.textContent)
+          if (!/선택한 1개/.test(n ?? '')) fail('세션 정리: 하나만 골랐는데 ' + n)
+          const before = await pg.$$eval('.modal.clean tbody tr', (r) => r.map((x) => `${x.dataset.id}:${x.querySelector('td.sn')?.textContent}:${x.querySelector('input')?.checked ? 'Y' : '-'}${x.classList.contains('lock') ? 'L' : ''}`))
+          const resP = pg.waitForResponse((r) => r.url().includes('/api/sessions/bulk-delete'), { timeout: 4000 }).then((r) => r.json()).catch((e) => ({ err: String(e) }))
+          await pg.click('.modal.clean .cfoot .btn.danger'); const res = await resP; await wait(300)
+          if ((await api(`/bots/${cfo.id}/sessions`)).some((x) => x.id === tmp.id)) fail('🔴 세션 정리: 지우기가 안 됐다 · ' + JSON.stringify({ tmp: tmp.id, res, before }))
+          if (!(await pg.$('.modal.clean .cundo'))) fail('세션 정리: 되돌리기 띠가 없다')
+          await pg.click('.modal.clean .cundo button'); await wait(700)
+          if (!(await api(`/bots/${cfo.id}/sessions`)).some((x) => x.id === tmp.id)) fail('🔴 세션 정리: 되돌리기가 안 됐다')
+          await pg.keyboard.press('Escape'); await pg.click('.modal.clean .modal-h .ib').catch(() => {}); await wait(200)
+          await api(`/sessions/${tmp.id}`, undefined, 'DELETE')
+          ok('세션 정리 — 메뉴 넷째 줄 · 모든 폴더 한 표 · 잠긴 줄 못 고름 · 지우고 10초 되돌리기')
+        }
         // 폴더 선택 = 트리: 1단계 폴더가 뜨고 활성 폴더는 펼쳐져 있다 · Resources 를 펼치면 하위가 보인다
-        await pg.click('.nav'); await pg.waitForSelector('.pk [data-rel]', { timeout: 5000 }); await wait(500)
+        await pg.click('.col.side.left .nav:has-text("폴더 선택")'); await pg.waitForSelector('.pk [data-rel]', { timeout: 5000 }); await wait(500)
         const top = await pg.$$eval('.pk [data-rel]', (r) => r.map((x) => x.getAttribute('data-rel'))); if (!top.includes('4. Resources') || !top.includes('3. Area/제품_Rondo')) fail('ui picker tree: ' + top.join(','))
         await pg.click('.pk [data-rel="4. Resources"] .cv'); await wait(500); const top2 = await pg.$$eval('.pk [data-rel]', (r) => r.map((x) => x.getAttribute('data-rel'))); if (!top2.includes('4. Resources/2026_브랜딩-DAVE')) fail('ui picker expand: ' + top2.join(','))
         const ft = await pg.evaluate(() => { const f = document.querySelector('.pk .modal-f'); return f.getBoundingClientRect().height }); if (ft > 70) fail('ui picker footer wraps ' + ft)
@@ -2818,6 +2880,8 @@ try {
             const shown = await pg.evaluate(() => ({ bot: new URLSearchParams(location.hash.slice(1)).get('bot'), rows: [...document.querySelectorAll('.panel .trow .n')].map((x) => x.textContent ?? '') }))
             if (shown.bot !== 'orch') fail('폴더 칩: 볼트 트리로 안 갔다 · ' + JSON.stringify(shown))
             if (!shown.rows.some((r) => /2026-10_해커톤-제안/.test(r))) fail('폴더 칩: 트리에 그 폴더가 안 보인다 · ' + JSON.stringify(shown.rows.slice(0, 20)))
+            const fbox = await pg.$eval('.panel .trow.box', (e) => e.getAttribute('data-rel')).catch(() => null)
+            if (fbox !== '2. Projects/2026-10_해커톤-제안') fail('🔴 C 트리 상자: 폴더 칩으로 고른 폴더에 상자가 없다 · ' + fbox)
             await pg.evaluate((id) => { location.hash = `bot=${id}` }, bot.id); await wait(700)
             ok('경로 칩 — 볼트 기준 · 절대 · 폴더까지, 폴더 칩은 트리를 연다')
           }
@@ -3968,14 +4032,24 @@ try {
           try { await api(`/bots/${bot.id}/new`, { dir: '../..', name: '밖', kind: 'note' }) } catch { blocked = true }
           if (!blocked) fail('새 노트: 루트 밖에 만들어졌다')
           // 화면 — 우클릭 메뉴에 새 항목들이 있다
+          // ⚠ 2026-10-02 · 트리는 열린 문서 자리로 스크롤해 있을 수 있다(시안 C) — 누를 줄을 먼저 보이게 하고 스크롤 이벤트가
+          //    가라앉기를 기다린다. 안 그러면 누르기 직전의 자동 스크롤이 **막 뜬 메뉴를 닫는다**(Float 은 스크롤에 닫힌다)
+          const seeRow = async (sel) => { await pg.$eval(sel, (e) => e.scrollIntoView({ block: 'center' })).catch(() => {}); await wait(250) }
+          await seeRow('.panel .secb button.trow:not(.dir)')
+          const diag = await pg.evaluate(() => { const e = document.querySelector('.panel .secb button.trow:not(.dir)'); if (!e) return 'no row'; const r = e.getBoundingClientRect(); const t = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return { rel: e.getAttribute('data-rel'), r: [r.x, r.y, r.width, r.height].map(Math.round), hit: t?.className, hitRow: t?.closest('.trow')?.getAttribute('data-rel'), modals: [...document.querySelectorAll('.backdrop,.modal')].map((m) => m.className) } })
           await pg.click('.panel .secb button.trow:not(.dir)', { button: 'right' }); await wait(300)
+          if (!(await pg.$('.menu.ctx'))) { await pg.screenshot({ path: 'test/tmp/ctx-miss.png' }); fail('파일 우클릭 메뉴가 안 떴다 · ' + JSON.stringify(diag)) }
           const mtx = await pg.textContent('.menu.ctx')
           // ⚠ 「Finder 에서 보기」는 **원격에서도** 있어야 한다 — 여는 주체가 호스트일 뿐 없는 기능이 아니다
           //    (2026-09-14 Dave: «폴더에서 우클릭 메뉴에 finder에서 보기가 없네»)
           for (const want of ['새 노트', '새 폴더', '복제', '경로 복사 (폴더 기준)', 'Finder']) if (!(mtx ?? '').includes(want)) fail(`파일 메뉴에 «${want}» 가 없다 · ` + mtx)
           await pg.keyboard.press('Escape'); await wait(200)
           // 폴더 줄에서도 같다 — 종전에는 파일에만 있고 폴더에는 없는 것처럼 보였다
-          await pg.click('.panel .secb button.trow.dir', { button: 'right' }); await wait(300)
+          await seeRow('.panel .secb button.trow.dir')
+          await pg.evaluate(() => { window.__sc = []; addEventListener('scroll', (e) => window.__sc.push(e.target?.className ?? 'doc'), true) })
+          const ddiag = await pg.evaluate(() => { const e = document.querySelector('.panel .secb button.trow.dir'); if (!e) return 'no dir row'; const r = e.getBoundingClientRect(); const t = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return { rel: e.getAttribute('data-rel'), r: [r.x, r.y, r.width, r.height].map(Math.round), hit: t?.className, hitRow: t?.closest('.trow')?.getAttribute('data-rel') } })
+          await pg.click('.panel .secb button.trow.dir', { button: 'right' }); const early = !!(await pg.$('.menu.ctx')); await wait(300)
+          if (!(await pg.$('.menu.ctx'))) { await pg.screenshot({ path: 'test/tmp/ctx-miss.png' }); fail('🔴 폴더 우클릭 메뉴가 떴다가 닫혔다(트리 칸이 늦게 스크롤됨?) · ' + JSON.stringify({ ddiag, early, sc: await pg.evaluate(() => window.__sc) })) }
           const dtx = await pg.textContent('.menu.ctx')
           if (!(dtx ?? '').includes('Finder')) fail('폴더 우클릭 메뉴에 «Finder 에서 보기» 가 없다 · ' + dtx)
           await pg.keyboard.press('Escape'); await wait(200)
@@ -4004,8 +4078,10 @@ try {
           ok('팝업은 절 경계를 넘어 body 에 뜬다 (⎋ · 바깥 클릭 · 스크롤에 닫힌다)')
         }
         // 트리 우클릭 — 폴더면 «새 봇 시작» 항목이 있다
+        await pg.$eval('.panel .secb button.trow.dir', (e) => e.scrollIntoView({ block: 'center' })).catch(() => {}); await wait(250)
         await pg.click('.panel .secb button.trow.dir', { button: 'right' }); await wait(200); const cm = await pg.textContent('.menu.ctx'); if (!/새 봇 시작|에이전트 시작|봇 열기/.test(cm ?? '')) fail('ui tree ctx: ' + cm); await pg.keyboard.press('Escape'); await wait(150)
         // 이름 바꾸기 — prompt() 가 아니라 앱 안 모달 (Electron 은 prompt 를 지원하지 않는다)
+        await pg.$eval('.panel .secb button.trow:not(.dir)', (e) => e.scrollIntoView({ block: 'center' })).catch(() => {}); await wait(250)
         await pg.click('.panel .secb button.trow:not(.dir)', { button: 'right' }); await wait(200); await pg.click('.menu.ctx button:has-text("이름 바꾸기")'); await wait(200)
         if (!(await pg.$('.modal.ask input.askin'))) fail('ui rename modal missing'); await pg.fill('.modal.ask input.askin', 'renamed-by-smoke.md'); await pg.keyboard.press('Enter'); await wait(700)
         if (!/renamed-by-smoke\.md/.test((await pg.textContent('.panel')) ?? '')) fail('ui rename did not apply'); if (await pg.$('.modal.ask')) fail('ui rename modal stuck')

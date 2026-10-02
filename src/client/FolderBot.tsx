@@ -85,6 +85,8 @@ export const I = {
   task: <><rect x="2.5" y="2.5" width="11" height="11" rx="2" /><path d="M5 8l2 2 4-4" /></>,
   clock: <><circle cx="8" cy="8" r="6" /><path d="M8 5v3l2 1.5" /></>,
   x: <path d="M4 4l8 8M12 4l-8 8" />,
+  // 세션 정리(2026-10-02) — 뚜껑 + 통
+  trash: <path d="M2.5 4.5h11M6 4.5V3h4v1.5M4 4.5l.7 8.5h6.6l.7-8.5M6.8 7v4M9.2 7v4" />,
   check: <path d="M3 8.5l3 3 7-7" />,
   open: <><path d="M9 3h4v4M13 3 7 9" /><path d="M11 9v4H3V5h4" /></>,
   back: <path d="M10 3 5 8l5 5" />,

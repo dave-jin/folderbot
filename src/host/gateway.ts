@@ -20,6 +20,7 @@ import { agentModels, codexAuth, diagnose, forgetModels } from './auth'
 import { canon } from './registry'
 import { normalizeRootInput } from '../core/rootPath'
 import { searchConversations } from '../core/convSearch'
+import { sessLocked } from '../core/cleanup'
 import type { ClientCtx } from '../core/clientCtx'
 /** J-1 · 요청의 기기 컨텍스트 — 누가 보냈나(origin·device)는 호스트가 정하고, 화면 종류·손가락·열 수 있나·모드는 화면이 말한 대로 */
 function clientOf(who: { device: string; main: boolean }, c: unknown): ClientCtx {
@@ -304,6 +305,25 @@ export class Gateway {
       const names = new Map(reg.bots().map((b) => [b.id, b.name]))
       const hits = searchConversations(q, h.sessions.all().map((r) => ({ id: r.id, botId: r.botId, name: r.name, lastActivity: r.lastActivity, items: r.items as { kind: string; text?: string }[] })), 20)
       return json(200, hits.map((x) => ({ ...x, bot: names.get(x.botId) ?? '' })))
+    }
+    /**
+     * 세션 정리 (2026-10-02 · 시안 B) — 여러 세션을 한 번에 지우고, 10초 안에 되살린다.
+     * 🔴 잠긴 세션(일하는 중·답 기다림·안 읽음·뒤에서 도는 중·대기 말)은 화면이 막아도 **호스트가 한 번 더** 걸러 건너뛴다 —
+     *    화면이 낡은 목록으로 보내도 일·답이 사라지면 안 된다. 판정은 `core/cleanup` 하나.
+     */
+    if (p === '/api/sessions/bulk-delete' && m === 'POST') {
+      const b = await body(); const ids = Array.isArray(b.ids) ? (b.ids as unknown[]).map(String) : []
+      const removed: string[] = [], skipped: { id: string; why: string }[] = []
+      for (const id of ids) {
+        const r = h.sessions.get(id); if (!r) { skipped.push({ id, why: '없음' }); continue }
+        const why = sessLocked(h.sessions.info(r)); if (why) { skipped.push({ id, why }); continue }
+        h.sessions.remove(id); removed.push(id)
+      }
+      return json(200, { removed, skipped })
+    }
+    if (p === '/api/sessions/restore' && m === 'POST') {
+      const b = await body(); const ids = Array.isArray(b.ids) ? (b.ids as unknown[]).map(String) : []
+      return json(200, { restored: h.sessions.restore(ids) })
     }
     if (p === '/api/todos' && m === 'GET') {
       const rows = reg.bots().filter((b) => !b.orchestrator).map((b) => {

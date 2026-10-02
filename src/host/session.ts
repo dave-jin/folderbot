@@ -341,7 +341,7 @@ export class SessionManager extends EventEmitter {
   }
   info(r: SessionRec): SessionInfo {
     const w = this.workers.get(r.id)
-    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, inflight: r.inflight, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, ...(r.comm ? { comm: true } : {}), ...(r.queue?.length ? { queue: r.queue } : {}), activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
+    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, inflight: r.inflight, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, ...(r.comm ? { comm: true } : {}), ...(r.delegatedFrom && !r.comm ? { delegated: true } : {}), ...(r.queue?.length ? { queue: r.queue } : {}), activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
   }
   get(id: string): SessionRec | undefined { return this.recs.get(id) }
   /** 볼트 전체의 세션 기록 — 「지난 대화 찾기」 가 훑는다(읽기만) */
@@ -371,6 +371,26 @@ export class SessionManager extends EventEmitter {
     this.persist(r)
     this.emit('sessions', bot.id)
     return r
+  }
+  /**
+   * 지운 세션 되살리기 — 세션 정리의 «되돌리기» (2026-10-02). `remove` 는 파일에 «지웠다» 표식만 남기므로 그걸 걷는다.
+   * ⚠ 워커는 없다 — 다음 말이 오면 `--resume` 으로 이어진다. @returns 되살린 id
+   */
+  restore(ids: string[]): string[] {
+    const back: string[] = []
+    for (const id of ids) {
+      if (this.recs.has(id) || !/^s_[a-z0-9]+$/.test(id)) continue
+      const f = join(this.dir, `${id}.json`)
+      try {
+        const r = JSON.parse(readFileSync(f, 'utf8')) as SessionRec & { deleted?: boolean }
+        if (!r.deleted) continue
+        delete r.deleted
+        if (r.state === 'running' || r.state === 'awaiting_input') r.state = 'idle'
+        this.recs.set(id, r); this.persist(r); back.push(id)
+        this.emit('sessions', r.botId)
+      } catch { /* 없는 파일 */ }
+    }
+    return back
   }
   remove(id: string): void {
     this.workers.get(id)?.kill(); this.workers.delete(id)
