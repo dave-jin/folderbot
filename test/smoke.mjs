@@ -3121,6 +3121,24 @@ try {
             await wait(3500)   // 스텁의 턴이 끝날 때까지 — 다음 검사가 «한가한 세션» 을 전제한다
             ok('미룬 질문 — 답하면 AskUserQuestion 도구 줄이 멈춘다(호스트가 닫는다)')
           }
+          /**
+           * 🔴 **채팅으로 답하면 미룬 질문 카드가 닫힌다 — 같은 질문 카드가 둘 서지 않는다** (2026-10-02 Dave: *«AskUserQuestion 을
+           *    두번씩 동일한 내용을 보낼때가 있어»*). 카드는 카드에서 답할 때만 닫혔다 — 채팅으로 답하면 남고, 모델이 같은 질문을
+           *    새 id 로 다시 해서 카드가 둘 섰다. 스텁은 답 없는 채팅을 받으면 실 모델처럼 다시 묻는다.
+           */
+          {
+            await pg.fill('.composer .cin', '미룬질문 해 줘'); await pg.click('.composer .sendb')
+            await pg.waitForSelector('.card .opt', { timeout: 8000 })
+            await pg.fill('.composer .cin', '예 안으로 할게요'); await pg.click('.composer .sendb')
+            let body = ''
+            for (let i = 0; i < 40; i++) { body = (await pg.textContent('.chat-body')) ?? ''; if (/채팅 답 받음|미룬 질문은 무엇으로/.test(body) && i > 4) break; await wait(250) }
+            const cards = await pg.evaluate(() => [...document.querySelectorAll('.card')].filter((c) => c.textContent?.includes('미룬 질문은 무엇으로 할까요?')).length)
+            const left = (await api(`/bots/${bot.id}/sessions`)).flatMap((x) => x.pending ?? []).filter((p) => p.toolName === 'AskUserQuestion').length
+            if (cards !== 0 || left !== 0) fail(`🔴 채팅으로 답했는데 미룬 질문 카드가 남았다(같은 질문이 둘 선다) · 화면 ${cards} · 호스트 ${left}`)
+            if (!/채팅 답 받음: 예 안으로 할게요/.test(body)) fail('채팅 답: 사람 글이 질문의 답으로 CLI 에 안 갔다')
+            await wait(3500)   // 스텁의 턴이 끝날 때까지
+            ok('채팅으로 답하면 미룬 질문 카드가 닫힌다 — 같은 질문 카드가 둘 서지 않는다')
+          }
           // 🔴 **링크 앞에 파비콘** (2026-09-13 Dave) — 자리표시자를 먼저 놓으므로 인터넷이 없어도 자리는 있다.
           //    ⛔ 비워 두고 도착할 때 넣으면 글줄이 그때마다 옆으로 밀린다.
           {

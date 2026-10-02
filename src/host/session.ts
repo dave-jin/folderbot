@@ -138,6 +138,7 @@ export class ClaudeWorker extends EventEmitter {
         // CLI 제안이 비면(복합 Bash) 호스트가 만든다 — «이 세션에서 항상 허용» 이 항상 있어야 한다(core/permPolicy)
         const sugg = (req.permission_suggestions as unknown[] | undefined) ?? []
         p.suggestions = sugg.length ? sugg : fallbackRules(p.toolName, p.input)
+        if (p.ask) this.dropSameDeferred(p)
         this.pending.set(p.requestId, p)
         this.emit('permission', p)
       }
@@ -147,7 +148,8 @@ export class ClaudeWorker extends EventEmitter {
     if (line.session_id) this.cliSessionId = line.session_id
     if (line.type === 'result' && line.stop_reason === 'tool_deferred' && line.deferred_tool_use?.name === 'AskUserQuestion' && line.deferred_tool_use.id) {
       const d = line.deferred_tool_use
-      const p: PermissionRequest = { requestId: d.id!, toolName: 'AskUserQuestion', displayName: 'AskUserQuestion', description: '', input: d.input ?? {}, suggestions: [], ask: true }
+      const p: PermissionRequest = { requestId: d.id!, toolName: 'AskUserQuestion', displayName: 'AskUserQuestion', description: '', input: d.input ?? {}, suggestions: [], ask: true, deferred: true }
+      this.dropSameDeferred(p)
       this.deferredAsks.add(p.requestId); this.pending.set(p.requestId, p)
       this.emit('permission', p)
       return
@@ -160,6 +162,35 @@ export class ClaudeWorker extends EventEmitter {
   }
   send(text: string): boolean {
     return this.write({ type: 'user', message: { role: 'user', content: [{ type: 'text', text }] } })
+  }
+  /**
+   * 🔴 **미뤄진 질문에 사람이 카드 대신 채팅으로 답했다** (2026-10-02 Dave: *«AskUserQuestion 을 두번씩 동일한
+   *    내용을 보낼때가 있어»*). 미뤄진 질문(`tool_deferred`)은 카드에서 답할 때만 닫혔다 — 채팅으로 답하면 카드가
+   *    남고, 모델은 답을 못 받은 줄 알고 **같은 질문을 새 id 로 다시 해서** 카드가 둘이 됐다(화면 중복 제거는 id 기준이라
+   *    못 거른다). 그래서 채팅을 보낼 때 남은 질문을 «채팅으로 답했다» 결과로 닫는다 — 기록에도 닫혀 `--resume` 이
+   *    다시 꺼내지 않는다.
+   * ⚠ 결과와 글을 **한 메시지**로 보낸다 — 따로 보내면 «취소» 에 대한 헛턴이 먼저 돈다.
+   * @returns 닫은 질문 id(화면의 도구 줄을 닫으라고)
+   */
+  sendClosingAsks(text: string): string[] {
+    const ids = [...this.deferredAsks]
+    if (!ids.length) { this.send(text); return [] }
+    for (const id of ids) this.pending.delete(id)
+    this.deferredAsks.clear()
+    const results = ids.map((id) => ({ type: 'tool_result', tool_use_id: id, is_error: true, content: '사용자가 질문 카드 대신 채팅으로 답했습니다. 같은 질문을 다시 하지 말고, 이어지는 사용자 글을 답으로 보세요.' }))
+    this.write({ type: 'user', message: { role: 'user', content: [...results, { type: 'text', text }] } })
+    return ids
+  }
+  /**
+   * 같은 질문이 또 오면 **앞의 미뤄진 카드는 걷는다** — 재시작 뒤 `--resume` 이 답 없는 질문을 다시 꺼내거나 모델이 되물을 때
+   * 같은 카드가 둘 서지 않게. ⚠ 미뤄진 것만 걷는다 — `control_request` 로 온 질문은 CLI 가 답을 기다리는 중이라 말없이 버리면 멈춘다.
+   */
+  private dropSameDeferred(p: PermissionRequest): void {
+    const key = JSON.stringify(p.input?.questions ?? p.input)
+    for (const id of [...this.deferredAsks]) {
+      const old = this.pending.get(id)
+      if (id !== p.requestId && old && JSON.stringify(old.input?.questions ?? old.input) === key) { this.pending.delete(id); this.deferredAsks.delete(id) }
+    }
   }
   /** @returns 미뤄진 질문에 **우리가 직접** 결과를 넣었으면 true — claude 가 되돌려 주지 않으니 화면 줄은 우리가 닫아야 한다(AX) */
   respondPermission(requestId: string, allow: boolean, always = false): boolean {
@@ -706,7 +737,11 @@ export class SessionManager extends EventEmitter {
     }
     const w = this.ensureWorker(r, bot)
     this.push(r, { id: itemId('u'), t: Date.now(), kind: 'user', text, ...(from ? { from } : {}) })
-    w.send(withClient(text, client))   // J-1 · 워커에게만 기기 블록을 앞세운다 — 채팅에는 사람의 글 그대로
+    // J-1 · 워커에게만 기기 블록을 앞세운다 — 채팅에는 사람의 글 그대로
+    // 🔴 남아 있던 미뤄진 질문은 이 글로 닫는다 — 안 닫으면 같은 질문 카드가 둘 선다(ClaudeWorker.sendClosingAsks)
+    const closed = w instanceof ClaudeWorker ? w.sendClosingAsks(withClient(text, client)) : (w.send(withClient(text, client)), [])
+    for (const id of closed) this.closeTool(r, id, '채팅으로 답했어요', true)
+    if (closed.length) this.emit('sessions', r.botId)
     if (r.state !== 'running') r.turnStartedAt = Date.now()
     this.setActivity(r, '시작하는 중', true)
     this.setState(r, { kind: 'user_sent' })

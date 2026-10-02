@@ -81,10 +81,23 @@ rl.on('line', (raw) => {
   const tr = msg.message?.content?.find?.((b) => b.type === 'tool_result')
   if (tr && pendingDeferred && tr.tool_use_id === pendingDeferred) {
     pendingDeferred = null
-    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: tr.is_error ? '미룬 질문 취소됨' : `미룬 답 받음: ${tr.content}` }] } })
+    // 결과와 같은 메시지에 사람 글이 실려 오면(채팅으로 답함 · 2026-10-02) 그 글을 답으로 받는다
+    const chat = msg.message.content.filter((x) => x.type === 'text').map((x) => x.text).join('').replace(/^<folderbot-client\s+[^>]*\/>\s*/, '')
+    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: chat ? `채팅 답 받음: ${chat}` : tr.is_error ? '미룬 질문 취소됨' : `미룬 답 받음: ${tr.content}` }] } })
     // ⚠ 턴을 바로 끝내지 않는다 — 스크린샷_234 는 답 뒤로 6분짜리 턴이 이어지는 동안 질문 줄이 돌았다.
     //    턴 끝(result)은 호스트가 열린 줄을 다 닫으므로, 바로 끝내면 버그가 가려진다.
     setTimeout(() => say({ type: 'result', subtype: 'success', duration_ms: 3000, total_cost_usd: 0.001 }), 3000)
+    return
+  }
+  /**
+   * 🔴 **미뤄진 질문에 답 없이 채팅만 오면 실 모델처럼 같은 질문을 새 id 로 다시 묻는다** (2026-10-02 Dave: «AskUserQuestion 을
+   *    두번씩 동일한 내용을 보낼때가 있어»). 호스트가 남은 질문을 닫지 않으면 이 길로 들어와 카드가 둘 선다.
+   */
+  if (pendingDeferred && !tr) {
+    const id = `stub-ask-${randomUUID().slice(0, 6)}`; pendingDeferred = id
+    const input = { questions: [{ question: '미룬 질문은 무엇으로 할까요?', header: '미룸', options: [{ label: '예 안' }, { label: '아니오 안' }] }] }
+    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input }] } })
+    say({ type: 'result', subtype: 'success', stop_reason: 'tool_deferred', deferred_tool_use: { id, name: 'AskUserQuestion', input }, duration_ms: 40, total_cost_usd: 0.001 })
     return
   }
   const rawText = msg.message?.content?.map?.((b) => b.text ?? '').join('') ?? ''

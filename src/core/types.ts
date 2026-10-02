@@ -178,6 +178,11 @@ export interface PermissionRequest {
   suggestions: unknown[]
   /** AskUserQuestion 이면 true */
   ask?: boolean
+  /**
+   * 미뤄진 질문(`tool_deferred`)이면 true — CLI 는 턴을 이미 끝냈으므로 채팅을 보내도 된다.
+   * 호스트가 그 글로 질문을 닫는다(2026-10-02). `control_request` 로 온 질문은 CLI 가 답을 기다리는 중이라 false.
+   */
+  deferred?: boolean
 }
 
 /** 대화 항목 — 화면이 그리는 단위 */
