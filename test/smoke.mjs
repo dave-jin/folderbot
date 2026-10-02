@@ -429,6 +429,27 @@ try {
   await wait(800)
   const cfo = (await api('/bots')).find((b) => b.name === '재무_CFO'); const cs = await api(`/bots/${cfo.id}/sessions`); if (cs[0].state !== 'done') fail('delegated session state ' + cs[0].state); ok('mcp bot_start + bot_send → delegated session done')
   /**
+   * 🔴 **봇마다 «🤝 소통» 세션 하나 · 일하는 중에 온 봇의 말은 큐** (2026-10-02 Dave: «각 폴더봇도 소통용 세션이 하나만 되어도 되지 않나» ·
+   *    «기다리는 작업은 현재처럼 큐로 잡아줘»). 종전에는 bot_send 마다 «위임 · HH:MM» 세션이 새로 생겨 폴더마다 쌓였다.
+   */
+  {
+    const c1 = await mcp('tools/call', { name: 'bot_send', arguments: { bot: '재무_CFO', text: '느린일 소통 첫째' } })
+    const c2 = await mcp('tools/call', { name: 'bot_send', arguments: { bot: '재무_CFO', text: '되읊어: 소통 둘째' } })
+    const sidOf = (r) => /세션 (s_\w+)/.exec(r.result.content[0].text)?.[1]
+    if (!sidOf(c1) || sidOf(c1) !== sidOf(c2)) fail('🔴 소통 세션: bot_send 두 번이 다른 세션으로 갔다 ' + JSON.stringify([c1.result.content[0].text, c2.result.content[0].text]))
+    if (!/큐에 넣었어요/.test(c2.result.content[0].text)) fail('소통 세션: 일하는 중에 온 둘째가 큐로 안 갔다 · ' + c2.result.content[0].text)
+    const comm = (await api(`/bots/${cfo.id}/sessions`)).filter((x) => x.comm)
+    if (comm.length !== 1 || comm[0].name !== '🤝 소통' || comm[0].queue?.[0]?.text !== '되읊어: 소통 둘째') fail('소통 세션: 하나 · 이름 · 큐가 안 맞다 ' + JSON.stringify(comm.map((x) => ({ n: x.name, q: x.queue }))))
+    let us = []
+    for (let i = 0; i < 40; i++) { us = (await api(`/sessions/${comm[0].id}/chat`)).items.filter((x) => x.kind === 'user').map((x) => x.text); if (us.length >= 2) break; await wait(250) }
+    if (JSON.stringify(us) !== JSON.stringify(['느린일 소통 첫째', '되읊어: 소통 둘째'])) fail('소통 세션: 큐가 턴 끝에 차례로 안 나갔다 ' + JSON.stringify(us))
+    // 소통 세션은 되묻지 못한다(고리 막기) — 위임 세션과 같은 가드
+    const rc = await (await fetch(base + `/mcp/${cfo.id}?sid=${comm[0].id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'orch_ask', arguments: { text: '되물어' } } }) })).json()
+    if (!rc.result?.isError) fail('소통 세션: orch_ask 가 거절되지 않았다 ' + JSON.stringify(rc))
+    await wait(1200)
+    ok('소통 세션 — 봇마다 하나 · 일하는 중에 온 봇의 말은 큐 → 턴 끝에 차례로 · 소통 세션은 되묻지 못한다')
+  }
+  /**
    * 🔴 BH · orch_ask — 폴더 봇이 오케스트레이터에게 직접 요청하고, 답은 원래 세션으로 돌아온다 (2026-09-27 Dave)
    *    받는 쪽은 오케스트레이터로 고정 · 위임 세션·오케스트레이터 자신은 못 쓴다
    */
@@ -440,8 +461,9 @@ try {
     const r = await orchAsk(bot.id, mine.sessionId, '재무_CFO 에게 이번 달 숫자를 물어봐 줘')
     if (r.error || r.result?.isError || !/오케스트레이터에게 보냈어요/.test(r.result?.content?.[0]?.text ?? '')) fail('BH orch_ask: 보내기 실패 ' + JSON.stringify(r))
     await wait(900)
-    const os = (await api('/bots/orch/sessions')).find((x) => x.name === `요청 ← ${bot.name}`)
-    if (!os) fail('BH orch_ask: 오케스트레이터에 «요청 ← ' + bot.name + '» 세션이 안 생겼다 ' + JSON.stringify((await api('/bots/orch/sessions')).map((x) => x.name)))
+    // 2026-10-02 · 요청은 오케스트레이터의 «🤝 소통» 세션 하나로 온다(종전 «요청 ← 봇» 세션은 없앴다)
+    const os = (await api('/bots/orch/sessions')).find((x) => x.comm)
+    if (!os) fail('BH orch_ask: 오케스트레이터에 «🤝 소통» 세션이 안 생겼다 ' + JSON.stringify((await api('/bots/orch/sessions')).map((x) => x.name)))
     const first = (await api(`/sessions/${os.id}/chat`)).items.find((x) => x.kind === 'user')
     if (!first?.text?.startsWith(`[요청 ← ${bot.name} · ${bot.id} · ${mine.sessionId}]\n재무_CFO 에게`)) fail('BH orch_ask: 본문 앞 요청 줄이 없다 ' + JSON.stringify(first?.text))
     // 오케스트레이터가 요청 줄의 봇 id·세션 id 로 답을 돌려보낸다 → 원래 세션에 쌓인다
@@ -462,10 +484,11 @@ try {
     await orchAsk(bot.id, mine.sessionId, '둘째'); await orchAsk(bot.id, mine.sessionId, '셋째')
     const r4 = await orchAsk(bot.id, mine.sessionId, '넷째')
     if (!r4.result?.isError || !/3건까지/.test(r4.result.content[0].text)) fail('BH orch_ask: 한 시간 4번째는 거절돼야 한다 ' + JSON.stringify(r4))
+    if ((await api('/bots/orch/sessions')).filter((x) => x.comm || /^요청 ← /.test(x.name)).length !== 1) fail('🔴 BH orch_ask: 요청 셋이 오케스트레이터 세션 하나로 안 모였다 ' + JSON.stringify((await api('/bots/orch/sessions')).map((x) => x.name)))
     await wait(1500)
     // 치우기 — 이 봇의 «가장 최근 세션» 이 뒤 화면 검사의 전제다(스텁 답이 보여야 한다). 오케스트레이터의 «요청 ←» 세션은 화면 검사에 쓰려고 남긴다
     await api(`/sessions/${mine.sessionId}`, undefined, 'DELETE')
-    ok('BH orch_ask — 폴더 봇 → 오케스트레이터 «요청 ← 봇» 세션 · 요청 줄 · 답은 원래 세션으로 · 위임 세션·오케스트레이터·4번째는 거절')
+    ok('BH orch_ask — 폴더 봇 → 오케스트레이터 «🤝 소통» 세션 하나 · 요청 줄 · 답은 원래 세션으로 · 위임 세션·오케스트레이터·4번째는 거절')
   }
   const ib = await mcp('tools/call', { name: 'inbox_list', arguments: {} }); if (!/예시랩/.test(ib.result.content[0].text)) fail('inbox')
   await mcp('tools/call', { name: 'folder_move', arguments: { from: '1. Inbox/예시랩_자문자료.txt', to: '3. Area/재무_CFO/자료/예시랩_자문자료.txt' } })
@@ -1889,7 +1912,7 @@ try {
           ok('S 읽음/안 읽음 — 안 본 답은 행 강조+배지 링 · 맨 아래까지 보면 볼트에 읽음 · 그 세션 알림도 함께 읽음')
         }
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
-        await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)
+        await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면|🤝 소통/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)   // ⚠ 2026-10-02 · 오케스트레이터는 세션이 «🤝 소통» 하나뿐일 수 있다(«세션 N» 줄이 안 선다)
         await pg.mouse.move(700, 300); await wait(200); if (await pg.$('.hcard')) fail('ui hover card stuck')
         // 폴더 선택 = 트리: 1단계 폴더가 뜨고 활성 폴더는 펼쳐져 있다 · Resources 를 펼치면 하위가 보인다
         await pg.click('.nav'); await pg.waitForSelector('.pk [data-rel]', { timeout: 5000 }); await wait(500)
@@ -3013,17 +3036,17 @@ try {
             await pg.evaluate(() => { window.__fbHoldFrames = false })
             if (!/늦게 온 세션/.test(head ?? '')) fail('BH 알림 점프: 화면 목록에 없던 세션인데 첫 세션으로 떨어졌다 · ' + JSON.stringify(head))
             await api(`/sessions/${late.id}`, undefined, 'DELETE')
-            // orch_ask 로 생긴 오케스트레이터 세션이 화면에서 «요청 ← …» 이름으로 보인다
+            // orch_ask 로 생긴 오케스트레이터 «🤝 소통» 세션이 화면 목록 **맨 위**에 선다 · 처음 열리는 세션은 아니다 (2026-10-02)
             await pg.evaluate(() => { location.hash = 'bot=orch' }); await wait(900)
             const orchNames = await pg.$$eval('.rpwrap .srow .n', (r) => r.map((x) => x.textContent))
-            if (!orchNames.some((n) => /^요청 ← /.test(n ?? ''))) fail('BH orch_ask: 오케스트레이터 세션 목록에 «요청 ← …» 가 안 보인다 ' + JSON.stringify(orchNames))
+            if (orchNames[0] !== '🤝 소통') fail('소통 세션: 오케스트레이터 세션 목록 맨 위에 «🤝 소통» 이 없다 ' + JSON.stringify(orchNames))
             await pg.evaluate((h) => { location.hash = h }, backHash); await wait(700)
             // 치우기 — 오케스트레이터의 최근 줄에 «요청 ← 제품_Rondo» 가 남으면 뒤 검사가 봇 이름으로 행을 찾다가 관제 행을 집는다.
             // ⚠ 화면을 먼저 옮기고 지운다 — 보고 있는 세션을 지우면 읽음 표시·대화 받기가 404 를 낸다(«페이지 오류 0»)
-            for (const x of (await api('/bots/orch/sessions')).filter((x) => /^요청 ← /.test(x.name))) await api(`/sessions/${x.id}`, undefined, 'DELETE')
+            for (const x of (await api('/bots/orch/sessions')).filter((x) => x.comm || /^요청 ← /.test(x.name))) await api(`/sessions/${x.id}`, undefined, 'DELETE')
             await wait(500)
             await pg.focus('.composer .cin')
-            ok('BH 알림 점프 — 화면 줄이 늦어도 그 세션으로 · 오케스트레이터에 «요청 ← …» 세션이 보인다')
+            ok('BH 알림 점프 — 화면 줄이 늦어도 그 세션으로 · 오케스트레이터의 «🤝 소통» 세션이 목록 맨 위')
           }
           /**
            * 🔴 **질문 카드의 「기타」는 질문마다 따로다** (2026-09-15 Dave: *«AskUserQuestion 에서 추가
@@ -3559,14 +3582,20 @@ try {
             if (!q) fail('대기 메시지: 돌고 있는데 보낸 말이 대기열에 안 들어갔다')
             {
               await q.click(); await wait(250)
+              // 🔴 큐 편집은 크게 (2026-10-02 Dave «큐 편집화면도 키워줘») — 여러 줄 글 상자 · ⏎ 는 줄바꿈 · ⌘⏎ 저장
+              const box = await pg.$eval('.queue .qin', (e) => ({ tag: e.tagName, h: e.getBoundingClientRect().height, fs: parseFloat(getComputedStyle(e).fontSize) }))
+              if (box.tag !== 'TEXTAREA' || box.h < 60 || box.fs < 14) fail('🔴 큐 편집: 고치는 칸이 아직 작다(한 줄 입력칸) · ' + JSON.stringify(box))
               await pg.fill('.queue .qin', '고친 말')
-              await pg.keyboard.press('Enter'); await wait(300)
+              await pg.keyboard.press('Enter'); await pg.keyboard.type('둘째 줄'); await wait(100)
+              if (!(await pg.$('.queue .qin'))) fail('큐 편집: ⏎ 가 줄바꿈이 아니라 저장으로 닫혔다')
+              await (await pg.$('.chat-foot .qlist'))?.screenshot({ path: 'test/tmp/queue-edit.png' }).catch(() => {})   // 큐 편집 모습(단언 없음)
+              await pg.keyboard.press('Meta+Enter'); await wait(300)
               const after = await pg.textContent('.queue .tx')
-              if (!/고친 말/.test(after ?? '')) fail('대기 메시지: 고친 글이 안 남았다 · ' + after)
-              ok('대기 메시지 — 눌러서 고친다')
+              if (!/고친 말\n둘째 줄/.test(after ?? '')) fail('대기 메시지: 고친 여러 줄 글이 안 남았다 · ' + JSON.stringify(after))
+              ok('대기 메시지 — 눌러서 크게 고친다 · ⏎ 줄바꿈 · ⌘⏎ 저장')
             }
             // ⚠ 대기열을 비우고 나간다 — 안 그러면 느린 턴이 끝나며 그 말이 진짜로 나간다
-            await pg.click('.queue button:not(.tx)').catch(() => {})
+            await pg.click('.queue .qb.drop').catch(() => {})
             await pg.fill('.composer .cin', ''); await wait(200)
           }
           /**

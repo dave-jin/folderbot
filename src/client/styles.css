@@ -236,7 +236,7 @@ b,strong { color:var(--w); font-weight:600 }
 .tobot.off { opacity:0; pointer-events:none } .tobot .dot { position:absolute; right:-1px; top:-1px; width:8px; height:8px; border:2px solid var(--bg) }
 .chat-foot { position:absolute; left:0; right:0; bottom:0; z-index:5; display:flex; flex-direction:column; align-items:center; padding:0 24px 8px; pointer-events:none } .chat-foot > * { pointer-events:auto }
 .chat-foot::before { content:''; position:absolute; left:0; right:0; top:-56px; bottom:0; background:linear-gradient(180deg, var(--fade0) 0%, var(--fadeA) 40%, var(--fadeB) 100%); pointer-events:none; z-index:-1 }
-.chat-foot .queue, .chat-foot .files { width:100%; max-width:712px; margin-bottom:8px }
+.chat-foot .qlist, .chat-foot .files { width:100%; max-width:712px; margin-bottom:8px }
 /* 사람 말 — cursor 처럼 **입력칸 모양 상자**로 답 위에 놓인다 */
 .umsg { background:var(--box); border-radius:8px; padding:11px 14px; color:var(--w); white-space:pre-wrap; word-break:break-word }
 .md { word-break:break-word } .md p { margin:0 0 10px } .md p:last-child { margin:0 } .md h1,.md h2,.md h3 { color:var(--w); font-size:15px; margin:10px 0 4px } .md h1 { font-size:17px } .md ul,.md ol { padding-left:20px; margin:4px 0 } .md li { margin:2px 0 } .md hr { border:0; border-top:1px solid var(--line); margin:12px 0 } .md pre { background:var(--box); border-radius:8px; padding:10px 12px; overflow:auto; font-size:12px } .md code { font-family:var(--mono); font-size:12px; background:var(--box); padding:1px 5px; border-radius:4px } .md pre code { padding:0; background:none } .md table { border-collapse:collapse; font-size:12.5px } .md td,.md th { border-bottom:1px solid var(--line); padding:4px 8px; text-align:left } .md th { color:var(--t3); font-weight:500 } .md blockquote { margin:0; padding-left:12px; border-left:2px solid var(--line2); color:var(--t2) } .md img { max-width:100%; border-radius:6px } .md img.wimg { display:block; max-height:360px; cursor:zoom-in; margin:4px 0 } .md img.wimg:not([src]) { display:none } .md .wlink { color:var(--w); text-decoration:underline; text-decoration-color:var(--line2); cursor:pointer } .md .wmiss { color:var(--t3); font-size:12px; border:1px dashed var(--line2); border-radius:4px; padding:1px 6px }
@@ -267,11 +267,22 @@ b,strong { color:var(--w); font-weight:600 }
 .glow { width:6px; height:6px; border-radius:50%; background:var(--wait); display:inline-block; flex:none; animation:glow 2.4s ease-in-out infinite }
 .live { display:flex; align-items:center; gap:10px; font-size:12.5px; color:var(--t2); min-height:24px } .live .tx { color:var(--t); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 } .live .th { color:var(--t3); font-style:italic; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:320px } .live .el { font-family:var(--mono); font-size:11.5px; color:var(--t3); flex:none } .live .stop { color:var(--t3); flex:none } .live .stop:hover { color:var(--t) }
 /* 대기 줄 — 눌러서 고친다. ⚠ 보기 상태와 고치기 상태의 **높이가 같아야** 목록이 안 출렁인다 */
-.queue { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--t3); padding:0 2px }
-.queue .tx { color:var(--t2); flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:left; line-height:1.7 }
+/* 대기 말 — 카드 (2026-10-02 Dave «큐 편집화면도 키워줘»): 세 줄까지 보이고, 고칠 때는 커지는 글 상자 */
+.qlist { display:flex; flex-direction:column; gap:6px; max-height:50vh; overflow:auto }
+.qhead { font-size:12px; color:var(--t3); padding:0 2px }
+.queue { display:flex; flex-direction:column; gap:6px; background:var(--bg2, rgba(255,255,255,.04)); border:1px solid var(--line2); border-radius:10px; padding:8px 10px 10px }
+.queue.editing { border-color:var(--t3) }
+.queue .qh { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--t3) }
+.queue .qn { font-weight:600; color:var(--t2) }
+.queue .qwho { font-size:11px; padding:1px 7px; border-radius:999px; background:var(--line2); color:var(--t2) }
+.queue .qb { display:inline-flex; align-items:center; gap:4px; font-size:12px; color:var(--t3); padding:2px 6px; border-radius:6px }
+.queue .qb:hover { color:var(--w); background:var(--line2) }
+.queue .tx { color:var(--t); font-size:14px; line-height:1.6; text-align:left; white-space:pre-wrap; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden }
 .queue button.tx:hover { color:var(--w) }
-.queue .qin { flex:1; min-width:0; background:var(--bg); border:1px solid var(--line2); border-radius:5px; padding:0 6px; color:var(--w); font:inherit; font-size:12px; line-height:1.7; outline:0 }
+.queue .qin { width:100%; min-height:72px; resize:none; background:var(--bg); border:1px solid var(--line2); border-radius:8px; padding:8px 10px; color:var(--w); font:inherit; font-size:14px; line-height:1.6; outline:0 }
 .queue .qin:focus { border-color:var(--t3) }
+.queue .qbtns { display:flex; align-items:center; gap:8px }
+.queue .qhint { font-size:11px; color:var(--t3) }
 .files { display:flex; gap:6px; flex-wrap:wrap }
 /* 루프 6/10 — 손댄 파일 칩 옆의 ⇄(전후 비교). 칩과 한 몸으로 붙되 누르는 곳은 따로 */
 .fpair { display:inline-flex; align-items:stretch; max-width:100% } .fpair .chip { border-radius:5px 0 0 5px; border-right:0 }
@@ -656,7 +667,7 @@ b,strong { color:var(--w); font-weight:600 }
   .pinq { top:calc(var(--sat) + 62px); width:calc(100% - 36px); border-radius:14px; padding:10px 14px; font-size:15px }
   .tobot { width:40px; height:40px }
   .chat-foot { padding:0 0 calc(var(--sab) + 4px) }
-  .chat-foot .queue, .chat-foot .files { padding:0 20px }
+  .chat-foot .qlist, .chat-foot .files { padding:0 20px }
   .cchips { display:flex; gap:6px; padding:0 22px 8px; width:100%; overflow-x:auto; scrollbar-width:none } .cchips::-webkit-scrollbar { display:none } .cchips .cbtn { padding:5px 11px; border-radius:15px; border:1px solid var(--hair); font-size:12.5px; background:var(--box); flex:none }
   .composer { margin:0 16px; width:calc(100% - 32px); max-width:none; min-height:60px; border-radius:30px; padding:8px 10px 8px 8px; gap:0; justify-content:center; box-shadow:0 10px 30px rgba(0,0,0,.45) } .composer.multi { border-radius:22px }
   .composer .crow { align-items:center; gap:10px }

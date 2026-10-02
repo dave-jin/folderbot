@@ -7,8 +7,9 @@ import { handleMcp, mcpTools, resetOrchAskForTest } from '../../src/host/mcp'
  */
 const orch = { id: 'orch', name: '오케스트레이터', orchestrator: true }
 const cfo = { id: 'b_cfo', name: '재무_CFO', rel: '3. Area/재무_CFO' }
-const recs: Record<string, { id: string; botId: string; delegatedFrom?: string }> = {
+const recs: Record<string, { id: string; botId: string; delegatedFrom?: string; comm?: boolean }> = {
   s_mine: { id: 's_mine', botId: 'b_cfo' },
+  s_comm: { id: 's_comm', botId: 'b_cfo', comm: true },
   s_deleg: { id: 's_deleg', botId: 'b_cfo', delegatedFrom: 'orch' },
   s_orch: { id: 's_orch', botId: 'orch' }
 }
@@ -34,13 +35,18 @@ describe('orch_ask (BH)', () => {
     expect(mcpTools('orch').map((x) => x.name)).toContain('bot_send')
   })
 
-  it('보내면 오케스트레이터에 «요청 ← 봇 이름» 세션으로, 본문 앞에 요청 줄이 붙는다', async () => {
+  it('보내면 오케스트레이터의 «🤝 소통» 세션으로(이름을 안 넘긴다 · 2026-10-02), 본문 앞에 요청 줄이 붙는다', async () => {
     const r = await call('b_cfo', 's_mine', 'orch_ask', { text: '4. Resources 에 폴더 하나 만들어 줘' })
     expect(r.isError).toBe(false)
     expect(sendToBot).toHaveBeenCalledTimes(1)
     const [to, body, session, name, from] = sendToBot.mock.calls[0]
-    expect(to.id).toBe('orch'); expect(session).toBeUndefined(); expect(name).toBe('요청 ← 재무_CFO'); expect(from).toBe('b_cfo')
+    expect(to.id).toBe('orch'); expect(session).toBeUndefined(); expect(name).toBeUndefined(); expect(from).toBe('b_cfo')
     expect(body).toBe('[요청 ← 재무_CFO · b_cfo · s_mine]\n4. Resources 에 폴더 하나 만들어 줘')
+  })
+
+  it('소통 세션에서 부르면 거절한다 — 봇 ↔ 오케스트레이터 고리 막기 (2026-10-02)', async () => {
+    const r = await call('b_cfo', 's_comm', 'orch_ask', { text: 'x' })
+    expect(r.isError).toBe(true); expect(sendToBot).not.toHaveBeenCalled()
   })
 
   it('오케스트레이터가 부르면 거절한다', async () => {

@@ -65,8 +65,10 @@ export class Host {
     setOauthToken(cfg.claudeOauthToken)
     this.sessions.mcpUrl = (sid, botId) => JSON.stringify({ mcpServers: { folderbot: { type: 'http', url: `http://127.0.0.1:${cfg.port}/mcp/${botId}?sid=${encodeURIComponent(sid)}` } } })
     this.sessions.systemPromptFor = (bot) => this.systemPrompt(bot)
+    this.sessions.botOf = (id) => this.registry.bot(id)
     this.routines = new Routines({ run: (b, r) => this.runRoutine(b, r), log: this.log })
     this.wire()
+    this.sessions.drainAll()   // 호스트가 다시 떴다 — 기다리던 봇 말을 내보낸다
     this.routines.reschedule(this.registry.bots())
     // 봇 폴더 감시 — 세션을 거치지 않은 쓰기(Bash·Codex·Dropbox·Finder)도 트리에 온다 (host/watch.ts 머리말)
     this.watcher.log = (m) => this.log(m)
@@ -139,8 +141,10 @@ export class Host {
   /** 세션에 지시 — 없으면 만든다 */
   sendToBot(bot: Bot, text: string, sessionId?: string, name?: string, from?: string, opts: { model?: string; effort?: string; permissionMode?: PermissionMode; vendor?: 'claude' | 'codex'; client?: ClientCtx } = {}): string {
     let r = sessionId ? this.sessions.get(sessionId) : undefined
+    // 🔴 봇끼리 오가는 말은 받는 봇의 «🤝 소통» 세션 하나로 (2026-10-02 Dave) — 세션을 집어 보냈으면 그 세션으로(답 돌려주기)
+    if (!r && from && !name) r = this.sessions.commOf(bot, from)
     if (!r) {
-      const list = this.sessions.list(bot.id)
+      const list = this.sessions.list(bot.id).filter((x) => !x.comm)   // 사람의 «이어서» 는 소통 세션으로 가지 않는다
       if (!name && list.length && !from) r = this.sessions.get(list[0].id)
       if (!r) {
         // BE · 봇당 4개도 같은 규칙 — 넘치면 그 봇의 가장 오래 안 쓴 쉬는 워커를 재운다. 전부 일하는 중일 때만 거절한다.
@@ -156,7 +160,9 @@ export class Host {
       this.broadcast({ ev: 'chat', sessionId: r.id, item: r.items[r.items.length - 1] })
       return r.id
     }
-    this.sessions.send(r, bot, text, opts.client)
+    // 다른 봇이 보낸 말은 받는 세션이 일하는 중이면 큐에서 기다린다(SessionManager.sendFromBot)
+    if (from) this.sessions.sendFromBot(r, bot, { text, from, fromName: this.registry.bot(from)?.name, t: Date.now() })
+    else this.sessions.send(r, bot, text, opts.client)
     return r.id
   }
 

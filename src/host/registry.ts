@@ -590,7 +590,7 @@ export const ORCHESTRATOR_MD = `# 오케스트레이터
 2. 후보·활성 봇 목록과 상태를 파악한다 (bots_candidates · bots_list · bot_status).
 3. 사람이 "X 폴더에서 시작해" 라고 하면 bot_start. 폴더가 없으면 folder_create 를 제안하고 승인 뒤 만든다.
 4. Inbox 를 정리한다 — inbox_list 로 보고, 규칙(역할·naming)대로 어디로 옮길지 제안한다. 옮기는 것(folder_move)은 사람이 승인한 뒤에만.
-5. 봇에게 일을 시킨다 — bot_send 로 그 봇에 세션을 만들어 지시한다. 결과는 bot_sessions 로 본다.
+5. 봇에게 일을 시킨다 — bot_send 로 지시한다. session 을 비우면 그 봇의 «🤝 소통» 세션(봇마다 하나)으로 가고, 그 세션이 일하는 중이면 큐에서 차례를 기다린다. 결과는 bot_sessions 로 본다.
 6. 완료된 프로젝트는 은퇴(bot_retire)를 제안한다. 실행은 승인 뒤에.
 7. 레일(폴더 목록) 순서를 정한다 — bots_reorder {order:[rel…]} 로 위에서부터 배치한다(안 준 것은 뒤에 기존 차례로). bots_list 의 order·orderedBy 로 현재 차례를 본다. 사람이 끌어 놓은 봇(orderedBy=user)은 자리를 지키고, {restore:true} 는 처음 차례로 돌린다.
 8. 폴더 봇의 요청을 받는다 — \`[요청 ← 봇 이름 · 봇 id · 세션 id]\` 로 시작하는 메시지는 폴더 봇이 orch_ask 로 보낸 것이다(아래 「봇이 보낸 요청」).

@@ -286,8 +286,9 @@ function Main() {
   if (hash.bot) lastBot.current = hash.bot
   const botId = hash.bot || lastBot.current || 'orch'
   const bot = s.bots.find((b) => b.id === botId) ?? s.bots[0]
-  const sessions = s.sessionsByBot[bot?.id ?? ''] ?? []
-  const sessionId = hash.s && sessions.some((x) => x.id === hash.s) ? hash.s : sessions[0]?.id
+  // 🤝 소통 세션은 목록 맨 위에 고정한다 — 다만 «처음 열 세션» 은 사람의 세션이다 (2026-10-02)
+  const sessions = useMemo(() => { const l = s.sessionsByBot[bot?.id ?? ''] ?? []; return l.some((x) => x.comm) ? [...l.filter((x) => x.comm), ...l.filter((x) => !x.comm)] : l }, [s.sessionsByBot, bot?.id])
+  const sessionId = hash.s && sessions.some((x) => x.id === hash.s) ? hash.s : (sessions.find((x) => !x.comm) ?? sessions[0])?.id
   /**
    * 🔴 **BH · 알림이 가리키는 세션이 화면 목록에 없으면 목록을 곧바로 새로 받는다** (2026-09-27 Dave · 스크린샷_1759:
    *    *«알림을 클릭하면 해당 폴더봇으로는 가는데, 세션이 여러 개 있을 때 특정 세션으로는 이동을 못해»* — 맥 배너).
@@ -1713,9 +1714,18 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
       {/* 🔴 **대기 메시지는 고칠 수 있어야 한다** (2026-09-14 Dave: «현재 대기 메시지 수정이 안돼»).
           아직 안 보낸 말이다 — 못 고치면 지우고 처음부터 다시 쓰는 수밖에 없었다.
           ⚠ 여기의 ⏎ 는 **고치기 끝**이다(보내기가 아니다) · ⎋ 는 되돌리기. ⛔ 빈 글로 두면 그 줄은 사라진다. */}
-      {queue.map((q, i) => <QueueRow key={i} n={i + 1} text={q}
-        onSave={(v) => onQueue((l) => (v.trim() ? l.map((x, k) => (k === i ? v : x)) : l.filter((_, k) => k !== i)))}
-        onDrop={() => onQueue((l) => l.filter((_, k) => k !== i))} />)}
+      {/* 🔴 **큐 편집은 크게** (2026-10-02 Dave: «현재 큐편집 화면이 너무 별로인데, 큐 편집화면도 키워줘»). 종전에는 한 줄로 잘린 글과
+          12px 한 줄 입력칸이라 긴 말은 읽지도 고치지도 못했다. 이제 줄마다 카드 — 세 줄까지 보이고, 고칠 때는 커지는 글 상자.
+          호스트 대기열(다른 봇이 보낸 말 · `cur.queue`)도 같은 목록에 «봇» 표시로 선다 — 고치고 빼는 길은 호스트로 간다. */}
+      {(cur?.queue?.length ?? 0) + queue.length ? <div className="qlist">
+        <div className="qhead">대기 {(cur?.queue?.length ?? 0) + queue.length}개 · 지금 일이 끝나면 차례로 보내요</div>
+        {(cur?.queue ?? []).map((q, i) => <QueueRow key={`h${i}${q.t}`} n={i + 1} text={q.text} who={q.fromName ?? '다른 봇'}
+          onSave={(v) => { if (cur) void api(`/sessions/${cur.id}/queue`, { body: { i, text: v } }).catch((e) => say((e as Error).message)) }}
+          onDrop={() => { if (cur) void api(`/sessions/${cur.id}/queue`, { body: { i, text: '' } }).catch((e) => say((e as Error).message)) }} />)}
+        {queue.map((q, i) => <QueueRow key={i} n={(cur?.queue?.length ?? 0) + i + 1} text={q}
+          onSave={(v) => onQueue((l) => (v.trim() ? l.map((x, k) => (k === i ? v : x)) : l.filter((_, k) => k !== i)))}
+          onDrop={() => onQueue((l) => l.filter((_, k) => k !== i))} />)}
+      </div> : null}
       {/* 🔴 **입력창의 링크도 아이콘을 갖는다** (2026-09-13 Dave). ⚠ `textarea` 안에는 그림을 못 넣는다 —
           글자만 담는 칸이다. 그래서 쓰는 중인 주소를 **입력칸 위 칩**으로 올린다: 같은 캐시, 같은 아이콘,
           그리고 «이 주소가 맞나» 를 보내기 전에 확인할 수 있다. */}
@@ -1780,22 +1790,41 @@ function LinkChip({ url }: { url: string }) {
  * ⚠ **여기의 ⏎ 는 «고치기 끝»** 이다 — 보내기가 아니다(보내기 계약은 입력칸에 있다).
  * ⚠ ⎋ 는 되돌리기. ⛔ 빈 글로 두고 나가면 그 줄은 **사라진다** — 「지우기」를 따로 찾지 않게.
  */
-function QueueRow({ n, text, onSave, onDrop }: { n: number; text: string; onSave: (v: string) => void; onDrop: () => void }) {
+/**
+ * 대기 말 한 줄 — 카드 (2026-10-02 Dave: «큐 편집화면도 키워줘»).
+ * 보기: 세 줄까지 · 누르면 고치기. 고치기: 글에 맞춰 커지는 글 상자(최대 화면 40%) — ⏎ 는 줄바꿈, **⌘⏎ 저장 · ⎋ 취소**.
+ * ⛔ 빈 글로 저장하면 그 줄은 빠진다. ⚠ 밖을 눌러도(blur) 저장한다 — 고친 말을 잃지 않게.
+ */
+function QueueRow({ n, text, who, onSave, onDrop }: { n: number; text: string; who?: string; onSave: (v: string) => void; onDrop: () => void }) {
   const [edit, setEdit] = useState(false)
   const [v, setV] = useState(text)
-  useEffect(() => { setV(text) }, [text])
-  return <div className="queue">
-    <span>대기 {n}</span>
+  const ta = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => { if (!edit) setV(text) }, [text, edit])
+  const fit = () => { const el = ta.current; if (!el) return; el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight + 2, Math.round(window.innerHeight * 0.4))}px` }
+  useEffect(() => { if (edit) { fit(); const el = ta.current; el?.setSelectionRange(el.value.length, el.value.length) } }, [edit])
+  const save = () => { setEdit(false); if (v !== text) onSave(v) }
+  const cancel = () => { setV(text); setEdit(false) }
+  return <div className={`queue${edit ? ' editing' : ''}`}>
+    <div className="qh">
+      <span className="qn">대기 {n}</span>{who ? <span className="qwho">{who}</span> : null}
+      <span style={{ flex: 1 }} />
+      {edit ? null : <button className="qb" title="고치기" onClick={() => setEdit(true)}><Icon n="edit" size={12} /><span>고치기</span></button>}
+      <button className="qb drop" title="대기열에서 빼기" onClick={onDrop}><Icon n="x" size={12} /><span>빼기</span></button>
+    </div>
     {edit
-      ? <input className="qin" autoFocus value={v} onChange={(e) => setV(e.target.value)}
-          onBlur={() => { setEdit(false); if (v !== text) onSave(v) }}
-          onKeyDown={(e) => {
-            if (e.nativeEvent.isComposing) return
-            if (e.key === 'Enter') { e.preventDefault(); setEdit(false); if (v !== text) onSave(v) }
-            if (e.key === 'Escape') { e.preventDefault(); setV(text); setEdit(false) }
-          }} />
+      ? <>
+          <textarea ref={ta} className="qin" autoFocus value={v} rows={3} onChange={(e) => { setV(e.target.value); fit() }}
+            onBlur={(e) => { if (!(e.relatedTarget as HTMLElement | null)?.closest('.queue.editing')) save() }}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save() }
+              if (e.key === 'Escape') { e.preventDefault(); cancel() }
+            }} />
+          <div className="qbtns"><span className="qhint">⌘⏎ 저장 · ⎋ 취소 · 비우면 빠져요</span><span style={{ flex: 1 }} />
+            <button className="btn ghost" onMouseDown={(e) => e.preventDefault()} onClick={cancel}>취소</button>
+            <button className="btn primary" onMouseDown={(e) => e.preventDefault()} onClick={save}>저장</button></div>
+        </>
       : <button className="tx" title="눌러서 고치기" onClick={() => setEdit(true)}>{text}</button>}
-    <button onClick={onDrop} title="대기열에서 빼기" style={{ color: 'var(--t3)', display: 'inline-flex' }}><Icon n="x" size={11} /></button>
   </div>
 }
 

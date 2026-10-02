@@ -15,7 +15,8 @@ import { CODEX_LOCAL, parseLocalSlash } from '../core/slashLocal'
 import { isAutoSessionName, titleFromText } from '../core/sessionTitle'
 import { isModelRejected } from '../core/codexMap'
 import { autoAllows, fallbackRules, rulesLabel } from '../core/permPolicy'
-import type { Bot, ChatItem, PermissionMode, PermissionRequest, SessionInfo, SessionState } from '../core/types'
+import type { Bot, ChatItem, PermissionMode, PermissionRequest, QueuedMsg, SessionInfo, SessionState } from '../core/types'
+import { compactReason } from '../core/compact'
 import { atomicWrite, dataDir, ensureDir } from './paths'
 
 /**
@@ -227,6 +228,12 @@ export interface SessionRec {
   delegatedFrom?: string
   /** J · 마지막 메시지가 온 기기 — rondo_open/reveal 이 그 기기에만 간다 */
   lastClient?: ClientCtx
+  /** 봇의 «🤝 소통» 세션(봇마다 하나) — 봇끼리 오가는 말을 모두 받는다. 이 세션도 `orch_ask` 를 못 쓴다(고리 막기) */
+  comm?: boolean
+  /** 호스트 대기열 — 다른 봇이 보낸 말이 일하는 중에 오면 여기서 기다렸다가 턴이 끝나면 차례로 나간다 */
+  queue?: QueuedMsg[]
+  /** 마지막 자동 압축 시각 — 압축 뒤 측정값이 늦게 와도 고리가 안 생기게(core/compact) */
+  compactedAt?: number
   id: string
   botId: string
   name: string
@@ -334,7 +341,7 @@ export class SessionManager extends EventEmitter {
   }
   info(r: SessionRec): SessionInfo {
     const w = this.workers.get(r.id)
-    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, inflight: r.inflight, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
+    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, inflight: r.inflight, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, ...(r.comm ? { comm: true } : {}), ...(r.queue?.length ? { queue: r.queue } : {}), activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
   }
   get(id: string): SessionRec | undefined { return this.recs.get(id) }
   /** 볼트 전체의 세션 기록 — 「지난 대화 찾기」 가 훑는다(읽기만) */
@@ -357,9 +364,9 @@ export class SessionManager extends EventEmitter {
   }
   items(id: string): ChatItem[] { return this.recs.get(id)?.items ?? [] }
 
-  create(bot: Bot, name: string, opts: { permissionMode?: PermissionMode; model?: string; effort?: string; routine?: string; vendor?: 'claude' | 'codex'; delegatedFrom?: string } = {}): SessionRec {
+  create(bot: Bot, name: string, opts: { permissionMode?: PermissionMode; model?: string; effort?: string; routine?: string; vendor?: 'claude' | 'codex'; delegatedFrom?: string; comm?: boolean } = {}): SessionRec {
     const id = `s_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-    const r: SessionRec = { id, botId: bot.id, name, cwd: bot.repo ?? bot.abs, cliSessionId: null, state: 'idle', createdAt: Date.now(), lastActivity: Date.now(), items: [], routine: opts.routine, ...(opts.delegatedFrom ? { delegatedFrom: opts.delegatedFrom } : {}), permissionMode: opts.permissionMode ?? ((opts.vendor ?? bot.vendor) === 'codex' ? undefined : this.defaultPermissionMode), vendor: opts.vendor ?? bot.vendor, model: opts.model ?? this.defaults[opts.vendor ?? bot.vendor].model, effort: opts.effort ?? this.defaults[opts.vendor ?? bot.vendor].effort }
+    const r: SessionRec = { id, botId: bot.id, name, cwd: bot.repo ?? bot.abs, cliSessionId: null, state: 'idle', createdAt: Date.now(), lastActivity: Date.now(), items: [], routine: opts.routine, ...(opts.delegatedFrom ? { delegatedFrom: opts.delegatedFrom } : {}), ...(opts.comm ? { comm: true } : {}), permissionMode: opts.permissionMode ?? ((opts.vendor ?? bot.vendor) === 'codex' ? undefined : this.defaultPermissionMode), vendor: opts.vendor ?? bot.vendor, model: opts.model ?? this.defaults[opts.vendor ?? bot.vendor].model, effort: opts.effort ?? this.defaults[opts.vendor ?? bot.vendor].effort }
     this.recs.set(id, r)
     this.persist(r)
     this.emit('sessions', bot.id)
@@ -465,6 +472,86 @@ export class SessionManager extends EventEmitter {
     r.state = next
     this.persist(r)
     this.emit('state', r, prev, shouldNotify(prev, next))
+    // 턴이 끝났다 — 기다리던 말을 내보내거나, 컨텍스트가 크면 압축한다. 상태 알림이 다 나간 뒤에 한다
+    if (next !== 'running' && next !== 'awaiting_input') queueMicrotask(() => this.afterTurn(r))
+  }
+
+  // ── 소통 세션 · 호스트 대기열 · 자동 압축 (2026-10-02 Dave) ─────────────────────────────────
+  /**
+   * 🔴 **봇마다 소통 세션은 하나다** (2026-10-02 Dave: *«각 폴더봇도 소통용 세션이 하나만 되어도 되지 않나»*).
+   * 종전에는 `bot_send`·`orch_ask` 가 올 때마다 «위임 · HH:MM» · «요청 ← 봇» 세션을 새로 열어 폴더마다 세션이 쌓였다.
+   * 이제 봇끼리 오가는 말은 받는 봇의 «🤝 소통» 세션 하나로 온다. 답은 요청 줄 머리(`[요청 ← 이름 · botId · sid]`)가
+   * 가리키는 **물어본 작업 세션**으로 돌아가므로, 여러 봇의 요청이 한 세션에 섞여도 엉키지 않는다.
+   */
+  commOf(bot: Bot, from: string): SessionRec {
+    const have = [...this.recs.values()].find((r) => r.botId === bot.id && r.comm)
+    return have ?? this.create(bot, '🤝 소통', { delegatedFrom: from, comm: true })
+  }
+  /** 지금 말을 넣으면 안 되나 — 일하는 중이거나, CLI 가 답을 기다리는 질문이 걸려 있다(미뤄진 질문만이면 넣어도 된다 · 그 말이 질문을 닫는다) */
+  mustWait(r: SessionRec): boolean {
+    if (r.state === 'running') return true
+    if (r.state !== 'awaiting_input') return false
+    const p = this.pendingOf(r.id)
+    return !(p.length && p.every((x) => x.deferred))
+  }
+  /**
+   * 다른 봇이 보낸 말 — 🔴 **일하는 중이면 큐에서 기다린다** (2026-10-02 Dave: *«기다리는 작업은 현재처럼 큐로 잡아줘»*).
+   * 종전에는 일하는 중에도 CLI 에 바로 밀어 넣어 턴 한가운데 끼어들었다. 이제 턴이 끝나면 들어온 차례대로 나간다(`afterTurn`).
+   * 소통 세션을 오래 쉬었다 다시 쓰면 먼저 압축하고 그 말은 큐에 둔다(`core/compact`).
+   * @returns 'sent' · 'queued'
+   */
+  sendFromBot(r: SessionRec, bot: Bot, msg: QueuedMsg): 'sent' | 'queued' {
+    if (this.mustWait(r) || r.queue?.length) { this.enqueue(r, msg); return 'queued' }
+    const why = r.comm ? compactReason(r, 'before') : null
+    if (why) { this.enqueue(r, msg); this.compact(r, bot, why); return 'queued' }
+    this.send(r, bot, msg.text)
+    return 'sent'
+  }
+  private enqueue(r: SessionRec, msg: QueuedMsg): void {
+    r.queue = [...(r.queue ?? []), msg]
+    this.persist(r); this.emit('sessions', r.botId)
+  }
+  /** 사람이 대기 말을 고치거나 뺀다 — 빈 글이면 뺀다. @returns 남은 대기열 */
+  editQueue(r: SessionRec, i: number, text: string): QueuedMsg[] {
+    const q = [...(r.queue ?? [])]
+    if (i < 0 || i >= q.length) throw new Error('없는 대기 말이에요')
+    if (text.trim()) q[i] = { ...q[i], text }; else q.splice(i, 1)
+    r.queue = q.length ? q : undefined
+    this.persist(r); this.emit('sessions', r.botId)
+    return q
+  }
+  /** 이 세션의 봇을 찾는 길 — 호스트가 꽂는다(대기열을 내보낼 때 워커를 띄우려면 봇이 필요하다) */
+  botOf: (botId: string) => Bot | undefined = () => undefined
+  /** 턴이 끝났다 — ① 대기 말이 있으면 하나 내보낸다 ② 없으면 컨텍스트가 클 때 압축한다 */
+  afterTurn(r: SessionRec): void {
+    if (!this.recs.has(r.id) || r.state === 'running' || r.state === 'awaiting_input') return
+    const bot = this.botOf(r.botId); if (!bot) return
+    if (r.queue?.length) {
+      const [m, ...rest] = r.queue; r.queue = rest.length ? rest : undefined
+      this.persist(r)
+      this.send(r, bot, m.text)
+      return
+    }
+    // ⚠ 잠든 세션은 압축하려고 깨우지 않는다 — 살아 있는 워커가 막 턴을 끝냈을 때만
+    const why = this.workers.get(r.id)?.alive ? compactReason(r, 'after') : null
+    if (why) this.compact(r, bot, why)
+  }
+  /** 호스트가 다시 뜬 뒤 — 남아 있던 대기열을 내보낸다 */
+  drainAll(): void { for (const r of this.recs.values()) if (r.queue?.length) this.afterTurn(r) }
+  /**
+   * 자동 압축 — `/compact` 를 사람 말 대신 **시스템 줄**로 적고 보낸다(대화에 사람이 안 한 말이 서지 않게).
+   * 압축 뒤 컨텍스트 측정값은 다음 턴에 새로 온다 — 그때까지 옛 값으로 또 압축하지 않게 지운다.
+   */
+  compact(r: SessionRec, bot: Bot, why: string): void {
+    const w = this.ensureWorker(r, bot)
+    r.compactedAt = Date.now(); r.ctx = undefined
+    this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `자동 압축 — ${why}. 지난 대화를 요약해 토큰을 줄여요.` })
+    this.turnAt.set(r.id, Date.now())
+    w.send('/compact')
+    r.turnStartedAt = Date.now()
+    this.setActivity(r, '압축하는 중', true)
+    this.setState(r, { kind: 'user_sent' })
+    this.persist(r)
   }
 
   /**

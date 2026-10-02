@@ -141,6 +141,14 @@ rl.on('line', (raw) => {
     }, 50)
     return
   }
+  // 자동 압축(2026-10-02) — 실 CLI 처럼 경계 줄과 결과를 낸다. 잠깐 걸려야 «압축 중에 온 말은 큐» 를 잴 수 있다
+  if (text.trim() === '/compact') {
+    setTimeout(() => {
+      say({ type: 'system', subtype: 'compact_boundary', compact_metadata: { trigger: 'manual', pre_tokens: 150000 } })
+      say({ type: 'result', subtype: 'success', duration_ms: 400, total_cost_usd: 0.001 })
+    }, 400)
+    return
+  }
   // 「대기열」 검사용 — 한 턴이 **느리게** 돌아야 그 사이에 보낸 말이 대기열에 쌓인다
   if (/느린일/.test(text)) {
     setTimeout(() => {

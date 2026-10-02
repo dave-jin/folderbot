@@ -120,6 +120,10 @@ export interface SessionInfo {
   pending: PermissionRequest[]
   lastError?: string
   routine?: string
+  /** 봇의 «🤝 소통» 세션 — 봇끼리 오가는 말은 모두 여기로 온다(봇마다 하나 · 2026-10-02) */
+  comm?: boolean
+  /** 호스트가 들고 있는 대기 말 — 다른 봇이 보낸 말이 이 세션이 일하는 중에 오면 끝날 때까지 기다린다 */
+  queue?: QueuedMsg[]
   /** 지금 하는 일 한 줄 (도구명 · 요약 / 생각 중 / 답 쓰는 중) */
   activity?: string
   /**
@@ -168,6 +172,9 @@ export interface HarnessRow {
   by: Record<HarnessScope, number>
 }
 export interface HarnessDetail extends HarnessRow { skillList: HarnessItem[]; mcpList: HarnessItem[] }
+
+/** 호스트 대기열의 말 한 개 — `from` 은 보낸 봇 id */
+export interface QueuedMsg { text: string; from: string; fromName?: string; t: number }
 
 export interface PermissionRequest {
   requestId: string

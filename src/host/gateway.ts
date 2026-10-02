@@ -763,6 +763,8 @@ export class Gateway {
       if (!sub && m === 'DELETE') { h.sessions.remove(r.id); return json(200, { ok: true }) }
       if (sub === 'chat') return json(200, { info: h.sessions.info(r), items: r.items.slice(-800) })
       if (sub === 'send' && m === 'POST') { const b = await body(); h.sendToBot(bot, String(b.text), r.id, undefined, undefined, { client: clientOf(who, b.client) }); return json(200, { ok: true }) }
+      // 호스트 대기열(다른 봇이 보낸 말) 고치기·빼기 — 빈 글이면 뺀다 (2026-10-02)
+      if (sub === 'queue' && m === 'POST') { const b = await body(); try { return json(200, { queue: h.sessions.editQueue(r, Number(b.i), String(b.text ?? '')) }) } catch (e) { return json(400, { error: (e as Error).message }) } }
       if (sub === 'permission' && m === 'POST') {
         const b = await body()
         // 🔴 질문(AskUserQuestion)은 «허용» 으로 닫지 않는다 — 답은 `/ask` 로 온다. 허용을 받아 주면 답 없이 넘어가거나(보통 질문)

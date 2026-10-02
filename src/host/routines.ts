@@ -1,3 +1,4 @@
+import { sessionUnread } from '../core/unread'
 import { Cron } from 'croner'
 import type { Bot, PermissionMode, RoutineDef } from '../core/types'
 import { cronOk, describeCron } from '../core/when'
@@ -89,11 +90,12 @@ export function approveToMode(a: RoutineDef['approve']): PermissionMode {
  */
 export const ROUTINE_KEEP = 2
 export function routinesToDrop(
-  sessions: { id: string; routine?: string; state: string; lastActivity: number }[],
+  sessions: { id: string; routine?: string; state: string; lastActivity: number; lastReplyAt?: number; readAt?: number }[],
   keep = ROUTINE_KEEP,
 ): string[] {
   const mine = sessions.filter((s) => s.routine)
-  const busy = (s: { state: string }) => s.state === 'running' || s.state === 'awaiting_input'
+  // 🔴 안 읽은 답도 걷지 않는다 (2026-10-02) — 사람이 아직 못 본 결과를 지우면 루틴이 돈 의미가 없다
+  const busy = (s: { state: string; lastReplyAt?: number; readAt?: number }) => s.state === 'running' || s.state === 'awaiting_input' || sessionUnread(s.lastReplyAt, s.readAt)
   const idle = mine.filter((s) => !busy(s)).sort((a, b) => b.lastActivity - a.lastActivity)
   const room = Math.max(0, keep - mine.filter(busy).length)
   return idle.slice(room).map((s) => s.id)
