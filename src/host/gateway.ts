@@ -359,6 +359,8 @@ export class Gateway {
         for (const x of h.sessions.list(botId)) h.notifier.markReadBySession(x.id)
         return json(200, { ok: true, read: n })
       } }
+    /* BL · 🔔 「모두 읽음」 — 모든 봇의 세션과 알림을 함께 읽음으로(알림만 닫으면 레일 링이 남는다) */
+    if (p === '/api/read-all' && m === 'POST') { const n = h.sessions.readEverything(); h.notifier.markRead(undefined); return json(200, { ok: true, read: n }) }
     if (p === '/api/notifications/read' && m === 'POST') { const b = await body(); h.notifier.markRead(Array.isArray(b.ids) ? (b.ids as string[]) : undefined); return json(200, { ok: true }) }
     if (p === '/api/push/subscribe' && m === 'POST') { const b = await body(); h.notifier.addSub(b.sub as { endpoint: string; keys: { p256dh: string; auth: string } }, device); return json(200, { ok: true }) }
     if (p === '/api/push/test' && m === 'POST') { h.notifier.emit('done', 'orch', 'Folder Bot', '푸시가 도착하면 성공이에요', undefined, { mac: false }); return json(200, { ok: true }) }

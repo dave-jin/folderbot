@@ -450,6 +450,23 @@ try {
     ok('소통 세션 — 봇마다 하나 · 일하는 중에 온 봇의 말은 큐 → 턴 끝에 차례로 · 소통 세션은 되묻지 못한다')
   }
   /**
+   * 🔴 **BL · 🔔 「모두 읽음」 = 모든 봇** (2026-10-07 Dave: «한번에 전체 읽음 표시 하고 싶어»).
+   *    종전 🔔 「모두 읽음」 은 알림만 닫아 레일 링이 그대로 남았다. 이제 모든 봇의 세션까지 읽음으로 바꾼다.
+   */
+  {
+    const unread = (xs) => xs.filter((x) => x.lastReplyAt && x.lastReplyAt > (x.readAt ?? 0))
+    const all = async () => (await Promise.all((await api('/bots')).map(async (b) => ({ b: b.name, xs: await api(`/bots/${b.id}/sessions`) }))))
+    const before = (await all()).filter((g) => unread(g.xs).length)
+    if (!before.length) fail('BL: 안 읽은 세션이 없어 「모두 읽음」 을 잴 수 없다 — 검사가 헛돈다')
+    const r = await api('/read-all', {})
+    if (!r.ok || r.read < before.reduce((n, g) => n + unread(g.xs).length, 0)) fail('🔴 BL: 「모두 읽음」 이 세션을 다 못 읽었다 ' + JSON.stringify(r))
+    const left = (await all()).filter((g) => unread(g.xs).length)
+    if (left.length) fail('🔴 BL: 「모두 읽음」 뒤에도 링이 남는 봇 ' + JSON.stringify(left.map((g) => g.b)))
+    for (const g of await all()) for (const x of g.xs) if (x.readAt && x.lastReplyAt && x.readAt > x.lastReplyAt) fail('BL: 읽은 지점이 마지막 답보다 뒤다 ' + JSON.stringify(x))
+    if ((await api('/notifications')).some((n) => !n.read)) fail('BL: 「모두 읽음」 뒤에도 안 읽은 알림이 남았다')
+    ok(`BL 🔔 모두 읽음 — 링 켜진 봇 ${before.length} → 0 · 세션 ${r.read}개 · 알림도 함께`)
+  }
+  /**
    * 🔴 BH · orch_ask — 폴더 봇이 오케스트레이터에게 직접 요청하고, 답은 원래 세션으로 돌아온다 (2026-09-27 Dave)
    *    받는 쪽은 오케스트레이터로 고정 · 위임 세션·오케스트레이터 자신은 못 쓴다
    */

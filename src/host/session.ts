@@ -426,6 +426,16 @@ export class SessionManager extends EventEmitter {
     if (n) this.emit('sessions', botId)
     return n
   }
+  /**
+   * 🔴 **BL · 모든 봇의 세션을 한 번에 읽음으로** (2026-10-07 Dave: «한번에 전체 읽음 표시 하고 싶어» → 🔔 「모두 읽음」 을 넓히기로 고름).
+   *    종전 🔔 「모두 읽음」 은 알림만 닫아서 레일의 링이 그대로 남았다. 읽은 지점 원칙은 `readAll` 과 같다.
+   * @returns 새로 읽음이 된 세션 수
+   */
+  readEverything(): number {
+    let n = 0
+    for (const botId of new Set([...this.recs.values()].map((r) => r.botId))) n += this.readAll(botId)
+    return n
+  }
   rename(id: string, name: string): void { const r = this.recs.get(id); if (!r) return; r.name = name; r.named = true; this.persist(r); this.emit('sessions', r.botId) }
   /**
    * 🔴 **첫 말이 제목이 된다** (2026-09-15 Dave: «첫 채팅이 진행되면 그에 맞는 채팅 제목을 자동으로»).

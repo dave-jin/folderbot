@@ -375,7 +375,7 @@ export function NotifyCenter({ onClose, onJump }: { onClose: () => void; onJump:
   const [pushOn, setPushOn] = useState<boolean | null>(null)
   const list = s.notifications.filter((n) => !only || n.kind === 'awaiting')
   const botOf = (id: string) => s.bots.find((b) => b.id === id)
-  const readAll = async () => { await api('/notifications/read', { body: {} }); await refresh() }
+  const readAll = async () => { await api('/read-all', { body: {} }); await refresh() }   // BL · 알림 + 모든 봇의 세션
   const enablePush = async () => { setPushOn(await subscribePush(s.vapidPublic, navigator.userAgent.slice(0, 30))) }
   return <>
     <div className="backdrop" onClick={onClose} />
