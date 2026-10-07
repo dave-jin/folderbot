@@ -251,6 +251,6 @@ export function decorateCode(root: HTMLElement, copy: (s: string) => Promise<boo
     // ⚠ `pre` **안**에 넣지 않는다 — 그러면 코드 글자에 섞여 복사·선택에 딸려 온다
     pre.parentElement?.insertBefore(Object.assign(document.createElement('div'), { className: 'cbwrap' }), pre)
     const wrap = pre.previousElementSibling as HTMLElement
-    wrap.append(bar, pre)
+    wrap.append(pre, bar)   // BN · 머리줄은 pre **뒤** — iOS 가 겹쳐 그리는 스크롤 상자 밑에 깔리지 않게(위치는 absolute 라 그대로 위)
   }
 }

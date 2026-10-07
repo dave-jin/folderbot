@@ -1723,10 +1723,16 @@ try {
                   const bar = document.querySelector('.md .cbbar'); if (!bar) return null
                   const b = bar.querySelector('.cp'); const cs = getComputedStyle(bar)
                   const r = b ? b.getBoundingClientRect() : null
-                  return { op: Number(cs.opacity), pe: cs.pointerEvents, h: r ? Math.round(r.height) : 0, txt: b ? (b.textContent ?? '') : '' }
+                  b?.scrollIntoView({ block: 'center' })   // 화면 밖이면 elementFromPoint 가 null 이다 — 먼저 보이는 자리로
+                  const rr = b ? b.getBoundingClientRect() : null
+                  const top = rr ? document.elementFromPoint(rr.left + rr.width / 2, rr.top + rr.height / 2) : null
+                  const hit = top
+                  return { op: Number(cs.opacity), pe: cs.pointerEvents, h: r ? Math.round(r.height) : 0, txt: b ? (b.textContent ?? '') : '', hit: !!hit && (hit === b || b.contains(hit)), after: bar.previousElementSibling?.tagName === 'PRE', z: Number(cs.zIndex) || 0 }
                 })
                 if (!cb) fail('AR: 코드 블록이 화면에 없어 복사 단추를 못 쟀다 — 검사가 헛돈다')
                 if (cb.op < 1 || cb.pe === 'none') fail('🔴 AR: 폰에서 코드 복사 단추가 안 보이거나 안 눌린다(올려놓기가 없는 기기다) ' + JSON.stringify(cb))
+                // BN (2026-10-07 · IMG_2311) — iPhone 에서 단추가 코드 상자 밑에 깔렸다. 누른 자리에 단추가 있고, 머리줄은 pre 뒤 · 쌓임 순서가 있다
+                if (!cb.hit || !cb.after || cb.z < 1) fail('🔴 BN: 코드 복사 단추가 코드 상자에 가려질 수 있다 ' + JSON.stringify(cb))
                 if (cb.h < 30) fail('🔴 AR: 코드 복사 단추가 손가락으로 누르기엔 작다(보이는 크기 30px + 누를 넓이 44px 계약) ' + JSON.stringify(cb))
                 // 폴더 탭에 루틴이 있나
                 const ft = await hp.$('.tabbar [data-tab="files"]'); if (ft) { await ft.click(); await wait(600) }

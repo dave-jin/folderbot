@@ -1152,7 +1152,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .md .mmderr { font-size:11.5px; color:var(--wait); margin:-4px 0 8px }
 .md .katex-display { margin:8px 0; overflow:auto hidden } .md .katex { font-size:1.06em } .md .mathsrc { color:var(--t2) }
 .md .cbwrap pre { margin:0 }
-.cbbar { position:absolute; right:6px; top:5px; display:flex; align-items:center; gap:8px; opacity:0; transition:opacity .12s; pointer-events:none }
+.cbbar { position:absolute; right:6px; top:5px; z-index:2; display:flex; align-items:center; gap:8px; opacity:0; transition:opacity .12s; pointer-events:none }
 .md .cbwrap:hover .cbbar { opacity:1; pointer-events:auto }
 .cbbar .lg { font-family:var(--mono); font-size:10.5px; color:var(--t3); text-transform:uppercase; letter-spacing:.04em }
 .cbbar .cp { font-size:11px; line-height:1.6; color:var(--t2); background:var(--bg2); border:1px solid var(--line2); border-radius:5px; padding:0 7px }
@@ -1162,6 +1162,10 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
       폰에서는 있으나 마나였다(보이지도, 눌리지도 않았다).
    ⚠ 「폰이냐」가 아니라 **「올려놓을 수 있느냐」**로 가른다(`hover: none`) — 터치 노트북·태블릿도 같이 맞는다.
    ⚠ 늘 보이면 첫 줄을 가리므로 그만큼 코드 위를 띄운다. */
+/* 🔴 **BN · iPhone 에서 단추가 코드 상자 밑에 깔렸다** (2026-10-07 Dave: «모바일에서 코드 부분 복사 버튼이 없어» · IMG_2311).
+      AR 의 빈 자리(padding-top 30px)는 보였는데 단추만 없었다 — iOS WebKit 은 가로 스크롤 상자(`pre { overflow-x:auto }`)를
+      따로 겹쳐 그리고, 그때 DOM 에서 **앞에 있던** 머리줄이 그 밑으로 들어간다(Chromium 은 안 그래서 스모크가 못 잡았다).
+   ⇒ 머리줄에 쌓임 순서(z-index)를 주고, DOM 에서도 `pre` **뒤**에 둔다(`previews.ts decorateCode`). */
 @media (hover: none) {
   .md .cbbar { opacity:1; pointer-events:auto }
   .md .cbwrap pre { padding-top:30px }
