@@ -29,18 +29,41 @@ interface Props {
 
 const TOKEN = /@([^\s@]+)/g
 
-/** DOM → 글. 평평한 자식만 본다: 글자 · <br>(줄바꿈) · 칩(`@이름`). 맨 끝의 <br> 은 크롬이 두는 자리표라 셈하지 않는다 */
+const BLOCK = new Set(['DIV', 'P', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'PRE', 'TR', 'UL', 'OL'])
+/**
+ * DOM → 글. 평소에는 평평하다: 글자 · <br>(줄바꿈) · 칩(`@이름`). 맨 끝의 <br> 은 크롬이 두는 자리표라 셈하지 않는다.
+ * 🔴 **BM-1 · 낯선 요소 속 줄바꿈을 살린다** (2026-10-07 Dave · IMG_2304). 붙여넣기·폰 키보드가 줄을 `<div>`·`<p>` 로 나누거나
+ *    `<span>…<br>…</span>` 로 감싸 넣으면, 종전에는 그 요소의 `textContent` 만 이어 붙여 **줄바꿈이 통째로 사라진 채 보내졌다**
+ *    (실제로 «정리:• 크진 않지만 …• 이번 행사의 …» 가 한 줄로 저장됐다). 이제 안까지 내려가며 블록은 줄로, <br> 은 줄바꿈으로 센다.
+ *    목록 칸(<li>)은 마크다운 목록(`- `)으로 남긴다. 화면은 다음 그리기(`render`)에서 다시 평평해진다.
+ */
 export function serialize(el: HTMLElement): string {
   let out = ''
-  const kids = Array.from(el.childNodes)
-  kids.forEach((n, i) => {
-    if (n.nodeType === Node.TEXT_NODE) out += n.textContent ?? ''
-    else if (n instanceof HTMLElement) {
-      if (n.dataset.chip !== undefined) out += `@${n.dataset.chip}`
-      else if (n.tagName === 'BR') { if (i < kids.length - 1) out += '\n' }
-      else out += (n.textContent ?? '')   // 붙여넣기로 들어온 낯선 요소 — 글자만 남긴다
-    }
-  })
+  let pendingNL = false
+  const put = (s: string) => { if (!s) return; if (pendingNL) { if (!out.endsWith('\n')) out += '\n'; pendingNL = false } out += s }
+  const walk = (parent: Node, top: boolean) => {
+    const kids = Array.from(parent.childNodes)
+    kids.forEach((n, i) => {
+      if (n.nodeType === Node.TEXT_NODE) { put(n.textContent ?? ''); return }
+      if (!(n instanceof HTMLElement)) return
+      if (n.dataset.chip !== undefined) { put(`@${n.dataset.chip}`); return }
+      if (n.tagName === 'BR') {
+        // 맨 끝 <br> 은 자리표 — 맨 위에서는 늘, 블록 안에서는 앞에 글이 있을 때
+        if (i === kids.length - 1 && (top || i > 0)) return
+        pendingNL = false; out += '\n'; return
+      }
+      if (BLOCK.has(n.tagName)) {
+        if (out && !out.endsWith('\n')) out += '\n'
+        pendingNL = false
+        if (n.tagName === 'LI') out += n.parentElement?.tagName === 'OL' ? `${Array.from(n.parentElement.children).indexOf(n) + 1}. ` : '- '
+        walk(n, false)
+        pendingNL = true
+        return
+      }
+      walk(n, false)   // <span>·<b> 같은 글 속 요소 — 안의 글과 줄바꿈을 그대로
+    })
+  }
+  walk(el, true)
   return out
 }
 
@@ -164,6 +187,20 @@ export const InlineInput = forwardRef<InlineInputHandle, Props>(function InlineI
     if (pos >= 0) placeCaret(e, Math.min(pos, latest.current.value.length))
   }
   useEffect(render, [value, chips])
+  /*
+   * BM-1 · 폰 키보드의 줄 넣기도 우리가 넣는다 — 한글 조합 중에 누른 ⏎ 는 keydown 이 IME 몫이라 아래 onKeyDown 을 지나쳐
+   *    브라우저가 `<div>` 를 만든다(insertParagraph). 그 길을 `\n` 하나로 바꾼다. 조합 중이면 확정 뒤에 넣는다.
+   */
+  useEffect(() => {
+    const e = el.current; if (!e) return
+    const f = (ev: InputEvent) => {
+      if (ev.inputType !== 'insertParagraph' && ev.inputType !== 'insertLineBreak') return
+      ev.preventDefault()
+      if (composing.current) nlAfterCompose.current = true; else insertText('\n')
+    }
+    e.addEventListener('beforeinput', f)
+    return () => e.removeEventListener('beforeinput', f)
+  })
   useEffect(() => () => { for (const r of roots.current.values()) r.unmount() }, [])
 
   const emit = () => { const e = el.current; if (!e) return; const t = serialize(e); e.dataset.value = t; latest.current.onChange(t, caretOf(e)) }

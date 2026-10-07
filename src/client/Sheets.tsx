@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
 import type { Bot, NotifyEvent, RoutineDef } from '../core/types'
 import { notePlain } from '../core/mdPlain'
 import { api, setToken, subscribePush } from './api'
@@ -105,13 +106,15 @@ function resolveWiki(root: HTMLElement, names: string[], ok: Record<string, { re
   }
 }
 
-export function Md({ text, streaming, botId, onPath, onDir }: { text: string; streaming?: boolean; botId?: string; onPath?: (rel: string) => void; onDir?: (rel: string) => void }) {
+/** 글 속 자리 표시 — `Md` 의 `chips` 가 이 글자를 찾아 그 자리에 노드를 세운다. 마크다운이 건드리지 않는 글자만 쓴다 */
+export const chipMark = (i: number) => `FBCHIP${i}X`
+export function Md({ text, streaming, botId, onPath, onDir, user, chips }: { text: string; streaming?: boolean; botId?: string; onPath?: (rel: string) => void; onDir?: (rel: string) => void; user?: boolean; chips?: ReactNode[] }) {
   /**
    * 수식 (루프 10/10) — `$…$` 를 marked 보다 먼저 걷어 내고(core/math), KaTeX 가 오면 끼워 넣는다.
    * ⚠ KaTeX 가 아직 안 왔으면 원문 `$…$` 이 그대로 보인다 — 빈칸보다 낫다. 오면 다시 그린다.
    */
   const [katex, setKatex] = useState<Parameters<typeof renderMath>[0] | null>(null)
-  const html = useMemo(() => (streaming ? renderStreaming(text) : renderMarkdown(text, katex ? renderMath(katex) : null)), [text, katex, streaming])
+  const html = useMemo(() => (streaming ? renderStreaming(text) : renderMarkdown(text, katex ? renderMath(katex) : null, !!user)), [text, katex, streaming, user])
   useEffect(() => { if (!katex && extractMath(text).chunks.length) void loadKatex().then(setKatex).catch(() => {}) }, [text, katex])
   const ref = useRef<HTMLDivElement>(null)
   /**
@@ -121,7 +124,13 @@ export function Md({ text, streaming, botId, onPath, onDir }: { text: string; st
    * ⚠ `marked` 는 `target` 을 안 달아 준다 — 그린 뒤에 우리가 단다. 데스크톱 셸의
    *    `setWindowOpenHandler` 가 이 `_blank` 를 받아 기본 브라우저로 넘긴다(desktop/main.js).
    */
-  useEffect(() => {
+  /*
+   * 🔴 **BM-3 · 그리기 전에 꾸민다** (2026-10-07 Dave: «코드블록 … 채팅이 생성될 때 채팅창이 흔들리는 이슈가 여전히»).
+   *    스트리밍 중에는 글이 올 때마다 innerHTML 이 통째로 바뀐다. 꾸미기를 useEffect(그린 **뒤**)에서 하면 한 프레임은
+   *    코드블록 머리(언어·복사)·링크 박스·파비콘 자리 없이 그려졌다가 다음 프레임에 붙어 **높이가 16px 줄었다 늘었다**(실측 `test/repro-codeshake.mjs`).
+   *    useLayoutEffect 는 그리기 전에 돈다 — 화면에는 꾸민 판만 나간다.
+   */
+  useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
     for (const a of el.querySelectorAll<HTMLAnchorElement>('a[href^="http"]')) { a.target = '_blank'; a.rel = 'noreferrer noopener' }
@@ -137,6 +146,33 @@ export function Md({ text, streaming, botId, onPath, onDir }: { text: string; st
     decorateCode(el, copyText)   // 코드 블록 — 언어 이름 · 복사 단추 (B3)
     if (!streaming) void renderMermaid(el).catch(() => {})   // ```mermaid → 그림 (루프 10/10) · 답이 끝난 뒤에만
   }, [html, streaming])
+  /*
+   * BM-1 · 내 말 속 파일 칩(AW) — 마크다운으로 그린 뒤 자리 표시(`chipMark`)를 찾아 그 자리에 칩을 세운다.
+   * ⚠ 칩은 React 노드라 innerHTML 에 못 넣는다 — 자리마다 작은 루트를 하나씩 둔다(입력창 `InlineInput` 과 같은 방식).
+   */
+  const chipsRef = useRef(chips); chipsRef.current = chips
+  useLayoutEffect(() => {
+    const el = ref.current
+    const chips = chipsRef.current   // ⚠ 칩 노드는 그릴 때마다 새로 만들어진다 — 글(html)이 바뀔 때만 다시 세운다
+    if (!el || !chips?.length) return
+    const roots: Array<[HTMLSpanElement, Root, string]> = []
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+    const hits: Text[] = []
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) if (/FBCHIP\d+X/.test(n.textContent ?? '')) hits.push(n as Text)
+    for (const t of hits) {
+      const frag = document.createDocumentFragment()
+      for (const part of (t.textContent ?? '').split(/(FBCHIP\d+X)/)) {
+        const m = /^FBCHIP(\d+)X$/.exec(part)
+        if (!m || !chips[Number(m[1])]) { if (part) frag.append(part); continue }
+        const span = document.createElement('span'); span.className = 'uchip'
+        const r = createRoot(span); r.render(chips[Number(m[1])]); roots.push([span, r, part])
+        frag.append(span)
+      }
+      t.replaceWith(frag)
+    }
+    // 되돌릴 때는 자리 표시 글자를 제자리에 둔다 — 같은 html 로 다시 돌면 그 글자를 또 찾아야 한다
+    return () => { const rs = roots.splice(0); for (const [span, , mark] of rs) span.replaceWith(mark); setTimeout(() => { for (const [, r] of rs) r.unmount() }) }
+  }, [html])
   useEffect(() => {
     const el = ref.current
     if (!el || !botId || !onPath || streaming) return

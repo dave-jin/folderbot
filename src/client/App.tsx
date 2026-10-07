@@ -5,7 +5,7 @@ import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
 import { holdHeader, holdLine, holderOf, type Holder } from '../core/waiting'
 import { cliNeedsUpdate, cliVersionShort, cliUpdateLine } from '../core/cliUpdate'
 import { notePlain } from '../core/mdPlain'
-import { AskHost, ConfirmHost, DiffHost, FolderPicker, Md, NotifyCenter, Onboarding, Pairing, RoutineSheet, Settings, askConfirm, askName, showDiff, useToast } from './Sheets'
+import { AskHost, ConfirmHost, DiffHost, FolderPicker, Md, NotifyCenter, chipMark, Onboarding, Pairing, RoutineSheet, Settings, askConfirm, askName, showDiff, useToast } from './Sheets'
 import { AgentPickHost, pickAgent } from './AgentPick'
 import type { SecId } from './Settings'
 import { VendorMark } from './Brand'
@@ -1918,20 +1918,25 @@ function Item({ it, bot, items, onFile, onReveal, onDrill, state, say, isLastAss
        * ⚠ 아래 줄을 통째로 없애지 않는 이유 — `+` 로 붙이고 글에는 `@` 로 안 부른 첨부도 있다. 그걸 지우면 **무엇을
        *    붙였는지가 화면에서 사라진다.** 보통은(전부 글 속에 있으면) 아래 줄이 아예 안 생긴다.
        */
-      const parts: ReactNode[] = []
+      /*
+       * 🔴 **BM-1 · 내 말도 마크다운으로** (2026-10-07 Dave: «채팅창 안에서도 기본적인 마크다운 포맷이 적용되었으면 좋겠고 …
+       *    이미 보내진 채팅 안에서도 그대로 반영»). 종전에는 글자 그대로(pre-wrap) 그려서 목록·굵게·링크·코드가 안 보였고
+       *    링크에 파비콘도 없었다. 봇의 답과 같은 `Md` 로 그린다 — 화면에서 그리므로 **지난 메시지도 그대로** 바뀐다.
+       *    글 속 `@이름` 칩(AW)은 자리 표시(`chipMark`)로 바꿔 두고 `Md` 가 그 자리에 칩을 세운다.
+       */
+      const chips: ReactNode[] = []
       const inline = new Set<string>()
+      let mdText = body
       if (files.length) {
-        const re = /@([^\s@]+)/g; let last = 0; let m: RegExpExecArray | null
-        while ((m = re.exec(body))) {
-          const f = files.find((x) => x.name === m![1]); if (!f) continue
-          parts.push(body.slice(last, m.index))
-          parts.push(<FileChip key={`m${m.index}`} abs={f.abs} dir={f.dir} botAbs={bot.abs} botId={bot.id} onClick={() => openRef(f)} />)
-          inline.add(f.abs); last = m.index + m[0].length
-        }
-        parts.push(body.slice(last))
+        mdText = body.replace(/@([^\s@]+)/g, (whole, name: string) => {
+          const f = files.find((x) => x.name === name); if (!f) return whole
+          inline.add(f.abs)
+          chips.push(<FileChip abs={f.abs} dir={f.dir} botAbs={bot.abs} botId={bot.id} onClick={() => openRef(f)} />)
+          return chipMark(chips.length - 1)
+        })
       }
       const rest = files.filter((f) => !inline.has(f.abs))
-      return <div className={`umsg ${isLastUser ? 'last' : ''}`} data-id={it.id} ref={isLastUser ? userRef : undefined}>{/* J-4 · 어느 기기에서 보냈나 — 호스트가 아닌 기기만 표시 */}{it.from && !it.from.main ? <span className="dev" title={`${it.from.device} 에서 보냄`}><Icon n={it.from.tier === 'phone' ? 'phone' : 'panel'} size={10} />{it.from.tier === 'phone' ? '폰' : '원격'} · {it.from.device}</span> : null}{files.length ? parts : it.text}{rest.length ? <div className="files uatt">{rest.map((f, i) => <FileChip key={`a${i}`} abs={f.abs} dir={f.dir} botAbs={bot.abs} botId={bot.id} onClick={() => openRef(f)} />)}</div> : null}</div>
+      return <div className={`umsg ${isLastUser ? 'last' : ''}`} data-id={it.id} ref={isLastUser ? userRef : undefined}>{/* J-4 · 어느 기기에서 보냈나 — 호스트가 아닌 기기만 표시 */}{it.from && !it.from.main ? <span className="dev" title={`${it.from.device} 에서 보냄`}><Icon n={it.from.tier === 'phone' ? 'phone' : 'panel'} size={10} />{it.from.tier === 'phone' ? '폰' : '원격'} · {it.from.device}</span> : null}<Md text={mdText} user chips={chips} botId={bot.id} onPath={onFile} onDir={onReveal} />{rest.length ? <div className="files uatt">{rest.map((f, i) => <FileChip key={`a${i}`} abs={f.abs} dir={f.dir} botAbs={bot.abs} botId={bot.id} onClick={() => openRef(f)} />)}</div> : null}</div>
     }
     case 'assistant': return <div className="amsg"><Md text={it.text || ' '} streaming={!!it.streaming} botId={bot.id} onPath={onFile} onDir={onReveal} />{/* 답 아래 줄 — 🔴 **아이콘만** (2026-09-13 Dave: «복사 및 기능들을 아이콘으로»). 글자를 빼면
             답과 답 사이가 조용해지고, 무엇을 하는지는 툴팁이 말한다. ⚠ 시각은 남긴다(언제 온 답인지) */}

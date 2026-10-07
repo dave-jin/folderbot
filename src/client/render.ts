@@ -1,19 +1,33 @@
-import { marked } from 'marked'
+import { Marked, marked, type MarkedExtension } from 'marked'
 import { unlinkFileMailto } from '../core/paths'
 import { extractMath, fillMath, type MathChunk } from '../core/math'
 import { expandWikilinks } from '../core/wikilinks'
 import { mdBlocks } from '../core/mdBlocks'
 
 marked.setOptions({ gfm: true, breaks: true })
+/**
+ * 🔴 **BM · 취소선은 `~~` 두 개일 때만** (2026-10-07). GFM 은 `~` 하나도 취소선으로 읽어서 «3~4일, 5~6명» 이
+ *    «3<del>4일, 5</del>6명» 으로 그어졌다 — 한국어에서 `~` 는 범위 표시다. 하나짜리는 글자로 둔다.
+ * ⚠ `false` 를 돌려주면 marked 가 원래 해석기로 넘긴다(`~~` 는 그쪽이 그린다). `undefined` 는 «취소선 아님».
+ */
+const TILDE: MarkedExtension = { tokenizer: { del(src: string) { return src.startsWith('~~') ? false : undefined } } }
+marked.use(TILDE)
+/**
+ * 🔴 **BM-1 · 내 말도 마크다운으로** (2026-10-07 Dave: «채팅창 안에서도 기본적인 마크다운 포맷이 적용되었으면»).
+ *    봇의 답과 같은 해석(줄바꿈 = 줄바꿈 · 목록 · 굵게 · 코드 · 링크)이되, **쓴 HTML 은 글자로** 보인다 —
+ *    내 말에는 다른 봇이 보낸 말(소통 세션)과 붙여 넣은 글이 섞이므로 `<img onerror>` 같은 것을 그대로 심지 않는다.
+ */
+const escHtml = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const userMarked = new Marked({ gfm: true, breaks: true }, TILDE, { renderer: { html(t: { text: string }) { return escHtml(t.text) } } })
 
 /**
  * 🔴 **마크다운 → HTML 은 이 한 곳** (K-1 · 2026-09-19). 채팅(`Md`)과 문서 창(인쇄 사본)이 같은 길을 지난다 —
  *    수식 걷어 내기(core/math) → 위키링크(core/wikilinks) → marked → 수식 끼우기. 같은 입력이면 같은 출력이다.
  */
-export function renderMarkdown(text: string, math: ((c: MathChunk) => string) | null = null): string {
+export function renderMarkdown(text: string, math: ((c: MathChunk) => string) | null = null, user = false): string {
   const m = extractMath(text)
   /* AP · 마크다운이 `이름@2x.png` 을 메일로 보고 링크로 감싼다 — 파일 이름이면 되돌린다(`core/paths`) */
-  const h = unlinkFileMailto(marked.parse(expandWikilinks(m.text)) as string)
+  const h = unlinkFileMailto((user ? userMarked : marked).parse(expandWikilinks(m.text)) as string)
   return fillMath(h, m.chunks, math)
 }
 

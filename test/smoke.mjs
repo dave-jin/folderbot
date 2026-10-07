@@ -1365,6 +1365,43 @@ try {
           ok(`O 스트리밍 안정 (${label}) — 프레임당 ≤10px(최대 ${maxStep}) · 클램프 점프 0 · 올려 보면 안 따라감+「↓ 새 내용」 · 렌더된 채 스트리밍 · 넘침 없음 · 상태 줄 24px/8px 고정`)
         }
         /**
+         * 🔴 **BM · 채팅 포맷 셋** (2026-10-07 Dave · IMG_2304: «실제로 작성했을 때랑 보여지는 화면이 달라»).
+         *    BM-1 입력창이 `<div>`·`<span><br>` 로 나뉜 줄을 이어 붙이지 않는다 · 내 말도 마크다운(목록·굵게·링크) · 쓴 HTML 은 글자로 ·
+         *    `~` 하나는 취소선이 아니다 · 글 속 `@칩` 은 제자리. BM-2 내 말의 링크에도 파비콘. BM-3 스트리밍 중 코드블록 머리가
+         *    빠진 프레임 0 · 말풍선 높이가 줄어드는 순간 0 (실측 `test/repro-codeshake.mjs` — 고치기 전 폰 4프레임·16px×3).
+         */
+        {
+          const sidM = (await api(`/bots/${bot.id}/sessions`, { name: 'bm' })).id
+          const mp = await br.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, hasTouch: true, isMobile: true })
+          await mp.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
+          await mp.goto(base + `/#bot=${bot.id}&s=${sidM}`); await mp.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(500)
+          // BM-1 입력창 — 붙여넣기·폰 키보드가 만든 블록 줄
+          const v = await mp.evaluate(() => { const c = document.querySelector('.composer .cin'); c.innerHTML = '정리:<div>• 하나</div><div>• 둘</div><span>셋<br>넷</span><ul><li>목록</li></ul>'; c.dispatchEvent(new Event('input', { bubbles: true })); return c.dataset.value })
+          if (v !== '정리:\n• 하나\n• 둘\n셋\n넷\n- 목록') fail('🔴 BM-1: 입력창이 줄바꿈을 잃는다 ' + JSON.stringify(v))
+          await mp.evaluate(() => { const c = document.querySelector('.composer .cin'); c.innerHTML = ''; c.dispatchEvent(new Event('input', { bubbles: true })) })
+          // BM-1·2 내 말 = 마크다운 · 링크 파비콘 · HTML 은 글자로 · ~ 하나는 글자 · @칩 제자리
+          const fileAbs = join(root, '3. Area/제품_Rondo/CLAUDE.md')
+          const msg = '확인: **굵게** 와 3~4일, 5~6명\n- 하나\n- 둘\n링크 https://example.com/a 끝\n<img src=x onerror="window.__xss=1"> @CLAUDE.md 보세요\n\n첨부 파일 (읽어서 참고해):\n- ' + fileAbs
+          await api(`/sessions/${sidM}/send`, { text: msg }); await wait(1500)
+          const u = await mp.evaluate(() => { const m = [...document.querySelectorAll('.umsg')].pop(); return m ? { strong: !!m.querySelector('.md strong'), li: m.querySelectorAll('.md li').length, del: !!m.querySelector('del'), link: !!m.querySelector('.md a[href^="http"]'), fav: !!m.querySelector('.md img.fvic'), img: !!m.querySelector('img[src="x"]'), xss: !!window.__xss, text: m.textContent, chip: !!m.querySelector('.uchip .fchip'), chips: m.querySelectorAll('.fchip').length } : null })
+          if (!u) fail('BM-1: 내 말풍선이 없다')
+          else {
+            if (!u.strong || u.li !== 2) fail('🔴 BM-1: 내 말이 마크다운으로 안 그려진다 ' + JSON.stringify(u))
+            if (u.del || !u.text.includes('3~4일, 5~6명')) fail('🔴 BM-1: 물결표 하나가 취소선이 됐다 ' + JSON.stringify(u.text))
+            if (u.img || u.xss || !u.text.includes('<img')) fail('🔴 BM-1: 내 말 속 HTML 이 그대로 심겼다 ' + JSON.stringify(u))
+            if (!u.chip || u.chips !== 1 || /FBCHIP/.test(u.text)) fail('BM-1: 글 속 @칩이 제자리에 한 번만 서지 않는다 ' + JSON.stringify(u))
+            if (!u.link || !u.fav) fail('🔴 BM-2: 내 말의 링크에 파비콘이 없다 ' + JSON.stringify(u))
+          }
+          // BM-3 코드블록 흔들림 — 그리기 직전마다 잰다
+          await mp.evaluate(() => { const w = window; w.__bare = 0; w.__shrink = []; let pH = 0, pEl = null; const f = () => { const md = document.querySelector('.md.streaming'); if (md) { if ([...md.querySelectorAll('pre')].some((p) => !p.parentElement?.classList.contains('cbwrap'))) w.__bare++; const h = md.getBoundingClientRect().height; if (md === pEl && h < pH - 0.5) w.__shrink.push(Math.round(pH - h)); pH = h; pEl = md } requestAnimationFrame(f) }; requestAnimationFrame(f) })
+          await api(`/sessions/${sidM}/send`, { text: '마크다운스트리밍' })
+          await mp.waitForSelector('.md.streaming', { timeout: 5000 }); for (let i = 0; i < 60 && (await mp.$('.md.streaming')); i++) await wait(200)
+          const cs = await mp.evaluate(() => ({ bare: window.__bare, shrink: window.__shrink }))
+          if (cs.bare || cs.shrink.length) fail('🔴 BM-3: 스트리밍 중 코드블록이 흔들린다 ' + JSON.stringify(cs))
+          await mp.screenshot({ path: 'test/tmp/bm-phone.png' }); await mp.close(); await fetch(base + `/api/sessions/${sidM}`, { method: 'DELETE' })
+          ok('BM 채팅 포맷 — 입력창 줄바꿈 보존 · 내 말 마크다운(굵게·목록) · HTML 은 글자 · ~ 하나는 글자 · @칩 제자리 · 내 말 링크 파비콘 · 코드블록 흔들림 0')
+        }
+        /**
          * 🔴 **P · 칩이 줄을 깨뜨린다 · 키보드 열린 채 당기면 화면이 밀린다** (2026-09-19, 근거 IMG_2012·2013·2014).
          *    P-1 인라인 칩은 글자처럼 앉는다(같은 글꼴·크기 · 높이 = 글자+2px · 세로 패딩 0 · margin 0 · 칩 있는 줄 = 없는 줄 ±1px · 가운데 줄임).
          *    P-2 `→ 처리`·`3/5`·`v0.2.113` 은 칩이 아니다 · 코드 조각은 코드 그대로(클릭만). P-3 첨부 칩은 글 위 28px 별도 행 · 6px · 빈 행 없음.
