@@ -364,8 +364,22 @@ export class SessionManager extends EventEmitter {
   }
   items(id: string): ChatItem[] { return this.recs.get(id)?.items ?? [] }
 
-  create(bot: Bot, name: string, opts: { permissionMode?: PermissionMode; model?: string; effort?: string; routine?: string; vendor?: 'claude' | 'codex'; delegatedFrom?: string; comm?: boolean } = {}): SessionRec {
-    const id = `s_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+  /**
+   * BO · 화면이 정한 id 를 받아도 되나 — `ok` 면 새로 만들고, `same` 이면 **같은 봇에 이미 있는 그 세션**이다
+   * (만들기 요청이 두 번 가도 세션은 하나 — 느린 줄에서 다시 보내기). `bad` 는 형식이 틀렸거나 남의 것·지운 것이다.
+   */
+  acceptId(id: string, botId: string): 'ok' | 'same' | 'bad' {
+    if (!/^s_[a-z0-9]{6,24}$/.test(id)) return 'bad'
+    const r = this.recs.get(id)
+    if (r) return r.botId === botId ? 'same' : 'bad'
+    return existsSync(join(this.dir, `${id}.json`)) ? 'bad' : 'ok'
+  }
+  /**
+   * BO · `id` 는 화면이 미리 정한 새 세션 id 다 — 화면이 호스트 답을 기다리지 않고 그 세션으로 먼저 간다(2026-10-08).
+   * ⚠ 형식이 틀리거나 이미 쓰인 id(지운 기록 파일 포함)는 받지 않는다 — 부르는 쪽(`gateway`)이 먼저 거른다(`acceptId`).
+   */
+  create(bot: Bot, name: string, opts: { permissionMode?: PermissionMode; model?: string; effort?: string; routine?: string; vendor?: 'claude' | 'codex'; delegatedFrom?: string; comm?: boolean; id?: string } = {}): SessionRec {
+    const id = opts.id ?? `s_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
     const r: SessionRec = { id, botId: bot.id, name, cwd: bot.repo ?? bot.abs, cliSessionId: null, state: 'idle', createdAt: Date.now(), lastActivity: Date.now(), items: [], routine: opts.routine, ...(opts.delegatedFrom ? { delegatedFrom: opts.delegatedFrom } : {}), ...(opts.comm ? { comm: true } : {}), permissionMode: opts.permissionMode ?? ((opts.vendor ?? bot.vendor) === 'codex' ? undefined : this.defaultPermissionMode), vendor: opts.vendor ?? bot.vendor, model: opts.model ?? this.defaults[opts.vendor ?? bot.vendor].model, effort: opts.effort ?? this.defaults[opts.vendor ?? bot.vendor].effort }
     this.recs.set(id, r)
     this.persist(r)

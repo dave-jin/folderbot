@@ -67,7 +67,7 @@ function freeName(botAbs: string, dir: string, name: string): string {
 }
 import { favicon } from './favicon'
 import { preview } from './preview'
-import { hookState, setBudget, setHook, usageReport } from './usage'
+import { hookState, setBudget, setHook, usageReport, warmUsage } from './usage'
 import { planNow } from './planUsage'
 import { saveDoc, fileVer } from './docSave'
 import { allDirs, findFiles, guard, headHash, kindOf, mime, readText, recent, resolveNF, resolveNFDeep, stream, tree, writeText, exists, listDir, renameEntry } from './files'
@@ -104,6 +104,23 @@ export class Gateway {
     }
     setInterval(() => this.rebind(), 30_000).unref()
     setInterval(() => { for (const c of this.clients) c.res.write(': hb\n\n') }, 8000).unref()
+    this.watchLoop()
+    warmUsage()   // BO · 첫 훑기를 뒤에서 미리 — 끊어 읽으니 켜지는 동안에도 요청을 받는다(켜기만 하는 `init` 같은 명령은 안 탄다)
+  }
+  /**
+   * 🔴 **BO · 호스트가 스스로 «멈춘 시간» 을 잰다** (2026-10-08). 250ms 마다 시계를 보고 늦은 만큼이 그동안 멈춘 시간이다.
+   *    원격 화면이 «기다린다» 고 느낀 뿌리는 네트워크가 아니라 호스트 멈춤이었다(사용량 훑기 2.5초) — 다음에 느려지면
+   *    `/api/health` 의 `stallMs`(최근 1분 최대)로 숫자가 바로 보이고, 1초를 넘으면 로그에 한 줄 남는다.
+   */
+  stall = { maxMs: 0, at: 0 }
+  private watchLoop(): void {
+    const TICK = 250; let last = performance.now()
+    setInterval(() => {
+      const now = performance.now(); const late = Math.max(0, now - last - TICK); last = now
+      if (Date.now() - this.stall.at > 60_000) this.stall = { maxMs: 0, at: Date.now() }
+      if (late > this.stall.maxMs) this.stall = { maxMs: Math.round(late), at: this.stall.at }
+      if (late > 1000) this.host.log(`호스트가 ${Math.round(late)}ms 멈췄어요`)
+    }, TICK).unref()
   }
   private rebind(): void {
     const want = bindAddresses()
@@ -155,7 +172,7 @@ export class Gateway {
       const chunks: Buffer[] = []; for await (const c of req) chunks.push(c as Buffer)
       return handleMcp(this.host, decodeURIComponent(p.slice(5)), req, res, Buffer.concat(chunks).toString('utf8'), new URL(req.url ?? '/', 'http://x').searchParams.get('sid') ?? '')
     }
-    if (p === '/api/health') return json(200, { ok: true, name: 'folderbot', version: this.host.version })
+    if (p === '/api/health') return json(200, { ok: true, name: 'folderbot', version: this.host.version, stallMs: this.stall.maxMs })
     if (p === '/api/pair' && req.method === 'POST') {
       const b = await body()
       const code = String(b.code ?? ''); const device = String(b.device ?? 'device').slice(0, 40)
@@ -232,7 +249,7 @@ export class Gateway {
       const bySid = new Map<string, { botId: string; name: string }>()
       for (const r of h.sessions.all()) if (r.cliSessionId) { const b = reg.bot(r.botId); bySid.set(r.cliSessionId, { botId: r.botId, name: b?.displayName ?? b?.name ?? r.botId }) }
       // BD · 실제 요금제 한도 — CLI 에게 물어 둔 값(오래됐으면 뒤에서 새로 묻는다 · 기다리지 않는다)
-      return json(200, { ...usageReport(Date.now(), (sid) => bySid.get(sid), planNow(h.sessions.bin)), hook: hookState().installed })
+      return json(200, { ...(await usageReport(Date.now(), (sid) => bySid.get(sid), planNow(h.sessions.bin))), hook: hookState().installed })
     }
     if (p === '/api/usage/hook' && m === 'POST') { const b = await body(); return json(200, setHook(!!b.on)) }
     if (p === '/api/usage/budget' && m === 'POST') { const b = await body(); return json(200, setBudget({ window: b.window === undefined ? undefined : Number(b.window), day: b.day === undefined ? undefined : Number(b.day), week: b.week === undefined ? undefined : Number(b.week) } as never)) }
@@ -438,7 +455,18 @@ export class Gateway {
       //    아래 트리의 `sub === 'trash'` 로, **봇 폴더 안 파일**에만 닿는다.
       if (sub === 'sessions' && m === 'GET') return json(200, h.sessions.list(bot.id))
       // ⚠ `vendor` 는 **세션마다** 고를 수 있다 — 한 폴더에 Claude 세션과 Codex 세션이 섞여 산다
-      if (sub === 'sessions' && m === 'POST') { const b = await body(); const vd = b.vendor === 'codex' || b.vendor === 'claude' ? b.vendor : undefined; const s = h.sessions.create(bot, String(b.name ?? '새 세션'), { permissionMode: b.permissionMode as never, model: b.model ? String(b.model) : undefined, vendor: vd }); return json(200, h.sessions.info(s)) }
+      if (sub === 'sessions' && m === 'POST') {
+        const b = await body(); const vd = b.vendor === 'codex' || b.vendor === 'claude' ? b.vendor : undefined
+        // BO · 화면이 id 를 정해 보내면(먼저 그 세션으로 가 있다) 그 id 로 만든다. 같은 요청이 또 오면 있는 것을 돌려준다
+        const id = b.id === undefined ? undefined : String(b.id)
+        if (id !== undefined) {
+          const v = h.sessions.acceptId(id, bot.id)
+          if (v === 'bad') return json(400, { error: '세션 id 를 쓸 수 없어요' })
+          if (v === 'same') return json(200, h.sessions.info(h.sessions.get(id)!))
+        }
+        const s = h.sessions.create(bot, String(b.name ?? '새 세션'), { permissionMode: b.permissionMode as never, model: b.model ? String(b.model) : undefined, vendor: vd, id })
+        return json(200, h.sessions.info(s))
+      }
       if (sub === 'send' && m === 'POST') { const b = await body(); const sid = h.sendToBot(bot, String(b.text), b.sessionId ? String(b.sessionId) : undefined, b.name ? String(b.name) : undefined, undefined, { model: b.model ? String(b.model) : undefined, effort: b.effort ? String(b.effort) : undefined, permissionMode: b.permissionMode ? (String(b.permissionMode) as never) : undefined, vendor: b.vendor === 'codex' || b.vendor === 'claude' ? b.vendor : undefined, client: clientOf(who, b.client) }); return json(200, { sessionId: sid }) }
       // ⚠ 목록은 **그 세션의 벤더**로 정한다 — Claude 의 명령을 Codex 에 보여 주면 그 글자가 프롬프트로 들어간다
       /** 슬래시 명령 관리 (루프 8/10) — 목록은 파일 그대로, 만들기는 파일 하나. `rel` 은 봇 폴더 기준(루트 것은 `../`), 사용자 것은 문서 열 밖이라 rel 이 없다 */

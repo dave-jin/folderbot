@@ -1932,6 +1932,57 @@ try {
               ok('BG 세션 목록 끝 «＋ 새 세션» — 마지막 줄 아래 · 누르면 세션이 는다')
             }
           }
+          // 🔴 BO · 새 세션은 화면이 먼저 연다 (2026-10-08 Dave: «원격에서 '새 세션'을 열면 채팅 창이 열릴 때까지 딜레이»).
+          //    만들기 답을 3초 붙잡아 두고 ＋ 를 누른다 — 옛 코드는 답을 다 기다린 뒤에야 화면이 바뀌어 여기서 빨개진다.
+          //    붙잡힌 동안 보낸 첫 말은 풀린 뒤 실제로 들어가야 하고, 만들기가 실패하면 원래 세션으로 돌아와야 한다.
+          {
+            const hashBo = await pg.evaluate(() => location.hash)
+            const prevBo = new URLSearchParams(hashBo.slice(1)).get('s')
+            const sOf = () => pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('s'))
+            let release; const gate = new Promise((r) => (release = r)); let mode = 'hold'
+            const sessUrl = (u) => new URL(u).pathname === `/api/bots/${bot.id}/sessions`
+            await pg.route(sessUrl, async (rt) => {
+              if (rt.request().method() !== 'POST') return rt.continue()
+              if (mode === 'fail') return rt.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'BO 검사가 일부러 실패시킴' }) })
+              await gate; return rt.continue()
+            })
+            const t0 = Date.now()
+            await pg.click('.rpwrap .secb .srow.sadd')
+            await pg.waitForFunction((prev) => { const x = new URLSearchParams(location.hash.slice(1)).get('s'); return !!x && x !== prev }, prevBo, { timeout: 2500 }).catch(() => null)
+            const dt = Date.now() - t0; const sidBo = await sOf()
+            if (!sidBo || sidBo === prevBo || dt > 600) { release(); fail(`BO: 만들기 답을 붙잡았더니 새 세션 화면이 바로 안 열렸다 (${dt}ms · s=${sidBo})`) }
+            const view = await pg.evaluate(() => ({ focus: !!document.activeElement?.closest('.composer'), msgs: document.querySelectorAll('.umsg').length }))
+            if (!view.focus || view.msgs !== 0) { release(); fail('BO: 새 세션 화면이 빈 대화 + 입력칸 커서가 아니다 ' + JSON.stringify(view)) }
+            // 붙잡힌 동안 첫 말을 보낸다 — 화면은 받아 두고, 만들기가 풀리면 그 세션으로 들어간다
+            await pg.keyboard.type('BO 첫 말'); await pg.click('.composer .sendb')
+            await wait(400)
+            if ((await api(`/bots/${bot.id}/sessions`)).some((x) => x.id === sidBo)) { release(); fail('BO: 붙잡았는데 세션이 이미 호스트에 있다 — 검사가 답을 못 붙잡았다') }
+            release()
+            let got = null
+            for (let i = 0; i < 40 && !got; i++) { await wait(150); try { got = (await api(`/sessions/${sidBo}/chat`)).items.find((x) => x.kind === 'user' && /BO 첫 말/.test(x.text)) } catch { /* 아직 */ } }
+            if (!got) fail('BO: 만들기가 풀린 뒤 첫 말이 그 세션에 안 들어갔다')
+            const rows = await pg.$$eval('.rpwrap .secb .srow', (r) => r.length)
+            const list = await api(`/bots/${bot.id}/sessions`)
+            if (list.filter((x) => x.id === sidBo).length !== 1) fail('BO: 새 세션이 호스트에 하나가 아니다')
+            // 같은 id 를 또 보내면 있는 것을 돌려준다 · 남의 봇 id·이상한 형식은 거절
+            const again = await api(`/bots/${bot.id}/sessions`, { id: sidBo, name: '또' })
+            if (again.id !== sidBo || (await api(`/bots/${bot.id}/sessions`)).length !== list.length) fail('BO: 같은 id 로 다시 만들었더니 세션이 늘었다')
+            const bad = await fetch(base + `/api/bots/${bot.id}/sessions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: '../x', name: 'x' }) })
+            if (bad.status !== 400) fail('BO: 이상한 형식의 id 를 받았다 ' + bad.status)
+            // 실패 — 임시 세션을 걷고 원래 보던 세션으로 돌아온다
+            mode = 'fail'; const errMark = errs.length
+            await pg.click('.rpwrap .secb .srow.sadd')
+            let back = null
+            for (let i = 0; i < 20; i++) { await wait(100); back = await sOf(); if (back === sidBo) break }
+            const ghostLeft = await pg.$$eval('.rpwrap .secb .srow', (r) => r.length)
+            if (back !== sidBo || ghostLeft !== rows) fail(`BO: 만들기가 실패했는데 원래 세션으로 안 돌아왔거나 임시 세션이 남았다 (s=${back} · 줄 ${rows}→${ghostLeft})`)
+            // ⚠ 일부러 낸 500 은 크롬이 콘솔에 «Failed to load resource» 로 찍는다 — 그 줄만 걷고, 그새 난 다른 오류는 남긴다
+            const induced = errs.splice(errMark); errs.push(...induced.filter((e) => !/status of 500/.test(e)))
+            await pg.unroute(sessUrl)
+            await fetch(base + `/api/sessions/${sidBo}`, { method: 'DELETE' })
+            await pg.evaluate((h) => { location.hash = h }, hashBo); await wait(700)
+            ok(`BO 새 세션은 화면이 먼저 — 만들기 답을 붙잡아도 ${dt}ms 에 열림 · 그새 보낸 첫 말은 풀린 뒤 들어감 · 같은 id 는 하나 · 실패하면 원래 세션으로`)
+          }
           // S-3 · 패널을 **접어 둬도** 우측 띠에 + 가 남는다 — 눌러서 세션이 늘어나는지까지
           // ⚠ 새 세션을 만들면 화면이 **그 빈 세션**으로 옮겨 간다 — 뒤 검사들이 보던 대화를 잃지 않게 있던 자리를 적어 두고 되돌린다
           const hashBeforeNs = await pg.evaluate(() => location.hash)

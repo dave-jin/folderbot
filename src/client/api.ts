@@ -6,7 +6,20 @@ export function setToken(t: string): void { try { if (t) localStorage.setItem(KE
 
 export class ApiError extends Error { constructor(public status: number, msg: string, public data?: unknown) { super(msg) } }
 
+/**
+ * BO · 아직 호스트에 만들어지는 중인 세션 — 화면은 «＋ 새 세션» 을 누르는 순간 그 세션으로 먼저 간다(`newSession.ts`).
+ * 그 세션으로 가는 요청(첫 메시지·모델 바꾸기…)은 만들기가 끝날 때까지 **여기서 기다렸다** 나간다 — 부르는 곳마다
+ * 기다리게 하면 한 곳을 빠뜨리는 순간 404 가 난다. 만들기가 실패해도 기다림은 풀린다(그 요청은 호스트가 거절한다).
+ */
+const creating = new Map<string, Promise<unknown>>()
+export function markCreating(sid: string, p: Promise<unknown>): void {
+  const done = p.then(() => {}, () => {}).finally(() => { if (creating.get(sid) === done) creating.delete(sid) })
+  creating.set(sid, done)
+}
+export function isCreating(sid: string): boolean { return creating.has(sid) }
 export async function api<T = unknown>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
+  const m = /^\/sessions\/(s_[a-z0-9]+)/.exec(path); const wait = m ? creating.get(m[1]) : undefined
+  if (wait) await wait
   const r = await fetch(`/api${path}`, { method: opts.method ?? (opts.body ? 'POST' : 'GET'), headers: { 'content-type': 'application/json', authorization: `Bearer ${token()}` }, body: opts.body ? JSON.stringify(opts.body) : undefined })
   if (r.status === 401) { setToken(''); window.dispatchEvent(new Event('fb:authlost')) }
   const text = await r.text()

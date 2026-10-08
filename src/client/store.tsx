@@ -36,14 +36,39 @@ export interface StateShape {
   filesTick: Record<string, number>
   /** A · 오케스트레이터가 레일 순서를 바꾼 횟수 — 오를 때마다 이 기기의 정렬을 «직접» 으로 */
   railReorder: number
+  /** BO · 화면이 먼저 띄운 새 세션 — 호스트 목록에 그 id 가 나타날 때까지 목록 맨 위에 붙들어 둔다(`newSession.ts`) */
+  ghosts: Record<string, SessionInfo>
 }
-const init: StateShape = { version: '', root: '', rules: null, rulesInstalled: false, bots: [], candidates: [], sessionsByBot: {}, chats: {}, pending: {}, todos: {}, auth: { verdict: 'unknown', checkedAt: 0 }, inbox: 0, notifications: [], vapidPublic: '', tailnet: null, addrs: [], port: 7373, devices: [], defaults: { model: 'claude-fable-5-1', effort: 'high' }, hostName: '', device: { id: '', name: '', main: false }, online: 'off', loaded: false, filesTick: {}, railReorder: 0 }
+const init: StateShape = { version: '', root: '', rules: null, rulesInstalled: false, bots: [], candidates: [], sessionsByBot: {}, chats: {}, pending: {}, todos: {}, auth: { verdict: 'unknown', checkedAt: 0 }, inbox: 0, notifications: [], vapidPublic: '', tailnet: null, addrs: [], port: 7373, devices: [], defaults: { model: 'claude-fable-5-1', effort: 'high' }, hostName: '', device: { id: '', name: '', main: false }, online: 'off', loaded: false, filesTick: {}, railReorder: 0, ghosts: {} }
 
-type Action = { type: 'state'; s: Partial<StateShape> } | { type: 'frame'; f: Frame } | { type: 'chat'; sessionId: string; items: ChatItem[]; pending: PermissionRequest[] } | { type: 'online'; v: 'on' | 'off' } | { type: 'todos'; botId: string; items: TodoItem[] } | { type: 'refiles' }
+type Action = { type: 'state'; s: Partial<StateShape> } | { type: 'frame'; f: Frame } | { type: 'chat'; sessionId: string; items: ChatItem[]; pending: PermissionRequest[] } | { type: 'online'; v: 'on' | 'off' } | { type: 'todos'; botId: string; items: TodoItem[] } | { type: 'refiles' } | { type: 'ghost'; info: SessionInfo } | { type: 'unghost'; id: string }
+
+/**
+ * BO · 호스트 목록에 임시 세션을 덧댄다. 호스트 목록에 이미 있는 id 는 임시 표시를 걷는다(호스트 것이 정답).
+ * ⚠ 이것이 없으면 만들기 답보다 다른 일로 온 목록(`/state`·`sessions` 프레임)이 먼저 도착하는 순간
+ *    방금 연 세션이 목록에서 사라지고 화면이 엉뚱한 세션으로 튄다.
+ */
+function withGhosts(by: Record<string, SessionInfo[]>, ghosts: Record<string, SessionInfo>): { by: Record<string, SessionInfo[]>; ghosts: Record<string, SessionInfo> } {
+  const left: Record<string, SessionInfo> = {}; const out = { ...by }
+  for (const g of Object.values(ghosts)) {
+    const list = out[g.botId] ?? []
+    if (list.some((x) => x.id === g.id)) continue
+    left[g.id] = g; out[g.botId] = [g, ...list]
+  }
+  return { by: out, ghosts: Object.keys(left).length === Object.keys(ghosts).length ? ghosts : left }
+}
 
 function reducer(s: StateShape, a: Action): StateShape {
   switch (a.type) {
-    case 'state': return { ...s, ...a.s, loaded: true }
+    case 'state': { const n = { ...s, ...a.s, loaded: true }; const w = withGhosts(n.sessionsByBot, s.ghosts); return { ...n, sessionsByBot: w.by, ghosts: w.ghosts } }
+    case 'ghost': { const ghosts = { ...s.ghosts, [a.info.id]: a.info }; const w = withGhosts(s.sessionsByBot, ghosts); return { ...s, sessionsByBot: w.by, ghosts: w.ghosts, chats: s.chats[a.info.id] ? s.chats : { ...s.chats, [a.info.id]: [] } } }
+    case 'unghost': {
+      if (!s.ghosts[a.id]) return s
+      const { [a.id]: g, ...ghosts } = s.ghosts
+      const list = (s.sessionsByBot[g.botId] ?? []).filter((x) => x.id !== a.id)
+      const { [a.id]: _c, ...chats } = s.chats
+      return { ...s, ghosts, chats, sessionsByBot: { ...s.sessionsByBot, [g.botId]: list } }
+    }
     case 'online': return { ...s, online: a.v }
     case 'chat': return { ...s, chats: { ...s.chats, [a.sessionId]: a.items }, pending: { ...s.pending, [a.sessionId]: a.pending } }
     case 'todos': return { ...s, todos: { ...s.todos, [a.botId]: a.items } }
@@ -53,7 +78,7 @@ function reducer(s: StateShape, a: Action): StateShape {
       const f = a.f
       switch (f.ev) {
         case 'bots': return { ...s, bots: f.bots, railReorder: f.reorderedBy ? s.railReorder + 1 : s.railReorder }
-        case 'sessions': return { ...s, sessionsByBot: { ...s.sessionsByBot, [f.botId]: f.sessions }, pending: { ...s.pending, ...Object.fromEntries(f.sessions.map((x) => [x.id, x.pending])) } }
+        case 'sessions': { const w = withGhosts({ ...s.sessionsByBot, [f.botId]: f.sessions }, s.ghosts); return { ...s, sessionsByBot: w.by, ghosts: w.ghosts, pending: { ...s.pending, ...Object.fromEntries(f.sessions.map((x) => [x.id, x.pending])) } } }
         case 'chat': {
           const cur = s.chats[f.sessionId]; if (!cur) return s
           let items: ChatItem[]

@@ -10,6 +10,7 @@ import { ACT_COLOR, ACT_ICON, ACT_LABEL, LONG, actOf, buzz, slotOf, useSwipeCfg,
 import { HOLD_MS, decide, dropIndex } from './gesture'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { FolderPicker, RoutineSheet, askName } from './Sheets'
+import { startSession } from './newSession'
 import { refreshModels } from './consts'
 import { Mark, VendorMark, useProviders } from './Brand'
 import { Float, anchorOf, type Anchor } from './Float'
@@ -32,7 +33,7 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
    * 세션·명령·스킬·루틴은 폰에서 볼 일이 없어 뺀다(데스크톱은 종전 그대로 전부 보인다).
    */
   only?: 'todo' | 'files'; touched: string[]; filesTick?: number; secH: SecH; onSecH: (h: SecH) => void; onCollapse: () => void; say: (m: string) => void; refresh: () => Promise<void>; activeDoc: string | null; onDragY: (on: boolean) => void; focusSec?: { sec: string; n: number } | null }) {
-  const { s, loadTodo } = useStore()
+  const { s, loadTodo, dispatch } = useStore()
   const [open, setOpen] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem(`fb:secs:${bot.id}`) ?? '') } catch { return { sessions: true, todo: true, files: true, routines: false } } })
   useEffect(() => { try { setOpen(JSON.parse(localStorage.getItem(`fb:secs:${bot.id}`) ?? '')) } catch { setOpen({ sessions: true, todo: true, files: true, routines: false }) } }, [bot.id])
   useEffect(() => { localStorage.setItem(`fb:secs:${bot.id}`, JSON.stringify(open)) }, [open, bot.id])
@@ -54,11 +55,9 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
   const [pick, setPick] = useState<Anchor | null>(null)
   const newSession = async (vendor?: ProviderId) => {
     setPick(null)
-    try {
-      const info = await api<SessionInfo>(`/bots/${bot.id}/sessions`, { body: { name: `세션 ${sessions.length + 1}`, vendor: vendor ?? provs[0]?.id } })
-      void refreshModels()   // ⚠ 새 세션마다 모델 상태를 다시 본다 (2026-09-15 Dave)
-      await refresh(); go(bot.id, info.id)
-    } catch (e) { say((e as Error).message) }
+    // BO · 누르는 순간 그 세션으로 간다 — 만들기는 뒤에서, 실패하면 되돌리고 알린다(`newSession.ts`)
+    // ⚠ 새 세션마다 모델 상태를 다시 본다 (2026-09-15 Dave) — 만들기가 끝난 뒤에
+    startSession({ bot, name: `세션 ${sessions.length + 1}`, vendor: vendor ?? provs[0]?.id, defaults: s.defaults, dispatch, go, prev: sessionId, say, after: () => void refreshModels() })
   }
   /**
    * 🔴 **제목은 그 자리에서 고친다** (2026-09-15 Dave: «채팅 제목이 수정되게도 해줘»).

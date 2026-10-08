@@ -39,6 +39,7 @@ import { ICON_PX, useIconSize, useTheme } from './theme'
 import { UsageCard, UsageStrip, useUsage } from './Usage'
 import { PermGate, usePerms } from './Perms'
 import { Palette } from './Palette'
+import { startSession } from './newSession'
 import { MODES, effortLabel, effortsFor, fmtK, hardRefreshModels, modeLabel, modelLabel, modelsFor, moreModelsFor, onModels, refreshModels } from './consts'
 import { rulesLabel } from '../core/permPolicy'
 import { DEFAULT_EFFORT, DEFAULT_MODEL, sameModel} from '../core/agents'
@@ -277,7 +278,7 @@ function UpdateChip({ version, st, onCheck, onApply }: { version: string; st: Up
 }
 
 function Main() {
-  const { s, refresh, loadChat, loadTodo } = useStore()
+  const { s, refresh, loadChat, loadTodo, dispatch } = useStore()
   const [hash, setHash] = useHash()
   /**
    * 🔴 **AJ · 해시가 비어도 오케스트레이터로 떨어지지 않는다** (2026-09-24 Dave: *«CCAF 폴더를 보다가 폴더봇
@@ -793,7 +794,8 @@ function Main() {
   // 트리 우클릭 «여기서 에이전트 시작» · «새 폴더 만들기 → 시작» — 볼트 상대 경로로
   const startAt = async (rel: string, botId?: string) => { if (botId) { go(botId); return } if (!bot.orchestrator && !confirm(`상위 봇 ${bot.name} 와 폴더가 겹쳐요. 그래도 여기서 시작할까요?`)) return; const provider = await pickAgent(rel); if (!provider) return; try { const b = await api<Bot>('/bots/start', { body: { rel, provider } }); await refresh(); go(b.id); say(`${b.name} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
   const newFolderAt = async (parent: string) => { const name = await askName(`${parent || '볼트'} 안에 만들 폴더 이름`); if (!name?.trim()) return; const provider = await pickAgent(`${parent ? parent + '/' : ''}${name.trim()}`); if (!provider) return; try { const r = await api<{ rel: string; bot: Bot }>('/folders', { body: { section: parent, name: name.trim(), start: true, provider } }); await refresh(); go(r.bot.id); say(`${r.rel} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
-  const newSession = async () => { const info = await api<SessionInfo>(`/bots/${bot.id}/sessions`, { body: { name: `세션 ${sessions.length + 1}` } }); void refreshModels(); await refresh(); go(bot.id, info.id) }
+  // BO · 누르는 순간 그 세션으로 간다 — 만들기는 뒤에서(`newSession.ts`). ⛔ 여기서 호스트 답이나 /state 를 기다리지 않는다
+  const newSession = async () => { startSession({ bot, name: `세션 ${sessions.length + 1}`, defaults: s.defaults, dispatch, go, prev: sessionId, say, after: () => void refreshModels() }) }
   /**
    * 전역 단축키 — **맥 앱의 상식대로** (2026-09-13 Dave: «맥 기본 단축키로»).
    *
@@ -1402,6 +1404,8 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const send = () => sendText(text)
   /** ⏎ 가 보내기인 기기인가 — 폰 화면도 아니고 손가락 포인터도 아닐 때만 (위 `onKey` 머리말) */
   const touch = useMedia('(pointer: coarse)'); const [lcfgC] = useLocalSettings()
+  // BO · 방금 «＋ 새 세션» 으로 연 세션(아직 임시)이면 바로 칠 수 있게 입력칸에 커서를 둔다. 터치 기기는 자판이 튀어 올라 두지 않는다
+  useEffect(() => { if (cur && s.ghosts[cur.id] && !touch) taRef.current?.focus() }, [cur?.id])
   const enterSends = !phone && !touch
   const sendKey = enterSends ? '⏎' : '⌘⏎'   // ⚠ 손가락 기기에는 키 안내를 안 쓴다 — ⌘ 키가 없다(2026-09-25 디자인 검수 · N 의 «폰 안내에 ⌘V 없음» 과 같은 뜻)
   /**
