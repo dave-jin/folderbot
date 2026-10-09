@@ -16,6 +16,7 @@ files:
   - perm-core.js
   - trayIcon.js
   - winBounds.js
+  - zoom.js
   - nav.js
   - notes.js
   - localfs.js

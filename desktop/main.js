@@ -10,6 +10,7 @@ const perms = require('./perms')
 const localfs = require('./localfs')
 const { folderIcon } = require('./trayIcon')
 const { pickBounds } = require('./winBounds')
+const { clampZoom, stepZoom, zoomPct } = require('./zoom')
 
 /**
  * 🔴 **AO · 두 손가락 쓸기로 앞뒤 페이지에 가지 않는다** (2026-09-24 Dave: *«왼쪽 혹은 오른쪽으로 쓸기에서
@@ -101,8 +102,19 @@ function createWin() {
   win.on('closed', () => { win = null })
   win.on('focus', () => { try { win.webContents.send('fb:perms', perms.list({ host: settings.mode === 'host', openMode: settings.openMode })) } catch {} })
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' } })
+  win.webContents.on('did-finish-load', applyZoom)   // BP · 새로 읽을 때마다 저장된 배율을 다시 건다
   Menu.setApplicationMenu(appMenu())
   loadHome()
+}
+/**
+ * BP · 화면 배율 — ⌘+ · ⌘− · ⌘0 (`zoom.js`). 배율은 settings.json 에 남고, 화면을 새로 읽을 때마다 다시 건다
+ * (Electron 은 배율을 스스로 기억하지 않는다 — 호스트 판이 바뀌어 화면이 다시 읽혀도(BJ) 그대로여야 한다).
+ * 바꿀 때마다 화면에 «화면 크기 110%» 를 잠깐 띄운다 — 배율이 얼마인지 사람이 외울 필요가 없게.
+ */
+function applyZoom() { try { if (win && !win.isDestroyed()) win.webContents.setZoomFactor(clampZoom(settings.zoom)) } catch {} }
+function zoomBy(dir) {
+  settings.zoom = stepZoom(settings.zoom, dir); save(); applyZoom()
+  try { win?.webContents.send('fb:cmd', `zoom:${zoomPct(settings.zoom)}`) } catch {}
 }
 function loadHome() {
   // 알림으로 창을 새로 띄웠으면 목적지를 첫 URL 에 함께 싣는다 — 토큰 리로드와 경합하지 않는다(`nav.js`)
@@ -377,6 +389,12 @@ function appMenu() {
     ] },
     { label: '보기', submenu: [
       { label: '알림', accelerator: 'CmdOrCtrl+Shift+U', click: cmd('notify') },
+      // BP · 확대·축소 (2026-10-09 Dave). ⌘+ 는 자판에서 ⇧= 라 «=» 도 함께 받는다(숨은 줄 · 크롬과 같다)
+      { type: 'separator' },
+      { id: 'zoom-reset', label: '실제 크기', accelerator: 'CmdOrCtrl+0', click: () => zoomBy(0) },
+      { id: 'zoom-in', label: '확대', accelerator: 'CmdOrCtrl+Plus', click: () => zoomBy(1) },
+      { label: '확대', accelerator: 'CmdOrCtrl+=', visible: false, acceleratorWorksWhenHidden: true, click: () => zoomBy(1) },
+      { id: 'zoom-out', label: '축소', accelerator: 'CmdOrCtrl+-', click: () => zoomBy(-1) },
       { type: 'separator' }, { role: 'reload' }, { role: 'togglefullscreen' }, { role: 'toggleDevTools' }
     ] },
     { label: '도움말', submenu: [

@@ -207,6 +207,8 @@ export const KEYS: { k: string; t: string; d?: string }[] = [
   { k: '⌘⇧B', t: '오른쪽 패널 접기' },
   { k: '⌘⇧D', t: '문서 열 접기' },
   { k: '⌘⇧U', t: '알림' },
+  { k: '⌘+ ⌘−', t: '화면 확대 · 축소', d: '글씨와 화면 전체 — 다시 켜도 그대로 · 이미지 뷰어에서는 그림 확대' },
+  { k: '⌘0', t: '실제 크기' },
   { k: '⌘W', t: '문서 탭 닫기' },
   { k: '↩', t: '보내기', d: '자판이 있는 기기에서 — 폰에서는 줄 바꾸기(보내기는 단추)' },
   { k: '⇧↩', t: '줄 바꾸기' },
@@ -847,6 +849,8 @@ function Main() {
       else if (c === 'new-session') void newSession()
       // ⚠ 보내기는 **입력칸이 쥐고 있다** — 메뉴는 그 자리에 신호만 보낸다(같은 길을 두 벌 만들지 않는다)
       else if (c === 'send') window.dispatchEvent(new Event('fb:send'))
+      // BP · 셸이 배율을 바꿨다 — 지금 몇 % 인지 잠깐 보여 준다(⌘0 이 되돌리는 길이라는 것까지)
+      else if (c.startsWith('zoom:')) say(c === 'zoom:100' ? '화면 크기 100% (실제 크기)' : `화면 크기 ${c.slice(5)}% · ⌘0 으로 되돌리기`)
     })
     return off
   }, [bot?.id, sessions.length])

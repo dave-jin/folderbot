@@ -14,6 +14,7 @@
  *   ⑥ 셸 IPC 로 복사가 «되읽혀» ok 가 온다           `folderbotDesktop.local.copyImage/copyFiles/copyDiag` (M)
  *   ⑦ 창 크기·자리가 settings.json 에 남는다         setBounds → 600ms 뒤 settings.win (winBounds)
  *   ⑧ 딥링크가 그 대화로 간다                        second-instance(folderbot://bot/<id>) → location.hash (nav · 알림 클릭과 같은 길)
+ *   ⑫ ⌘+ · ⌘− · ⌘0 화면 배율                        메뉴·실제 키 → getZoomFactor · settings.json zoom · 다시 읽어도 그대로 (BP)
  *
  * 🔴 안전 수칙 (전부 실사고에서 나왔다):
  *   ⛔ Dave 의 실 볼트·실 앱을 안 건드린다 — 픽스처 볼트 + 임시 HOME(userData 도 그 아래) + FOLDERBOT_QA=1(프로토콜·로그인 항목·업데이터 끔)
@@ -224,6 +225,37 @@ ok(`봇 화면 · ${bot.name} · 스크린샷 test/tmp/mac-qa-app.png`)
   const h = await page.evaluate(() => location.hash)
   if (!h.includes(`s=${s1.id}`)) await fail(`🔴 ⑪ GC 뒤 알림 클릭이 그 세션으로 안 갔다 — ${h} (기대 s=${s1.id})`)
   ok('알림 — GC 를 견디고, 뒤늦게 눌러도 그 세션으로 · Dock 은 안 건드린다')
+}
+
+// ── ⑫ 화면 확대·축소 ⌘+ · ⌘− · ⌘0 (BP · 2026-10-09 Dave: «Command + [+/-] 로 글씨 및 크기 조정») ──
+// 메뉴에 항목이 없으면 Electron 은 ⌘+/− 를 아무 데도 안 보낸다(옛 판이 그랬다). 실제 키를 앱에 넣어 배율이 바뀌는지,
+// settings.json 에 남는지, 화면을 다시 읽어도 그대로인지, ⌘0 으로 돌아오는지 잰다.
+// ⚠ `sendInputEvent` 키는 메뉴 단축키까지 안 닿는다(맥미니 실측) — 그래서 판정은 메뉴 클릭으로 한다. 진짜 자판(⌘= · ⌘⇧= · ⌘− · ⌘0)은
+//    2026-10-09 cua-driver 의 foreground hotkey 로 이 앱에 눌러 1 → 1.1 → 1.25 → 1.1 → 1 을 확인했다.
+{
+  const zf = () => app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows().find((x) => x.isVisible()) || BrowserWindow.getAllWindows()[0]; return w.webContents.getZoomFactor() })
+  const key = (keyCode, mods) => app.evaluate(({ BrowserWindow }, a) => { const w = BrowserWindow.getAllWindows().find((x) => x.isVisible()) || BrowserWindow.getAllWindows()[0]; w.focus(); w.webContents.sendInputEvent({ type: 'keyDown', keyCode: a.keyCode, modifiers: a.mods }); w.webContents.sendInputEvent({ type: 'keyUp', keyCode: a.keyCode, modifiers: a.mods }) }, { keyCode, mods })
+  const menu = (id) => app.evaluate(({ Menu }, i) => { const m = Menu.getApplicationMenu()?.getMenuItemById(i); if (!m) return false; m.click(); return true }, id)
+  const savedZoom = () => JSON.parse(readFileSync(join(userData, 'settings.json'), 'utf8')).zoom
+  await page.evaluate(() => document.activeElement?.blur?.()); await wait(200)
+  const z0 = await zf()
+  if (!(await menu('zoom-in'))) await fail('🔴 ⑫ 보기 메뉴에 «확대» 가 없다 — ⌘+ 가 아무 일도 안 한다')
+  await wait(300)
+  const z1 = await zf()
+  if (!(z1 > z0)) await fail(`⑫ 확대를 눌렀는데 배율이 안 커졌다 (${z0} → ${z1})`)
+  // 실제 키 — ⌘= (자판의 + 자리) · ⌘−
+  await key('=', ['meta']); await wait(400); const z2 = await zf()
+  await key('-', ['meta']); await wait(400); const z3 = await zf()
+  const keysWork = z2 > z1 && z3 < z2
+  if (savedZoom() !== z3) await fail(`⑫ 배율이 settings.json 에 안 남았다 (화면 ${z3} · 저장 ${savedZoom()})`)
+  const toast = await page.evaluate(() => document.body.innerText.match(/화면 크기 \d+%/)?.[0] ?? '')
+  // 다시 읽어도 그대로 — 호스트 새 판(BJ)·재접속에서 화면이 새로 읽힌다
+  await page.reload(); await page.waitForSelector('.col.chat, .home, body', { timeout: 15000 }); await wait(800)
+  const z4 = await zf()
+  if (Math.abs(z4 - z3) > 1e-6) await fail(`🔴 ⑫ 화면을 다시 읽었더니 배율이 풀렸다 (${z3} → ${z4})`)
+  await menu('zoom-reset'); await wait(300)
+  if ((await zf()) !== 1 || savedZoom() !== 1) await fail('⑫ «실제 크기» 로 안 돌아왔다')
+  ok(`화면 확대·축소 · ${z0} → ${z1} → ⌘= ${z2} → ⌘− ${z3} · 저장 · 다시 읽어도 ${z4} · ⌘0 → 1 · ${toast || '(알림 문구 못 읽음)'}${keysWork ? '' : ' · ⚠ sendInputEvent 키는 메뉴에 안 닿음(메뉴 클릭으로만 쟀다)'}`)
 }
 
 if (errs.length) console.log('  ⚠ pageerror:', errs.join(' | ').slice(0, 500))
