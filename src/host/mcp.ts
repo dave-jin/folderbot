@@ -70,7 +70,14 @@ const ORCH: Tool[] = [
   { name: 'folder_move', description: '루트 안에서 폴더·파일을 옮긴다(되돌리기 스냅샷 남김). ⚠ 사람의 승인 뒤에만.', inputSchema: obj({ from: { type: 'string' }, to: { type: 'string' } }, ['from', 'to']) }
 ]
 
-export function mcpTools(botId: string): Tool[] { return botId === ORCH_ID ? [...COMMON, ...ORCH] : COMMON }
+/**
+ * BQ-6 · bridge_send — 연결 상대에게 편지를 쓴다. 상대의 `may_send` 에 든 봇에게만 보인다(기본 오케스트레이터만).
+ * 🔴 봇이 우편함 파일을 손으로 쓰지 않게 한다 — 형식·시각·파일 이름 실수를 호스트가 막는다(host/bridge.ts send).
+ */
+const BRIDGE_SEND: Tool = { name: 'bridge_send', description: '연결(Bridge) 상대에게 편지를 쓴다 — 우편함 from-folderbot/ 에 FBMF 파일을 호스트가 만든다. kind: request(부탁) · reply(답 · re 필수) · report(알릴 사실) · done(끝난 일 · 앞 편지가 있으면 re) · incident(장애) · briefing(정기 브리핑). 본문은 짧게, 긴 자료는 볼트 경로로. 사람 결정이 필요하면 needs_human, 바로 봐야 하면 urgent.', inputSchema: obj({ peer: { type: 'string', description: '상대 id (예: halili)' }, kind: { type: 'string', enum: ['request', 'reply', 'report', 'done', 'incident', 'briefing'] }, title: { type: 'string', description: '한 줄 제목(한글 가능)' }, text: { type: 'string' }, re: { type: 'string', description: '회신이면 받은 편지 id' }, urgent: { type: 'boolean' }, needs_human: { type: 'boolean' } }, ['peer', 'kind', 'text']) }
+
+export function mcpTools(botId: string, bridge = false): Tool[] { const base = botId === ORCH_ID ? [...COMMON, ...ORCH] : COMMON; return bridge ? [...base, BRIDGE_SEND] : base }
+const canBridge = (host: Host, botId: string): boolean => !!host.bridges?.peersFor(botId).length
 
 export async function handleMcp(host: Host, botId: string, req: IncomingMessage, res: ServerResponse, body: string, sid = ''): Promise<void> {
   let msg: Rpc
@@ -79,10 +86,10 @@ export async function handleMcp(host: Host, botId: string, req: IncomingMessage,
   const error = (code: number, message: string) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, error: { code, message } })) }
   if (msg.method === 'initialize') return reply({ protocolVersion: '2025-03-26', capabilities: { tools: {} }, serverInfo: { name: 'folderbot', version: host.version } })
   if (msg.method === 'notifications/initialized' || msg.method === 'ping') { res.writeHead(msg.id === undefined ? 202 : 200, { 'content-type': 'application/json' }); res.end(msg.id === undefined ? '' : JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: {} })); return }
-  if (msg.method === 'tools/list') return reply({ tools: mcpTools(botId) })
+  if (msg.method === 'tools/list') return reply({ tools: mcpTools(botId, canBridge(host, botId)) })
   if (msg.method === 'tools/call') {
     const name = String(msg.params?.name ?? ''); const args = (msg.params?.arguments ?? {}) as Record<string, unknown>
-    if (!mcpTools(botId).some((t) => t.name === name)) return error(-32601, `이 봇은 ${name} 을 쓸 수 없어요`)
+    if (!mcpTools(botId, canBridge(host, botId)).some((t) => t.name === name)) return error(-32601, `이 봇은 ${name} 을 쓸 수 없어요`)
     // BS · 루틴·다른 봇·편지가 시작한 턴에서는 되돌리기 어려운 도구를 거절한다(core/turnGuard)
     const blocked = turnBlock(name, sid ? host.sessions.get(sid)?.turnFrom : undefined)
     if (blocked) return reply({ content: [{ type: 'text', text: `오류: ${blocked}` }], isError: true })
@@ -131,7 +138,7 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       const rec = sid ? host.sessions.get(sid) : undefined
       if (!rec) throw new Error('어느 세션에서 보냈는지 몰라요 — 답을 돌려받을 세션이 있어야 해요')
       // 가드 1 · 오케스트레이터가 bot_send 로 연 세션은 되묻지 못한다 — 막지 않으면 봇 ↔ 오케스트레이터 고리가 생긴다
-      if (rec.delegatedFrom || rec.comm) throw new Error('위임받은 세션에서는 오케스트레이터에게 다시 요청할 수 없어요. 결과를 이 세션에 남기면 오케스트레이터가 읽어 갑니다.')
+      if (rec.delegatedFrom || rec.comm || rec.channel) throw new Error('위임받은 세션에서는 오케스트레이터에게 다시 요청할 수 없어요. 결과를 이 세션에 남기면 오케스트레이터가 읽어 갑니다.')
       // 가드 2 · 남용 상한
       const now = Date.now(); const log = (orchAsks.get(sid) ?? []).filter((t) => now - t < ORCH_ASK_WINDOW)
       if (log.length >= ORCH_ASK_MAX) throw new Error(`이 세션은 한 시간에 orch_ask 를 ${ORCH_ASK_MAX}건까지 보낼 수 있어요 — 가장 오래된 요청이 ${Math.ceil((ORCH_ASK_WINDOW - (now - log[0])) / 60000)}분 뒤에 풀려요. 급하면 사람에게 알리세요.`)
@@ -203,6 +210,10 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       saveRoutines(reg, host, b, b.routines.filter((r) => r.name !== name))
       // 🔴 되돌릴 수 없으므로 직전 값을 그대로 돌려준다 — 이 값으로 routine_add 하면 복구된다
       return { ok: true, removed: name, before, undo: '잘못 지웠으면 before 의 값으로 routine_add 하면 돌아와요' }
+    }
+    case 'bridge_send': {
+      const out = host.bridges.send(s('peer'), botId, { kind: s('kind'), text: s('text'), title: s('title') || undefined, re: s('re') || undefined, urgent: a.urgent === true, needsHuman: a.needs_human === true })
+      return `편지를 썼어요 · ${out.id} · ${out.rel}`
     }
     case 'todo_add': { const b = reg.bot(botId); if (!b) throw new Error('봇을 못 찾았어요'); host.todoAdd(b, s('title'), s('desc'), 'bot', !!a.for_user); return '추가했어요' }
   }

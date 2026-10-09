@@ -15,7 +15,12 @@ import { FolderWatch } from './watch'
 import { Notifier } from './notify'
 import { type HostConfig, absRoot, dataDir, saveConfig } from './paths'
 import { McpAuth } from './mcpAuth'
-import { ORCH_ID, Registry, canon, ORCH_REQUEST_RULES_MD, ORCH_ASK_HINT } from './registry'
+import { BridgeHub, type Incoming } from './bridge'
+import { RunLog } from './runs'
+import { letterBatch } from '../core/fbmf'
+import type { PeerDef } from '../core/bridges'
+import type { QueuedMsg } from '../core/types'
+import { ORCH_ID, Registry, canon, ORCH_REQUEST_RULES_MD, ORCH_ASK_HINT, LETTER_RULES_MD } from './registry'
 import { Routines, routineRun, routinesToDrop } from './routines'
 import { SessionManager, setOauthToken, setKeychainLogin, AUTH_ERROR, type SessionRec } from './session'
 import { readTodo, todoAdd, todoContext } from './todoStore'
@@ -35,13 +40,17 @@ export class Host {
   readonly routines: Routines
   /** BT · 로컬 MCP 세션 토큰 */
   readonly mcpAuth = new McpAuth(dataDir())
+  /** 연결(Bridge) — 바깥 상대와 편지 파일로 대화한다(host/bridge.ts) */
+  readonly bridges: BridgeHub
+  /** BR-1 · 루틴 실행 기록 */
+  readonly runs: RunLog
   auth: AuthState = { verdict: 'unknown', checkedAt: 0 }
   private queued: { botId: string; sessionId: string; text: string; origin: TurnFrom }[] = []
   broadcast: (f: Frame) => void = () => {}
   /** 🔴 `.bot.yml` 이 밖에서 바뀌면 **UI 로 저장한 것과 같은 길**을 탄다(AA-2) — 화면 갱신 + 스케줄 다시 걸기 */
   watcher = new FolderWatch(
     (botId) => { this.broadcast({ ev: 'files', botId }); this.refreshNames() },
-    (botId) => { this.log(`.bot.yml 이 바뀌어 루틴을 다시 걸어요 · ${this.registry.bot(botId)?.name ?? botId}`); this.afterBotsChanged() },
+    (botId) => { this.log(`설정 파일이 바뀌어 루틴·연결을 다시 읽어요 · ${this.registry.bot(botId)?.name ?? botId}`); this.afterBotsChanged(); if (botId === ORCH_ID) this.bridges.reload() },
   )
   private lastNames = ''
   /** 봇 폴더의 CLAUDE.md `display_name:` 이 바뀌면 레일도 바뀌어야 한다 — 파일 신호 뒤에 표시 이름을 다시 재 본다 */
@@ -72,12 +81,16 @@ export class Host {
     this.sessions.systemPromptFor = (bot) => this.systemPrompt(bot)
     this.sessions.botOf = (id) => this.registry.bot(id)
     this.routines = new Routines({ run: (b, r) => this.runRoutine(b, r), log: this.log })
+    this.bridges = new BridgeHub({ root: this.registry.root, dataDir: dataDir(), hostNames: () => [hostname(), this.hostName(), this.cfg.hostName ?? ''], log: (m) => this.log(m), deliver: (peer, items) => this.deliverLetters(peer, items) })
+    this.runs = new RunLog(this.registry.root, () => this.bridges.cfg.runsCopy, () => hostname().replace(/\.local$/, ''), (m) => this.log(m))
     this.wire()
     this.sessions.drainAll()   // 호스트가 다시 떴다 — 기다리던 봇 말을 내보낸다
     this.routines.reschedule(this.registry.bots())
     // 봇 폴더 감시 — 세션을 거치지 않은 쓰기(Bash·Codex·Dropbox·Finder)도 트리에 온다 (host/watch.ts 머리말)
     this.watcher.log = (m) => this.log(m)
     this.watcher.sync(this.registry.bots())
+    this.bridges.reload()
+    setInterval(() => this.runs.sweep(), 60_000).unref()
     void this.refreshAuth()
     setInterval(() => void this.refreshAuth(), 30 * 60 * 1000).unref()
     setInterval(() => this.watchInbox(), 60 * 1000).unref()
@@ -113,6 +126,11 @@ export class Host {
     })
     this.sessions.on('state', (r: SessionRec, prev: SessionState, notify: boolean) => {
       this.broadcast({ ev: 'state', sessionId: r.id, botId: r.botId, state: r.state })
+      // BR-1 · 루틴 회차가 끝났다 — 결과 줄(`결과: ok|fail|skip`)까지 읽어 기록한다
+      if (r.routine && prev === 'running' && (r.state === 'done' || r.state === 'error')) {
+        const lastA = [...r.items].reverse().find((i) => i.kind === 'assistant') as { text: string } | undefined
+        this.runs.end(r.id, r.state === 'done', lastA?.text, r.state === 'error' ? r.lastError : undefined)
+      }
       // L · 턴이 끝나면 사용량 캐시를 비운다 — 다음 /api/usage 가 새 기록을 훑어 60초 안에 원격 패널이 바뀐다
       if (prev === 'running' && r.state !== 'running') { invalidateUsage(); planNow(this.sessions.bin, true) }   // BD · 턴을 썼으니 실제 한도도 다시(60초 문턱 안에서)
       this.broadcast({ ev: 'sessions', botId: r.botId, sessions: this.sessions.list(r.botId) })
@@ -129,6 +147,8 @@ export class Host {
     // BH · orch_ask — 볼트의 orchestrator.md·폴더 CLAUDE.md 가 옛 판이어도 규칙이 닿게 시스템 프롬프트로도 준다(DEVICE_RULES_MD 와 같은 이유)
     if (bot.orchestrator) { const op = this.registry.orchestratorPrompt(); parts.push(op); if (!op.includes('봇이 보낸 요청')) parts.push(ORCH_REQUEST_RULES_MD) }
     else parts.push(`너는 Folder Bot 의 봇이다. 폴더 "${bot.rel}" 안에서 일한다. 산출물은 이 폴더에 둔다.\n${ORCH_ASK_HINT}`)
+    // BQ · 연결 편지를 받거나 보낼 수 있는 봇에게만 편지 규칙을 준다
+    if (this.bridges?.cfg.peers.some((p) => p.enabled && (this.isDeliverTarget(p, bot) || p.maySend.includes(bot.id)))) parts.push(LETTER_RULES_MD)
     parts.push(TODO_RULES_PROMPT)
     parts.push(DEVICE_RULES_MD)   // J-2 · 볼트 CLAUDE.md 에도 같은 글이 있지만, 옛 볼트에는 없으므로 시스템 프롬프트로도 준다
     const ctx = todoContext(bot.abs)
@@ -175,6 +195,7 @@ export class Host {
     this.log(`루틴 실행: ${bot.name} · ${r.name}`)
     const run = routineRun(r)   // BS · 문구와 권한 모드를 같은 값에서
     const s = this.sessions.create(bot, `루틴 · ${r.name}`, { permissionMode: run.mode, routine: r.name })
+    this.runs.start(s.id, bot.id, bot.name, r.name)
     /**
      * AI · **루틴 세션은 둘까지만** (2026-09-24 Dave). 새로 만든 뒤 오래된 «끝난» 것부터 걷는다 —
      * 🔴 도는 중·확인 대기는 걷지 않는다(하던 일을 끊고 안 읽은 답을 지우게 된다). 판정은 `core` 가 아니라
@@ -268,6 +289,7 @@ export class Host {
     this.broadcast({ ev: 'auth', auth: this.auth })
     if (this.auth.verdict === 'unreadable' && prev !== 'unreadable') this.notifier.emit('error', ORCH_ID, `${this.hostName()} 에서 Claude 로그인이 필요해요`, '호스트 맥에서 터미널 → claude → /login. 대기 중인 지시는 복구되면 이어서 해요.')
     if (this.auth.verdict === 'loggedout' && prev !== 'loggedout') this.notifier.emit('error', ORCH_ID, 'Claude 가 로그아웃됐어요', `${this.hostName()} 에서 claude → /login 을 해 주세요.`)
+    if (this.auth.verdict === 'loggedin' && prev !== 'loggedin') this.sessions.drainAll()   // 로그인이 막혀 큐에만 둔 편지를 내보낸다
     if (this.auth.verdict === 'loggedin' && this.queued.length) {
       const q = this.queued; this.queued = []
       for (const it of q) { const b = this.registry.bot(it.botId); const r = this.sessions.get(it.sessionId); if (b && r) this.sessions.send(r, b, it.text, undefined, it.origin) }
@@ -309,7 +331,28 @@ export class Host {
     return out.sort((a, b) => b.m - a.m).slice(0, limit).map((x) => x.rel)
   }
   recentFiles(bot: Bot, limit = 12) { return recentFiles(bot.abs, limit) }
-  shutdown(): void { this.sessions.stopAll(); this.watcher.close() }
+  shutdown(): void { this.sessions.stopAll(); this.watcher.close(); this.bridges.closeAll() }
+
+  private isDeliverTarget(p: PeerDef, bot: Bot): boolean { const q = p.deliver.bot; return q === bot.id || q === bot.name || q === bot.rel }
+  /**
+   * BQ-3·4 · 편지 묶음을 상대의 채널 세션에 넣는다 — 사람이 아니라 «바깥 상대» 의 턴(`turnFrom: peer`)이다.
+   * 🔴 두 번 넣지 않는다 — 배달 기록을 쓰기 전에 꺼졌다 켜지면 같은 편지가 다시 오므로, 세션의 큐와 최근 대화에 그 id 가 있으면 건너뛴다.
+   * 🔴 로그인이 막혀 있으면 보내지 않고 큐에만 둔다(파일로 저장된다) — 복구되면 `drainAll` 이 내보낸다.
+   * @returns 세션 id · 넣을 봇이 없으면 null(기록하지 않고 다음 폴링에 다시)
+   */
+  deliverLetters(peer: PeerDef, items: Incoming[]): string | null {
+    const bot = this.registry.bots().find((b) => this.isDeliverTarget(peer, b))
+    if (!bot) { this.log(`⚠ 연결 «${peer.name}» 편지를 넣을 봇 «${peer.deliver.bot}» 이 없어요 — 편지는 그대로 두고 다음에 다시`); return null }
+    const r = this.sessions.channelOf(bot, peer.id, peer.deliver.session, peer.trust)
+    const queued = new Set((r.queue ?? []).flatMap((q) => q.letters ?? []))
+    const recent = r.items.slice(-400).filter((i) => i.kind === 'user').map((i) => (i as { text: string }).text)
+    const fresh = items.filter((x) => !queued.has(x.letter.id) && !recent.some((t) => t.includes(`id="${x.letter.id}"`)))
+    if (!fresh.length) return r.id
+    const msg: QueuedMsg = { text: letterBatch(peer.name, fresh.map((x) => ({ letter: x.letter, rel: x.rel }))), from: `peer:${peer.id}`, fromName: `${peer.icon} ${peer.name}`, t: Date.now(), origin: 'peer', letters: fresh.map((x) => x.letter.id), ...(fresh.some((x) => x.letter.urgent) ? { urgent: true } : {}) }
+    if (this.auth.verdict === 'unreadable' || this.auth.verdict === 'loggedout') this.sessions.enqueue(r, msg)
+    else this.sessions.sendFromBot(r, bot, msg)
+    return r.id
+  }
 }
 
 function summarize(req: PermissionRequest): string {

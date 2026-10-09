@@ -17,6 +17,7 @@ import { isModelRejected } from '../core/codexMap'
 import { autoAllows, fallbackRules, rulesLabel } from '../core/permPolicy'
 import type { Bot, ChatItem, PermissionMode, PermissionRequest, QueuedMsg, SessionInfo, SessionState } from '../core/types'
 import type { TurnFrom } from '../core/turnGuard'
+import { channelSpawn, type Trust } from '../core/bridges'
 import { compactReason } from '../core/compact'
 import { atomicWrite, dataDir, ensureDir } from './paths'
 
@@ -98,6 +99,10 @@ export interface SpawnSpec {
   name?: string
   appendSystemPrompt?: string
   bin?: string
+  /** BQ-5 · 채널 세션 울타리(core/bridges.channelSpawn) — `default` 도 명시해 사용자 설정의 auto/bypass 를 안 따라가게 */
+  explicitMode?: boolean
+  strictMcp?: boolean
+  disallowed?: string[]
 }
 
 /** Claude Code 상주 워커 (stream-json, 다중 턴, stdio 권한) */
@@ -113,9 +118,11 @@ export class ClaudeWorker extends EventEmitter {
     super()
     this.cliSessionId = spec.resume ?? null
     const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-prompt-tool', 'stdio']
-    if (spec.permissionMode && spec.permissionMode !== 'default') args.push('--permission-mode', spec.permissionMode)
+    if (spec.permissionMode && (spec.permissionMode !== 'default' || spec.explicitMode)) args.push('--permission-mode', spec.permissionMode)
     for (const d of spec.addDirs ?? []) args.push('--add-dir', d)
     if (spec.mcpConfig) args.push('--mcp-config', spec.mcpConfig)
+    if (spec.strictMcp) args.push('--strict-mcp-config')
+    if (spec.disallowed?.length) args.push('--disallowedTools', spec.disallowed.join(' '))
     if (spec.model) args.push('--model', spec.model)
     if (spec.effort) args.push('--effort', spec.effort)
     if (spec.name) args.push('--name', spec.name.replace(/[^\p{L}\p{N}_-]+/gu, '-').slice(0, 60))
@@ -235,6 +242,12 @@ export interface SessionRec {
   queue?: QueuedMsg[]
   /** 마지막 자동 압축 시각 — 압축 뒤 측정값이 늦게 와도 고리가 안 생기게(core/compact) */
   compactedAt?: number
+  /**
+   * BQ-4 · 연결(Bridge) 채널 세션이면 상대 id — 그 상대의 편지가 이 세션 하나로 온다(봇마다 상대마다 하나).
+   * `trust` 는 그 상대의 신뢰 수준이고, 워커를 띄울 때 CLI 인자로 집행된다(core/bridges.channelSpawn).
+   */
+  channel?: string
+  trust?: Trust
   /** BS · 지금(마지막) 턴을 누가 시작했나 — 사람만 시킬 수 있는 도구를 MCP 가 이것으로 거른다(core/turnGuard) */
   turnFrom?: TurnFrom
   id: string
@@ -344,7 +357,7 @@ export class SessionManager extends EventEmitter {
   }
   info(r: SessionRec): SessionInfo {
     const w = this.workers.get(r.id)
-    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, inflight: r.inflight, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, ...(r.comm ? { comm: true } : {}), ...(r.delegatedFrom && !r.comm ? { delegated: true } : {}), ...(r.queue?.length ? { queue: r.queue } : {}), activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
+    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, inflight: r.inflight, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, ...(r.comm ? { comm: true } : {}), ...(r.channel ? { channel: r.channel } : {}), ...(r.delegatedFrom && !r.comm ? { delegated: true } : {}), ...(r.queue?.length ? { queue: r.queue } : {}), activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
   }
   get(id: string): SessionRec | undefined { return this.recs.get(id) }
   /** 볼트 전체의 세션 기록 — 「지난 대화 찾기」 가 훑는다(읽기만) */
@@ -381,9 +394,9 @@ export class SessionManager extends EventEmitter {
    * BO · `id` 는 화면이 미리 정한 새 세션 id 다 — 화면이 호스트 답을 기다리지 않고 그 세션으로 먼저 간다(2026-10-08).
    * ⚠ 형식이 틀리거나 이미 쓰인 id(지운 기록 파일 포함)는 받지 않는다 — 부르는 쪽(`gateway`)이 먼저 거른다(`acceptId`).
    */
-  create(bot: Bot, name: string, opts: { permissionMode?: PermissionMode; model?: string; effort?: string; routine?: string; vendor?: 'claude' | 'codex'; delegatedFrom?: string; comm?: boolean; id?: string } = {}): SessionRec {
+  create(bot: Bot, name: string, opts: { permissionMode?: PermissionMode; model?: string; effort?: string; routine?: string; vendor?: 'claude' | 'codex'; delegatedFrom?: string; comm?: boolean; id?: string; channel?: string; trust?: Trust } = {}): SessionRec {
     const id = opts.id ?? `s_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-    const r: SessionRec = { id, botId: bot.id, name, cwd: bot.repo ?? bot.abs, cliSessionId: null, state: 'idle', createdAt: Date.now(), lastActivity: Date.now(), items: [], routine: opts.routine, ...(opts.delegatedFrom ? { delegatedFrom: opts.delegatedFrom } : {}), ...(opts.comm ? { comm: true } : {}), permissionMode: opts.permissionMode ?? ((opts.vendor ?? bot.vendor) === 'codex' ? undefined : this.defaultPermissionMode), vendor: opts.vendor ?? bot.vendor, model: opts.model ?? this.defaults[opts.vendor ?? bot.vendor].model, effort: opts.effort ?? this.defaults[opts.vendor ?? bot.vendor].effort }
+    const r: SessionRec = { id, botId: bot.id, name, cwd: bot.repo ?? bot.abs, cliSessionId: null, state: 'idle', createdAt: Date.now(), lastActivity: Date.now(), items: [], routine: opts.routine, ...(opts.delegatedFrom ? { delegatedFrom: opts.delegatedFrom } : {}), ...(opts.comm ? { comm: true } : {}), ...(opts.channel ? { channel: opts.channel, trust: opts.trust ?? 'propose', named: true } : {}), permissionMode: opts.permissionMode ?? ((opts.vendor ?? bot.vendor) === 'codex' ? undefined : this.defaultPermissionMode), vendor: opts.vendor ?? bot.vendor, model: opts.model ?? this.defaults[opts.vendor ?? bot.vendor].model, effort: opts.effort ?? this.defaults[opts.vendor ?? bot.vendor].effort }
     this.recs.set(id, r)
     this.persist(r)
     this.emit('sessions', bot.id)
@@ -549,14 +562,32 @@ export class SessionManager extends EventEmitter {
    */
   sendFromBot(r: SessionRec, bot: Bot, msg: QueuedMsg): 'sent' | 'queued' {
     if (this.mustWait(r) || r.queue?.length) { this.enqueue(r, msg); return 'queued' }
-    const why = r.comm ? compactReason(r, 'before') : null
+    const why = r.comm || r.channel ? compactReason({ ...r, comm: true }, 'before') : null
     if (why) { this.enqueue(r, msg); this.compact(r, bot, why); return 'queued' }
     this.send(r, bot, msg.text, undefined, msg.origin ?? 'bot')
     return 'sent'
   }
-  private enqueue(r: SessionRec, msg: QueuedMsg): void {
-    r.queue = [...(r.queue ?? []), msg]
+  /** 큐에 넣는다 — 급한 편지(`urgent`)는 앞서 온 급한 것들 바로 뒤로(끼어들기가 아니라 큐 맨 앞 · 검토 §2-⑨) */
+  enqueue(r: SessionRec, msg: QueuedMsg): void {
+    const q = [...(r.queue ?? [])]
+    if (msg.urgent) { let i = 0; while (i < q.length && q[i].urgent) i++; q.splice(i, 0, msg) } else q.push(msg)
+    r.queue = q
     this.persist(r); this.emit('sessions', r.botId)
+  }
+  /**
+   * BQ-4 · 상대의 채널 세션 — 봇마다 상대마다 하나(가장 최근 것). 없으면 이름 고정으로 만든다.
+   * trust 가 바뀌었으면 기록을 고치고, 쉬는 워커는 내려서 다음 턴에 새 울타리로 뜨게 한다.
+   */
+  channelOf(bot: Bot, peer: string, name: string, trust: Trust): SessionRec {
+    const have = [...this.recs.values()].filter((r) => r.botId === bot.id && r.channel === peer).sort((a, b) => b.createdAt - a.createdAt)[0]
+    if (!have) return this.create(bot, name, { channel: peer, trust, vendor: 'claude', permissionMode: channelSpawn(trust).permissionMode })
+    if (have.trust !== trust) {
+      have.trust = trust; have.permissionMode = channelSpawn(trust).permissionMode
+      const w = this.workers.get(have.id)
+      if (w && have.state !== 'running' && have.state !== 'awaiting_input') { w.kill(); this.workers.delete(have.id) }
+      this.persist(have); this.emit('sessions', have.botId)
+    }
+    return have
   }
   /** 사람이 대기 말을 고치거나 뺀다 — 빈 글이면 뺀다. @returns 남은 대기열 */
   editQueue(r: SessionRec, i: number, text: string): QueuedMsg[] {
@@ -574,9 +605,13 @@ export class SessionManager extends EventEmitter {
     if (!this.recs.has(r.id) || r.state === 'running' || r.state === 'awaiting_input') return
     const bot = this.botOf(r.botId); if (!bot) return
     if (r.queue?.length) {
-      const [m, ...rest] = r.queue; r.queue = rest.length ? rest : undefined
+      // BQ-4 · 편지는 묶어서 한 턴에 — 큐에 쌓인 편지 묶음을 모두 모아 한 번에 보낸다(봇 말은 종전대로 하나씩)
+      const head = r.queue[0]
+      const take = head.letters ? r.queue.filter((x) => x.letters) : [head]
+      const rest = r.queue.filter((x) => !take.includes(x))
+      r.queue = rest.length ? rest : undefined
       this.persist(r)
-      this.send(r, bot, m.text, undefined, m.origin ?? 'bot')
+      this.send(r, bot, take.map((x) => x.text).join('\n\n'), undefined, head.origin ?? 'bot')
       return
     }
     // ⚠ 잠든 세션은 압축하려고 깨우지 않는다 — 살아 있는 워커가 막 턴을 끝냈을 때만
@@ -615,7 +650,7 @@ export class SessionManager extends EventEmitter {
       // ⚠ 모델 이름은 CLI 마다 다르다 — Claude 이름(claude-opus-5)을 Codex 에 넘기면 그 자리에서 죽는다.
       //    Codex 것처럼 보이는 이름만 넘기고 아니면 CLI 의 기본값에 맡긴다.
       ? new CodexWorker({ cwd: r.cwd, resume: r.cliSessionId, model: fitsProvider('codex', r.model) ? r.model : undefined, effort: r.effort, sandbox: this.codexSandbox, apiKey: this.openaiApiKey, addDirs: extraDirs(bot) })
-      : new ClaudeWorker({ cwd: r.cwd, resume: r.cliSessionId, permissionMode: r.permissionMode, addDirs: extraDirs(bot), mcpConfig: this.mcpUrl(r.id, bot.id), model: r.model, effort: r.effort, name: `${bot.name}-${r.name}`, appendSystemPrompt: this.systemPromptFor(bot) || undefined, bin: this.bin })
+      : new ClaudeWorker({ cwd: r.cwd, resume: r.cliSessionId, permissionMode: r.permissionMode, addDirs: extraDirs(bot), mcpConfig: this.mcpUrl(r.id, bot.id), model: r.model, effort: r.effort, name: `${bot.name}-${r.name}`, appendSystemPrompt: this.systemPromptFor(bot) || undefined, bin: this.bin, ...(r.channel ? channelWorkerSpec(r.trust ?? 'propose') : {}) })
     this.workers.set(r.id, w)
     w.on('line', (line: StreamLine) => this.onLine(r, line))
     w.on('permission', (p: PermissionRequest) => {
@@ -986,3 +1021,9 @@ export class SessionManager extends EventEmitter {
 
 export function statBotDir(abs: string): boolean { try { return statSync(abs).isDirectory() } catch { return false } }
 export { mkdirSync }
+
+/** BQ-5 · 채널 세션 워커 인자 — trust 하나에서 모드·MCP·막을 도구가 나온다(core/bridges.channelSpawn) */
+function channelWorkerSpec(trust: Trust): Pick<SpawnSpec, 'permissionMode' | 'explicitMode' | 'strictMcp' | 'disallowed'> {
+  const sp = channelSpawn(trust)
+  return { permissionMode: sp.permissionMode, explicitMode: true, strictMcp: sp.strictMcp, disallowed: sp.disallowed }
+}

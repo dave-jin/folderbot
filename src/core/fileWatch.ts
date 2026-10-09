@@ -29,7 +29,8 @@ export function isBotConfigChange(rel: string): boolean {
   const parts = String(rel ?? '').split(/[\\/]/).filter(Boolean)
   if (parts[parts.length - 1] === '.bot.yml') return true
   // BK-2 · 오케스트레이터 루틴 파일 — 볼트 루트 기준 `.claude/routines.yml`. 손으로 고쳐도 touch 없이 다시 걸린다
-  return parts.length === 2 && parts[0] === '.claude' && parts[1] === 'routines.yml'
+  // BQ-1 · 연결 설정 `.claude/bridges.yml` 도 — 고치면 연결을 다시 읽는다
+  return parts.length === 2 && parts[0] === '.claude' && (parts[1] === 'routines.yml' || parts[1] === 'bridges.yml')
 }
 /**
  * 볼트가 Dropbox 로 동기화되므로 **쓰기가 연달아 들어온다.** 파일 신호(300ms)보다 넉넉히 쉬고 한 번만 다시 짠다 —

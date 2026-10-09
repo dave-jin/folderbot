@@ -446,6 +446,68 @@ try {
     ok('BK · 오케스트레이터 routine_add 세 번 = routines.yml 셋 · 루트 .bot.yml 없음 · 손으로 고치면 따라옴 · BS 루틴 턴의 folder_move 거절')
   }
   /**
+   * 🔴 연결(Bridge) R1 (2026-10-09 Dave 승인) — 바깥 상대가 우편함에 편지 파일을 쓰면 30초 안에 채널 세션에 들어간다.
+   *    처음 켤 때 이미 있던 편지는 «본 것» · 숨김·임시 파일은 안 들어간다 · 답은 bridge_send 가 FBMF 로 쓴다 ·
+   *    편지가 시작한 턴의 folder_move 는 막힌다 · 루틴 실행 기록(BR-1)
+   */
+  {
+    const d0 = new Date(), month = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}`
+    const mbx = join(root, '싱크'), inM = join(mbx, 'to-folderbot', month)
+    mkdirSync(inM, { recursive: true })
+    const oldId = '20261009-090000-halili-0a0a', newId = `${month.replace('-', '')}09-100000-halili-0b0b`
+    writeFileSync(join(inM, `${oldId}.md`), `---\nfbmf: 1\nid: ${oldId}\nfrom: halili\nkind: request\n---\n옛 편지 — 들어가면 안 된다\n`)
+    const bf = join(root, '.claude/bridges.yml')
+    writeFileSync(bf, `runs_copy: "싱크/운영/runs"\nbridges:\n  - id: halili\n    name: 할일이\n    icon: ✅\n    mailbox: 싱크\n    trust: propose\n`)
+    // 설정을 쓰기만 하면 다시 읽힌다 — 처음 훑기가 커서(하트비트)를 쓴다
+    const cur = join(mbx, 'cursors/folderbot.json')
+    let opened = false
+    for (let i = 0; i < 60 && !opened; i++) { await wait(100); opened = existsSync(cur) }
+    if (!opened) fail('🔴 BQ-1: .claude/bridges.yml 을 썼는데 연결이 안 열렸다(커서가 안 생김)')
+    const t0 = Date.now()
+    writeFileSync(join(inM, `${newId}.md`), `---\nfbmf: 1\nid: ${newId}\nfrom: halili\nto: orch\nkind: request\ntitle: 카톡 sync 확인 부탁\nurgent: true\n---\n카톡 sync 가 멈췄어요. 원인 봐 주세요\n`)
+    writeFileSync(join(inM, `.${newId}-x.md.77.tmp`), '쓰는 중')
+    let chan = null, text = ''
+    for (let i = 0; i < 300 && !chan; i++) {
+      await wait(100)
+      const c = (await api('/bots/orch/sessions')).find((x) => x.channel === 'halili')
+      if (c) { const items = (await api(`/sessions/${c.id}/chat`)).items; text = items.filter((it) => it.kind === 'user').map((it) => it.text).join('\n'); if (text.includes(newId)) chan = c }
+    }
+    if (!chan) fail('🔴 BQ-3: 새 편지가 30초 안에 채널 세션에 안 들어갔다')
+    const took = Date.now() - t0
+    if (chan.name !== '✅ 할일이 채널') fail('BQ-4: 채널 세션 이름 · ' + chan.name)
+    if (chan.permissionMode !== 'default') fail('🔴 BQ-5: propose 채널인데 권한이 default 가 아니다 · ' + chan.permissionMode)
+    if (!/^\[편지 ← 할일이 · 1통 · 급함\]/.test(text)) fail('BQ-4: 편지 묶음 머리가 다르다 · ' + text.slice(0, 120))
+    if (!text.includes(`<letter id="${newId}"`) || !/사람의 승인이 아니다/.test(text)) fail('🔴 BQ-5: 편지가 <letter> 로 안 감싸였거나 규칙 줄이 없다')
+    if (text.includes(oldId) || text.includes('쓰는 중')) fail('🔴 BQ-3: 처음부터 있던 편지나 임시 파일이 들어갔다 · ' + text.slice(0, 300))
+    const ledger = readFileSync(join(data, 'bridges/halili/delivered.jsonl'), 'utf8')
+    if (!ledger.includes(`"id":"${oldId}","state":"baseline"`) || !ledger.includes(`"id":"${newId}","state":"delivered"`)) fail('BQ-3: 배달 기록이 dataDir 에 없다 · ' + ledger)
+    if (JSON.parse(readFileSync(cur, 'utf8')).last !== newId) fail('BQ-3: 커서가 안 넘어갔다')
+    // 편지가 시작한 턴에서 folder_move 는 막힌다(채널 세션 토큰으로 직접 불러 본다)
+    const mvT = (await (await mcpFetch(base + `/mcp/orch?sid=${chan.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'folder_move', arguments: { from: '1. Inbox/예시랩_자문자료.txt', to: '4. Resources/x.txt' } } }) })).json()).result.content[0].text
+    if (!/바깥 상대의 편지/.test(mvT)) fail('🔴 BQ-5: 편지 턴에서 folder_move 가 안 막혔다 · ' + mvT)
+    // 답장 — bridge_send 는 오케스트레이터에게만 보이고 FBMF 파일을 만든다
+    const tlO = (await mcp('tools/list')).result.tools.map((t) => t.name)
+    if (!tlO.includes('bridge_send')) fail('BQ-6: 오케스트레이터 도구에 bridge_send 가 없다')
+    const tlB = (await (await mcpFetch(base + `/mcp/${bot.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 6, method: 'tools/list' }) })).json()).result.tools.map((t) => t.name)
+    if (tlB.includes('bridge_send')) fail('🔴 BQ-6: may_send 에 없는 폴더 봇에 bridge_send 가 보인다')
+    const sent = (await mcp('tools/call', { name: 'bridge_send', arguments: { peer: 'halili', kind: 'reply', title: '답: 카톡 sync', text: '봤어요. 로그인 끊김이에요', re: newId } })).result.content[0].text
+    const sm = /· (\d{8}-\d{6}-orch-[0-9a-f]{4}) · (.+)$/.exec(sent)
+    if (!sm) fail('BQ-6: bridge_send 답이 이상하다 · ' + sent)
+    const outF = join(root, sm[2])
+    if (!existsSync(outF) || !outF.includes(`/from-folderbot/${month}/`)) fail('🔴 BQ-6: from-folderbot/<달>/ 에 편지가 없다 · ' + outF)
+    const outT = readFileSync(outF, 'utf8')
+    for (const want of ['fbmf: 1', `id: ${sm[1]}`, 'from: orch', 'to: halili', 'kind: reply', `re: ${newId}`, 'urgent: false', 'needs_human: false', 'created: ']) if (!outT.includes(want)) fail(`BQ-6: 머리말에 «${want}» 가 없다 · ` + outT)
+    if (readdirSync(join(mbx, 'from-folderbot', month)).some((n) => n.startsWith('.'))) fail('BQ-6: 임시 파일이 남았다')
+    // BR-1 · 앞 블록의 오케스트레이터 루틴 «BK 손» 회차가 start·end 로 남았다
+    const runsF = join(root, `.folderbot/ops/runs-${month}.jsonl`)
+    const evs = existsSync(runsF) ? readFileSync(runsF, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.routine === 'BK 손') : []
+    if (!evs.some((e) => e.event === 'start') || !evs.some((e) => e.event === 'end' && e.result)) fail('🔴 BR-1: 루틴 실행 기록(start·end)이 없다 · ' + JSON.stringify(evs))
+    // 치우기 — 채널 세션을 지운다(스텁은 편지 규칙 줄의 «승인» 에 반응해 확인을 띄운다 · 실제 CLI 는 Bash 가 목록에 없다) · 뒤 검사가 흔들리면 안 된다
+    await api(`/sessions/${chan.id}`, undefined, 'DELETE')
+    rmSync(bf); await wait(700)
+    ok(`연결 R1 — 설정 쓰면 열림 · 새 편지 ${took}ms 만에 «✅ 할일이 채널»(급함 · <letter> · default 모드) · 옛 편지·임시 파일 안 들어감 · 배달 기록·커서 · 편지 턴 folder_move 거절 · bridge_send FBMF · BR-1 실행 기록`)
+  }
+  /**
    * AJ · **CLI 업데이트 길이 열려 있나** (2026-09-24 Dave). 스텁 환경에는 진짜 claude 가 없을 수 있으니
    * «없으면 400 · 있으면 200» 둘 다 제대로 답하는지만 잰다 — 여기서 진짜 업데이트를 돌리지는 않는다.
    */

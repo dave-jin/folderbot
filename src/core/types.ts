@@ -177,7 +177,13 @@ export interface HarnessDetail extends HarnessRow { skillList: HarnessItem[]; mc
 
 /** 호스트 대기열의 말 한 개 — `from` 은 보낸 봇 id */
 /** `origin` — 이 말이 나가 시작하는 턴의 출처(core/turnGuard). 비면 'bot' */
-export interface QueuedMsg { text: string; from: string; fromName?: string; t: number; origin?: import('./turnGuard').TurnFrom }
+export interface QueuedMsg {
+  text: string; from: string; fromName?: string; t: number; origin?: import('./turnGuard').TurnFrom
+  /** BQ-4 · 편지 묶음이면 그 편지 id 들 — 큐에서 편지끼리는 한 턴에 묶여 나가고, 두 번 넣지 않는 판정에도 쓴다 */
+  letters?: string[]
+  /** 급한 편지 — 큐 맨 앞(앞선 급한 것들 뒤) */
+  urgent?: boolean
+}
 
 export interface PermissionRequest {
   requestId: string

@@ -2,6 +2,7 @@ import { sessionUnread } from '../core/unread'
 import { Cron } from 'croner'
 import type { Bot, PermissionMode, RoutineDef } from '../core/types'
 import { cronOk, describeCron } from '../core/when'
+import { RESULT_LINE_HINT } from '../core/runs'
 
 export interface RoutineRunner { run: (bot: Bot, r: RoutineDef) => void; log: (msg: string) => void }
 
@@ -90,7 +91,7 @@ export function routineRun(r: Pick<RoutineDef, 'name' | 'prompt' | 'approve'>): 
   const how = a === 'always' ? '' : a === 'folder' ? '이 폴더 안 파일만 고치고 ' : '파일을 고치지 말고 제안만 하고 '
   return {
     mode: approveToMode(a),
-    text: `${r.prompt}\n\n(이건 예약된 루틴 "${r.name}" 이야. 사람이 없을 수 있으니 ${how}결과를 짧게 요약해. 폴더 생성·이동·은퇴·외부 발송처럼 되돌리기 어려운 일은 하지 말고 제안으로 남겨.)`,
+    text: `${r.prompt}\n\n(이건 예약된 루틴 "${r.name}" 이야. 사람이 없을 수 있으니 ${how}결과를 짧게 요약해. 폴더 생성·이동·은퇴·외부 발송처럼 되돌리기 어려운 일은 하지 말고 제안으로 남겨. ${RESULT_LINE_HINT})`,
   }
 }
 
