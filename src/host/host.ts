@@ -3,7 +3,7 @@ import { planNow, refreshPlan } from './planUsage'
 import { DEVICE_RULES_MD, type ClientCtx } from '../core/clientCtx'
 import { mdPlain } from '../core/mdPlain'   // 알림 미리보기는 글자만 — 마크다운 기호가 그대로 나왔다(2026-09-25)
 import { existsSync, readdirSync, statSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { hostname } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { TODO_RULES_PROMPT } from '../core/todo'
@@ -17,11 +17,12 @@ import { type HostConfig, absRoot, dataDir, saveConfig } from './paths'
 import { McpAuth } from './mcpAuth'
 import { BridgeHub, type Incoming } from './bridge'
 import { RunLog } from './runs'
+import { readWakeEnv, wakePeer } from './wake'
 import { letterBatch } from '../core/fbmf'
 import type { PeerDef } from '../core/bridges'
 import type { QueuedMsg } from '../core/types'
-import { ORCH_ID, Registry, canon, ORCH_REQUEST_RULES_MD, ORCH_ASK_HINT, LETTER_RULES_MD } from './registry'
-import { Routines, routineRun, routinesToDrop } from './routines'
+import { ORCH_ID, Registry, canon, ORCH_REQUEST_RULES_MD, ORCH_ASK_HINT, ORCH_REPORT_HINT, LETTER_RULES_MD } from './registry'
+import { Routines, routineRun, routinesToDrop, RETRY_DELAY_MS } from './routines'
 import { SessionManager, setOauthToken, setKeychainLogin, AUTH_ERROR, type SessionRec } from './session'
 import { readTodo, todoAdd, todoContext } from './todoStore'
 import { recent as recentFiles, tree as fileTree } from './files'
@@ -80,12 +81,18 @@ export class Host {
     this.sessions.mcpUrl = (sid, botId) => this.mcpAuth.configFile(botId, sid, cfg.port)
     this.sessions.systemPromptFor = (bot) => this.systemPrompt(bot)
     this.sessions.botOf = (id) => this.registry.bot(id)
-    this.routines = new Routines({ run: (b, r) => this.runRoutine(b, r), log: this.log })
-    this.bridges = new BridgeHub({ root: this.registry.root, dataDir: dataDir(), hostNames: () => [hostname(), this.hostName(), this.cfg.hostName ?? ''], log: (m) => this.log(m), deliver: (peer, items) => this.deliverLetters(peer, items) })
+    this.routines = new Routines({ run: (b, r, why) => { this.runRoutine(b, r, why ?? {}) }, log: this.log })
+    this.bridges = new BridgeHub({ root: this.registry.root, dataDir: dataDir(), hostNames: () => [hostname(), this.hostName(), this.cfg.hostName ?? ''], log: (m) => this.log(m), deliver: (peer, items) => this.deliverLetters(peer, items),
+      wake: (peer, payload) => { void this.wakePeer(peer, payload) },
+      onStale: (peer, last) => this.peerSignal(peer, last, false),
+      onAlive: (peer, last) => this.peerSignal(peer, last, true) })
+    this.routines.file = join(dataDir(), 'routine-runs.json')   // BR-2 · 놓친 회차 판단 기준
     this.runs = new RunLog(this.registry.root, () => this.bridges.cfg.runsCopy, () => hostname().replace(/\.local$/, ''), (m) => this.log(m))
     this.wire()
     this.sessions.drainAll()   // 호스트가 다시 떴다 — 기다리던 봇 말을 내보낸다
     this.routines.reschedule(this.registry.bots())
+    // BR-2 · 꺼져 있던 사이 놓친 회차를 한 번 보충한다 — 세션·인증이 자리 잡은 뒤에
+    setTimeout(() => { try { this.routines.catchUp(this.registry.bots()) } catch (e) { this.log(`놓친 회차 보충 실패: ${(e as Error).message}`) } }, 20_000).unref()
     // 봇 폴더 감시 — 세션을 거치지 않은 쓰기(Bash·Codex·Dropbox·Finder)도 트리에 온다 (host/watch.ts 머리말)
     this.watcher.log = (m) => this.log(m)
     this.watcher.sync(this.registry.bots())
@@ -129,7 +136,16 @@ export class Host {
       // BR-1 · 루틴 회차가 끝났다 — 결과 줄(`결과: ok|fail|skip`)까지 읽어 기록한다
       if (r.routine && prev === 'running' && (r.state === 'done' || r.state === 'error')) {
         const lastA = [...r.items].reverse().find((i) => i.kind === 'assistant') as { text: string } | undefined
-        this.runs.end(r.id, r.state === 'done', lastA?.text, r.state === 'error' ? r.lastError : undefined)
+        const res = this.runs.end(r.id, r.state === 'done', lastA?.text, r.state === 'error' ? r.lastError : undefined)
+        // BR-2 · 실패한 회차는 `retry: true` 인 루틴만 10분 뒤 한 번 다시(기본 끔 — 외부 발송이 두 번 나가지 않게)
+        const info = this.routineRuns.get(r.id); this.routineRuns.delete(r.id)
+        if (res && !res.ok && info && info.attempt === 1) {
+          const def = this.registry.bot(info.botId)?.routines.find((x) => x.name === r.routine)
+          if (def?.retry === true && def.enabled !== false) {
+            this.runs.note({ event: 'retry', botId: info.botId, routine: def.name, run: r.id, ms: this.retryDelayMs })
+            setTimeout(() => { const b = this.registry.bot(info.botId); const d = b?.routines.find((x) => x.name === def.name); if (b && d && d.enabled !== false) this.runRoutine(b, d, { attempt: 2 }) }, this.retryDelayMs).unref()
+          }
+        }
       }
       // L · 턴이 끝나면 사용량 캐시를 비운다 — 다음 /api/usage 가 새 기록을 훑어 60초 안에 원격 패널이 바뀐다
       if (prev === 'running' && r.state !== 'running') { invalidateUsage(); planNow(this.sessions.bin, true) }   // BD · 턴을 썼으니 실제 한도도 다시(60초 문턱 안에서)
@@ -146,7 +162,7 @@ export class Host {
     const parts: string[] = []
     // BH · orch_ask — 볼트의 orchestrator.md·폴더 CLAUDE.md 가 옛 판이어도 규칙이 닿게 시스템 프롬프트로도 준다(DEVICE_RULES_MD 와 같은 이유)
     if (bot.orchestrator) { const op = this.registry.orchestratorPrompt(); parts.push(op); if (!op.includes('봇이 보낸 요청')) parts.push(ORCH_REQUEST_RULES_MD) }
-    else parts.push(`너는 Folder Bot 의 봇이다. 폴더 "${bot.rel}" 안에서 일한다. 산출물은 이 폴더에 둔다.\n${ORCH_ASK_HINT}`)
+    else parts.push(`너는 Folder Bot 의 봇이다. 폴더 "${bot.rel}" 안에서 일한다. 산출물은 이 폴더에 둔다.\n${ORCH_ASK_HINT}\n${ORCH_REPORT_HINT}`)
     // BQ · 연결 편지를 받거나 보낼 수 있는 봇에게만 편지 규칙을 준다
     if (this.bridges?.cfg.peers.some((p) => p.enabled && (this.isDeliverTarget(p, bot) || p.maySend.includes(bot.id)))) parts.push(LETTER_RULES_MD)
     parts.push(TODO_RULES_PROMPT)
@@ -191,11 +207,16 @@ export class Host {
     return r.id
   }
 
-  runRoutine(bot: Bot, r: RoutineDef): void {
-    this.log(`루틴 실행: ${bot.name} · ${r.name}`)
+  /** BR-2 · 이 호스트가 돌린 루틴 회차(세션 id → 몇 번째 시도) — 재시도 판단 */
+  private routineRuns = new Map<string, { botId: string; attempt: number }>()
+  /** @returns 루틴 세션 id */
+  runRoutine(bot: Bot, r: RoutineDef, why: { attempt?: number; catchup?: number } = {}): string {
+    this.log(`루틴 실행: ${bot.name} · ${r.name}${why.attempt && why.attempt > 1 ? ` · ${why.attempt}번째 시도` : ''}${why.catchup ? ' · 놓친 회차 보충' : ''}`)
+    this.routines.markRun(bot.id, r.name)
     const run = routineRun(r)   // BS · 문구와 권한 모드를 같은 값에서
     const s = this.sessions.create(bot, `루틴 · ${r.name}`, { permissionMode: run.mode, routine: r.name })
-    this.runs.start(s.id, bot.id, bot.name, r.name)
+    this.runs.start(s.id, bot.id, bot.name, r.name, why)
+    this.routineRuns.set(s.id, { botId: bot.id, attempt: why.attempt ?? 1 })
     /**
      * AI · **루틴 세션은 둘까지만** (2026-09-24 Dave). 새로 만든 뒤 오래된 «끝난» 것부터 걷는다 —
      * 🔴 도는 중·확인 대기는 걷지 않는다(하던 일을 끊고 안 읽은 답을 지우게 된다). 판정은 `core` 가 아니라
@@ -206,6 +227,7 @@ export class Host {
       this.sessions.remove(id)
     }
     this.sessions.send(s, bot, run.text, undefined, 'routine')
+    return s.id
   }
 
   /** 메인(호스트) 이름 — 설정값이 없으면 맥의 컴퓨터 이름(시스템 설정 › 일반 › 정보), 그것도 없으면 hostname */
@@ -332,6 +354,57 @@ export class Host {
   }
   recentFiles(bot: Bot, limit = 12) { return recentFiles(bot.abs, limit) }
   shutdown(): void { this.sessions.stopAll(); this.watcher.close(); this.bridges.closeAll() }
+
+  // ── BU · orch_report — 폴더 봇의 보고를 모아 오케스트레이터에게 ─────────────────────────────
+  private reportBuf: { bot: string; botId: string; kind: string; text: string; t: number }[] = []
+  private reportTimer: NodeJS.Timeout | null = null
+  /** 보고를 모아 두는 시간 — 그 사이 온 보고는 한 턴으로 넘어간다(장애·급함은 바로) */
+  reportHoldMs = Number(process.env.FOLDERBOT_REPORT_HOLD_MS) || 5 * 60_000   // 검사 시임 — 스모크가 몇 초로 줄인다
+  /** BR-2 · 실패한 루틴을 다시 돌리기까지(검사 시임 FOLDERBOT_RETRY_MS) */
+  retryDelayMs = Number(process.env.FOLDERBOT_RETRY_MS) || RETRY_DELAY_MS
+  /** @returns 'now'(바로 넘김) · 'held'(모아 둠) */
+  orchReport(bot: Bot, kind: 'report' | 'done' | 'incident', text: string, urgent: boolean, sid = ''): 'now' | 'held' {
+    const t = Date.now()
+    this.reportBuf.push({ bot: bot.name, botId: bot.id, kind, text, t })
+    this.runs.note({ event: 'report', botId: bot.id, bot: bot.name, kind, text: text.slice(0, 500), urgent: urgent || undefined, session: sid || undefined })
+    if (urgent || kind === 'incident') { this.flushReports(); return 'now' }
+    if (!this.reportTimer) { this.reportTimer = setTimeout(() => this.flushReports(), this.reportHoldMs); this.reportTimer.unref?.() }
+    return 'held'
+  }
+  flushReports(): void {
+    if (this.reportTimer) { clearTimeout(this.reportTimer); this.reportTimer = null }
+    const items = this.reportBuf.splice(0); if (!items.length) return
+    const orch = this.registry.bot(ORCH_ID); if (!orch) return
+    const time = (t: number) => new Date(t).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+    const text = [`[보고 ← 폴더 봇 ${items.length}건]`, '(답이 필요 없는 보고다. 연결 상대에게 넘길 것만 골라 bridge_send 로 넘기고, 나머지는 기록만 한다.)', ...items.map((x) => `- [${time(x.t)} · ${x.bot} · ${x.botId} · ${x.kind}] ${x.text.replace(/\s*\n\s*/g, ' ')}`)].join('\n')
+    const r = this.sessions.commOf(orch, 'reports')
+    const msg: QueuedMsg = { text, from: 'reports', fromName: '📥 보고', t: Date.now(), origin: 'bot', reports: true }
+    if (this.auth.verdict === 'unreadable' || this.auth.verdict === 'loggedout') this.sessions.enqueue(r, msg)
+    else this.sessions.sendFromBot(r, orch, msg)
+  }
+
+  /** BQ-8 · 급한 편지 → 상대 웹훅. 결과는 실행 기록에 남긴다(키 값은 남기지 않는다) */
+  async wakePeer(peer: PeerDef, payload: Record<string, unknown>): Promise<void> {
+    if (!peer.wake) return
+    let res: { ok: boolean; status?: number; error?: string }
+    try { res = await wakePeer(readWakeEnv(peer.wake.env), payload) } catch (e) { res = { ok: false, error: (e as Error).message } }
+    this.runs.note({ event: 'wake', peer: peer.id, id: String(payload.id), ok: res.ok, ...(res.status ? { status: res.status } : {}), ...(res.error ? { error: res.error } : {}) })
+    if (!res.ok) this.log(`⚠ 연결 «${peer.name}» 깨우기 실패 · ${res.error ?? res.status}`)
+  }
+  /**
+   * BQ-8 · 상대가 조용하다 / 돌아왔다 — 실행 기록 + 오케스트레이터 소통 세션에 한 줄 + (끊김이면) `fallback_notify` 명령.
+   * ⚠ 같은 일을 볼트 감시기도 한다면 둘 중 하나만 켠다(알림이 두 갈래가 된다).
+   */
+  peerSignal(peer: PeerDef, last: number, alive: boolean): void {
+    const ago = Math.round((Date.now() - last) / 60_000)
+    const at = new Date(last).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+    this.runs.note({ event: alive ? 'peer_ok' : 'peer_stale', peer: peer.id, last: new Date(last).toISOString(), minutes: ago })
+    const text = alive ? `[연결 회복] ${peer.icon} ${peer.name} — 다시 신호가 왔어요(${at}).` : `[연결 끊김] ${peer.icon} ${peer.name} — 마지막 신호 ${at}(${ago}분 전). 기대 주기 ${Math.round((peer.expectEveryMs ?? 0) / 60_000)}분을 넘었어요. 상대 쪽(앱·연결·루틴)을 확인해 주세요.`
+    this.log(text)
+    const orch = this.registry.bot(ORCH_ID)
+    if (orch) { const r = this.sessions.commOf(orch, `peer:${peer.id}`); const msg: QueuedMsg = { text, from: `peer:${peer.id}`, fromName: `${peer.icon} ${peer.name}`, t: Date.now(), origin: 'bot' }; if (this.auth.verdict === 'unreadable' || this.auth.verdict === 'loggedout') this.sessions.enqueue(r, msg); else this.sessions.sendFromBot(r, orch, msg) }
+    if (!alive && peer.fallbackNotify) execFile('/bin/sh', ['-c', `${peer.fallbackNotify} "$1"`, 'sh', text], { timeout: 30_000 }, (e) => { if (e) this.log(`⚠ 연결 «${peer.name}» 대체 알림 실패 · ${e.message}`) })
+  }
 
   private isDeliverTarget(p: PeerDef, bot: Bot): boolean { const q = p.deliver.bot; return q === bot.id || q === bot.name || q === bot.rel }
   /**

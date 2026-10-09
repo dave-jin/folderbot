@@ -18,7 +18,7 @@ import { autoAllows, fallbackRules, rulesLabel } from '../core/permPolicy'
 import type { Bot, ChatItem, PermissionMode, PermissionRequest, QueuedMsg, SessionInfo, SessionState } from '../core/types'
 import type { TurnFrom } from '../core/turnGuard'
 import { channelSpawn, type Trust } from '../core/bridges'
-import { compactReason } from '../core/compact'
+import { compactReason, rotateReason } from '../core/compact'
 import { atomicWrite, dataDir, ensureDir } from './paths'
 
 /**
@@ -248,6 +248,9 @@ export interface SessionRec {
    */
   channel?: string
   trust?: Trust
+  /** BV-2 · 갈아타기 중(인수인계를 쓰는 턴) · 새 채널이 받은 인수인계 — 다음에 보내는 말 앞에 한 번 붙는다 */
+  rotating?: boolean
+  handover?: string
   /** BS · 지금(마지막) 턴을 누가 시작했나 — 사람만 시킬 수 있는 도구를 MCP 가 이것으로 거른다(core/turnGuard) */
   turnFrom?: TurnFrom
   id: string
@@ -604,19 +607,43 @@ export class SessionManager extends EventEmitter {
   afterTurn(r: SessionRec): void {
     if (!this.recs.has(r.id) || r.state === 'running' || r.state === 'awaiting_input') return
     const bot = this.botOf(r.botId); if (!bot) return
+    if (r.rotating) { this.finishRotate(r, bot); return }
     if (r.queue?.length) {
       // BQ-4 · 편지는 묶어서 한 턴에 — 큐에 쌓인 편지 묶음을 모두 모아 한 번에 보낸다(봇 말은 종전대로 하나씩)
       const head = r.queue[0]
-      const take = head.letters ? r.queue.filter((x) => x.letters) : [head]
+      const take = head.letters ? r.queue.filter((x) => x.letters) : head.reports ? r.queue.filter((x) => x.reports) : [head]
       const rest = r.queue.filter((x) => !take.includes(x))
       r.queue = rest.length ? rest : undefined
       this.persist(r)
       this.send(r, bot, take.map((x) => x.text).join('\n\n'), undefined, head.origin ?? 'bot')
       return
     }
+    // BV-2 · 채널 세션은 압축 대신 갈아탄다(요약의 요약이 되지 않게) — 살아 있는 워커가 막 턴을 끝냈을 때만
+    if (r.channel && this.workers.get(r.id)?.alive) { const rot = rotateReason(r); if (rot) { this.startRotate(r, bot, rot); return } }
     // ⚠ 잠든 세션은 압축하려고 깨우지 않는다 — 살아 있는 워커가 막 턴을 끝냈을 때만
     const why = this.workers.get(r.id)?.alive ? compactReason(r, 'after') : null
     if (why) this.compact(r, bot, why)
+  }
+  /**
+   * 🔴 **BV-2 · 채널 갈아타기** (2026-10-09). 15만 토큰을 넘거나 7일이 지난 채널은 ① 인수인계를 한 턴 쓰고 ② 같은 이름의 새 채널을 열고
+   *    ③ 큐를 옮긴 뒤 ④ 새 채널의 첫 말 앞에 인수인계를 붙인다. 옛 세션은 이름 끝에 날짜를 달고 남는다(지우지 않는다).
+   */
+  startRotate(r: SessionRec, bot: Bot, why: string): void {
+    r.rotating = true
+    this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `채널 갈아타기 — ${why}. 인수인계를 쓰고 같은 이름의 새 세션으로 넘어가요.` })
+    this.send(r, bot, ROTATE_PROMPT, undefined, 'bot')
+  }
+  private finishRotate(r: SessionRec, bot: Bot): void {
+    const last = [...r.items].reverse().find((i) => i.kind === 'assistant') as { text: string } | undefined
+    const summary = (r.state === 'done' && last?.text?.trim()) || `(인수인계를 못 받았어요 — 이전 세션 ${r.id} 의 대화를 bot_sessions 로 읽어 이어받으세요)`
+    const nr = this.create(bot, r.name, { channel: r.channel, trust: r.trust ?? 'propose', vendor: 'claude', permissionMode: r.permissionMode })
+    nr.handover = `${summary.slice(0, 6000)}\n(이전 채널 세션: ${r.id})`
+    const d = new Date()
+    r.rotating = false; r.channel = undefined; r.named = true; r.name = `${r.name} · ~${d.getMonth() + 1}/${d.getDate()}`
+    if (r.queue?.length) { nr.queue = r.queue; r.queue = undefined }
+    this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `새 채널 세션으로 넘겼어요 · ${nr.id}` })
+    this.persist(r); this.persist(nr); this.emit('sessions', bot.id)
+    if (nr.queue?.length) this.afterTurn(nr)
   }
   /** 호스트가 다시 뜬 뒤 — 남아 있던 대기열을 내보낸다 */
   drainAll(): void { for (const r of this.recs.values()) if (r.queue?.length) this.afterTurn(r) }
@@ -877,6 +904,8 @@ export class SessionManager extends EventEmitter {
 
   send(r: SessionRec, bot: Bot, text: string, client?: ClientCtx, origin: TurnFrom = 'human'): void {
     r.turnFrom = origin
+    // BV-2 · 갈아탄 채널의 첫 말 앞에 인수인계를 한 번 붙인다
+    if (r.handover) { text = `[이전 채널 인수인계]\n${r.handover}\n\n---\n\n${text}`; r.handover = undefined }
     this.autoTitle(r, text)
     if (client) r.lastClient = client
     const from = client ? { device: client.device, main: client.origin === 'host', tier: client.tier } : undefined
@@ -1027,3 +1056,6 @@ function channelWorkerSpec(trust: Trust): Pick<SpawnSpec, 'permissionMode' | 'ex
   const sp = channelSpawn(trust)
   return { permissionMode: sp.permissionMode, explicitMode: true, strictMcp: sp.strictMcp, disallowed: sp.disallowed }
 }
+
+/** BV-2 · 갈아타기 직전에 채널에 보내는 말 — 다음 세션이 아무것도 묻지 않고 이어받게 */
+export const ROTATE_PROMPT = '이 채널 세션을 새 세션으로 갈아탄다(오래 써서 맥락이 커졌다). 다음 세션이 아무것도 묻지 않고 이어받도록 인수인계를 20줄 이내로 써라 — 진행 중인 편지와 약속, 답을 기다리는 편지 id, 상대의 최근 요청, 주의할 점. 도구는 쓰지 말고 글로만 답한다.'

@@ -1,10 +1,12 @@
 import { sessionUnread } from '../core/unread'
+import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { Cron } from 'croner'
 import type { Bot, PermissionMode, RoutineDef } from '../core/types'
 import { cronOk, describeCron } from '../core/when'
 import { RESULT_LINE_HINT } from '../core/runs'
 
-export interface RoutineRunner { run: (bot: Bot, r: RoutineDef) => void; log: (msg: string) => void }
+export interface RoutineRunner { run: (bot: Bot, r: RoutineDef, why?: { catchup?: number }) => void; log: (msg: string) => void }
 
 /**
  * 루틴 스케줄러 — 봇 목록이 바뀔 때마다 다시 짠다.
@@ -64,6 +66,56 @@ export class Routines {
   }
   /** 사람이 읽는 한 줄 — 「매일 저녁 8시」 */
   static describe(cron: string): string { return describeCron(cron) }
+
+  // ── BR-2 · 놓친 회차 보충 ────────────────────────────────────────────────
+  /** 루틴마다 마지막으로 돌린 시각 — `<dataDir>/routine-runs.json`(호스트마다). 비면 보충 판단을 안 한다 */
+  file: string | null = null
+  private last: Record<string, number> | null = null
+  private loadLast(): Record<string, number> {
+    if (this.last) return this.last
+    try { this.last = this.file && existsSync(this.file) ? (JSON.parse(readFileSync(this.file, 'utf8')) as Record<string, number>) : {} } catch { this.last = {} }
+    return this.last
+  }
+  private saveLast(): void {
+    if (!this.file || !this.last) return
+    try { mkdirSync(dirname(this.file), { recursive: true }); const tmp = `${this.file}.${process.pid}.tmp`; writeFileSync(tmp, JSON.stringify(this.last)); renameSync(tmp, this.file) } catch (e) { this.runner.log(`루틴 실행 시각을 못 적었어요 · ${(e as Error).message}`) }
+  }
+  markRun(botId: string, name: string, at = Date.now()): void { this.loadLast()[this.key(botId, name)] = at; this.saveLast() }
+  /**
+   * 🔴 **켜질 때 한 번 — 꺼져 있던 사이 놓친 회차를 보충한다** (BR-2 · 2026-10-09). 업데이트로 앱이 다시 뜨거나 맥이 멈춘 사이에
+   *    걸린 회차는 croner 가 다시 돌려주지 않는다. 마지막으로 돌린 뒤 예정 시각이 한 번이라도 지나갔고 그게 `CATCHUP_WINDOW_MS` 안이면 한 번 돌린다.
+   * ⚠ 처음 보는 루틴(기록 없음)은 지금을 기준선으로만 적는다 — 처음 켠 날 모든 루틴이 한꺼번에 돌지 않게.
+   * ⚠ `catchup: false` 면 안 한다(정해진 시각에만 의미가 있는 루틴).
+   * @returns 보충한 루틴 이름들
+   */
+  catchUp(bots: Bot[], now = Date.now()): string[] {
+    const last = this.loadLast(), done: string[] = []
+    for (const b of bots) for (const r of b.routines) {
+      if (r.enabled === false || r.catchup === false || !cronOk(r.cron).ok) continue
+      const k = this.key(b.id, r.name)
+      if (!last[k]) { last[k] = now; continue }
+      const prev = missedSince(r.cron, last[k], now)
+      if (prev === null) continue
+      this.runner.log(`놓친 회차 보충: ${b.name} · ${r.name} · 예정 ${new Date(prev).toLocaleString('ko-KR')}`)
+      this.runner.run(b, r, { catchup: prev })
+      done.push(`${b.id}::${r.name}`)
+    }
+    this.saveLast()
+    return done
+  }
+}
+
+/** BR-2 · 이만큼 지난 회차까지만 보충한다 */
+export const CATCHUP_WINDOW_MS = 6 * 3600_000
+/** BR-2 · 실패한 루틴을 다시 돌리기까지 */
+export const RETRY_DELAY_MS = 10 * 60_000
+/** 마지막으로 돌린 뒤 지나간 예정 시각(가장 최근) — 보충 창 안이면 그 시각, 아니면 null (순수 · 유닛) */
+export function missedSince(cron: string, lastRunAt: number, now: number, windowMs = CATCHUP_WINDOW_MS): number | null {
+  let prev: Date | undefined
+  try { prev = new Cron(cron, { paused: true }).previousRuns(1, new Date(now))[0] } catch { return null }
+  if (!prev) return null
+  const t = prev.getTime()
+  return t > lastRunAt && now - t <= windowMs ? t : null
 }
 
 /**

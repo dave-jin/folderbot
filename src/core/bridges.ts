@@ -34,6 +34,12 @@ export interface PeerDef {
   host?: string
   since?: number
   enabled: boolean
+  /** BQ-8 · 급한 편지를 쓰면 상대를 깨우는 웹훅 — 주소·키는 0600 env 파일(키체인 아님 · 2026-10-09 Dave) */
+  wake?: { env: string }
+  /** BQ-8 · 이 시간 안에 상대의 신호(커서 갱신·편지)가 없으면 «상대 끊김» */
+  expectEveryMs?: number
+  /** 끊겼을 때 따로 울릴 명령 — 메시지가 마지막 인자로 붙는다 */
+  fallbackNotify?: string
 }
 export interface BridgesConfig { peers: PeerDef[]; runsCopy?: string; errors: string[] }
 
@@ -60,8 +66,18 @@ export function parseBridges(text: string): BridgesConfig {
     if (r.trust !== undefined && trust !== r.trust) errors.push(`연결 «${id}»: trust 는 read · propose · act 중 하나예요 — propose 로 둡니다`)
     const since = r.since === undefined ? undefined : Date.parse(String(r.since))
     if (r.since !== undefined && !Number.isFinite(since)) errors.push(`연결 «${id}»: since 를 시각으로 못 읽었어요`)
+    let wake: { env: string } | undefined
+    if (r.wake === true) wake = { env: `~/.config/secrets/folderbot-bridge-${id}.env` }
+    else if (r.wake && typeof r.wake === 'object' && (r.wake as Record<string, unknown>).env) wake = { env: String((r.wake as Record<string, unknown>).env) }
+    else if (r.wake !== undefined && r.wake !== false) errors.push(`연결 «${id}»: wake 는 true 또는 { env: 파일 } 이에요`)
+    const every = r.expect_every === undefined ? undefined : parseDuration(r.expect_every)
+    if (r.expect_every !== undefined && every === null) errors.push(`연결 «${id}»: expect_every 를 못 읽었어요(예: 150m · 2h)`)
+    const fb = r.fallback_notify && typeof r.fallback_notify === 'object' ? String((r.fallback_notify as Record<string, unknown>).command ?? '').trim() : ''
     peers.push({
       id, name, icon, mailbox,
+      ...(wake ? { wake } : {}),
+      ...(every ? { expectEveryMs: every } : {}),
+      ...(fb ? { fallbackNotify: fb } : {}),
       deliver: { bot: String(d.bot ?? 'orch').trim() || 'orch', session: String(d.session ?? `${icon} ${name} 채널`).trim() },
       maySend: Array.isArray(r.may_send) ? (r.may_send as unknown[]).map(String) : ['orch'],
       trust,
@@ -71,6 +87,15 @@ export function parseBridges(text: string): BridgesConfig {
     })
   })
   return { peers, ...(doc.runs_copy ? { runsCopy: String(doc.runs_copy) } : {}), errors }
+}
+
+/** `150m` · `2h` · `90` (분) → ms. 못 읽으면 null */
+export function parseDuration(v: unknown): number | null {
+  if (typeof v === 'number' && v > 0) return v * 60_000
+  const m = /^\s*(\d+(?:\.\d+)?)\s*(m|min|분|h|시간)?\s*$/i.exec(String(v ?? ''))
+  if (!m) return null
+  const n = Number(m[1]); const unit = (m[2] ?? 'm').toLowerCase()
+  return Math.round(n * (unit === 'h' || unit === '시간' ? 3600_000 : 60_000)) || null
 }
 
 /** 이 호스트가 그 연결의 주인인가 — `host` 를 안 적었으면 누구든. 이름은 대소문자·`.local` 을 가리지 않는다 */
@@ -99,7 +124,7 @@ const WRITE_BUILTINS = ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'W
  */
 export function channelSpawn(trust: Trust): { permissionMode: 'default' | 'bypassPermissions'; strictMcp: boolean; disallowed: string[] } {
   if (trust === 'act') return { permissionMode: 'bypassPermissions', strictMcp: false, disallowed: [] }
-  const always = fb(['folder_move', 'folder_create', 'bot_retire', 'routine_add', 'routine_update', 'routine_remove', 'orch_ask'])
+  const always = fb(['folder_move', 'folder_create', 'bot_retire', 'routine_add', 'routine_update', 'routine_remove', 'routine_run', 'orch_ask'])
   if (trust === 'propose') return { permissionMode: 'default', strictMcp: true, disallowed: [...WRITE_BUILTINS, ...always] }
   return { permissionMode: 'default', strictMcp: true, disallowed: [...WRITE_BUILTINS, ...always, ...fb(['bot_send', 'todo_add', 'bot_start', 'bot_stop', 'bots_reorder'])] }
 }

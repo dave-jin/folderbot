@@ -35,7 +35,7 @@ writeFileSync(join(fbHome, '.folderbot/usage.jsonl'),
 // ⚠ 메인 호스트는 «Claude 만 깔린 기기» 여야 한다 — 실제 codex 가 깔린 맥(2026-09-22 맥미니)에서는 제공자가 둘이 되어 세션 + 가 고르기를 띄우고
 //   «세션 삭제 UI» 같은 검사가 어긋난다. 없는 경로를 주면 codex 는 숨는다(providers.ts 의 ENV_OVERRIDE). 둘인 경우는 아래 V24 블록이 두 번째 호스트로 잰다
 // 🔴 `FOLDERBOT_QA` — 검사는 **실 CLI·실 앱을 건드리지 않는다**(실제로 `claude update` 를 돌려 버린 적이 있다)
-const env = { ...process.env, FOLDERBOT_QA: '1', FOLDERBOT_HOME: fbHome, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_CODEX_BIN: '/nonexistent/codex', FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg }
+const env = { ...process.env, FOLDERBOT_QA: '1', FOLDERBOT_HOME: fbHome, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_CODEX_BIN: '/nonexistent/codex', FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg, FOLDERBOT_RETRY_MS: '1500', FOLDERBOT_REPORT_HOLD_MS: '1500' }   // R2 · 재시도 10분·보고 묶음 5분을 검사용으로 줄인다
 /**
  * 🔴 **포트가 이미 잡혀 있으면 그 자리에서 멈춘다** (2026-09-13 실사고).
  *    앞선 실패로 남은 호스트가 같은 포트를 잡고 있으면, 우리는 «건강한 응답» 을 받고 **옛 코드를**
@@ -506,6 +506,50 @@ try {
     await api(`/sessions/${chan.id}`, undefined, 'DELETE')
     rmSync(bf); await wait(700)
     ok(`연결 R1 — 설정 쓰면 열림 · 새 편지 ${took}ms 만에 «✅ 할일이 채널»(급함 · <letter> · default 모드) · 옛 편지·임시 파일 안 들어감 · 배달 기록·커서 · 편지 턴 folder_move 거절 · bridge_send FBMF · BR-1 실행 기록`)
+  }
+  /**
+   * 🔴 연결 R2 (2026-10-09) — BR-2 일부러 실패하는 루틴 → end(fail) · retry · 두 번째 시도(설계 §8 ⑤) · routine_run ·
+   *    BU orch_report 두 건이 한 턴으로 오케스트레이터에게
+   */
+  {
+    const d0 = new Date(), month = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}`
+    const sessWasR2 = new Set((await api(`/bots/${bot.id}/sessions`)).map((x) => x.id))
+    const yml = join(root, '3. Area/제품_Rondo/.bot.yml'); const ymlWas = existsSync(yml) ? readFileSync(yml, 'utf8') : null
+    const put = await fetch(base + `/api/bots/${bot.id}/routines`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ routines: [{ name: 'R2 실패', cron: '매일 새벽 4시', prompt: '되읊어: 결과: fail — 일부러', retry: true }] }) })
+    if (put.status !== 200) fail('R2: 루틴 저장 실패 · ' + JSON.stringify(await put.json()))
+    await api(`/bots/${bot.id}/routines/run`, { name: 'R2 실패' })
+    const runsF = join(root, `.folderbot/ops/runs-${month}.jsonl`)
+    const evs = () => (existsSync(runsF) ? readFileSync(runsF, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.routine === 'R2 실패') : [])
+    let seq = ''
+    for (let i = 0; i < 150; i++) { await wait(100); seq = evs().map((e) => `${e.event}${e.attempt ? e.attempt : ''}${e.event === 'end' ? `:${e.result}` : ''}`).join(','); if (/start,end:fail,retry,start2,end:fail/.test(seq)) break }
+    if (!/^start,end:fail,retry,start2,end:fail$/.test(seq)) fail('🔴 BR-2: 실패한 루틴이 fail · retry · 두 번째 시도로 남지 않았다 · ' + seq)
+    await wait(2500)
+    if (evs().filter((e) => e.event === 'start').length !== 2) fail('🔴 BR-2: 두 번째도 실패했는데 또 다시 돌렸다(재시도는 한 번)')
+    // routine_run — 봇이 MCP 로 제 루틴을 한 번 돌린다
+    const before = evs().filter((e) => e.event === 'start').length
+    const rr = (await (await mcpFetch(base + `/mcp/${bot.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'routine_run', arguments: { name: 'R2 실패' } } }) })).json()).result.content[0].text
+    if (!/돌렸어요 · 루틴 세션 s_/.test(rr)) fail('BR-2: routine_run 답이 이상하다 · ' + rr)
+    for (let i = 0; i < 30 && evs().filter((e) => e.event === 'start').length === before; i++) await wait(100)
+    if (evs().filter((e) => e.event === 'start').length === before) fail('BR-2: routine_run 으로 돌렸는데 기록이 없다')
+    if (ymlWas === null) rmSync(yml); else writeFileSync(yml, ymlWas)
+    // BU · 보고 두 건 → 1.5초 뒤 오케스트레이터 소통 세션에 한 턴
+    const rep = async (text) => (await (await mcpFetch(base + `/mcp/${bot.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: 'orch_report', arguments: { kind: 'done', text } } }) })).json()).result.content[0].text
+    if (!/5분 안에/.test(await rep('R2 보고 하나 — 끝남'))) fail('BU: orch_report 답이 이상하다')
+    await rep('R2 보고 둘 — 끝남')
+    let got = ''
+    for (let i = 0; i < 150 && !got; i++) {
+      await wait(100)
+      const comm = (await api('/bots/orch/sessions')).find((x) => x.comm)
+      if (comm) got = (await api(`/sessions/${comm.id}/chat`)).items.filter((it) => it.kind === 'user').map((it) => it.text).find((t) => t.includes('R2 보고 하나')) ?? ''
+      if (!got) { const q = comm?.queue?.find((x) => x.text.includes('R2 보고 하나')); if (q) got = q.text }
+    }
+    if (!got) fail('🔴 BU: orch_report 가 오케스트레이터에게 안 갔다')
+    if (!/^\[보고 ← 폴더 봇 2건\]/.test(got) || !got.includes('R2 보고 둘')) fail('🔴 BU: 보고 두 건이 한 턴으로 묶이지 않았다 · ' + got.slice(0, 200))
+    // 치우기 — 이 블록이 만든 루틴 세션(뒤 UI 검사는 그 봇의 최근 세션을 연다) · 오케스트레이터 소통 세션(뒤의 BH 검사는 그 세션의 «첫 말» 을 본다)
+    await wait(1500)
+    for (const x of await api(`/bots/${bot.id}/sessions`)) if (!sessWasR2.has(x.id)) await api(`/sessions/${x.id}`, undefined, 'DELETE')
+    { const comm = (await api('/bots/orch/sessions')).find((x) => x.comm); if (comm) await api(`/sessions/${comm.id}`, undefined, 'DELETE') }
+    ok(`연결 R2 — 일부러 실패하는 루틴 = ${seq} · routine_run · orch_report 두 건이 한 턴으로`)
   }
   /**
    * AJ · **CLI 업데이트 길이 열려 있나** (2026-09-24 Dave). 스텁 환경에는 진짜 claude 가 없을 수 있으니

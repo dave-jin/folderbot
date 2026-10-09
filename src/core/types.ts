@@ -54,11 +54,15 @@ export interface RoutineDef {
   cron: string
   prompt: string
   vendor?: Vendor
-  /** 사람이 없을 때 승인 정책: readonly(기본) · folder(폴더 안 쓰기 허용) · always */
+  /** 사람이 없을 때 승인 정책: readonly · folder(폴더 안 쓰기 허용) · always(기본 · routines.ts DEFAULT_ROUTINE_APPROVE) */
   approve?: 'readonly' | 'folder' | 'always'
   push?: boolean
   /** 꺼 두면 스케줄에 안 건다 — 지우지 않고 잠시 멈추는 길 (AA-4). 없으면 켜진 것으로 본다 */
   enabled?: boolean
+  /** BR-2 · 실패하면 10분 뒤 한 번 다시 — **기본 끔**(외부 발송이 든 루틴이 같은 것을 두 번 보내지 않게 · 2026-10-09 Dave) */
+  retry?: boolean
+  /** BR-2 · 호스트가 꺼져 있어 놓친 회차를 켜질 때 한 번 보충한다(6시간 안) — 기본 켬, false 로 끈다 */
+  catchup?: boolean
   /**
    * 🔴 아래 둘은 **저장하지 않는다** — 스케줄러가 매번 새로 채워 화면으로 보내는 값이다(AA-1).
    * `.bot.yml` 에 새면 다음에 읽을 때 «지난 오류» 가 살아 있는 것처럼 보인다. 저장 직전에 `stripRuntime()` 로 턴다.
@@ -181,6 +185,8 @@ export interface QueuedMsg {
   text: string; from: string; fromName?: string; t: number; origin?: import('./turnGuard').TurnFrom
   /** BQ-4 · 편지 묶음이면 그 편지 id 들 — 큐에서 편지끼리는 한 턴에 묶여 나가고, 두 번 넣지 않는 판정에도 쓴다 */
   letters?: string[]
+  /** BU · 폴더 봇 보고 묶음 — 편지처럼 큐에서 한 턴에 묶인다 */
+  reports?: boolean
   /** 급한 편지 — 큐 맨 앞(앞선 급한 것들 뒤) */
   urgent?: boolean
 }

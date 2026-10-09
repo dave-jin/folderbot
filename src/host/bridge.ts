@@ -33,6 +33,11 @@ export interface BridgeDeps {
   log: (s: string) => void
   /** 편지 묶음을 세션에 넣는다. 넣었으면 세션 id, 넣을 곳이 없으면 null(기록하지 않고 다음에 다시) */
   deliver: (peer: PeerDef, items: Incoming[]) => string | null
+  /** BQ-8 · 급한 편지를 썼다 — 상대를 깨운다(웹훅). 본문은 안 보낸다 */
+  wake?: (peer: PeerDef, payload: { id: string; kind: string; path: string; urgent: boolean; needs_human: boolean }) => void
+  /** BQ-8 · 상대가 `expect_every` 넘게 조용하다 / 다시 살아났다 */
+  onStale?: (peer: PeerDef, lastSignal: number) => void
+  onAlive?: (peer: PeerDef, lastSignal: number) => void
   now?: () => number
 }
 
@@ -49,6 +54,10 @@ interface Box {
   recheck?: NodeJS.Timeout
   lastCursor: number
   scanning: boolean
+  /** BQ-8 · 상대의 마지막 신호(커서 갱신·편지) · 지금 끊긴 것으로 보고 있나 */
+  openedAt: number
+  lastLetterAt: number
+  stale: boolean
 }
 
 export class BridgeHub {
@@ -80,7 +89,7 @@ export class BridgeHub {
 
   private open(peer: PeerDef): void {
     const mb = this.abs(peer.mailbox)
-    const box: Box = { peer, inDir: join(mb, 'to-folderbot'), outDir: join(mb, 'from-folderbot'), ledger: join(this.d.dataDir, 'bridges', peer.id, 'delivered.jsonl'), delivered: new Set(), seen: new Map(), lastCursor: 0, scanning: false }
+    const box: Box = { peer, inDir: join(mb, 'to-folderbot'), outDir: join(mb, 'from-folderbot'), ledger: join(this.d.dataDir, 'bridges', peer.id, 'delivered.jsonl'), delivered: new Set(), seen: new Map(), lastCursor: 0, scanning: false, openedAt: this.now(), lastLetterAt: 0, stale: false }
     mkdirSync(join(this.d.dataDir, 'bridges', peer.id), { recursive: true })
     const first = !existsSync(box.ledger)
     if (!first) for (const line of readFileSync(box.ledger, 'utf8').split('\n')) { try { const j = JSON.parse(line) as { id?: string }; if (j.id) box.delivered.add(normId(j.id)) } catch { /* 깨진 줄은 건너뛴다 */ } }
@@ -167,7 +176,26 @@ export class BridgeHub {
       if (ready.length) this.hand(box, ready)
       if (waiting) { if (box.recheck) clearTimeout(box.recheck); box.recheck = setTimeout(() => { box.recheck = undefined; this.scan(box) }, STABLE_MS + 200); box.recheck.unref?.() }
       if (this.now() - box.lastCursor > CURSOR_BEAT_MS) this.writeCursor(box)
+      this.checkAlive(box)
     } finally { box.scanning = false }
+  }
+
+  /**
+   * BQ-8 · 상대가 살아 있나 — 상대 커서(`cursors/<상대>.json` 또는 `cursors/<상대>/*.json`)의 갱신 시각과 마지막 편지 중 늦은 것.
+   * 신호를 한 번도 못 봤으면 연결을 연 시각을 기준으로 한다(켜자마자 «끊김» 이 울리지 않게). 바뀔 때만 알린다.
+   */
+  lastSignal(box: Box): number {
+    const cdir = join(this.abs(box.peer.mailbox), 'cursors')
+    let t = Math.max(box.openedAt, box.lastLetterAt)
+    try { t = Math.max(t, statSync(join(cdir, `${box.peer.id}.json`)).mtimeMs) } catch { /* */ }
+    try { for (const n of readdirSync(join(cdir, box.peer.id))) if (n.endsWith('.json')) { try { t = Math.max(t, statSync(join(cdir, box.peer.id, n)).mtimeMs) } catch { /* */ } } } catch { /* */ }
+    return t
+  }
+  private checkAlive(box: Box): void {
+    const every = box.peer.expectEveryMs; if (!every) return
+    const last = this.lastSignal(box), quiet = this.now() - last > every
+    if (quiet && !box.stale) { box.stale = true; this.d.onStale?.(box.peer, last) }
+    else if (!quiet && box.stale) { box.stale = false; this.d.onAlive?.(box.peer, last) }
   }
 
   /** 세션에 넘기고, 넘겼으면 기록 · 커서 */
@@ -179,6 +207,7 @@ export class BridgeHub {
     const at = new Date(this.now()).toISOString()
     appendFileSync(box.ledger, items.map((x) => JSON.stringify({ id: x.letter.id, state: 'delivered', rel: x.rel, sha: x.sha, session: sid, urgent: x.letter.urgent || undefined, at })).join('\n') + '\n')
     for (const x of items) { box.delivered.add(x.letter.id); box.seen.delete(x.abs) }
+    box.lastLetterAt = this.now()
     this.writeCursor(box, items.map((x) => x.letter.id).sort().pop())
     this.d.log(`연결 «${box.peer.name}» 편지 ${items.length}통 → 세션 ${sid}`)
   }
@@ -219,7 +248,9 @@ export class BridgeHub {
       writeFileSync(tmp, formatLetter({ id, from, to: peer.id, kind, title: o.title?.trim() || undefined, re: o.re ? normId(o.re) : undefined, urgent: !!o.urgent, needsHuman: !!o.needsHuman, created: isoLocal(d), body }))
       try { linkSync(tmp, final) } catch (e) { unlinkSync(tmp); if ((e as NodeJS.ErrnoException).code === 'EEXIST') continue; throw e }
       unlinkSync(tmp)
-      return { id, rel: relative(this.d.root, final).startsWith('..') ? final : relative(this.d.root, final) }
+      const rel = relative(this.d.root, final).startsWith('..') ? final : relative(this.d.root, final)
+      if (o.urgent && peer.wake) { try { this.d.wake?.(peer, { id, kind, path: rel, urgent: true, needs_human: !!o.needsHuman }) } catch (e) { this.d.log(`연결 «${peer.name}» 깨우기 실패 · ${(e as Error).message}`) } }
+      return { id, rel }
     }
     throw new Error('같은 이름이 계속 있어 편지를 못 만들었어요')
   }

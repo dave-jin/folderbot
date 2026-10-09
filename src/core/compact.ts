@@ -25,6 +25,17 @@ export interface CompactInput {
   comm?: boolean
 }
 
+/**
+ * BV-2 · **채널 세션 갈아타기** (2026-10-09 소통 재설계). 연결 상대의 채널은 오래 쓰는 세션이라 압축을 거듭하면 요약의 요약이 된다.
+ * 15만 토큰을 넘거나 7일이 지나면 인수인계를 쓰고 같은 이름의 새 세션으로 갈아탄다(압축보다 먼저 본다).
+ */
+export const ROTATE_AFTER_MS = 7 * 24 * 3600_000
+export function rotateReason(s: { ctx?: { used: number; window: number }; createdAt: number }, now = Date.now()): string | null {
+  if (s.ctx && s.ctx.used >= COMPACT_AFTER_TOKENS) return `컨텍스트 ${Math.round(s.ctx.used / 1000)}k 토큰`
+  if (now - s.createdAt >= ROTATE_AFTER_MS) return `${Math.floor((now - s.createdAt) / (24 * 3600_000))}일 쓴 채널`
+  return null
+}
+
 /** 압축할 때면 화면에 적을 이유 한 줄, 아니면 null */
 export function compactReason(s: CompactInput, when: 'after' | 'before', now = Date.now()): string | null {
   if (s.vendor === 'codex' || !s.ctx || !s.ctx.window) return null

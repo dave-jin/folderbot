@@ -48,6 +48,12 @@ const COMMON: Tool[] = [
   { name: 'routine_list', description: '이 폴더에 걸린 루틴 목록 — 주기(사람 말)·다음 실행·켜짐·마지막 오류. 루틴이 안 도는 것 같으면 여기부터 본다.', inputSchema: obj({}) },
   { name: 'routine_add', description: `이 폴더에 루틴을 새로 건다. when 은 ${WHEN_DESC} prompt 에는 «무엇을 확인하고, 변화가 없으면 어떻게 하라» 까지 적는다. 승인 수준(approve)은 여기서 못 바꾼다 — 사람이 화면에서 정한다.`, inputSchema: obj({ name: { type: 'string', description: '루틴 이름(이 폴더 안에서 유일)' }, when: { type: 'string', description: '사람 말로 적은 주기' }, prompt: { type: 'string', description: '루틴이 돌 때 보낼 말' }, push: { type: 'boolean', description: '끝나면 폰으로 알릴지' } }, ['name', 'when', 'prompt']) },
   { name: 'routine_update', description: `루틴을 고친다. 준 값만 바뀐다. when 은 ${WHEN_DESC} 되돌릴 수 있게 **직전 값**을 결과에 담아 준다. 승인 수준(approve)은 여기서 못 바꾼다.`, inputSchema: obj({ name: { type: 'string' }, when: { type: 'string' }, prompt: { type: 'string' }, push: { type: 'boolean' }, enabled: { type: 'boolean', description: '끄면 지우지 않고 잠시 멈춘다' } }, ['name']) },
+  { name: 'routine_run', description: '이 폴더의 루틴 하나를 지금 한 번 돌린다(새 루틴 세션). 루틴이 안 도는지 확인하거나 실패한 회차를 사람이 다시 돌려 달라고 할 때. 결과는 그 세션에 남는다.', inputSchema: obj({ name: { type: 'string' } }, ['name']) },
+  /**
+   * 🔴 **BU · orch_report — 답을 기다리지 않는 보고** (2026-10-09 소통 재설계). 폴더 봇이 루트 state.md 에 직접 쓰던 일을 대신한다.
+   *    호스트가 5분 동안 모아 오케스트레이터의 소통 세션에 **한 턴으로** 넘긴다(장애·급함은 바로). 세션마다 시간당 20건.
+   */
+  { name: 'orch_report', description: '오케스트레이터에게 답이 필요 없는 보고를 남긴다 — 끝난 일(done) · 알릴 사실(report) · 장애(incident). 루틴 결과 보고도 이것으로. 호스트가 모아서 넘기므로 바로 답이 오지 않는다. 답이 필요하면 orch_ask 를 쓴다. 한 세션에서 한 시간에 20건까지.', inputSchema: obj({ kind: { type: 'string', enum: ['report', 'done', 'incident'] }, text: { type: 'string', description: '한두 문장 — 무엇이 · 영향 · 제안 행동. 근거 파일 경로를 붙인다' }, urgent: { type: 'boolean', description: '바로 넘겨야 하면' } }, ['kind', 'text']) },
   { name: 'routine_remove', description: '루틴을 지운다. 되돌릴 수 없으므로 **직전 값**을 결과에 담아 준다 — 잘못 지웠으면 그 값으로 routine_add 하면 된다.', inputSchema: obj({ name: { type: 'string' } }, ['name']) },
   /**
    * 🔴 **BH · orch_ask — 폴더 봇이 오케스트레이터에게 직접 요청한다** (2026-09-27 Dave).
@@ -101,12 +107,15 @@ export async function handleMcp(host: Host, botId: string, req: IncomingMessage,
   return error(-32601, 'method not found')
 }
 
+/** BU · orch_report 상한 — 세션(없으면 봇)마다 한 시간에 20건 */
+const ORCH_REPORT_MAX = 20
+const orchReports = new Map<string, number[]>()
 /** BH · orch_ask 남용 상한 — 세션마다 한 시간에 3건. 호스트가 켜져 있는 동안만 센다(재시작하면 비운다) */
 const ORCH_ASK_MAX = 3
 const ORCH_ASK_WINDOW = 60 * 60 * 1000
 const orchAsks = new Map<string, number[]>()
 /** 검사용 — 세션별 요청 기록을 비운다 */
-export function resetOrchAskForTest(): void { orchAsks.clear() }
+export function resetOrchAskForTest(): void { orchAsks.clear(); orchReports.clear() }
 /** 요청 머리 한 줄 — 오케스트레이터는 이 줄로 «누가 · 어느 세션에서» 를 읽고 `bot_send(bot, text, session)` 으로 답을 돌려보낸다 */
 export const orchAskHead = (name: string, botId: string, sid: string): string => `[요청 ← ${name} · ${botId} · ${sid}]`
 
@@ -146,6 +155,23 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       const osid = host.sendToBot(orch, `${orchAskHead(me.name, me.id, sid)}\n${text}`, undefined, undefined, botId)   // 오케스트레이터의 «🤝 소통» 세션 하나로(2026-10-02)
       log.push(now); orchAsks.set(sid, log)
       return `오케스트레이터에게 보냈어요 · 오케스트레이터 세션 ${osid}. 답은 이 세션으로 돌아와요 — 기다리는 동안 다른 일을 해도 돼요.`
+    }
+    case 'orch_report': {
+      if (botId === ORCH_ID) throw new Error('오케스트레이터는 orch_report 를 쓸 수 없어요 — 연결 상대에게는 bridge_send 를 쓰세요')
+      const me = reg.bot(botId); if (!me) throw new Error('봇을 못 찾았어요')
+      const kind = s('kind'); if (!['report', 'done', 'incident'].includes(kind)) throw new Error('kind 는 report · done · incident 중 하나예요')
+      const text = s('text').trim(); if (!text) throw new Error('text 가 비었어요')
+      const k = sid || botId, now = Date.now(); const log = (orchReports.get(k) ?? []).filter((t) => now - t < ORCH_ASK_WINDOW)
+      if (log.length >= ORCH_REPORT_MAX) throw new Error(`한 시간에 orch_report 를 ${ORCH_REPORT_MAX}건까지 보낼 수 있어요 — 묶어서 한 건으로 보내세요`)
+      log.push(now); orchReports.set(k, log)
+      const when = host.orchReport(me, kind as 'report' | 'done' | 'incident', text, a.urgent === true, sid)
+      return when === 'now' ? '오케스트레이터에게 바로 넘겼어요(급함·장애).' : '보고를 남겼어요 — 5분 안에 다른 보고와 묶여 오케스트레이터에게 갑니다. 답은 오지 않아요.'
+    }
+    case 'routine_run': {
+      const b = reg.bot(botId); if (!b) throw new Error('봇을 못 찾았어요')
+      const def = b.routines.find((r) => r.name === s('name').trim()); if (!def) throw new Error(`「${s('name')}」 이라는 루틴이 없어요 — routine_list 로 이름을 보세요`)
+      const rs = host.runRoutine(b, def)
+      return `돌렸어요 · 루틴 세션 ${rs}`
     }
     case 'bot_send': { const b = findBot(s('bot')); if (!b) throw new Error('그런 봇이 없어요'); const sid = host.sendToBot(b, s('text'), s('session') || undefined, s('name') || undefined, botId); const q = host.sessions.get(sid)?.queue?.length ?? 0; return q ? `큐에 넣었어요 — 그 세션이 하던 일을 끝내면 차례로 보내요(대기 ${q}개) · 세션 ${sid}` : `보냈어요 · 세션 ${sid}` }
     case 'inbox_list': return reg.inboxItems().map((i) => ({ rel: i.rel, dir: i.dir, modified: new Date(i.mtime).toISOString() }))
