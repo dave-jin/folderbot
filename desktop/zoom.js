@@ -6,7 +6,7 @@
  * - 배율은 셸 설정(settings.json `zoom`)에 남아 다시 켜도, 화면을 다시 읽어도(BJ 새 판 · 원격 재접속) 그대로다.
  *   ⚠ Electron 은 크롬과 달리 배율을 스스로 기억하지 않는다 — 셸이 매번 다시 건다(`main.js` did-finish-load).
  * - 이미지 뷰어가 떠 있으면 ⌘+/− 는 그림 확대다 — 페이지가 먼저 받아 막으면(preventDefault) 메뉴로 안 온다.
- * ⚠ 정책은 여기 순수 함수로 둔다 — 유닛테스트(`test/unit/zoom.test.ts`)가 고정한다.
+ * ⚠ 정책은 여기 순수 함수로 둔다 — 유닛테스트(`test/unit/screenZoom.test.ts`)가 고정한다.
  */
 const STEPS = [0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2]
 
