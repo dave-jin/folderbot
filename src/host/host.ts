@@ -9,12 +9,14 @@ import { join, relative, resolve } from 'node:path'
 import { TODO_RULES_PROMPT } from '../core/todo'
 import type { AuthState, Bot, Frame, PermissionMode, PermissionRequest, RoutineDef, SessionState } from '../core/types'
 import { STATE_LABEL } from '../core/types'
+import type { TurnFrom } from '../core/turnGuard'
 import { checkAuth } from './auth'
 import { FolderWatch } from './watch'
 import { Notifier } from './notify'
-import { type HostConfig, absRoot, saveConfig } from './paths'
+import { type HostConfig, absRoot, dataDir, saveConfig } from './paths'
+import { McpAuth } from './mcpAuth'
 import { ORCH_ID, Registry, canon, ORCH_REQUEST_RULES_MD, ORCH_ASK_HINT } from './registry'
-import { Routines, approveToMode, routinesToDrop } from './routines'
+import { Routines, routineRun, routinesToDrop } from './routines'
 import { SessionManager, setOauthToken, setKeychainLogin, AUTH_ERROR, type SessionRec } from './session'
 import { readTodo, todoAdd, todoContext } from './todoStore'
 import { recent as recentFiles, tree as fileTree } from './files'
@@ -31,8 +33,10 @@ export class Host {
   readonly clashes = new ConflictBook()
   readonly notifier: Notifier
   readonly routines: Routines
+  /** BT · 로컬 MCP 세션 토큰 */
+  readonly mcpAuth = new McpAuth(dataDir())
   auth: AuthState = { verdict: 'unknown', checkedAt: 0 }
-  private queued: { botId: string; sessionId: string; text: string }[] = []
+  private queued: { botId: string; sessionId: string; text: string; origin: TurnFrom }[] = []
   broadcast: (f: Frame) => void = () => {}
   /** 🔴 `.bot.yml` 이 밖에서 바뀌면 **UI 로 저장한 것과 같은 길**을 탄다(AA-2) — 화면 갱신 + 스케줄 다시 걸기 */
   watcher = new FolderWatch(
@@ -63,7 +67,8 @@ export class Host {
     void refreshPlan(cfg.claudeBin)   // BD · 첫 화면부터 실제 한도 — 모델을 부르지 않는 CLI 질문 한 번
     this.applyDefaults(cfg)
     setOauthToken(cfg.claudeOauthToken)
-    this.sessions.mcpUrl = (sid, botId) => JSON.stringify({ mcpServers: { folderbot: { type: 'http', url: `http://127.0.0.1:${cfg.port}/mcp/${botId}?sid=${encodeURIComponent(sid)}` } } })
+    // BT · 세션 토큰이 든 설정을 0600 파일로 넘긴다(argv 에 토큰을 싣지 않는다) — host/mcpAuth.ts
+    this.sessions.mcpUrl = (sid, botId) => this.mcpAuth.configFile(botId, sid, cfg.port)
     this.sessions.systemPromptFor = (bot) => this.systemPrompt(bot)
     this.sessions.botOf = (id) => this.registry.bot(id)
     this.routines = new Routines({ run: (b, r) => this.runRoutine(b, r), log: this.log })
@@ -155,7 +160,7 @@ export class Host {
       }
     }
     if (this.auth.verdict === 'unreadable' || this.auth.verdict === 'loggedout') {
-      this.queued.push({ botId: bot.id, sessionId: r.id, text })
+      this.queued.push({ botId: bot.id, sessionId: r.id, text, origin: from ? 'bot' : 'human' })
       this.sessions.get(r.id)!.items.push({ id: `q${Date.now()}`, t: Date.now(), kind: 'system', text: '미니의 Claude 로그인이 필요해 대기열에 뒀어요. 복구되면 이어서 보냅니다.' })
       this.broadcast({ ev: 'chat', sessionId: r.id, item: r.items[r.items.length - 1] })
       return r.id
@@ -168,7 +173,8 @@ export class Host {
 
   runRoutine(bot: Bot, r: RoutineDef): void {
     this.log(`루틴 실행: ${bot.name} · ${r.name}`)
-    const s = this.sessions.create(bot, `루틴 · ${r.name}`, { permissionMode: approveToMode(r.approve), routine: r.name })
+    const run = routineRun(r)   // BS · 문구와 권한 모드를 같은 값에서
+    const s = this.sessions.create(bot, `루틴 · ${r.name}`, { permissionMode: run.mode, routine: r.name })
     /**
      * AI · **루틴 세션은 둘까지만** (2026-09-24 Dave). 새로 만든 뒤 오래된 «끝난» 것부터 걷는다 —
      * 🔴 도는 중·확인 대기는 걷지 않는다(하던 일을 끊고 안 읽은 답을 지우게 된다). 판정은 `core` 가 아니라
@@ -178,7 +184,7 @@ export class Host {
       this.log(`루틴 세션 정리: ${id}`)
       this.sessions.remove(id)
     }
-    this.sessions.send(s, bot, `${r.prompt}\n\n(이건 예약된 루틴 "${r.name}" 이야. 사람이 없을 수 있으니 ${r.approve === 'always' ? '' : r.approve === 'folder' ? '이 폴더 안 파일만 고치고 ' : '파일을 고치지 말고 제안만 하고 '}결과를 짧게 요약해.)`)
+    this.sessions.send(s, bot, run.text, undefined, 'routine')
   }
 
   /** 메인(호스트) 이름 — 설정값이 없으면 맥의 컴퓨터 이름(시스템 설정 › 일반 › 정보), 그것도 없으면 hostname */
@@ -264,7 +270,7 @@ export class Host {
     if (this.auth.verdict === 'loggedout' && prev !== 'loggedout') this.notifier.emit('error', ORCH_ID, 'Claude 가 로그아웃됐어요', `${this.hostName()} 에서 claude → /login 을 해 주세요.`)
     if (this.auth.verdict === 'loggedin' && this.queued.length) {
       const q = this.queued; this.queued = []
-      for (const it of q) { const b = this.registry.bot(it.botId); const r = this.sessions.get(it.sessionId); if (b && r) this.sessions.send(r, b, it.text) }
+      for (const it of q) { const b = this.registry.bot(it.botId); const r = this.sessions.get(it.sessionId); if (b && r) this.sessions.send(r, b, it.text, undefined, it.origin) }
     }
     return this.auth
   }

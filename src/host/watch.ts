@@ -13,6 +13,9 @@ import { CONFIG_DEBOUNCE_MS, ignoredChange, isBotConfigChange, WATCH_DEBOUNCE_MS
  * - 앱 상태·도구 폴더는 `core/fileWatch.ignoredChange` 로 거른다(세션 저장이 트리 갱신을 부르면 소음이다).
  * - 감시를 못 걸면(권한·한도) 조용히 넘어간다 — 세션 경로의 신호는 그대로 살아 있다. 이유는 로그에 남긴다.
  */
+/** 감시 오류 뒤 다시 걸기까지 */
+export const RETRY_MS = 30_000
+
 export class FolderWatch {
   private ws = new Map<string, { abs: string; w: FSWatcher }>()
   private timers = new Map<string, NodeJS.Timeout>()
@@ -22,8 +25,15 @@ export class FolderWatch {
   constructor(private onChange: (botId: string) => void, private onConfig: (botId: string) => void = () => {}) {}
 
   /** 현재 봇 목록에 맞춘다 — 새 봇은 걸고, 사라진 봇은 풀고, 폴더가 바뀐 봇은 다시 건다 */
+  private want = new Map<string, string>()
+  /** 감시가 끊긴 봇을 다시 건다 — 그새 봇이 빠졌거나 폴더가 바뀌었으면 안 건다 */
+  retryMs = RETRY_MS
+  private retry(id: string): void {
+    setTimeout(() => { const abs = this.want.get(id); if (abs && !this.ws.has(id)) this.add(id, abs) }, this.retryMs).unref()
+  }
   sync(bots: { id: string; abs: string }[]): void {
     const want = new Map(bots.map((b) => [b.id, b.abs]))
+    this.want = want
     for (const [id, cur] of this.ws) if (want.get(id) !== cur.abs) this.drop(id)
     for (const [id, abs] of want) if (!this.ws.has(id)) this.add(id, abs)
   }
@@ -35,7 +45,8 @@ export class FolderWatch {
         if (isBotConfigChange(rel)) this.bumpCfg(id)
         this.bump(id)
       })
-      w.on('error', (e: Error) => { this.log(`폴더 감시 오류 · ${abs} · ${e.message}`); this.drop(id) })
+      // ⚠ 종전엔 오류가 나면 풀기만 하고 다시 걸지 않아, 봇 목록이 바뀔 때까지 감시가 조용히 꺼져 있었다(10/9 검토 §2-③) — 30초 뒤 다시 건다
+      w.on('error', (e: Error) => { this.log(`폴더 감시 오류 · ${abs} · ${e.message} — 30초 뒤 다시 걸어요`); this.drop(id); this.retry(id) })
       this.ws.set(id, { abs, w })
     } catch (e) { this.log(`폴더 감시 실패 · ${abs} · ${(e as Error).message}`) }
   }

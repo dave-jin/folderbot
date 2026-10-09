@@ -545,10 +545,49 @@ export class Registry extends EventEmitter {
     this.emit('bots', this.bots())
   }
 
+  /**
+   * 🔴 **BK · 루틴은 «읽는 파일» 에 쓴다** (2026-10-07 오케스트레이터 제보 · 10/9 수정).
+   *    오케스트레이터 루틴은 `.claude/routines.yml` 에서 읽는데 저장은 `.bot.yml`(루트)로 갔다 — 그래서
+   *    `routine_add` 를 두 번 부르면 두 번째가 첫 번째를 지웠다(읽는 곳에 첫 번째가 없으니까).
+   *    읽기·쓰기 자리를 이 한 함수가 정한다. 폴더 봇은 종전대로 `.bot.yml`.
+   */
+  routinesFile(bot: { orchestrator?: boolean; abs: string }): string {
+    return bot.orchestrator ? join(this.root, '.claude', 'routines.yml') : join(bot.abs, '.bot.yml')
+  }
+  /** 반쯤 쓰인 `routines.yml` 을 읽은 한 번으로 루틴이 통째로 사라지지 않게 — `botConfig` 와 같은 이유(AA-2) */
+  private lastGoodRoutines: RoutineDef[] | null = null
   private orchRoutines(): RoutineDef[] {
-    const f = join(this.root, '.claude', 'routines.yml')
-    if (!existsSync(f)) return []
-    try { return ((parseYaml(readFileSync(f, 'utf8')) as { routines?: RoutineDef[] })?.routines) ?? [] } catch { return [] }
+    const f = this.routinesFile({ orchestrator: true, abs: this.root })
+    if (!existsSync(f)) { this.lastGoodRoutines = null; return [] }
+    try {
+      const list = ((parseYaml(readFileSync(f, 'utf8')) as { routines?: RoutineDef[] } | null)?.routines) ?? []
+      this.lastGoodRoutines = list
+      return list
+    } catch { return this.lastGoodRoutines ?? [] }
+  }
+  /**
+   * 루틴 목록을 저장하고 **다시 읽어 확인한다**(BK-3). 개수나 이름이 다르면 던진다 — 종전에는 저장이
+   * 엉뚱한 곳으로 가도 `ok` 와 「다음 실행」 이 나갔다.
+   * ⚠ 오케스트레이터 파일의 다른 키는 그대로 둔다. 파일이 있는데 못 읽으면 **덮어쓰지 않고** 던진다.
+   */
+  saveRoutines(bot: { orchestrator?: boolean; abs: string }, routines: RoutineDef[]): RoutineDef[] {
+    if (bot.orchestrator) {
+      const f = this.routinesFile(bot)
+      let doc: Record<string, unknown> = {}
+      if (existsSync(f)) {
+        try { doc = (parseYaml(readFileSync(f, 'utf8')) as Record<string, unknown> | null) ?? {} }
+        catch (e) { throw new Error(`routines.yml 을 읽지 못해 덮어쓰지 않았어요 — ${(e as Error).message}`) }
+      }
+      mkdirSync(dirname(f), { recursive: true })
+      atomicWrite(f, stringify({ ...doc, routines }, { lineWidth: 0 }))
+    } else {
+      const cfg = this.botConfig(bot.abs)
+      this.saveBotConfig(bot.abs, { ...cfg, routines })
+    }
+    const back = bot.orchestrator ? this.orchRoutines() : (this.botConfig(bot.abs).routines ?? [])
+    const names = (l: RoutineDef[]) => l.map((r) => r.name).join('\u0000')
+    if (back.length !== routines.length || names(back) !== names(routines)) throw new Error(`저장한 뒤 다시 읽어 보니 루틴이 ${back.length}개예요(저장한 것은 ${routines.length}개) — ${this.routinesFile(bot)} 을 확인해 주세요`)
+    return back
   }
   orchestratorPrompt(): string {
     const f = join(this.root, '.claude', 'orchestrator.md')
@@ -600,7 +639,7 @@ ${ORCH_REQUEST_RULES_MD}
 ## 자율 범위
 - 읽기·조사·분류 제안·봇 시작/정지는 알아서 한다.
 - 폴더 생성·이동·삭제·외부 발송은 반드시 사람의 승인을 받는다. 되돌리기가 있는 동작만 자동 허용.
-- 사람이 없을 때(루틴)는 제안만 하고 파일을 쓰지 않는다.
+- 루틴·다른 봇의 요청으로 시작된 턴에서는 폴더 생성·이동·은퇴를 하지 않고 제안만 한다(호스트도 막는다). 그 밖의 쓰기는 루틴의 승인 수준을 따른다.
 
 ## 말투
 - 짧게. 제안은 "무엇을 어디로, 왜" 한 줄씩. 승인이 필요하면 마지막에 무엇을 승인하는지 분명히.

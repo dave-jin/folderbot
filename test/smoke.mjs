@@ -4,6 +4,7 @@ import { execSync, spawn } from 'node:child_process'
 import { createServer } from 'node:net'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { createHmac } from 'node:crypto'
 import { join } from 'node:path'
 
 // 브라우저 — 컨테이너(/opt/pw-browsers)면 그것, 맥이면 Playwright 캐시(~/Library/Caches/ms-playwright · `node node_modules/playwright-core/cli.js install chromium-headless-shell`). PW_CHROMIUM 으로 덮는다
@@ -51,6 +52,13 @@ let hostLog = ''; host.stdout.on('data', (d) => (hostLog += d)); host.stderr.on(
 const base = `http://127.0.0.1:${PORT}`
 const api = async (p, body, method) => { const r = await fetch(base + '/api' + p, { method: method ?? (body ? 'POST' : 'GET'), headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); const j = await r.json(); if (!r.ok) throw new Error(`${p}: ${j.error}`); return j }
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+/**
+ * 🔴 BT · `/mcp` 는 세션 토큰이 있어야 열린다(host/mcpAuth.ts). 검사는 호스트 비밀(`<data>/mcp.key`)로 같은 HMAC 을 만들어 붙인다 —
+ *    워커가 받는 0600 설정 파일과 같은 값이다. 토큰 없이 부르는 길은 아래 BT 블록이 «거절되는가» 로 따로 잰다.
+ */
+const mcpToken = (u) => { const url = new URL(u); const kf = join(data, 'mcp.key'); if (!existsSync(kf)) return 'no-key'   // 옛 판(BT 전)을 잴 때 — 키가 없다
+  const key = Buffer.from(readFileSync(kf, 'utf8').trim(), 'base64url'); return createHmac('sha256', key).update(`${decodeURIComponent(url.pathname.slice(5))}\n${url.searchParams.get('sid') ?? ''}`).digest('base64url') }
+const mcpFetch = (u, init = {}) => fetch(u, { ...init, headers: { ...(init.headers ?? {}), authorization: `Bearer ${mcpToken(u)}` } })
 // ⌨ 단축키는 ControlOrMeta 로 — 맥 Chromium 에서 Control+A 는 전체 선택이 아니다(줄 머리 이동 · 2026-09-22 맥미니 실측)
 //   Home/End 도 맥에선 캐럿을 안 옮긴다(스크롤만) — 줄 끝은 ⌘→, 문서 끝은 ⌘↓, 줄 머리 선택은 ⇧⌘←
 const MAC = process.platform === 'darwin'
@@ -282,15 +290,36 @@ try {
   chat = await api(`/sessions/${s1.sessionId}/chat`)
   if (chat.info.cliSessionId !== before) fail(`resume id changed ${before} → ${chat.info.cliSessionId}`); ok('hibernate → resume keeps cli session id')
   // MCP (오케스트레이터 도구)
-  const mcp = async (method, params, id = 1) => (await (await fetch(base + '/mcp/orch', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }) })).json())
+  const mcp = async (method, params, id = 1) => (await (await mcpFetch(base + '/mcp/orch', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }) })).json())
   const tl = await mcp('tools/list'); if (!tl.result.tools.some((t) => t.name === 'bot_send')) fail('mcp tools'); ok(`mcp tools ${tl.result.tools.length}`)
+  /**
+   * 🔴 BT · 로컬 MCP 인증 (2026-10-09). 종전엔 loopback 이기만 하면 아무 sid 로 오케스트레이터 도구를 다 썼고,
+   *    content-type 을 안 봐서 이 맥의 웹 페이지가 text/plain POST 로 부를 수도 있었다. 넷 다 거절돼야 한다.
+   */
+  {
+    const tlBody = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
+    const at = (headers) => fetch(base + '/mcp/orch?sid=x1', { method: 'POST', headers, body: tlBody }).then((r) => r.status)
+    const tok = mcpToken(base + '/mcp/orch?sid=x1'), other = mcpToken(base + '/mcp/orch?sid=x2')
+    if ((await at({ 'content-type': 'application/json' })) !== 401) fail('🔴 BT: 토큰 없는 /mcp/orch 가 통과했다')
+    if ((await at({ 'content-type': 'application/json', authorization: `Bearer ${other}` })) !== 401) fail('🔴 BT: 다른 세션의 토큰으로 오케스트레이터 도구가 열렸다')
+    if ((await at({ 'content-type': 'text/plain', authorization: `Bearer ${tok}` })) !== 415) fail('🔴 BT: text/plain(브라우저가 사전 확인 없이 보내는 형식)이 통과했다')
+    if ((await at({ 'content-type': 'application/json', origin: 'https://evil.example', authorization: `Bearer ${tok}` })) !== 403) fail('🔴 BT: 브라우저 Origin 이 붙은 요청이 통과했다')
+    if ((await at({ 'content-type': 'application/json', authorization: `Bearer ${tok}` })) !== 200) fail('BT: 맞는 토큰인데 막혔다')
+    // 워커는 토큰을 argv 가 아니라 0600 파일로 받는다 — 앞에서 돈 세션의 설정 파일
+    const cf = join(data, 'mcp', `${s1.sessionId}.json`)
+    if (!existsSync(cf)) fail('🔴 BT: 세션의 MCP 설정 파일이 없다 · ' + cf)
+    if ((statSync(cf).mode & 0o777) !== 0o600) fail('🔴 BT: MCP 설정 파일이 0600 이 아니다')
+    const cfj = JSON.parse(readFileSync(cf, 'utf8')).mcpServers.folderbot
+    if (cfj.headers?.Authorization !== `Bearer ${mcpToken(cfj.url)}`) fail('🔴 BT: 설정 파일의 토큰이 그 세션 것이 아니다 · ' + JSON.stringify(cfj))
+    ok('BT · /mcp 는 세션 토큰 · JSON · Origin 없음 셋이 다 맞아야 열린다 · 워커는 0600 파일로 토큰을 받는다')
+  }
   /**
    * ═══ AA · 루틴 (2026-09-22 Dave, 실제 사고 뒤) ═══════════════════════════════════════
    * 사고: UI 에 「20」(저녁 8시)을 넣었더니 `.bot.yml` 에 `cron: "20"` 으로 저장됐고, croner 가 던진 예외를
    * 스케줄러가 삼켜 **루틴이 화면에 멀쩡히 살아 있는데 한 번도 안 돌았다.** 이틀을 몰랐다.
    */
   {
-    const mcpB = async (name, args) => { const r = await (await fetch(base + `/mcp/${bot.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name, arguments: args } }) })).json(); return r.result }
+    const mcpB = async (name, args) => { const r = await (await mcpFetch(base + `/mcp/${bot.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name, arguments: args } }) })).json(); return r.result }
     const yml = join(root, '3. Area/제품_Rondo/.bot.yml')
     const ymlWas = existsSync(yml) ? readFileSync(yml, 'utf8') : null      // 이 블록이 끝나면 그대로 되돌린다 — 뒤 검사가 흔들리면 안 된다
     const sessWas = new Set((await api(`/bots/${bot.id}/sessions`)).map((x) => x.id))
@@ -336,6 +365,15 @@ try {
     let grew = false
     for (let i = 0; i < 40 && !grew; i++) { await wait(100); grew = (await api(`/bots/${bot.id}/sessions`)).length > before }
     if (!grew) fail('AA-4: 돌렸다는데 세션이 안 생겼다')
+    // 🔴 BS · approve 를 안 적은 루틴은 «묻지 않고 바로» 다 — 문구도 권한도 같은 값(종전엔 「제안만 하라」 + bypass 가 같이 걸렸다)
+    {
+      const rs = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.routine === '저녁 정리')
+      if (!rs) fail('BS: 루틴 세션을 못 찾았다')
+      if (rs.permissionMode !== 'bypassPermissions') fail('BS: approve 없는 루틴의 권한이 bypass 가 아니다 · ' + rs.permissionMode)
+      const first = (await api(`/sessions/${rs.id}/chat`)).items.find((it) => it.kind === 'user')
+      if (/파일을 고치지 말고 제안만/.test(first?.text ?? '')) fail('🔴 BS: 권한은 bypass 인데 「제안만 하라」 고 말한다 · ' + first?.text)
+      ok('BS · approve 없는 루틴 = bypass + 같은 뜻의 문구')
+    }
 
     // ⑤ 봇이 채팅에서 루틴을 고친다 — 「저녁 9시로 바꿔줘」
     const listed = JSON.parse((await mcpB('routine_list', {})).content[0].text)
@@ -347,7 +385,7 @@ try {
     const ambiguous = JSON.parse((await mcpB('routine_update', { name: '저녁 정리', when: '20' })).content[0].text)
     if (ambiguous.ok !== false || !ambiguous.ask) fail('🔴 AA-5: 「20」 을 봇이 넣었는데 그냥 저장됐다 · ' + JSON.stringify(ambiguous))
     // 🔴 approve 는 도구에 아예 없다 — 봇이 스스로 bypassPermissions 로 올리는 길을 열지 않는다
-    const tools = (await (await fetch(base + `/mcp/${bot.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'tools/list' }) })).json()).result.tools
+    const tools = (await (await mcpFetch(base + `/mcp/${bot.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'tools/list' }) })).json()).result.tools
     for (const t of tools.filter((x) => /^routine_/.test(x.name))) if (JSON.stringify(t.inputSchema).includes('approve')) fail('🔴 AA-5: 루틴 도구에 approve 가 있다 — 봇이 스스로 권한을 올릴 수 있다 · ' + t.name)
     const tryApprove = await mcpB('routine_update', { name: '저녁 정리', approve: 'always' })
     const afterTry = await api(`/bots/${bot.id}/routines`)
@@ -372,6 +410,40 @@ try {
     await wait(700)
     if ((await api(`/bots/${bot.id}/routines`)).length && ymlWas === null) fail('AA: 치우기가 안 됐다')
     ok('AA 루틴 — 「20」은 400+되묻기 · 사람 말 → cron · .bot.yml 을 밖에서 고쳐도 따라옴 · 깨진 YAML 로 안 날림 · 지금 한 번 · 봇 도구 4개(approve 없음)')
+  }
+  /**
+   * 🔴 BK · 오케스트레이터 루틴은 `.claude/routines.yml` 에 쓴다 (2026-10-07 제보 · 10/9 수정).
+   *    종전엔 읽기는 routines.yml, 쓰기는 루트 `.bot.yml` 이라 routine_add 를 두 번 부르면 앞의 것이 사라졌다.
+   */
+  {
+    const callO = async (name, args, sid = '') => { const t = (await (await mcpFetch(base + `/mcp/orch${sid ? `?sid=${sid}` : ''}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name, arguments: args } }) })).json()).result.content[0].text; try { return JSON.parse(t) } catch { return { error: t } } }
+    const rf = join(root, '.claude/routines.yml'); const rfWas = existsSync(rf) ? readFileSync(rf, 'utf8') : null
+    for (const n of ['BK 하나', 'BK 둘', 'BK 셋']) { const r = await callO('routine_add', { name: n, when: '매일 새벽 4시', prompt: '점검' }); if (!r.ok) fail('BK: routine_add 실패 · ' + JSON.stringify(r)) }
+    const names = ((existsSync(rf) ? readFileSync(rf, 'utf8') : '').match(/name: BK \S+/g) ?? []).join(',')
+    if (names !== 'name: BK 하나,name: BK 둘,name: BK 셋') fail('🔴 BK: routines.yml 에 셋이 다 없다 · ' + names)
+    if (existsSync(join(root, '.bot.yml'))) fail('🔴 BK: 루트 .bot.yml 이 생겼다 — 엉뚱한 파일에 썼다')
+    const lo = (await api('/bots/orch/routines')).filter((r) => r.name.startsWith('BK '))
+    if (lo.length !== 3 || lo.some((r) => !r.nextRun)) fail('🔴 BK: 루틴 목록이 셋이 아니거나 다음 실행이 없다 · ' + JSON.stringify(lo))
+    const ml = JSON.parse((await mcp('tools/call', { name: 'routine_list', arguments: {} })).result.content[0].text).filter((r) => r.name.startsWith('BK '))
+    if (ml.length !== 3) fail('🔴 BK: routine_list 가 셋이 아니다 · ' + JSON.stringify(ml))
+    // BK-완료기준 2 · routines.yml 을 손으로 고치면 touch 없이 다시 걸린다
+    writeFileSync(rf, 'routines:\n  - name: BK 손\n    cron: "0 5 * * *"\n    prompt: 손으로 넣음\n')
+    let hand = null
+    for (let i = 0; i < 60 && !hand; i++) { await wait(100); hand = (await api('/bots/orch/routines')).find((r) => r.name === 'BK 손' && r.nextRun) ?? null }
+    if (!hand) fail('🔴 BK-2: routines.yml 을 손으로 고쳤는데 스케줄이 안 따라온다')
+    // BS · 루틴이 시작한 턴에서는 folder_move 가 막힌다 — 오케스트레이터 루틴을 한 번 돌리고 그 세션 토큰으로 부른다
+    const before = new Set((await api('/bots/orch/sessions')).map((x) => x.id))
+    await api('/bots/orch/routines/run', { name: 'BK 손' })
+    let rsid = null
+    for (let i = 0; i < 40 && !rsid; i++) { await wait(100); rsid = (await api('/bots/orch/sessions')).find((x) => !before.has(x.id) && x.routine === 'BK 손')?.id ?? null }
+    if (!rsid) fail('BS: 오케스트레이터 루틴 세션이 안 생겼다')
+    const mv = await callO('folder_move', { from: '1. Inbox/예시랩_자문자료.txt', to: '4. Resources/예시랩_자문자료.txt' }, rsid)
+    if (!/예약된 루틴/.test(JSON.stringify(mv))) fail('🔴 BS: 루틴 턴에서 folder_move 가 막히지 않았다 · ' + JSON.stringify(mv))
+    if (!existsSync(join(root, '1. Inbox/예시랩_자문자료.txt'))) fail('🔴 BS: 막혔다면서 파일이 옮겨졌다')
+    if (rfWas === null) rmSync(rf); else writeFileSync(rf, rfWas)
+    await api(`/sessions/${rsid}`, undefined, 'DELETE').catch(() => {})
+    await wait(700)
+    ok('BK · 오케스트레이터 routine_add 세 번 = routines.yml 셋 · 루트 .bot.yml 없음 · 손으로 고치면 따라옴 · BS 루틴 턴의 folder_move 거절')
   }
   /**
    * AJ · **CLI 업데이트 길이 열려 있나** (2026-09-24 Dave). 스텁 환경에는 진짜 claude 가 없을 수 있으니
@@ -444,7 +516,7 @@ try {
     for (let i = 0; i < 40; i++) { us = (await api(`/sessions/${comm[0].id}/chat`)).items.filter((x) => x.kind === 'user').map((x) => x.text); if (us.length >= 2) break; await wait(250) }
     if (JSON.stringify(us) !== JSON.stringify(['느린일 소통 첫째', '되읊어: 소통 둘째'])) fail('소통 세션: 큐가 턴 끝에 차례로 안 나갔다 ' + JSON.stringify(us))
     // 소통 세션은 되묻지 못한다(고리 막기) — 위임 세션과 같은 가드
-    const rc = await (await fetch(base + `/mcp/${cfo.id}?sid=${comm[0].id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'orch_ask', arguments: { text: '되물어' } } }) })).json()
+    const rc = await (await mcpFetch(base + `/mcp/${cfo.id}?sid=${comm[0].id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'orch_ask', arguments: { text: '되물어' } } }) })).json()
     if (!rc.result?.isError) fail('소통 세션: orch_ask 가 거절되지 않았다 ' + JSON.stringify(rc))
     await wait(1200)
     ok('소통 세션 — 봇마다 하나 · 일하는 중에 온 봇의 말은 큐 → 턴 끝에 차례로 · 소통 세션은 되묻지 못한다')
@@ -471,8 +543,8 @@ try {
    *    받는 쪽은 오케스트레이터로 고정 · 위임 세션·오케스트레이터 자신은 못 쓴다
    */
   {
-    const orchAsk = async (b, sid, text) => (await (await fetch(base + `/mcp/${b}?sid=${sid}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'orch_ask', arguments: { text } } }) })).json())
-    const botTools = (await (await fetch(base + `/mcp/${bot.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) })).json()).result.tools.map((t) => t.name)
+    const orchAsk = async (b, sid, text) => (await (await mcpFetch(base + `/mcp/${b}?sid=${sid}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'orch_ask', arguments: { text } } }) })).json())
+    const botTools = (await (await mcpFetch(base + `/mcp/${bot.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) })).json()).result.tools.map((t) => t.name)
     if (!botTools.includes('orch_ask') || botTools.includes('bot_send')) fail('BH orch_ask: 폴더 봇 도구 목록 — orch_ask 는 있고 bot_send 는 없어야 한다 ' + JSON.stringify(botTools))
     const mine = await api(`/bots/${bot.id}/send`, { text: '되읊어: 요청을 보낼 세션', name: 'BH 요청 세션' }); await wait(900)
     const r = await orchAsk(bot.id, mine.sessionId, '재무_CFO 에게 이번 달 숫자를 물어봐 줘')
@@ -879,7 +951,7 @@ try {
           }
           // 에이전트 rondo_open — 창 닫힘 → 열림 · 같은 턴 두 번째는 무시 · 볼트 밖 거부
           await closeDoc()
-          const mcpBot = async (name, args) => (await (await fetch(base + `/mcp/${bot.id}?sid=${sidC}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) })).json()).result
+          const mcpBot = async (name, args) => (await (await mcpFetch(base + `/mcp/${bot.id}?sid=${sidC}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) })).json()).result
           const r1 = await mcpBot('rondo_open', { path: 'CLAUDE.md' }); if (!/열었어요/.test(r1.content[0].text)) fail('C rondo_open: ' + JSON.stringify(r1))
           await wait(600); if (!(await pg.$('.docwrap')) || (await pg.textContent('.docwrap .dtb .nm')) !== 'CLAUDE.md') fail('C rondo_open: 창이 열리고 CLAUDE.md 가 보여야 한다')
           await mcpBot('rondo_open', { path: 'todo.md' }); await wait(600)
@@ -1511,7 +1583,7 @@ try {
           // J-3 · 원격 턴의 rondo_open → 원격 문서 창에만 열리고 호스트(pg)에는 안 뜬다
           const closeDocP = async (p) => { for (let i = 0; i < 3 && (await p.$('.docwrap')); i++) { await p.keyboard.press('Meta+Shift+D'); await wait(300) } }
           await closeDocP(pg); await closeDocP(rj)
-          const mcpJ = await (await fetch(base + `/mcp/${bot.id}?sid=${sidJ}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'rondo_open', arguments: { path: 'CLAUDE.md' } } }) })).json()
+          const mcpJ = await (await mcpFetch(base + `/mcp/${bot.id}?sid=${sidJ}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'rondo_open', arguments: { path: 'CLAUDE.md' } } }) })).json()
           if (mcpJ.result?.isError) fail('J-3 rondo_open: ' + mcpJ.result.content[0].text)
           await wait(900)
           const onRemote = !!(await rj.$('.docwrap .dtb .nm:has-text("CLAUDE.md")')); const onHost = !!(await pg.$('.docwrap'))
@@ -1526,7 +1598,7 @@ try {
           await pj.click('.cright .sendb'); await wait(1200)
           chatJ = await api(`/sessions/${sidJ}/chat`); const phReply = chatJ.items.filter((i) => i.kind === 'assistant').pop()?.text ?? ''
           for (const w of ['origin="remote"', 'device="iphone"', 'tier="phone"', 'touch="true"', 'canOpenOnDevice="false"']) if (!phReply.includes(w)) fail('J-1 폰: ' + w + ' 가 없다 · ' + phReply)
-          const mcpR = await (await fetch(base + `/mcp/${bot.id}?sid=${sidJ}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'rondo_reveal', arguments: { path: 'CLAUDE.md' } } }) })).json()
+          const mcpR = await (await mcpFetch(base + `/mcp/${bot.id}?sid=${sidJ}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'rondo_reveal', arguments: { path: 'CLAUDE.md' } } }) })).json()
           if (mcpR.result?.isError) fail('J-3 rondo_reveal: ' + mcpR.result.content[0].text)
           await wait(800); const phToast = (await pj.textContent('.toast').catch(() => '')) ?? ''
           if (!phToast || (await pg.$('.docwrap')) || (await rj.$('.docwrap'))) fail('J-3 폰: 폰에는 안내, 다른 기기에는 아무것도 ' + JSON.stringify({ phToast, host: !!(await pg.$('.docwrap')) }))
@@ -2897,7 +2969,7 @@ try {
             await pg.evaluate((h) => { location.hash = h }, `bot=${bot.id}&s=${sidF}`); await wait(700)
             await api(`/sessions/${sidF}/send`, { text: '되읊어: 준비' }); await wait(1300)   // 새 턴 — rondo_open 은 턴마다 한 번 먹는다
             await pg.click('.composer .cin'); await pg.keyboard.type('안녕')
-            const ro = await (await fetch(base + `/mcp/${bot.id}?sid=${sidF}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'rondo_open', arguments: { path: rel } } }) })).json()
+            const ro = await (await mcpFetch(base + `/mcp/${bot.id}?sid=${sidF}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'rondo_open', arguments: { path: rel } } }) })).json()
             if (ro.result?.isError) fail('BJ: rondo_open 실패(검사 전제) ' + JSON.stringify(ro))
             await wait(1000)
             await pg.keyboard.type('하세요'); await wait(1700)
@@ -3902,7 +3974,7 @@ try {
             {
               await api('/bots/reorder', { ids, moved: ids[1] })                       // ids[1] 을 «끌어» 1번 칸에 — 사람이 정한 자리
               const rels = (await api('/bots')).filter((b) => !b.orchestrator).map((b) => b.rel)
-              const call = async (args) => (await (await fetch(base + '/mcp/orch', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'bots_reorder', arguments: args } }) })).json()).result
+              const call = async (args) => (await (await mcpFetch(base + '/mcp/orch', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'bots_reorder', arguments: args } }) })).json()).result
               const bad = await call({ order: [rels[0], '2. Projects/없는폴더'] })
               if (!bad.isError || !/없는폴더/.test(bad.content[0].text)) fail('A: 없는 rel 이 섞였는데 실패하지 않았다 ' + JSON.stringify(bad))
               if (JSON.stringify((await api('/bots')).filter((b) => !b.orchestrator).map((b) => b.id)) !== JSON.stringify(ids)) fail('A: 실패했는데 순서가 바뀌었다')

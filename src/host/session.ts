@@ -16,6 +16,7 @@ import { isAutoSessionName, titleFromText } from '../core/sessionTitle'
 import { isModelRejected } from '../core/codexMap'
 import { autoAllows, fallbackRules, rulesLabel } from '../core/permPolicy'
 import type { Bot, ChatItem, PermissionMode, PermissionRequest, QueuedMsg, SessionInfo, SessionState } from '../core/types'
+import type { TurnFrom } from '../core/turnGuard'
 import { compactReason } from '../core/compact'
 import { atomicWrite, dataDir, ensureDir } from './paths'
 
@@ -234,6 +235,8 @@ export interface SessionRec {
   queue?: QueuedMsg[]
   /** 마지막 자동 압축 시각 — 압축 뒤 측정값이 늦게 와도 고리가 안 생기게(core/compact) */
   compactedAt?: number
+  /** BS · 지금(마지막) 턴을 누가 시작했나 — 사람만 시킬 수 있는 도구를 MCP 가 이것으로 거른다(core/turnGuard) */
+  turnFrom?: TurnFrom
   id: string
   botId: string
   name: string
@@ -548,7 +551,7 @@ export class SessionManager extends EventEmitter {
     if (this.mustWait(r) || r.queue?.length) { this.enqueue(r, msg); return 'queued' }
     const why = r.comm ? compactReason(r, 'before') : null
     if (why) { this.enqueue(r, msg); this.compact(r, bot, why); return 'queued' }
-    this.send(r, bot, msg.text)
+    this.send(r, bot, msg.text, undefined, msg.origin ?? 'bot')
     return 'sent'
   }
   private enqueue(r: SessionRec, msg: QueuedMsg): void {
@@ -573,7 +576,7 @@ export class SessionManager extends EventEmitter {
     if (r.queue?.length) {
       const [m, ...rest] = r.queue; r.queue = rest.length ? rest : undefined
       this.persist(r)
-      this.send(r, bot, m.text)
+      this.send(r, bot, m.text, undefined, m.origin ?? 'bot')
       return
     }
     // ⚠ 잠든 세션은 압축하려고 깨우지 않는다 — 살아 있는 워커가 막 턴을 끝냈을 때만
@@ -648,7 +651,8 @@ export class SessionManager extends EventEmitter {
           this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `${was} 는 이 계정에서 못 써요 — 기본 모델로 다시 보냅니다` })
           this.persist(r)
           const bot2 = bot
-          setTimeout(() => { try { this.send(r, bot2, lastUser.text) } catch { /* 두 번은 안 한다 */ } }, 50)
+          const again = r.turnFrom
+          setTimeout(() => { try { this.send(r, bot2, lastUser.text, undefined, again) } catch { /* 두 번은 안 한다 */ } }, 50)
           this.emit('sessions', r.botId)
           return
         }
@@ -836,7 +840,8 @@ export class SessionManager extends EventEmitter {
     }
   }
 
-  send(r: SessionRec, bot: Bot, text: string, client?: ClientCtx): void {
+  send(r: SessionRec, bot: Bot, text: string, client?: ClientCtx, origin: TurnFrom = 'human'): void {
+    r.turnFrom = origin
     this.autoTitle(r, text)
     if (client) r.lastClient = client
     const from = client ? { device: client.device, main: client.origin === 'host', tier: client.tier } : undefined

@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs'
 import { relUnder } from '../core/paths'
 import { stripRuntime, type RoutineDef } from '../core/types'
 import { confirmLine, describeCron, formatNext, parseWhen } from '../core/when'
+import { turnBlock } from '../core/turnGuard'
 
 interface Rpc { jsonrpc: '2.0'; id?: number | string; method?: string; params?: Record<string, unknown> }
 type Tool = { name: string; description: string; inputSchema: Record<string, unknown> }
@@ -17,11 +18,12 @@ function whenProblem(w: Exclude<ReturnType<typeof parseWhen>, { ok: true }>): Re
   if ('ask' in w) return { ok: false, ask: w.ask.q, options: w.ask.options.map((o) => ({ label: o.label, when: o.text })), note: '뜻이 갈려서 저장하지 않았어요. 사람에게 물어보고 고른 쪽을 사람 말로 다시 주세요 — cron 식을 지어내지 마세요' }
   return { ok: false, error: w.error, examples: w.examples, note: 'cron 식을 지어내지 말고 사람 말로 다시 주세요' }
 }
-/** 루틴을 `.bot.yml` 에 저장하고 스케줄을 다시 건다 — 화면용 값(lastError·nextRun)은 털어서 넣는다 */
-function saveRoutines(reg: Registry, host: Host, abs: string, routines: RoutineDef[]): void {
-  const cfg = reg.botConfig(abs)
-  cfg.routines = routines.map(stripRuntime) as never
-  reg.saveBotConfig(abs, cfg)
+/**
+ * 루틴을 저장하고 스케줄을 다시 건다 — 화면용 값(lastError·nextRun)은 털어서 넣는다.
+ * 🔴 BK · 자리는 `registry.saveRoutines` 가 정한다(오케스트레이터 = `.claude/routines.yml`) · 저장 뒤 다시 읽어 확인한다
+ */
+function saveRoutines(reg: Registry, host: Host, bot: { orchestrator?: boolean; abs: string }, routines: RoutineDef[]): void {
+  reg.saveRoutines(bot, routines.map(stripRuntime))
   host.afterBotsChanged()
 }
 
@@ -81,6 +83,9 @@ export async function handleMcp(host: Host, botId: string, req: IncomingMessage,
   if (msg.method === 'tools/call') {
     const name = String(msg.params?.name ?? ''); const args = (msg.params?.arguments ?? {}) as Record<string, unknown>
     if (!mcpTools(botId).some((t) => t.name === name)) return error(-32601, `이 봇은 ${name} 을 쓸 수 없어요`)
+    // BS · 루틴·다른 봇·편지가 시작한 턴에서는 되돌리기 어려운 도구를 거절한다(core/turnGuard)
+    const blocked = turnBlock(name, sid ? host.sessions.get(sid)?.turnFrom : undefined)
+    if (blocked) return reply({ content: [{ type: 'text', text: `오류: ${blocked}` }], isError: true })
     try {
       const out = await callTool(host, botId, name, args, sid)
       return reply({ content: [{ type: 'text', text: typeof out === 'string' ? out : JSON.stringify(out, null, 1) }] })
@@ -171,7 +176,7 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       const w = parseWhen(s('when'))
       if (!w.ok) return whenProblem(w)
       const def: RoutineDef = { name, cron: w.cron, prompt: s('prompt'), ...(a.push === undefined ? {} : { push: !!a.push }) }
-      saveRoutines(reg, host, b.abs, [...b.routines, def])
+      saveRoutines(reg, host, b, [...b.routines, def])
       return { ok: true, name, when: w.text, confirm: confirmLine(w.cron), note: '승인 수준(approve)은 사람이 화면에서 정해요 — 기본은 «묻지 않고 바로 한다» 입니다(루틴은 사람이 없을 때 도니까)' }
     }
     case 'routine_update': {
@@ -186,7 +191,7 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       if (a.enabled !== undefined) patch.enabled = !!a.enabled
       if (!Object.keys(patch).length) throw new Error('바꿀 값을 하나는 주세요 (when · prompt · push · enabled)')
       const next = { ...before, ...patch }
-      saveRoutines(reg, host, b.abs, b.routines.map((r) => (r.name === name ? next : r)))
+      saveRoutines(reg, host, b, b.routines.map((r) => (r.name === name ? next : r)))
       // 🔴 prompt 교체는 되돌릴 수 없다 — 직전 값을 담아 준다
       return { ok: true, name, when: describeCron(next.cron), confirm: confirmLine(next.cron), before }
     }
@@ -195,7 +200,7 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       const name = s('name').trim()
       const cur = b.routines.find((r) => r.name === name); if (!cur) throw new Error(`「${name}」 이라는 루틴이 없어요`)
       const before = stripRuntime(cur)
-      saveRoutines(reg, host, b.abs, b.routines.filter((r) => r.name !== name))
+      saveRoutines(reg, host, b, b.routines.filter((r) => r.name !== name))
       // 🔴 되돌릴 수 없으므로 직전 값을 그대로 돌려준다 — 이 값으로 routine_add 하면 복구된다
       return { ok: true, removed: name, before, undo: '잘못 지웠으면 before 의 값으로 routine_add 하면 돌아와요' }
     }

@@ -80,6 +80,21 @@ export function approveToMode(a: RoutineDef['approve']): PermissionMode {
 }
 
 /**
+ * 🔴 **BS · 루틴에 붙는 말과 권한 모드는 같은 값에서 나온다** (2026-10-08 오케스트레이터 제보).
+ *    종전에는 문구가 `r.approve === 'always'` 로 갈리고 권한은 `approveToMode` 가 «비면 always» 로 정했다 —
+ *    `approve` 를 안 적은 루틴은 **「제안만 하라」 와 bypassPermissions 를 같이** 받았다. 이제 둘 다 이 함수를 거친다.
+ * ⚠ 폴더 생성·이동·은퇴는 승인 수준과 상관없이 루틴 턴에서 막힌다(`core/turnGuard`) — 문구도 그렇게 말한다.
+ */
+export function routineRun(r: Pick<RoutineDef, 'name' | 'prompt' | 'approve'>): { mode: PermissionMode; text: string } {
+  const a = r.approve ?? DEFAULT_ROUTINE_APPROVE
+  const how = a === 'always' ? '' : a === 'folder' ? '이 폴더 안 파일만 고치고 ' : '파일을 고치지 말고 제안만 하고 '
+  return {
+    mode: approveToMode(a),
+    text: `${r.prompt}\n\n(이건 예약된 루틴 "${r.name}" 이야. 사람이 없을 수 있으니 ${how}결과를 짧게 요약해. 폴더 생성·이동·은퇴·외부 발송처럼 되돌리기 어려운 일은 하지 말고 제안으로 남겨.)`,
+  }
+}
+
+/**
  * AI · **루틴 세션은 둘까지만 남긴다** (2026-09-24 Dave: *«바로 직전 루틴까지만 남기고, 루틴 세션은 두 개 이상
  * 가져가지 않는»*). 루틴이 돌 때마다 새 세션이 생기므로 그냥 두면 목록이 루틴 기록으로 덮인다.
  *

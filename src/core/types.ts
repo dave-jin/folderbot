@@ -176,7 +176,8 @@ export interface HarnessRow {
 export interface HarnessDetail extends HarnessRow { skillList: HarnessItem[]; mcpList: HarnessItem[] }
 
 /** 호스트 대기열의 말 한 개 — `from` 은 보낸 봇 id */
-export interface QueuedMsg { text: string; from: string; fromName?: string; t: number }
+/** `origin` — 이 말이 나가 시작하는 턴의 출처(core/turnGuard). 비면 'bot' */
+export interface QueuedMsg { text: string; from: string; fromName?: string; t: number; origin?: import('./turnGuard').TurnFrom }
 
 export interface PermissionRequest {
   requestId: string

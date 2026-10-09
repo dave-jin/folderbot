@@ -15,6 +15,7 @@ import type { Host } from './host'
 import { bindAddresses, tailnetInfo } from './tailnet'
 import { saveConfig } from './paths'
 import { handleMcp } from './mcp'
+import { bearer, mcpGate } from './mcpAuth'
 import { providers, forgetProviders } from './providers'
 import { agentModels, codexAuth, diagnose, forgetModels } from './auth'
 import { canon } from './registry'
@@ -169,8 +170,12 @@ export class Gateway {
 
     if (p.startsWith('/mcp/')) {
       if (!this.isLoopback(req)) return json(403, { error: 'loopback only' })
+      // BT · 브라우저(Origin)·JSON 아닌 본문·세션 토큰 없는 요청은 거절 — host/mcpAuth.ts 머리말
+      const gate = mcpGate(req.headers); if (gate) return json(gate.code, { error: gate.error })
+      const mBot = decodeURIComponent(p.slice(5)), mSid = url.searchParams.get('sid') ?? ''
+      if (!this.host.mcpAuth.check(mBot, mSid, bearer(req.headers))) return json(401, { error: 'mcp token required' })
       const chunks: Buffer[] = []; for await (const c of req) chunks.push(c as Buffer)
-      return handleMcp(this.host, decodeURIComponent(p.slice(5)), req, res, Buffer.concat(chunks).toString('utf8'), new URL(req.url ?? '/', 'http://x').searchParams.get('sid') ?? '')
+      return handleMcp(this.host, mBot, req, res, Buffer.concat(chunks).toString('utf8'), mSid)
     }
     if (p === '/api/health') return json(200, { ok: true, name: 'folderbot', version: this.host.version, stallMs: this.stall.maxMs })
     if (p === '/api/pair' && req.method === 'POST') {
@@ -789,8 +794,7 @@ export class Gateway {
           return stripRuntime({ ...r, name, cron: v.cron })
         })
         if (bad.length) return json(400, { error: '주기를 못 읽었어요', bad, examples: WHEN_EXAMPLES })
-        const cfg = reg.botConfig(bot.abs); cfg.routines = clean.filter(Boolean) as never
-        reg.saveBotConfig(bot.abs, cfg); h.afterBotsChanged()
+        reg.saveRoutines(bot, clean.filter(Boolean) as RoutineDef[]); h.afterBotsChanged()   // BK · 오케스트레이터는 .claude/routines.yml · 다시 읽어 확인
         const saved = reg.bot(bot.id)?.routines ?? []
         return json(200, { ok: true, routines: h.routines.decorate(bot.id, saved).map((r) => ({ ...r, when: describeCron(r.cron), confirm: confirmLine(r.cron) })) })
       }
