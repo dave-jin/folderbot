@@ -552,6 +552,33 @@ try {
     ok(`연결 R2 — 일부러 실패하는 루틴 = ${seq} · routine_run · orch_report 두 건이 한 턴으로`)
   }
   /**
+   * 🔴 연결 R3 (2026-10-09) — BQ-11 들어오는 웹훅: 상대만의 토큰(0600 파일)이 없으면 401 · 있으면 편지 파일이 생기고 평소처럼 채널로 ·
+   *    BY 호스트 로그가 앱 데이터 logs/host-YYYY-MM-DD.log 에 남는다
+   */
+  {
+    const tokF = join(data, 'n8n-in.env'); writeFileSync(tokF, 'TOKEN=qa-inbound-token-0123456789\n', { mode: 0o600 })
+    const bf = join(root, '.claude/bridges.yml')
+    writeFileSync(bf, `bridges:\n  - id: n8n\n    name: 자동화\n    icon: 🤖\n    mailbox: 우편-n8n\n    inbound: { env: ${JSON.stringify(tokF)} }\n  - id: nobody\n    mailbox: 우편-x\n`)
+    let opened = false
+    for (let i = 0; i < 60 && !opened; i++) { await wait(100); opened = existsSync(join(root, '우편-n8n/cursors/folderbot.json')) }
+    if (!opened) fail('BQ-11: 연결이 안 열렸다')
+    const post = (peer, auth, body = { kind: 'report', title: '주문', text: '주문 #12 들어옴' }) => fetch(base + `/api/bridges/${peer}/messages`, { method: 'POST', headers: { 'content-type': 'application/json', ...(auth ? { authorization: `Bearer ${auth}` } : {}) }, body: JSON.stringify(body) })
+    if ((await post('n8n', '')).status !== 401) fail('🔴 BQ-11: 토큰 없는 들어오는 웹훅이 통과했다')
+    if ((await post('n8n', 'qa-inbound-token-0123456789x')).status !== 401) fail('🔴 BQ-11: 틀린 토큰이 통과했다')
+    if ((await post('nobody', 'qa-inbound-token-0123456789')).status !== 404) fail('BQ-11: inbound 를 안 켠 상대가 404 가 아니다')
+    const ok201 = await post('n8n', 'qa-inbound-token-0123456789'); const okB = await ok201.json()
+    if (ok201.status !== 201 || !/^\d{8}-\d{6}-n8n-[0-9a-f]{4}$/.test(okB.id)) fail('BQ-11: 맞는 토큰인데 편지가 안 만들어졌다 · ' + JSON.stringify(okB))
+    if (!existsSync(join(root, okB.rel))) fail('BQ-11: 편지 파일이 없다 · ' + okB.rel)
+    let chan = null
+    for (let i = 0; i < 200 && !chan; i++) { await wait(100); const c = (await api('/bots/orch/sessions')).find((x) => x.channel === 'n8n'); if (c && (await api(`/sessions/${c.id}/chat`)).items.some((it) => it.kind === 'user' && it.text.includes(okB.id))) chan = c }
+    if (!chan) fail('🔴 BQ-11: 웹훅으로 들어온 편지가 채널 세션에 안 들어갔다')
+    await api(`/sessions/${chan.id}`, undefined, 'DELETE'); rmSync(bf); await wait(700)
+    const d = new Date(), day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const lf = join(data, 'logs', `host-${day}.log`)
+    if (!existsSync(lf) || !/연결 «자동화» 열림/.test(readFileSync(lf, 'utf8'))) fail('🔴 BY: 호스트 로그가 날짜별 파일에 안 남았다 · ' + lf)
+    ok('연결 R3 — 들어오는 웹훅 401·404·201 → 편지 파일 → 채널 세션 · 호스트 로그 날짜별 파일')
+  }
+  /**
    * AJ · **CLI 업데이트 길이 열려 있나** (2026-09-24 Dave). 스텁 환경에는 진짜 claude 가 없을 수 있으니
    * «없으면 400 · 있으면 200» 둘 다 제대로 답하는지만 잰다 — 여기서 진짜 업데이트를 돌리지는 않는다.
    */
@@ -3814,7 +3841,8 @@ try {
            *    그래서 ① 뜨는 것만 UI 로 잡고 ② 시각을 그 자리에서 밀어 «2분 뒤» 문구를 확인하고
            *    ③ «턴이 끝나도 남는다» 는 계약은 **얼어붙지 않는 쪽**(순수 판정 · 유닛)과 API 로 잰다.
            */
-          await pg.fill('.composer .cin', '백그라운드 조사'); await pg.keyboard.press('Enter')
+          // ⚠ «느리게» — 스텁의 백그라운드 작업이 0.7초면 «2분 뒤» 문구를 다시 그리기 전에 대기 줄이 사라져 AB-3 이 경주로 깨진다(맥미니 qa 연속 재현 · 2026-10-09)
+          await pg.fill('.composer .cin', '백그라운드 조사 느리게'); await pg.keyboard.press('Enter')
           let v = null
           for (let i = 0; i < 80; i++) { await wait(60); v = await view(); if (v.hold) break }
           if (!v.hold) fail('🔴 AB: 남을 기다리는데 대기 줄이 없다 ' + JSON.stringify(v))
@@ -3823,18 +3851,6 @@ try {
           if (!/기다리는 중/.test(v.hstate ?? '')) fail('🔴 AB-5: 헤더 한 줄이 없다 ' + JSON.stringify(v))
           if (!v.rail.includes('fb-hold')) fail('🔴 AB-5: 레일 얼굴이 대기 줄과 다른 말을 한다 ' + JSON.stringify(v))
 
-          /**
-           * 🔴 **턴이 끝나도 남이 일하면 화면은 안 조용해진다** — 이것이 2319 의 정체다.
-           *    화면이 아니라 **값**으로 잰다(스텁이 너무 빨리 끝나 화면으로는 못 잡는다): 세션이 running 이 아닌데
-           *    `bg > 0` 인 순간이 실제로 있고, 그 순간의 판정이 «남이 들고 있다» 여야 한다.
-           */
-          let sawEndedWithBg = false
-          for (let i = 0; i < 120 && !sawEndedWithBg; i++) {
-            const ss = await api(`/bots/${bot.id}/sessions`)
-            if (ss.some((x) => x.state !== 'running' && (x.bg ?? 0) > 0)) sawEndedWithBg = true
-            else await wait(40)
-          }
-          if (!sawEndedWithBg) console.log('  (참고) 스텁이 너무 빨라 «턴 끝 + bg 남음» 순간을 못 잡았다 — 판정 자체는 유닛이 잰다')
 
           // 🔴 2분이 넘으면 화면이 먼저 «가도 된다» 고 말한다 — 시각을 밀어 확인한다(멈춰 있는 대기 줄로)
           await pg.evaluate(() => {
@@ -3849,6 +3865,20 @@ try {
           if (!/분/.test(late.el ?? '')) fail('AB-2: 얼마나 됐는지 안 보인다 ' + JSON.stringify(late))
           await pg.screenshot({ path: 'test/tmp/ab-hold.png' })
           await pg.reload(); await pg.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(600)
+          // ⚠ (2026-10-09) 이 값 검사는 «2분 뒤» 확인 **뒤로** 옮겼다 — 앞에 두면 최대 수 초 폴링하는 사이 스텁의 백그라운드 작업(1초 남짓)이 끝나
+          //    대기 줄이 사라지고 AB-3 이 경주로 깨졌다(맥미니 qa 에서 R2 판 그대로도 연달아 재현). 머리말 ②「그 자리에서 밀어 확인」을 따른다
+          /**
+           * 🔴 **턴이 끝나도 남이 일하면 화면은 안 조용해진다** — 이것이 2319 의 정체다.
+           *    화면이 아니라 **값**으로 잰다(스텁이 너무 빨리 끝나 화면으로는 못 잡는다): 세션이 running 이 아닌데
+           *    `bg > 0` 인 순간이 실제로 있고, 그 순간의 판정이 «남이 들고 있다» 여야 한다.
+           */
+          let sawEndedWithBg = false
+          for (let i = 0; i < 120 && !sawEndedWithBg; i++) {
+            const ss = await api(`/bots/${bot.id}/sessions`)
+            if (ss.some((x) => x.state !== 'running' && (x.bg ?? 0) > 0)) sawEndedWithBg = true
+            else await wait(40)
+          }
+          if (!sawEndedWithBg) console.log('  (참고) 스텁이 너무 빨라 «턴 끝 + bg 남음» 순간을 못 잡았다 — 판정 자체는 유닛이 잰다')
           ok('AB 기다림 — 턴이 끝나도 대기 줄이 남고 · 얼굴·헤더·레일이 같은 말 · 2분 넘으면 «가도 된다»')
         }
         // 🔴 **맥 기본 단축키** (2026-09-13 Dave: «키보드 단축키를 전 영역에 적용해줘. 맥 기본 단축키로»)

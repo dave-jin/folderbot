@@ -624,7 +624,7 @@ app.whenReady().then(async () => {
   app.on('activate', showWin)
   // 자기 업데이트 — 호스트 모드에선 세션이 전부 유휴일 때만 적용한다
   const busyCount = () => { let b = 0; for (const st of states.values()) if (st === 'running' || st === 'awaiting_input') b++; return b }
-  if (!QA) updater.start({ isHost: () => settings.mode === 'host', isBusy: () => busyCount() > 0, busyCount, onChange: () => { pushTrayState(); try { win?.webContents.send('fb:update', updater.state()) } catch {} } })
+  if (!QA) updater.start({ isHost: () => settings.mode === 'host', port: () => settings.port || 7373, isBusy: () => busyCount() > 0, busyCount, onChange: () => { pushTrayState(); try { win?.webContents.send('fb:update', updater.state()) } catch {} } })
 })
 app.on('window-all-closed', () => { /* 메뉴바에 남는다 */ })
 app.on('before-quit', () => {

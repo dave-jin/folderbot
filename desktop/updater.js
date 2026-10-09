@@ -13,6 +13,7 @@ const { spawn } = require('node:child_process')
 const { createHash } = require('node:crypto')
 
 const { pickLatest } = require('./update-pick')
+const { applyScript } = require('./apply-script')
 const REPO = 'dave-jin/folderbot'
 const CHECK_EVERY = 30 * 60 * 1000
 const FOCUS_EVERY = 10 * 60 * 1000
@@ -20,7 +21,7 @@ const dir = () => join(app.getPath('userData'), 'updates')
 
 let staged = null      // { version, zip, notes }
 let checking = false, downloading = null, timer = null, deferTimer = null
-let hooks = { isBusy: () => false, busyCount: () => 0, isHost: () => false, onChange: () => {}, log: (m) => console.log('[update]', m) }
+let hooks = { isBusy: () => false, busyCount: () => 0, isHost: () => false, port: () => 7373, onChange: () => {}, log: (m) => console.log('[update]', m) }
 let lastCheck = 0, lastError = '', deferred = false, lastFocusCheck = 0
 /** userData/updates/log.txt — 왜 안 됐는지 나중에 볼 수 있게 */
 function flog(m) { try { mkdirSync(dir(), { recursive: true }); require('node:fs').appendFileSync(join(dir(), 'log.txt'), `${new Date().toISOString()} ${m}\n`) } catch {} }
@@ -116,24 +117,11 @@ function apply() {
   }
   const work = join(dir(), 'unpack')
   const script = join(dir(), 'apply.sh')
-  writeFileSync(script, `#!/bin/bash
-# Folder Bot 업데이트 적용 — 앱이 완전히 끝난 뒤 실행된다
-PID=$1; ZIP="$2"; TARGET="$3"; WORK="$4"
-for i in $(seq 1 120); do kill -0 "$PID" 2>/dev/null || break; sleep 0.5; done
-rm -rf "$WORK"; mkdir -p "$WORK"
-/usr/bin/ditto -x -k --noqtn "$ZIP" "$WORK" || exit 1
-NEW=$(find "$WORK" -maxdepth 2 -name "*.app" -print -quit)
-[ -n "$NEW" ] || exit 1
-rm -rf "$TARGET.old"; mv "$TARGET" "$TARGET.old" 2>/dev/null
-/usr/bin/ditto --noqtn "$NEW" "$TARGET" || { mv "$TARGET.old" "$TARGET"; exit 1; }
-/usr/bin/xattr -dr com.apple.quarantine "$TARGET" 2>/dev/null
-rm -rf "$TARGET.old" "$WORK"
-echo "applied $(date)" > "$(dirname "$ZIP")/applied.txt"
-/usr/bin/open -a "$TARGET"
-`)
+  writeFileSync(script, applyScript())   // BX · 새 판이 /api/health 에 안 답하면 옛 판으로 되돌린다(apply-script.js)
   chmodSync(script, 0o755)
   hooks.log(`적용 → ${target}`)
-  const child = spawn('/bin/bash', [script, String(process.pid), staged.zip, target, work], { detached: true, stdio: 'ignore' })
+  const health = hooks.isHost() ? `http://127.0.0.1:${hooks.port()}/api/health` : ''   // 원격 화면 모드는 이 맥에 호스트가 없다 — 되돌리기 판정 없이 연다
+  const child = spawn('/bin/bash', [script, String(process.pid), staged.zip, target, work, health], { detached: true, stdio: 'ignore' })
   child.unref()
   setTimeout(() => app.quit(), 300)
   return true
@@ -144,6 +132,8 @@ function start(h) {
   const log0 = hooks.log; hooks.log = (m) => { flog(m); log0(m) }
   if (process.platform !== 'darwin') return
   hooks.log(`시작 v${app.getVersion()} · ${bundlePath() || '(번들 아님)'}`)
+  // BX · 지난 적용이 되돌려졌으면 알린다(새 판이 켜지지 않아 옛 판으로 돌아왔다) — 한 번 읽고 지운다
+  try { const f = join(dir(), 'applied.txt'); if (existsSync(f)) { const t = require('node:fs').readFileSync(f, 'utf8').trim(); if (/^rolled back|^failed/.test(t)) { lastError = `지난 업데이트가 켜지지 않아 옛 판으로 되돌렸어요 · ${t}`; hooks.log(lastError) } unlinkSync(f) } } catch {}
   setTimeout(() => void check(), 15 * 1000)
   timer = setInterval(() => void check(), CHECK_EVERY)
 }

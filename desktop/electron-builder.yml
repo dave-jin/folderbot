@@ -12,6 +12,7 @@ files:
   - preload.js
   - updater.js
   - update-pick.js
+  - apply-script.js
   - perms.js
   - perm-core.js
   - trayIcon.js

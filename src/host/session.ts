@@ -4,8 +4,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { transition, shouldNotify } from '../core/stateMachine'
 import { assistantText, closeOpenItems, contextOf, itemId, modelOf, toolSummary, touchedPath, type StreamLine } from '../core/chat'
@@ -428,8 +428,30 @@ export class SessionManager extends EventEmitter {
   remove(id: string): void {
     this.workers.get(id)?.kill(); this.workers.delete(id)
     const r = this.recs.get(id); this.recs.delete(id)
-    try { const f = join(this.dir, `${id}.json`); if (existsSync(f)) atomicWrite(f, JSON.stringify({ ...r, deleted: true })) } catch { /* */ }
+    try { const f = join(this.dir, `${id}.json`); if (existsSync(f)) atomicWrite(f, JSON.stringify({ ...r, deleted: true, deletedAt: Date.now() })) } catch { /* */ }
     if (r) this.emit('sessions', r.botId)
+  }
+  /**
+   * BW · 지운 지 7일 지난 세션 파일을 휴지통으로 (2026-10-09 · 맥미니 실측 317개 중 154개가 지운 표시만 남아 있었다).
+   * 볼트의 `.folderbot/trash` 가 아니라 **앱 데이터의** `trash/sessions/` 로 옮긴다 — 대화 기록을 Dropbox 로 보내지 않는다.
+   * 지우지 않고 옮기므로 되돌릴 수 있다(파일을 sessions/ 로 되돌려 놓고 «되살리기»). 지운 시각이 없는 옛 파일은 수정 시각으로 본다.
+   * @returns 옮긴 세션 id
+   */
+  sweepDeleted(maxAgeMs = 7 * 24 * 3600_000, now = Date.now()): string[] {
+    const out: string[] = []
+    const trash = join(dirname(this.dir), 'trash', 'sessions')
+    for (const f of readdirSync(this.dir).filter((n) => n.endsWith('.json'))) {
+      if (this.recs.has(f.slice(0, -5))) continue   // 살아 있는 세션은 읽지도 않는다 — 큰 파일을 다 파싱하면 호스트가 멈춘다
+      const p = join(this.dir, f)
+      try {
+        const j = JSON.parse(readFileSync(p, 'utf8')) as { deleted?: boolean; deletedAt?: number }
+        if (!j.deleted) continue
+        const at = j.deletedAt ?? statSync(p).mtimeMs
+        if (now - at < maxAgeMs) continue
+        mkdirSync(trash, { recursive: true }); renameSync(p, join(trash, f)); out.push(f.replace(/\.json$/, ''))
+      } catch { /* 깨진 파일은 건너뛴다 */ }
+    }
+    return out
   }
   /** ⚠ 사람이 지은 이름은 **표시를 남긴다** — 그래야 첫 말 자동 제목이 이걸 안 덮는다 */
   /**

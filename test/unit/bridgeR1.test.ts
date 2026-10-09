@@ -13,6 +13,7 @@ import type { Bot } from '../../src/core/types'
  * 연결(Bridge) R1 (2026-10-09 Dave 승인) — 바깥 상대와 편지 파일로 대화한다.
  * 설계 · 검토: PARA/2. Area/제품_FolderBot/01_기획/2026-10-09_기획_외부-에이전트-연결-Bridge.md · …_검토_연결-Bridge.md
  */
+/** ⚠ 감시(FSEvents)는 유닛이 병렬로 돌 때 몇 초씩 늦는다(fileWatch.test 머리말) — 배달은 폴링(scanNow)을 불러 결정적으로 잰다. 감시 지연은 스모크가 잰다 */
 const until = async (f: () => boolean, ms = 12000) => { const t0 = Date.now(); while (!f()) { if (Date.now() - t0 > ms) return false; await new Promise((r) => setTimeout(r, 50)) } return true }
 
 describe('FBMF — 편지 읽기·쓰기 (core/fbmf)', () => {
@@ -119,7 +120,7 @@ describe('BridgeHub — 들어오는 편지 (host/bridge)', () => {
       f.inbox('20261009-110000-halili-0002.md', letter('20261009-110000-halili-0002', 'urgent: true\n'))
       f.inbox('.20261009-110001-halili-0003.md.9.tmp', letter('x'))
       f.inbox('20261009-110002-halili-0004.md.tmp-1-2', letter('y'))
-      expect(await until(() => f.got.length === 1, STABLE_MS + 8000)).toBe(true)
+      expect(await until(() => (f.hub.scanNow(), f.got.length === 1), STABLE_MS + 8000)).toBe(true)
       expect(f.got[0].map((x) => x.letter.id)).toEqual(['20261009-110000-halili-0002'])
       expect(f.got[0][0].letter.urgent).toBe(true)
       const cur = JSON.parse(readFileSync(join(f.mb, 'cursors/folderbot.json'), 'utf8'))
@@ -131,7 +132,7 @@ describe('BridgeHub — 들어오는 편지 (host/bridge)', () => {
     try {
       f.hub.reload()
       f.inbox('20261009-120000-halili-0005.md', letter('20261009-120000-halili-0005'))
-      expect(await until(() => f.got.length === 1, STABLE_MS + 8000)).toBe(true)
+      expect(await until(() => (f.hub.scanNow(), f.got.length === 1), STABLE_MS + 8000)).toBe(true)
       expect(existsSync(join(f.data, 'bridges/halili/delivered.jsonl'))).toBe(true)
       f.hub.closeAll()
       f.inbox('20261009-120500-halili-0009.md', letter('20261009-120500-halili-0009'))   // 꺼진 동안 온 편지
@@ -162,7 +163,7 @@ describe('BridgeHub — 들어오는 편지 (host/bridge)', () => {
       const old = new Date('2026-10-01T00:00:00Z'); utimesSync(join(f.mb, 'to-folderbot/2026-10/20261001-100000-halili-0007.md'), old, old)
       f.inbox('20261009-140000-halili-0008.md', letter('20261009-140000-halili-0008'))
       f.hub.reload()
-      expect(await until(() => f.got.length >= 1, STABLE_MS + 8000)).toBe(true)
+      expect(await until(() => (f.hub.scanNow(), f.got.length >= 1), STABLE_MS + 8000)).toBe(true)
       expect(f.got.flat().map((x) => x.letter.id)).toEqual(['20261009-140000-halili-0008'])
     } finally { f.done() }
   }, 20000)

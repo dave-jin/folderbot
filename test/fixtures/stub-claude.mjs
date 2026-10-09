@@ -189,7 +189,7 @@ rl.on('line', (raw) => {
       say({ type: 'system', subtype: 'init', model: at('--model') ?? 'stub', tools: [], mcp_servers: [], slash_commands: [] })
       say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'GOT: PONG' }], stop_reason: 'end_turn' } })
       say({ type: 'result', subtype: 'success', duration_ms: 60, total_cost_usd: 0.001 })
-    }, 700)
+    }, /느리게/.test(text) ? 5000 : 700)   // «느리게» — 화면이 대기 줄을 다시 그릴 시간을 준다(AB-3 경주 · 2026-10-09)
     return
   }
   say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: `stub-t1-${u}`, name: 'Read', input: { file_path: join(process.cwd(), 'readme.md') } }] } })

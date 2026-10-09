@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { Host } from './host'
 import { Gateway } from './gateway'
 import { loadConfig, saveConfig, dataDir } from './paths'
+import { DailyLog } from './logfile'
 import { Registry, canon } from './registry'
 import { tailnetInfo } from './tailnet'
 
@@ -23,7 +24,10 @@ export async function startHost(opts: StartOpts = {}): Promise<Started> {
   const reg = new Registry(cfg.root)
   if (!reg.rulesInstalled()) reg.installRules('para')
   const host = new Host(cfg, VERSION)
-  if (opts.log) host.log = opts.log
+  // BY · 호스트 로그를 날짜별 파일로(7일) — 데스크톱 앱의 console 은 아무 데도 안 남는다
+  const daily = new DailyLog(join(dataDir(), 'logs'))
+  const sink = opts.log ?? host.log
+  host.log = (s) => { daily.write(s); sink(s) }
   if (opts.onRoot) host.onRoot = opts.onRoot
   const gw = new Gateway(host, opts.webRoot ?? webRoot)
   gw.start()

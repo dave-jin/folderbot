@@ -40,6 +40,8 @@ export interface PeerDef {
   expectEveryMs?: number
   /** 끊겼을 때 따로 울릴 명령 — 메시지가 마지막 인자로 붙는다 */
   fallbackNotify?: string
+  /** BQ-11 · 상대가 웹훅으로 편지를 넣을 때 쓰는 토큰 파일(TOKEN=…) — 같은 tailnet·이 맥에서만 받는다 */
+  inbound?: { env: string }
 }
 export interface BridgesConfig { peers: PeerDef[]; runsCopy?: string; errors: string[] }
 
@@ -70,12 +72,16 @@ export function parseBridges(text: string): BridgesConfig {
     if (r.wake === true) wake = { env: `~/.config/secrets/folderbot-bridge-${id}.env` }
     else if (r.wake && typeof r.wake === 'object' && (r.wake as Record<string, unknown>).env) wake = { env: String((r.wake as Record<string, unknown>).env) }
     else if (r.wake !== undefined && r.wake !== false) errors.push(`연결 «${id}»: wake 는 true 또는 { env: 파일 } 이에요`)
+    let inbound: { env: string } | undefined
+    if (r.inbound === true) inbound = { env: `~/.config/secrets/folderbot-bridge-${id}-in.env` }
+    else if (r.inbound && typeof r.inbound === 'object' && (r.inbound as Record<string, unknown>).env) inbound = { env: String((r.inbound as Record<string, unknown>).env) }
     const every = r.expect_every === undefined ? undefined : parseDuration(r.expect_every)
     if (r.expect_every !== undefined && every === null) errors.push(`연결 «${id}»: expect_every 를 못 읽었어요(예: 150m · 2h)`)
     const fb = r.fallback_notify && typeof r.fallback_notify === 'object' ? String((r.fallback_notify as Record<string, unknown>).command ?? '').trim() : ''
     peers.push({
       id, name, icon, mailbox,
       ...(wake ? { wake } : {}),
+      ...(inbound ? { inbound } : {}),
       ...(every ? { expectEveryMs: every } : {}),
       ...(fb ? { fallbackNotify: fb } : {}),
       deliver: { bot: String(d.bot ?? 'orch').trim() || 'orch', session: String(d.session ?? `${icon} ${name} 채널`).trim() },

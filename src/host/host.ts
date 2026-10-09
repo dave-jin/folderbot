@@ -102,6 +102,9 @@ export class Host {
     setInterval(() => void this.refreshAuth(), 30 * 60 * 1000).unref()
     setInterval(() => this.watchInbox(), 60 * 1000).unref()
     this.sweepClashes(); setInterval(() => this.sweepClashes(), 60 * 60 * 1000).unref()
+    // BW · 지운 지 7일 지난 세션 파일 → 앱 데이터 trash(6시간마다)
+    const sweepS = () => { try { const n = this.sessions.sweepDeleted(); if (n.length) this.log(`지운 세션 ${n.length}개를 휴지통(앱 데이터 trash/sessions)으로 옮겼어요`) } catch (e) { this.log(`지운 세션 정리 실패: ${(e as Error).message}`) } }
+    setTimeout(sweepS, 60_000).unref(); setInterval(sweepS, 6 * 3600_000).unref()
   }
 
   /** BF · 충돌 사본 치우기 — 원본과 같아졌거나 7일 지난 것만. 사람이 고친 사본은 그 사람 것이라 두고 장부에서만 뺀다 */

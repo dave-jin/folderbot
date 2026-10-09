@@ -30,6 +30,16 @@ export function readWakeEnv(path: string): WakeEnv {
   return { url: kv.URL, ...(kv.TOKEN ? { token: kv.TOKEN } : {}), ...(kv.HEADER ? { header: kv.HEADER } : {}) }
 }
 
+/** BQ-11 · 들어오는 웹훅 토큰 파일(`TOKEN=…` · 0600) — 깨우기 파일과 같은 규칙 */
+export function readTokenEnv(path: string): string {
+  const f = expandHome(path)
+  if (!existsSync(f)) throw new Error(`토큰 파일이 없어요: ${path}`)
+  if ((statSync(f).mode & 0o077) !== 0) throw new Error(`토큰 파일 권한이 넓어요(0600 이어야 해요): ${path}`)
+  const m = /^\s*TOKEN\s*=\s*(['"]?)(.+?)\1\s*$/m.exec(readFileSync(f, 'utf8'))
+  if (!m || m[2].length < 16) throw new Error(`토큰 파일에 16자 넘는 TOKEN 이 없어요: ${path}`)
+  return m[2]
+}
+
 /** POST 한 번 — 10초. 실패해도 던지지 않고 결과를 돌려준다(편지는 이미 우편함에 있다) */
 export async function wakePeer(env: WakeEnv, payload: Record<string, unknown>, fetchImpl: typeof fetch = fetch): Promise<{ ok: boolean; status?: number; error?: string }> {
   const headers: Record<string, string> = { 'content-type': 'application/json' }

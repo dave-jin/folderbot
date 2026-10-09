@@ -16,6 +16,7 @@ import { bindAddresses, tailnetInfo } from './tailnet'
 import { saveConfig } from './paths'
 import { handleMcp } from './mcp'
 import { bearer, mcpGate } from './mcpAuth'
+import { readTokenEnv } from './wake'
 import { providers, forgetProviders } from './providers'
 import { agentModels, codexAuth, diagnose, forgetModels } from './auth'
 import { canon } from './registry'
@@ -177,6 +178,9 @@ export class Gateway {
       const chunks: Buffer[] = []; for await (const c of req) chunks.push(c as Buffer)
       return handleMcp(this.host, mBot, req, res, Buffer.concat(chunks).toString('utf8'), mSid)
     }
+    // BQ-11 · 연결 상대의 들어오는 웹훅 — 기기 토큰이 아니라 그 상대만의 토큰. 이 맥·같은 tailnet 에서만(공개 주소로 열지 않는다)
+    const mIn = /^\/api\/bridges\/([a-z0-9-]+)\/messages$/.exec(p)
+    if (mIn && req.method === 'POST') return this.bridgeInbound(mIn[1], req, json, body)
     if (p === '/api/health') return json(200, { ok: true, name: 'folderbot', version: this.host.version, stallMs: this.stall.maxMs })
     if (p === '/api/pair' && req.method === 'POST') {
       const b = await body()
@@ -195,6 +199,29 @@ export class Gateway {
       return this.api(p, url, req, res, json, body, a.device, a)
     }
     return this.static(p, res)
+  }
+
+  /** BQ-11 · 상대별 토큰 확인 → 편지 파일 → 평소처럼 배달. 상한: 상대마다 시간당 60통 */
+  private inboundLog = new Map<string, number[]>()
+  private async bridgeInbound(peerId: string, req: IncomingMessage, json: (c: number, b: unknown) => void, body: () => Promise<Record<string, unknown>>): Promise<void> {
+    const a = req.socket.remoteAddress ?? ''
+    const local = this.isLoopback(req) || /^(::ffff:)?100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(a)
+    if (!local) return json(403, { error: 'tailnet only' })
+    const peer = this.host.bridges.peer(peerId)
+    if (!peer?.enabled || !peer.inbound) return json(404, { error: 'no such inbound bridge' })
+    let token = ''
+    try { token = readTokenEnv(peer.inbound.env) } catch (e) { this.host.log(`⚠ 연결 «${peer.name}» 들어오는 웹훅 토큰을 못 읽었어요 · ${(e as Error).message}`); return json(503, { error: 'inbound token not configured' }) }
+    const got = Buffer.from(bearer(req.headers)), want = Buffer.from(token)
+    if (!(got.length === want.length && timingSafeEqual(got, want))) { await new Promise((r) => setTimeout(r, 500)); return json(401, { error: 'unauthorized' }) }
+    const now = Date.now(); const log = (this.inboundLog.get(peerId) ?? []).filter((t) => now - t < 3600_000)
+    if (log.length >= 60) return json(429, { error: 'too many letters — 60 per hour' })
+    log.push(now); this.inboundLog.set(peerId, log)
+    let b: Record<string, unknown>
+    try { b = await body() } catch { return json(400, { error: 'json body required' }) }
+    try {
+      const out = this.host.bridges.receive(peerId, { kind: typeof b.kind === 'string' ? b.kind : undefined, text: String(b.text ?? ''), title: typeof b.title === 'string' ? b.title : undefined, re: typeof b.re === 'string' ? b.re : undefined, urgent: b.urgent === true, needsHuman: b.needs_human === true })
+      return json(201, out)
+    } catch (e) { return json(400, { error: (e as Error).message }) }
   }
 
   private async api(p: string, url: URL, req: IncomingMessage, res: ServerResponse, json: (c: number, b: unknown) => void, body: () => Promise<Record<string, unknown>>, device: string, who: Who): Promise<void> {

@@ -228,6 +228,34 @@ export class BridgeHub {
   }
 
   /**
+   * BQ-11 · 들어오는 웹훅 — 상대 대신 `to-folderbot/<달>/` 에 편지 파일을 만들고 바로 훑는다. **들어오는 길이 몇 개든 처리는 파일 하나로 모인다.**
+   * 인증·주소 확인은 부르는 쪽(gateway)이 한다.
+   */
+  receive(peerId: string, o: { kind?: string; text: string; title?: string; re?: string; urgent?: boolean; needsHuman?: boolean }): { id: string; rel: string } {
+    const peer = this.peer(peerId); if (!peer || !peer.enabled) throw new Error('그런 연결이 없어요')
+    const kind = (FBMF_KINDS.includes(String(o.kind ?? 'request') as LetterKind) ? String(o.kind ?? 'request') : 'request') as LetterKind
+    const out = this.writeLetter(peer, 'to-folderbot', peer.id, peer.id, peer.deliver.bot, { ...o, kind })
+    const b = this.boxes.get(peer.id); if (b) this.kick(b)
+    return out
+  }
+  /** 숨김 임시 파일 → link(이미 있으면 실패 → 새 난수) — 덮지 않고, 상대가 반쯤 쓴 파일을 못 본다 */
+  private writeLetter(peer: PeerDef, side: 'to-folderbot' | 'from-folderbot', slug: string, from: string, to: string, o: { kind: LetterKind; text: string; title?: string; re?: string; urgent?: boolean; needsHuman?: boolean }): { id: string; rel: string } {
+    const body = String(o.text ?? '').trim(); if (!body) throw new Error('본문(text)이 비었어요')
+    const d = new Date(this.now())
+    for (let i = 0; i < 5; i++) {
+      const id = letterId(d, slug, randomBytes(2).toString('hex'))
+      const dir = join(this.abs(peer.mailbox), side, monthOf(id, d))
+      mkdirSync(dir, { recursive: true })
+      const final = join(dir, `${id}.md`), tmp = join(dir, `.${id}.md.${process.pid}.tmp`)
+      writeFileSync(tmp, formatLetter({ id, from, to, kind: o.kind, title: o.title?.trim() || undefined, re: o.re ? normId(o.re) : undefined, urgent: !!o.urgent, needsHuman: !!o.needsHuman, created: isoLocal(d), body }))
+      try { linkSync(tmp, final) } catch (e) { unlinkSync(tmp); if ((e as NodeJS.ErrnoException).code === 'EEXIST') continue; throw e }
+      unlinkSync(tmp)
+      return { id, rel: relative(this.d.root, final).startsWith('..') ? final : relative(this.d.root, final) }
+    }
+    throw new Error('같은 이름이 계속 있어 편지를 못 만들었어요')
+  }
+
+  /**
    * 나가는 편지 — `bridge_send`. 이 호스트가 주인이 아니어도 쓴다(편지 파일은 Dropbox 로 건너간다 · 한 파일은 한 쪽만).
    * @returns 만든 편지 id 와 볼트 기준 경로
    */
@@ -237,22 +265,10 @@ export class BridgeHub {
     if (!peer.maySend.includes(fromBot)) throw new Error(`이 봇은 «${peer.name}» 에게 편지를 보낼 수 없어요 — may_send 에 없어요(${peer.maySend.join(', ') || '없음'}). 오케스트레이터를 거치세요`)
     const kind = String(o.kind) as LetterKind
     if (!FBMF_KINDS.includes(kind) || kind === 'heartbeat') throw new Error(`kind 는 ${FBMF_KINDS.filter((k) => k !== 'heartbeat').join(' · ')} 중 하나예요`)
-    const body = String(o.text ?? '').trim(); if (!body) throw new Error('본문(text)이 비었어요')
-    const from = fromBot === 'orch' ? 'orch' : `folderbot:${fromBot}`
-    const d = new Date(this.now())
-    for (let i = 0; i < 5; i++) {
-      const id = letterId(d, fromBot === 'orch' ? 'orch' : fromBot, randomBytes(2).toString('hex'))
-      const dir = join(this.abs(peer.mailbox), 'from-folderbot', monthOf(id, d))
-      mkdirSync(dir, { recursive: true })
-      const final = join(dir, `${id}.md`), tmp = join(dir, `.${id}.md.${process.pid}.tmp`)
-      writeFileSync(tmp, formatLetter({ id, from, to: peer.id, kind, title: o.title?.trim() || undefined, re: o.re ? normId(o.re) : undefined, urgent: !!o.urgent, needsHuman: !!o.needsHuman, created: isoLocal(d), body }))
-      try { linkSync(tmp, final) } catch (e) { unlinkSync(tmp); if ((e as NodeJS.ErrnoException).code === 'EEXIST') continue; throw e }
-      unlinkSync(tmp)
-      const rel = relative(this.d.root, final).startsWith('..') ? final : relative(this.d.root, final)
-      if (o.urgent && peer.wake) { try { this.d.wake?.(peer, { id, kind, path: rel, urgent: true, needs_human: !!o.needsHuman }) } catch (e) { this.d.log(`연결 «${peer.name}» 깨우기 실패 · ${(e as Error).message}`) } }
-      return { id, rel }
-    }
-    throw new Error('같은 이름이 계속 있어 편지를 못 만들었어요')
+    if (!String(o.text ?? '').trim()) throw new Error('본문(text)이 비었어요')
+    const out = this.writeLetter(peer, 'from-folderbot', fromBot === 'orch' ? 'orch' : fromBot, fromBot === 'orch' ? 'orch' : `folderbot:${fromBot}`, peer.id, { ...o, kind })
+    if (o.urgent && peer.wake) { try { this.d.wake?.(peer, { id: out.id, kind, path: out.rel, urgent: true, needs_human: !!o.needsHuman }) } catch (e) { this.d.log(`연결 «${peer.name}» 깨우기 실패 · ${(e as Error).message}`) } }
+    return out
   }
 
   /** 화면·도구용 — 연결마다 주인인지, 배달 기록 수 */
