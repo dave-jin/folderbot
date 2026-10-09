@@ -10,7 +10,7 @@ import { RUN_TIMEOUT_MS, routineResult } from '../core/runs'
  *  - 사본: `.claude/bridges.yml` 의 `runs_copy` 폴더에 `folderbot-YYYY-MM.jsonl` (감시기가 읽는 자리)
  * 쓰는 것은 그 루틴을 돌린 호스트 하나다(루틴은 호스트에서만 돈다).
  */
-export interface RunEvent { event: 'start' | 'end' | 'timeout' | 'retry' | 'peer_stale' | 'peer_ok' | 'wake' | 'report'; botId?: string; bot?: string; routine?: string; run?: string; ok?: boolean; result?: string; reason?: string; error?: string; ms?: number; attempt?: number; catchup?: string; peer?: string; [k: string]: unknown }
+export interface RunEvent { event: 'start' | 'end' | 'timeout' | 'retry' | 'peer_stale' | 'peer_ok' | 'wake' | 'report' | 'ops_watch'; botId?: string; bot?: string; routine?: string; run?: string; ok?: boolean; result?: string; reason?: string; error?: string; ms?: number; attempt?: number; catchup?: string; peer?: string; [k: string]: unknown }
 
 export class RunLog {
   private open = new Map<string, { botId: string; bot: string; routine: string; at: number; timedOut?: boolean }>()

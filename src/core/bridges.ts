@@ -95,13 +95,14 @@ export function parseBridges(text: string): BridgesConfig {
   return { peers, ...(doc.runs_copy ? { runsCopy: String(doc.runs_copy) } : {}), errors }
 }
 
-/** `150m` · `2h` · `90` (분) → ms. 못 읽으면 null */
+/** `150m` · `2h` · `60s` · `90` (분) → ms. 못 읽으면 null */
 export function parseDuration(v: unknown): number | null {
   if (typeof v === 'number' && v > 0) return v * 60_000
-  const m = /^\s*(\d+(?:\.\d+)?)\s*(m|min|분|h|시간)?\s*$/i.exec(String(v ?? ''))
+  const m = /^\s*(\d+(?:\.\d+)?)\s*(s|sec|초|m|min|분|h|시간)?\s*$/i.exec(String(v ?? ''))
   if (!m) return null
   const n = Number(m[1]); const unit = (m[2] ?? 'm').toLowerCase()
-  return Math.round(n * (unit === 'h' || unit === '시간' ? 3600_000 : 60_000)) || null
+  const per = unit === 'h' || unit === '시간' ? 3600_000 : unit === 's' || unit === 'sec' || unit === '초' ? 1000 : 60_000
+  return Math.round(n * per) || null
 }
 
 /** 이 호스트가 그 연결의 주인인가 — `host` 를 안 적었으면 누구든. 이름은 대소문자·`.local` 을 가리지 않는다 */

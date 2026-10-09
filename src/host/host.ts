@@ -18,6 +18,7 @@ import { McpAuth } from './mcpAuth'
 import { BridgeHub, type Incoming } from './bridge'
 import { RunLog } from './runs'
 import { readWakeEnv, wakePeer } from './wake'
+import { OpsWatch } from './opsWatch'
 import { letterBatch } from '../core/fbmf'
 import type { PeerDef } from '../core/bridges'
 import type { QueuedMsg } from '../core/types'
@@ -45,13 +46,15 @@ export class Host {
   readonly bridges: BridgeHub
   /** BR-1 · 루틴 실행 기록 */
   readonly runs: RunLog
+  /** BZ · 호스트 운영 감시(`.claude/ops.yml` 의 명령을 주기마다) */
+  readonly ops: OpsWatch
   auth: AuthState = { verdict: 'unknown', checkedAt: 0 }
   private queued: { botId: string; sessionId: string; text: string; origin: TurnFrom }[] = []
   broadcast: (f: Frame) => void = () => {}
   /** 🔴 `.bot.yml` 이 밖에서 바뀌면 **UI 로 저장한 것과 같은 길**을 탄다(AA-2) — 화면 갱신 + 스케줄 다시 걸기 */
   watcher = new FolderWatch(
     (botId) => { this.broadcast({ ev: 'files', botId }); this.refreshNames() },
-    (botId) => { this.log(`설정 파일이 바뀌어 루틴·연결을 다시 읽어요 · ${this.registry.bot(botId)?.name ?? botId}`); this.afterBotsChanged(); if (botId === ORCH_ID) this.bridges.reload() },
+    (botId) => { this.log(`설정 파일이 바뀌어 루틴·연결을 다시 읽어요 · ${this.registry.bot(botId)?.name ?? botId}`); this.afterBotsChanged(); if (botId === ORCH_ID) { this.bridges.reload(); this.ops.reload() } },
   )
   private lastNames = ''
   /** 봇 폴더의 CLAUDE.md `display_name:` 이 바뀌면 레일도 바뀌어야 한다 — 파일 신호 뒤에 표시 이름을 다시 재 본다 */
@@ -88,6 +91,10 @@ export class Host {
       onAlive: (peer, last) => this.peerSignal(peer, last, true) })
     this.routines.file = join(dataDir(), 'routine-runs.json')   // BR-2 · 놓친 회차 판단 기준
     this.runs = new RunLog(this.registry.root, () => this.bridges.cfg.runsCopy, () => hostname().replace(/\.local$/, ''), (m) => this.log(m))
+    this.ops = new OpsWatch({ root: this.registry.root, hostNames: () => [hostname(), this.hostName(), this.cfg.hostName ?? ''], log: (m) => this.log(m),
+      note: (e) => this.runs.note(e),
+      alert: (text) => this.notifyOrch(text, 'ops'),
+      firstDelayMs: Number(process.env.FOLDERBOT_OPS_FIRST_MS) || 30_000 })
     this.wire()
     this.sessions.drainAll()   // 호스트가 다시 떴다 — 기다리던 봇 말을 내보낸다
     this.routines.reschedule(this.registry.bots())
@@ -97,6 +104,7 @@ export class Host {
     this.watcher.log = (m) => this.log(m)
     this.watcher.sync(this.registry.bots())
     this.bridges.reload()
+    this.ops.reload()
     setInterval(() => this.runs.sweep(), 60_000).unref()
     void this.refreshAuth()
     setInterval(() => void this.refreshAuth(), 30 * 60 * 1000).unref()
@@ -356,7 +364,16 @@ export class Host {
     return out.sort((a, b) => b.m - a.m).slice(0, limit).map((x) => x.rel)
   }
   recentFiles(bot: Bot, limit = 12) { return recentFiles(bot.abs, limit) }
-  shutdown(): void { this.sessions.stopAll(); this.watcher.close(); this.bridges.closeAll() }
+  shutdown(): void { this.sessions.stopAll(); this.watcher.close(); this.bridges.closeAll(); this.ops.stop() }
+
+  /** 오케스트레이터 «🤝 소통» 세션에 시스템이 한 줄 넣는다(봇의 말로 · 일하는 중이면 큐) — 로그인이 막혀 있으면 큐에만 */
+  notifyOrch(text: string, from: string): void {
+    this.log(text.split('\n')[0])
+    const orch = this.registry.bot(ORCH_ID); if (!orch) return
+    const r = this.sessions.commOf(orch, from)
+    const msg: QueuedMsg = { text, from, fromName: from === 'ops' ? '🛠 운영 감시' : from, t: Date.now(), origin: 'bot' }
+    if (this.auth.verdict === 'unreadable' || this.auth.verdict === 'loggedout') this.sessions.enqueue(r, msg); else this.sessions.sendFromBot(r, orch, msg)
+  }
 
   // ── BU · orch_report — 폴더 봇의 보고를 모아 오케스트레이터에게 ─────────────────────────────
   private reportBuf: { bot: string; botId: string; kind: string; text: string; t: number }[] = []

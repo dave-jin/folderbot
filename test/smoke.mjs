@@ -35,7 +35,7 @@ writeFileSync(join(fbHome, '.folderbot/usage.jsonl'),
 // ⚠ 메인 호스트는 «Claude 만 깔린 기기» 여야 한다 — 실제 codex 가 깔린 맥(2026-09-22 맥미니)에서는 제공자가 둘이 되어 세션 + 가 고르기를 띄우고
 //   «세션 삭제 UI» 같은 검사가 어긋난다. 없는 경로를 주면 codex 는 숨는다(providers.ts 의 ENV_OVERRIDE). 둘인 경우는 아래 V24 블록이 두 번째 호스트로 잰다
 // 🔴 `FOLDERBOT_QA` — 검사는 **실 CLI·실 앱을 건드리지 않는다**(실제로 `claude update` 를 돌려 버린 적이 있다)
-const env = { ...process.env, FOLDERBOT_QA: '1', FOLDERBOT_HOME: fbHome, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_CODEX_BIN: '/nonexistent/codex', FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg, FOLDERBOT_RETRY_MS: '1500', FOLDERBOT_REPORT_HOLD_MS: '1500' }   // R2 · 재시도 10분·보고 묶음 5분을 검사용으로 줄인다
+const env = { ...process.env, FOLDERBOT_QA: '1', FOLDERBOT_HOME: fbHome, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_CODEX_BIN: '/nonexistent/codex', FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg, FOLDERBOT_RETRY_MS: '1500', FOLDERBOT_REPORT_HOLD_MS: '1500', FOLDERBOT_OPS_FIRST_MS: '300' }   // R2 · 재시도 10분·보고 묶음 5분을 검사용으로 줄인다
 /**
  * 🔴 **포트가 이미 잡혀 있으면 그 자리에서 멈춘다** (2026-09-13 실사고).
  *    앞선 실패로 남은 호스트가 같은 포트를 잡고 있으면, 우리는 «건강한 응답» 을 받고 **옛 코드를**
@@ -577,6 +577,36 @@ try {
     const lf = join(data, 'logs', `host-${day}.log`)
     if (!existsSync(lf) || !/연결 «자동화» 열림/.test(readFileSync(lf, 'utf8'))) fail('🔴 BY: 호스트 로그가 날짜별 파일에 안 남았다 · ' + lf)
     ok('연결 R3 — 들어오는 웹훅 401·404·201 → 편지 파일 → 채널 세션 · 호스트 로그 날짜별 파일')
+  }
+  /**
+   * 🔴 BZ · 호스트 운영 감시 (2026-10-09 Dave 결정) — `.claude/ops.yml` 의 명령을 주기마다 LLM 없이 돌린다.
+   *    완료 기준: 현황판 파일의 갱신 시각이 주기마다 바뀐다 · 실패가 runs.jsonl 에 남는다 · 연속 3회 실패면 오케스트레이터에게
+   */
+  {
+    const d0 = new Date(), month = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}`
+    const of = join(root, '.claude/ops.yml'), board = join(root, '싱크-ops/루틴-현황.md'); mkdirSync(join(root, '싱크-ops'), { recursive: true })
+    writeFileSync(of, `watch:\n  command: "date +%s%N > '${board}'"\n  every: 1s\n  timeout: 1s\n`)
+    const stamps = new Set()
+    for (let i = 0; i < 50 && stamps.size < 3; i++) { await wait(100); if (existsSync(board)) stamps.add(readFileSync(board, 'utf8').trim()) }
+    if (stamps.size < 3) fail('🔴 BZ: ops.yml 을 썼는데 명령이 주기마다 안 돈다(현황판 갱신 ' + stamps.size + '회)')
+    writeFileSync(of, `watch:\n  command: "echo 볼트를 못 읽음 BZ >&2; exit 5"\n  every: 0.4s\n  timeout: 0.4s\n`)
+    const runsF = join(root, `.folderbot/ops/runs-${month}.jsonl`)
+    const fails = () => (existsSync(runsF) ? readFileSync(runsF, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.event === 'ops_watch' && !e.ok && /BZ/.test(e.stderr ?? '')) : [])
+    for (let i = 0; i < 60 && fails().length < 3; i++) await wait(100)
+    const fl = fails()
+    if (fl.length < 3 || fl[0].code !== 5 || typeof fl[0].ms !== 'number') fail('🔴 BZ: 실패가 runs.jsonl 에 종료 코드·소요 시간·stderr 와 함께 안 남았다 · ' + JSON.stringify(fl.slice(0, 2)))
+    let alerted = ''
+    for (let i = 0; i < 60 && !alerted; i++) {
+      await wait(100)
+      const comm = (await api('/bots/orch/sessions')).find((x) => x.comm)
+      if (comm) { const t = (await api(`/sessions/${comm.id}/chat`)).items.filter((it) => it.kind === 'user').map((it) => it.text).find((x) => x.startsWith('[운영 감시 실패]')) ?? comm.queue?.find((q) => q.text.startsWith('[운영 감시 실패]'))?.text; if (t) alerted = t }
+    }
+    if (!alerted || !/연속 3회/.test(alerted) || !alerted.includes('볼트를 못 읽음 BZ')) fail('🔴 BZ: 연속 3회 실패했는데 오케스트레이터에게 안 알렸다 · ' + alerted)
+    rmSync(of); await wait(900)
+    const n = fails().length; await wait(1000)
+    if (fails().length !== n) fail('BZ: ops.yml 을 지웠는데 계속 돈다')
+    { const comm = (await api('/bots/orch/sessions')).find((x) => x.comm); if (comm) await api(`/sessions/${comm.id}`, undefined, 'DELETE') }
+    ok(`BZ 운영 감시 — 주기마다 현황판 갱신 ${stamps.size}회 · 실패가 runs.jsonl 에(코드 5) · 연속 3회면 오케스트레이터에게 · 지우면 멈춤`)
   }
   /**
    * AJ · **CLI 업데이트 길이 열려 있나** (2026-09-24 Dave). 스텁 환경에는 진짜 claude 가 없을 수 있으니
