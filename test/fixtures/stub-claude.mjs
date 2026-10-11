@@ -227,6 +227,13 @@ rl.on('line', (raw) => {
     process.stdout.write(JSON.stringify({ type: 'control_request', request_id: `req-${randomUUID()}`, request: { subtype: 'can_use_tool', tool_name: 'Bash', display_name: 'Bash', description: '명령을 실행합니다', input: { command: 'cd /tmp/x && npm run qa 2>&1 | tee log.txt' }, permission_suggestions: [] } }) + '\n')
     return
   }
+  // 아무 도구나 승인을 묻게 한다 — `도구승인:mcp__folderbot__todo_add` (연결 채널이 묻지 않고 답하는지 재려고 · 2026-10-11)
+  const askTool = /도구승인:(\S+)/.exec(text)
+  if (askTool) {
+    pendingReq = { text }
+    process.stdout.write(JSON.stringify({ type: 'control_request', request_id: `req-${randomUUID()}`, request: { subtype: 'can_use_tool', tool_name: askTool[1], display_name: askTool[1], description: '', input: {}, permission_suggestions: [] } }) + '\n')
+    return
+  }
   if (/승인|permission/.test(text) || process.env.STUB_ASK_PERMISSION) {
     pendingReq = { text }
     const request_id = `req-${randomUUID()}`

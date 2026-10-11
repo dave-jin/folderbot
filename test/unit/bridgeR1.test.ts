@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, 
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { formatLetter, frontMatterClosed, ignoredLetterName, letterBatch, letterId, monthOf, normId, parseLetter, wrapLetter, LETTER_INLINE_MAX } from '../../src/core/fbmf'
-import { channelSpawn, ownsPeer, parseBridges, type PeerDef } from '../../src/core/bridges'
+import { channelSpawn, channelVerdict, ownsPeer, parseBridges, type PeerDef } from '../../src/core/bridges'
 import { routineResult } from '../../src/core/runs'
 import { BridgeHub, STABLE_MS, type Incoming } from '../../src/host/bridge'
 import { RunLog } from '../../src/host/runs'
@@ -83,7 +83,20 @@ describe('연결 설정 (core/bridges)', () => {
     expect(r.disallowed).toContain('mcp__folderbot__bot_send')
     expect(r.disallowed).not.toContain('mcp__folderbot__bridge_send')
     expect([p.strictMcp, p.permissionMode]).toEqual([true, 'default'])
-    expect(a).toEqual({ permissionMode: 'bypassPermissions', strictMcp: false, disallowed: [] })
+    expect(a).toEqual({ permissionMode: 'bypassPermissions', strictMcp: false, disallowed: [], allowed: [] })
+  })
+  it('🔴 채널 판정 — 허용 목록 안은 바로 허용, 밖은 «제안으로 남겨라» 로 바로 거절, 질문은 어디서나 거절 (2026-10-11)', () => {
+    for (const t of ['mcp__folderbot__bridge_send', 'mcp__folderbot__todo_add', 'mcp__folderbot__bot_send', 'Read', 'Grep']) expect(channelVerdict('propose', t).allow).toBe(true)
+    for (const t of ['Bash', 'Write', 'mcp__folderbot__bot_start', 'mcp__folderbot__rondo_open', 'mcp__folderbot__folder_move', 'mcp__gmail__send', 'AskUserQuestion']) expect(channelVerdict('propose', t).allow).toBe(false)
+    const no = channelVerdict('propose', 'Bash')
+    expect(!no.allow && no.message).toMatch(/bridge_send.*제안/)
+    expect(channelVerdict('read', 'mcp__folderbot__bridge_send').allow).toBe(true)
+    expect(channelVerdict('read', 'mcp__folderbot__todo_add').allow).toBe(false)
+    expect(channelVerdict('act', 'Bash').allow).toBe(true)
+    expect(channelVerdict('act', 'AskUserQuestion').allow).toBe(false)
+    // 허용 목록은 지운 목록과 겹치지 않는다 — 겹치면 CLI 가 어느 쪽을 따를지 모른다
+    for (const tr of ['read', 'propose'] as const) { const sp = channelSpawn(tr); expect(sp.allowed.filter((t) => sp.disallowed.includes(t))).toEqual([]) }
+    expect(channelSpawn('propose').allowed).toContain('mcp__folderbot__bridge_send')
   })
 })
 
@@ -276,5 +289,44 @@ describe('채널 세션 · 급한 편지 · 묶음 배달 · trust 울타리 (Se
     expect(args).toContain('--strict-mcp-config')
     const dis = args[args.indexOf('--disallowedTools') + 1].split(' ')
     for (const t of ['Bash', 'Edit', 'Write', 'mcp__folderbot__folder_move']) expect(dis).toContain(t)
+    const allow = args[args.indexOf('--allowedTools') + 1].split(' ')
+    for (const t of ['mcp__folderbot__bridge_send', 'mcp__folderbot__todo_add']) expect(allow).toContain(t)
   }, 12000)
+  /**
+   * 🔴 2026-10-11 맥미니 0.2.179 실측 — 「✅ 할일이 채널」(propose)이 `bridge_send` 승인에 7시간 43분, `todo_add` 승인에 4시간 넘게 섰다.
+   *    사람이 없는 세션이라 아무도 안 눌렀고 그동안 편지가 쌓였다. 이제 호스트가 그 자리에서 답한다 — 안이면 허용, 밖이면 거절.
+   */
+  it('🔴 채널 세션은 승인을 기다리지 않는다 — todo_add 는 바로 허용 · Bash·질문은 바로 거절 · 서 있는 채널 0', async () => {
+    const sm = new SessionManager(); sm.botOf = () => bot
+    const r = sm.channelOf(bot, 'p3', '채널', 'propose')
+    const sys = () => sm.items(r.id).filter((i) => i.kind === 'system').map((i) => (i as { text: string }).text)
+    const said = () => sm.items(r.id).filter((i) => i.kind === 'assistant').map((i) => (i as { text: string }).text)
+    let asked = 0; sm.on('permission', () => asked++)
+    sm.send(r, bot, '도구승인:mcp__folderbot__todo_add', undefined, 'peer')
+    expect(await until(() => r.state === 'done', 8000)).toBe(true)
+    expect(sys().some((t) => /자동 허용 · mcp__folderbot__todo_add \(연결 채널 · propose\)/.test(t))).toBe(true)
+    expect(said().some((t) => t.startsWith('스텁이 처리했습니다'))).toBe(true)
+    sm.send(r, bot, '도구승인:Bash', undefined, 'peer')
+    expect(await until(() => said().includes('거부돼서 멈췄어요.'), 8000)).toBe(true)
+    expect(sys().some((t) => /자동 거절 · Bash/.test(t))).toBe(true)
+    sm.send(r, bot, '질문 하나', undefined, 'peer')
+    expect(await until(() => said().some((t) => t.startsWith('답변 받음')), 8000)).toBe(true)
+    expect(sys().some((t) => /자동 거절 · AskUserQuestion/.test(t))).toBe(true)
+    expect(asked).toBe(0)                                   // 사람에게 카드가 한 번도 안 갔다
+    expect(sm.channelWaits()).toEqual({ n: 0, oldestMs: 0 })
+  }, 30000)
+  it('사람 세션은 그대로 묻는다 — 채널 판정은 채널 세션에만 · 서 있으면 channelWaits 가 잰다', async () => {
+    const sm = new SessionManager(); sm.botOf = () => bot
+    const r = sm.create(bot, '사람', { vendor: 'claude' })
+    sm.send(r, bot, '도구승인:mcp__folderbot__todo_add')
+    expect(await until(() => r.state === 'awaiting_input', 8000)).toBe(true)
+    expect(sm.channelWaits().n).toBe(0)                    // 사람 세션은 세지 않는다
+    r.channel = 'p4'                                        // 서 있는 채널을 흉내 — 세어지는지만 본다
+    r.awaitingSince = Date.now() - 5000
+    expect(sm.channelWaits().n).toBe(1)
+    expect(sm.channelWaits().oldestMs).toBeGreaterThanOrEqual(5000)
+    sm.respondPermission(r, sm.pendingOf(r.id)[0].requestId, false)
+    expect(await until(() => r.state === 'done', 8000)).toBe(true)
+    expect(r.awaitingSince).toBeUndefined()
+  }, 20000)
 })

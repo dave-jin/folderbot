@@ -181,7 +181,8 @@ export class Gateway {
     // BQ-11 · 연결 상대의 들어오는 웹훅 — 기기 토큰이 아니라 그 상대만의 토큰. 이 맥·같은 tailnet 에서만(공개 주소로 열지 않는다)
     const mIn = /^\/api\/bridges\/([a-z0-9-]+)\/messages$/.exec(p)
     if (mIn && req.method === 'POST') return this.bridgeInbound(mIn[1], req, json, body)
-    if (p === '/api/health') return json(200, { ok: true, name: 'folderbot', version: this.host.version, stallMs: this.stall.maxMs })
+    // ③ 승인을 기다리는 연결 채널 세션 수와 가장 오래 선 시간 — 이름은 안 낸다(인증 없는 창구다). 감시기가 이것을 본다
+    if (p === '/api/health') return json(200, { ok: true, name: 'folderbot', version: this.host.version, stallMs: this.stall.maxMs, channelWaits: this.host.sessions.channelWaits() })
     if (p === '/api/pair' && req.method === 'POST') {
       const b = await body()
       const code = String(b.code ?? ''); const device = String(b.device ?? 'device').slice(0, 40)

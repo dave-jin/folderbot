@@ -17,7 +17,7 @@ import { isModelRejected } from '../core/codexMap'
 import { autoAllows, fallbackRules, rulesLabel } from '../core/permPolicy'
 import type { Bot, ChatItem, PermissionMode, PermissionRequest, QueuedMsg, SessionInfo, SessionState } from '../core/types'
 import type { TurnFrom } from '../core/turnGuard'
-import { channelSpawn, type Trust } from '../core/bridges'
+import { channelSpawn, channelVerdict, type Trust } from '../core/bridges'
 import { compactReason, rotateReason } from '../core/compact'
 import { atomicWrite, dataDir, ensureDir } from './paths'
 
@@ -103,6 +103,8 @@ export interface SpawnSpec {
   explicitMode?: boolean
   strictMcp?: boolean
   disallowed?: string[]
+  /** 묻지 않고 쓰게 할 도구 — 채널 세션 허용 목록(core/bridges.CHANNEL_ALLOW) */
+  allowed?: string[]
 }
 
 /** Claude Code 상주 워커 (stream-json, 다중 턴, stdio 권한) */
@@ -123,6 +125,7 @@ export class ClaudeWorker extends EventEmitter {
     if (spec.mcpConfig) args.push('--mcp-config', spec.mcpConfig)
     if (spec.strictMcp) args.push('--strict-mcp-config')
     if (spec.disallowed?.length) args.push('--disallowedTools', spec.disallowed.join(' '))
+    if (spec.allowed?.length) args.push('--allowedTools', spec.allowed.join(' '))
     if (spec.model) args.push('--model', spec.model)
     if (spec.effort) args.push('--effort', spec.effort)
     if (spec.name) args.push('--name', spec.name.replace(/[^\p{L}\p{N}_-]+/gu, '-').slice(0, 60))
@@ -202,13 +205,13 @@ export class ClaudeWorker extends EventEmitter {
     }
   }
   /** @returns 미뤄진 질문에 **우리가 직접** 결과를 넣었으면 true — claude 가 되돌려 주지 않으니 화면 줄은 우리가 닫아야 한다(AX) */
-  respondPermission(requestId: string, allow: boolean, always = false): boolean {
+  respondPermission(requestId: string, allow: boolean, always = false, why?: string): boolean {
     const p = this.pending.get(requestId); this.pending.delete(requestId)
     if (this.deferredAsks.delete(requestId)) {
-      this.write({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: requestId, is_error: true, content: '사용자가 질문을 취소했습니다. 반복하지 말고 진행하세요.' }] } })
+      this.write({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: requestId, is_error: true, content: why ?? '사용자가 질문을 취소했습니다. 반복하지 말고 진행하세요.' }] } })
       return true
     }
-    const inner = allow ? { behavior: 'allow', updatedInput: p?.input ?? {}, ...(always && p && p.suggestions.length ? { updatedPermissions: p.suggestions } : {}) } : { behavior: 'deny', message: '사용자가 Folder Bot 에서 거부했습니다' }
+    const inner = allow ? { behavior: 'allow', updatedInput: p?.input ?? {}, ...(always && p && p.suggestions.length ? { updatedPermissions: p.suggestions } : {}) } : { behavior: 'deny', message: why ?? '사용자가 Folder Bot 에서 거부했습니다' }
     this.write({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response: inner } })
     return false
   }
@@ -272,6 +275,8 @@ export interface SessionRec {
   activity?: string
   /** AB · 지금 돌고 있는 도구 한 개 — 「남을 기다리는 중」 판정의 단서 (판정은 `core/waiting`) */
   inflight?: { name: string; summary?: string; since: number }
+  /** 사람의 답을 기다리기 시작한 시각 — 채널 세션이 서 있으면 `/api/health` 가 이것으로 잰다 */
+  awaitingSince?: number
   turnStartedAt?: number
   ctx?: { used: number; window: number }
   restartPending?: boolean
@@ -534,6 +539,33 @@ export class SessionManager extends EventEmitter {
     this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `자동 허용 · ${p.displayName} (${r.permissionMode === 'acceptEdits' ? '편집 자동 수락' : '항상 허용'} 모드)` })
     return true
   }
+  /**
+   * 🔴 **채널 세션의 물음은 호스트가 그 자리에서 답한다** — 사람이 없는 세션이라 기다리면 편지가 쌓인다
+   * (2026-10-11 맥미니 실측: `bridge_send` 7시간 43분 · `todo_add` 4시간+ 승인 대기). 판정은 core/bridges.channelVerdict.
+   * 거절은 사유를 모델에게 돌려줘 «제안으로 남기기» 로 넘어가게 한다. 기록은 남긴다(조용히 넘어가지 않는다).
+   */
+  private channelAnswer(r: SessionRec, w: Worker, p: PermissionRequest): boolean {
+    if (!w.pending.has(p.requestId)) return false
+    const trust = r.trust ?? 'propose'
+    const v = channelVerdict(trust, p.toolName)
+    if (v.allow) {
+      w.respondPermission(p.requestId, true)
+      this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `자동 허용 · ${p.displayName} (연결 채널 · ${trust})` })
+    } else {
+      if (w.respondPermission(p.requestId, false, false, v.message)) this.closeTool(r, p.requestId, '연결 채널이라 묻지 않고 넘겼어요', true)
+      this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `자동 거절 · ${p.displayName} — 연결 채널(${trust})은 승인할 사람이 없어 허용 목록 밖은 바로 거절해요` })
+    }
+    return true
+  }
+  /** ③ 승인을 기다리는 채널 세션 — 이제 생기면 안 되지만, 생기면 `/api/health` 와 로그로 드러낸다 */
+  channelWaits(): { n: number; oldestMs: number } {
+    const now = Date.now(); let n = 0, oldestMs = 0
+    for (const r of this.recs.values()) {
+      if (!r.channel || r.state !== 'awaiting_input') continue
+      n++; oldestMs = Math.max(oldestMs, now - (r.awaitingSince ?? r.lastActivity))
+    }
+    return { n, oldestMs }
+  }
   slashOf(id: string): string[] { return this.recs.get(id)?.slash ?? [] }
 
   private persist(r: SessionRec): void {
@@ -555,6 +587,7 @@ export class SessionManager extends EventEmitter {
     const next = transition(prev, ev)
     if (next === prev) return
     r.state = next
+    if (next === 'awaiting_input') r.awaitingSince = Date.now(); else delete r.awaitingSince
     this.persist(r)
     this.emit('state', r, prev, shouldNotify(prev, next))
     // 턴이 끝났다 — 기다리던 말을 내보내거나, 컨텍스트가 크면 압축한다. 상태 알림이 다 나간 뒤에 한다
@@ -708,6 +741,7 @@ export class SessionManager extends EventEmitter {
        *    «중간에 권한을 바꿨는데 그 이후에도 계속 실행하기 전에 물어보네»). 그 사이는 호스트가 새 모드를
        *    대신 집행한다 — 워커를 턴 중간에 죽이면 하던 일이 끊기므로 답만 대신한다. 정책은 core/permPolicy.
        */
+      if (r.channel && this.channelAnswer(r, w, p)) return
       if (this.autoAllow(r, w, p)) return
       this.setState(r, { kind: 'permission_requested' }); this.emit('permission', r, p)
     })
@@ -1074,9 +1108,9 @@ export function statBotDir(abs: string): boolean { try { return statSync(abs).is
 export { mkdirSync }
 
 /** BQ-5 · 채널 세션 워커 인자 — trust 하나에서 모드·MCP·막을 도구가 나온다(core/bridges.channelSpawn) */
-function channelWorkerSpec(trust: Trust): Pick<SpawnSpec, 'permissionMode' | 'explicitMode' | 'strictMcp' | 'disallowed'> {
+function channelWorkerSpec(trust: Trust): Pick<SpawnSpec, 'permissionMode' | 'explicitMode' | 'strictMcp' | 'disallowed' | 'allowed'> {
   const sp = channelSpawn(trust)
-  return { permissionMode: sp.permissionMode, explicitMode: true, strictMcp: sp.strictMcp, disallowed: sp.disallowed }
+  return { permissionMode: sp.permissionMode, explicitMode: true, strictMcp: sp.strictMcp, disallowed: sp.disallowed, allowed: sp.allowed }
 }
 
 /** BV-2 · 갈아타기 직전에 채널에 보내는 말 — 다음 세션이 아무것도 묻지 않고 이어받게 */

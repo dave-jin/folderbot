@@ -129,9 +129,32 @@ const WRITE_BUILTINS = ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'W
  * act     — 제한 없음(`bypassPermissions`). 사람 승인이 필요한 세 도구는 그래도 턴 출처로 막힌다(core/turnGuard)
  * ⚠ 세션 단위다 — 채널 세션에 사람이 직접 쳐도 같은 울타리다. 넓게 하려면 다른 세션을 쓴다.
  */
-export function channelSpawn(trust: Trust): { permissionMode: 'default' | 'bypassPermissions'; strictMcp: boolean; disallowed: string[] } {
-  if (trust === 'act') return { permissionMode: 'bypassPermissions', strictMcp: false, disallowed: [] }
+export function channelSpawn(trust: Trust): { permissionMode: 'default' | 'bypassPermissions'; strictMcp: boolean; disallowed: string[]; allowed: string[] } {
+  if (trust === 'act') return { permissionMode: 'bypassPermissions', strictMcp: false, disallowed: [], allowed: [] }
   const always = fb(['folder_move', 'folder_create', 'bot_retire', 'routine_add', 'routine_update', 'routine_remove', 'routine_run', 'orch_ask'])
-  if (trust === 'propose') return { permissionMode: 'default', strictMcp: true, disallowed: [...WRITE_BUILTINS, ...always] }
-  return { permissionMode: 'default', strictMcp: true, disallowed: [...WRITE_BUILTINS, ...always, ...fb(['bot_send', 'todo_add', 'bot_start', 'bot_stop', 'bots_reorder'])] }
+  if (trust === 'propose') return { permissionMode: 'default', strictMcp: true, disallowed: [...WRITE_BUILTINS, ...always], allowed: [...CHANNEL_ALLOW.propose] }
+  return { permissionMode: 'default', strictMcp: true, disallowed: [...WRITE_BUILTINS, ...always, ...fb(['bot_send', 'todo_add', 'bot_start', 'bot_stop', 'bots_reorder'])], allowed: [...CHANNEL_ALLOW.read] }
+}
+
+/**
+ * 🔴 **채널 세션은 승인을 기다리지 않는다 — 허용 목록 안이면 바로 허용, 밖이면 바로 거절** (2026-10-11 오케스트레이터 실측).
+ * 채널 세션에는 승인할 사람이 없다. 그런데 `--permission-mode default` 에서는 MCP 도구가 쓸 때마다 물어서,
+ * 맥미니 0.2.179 「✅ 할일이 채널」(trust propose)이 `bridge_send` 승인에 7시간 43분, `todo_add` 승인에 4시간 넘게 섰다.
+ * 그동안 들어온 편지는 큐에 쌓였다. `--disallowedTools` 는 목록에서 지울 뿐 «안 지운 도구» 는 여전히 묻는다.
+ *  - 허용 목록은 `--allowedTools` 로 CLI 에 미리 주고(묻지도 않게), 그래도 물음이 오면 호스트가 이 판정으로 바로 답한다.
+ *  - 목록 밖은 거절하되 «제안으로 남겨라» 를 사유로 돌려준다 — 모델이 멈추지 않고 답장에 적고 넘어간다.
+ *  - `AskUserQuestion` 은 어느 trust 에서도 거절한다(물어볼 사람이 없다). act 는 그것만 빼고 다 허용.
+ * read    — 읽기 + 답장(`bridge_send`) + 오케스트레이터 보고(`orch_report`)
+ * propose — read + 봇에게 나눠 주기(`bot_send`) · 할 일 남기기(`todo_add`). 봇 켜고 끄기·순서는 «제안» 이 아니라 뺀다
+ */
+const READ_BUILTINS = ['Read', 'Grep', 'Glob', 'LS', 'NotebookRead', 'TodoWrite']
+const FB_READ = fb(['bots_list', 'bot_status', 'bot_sessions', 'vault_tree', 'vault_search', 'rules_get', 'routine_list', 'inbox_list', 'bots_candidates', 'bridge_send', 'orch_report'])
+export const CHANNEL_ALLOW: Record<'read' | 'propose', readonly string[]> = {
+  read: [...READ_BUILTINS, ...FB_READ],
+  propose: [...READ_BUILTINS, ...FB_READ, ...fb(['bot_send', 'todo_add'])],
+}
+export function channelVerdict(trust: Trust, toolName: string): { allow: true } | { allow: false; message: string } {
+  if (toolName === 'AskUserQuestion') return { allow: false, message: '이 세션은 연결(Bridge) 채널이라 물어볼 사람이 없습니다. 묻지 말고, 정할 것이 있으면 답장(bridge_send)에 needs_human 으로 적어 넘기세요.' }
+  if (trust === 'act' || CHANNEL_ALLOW[trust].includes(toolName)) return { allow: true }
+  return { allow: false, message: `이 연결 채널(trust ${trust})에서는 ${toolName} 을 쓸 수 없고, 승인할 사람도 없습니다. 하려던 일은 답장(bridge_send)에 «제안» 으로 적어 남기고 다음으로 넘어가세요.` }
 }

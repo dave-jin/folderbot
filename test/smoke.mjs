@@ -482,6 +482,14 @@ try {
     const ledger = readFileSync(join(data, 'bridges/halili/delivered.jsonl'), 'utf8')
     if (!ledger.includes(`"id":"${oldId}","state":"baseline"`) || !ledger.includes(`"id":"${newId}","state":"delivered"`)) fail('BQ-3: 배달 기록이 dataDir 에 없다 · ' + ledger)
     if (JSON.parse(readFileSync(cur, 'utf8')).last !== newId) fail('BQ-3: 커서가 안 넘어갔다')
+    // 🔴 2026-10-11 · 채널 세션은 승인을 기다리지 않는다 — 스텁은 편지 규칙 줄의 «승인» 에 Bash 확인을 띄운다(맥미니에서 7시간 넘게 선 그 모양).
+    //    호스트가 그 자리에서 거절하고, 세션은 서지 않으며, /api/health 의 서 있는 채널은 0 이다
+    let denied = false, chanNow = chan
+    for (let i = 0; i < 60 && !denied; i++) { await wait(100); denied = (await api(`/sessions/${chan.id}/chat`)).items.some((it) => it.kind === 'system' && /자동 거절 · Bash/.test(it.text)); chanNow = (await api('/bots/orch/sessions')).find((x) => x.id === chan.id) ?? chanNow }
+    if (!denied) fail('🔴 BQ-5: 채널 세션의 Bash 확인을 호스트가 바로 거절하지 않았다(사람 승인을 기다린다)')
+    if (chanNow.state === 'awaiting_input') fail('🔴 BQ-5: 채널 세션이 승인 대기로 섰다')
+    const hz = await (await fetch(base + '/api/health')).json()
+    if (hz.channelWaits?.n !== 0) fail('BQ-5: /api/health 에 서 있는 채널 수가 없거나 0 이 아니다 · ' + JSON.stringify(hz.channelWaits))
     // 편지가 시작한 턴에서 folder_move 는 막힌다(채널 세션 토큰으로 직접 불러 본다)
     const mvT = (await (await mcpFetch(base + `/mcp/orch?sid=${chan.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'folder_move', arguments: { from: '1. Inbox/예시랩_자문자료.txt', to: '4. Resources/x.txt' } } }) })).json()).result.content[0].text
     if (!/바깥 상대의 편지/.test(mvT)) fail('🔴 BQ-5: 편지 턴에서 folder_move 가 안 막혔다 · ' + mvT)
@@ -502,10 +510,10 @@ try {
     const runsF = join(root, `.folderbot/ops/runs-${month}.jsonl`)
     const evs = existsSync(runsF) ? readFileSync(runsF, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.routine === 'BK 손') : []
     if (!evs.some((e) => e.event === 'start') || !evs.some((e) => e.event === 'end' && e.result)) fail('🔴 BR-1: 루틴 실행 기록(start·end)이 없다 · ' + JSON.stringify(evs))
-    // 치우기 — 채널 세션을 지운다(스텁은 편지 규칙 줄의 «승인» 에 반응해 확인을 띄운다 · 실제 CLI 는 Bash 가 목록에 없다) · 뒤 검사가 흔들리면 안 된다
+    // 치우기 — 채널 세션을 지운다 · 뒤 검사가 흔들리면 안 된다
     await api(`/sessions/${chan.id}`, undefined, 'DELETE')
     rmSync(bf); await wait(700)
-    ok(`연결 R1 — 설정 쓰면 열림 · 새 편지 ${took}ms 만에 «✅ 할일이 채널»(급함 · <letter> · default 모드) · 옛 편지·임시 파일 안 들어감 · 배달 기록·커서 · 편지 턴 folder_move 거절 · bridge_send FBMF · BR-1 실행 기록`)
+    ok(`연결 R1 — 설정 쓰면 열림 · 새 편지 ${took}ms 만에 «✅ 할일이 채널»(급함 · <letter> · default 모드) · 승인 안 기다리고 바로 거절 · 옛 편지·임시 파일 안 들어감 · 배달 기록·커서 · 편지 턴 folder_move 거절 · bridge_send FBMF · BR-1 실행 기록`)
   }
   /**
    * 🔴 연결 R2 (2026-10-09) — BR-2 일부러 실패하는 루틴 → end(fail) · retry · 두 번째 시도(설계 §8 ⑤) · routine_run ·
