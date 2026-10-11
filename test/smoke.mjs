@@ -2226,6 +2226,32 @@ try {
             await pg.evaluate((h) => { location.hash = h }, hashBo); await wait(700)
             ok(`BO 새 세션은 화면이 먼저 — 만들기 답을 붙잡아도 ${dt}ms 에 열림 · 그새 보낸 첫 말은 풀린 뒤 들어감 · 같은 id 는 하나 · 실패하면 원래 세션으로`)
           }
+          // 🔴 CA · 이름에 공백·괄호가 든 파일도 칩이 서고, 첨부에서 빠지지 않고, 보낸 말에 실제로 붙는다
+          //    (2026-10-11 Dave 스크린샷_2326 — 끌어다 놓은 파일이 «@x …txt» 글자로 남고 첨부에서 조용히 빠졌다)
+          {
+            const hashCa = await pg.evaluate(() => location.hash)
+            const sidCa = (await api(`/bots/${bot.id}/sessions`, { name: 'CA 공백 이름' })).id
+            await pg.evaluate((h) => { location.hash = h }, `bot=${bot.id}&s=${sidCa}`); await pg.waitForSelector('.composer .cin'); await wait(600)
+            const nm = '회의 메모 (최종) v2.txt'
+            await pg.setInputFiles('.composer input[type="file"][multiple], input[type="file"][multiple]', [{ name: nm, mimeType: 'text/plain', buffer: Buffer.from('공백 이름 첨부 확인') }])
+            let chipOk = false
+            for (let i = 0; i < 30 && !chipOk; i++) { await wait(150); chipOk = await pg.evaluate((n) => !![...document.querySelectorAll('.composer .cin [data-chip]')].find((c) => c.dataset.chip === n && c.dataset.busy !== '1'), nm) }
+            if (!chipOk) fail('CA: 공백이 든 파일명이 입력창에서 칩이 안 됐다 ' + JSON.stringify(await pg.$eval('.composer .cin', (e) => e.textContent)))
+            await wait(500)   // 첨부 목록을 글과 맞추는 쪽이 이름을 끊어 빼던 자리 — 잠시 뒤에도 남아야 한다
+            if (!(await pg.evaluate((n) => !![...document.querySelectorAll('.composer .cin [data-chip]')].find((c) => c.dataset.chip === n), nm))) fail('CA: 칩이 섰다가 첨부에서 빠졌다')
+            await pg.click('.composer .cin'); await pg.keyboard.press(MAC ? 'Meta+ArrowDown' : 'Control+End'); await pg.keyboard.type('이거 봐')
+            await pg.click('.composer .sendb')
+            let sent = null
+            for (let i = 0; i < 40 && !sent; i++) { await wait(150); sent = (await api(`/sessions/${sidCa}/chat`)).items.find((x) => x.kind === 'user' && x.text.includes('첨부 파일 (읽어서 참고해)') && x.text.includes(nm)) }
+            if (!sent) fail('CA: 보낸 말에 공백이 든 파일이 첨부로 안 붙었다')
+            let umsgChip = false
+            for (let i = 0; i < 20 && !umsgChip; i++) { await wait(150); umsgChip = await pg.evaluate((n) => [...document.querySelectorAll('.umsg .fchip')].some((c) => (c.getAttribute('data-tip') ?? '').endsWith('/' + n)), nm) }
+            if (!umsgChip) fail('CA: 보낸 말에서 공백이 든 파일이 칩으로 안 그려졌다')
+            for (let i = 0; i < 40; i++) { const st = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === sidCa)?.state; if (st !== 'running') break; await wait(150) }
+            await fetch(base + `/api/sessions/${sidCa}`, { method: 'DELETE' })
+            await pg.evaluate((h) => { location.hash = h }, hashCa); await wait(700)
+            ok('CA 공백·괄호가 든 파일명 — 입력창 칩 · 첨부에 남음 · 보낸 말에 붙고 칩으로 그려짐')
+          }
           // S-3 · 패널을 **접어 둬도** 우측 띠에 + 가 남는다 — 눌러서 세션이 늘어나는지까지
           // ⚠ 새 세션을 만들면 화면이 **그 빈 세션**으로 옮겨 간다 — 뒤 검사들이 보던 대화를 잃지 않게 있던 자리를 적어 두고 되돌린다
           const hashBeforeNs = await pg.evaluate(() => location.hash)

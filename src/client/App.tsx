@@ -40,6 +40,7 @@ import { UsageCard, UsageStrip, useUsage } from './Usage'
 import { PermGate, usePerms } from './Perms'
 import { Palette } from './Palette'
 import { startSession } from './newSession'
+import { findChips } from '../core/chipFind'
 import { MODES, effortLabel, effortsFor, fmtK, hardRefreshModels, modeLabel, modelLabel, modelsFor, moreModelsFor, onModels, refreshModels } from './consts'
 import { rulesLabel } from '../core/permPolicy'
 import { DEFAULT_EFFORT, DEFAULT_MODEL, sameModel} from '../core/agents'
@@ -1457,8 +1458,8 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   useEffect(() => { if (!caretEnd.current) return; caretEnd.current = false; setCaret(text.length); if (document.activeElement === taRef.current?.el()) taRef.current?.setSelection(text.length) }, [text])
   useEffect(() => {
     if (phone) return   // 폰은 토큰이 없다 — 칩의 ✕ 가 목록을 뺀다 (N-1)
-    const names = new Set(Array.from(text.matchAll(/@([^\s@]+)/g)).map((m) => m[1]))
-    setAttach((l) => (l.every((a) => names.has(attName(a))) ? l : l.filter((a) => names.has(attName(a)))))
+    // CA · 글에 남은 칩만 첨부로 둔다 — 이름은 첨부 목록과 맞춰 찾는다(공백이 든 이름이 여기서 조용히 빠졌다)
+    setAttach((l) => { const names = new Set(findChips(text, l.map(attName)).map((h) => h.name)); return l.every((a) => names.has(attName(a))) ? l : l.filter((a) => names.has(attName(a))) })
   }, [text]) // eslint-disable-line react-hooks/exhaustive-deps
   const chipsByName = useMemo(() => Object.fromEntries(attach.map((a) => { const abs = a.abs || `${bot.abs}/첨부/${a.name ?? ''}`; return [attName(a), { abs, dir: a.dir, folder: chipParts(abs, bot.abs, !!a.dir).folder, busy: a.uploading, icon: <Icon n={a.dir ? 'folder' : 'doc'} size={11} color="var(--t3)" /> }] })), [attach, bot.abs])
   const relOf = (p: string) => (p.startsWith(bot.abs + '/') ? p.slice(bot.abs.length + 1) : null)
@@ -1936,12 +1937,15 @@ function Item({ it, bot, items, onFile, onReveal, onDrill, state, say, isLastAss
       const inline = new Set<string>()
       let mdText = body
       if (files.length) {
-        mdText = body.replace(/@([^\s@]+)/g, (whole, name: string) => {
-          const f = files.find((x) => x.name === name); if (!f) return whole
+        // CA · 보낸 말도 같은 함수로 — 공백이 든 이름도 칩으로 선다
+        let acc = ''; let last = 0
+        for (const h of findChips(body, files.map((x) => x.name))) {
+          const f = files.find((x) => x.name === h.name)!
           inline.add(f.abs)
           chips.push(<FileChip abs={f.abs} dir={f.dir} botAbs={bot.abs} botId={bot.id} onClick={() => openRef(f)} />)
-          return chipMark(chips.length - 1)
-        })
+          acc += body.slice(last, h.index) + chipMark(chips.length - 1); last = h.end
+        }
+        mdText = acc + body.slice(last)
       }
       const rest = files.filter((f) => !inline.has(f.abs))
       return <div className={`umsg ${isLastUser ? 'last' : ''}`} data-id={it.id} ref={isLastUser ? userRef : undefined}>{/* J-4 · 어느 기기에서 보냈나 — 호스트가 아닌 기기만 표시 */}{it.from && !it.from.main ? <span className="dev" title={`${it.from.device} 에서 보냄`}><Icon n={it.from.tier === 'phone' ? 'phone' : 'panel'} size={10} />{it.from.tier === 'phone' ? '폰' : '원격'} · {it.from.device}</span> : null}<Md text={mdText} user chips={chips} botId={bot.id} onPath={onFile} onDir={onReveal} />{rest.length ? <div className="files uatt">{rest.map((f, i) => <FileChip key={`a${i}`} abs={f.abs} dir={f.dir} botAbs={bot.abs} botId={bot.id} onClick={() => openRef(f)} />)}</div> : null}</div>

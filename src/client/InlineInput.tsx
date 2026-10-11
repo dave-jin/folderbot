@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { findChips } from '../core/chipFind'
 
 /**
  * 입력창 — **글 속에 칩이 선다** (2026-09-15 Dave: «칩이 채팅 창 안으로 들어가야 해», Rondo 입력창과 같은 꼴).
@@ -27,7 +28,6 @@ interface Props {
   onChipClick?: (name: string) => void
 }
 
-const TOKEN = /@([^\s@]+)/g
 
 const BLOCK = new Set(['DIV', 'P', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'PRE', 'TR', 'UL', 'OL'])
 /**
@@ -105,12 +105,11 @@ function placeCaret(el: HTMLElement, pos: number): void {
 /** 글 → 자식 목록(구조 비교용). `@이름` 이 칩 목록에 있으면 칩, 아니면 글자 그대로 */
 function tokens(value: string, chips: Record<string, ChipInfo>): { t: 'text' | 'chip'; s: string }[] {
   const out: { t: 'text' | 'chip'; s: string }[] = []
-  let last = 0; let m: RegExpExecArray | null
-  TOKEN.lastIndex = 0
-  while ((m = TOKEN.exec(value))) {
-    if (!chips[m[1]]) continue
-    if (m.index > last) out.push({ t: 'text', s: value.slice(last, m.index) })
-    out.push({ t: 'chip', s: m[1] }); last = m.index + m[0].length
+  let last = 0
+  // CA · 이름은 칩 목록과 맞춰 찾는다 — 공백이 든 이름도 칩이 된다(`core/chipFind`)
+  for (const h of findChips(value, Object.keys(chips))) {
+    if (h.index > last) out.push({ t: 'text', s: value.slice(last, h.index) })
+    out.push({ t: 'chip', s: h.name }); last = h.end
   }
   if (last < value.length) out.push({ t: 'text', s: value.slice(last) })
   return out
