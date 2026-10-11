@@ -1458,7 +1458,7 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   useEffect(() => { if (!caretEnd.current) return; caretEnd.current = false; setCaret(text.length); if (document.activeElement === taRef.current?.el()) taRef.current?.setSelection(text.length) }, [text])
   useEffect(() => {
     if (phone) return   // 폰은 토큰이 없다 — 칩의 ✕ 가 목록을 뺀다 (N-1)
-    // CA · 글에 남은 칩만 첨부로 둔다 — 이름은 첨부 목록과 맞춰 찾는다(공백이 든 이름이 여기서 조용히 빠졌다)
+    // CB · 글에 남은 칩만 첨부로 둔다 — 이름은 첨부 목록과 맞춰 찾는다(공백이 든 이름이 여기서 조용히 빠졌다)
     setAttach((l) => { const names = new Set(findChips(text, l.map(attName)).map((h) => h.name)); return l.every((a) => names.has(attName(a))) ? l : l.filter((a) => names.has(attName(a))) })
   }, [text]) // eslint-disable-line react-hooks/exhaustive-deps
   const chipsByName = useMemo(() => Object.fromEntries(attach.map((a) => { const abs = a.abs || `${bot.abs}/첨부/${a.name ?? ''}`; return [attName(a), { abs, dir: a.dir, folder: chipParts(abs, bot.abs, !!a.dir).folder, busy: a.uploading, icon: <Icon n={a.dir ? 'folder' : 'doc'} size={11} color="var(--t3)" /> }] })), [attach, bot.abs])
@@ -1937,7 +1937,7 @@ function Item({ it, bot, items, onFile, onReveal, onDrill, state, say, isLastAss
       const inline = new Set<string>()
       let mdText = body
       if (files.length) {
-        // CA · 보낸 말도 같은 함수로 — 공백이 든 이름도 칩으로 선다
+        // CB · 보낸 말도 같은 함수로 — 공백이 든 이름도 칩으로 선다
         let acc = ''; let last = 0
         for (const h of findChips(body, files.map((x) => x.name))) {
           const f = files.find((x) => x.name === h.name)!

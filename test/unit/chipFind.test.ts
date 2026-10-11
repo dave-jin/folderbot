@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { findChips } from '../../src/core/chipFind'
 
-/** CA · 글 속 `@이름` 칩은 아는 이름과 맞춰 찾는다 (2026-10-11 Dave 스크린샷_2326) */
-describe('findChips (CA)', () => {
+/** CB · 글 속 `@이름` 칩은 아는 이름과 맞춰 찾는다 (2026-10-11 Dave 스크린샷_2326) */
+describe('findChips (CB)', () => {
   it('공백·괄호가 든 이름도 통째로 찾는다', () => {
     const n = 'x 회의록 (최종)_2026.txt'
     expect(findChips(`아래로 만들어 줘.\n@${n} `, [n])).toEqual([{ index: 11, end: 12 + n.length, name: n }])

@@ -106,7 +106,7 @@ function placeCaret(el: HTMLElement, pos: number): void {
 function tokens(value: string, chips: Record<string, ChipInfo>): { t: 'text' | 'chip'; s: string }[] {
   const out: { t: 'text' | 'chip'; s: string }[] = []
   let last = 0
-  // CA · 이름은 칩 목록과 맞춰 찾는다 — 공백이 든 이름도 칩이 된다(`core/chipFind`)
+  // CB · 이름은 칩 목록과 맞춰 찾는다 — 공백이 든 이름도 칩이 된다(`core/chipFind`)
   for (const h of findChips(value, Object.keys(chips))) {
     if (h.index > last) out.push({ t: 'text', s: value.slice(last, h.index) })
     out.push({ t: 'chip', s: h.name }); last = h.end
