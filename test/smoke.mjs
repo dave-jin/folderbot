@@ -2228,6 +2228,34 @@ try {
               ok('BG 세션 목록 끝 «＋ 새 세션» — 마지막 줄 아래 · 누르면 세션이 는다')
             }
           }
+          // 🔴 CC · 세션 목록은 채팅만 · 자동화 세션은 접힌 «자동화» 줄 아래 · 열면 입력창 위에 어디로 가는지 한 줄 (2026-10-12 Dave)
+          if (name !== 'phone') {
+            const isAuto = (x) => !x.adopted && !!(x.comm || x.exComm || x.channel || x.exChannel || x.routine || x.delegated)
+            const hashCc = await pg.evaluate(() => location.hash)
+            let tgt = null
+            for (const b of await api('/bots')) { const xs = await api(`/bots/${b.id}/sessions`); if (xs.some(isAuto)) { tgt = { b, xs }; break } }
+            if (!tgt) fail('CC: 자동화 세션이 있는 봇이 없어 화면을 잴 수 없다 — 검사가 헛돈다')
+            else {
+              const chatN = tgt.xs.filter((x) => !isAuto(x)).length, autoN = tgt.xs.filter(isAuto).length
+              const firstChat = tgt.xs.find((x) => !isAuto(x))
+              await pg.evaluate((id) => { location.hash = `bot=${id}` }, tgt.b.id); await wait(800)
+              const v = await pg.evaluate(() => { const sec = document.querySelector('.rpwrap .secb'); const h = [...document.querySelectorAll('.rpwrap .sech')].find((x) => /세션/.test(x.textContent ?? '')); return { count: h?.querySelector('.c')?.textContent, autoh: sec?.querySelector('.srow.autoh')?.textContent ?? null, autoRows: sec?.querySelectorAll('.srow.auto').length ?? -1, hash: location.hash } })
+              if (v.count !== String(chatN)) fail('🔴 CC: 세션 절 숫자가 채팅 세션 수가 아니다 ' + JSON.stringify({ v, chatN }))
+              if (!v.autoh || !v.autoh.includes(String(autoN))) fail('🔴 CC: «자동화 N» 줄이 없다 ' + JSON.stringify(v))
+              if (v.autoRows !== 0) fail('🔴 CC: 자동화 세션이 접히지 않고 채팅 목록에 섞여 보인다 ' + JSON.stringify(v))
+              if (firstChat ? !v.hash.includes(firstChat.id) : /s=/.test(v.hash) && tgt.xs.some((x) => isAuto(x) && v.hash.includes(x.id))) fail('🔴 CC: 처음 연 세션이 채팅 세션이 아니다 ' + JSON.stringify({ hash: v.hash, firstChat: firstChat?.id }))
+              await pg.click('.rpwrap .secb .srow.autoh'); await wait(400)
+              const opened = await pg.evaluate(() => [...document.querySelectorAll('.rpwrap .secb .srow.auto')].map((r) => r.querySelector('.ak')?.textContent ?? ''))
+              if (opened.length !== autoN || opened.some((k) => !/^(소통|채널|루틴|봇끼리)$/.test(k))) fail('CC: 펼친 자동화 줄 수·종류 표시가 안 맞다 ' + JSON.stringify({ opened, autoN }))
+              await pg.click('.rpwrap .secb .srow.auto'); await wait(600)
+              const note = await pg.evaluate(() => document.querySelector('.autonote')?.textContent ?? '')
+              if (!/세션이에요 — 여기에 쓰면/.test(note)) fail('🔴 CC: 자동화 세션을 열었는데 입력창 위 안내가 없다 · ' + note)
+              await pg.click('.rpwrap .secb .srow.autoh'); await wait(200)   // 접힘 기억을 원래대로
+              await pg.screenshot({ path: 'test/tmp/cc-auto-area.png' })
+              await pg.evaluate((h) => { location.hash = h }, hashCc); await wait(700)
+              ok(`CC 세션 목록 — 채팅 ${chatN}개만 · «자동화 ${autoN}» 접힘 · 펼치면 종류 표시 · 열면 «${note}»`)
+            }
+          }
           // 🔴 BO · 새 세션은 화면이 먼저 연다 (2026-10-08 Dave: «원격에서 '새 세션'을 열면 채팅 창이 열릴 때까지 딜레이»).
           //    만들기 답을 3초 붙잡아 두고 ＋ 를 누른다 — 옛 코드는 답을 다 기다린 뒤에야 화면이 바뀌어 여기서 빨개진다.
           //    붙잡힌 동안 보낸 첫 말은 풀린 뒤 실제로 들어가야 하고, 만들기가 실패하면 원래 세션으로 돌아와야 한다.
@@ -3533,10 +3561,12 @@ try {
             await pg.evaluate(() => { window.__fbHoldFrames = false })
             if (!/늦게 온 세션/.test(head ?? '')) fail('BH 알림 점프: 화면 목록에 없던 세션인데 첫 세션으로 떨어졌다 · ' + JSON.stringify(head))
             await api(`/sessions/${late.id}`, undefined, 'DELETE')
-            // orch_ask 로 생긴 오케스트레이터 «🤝 소통» 세션이 화면 목록 **맨 위**에 선다 · 처음 열리는 세션은 아니다 (2026-10-02)
+            // orch_ask 로 생긴 오케스트레이터 «🤝 소통» 세션은 — CC(2026-10-12) 부터 — 채팅 목록이 아니라 접힌 «자동화» 줄 아래에 선다 · 처음 열리는 세션도 아니다
             await pg.evaluate(() => { location.hash = 'bot=orch' }); await wait(900)
-            const orchNames = await pg.$$eval('.rpwrap .srow .n', (r) => r.map((x) => x.textContent))
-            if (orchNames[0] !== '🤝 소통') fail('소통 세션: 오케스트레이터 세션 목록 맨 위에 «🤝 소통» 이 없다 ' + JSON.stringify(orchNames))
+            const orchView = await pg.evaluate(() => ({ chat: [...document.querySelectorAll('.rpwrap .srow:not(.auto):not(.autoh):not(.sadd) .n')].map((x) => x.textContent), autoh: !!document.querySelector('.rpwrap .srow.autoh'), hash: location.hash }))
+            if (orchView.chat.includes('🤝 소통') || !orchView.autoh) fail('소통 세션: 오케스트레이터 «🤝 소통» 이 채팅 목록에 섞였거나 «자동화» 줄이 없다 ' + JSON.stringify(orchView))
+            const orchComm = (await api('/bots/orch/sessions')).find((x) => x.comm)
+            if (orchComm && orchView.hash.includes(orchComm.id)) fail('소통 세션: 오케스트레이터를 열었는데 «🤝 소통» 이 처음 열렸다 ' + JSON.stringify(orchView))
             await pg.evaluate((h) => { location.hash = h }, backHash); await wait(700)
             // 치우기 — 오케스트레이터의 최근 줄에 «요청 ← 제품_Rondo» 가 남으면 뒤 검사가 봇 이름으로 행을 찾다가 관제 행을 집는다.
             // ⚠ 화면을 먼저 옮기고 지운다 — 보고 있는 세션을 지우면 읽음 표시·대화 받기가 404 를 낸다(«페이지 오류 0»)
