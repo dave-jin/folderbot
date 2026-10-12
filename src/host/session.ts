@@ -19,6 +19,7 @@ import type { Bot, ChatItem, PermissionMode, PermissionRequest, QueuedMsg, Sessi
 import type { TurnFrom } from '../core/turnGuard'
 import { channelSpawn, channelVerdict, type Trust } from '../core/bridges'
 import { compactReason, rotateReason } from '../core/compact'
+import { extraComms, forkHandover, migrateArea, takeoverMode } from '../core/autoArea'
 import { atomicWrite, dataDir, ensureDir } from './paths'
 
 /**
@@ -251,6 +252,12 @@ export interface SessionRec {
    */
   channel?: string
   trust?: Trust
+  /** CC · 사람이 이어받아 채팅으로 옮긴 자동 세션 · 갈아탄 옛 채널 · 봇마다 하나만 남긴 소통의 나머지 (`core/autoArea`) */
+  adopted?: boolean
+  exChannel?: boolean
+  exComm?: boolean
+  /** CC · 갈라 연 채팅의 첫 턴에 워커에게만 앞세우는 맥락 — 화면의 사람 말과 자동 제목에는 안 붙는다 */
+  prelude?: string
   /** BV-2 · 갈아타기 중(인수인계를 쓰는 턴) · 새 채널이 받은 인수인계 — 다음에 보내는 말 앞에 한 번 붙는다 */
   rotating?: boolean
   handover?: string
@@ -354,9 +361,12 @@ export class SessionManager extends EventEmitter {
         if (r.deleted) continue
         if (r.state === 'running' || r.state === 'awaiting_input') r.state = 'idle' // 호스트가 다시 뜨면 워커는 없다
         if (closeOpenItems(r.items, 'restore').length) atomicWrite(join(this.dir, f), JSON.stringify({ ...r, items: r.items.slice(-1500) })) // 스피너로 남은 항목도 함께 마감
+        if (migrateArea(r)) atomicWrite(join(this.dir, f), JSON.stringify(r))
         this.recs.set(r.id, r)
       } catch { /* skip */ }
     }
+    // CC · 소통 세션은 봇마다 하나 — 둘 이상이면 가장 최근 것만 남기고 나머지는 «옛 소통» 으로 내린다
+    for (const id of extraComms([...this.recs.values()])) { const r = this.recs.get(id)!; r.comm = undefined; r.exComm = true; this.persist(r) }
     setInterval(() => this.reclaim(), 60_000).unref()
   }
 
@@ -365,7 +375,7 @@ export class SessionManager extends EventEmitter {
   }
   info(r: SessionRec): SessionInfo {
     const w = this.workers.get(r.id)
-    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, inflight: r.inflight, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, ...(r.comm ? { comm: true } : {}), ...(r.channel ? { channel: r.channel } : {}), ...(r.delegatedFrom && !r.comm ? { delegated: true } : {}), ...(r.queue?.length ? { queue: r.queue } : {}), activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
+    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, inflight: r.inflight, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, ...(r.comm ? { comm: true } : {}), ...(r.channel ? { channel: r.channel } : {}), ...(r.delegatedFrom && !r.comm ? { delegated: true } : {}), ...(r.adopted ? { adopted: true } : {}), ...(r.exChannel ? { exChannel: true } : {}), ...(r.exComm ? { exComm: true } : {}), ...(r.queue?.length ? { queue: r.queue } : {}), activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
   }
   get(id: string): SessionRec | undefined { return this.recs.get(id) }
   /** 볼트 전체의 세션 기록 — 「지난 대화 찾기」 가 훑는다(읽기만) */
@@ -602,8 +612,30 @@ export class SessionManager extends EventEmitter {
    * 가리키는 **물어본 작업 세션**으로 돌아가므로, 여러 봇의 요청이 한 세션에 섞여도 엉키지 않는다.
    */
   commOf(bot: Bot, from: string): SessionRec {
-    const have = [...this.recs.values()].find((r) => r.botId === bot.id && r.comm)
+    const have = [...this.recs.values()].filter((r) => r.botId === bot.id && r.comm).sort((a, b) => b.lastActivity - a.lastActivity)[0]
     return have ?? this.create(bot, '🤝 소통', { delegatedFrom: from, comm: true })
+  }
+  /**
+   * CC · **사람이 자동화 세션에 말을 보냈다** (2026-10-12 Dave). 자동화 쪽 정리가 사람이 쓰던 대화를 지우지 않게 —
+   * 루틴·봇끼리·옛 채널은 그 세션을 채팅으로 옮기고(하던 일·백그라운드 작업이 그대로 이어진다),
+   * 🤝 소통·연결 채널은 봇마다 하나여야 하니 최근 대화를 물려받은 새 채팅을 갈라 연다.
+   * @returns 사람의 말이 들어갈 세션
+   */
+  takeOver(r: SessionRec, bot: Bot): SessionRec {
+    const mode = takeoverMode(this.info(r))   // ⚠ 기록(`delegatedFrom`)이 아니라 화면이 보는 사실(`delegated`)로 — 같은 판정을 쓴다
+    if (mode === 'none') return r
+    if (mode === 'adopt') {
+      r.adopted = true
+      this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: '사람이 이어받아 채팅으로 옮겼어요 — 이제 자동 정리에서 빠져요.' })
+      this.persist(r); this.emit('sessions', r.botId)
+      return r
+    }
+    const nr = this.create(bot, '새 대화', { vendor: r.vendor })
+    nr.prelude = forkHandover(r.name, r.id, r.items as { kind: string; text?: string }[])
+    this.push(nr, { id: itemId('s'), t: Date.now(), kind: 'system', text: `자동화 세션 «${r.name}» 에서 갈라 연 채팅이에요 — 그 세션의 최근 대화를 이어받았어요.` })
+    this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `사람이 보낸 말은 새 채팅(${nr.id})으로 갈라 열었어요 — 이 세션은 자동화 채널로 남아요.` })
+    this.persist(r); this.persist(nr); this.emit('sessions', bot.id)
+    return nr
   }
   /** 지금 말을 넣으면 안 되나 — 일하는 중이거나, CLI 가 답을 기다리는 질문이 걸려 있다(미뤄진 질문만이면 넣어도 된다 · 그 말이 질문을 닫는다) */
   mustWait(r: SessionRec): boolean {
@@ -694,7 +726,7 @@ export class SessionManager extends EventEmitter {
     const nr = this.create(bot, r.name, { channel: r.channel, trust: r.trust ?? 'propose', vendor: 'claude', permissionMode: r.permissionMode })
     nr.handover = `${summary.slice(0, 6000)}\n(이전 채널 세션: ${r.id})`
     const d = new Date()
-    r.rotating = false; r.channel = undefined; r.named = true; r.name = `${r.name} · ~${d.getMonth() + 1}/${d.getDate()}`
+    r.rotating = false; r.channel = undefined; r.exChannel = true; r.named = true; r.name = `${r.name} · ~${d.getMonth() + 1}/${d.getDate()}`
     if (r.queue?.length) { nr.queue = r.queue; r.queue = undefined }
     this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `새 채널 세션으로 넘겼어요 · ${nr.id}` })
     this.persist(r); this.persist(nr); this.emit('sessions', bot.id)
@@ -995,7 +1027,9 @@ export class SessionManager extends EventEmitter {
     this.push(r, { id: itemId('u'), t: Date.now(), kind: 'user', text, ...(from ? { from } : {}) })
     // J-1 · 워커에게만 기기 블록을 앞세운다 — 채팅에는 사람의 글 그대로
     // 🔴 남아 있던 미뤄진 질문은 이 글로 닫는다 — 안 닫으면 같은 질문 카드가 둘 선다(ClaudeWorker.sendClosingAsks)
-    const closed = w instanceof ClaudeWorker ? w.sendClosingAsks(withClient(text, client)) : (w.send(withClient(text, client)), [])
+    const pre = r.prelude; r.prelude = undefined
+    const wtext = withClient(pre ? `${pre}\n\n---\n\n${text}` : text, client)
+    const closed = w instanceof ClaudeWorker ? w.sendClosingAsks(wtext) : (w.send(wtext), [])
     for (const id of closed) this.closeTool(r, id, '채팅으로 답했어요', true)
     if (closed.length) this.emit('sessions', r.botId)
     if (r.state !== 'running') r.turnStartedAt = Date.now()

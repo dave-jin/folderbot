@@ -29,6 +29,7 @@ import { applyViewport, planViewport } from '../core/viewport'
 import { canStartSwipe, dragProgress, fromLeftEdge, lockOf, scrollableEats, stageOf, swipeVerdict } from '../core/drawer'
 import { curOf, dismiss, goTo, navInit, type Nav, type Page } from '../core/navstack'
 import { botUnread, shouldMarkRead, MOOD_RANK, recentDone, type BotMood } from '../core/unread'
+import { sessArea, takeoverMode } from '../core/autoArea'
 import { clampDockOffset, isDockDrag, readDockOffset } from '../core/dock'
 import { tabActive } from '../core/tabbar'
 import { SwipeRow } from './SwipeRow'
@@ -294,8 +295,9 @@ function Main() {
   const botId = hash.bot || lastBot.current || 'orch'
   const bot = s.bots.find((b) => b.id === botId) ?? s.bots[0]
   // 🤝 소통 세션은 목록 맨 위에 고정한다 — 다만 «처음 열 세션» 은 사람의 세션이다 (2026-10-02)
+  //    CC · 그 «사람의 세션» 은 채팅 세션뿐이다 — 루틴·채널·봇끼리 세션으로 들어가지 않는다. 없으면 빈 채팅(첫 말이 «메인» 을 만든다)
   const sessions = useMemo(() => { const l = s.sessionsByBot[bot?.id ?? ''] ?? []; return l.some((x) => x.comm) ? [...l.filter((x) => x.comm), ...l.filter((x) => !x.comm)] : l }, [s.sessionsByBot, bot?.id])
-  const sessionId = hash.s && sessions.some((x) => x.id === hash.s) ? hash.s : (sessions.find((x) => !x.comm) ?? sessions[0])?.id
+  const sessionId = hash.s && sessions.some((x) => x.id === hash.s) ? hash.s : sessions.find((x) => sessArea(x) === 'chat')?.id
   /**
    * 🔴 **BH · 알림이 가리키는 세션이 화면 목록에 없으면 목록을 곧바로 새로 받는다** (2026-09-27 Dave · 스크린샷_1759:
    *    *«알림을 클릭하면 해당 폴더봇으로는 가는데, 세션이 여러 개 있을 때 특정 세션으로는 이동을 못해»* — 맥 배너).
@@ -1391,7 +1393,8 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   }
   // J-1 · 이 화면이 어떤 기기인지 — 호스트가 origin·device 를 붙이고, 화면은 종류·손가락·열 수 있나·모드를 말한다
   const clientCtx = () => ({ tier: phone ? 'phone' : localBridge() ? 'desktop' : 'browser', touch, canOpenOnDevice: !!localBridge() && !phone, openMode: localBridge() ? (lcfgC?.openMode ?? '') : '' })
-  const post = async (t: string) => { if (cur) await api(`/sessions/${cur.id}/send`, { body: { text: t, client: clientCtx() } }); else { const r = await api<{ sessionId: string }>(`/bots/${bot.id}/send`, { body: { text: t, name: '메인', client: clientCtx(), ...draft } }); await refreshAll(); onSession(r.sessionId) } }
+  // CC · 소통·채널 세션에 쓴 말은 호스트가 새 채팅으로 갈라 연다 — 돌려받은 id 가 다르면 그리로 넘어간다
+  const post = async (t: string) => { if (cur) { const r = await api<{ sessionId?: string }>(`/sessions/${cur.id}/send`, { body: { text: t, client: clientCtx() } }); if (r?.sessionId && r.sessionId !== cur.id) { await refreshAll(); onSession(r.sessionId) } } else { const r = await api<{ sessionId: string }>(`/bots/${bot.id}/send`, { body: { text: t, name: '메인', client: clientCtx(), ...draft } }); await refreshAll(); onSession(r.sessionId) } }
   // ⚠ 대기열을 내보내는 일은 **부모**가 한다 — 보고 있지 않은 세션의 것도 나가야 하기 때문(위 머리말)
   const sendText = async (raw: string) => {
     let t = raw.trim(); if ((!t && !attach.length) || busy || uploading) return
@@ -1403,7 +1406,9 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
     // 🔴 미뤄진 질문만 떠 있으면 대기열에 묶지 않고 바로 보낸다 — 호스트가 이 글로 질문을 닫는다(2026-10-02 Dave: «AskUserQuestion 을
     //    두번씩»). 묶어 두면 글이 안 보이게 기다리다 카드에 답한 **뒤에** 따로 들어가, 모델이 같은 질문을 또 하기도 했다.
     const deferredOnly = state === 'awaiting_input' && pending.length > 0 && pending.every((p) => p.deferred)
-    if (running || (state === 'awaiting_input' && !deferredOnly)) { onQueue((q) => [...q, t]); return }
+    // CC · 갈라 열릴 자동화 세션(소통·채널)은 기다리지 않는다 — 말은 그 세션이 아니라 새 채팅으로 간다
+    const forks = !!cur && takeoverMode(cur) === 'fork'
+    if (!forks && (running || (state === 'awaiting_input' && !deferredOnly))) { onQueue((q) => [...q, t]); return }
     setBusy(true); try { await post(t) } catch (e) { say((e as Error).message) } finally { setBusy(false) }
   }
   const send = () => sendText(text)

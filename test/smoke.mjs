@@ -404,6 +404,31 @@ try {
     if (!flagged) fail('🔴 AA-1: 안 서는 주기인데 화면에 오류가 안 붙었다 — 사고가 그대로 되풀이된다')
     if (flagged.nextRun) fail('AA-1: 안 걸렸는데 다음 실행이 있다 · ' + JSON.stringify(flagged))
     writeFileSync(yml, goodYml); await wait(700)
+    /**
+     * 🔴 CC · 10/12 12:00 사고 재현 — 사람이 08:00 루틴 세션에 답해 이어 쓰고(읽음까지) 있었는데, 같은 봇의 다른 루틴이 돌며
+     *    «봇마다 끝난 루틴 세션 2개» 규칙으로 그 세션을 지웠다. 이제 사람이 답한 루틴 세션은 채팅으로 옮겨져 어느 루틴도 못 지운다.
+     *    옛 코드는 다른 루틴 세션들이 «안 읽음» 으로 자리를 채워 읽은 그 세션이 걷혀 여기서 빨개진다.
+     */
+    {
+      if ((await putR([{ name: '저녁 정리', cron: '매일 저녁 8시', prompt: '오늘 바뀐 것 정리해 줘' }, { name: '워커빌', cron: '매일 낮 12시', prompt: '워커빌 훑어 줘' }])).status !== 200) fail('CC: 루틴 둘을 못 넣었다')
+      const routineSess = async (name) => (await api(`/bots/${bot.id}/sessions`)).filter((x) => x.routine === name).sort((a, b) => b.createdAt - a.createdAt)
+      const settle = async () => { for (let i = 0; i < 80; i++) { const xs = await api(`/bots/${bot.id}/sessions`); if (!xs.some((x) => x.state === 'running')) return; await wait(100) } }
+      const had = new Set((await routineSess('저녁 정리')).map((x) => x.id))
+      await api(`/bots/${bot.id}/routines/run`, { name: '저녁 정리' }); await wait(300); await settle()
+      const mine = (await routineSess('저녁 정리')).find((x) => !had.has(x.id))
+      if (!mine) fail('CC: 저녁 정리 루틴 세션이 안 생겼다')
+      const sent = await api(`/sessions/${mine.id}/send`, { text: '되읊어: 사람이 루틴 세션에 답함', client: { tier: 'phone' } })
+      if (sent.sessionId && sent.sessionId !== mine.id) fail('CC: 루틴 세션은 그 자리에서 이어져야 하는데 다른 세션으로 갔다 ' + JSON.stringify(sent))
+      await wait(300); await settle()
+      const after = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === mine.id)
+      await api(`/sessions/${mine.id}/read`, { at: after.lastReplyAt })
+      for (let k = 0; k < 3; k++) { await api(`/bots/${bot.id}/routines/run`, { name: '워커빌' }); await wait(300); await settle() }
+      const left = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === mine.id)
+      if (!left) fail('🔴 CC: 사람이 답한 루틴 세션이 다른 루틴이 돌면서 지워졌다(10/12 사고 그대로)')
+      else if (!left.adopted) fail('CC: 사람이 답한 루틴 세션이 채팅으로 안 옮겨졌다 ' + JSON.stringify(left))
+      else ok('CC 10/12 사고 재현 — 사람이 답한 루틴 세션은 채팅으로 옮겨지고 다른 루틴이 세 번 돌아도 남는다')
+      writeFileSync(yml, goodYml); await wait(700)
+    }
     // 치우기 — 루틴이 만든 세션과 `.bot.yml` 을 원래대로 (이 블록 때문에 뒤 검사가 달라지면 안 된다)
     for (const x of await api(`/bots/${bot.id}/sessions`)) if (!sessWas.has(x.id)) await fetch(base + `/api/sessions/${x.id}`, { method: 'DELETE' })
     if (ymlWas === null) { try { rmSync(yml) } catch { /* */ } } else writeFileSync(yml, ymlWas)
@@ -691,6 +716,34 @@ try {
     if (!rc.result?.isError) fail('소통 세션: orch_ask 가 거절되지 않았다 ' + JSON.stringify(rc))
     await wait(1200)
     ok('소통 세션 — 봇마다 하나 · 일하는 중에 온 봇의 말은 큐 → 턴 끝에 차례로 · 소통 세션은 되묻지 못한다')
+  }
+  /**
+   * 🔴 **CC · 사람이 자동화 세션에 답하면** (2026-10-12 Dave: «자동화 섹션은 내가 채팅하는 영역과 별개로 동작해야 해»).
+   *    같은 날 12:00 — 사람이 이어 쓰던 루틴 세션을 다른 루틴이 지웠다. 이제 소통 세션에 쓴 말은 새 채팅으로 갈라지고(소통은 하나 그대로),
+   *    봇끼리 세션에 쓴 말은 그 세션을 채팅으로 옮긴다(정리 대상에서 빠진다). 옛 코드는 소통 세션에 그대로 이어 써서 여기서 빨개진다.
+   */
+  {
+    const xs0 = await api(`/bots/${cfo.id}/sessions`)
+    const comm = xs0.find((x) => x.comm)
+    const r = await api(`/sessions/${comm.id}/send`, { text: '되읊어: 사람이 소통에 답함', client: { tier: 'desktop' } })
+    if (!r.sessionId || r.sessionId === comm.id) fail('🔴 CC: 소통 세션에 쓴 사람 말이 새 채팅으로 안 갈라졌다 ' + JSON.stringify(r))
+    await wait(900)
+    const xs1 = await api(`/bots/${cfo.id}/sessions`)
+    const nr = xs1.find((x) => x.id === r.sessionId)
+    if (!nr || nr.comm || nr.delegated || nr.routine) fail('CC: 갈라 연 세션이 채팅 세션이 아니다 ' + JSON.stringify(nr))
+    if (xs1.filter((x) => x.comm).length !== 1) fail('🔴 CC: 소통 세션이 하나가 아니다 ' + xs1.filter((x) => x.comm).length)
+    const nu = (await api(`/sessions/${r.sessionId}/chat`)).items.filter((x) => x.kind === 'user').map((x) => x.text)
+    if (JSON.stringify(nu) !== JSON.stringify(['되읊어: 사람이 소통에 답함'])) fail('CC: 갈라 연 채팅의 내 말이 내가 쓴 그대로가 아니다 ' + JSON.stringify(nu))
+    const cu = (await api(`/sessions/${comm.id}/chat`)).items.filter((x) => x.kind === 'user').map((x) => x.text)
+    if (cu.includes('되읊어: 사람이 소통에 답함')) fail('🔴 CC: 사람 말이 소통 세션에 들어갔다')
+    const del = xs1.find((x) => x.delegated)
+    if (!del) fail('CC: 봇끼리 세션을 못 찾았다')
+    const r2 = await api(`/sessions/${del.id}/send`, { text: '되읊어: 사람이 이어받음', client: { tier: 'desktop' } })
+    if (r2.sessionId !== del.id) fail('CC: 봇끼리 세션은 그 자리에서 옮겨져야 하는데 다른 세션으로 갔다 ' + JSON.stringify(r2))
+    await wait(700)
+    if (!(await api(`/bots/${cfo.id}/sessions`)).find((x) => x.id === del.id)?.adopted) fail('🔴 CC: 사람이 답한 봇끼리 세션이 채팅으로 안 옮겨졌다')
+    await fetch(base + `/api/sessions/${r.sessionId}`, { method: 'DELETE' })
+    ok('CC 사람이 자동화 세션에 답함 — 소통은 새 채팅으로 갈라지고(소통 하나 유지 · 내 말 그대로) · 봇끼리는 그 자리에서 채팅으로')
   }
   /**
    * 🔴 **BL · 🔔 「모두 읽음」 = 모든 봇** (2026-10-07 Dave: «한번에 전체 읽음 표시 하고 싶어»).

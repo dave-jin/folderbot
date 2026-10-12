@@ -1,4 +1,3 @@
-import { sessionUnread } from '../core/unread'
 import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { Cron } from 'croner'
@@ -148,23 +147,7 @@ export function routineRun(r: Pick<RoutineDef, 'name' | 'prompt' | 'approve'>): 
 }
 
 /**
- * AI · **루틴 세션은 둘까지만 남긴다** (2026-09-24 Dave: *«바로 직전 루틴까지만 남기고, 루틴 세션은 두 개 이상
- * 가져가지 않는»*). 루틴이 돌 때마다 새 세션이 생기므로 그냥 두면 목록이 루틴 기록으로 덮인다.
- *
- * 🔴 **도는 중이거나 확인을 기다리는 것은 걷지 않는다.** 그걸 지우면 ① 하던 일이 중간에 끊기고
- *    ② 아직 안 읽은 답이 사라진다. 그래서 «끝난 것» 중에서 오래된 것부터 걷는다 — 그 결과 도는 것이 많으면
- *    한동안 둘을 넘을 수 있는데, **일을 죽이는 것보다 낫다.**
- * @param sessions 그 봇의 루틴 세션들 (새로 만든 것 포함 · 최근 활동 순서는 상관없다)
+ * AI · 루틴 세션은 둘까지(2026-09-24) → CC · **루틴마다** 둘까지 + 사람이 이어받은 세션·백그라운드·30분 안 활동은 안 걷는다(2026-10-12).
+ * 판정은 `core/autoArea` 한 곳에 있다 — 여기서는 옛 이름으로 다시 내보내기만 한다.
  */
-export const ROUTINE_KEEP = 2
-export function routinesToDrop(
-  sessions: { id: string; routine?: string; state: string; lastActivity: number; lastReplyAt?: number; readAt?: number }[],
-  keep = ROUTINE_KEEP,
-): string[] {
-  const mine = sessions.filter((s) => s.routine)
-  // 🔴 안 읽은 답도 걷지 않는다 (2026-10-02) — 사람이 아직 못 본 결과를 지우면 루틴이 돈 의미가 없다
-  const busy = (s: { state: string; lastReplyAt?: number; readAt?: number }) => s.state === 'running' || s.state === 'awaiting_input' || sessionUnread(s.lastReplyAt, s.readAt)
-  const idle = mine.filter((s) => !busy(s)).sort((a, b) => b.lastActivity - a.lastActivity)
-  const room = Math.max(0, keep - mine.filter(busy).length)
-  return idle.slice(room).map((s) => s.id)
-}
+export { routinesToDrop, AUTO_KEEP_PER_ROUTINE as ROUTINE_KEEP } from '../core/autoArea'

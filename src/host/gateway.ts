@@ -844,7 +844,8 @@ export class Gateway {
       const bot = botOf(r.botId); const sub = seg[3]
       if (!sub && m === 'DELETE') { h.sessions.remove(r.id); return json(200, { ok: true }) }
       if (sub === 'chat') return json(200, { info: h.sessions.info(r), items: r.items.slice(-800) })
-      if (sub === 'send' && m === 'POST') { const b = await body(); h.sendToBot(bot, String(b.text), r.id, undefined, undefined, { client: clientOf(who, b.client) }); return json(200, { ok: true }) }
+      // CC · 자동화 세션(소통·채널)에 보낸 사람 말은 새 채팅으로 갈라진다 — 화면이 그 세션으로 넘어가게 id 를 돌려준다
+      if (sub === 'send' && m === 'POST') { const b = await body(); const sid = h.sendToBot(bot, String(b.text), r.id, undefined, undefined, { client: clientOf(who, b.client) }); return json(200, { ok: true, sessionId: sid }) }
       // 호스트 대기열(다른 봇이 보낸 말) 고치기·빼기 — 빈 글이면 뺀다 (2026-10-02)
       if (sub === 'queue' && m === 'POST') { const b = await body(); try { return json(200, { queue: h.sessions.editQueue(r, Number(b.i), String(b.text ?? '')) }) } catch (e) { return json(400, { error: (e as Error).message }) } }
       if (sub === 'permission' && m === 'POST') {

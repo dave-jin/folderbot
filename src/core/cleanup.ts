@@ -1,18 +1,21 @@
 import type { SessionInfo } from './types'
 import { sessionUnread } from './unread'
+import { autoKind } from './autoArea'
 
 /**
  * 세션 정리 (2026-10-02 Dave: *«전체 세션을 보고 일괄로 유휴 상태나 안쓰는 세션들을 지우는 기능»* · 시안 B).
  * 화면(정리 창)과 메뉴의 «정리 가능 N» 이 같은 판정을 쓰도록 여기 한 곳에 둔다.
  */
-export type SessKind = '소통' | '루틴' | '봇끼리' | '사람'
+export type SessKind = '소통' | '채널' | '루틴' | '봇끼리' | '사람'
 export const CLEAN_IDLE_MS = 7 * 24 * 3600_000
 
-export function sessKind(x: Pick<SessionInfo, 'comm' | 'routine' | 'delegated' | 'name'>): SessKind {
-  if (x.comm) return '소통'
-  if (x.routine) return '루틴'
+/** 판정은 `core/autoArea` 와 같다(CC) — 사람이 이어받은 자동 세션은 «사람» 이다 */
+export function sessKind(x: Pick<SessionInfo, 'comm' | 'routine' | 'delegated' | 'name' | 'channel' | 'adopted' | 'exChannel' | 'exComm'>): SessKind {
+  const k = autoKind(x)
+  if (k) return k
+  if (x.adopted) return '사람'
   // 2026-10-02 이전의 봇끼리 세션은 출처 표식이 없을 수 있어 이름 앞머리로도 본다
-  if (x.delegated || /^(위임 ·|요청 ←)/.test(x.name)) return '봇끼리'
+  if (/^(위임 ·|요청 ←)/.test(x.name)) return '봇끼리'
   return '사람'
 }
 
@@ -43,7 +46,7 @@ export function cleanMatch(x: SessionInfo, on: CleanFilter[], now = Date.now()):
 
 /** 처음부터 체크해 두는가 — 거름에 걸리고, 잠기지 않았고, 소통 세션이 아닌 것(소통 세션은 봇마다 하나라 일부러 고를 때만) */
 export function cleanPreselect(x: SessionInfo, on: CleanFilter[], now = Date.now()): boolean {
-  return cleanMatch(x, on, now) && !sessLocked(x) && sessKind(x) !== '소통'
+  return cleanMatch(x, on, now) && !sessLocked(x) && !x.comm && !x.channel   // 살아 있는 소통·채널은 봇마다 하나라 일부러 고를 때만
 }
 
 /** 메뉴의 «정리 가능 N» — 기본 거름으로 열었을 때 체크될 수 */

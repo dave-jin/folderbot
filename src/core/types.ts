@@ -128,6 +128,13 @@ export interface SessionInfo {
   comm?: boolean
   /** 다른 봇이 보내서 열린 세션(옛 «위임 ·» · «요청 ←») — 세션 정리의 «봇끼리» 판정 */
   delegated?: boolean
+  /** BQ-4 · 연결(Bridge) 채널 세션이면 상대 id */
+  channel?: string
+  /** CC · 사람이 이어받아 채팅으로 옮긴 자동 세션 — 자동 정리에서 빠진다(`core/autoArea`) */
+  adopted?: boolean
+  /** CC · 갈아탄 옛 채널 · 봇마다 하나만 남긴 소통의 나머지 — 자동화 영역에 남고 7일 뒤 정리 */
+  exChannel?: boolean
+  exComm?: boolean
   /** 호스트가 들고 있는 대기 말 — 다른 봇이 보낸 말이 이 세션이 일하는 중에 오면 끝날 때까지 기다린다 */
   queue?: QueuedMsg[]
   /** 지금 하는 일 한 줄 (도구명 · 요약 / 생각 중 / 답 쓰는 중) */

@@ -23,7 +23,8 @@ import { letterBatch } from '../core/fbmf'
 import type { PeerDef } from '../core/bridges'
 import type { QueuedMsg } from '../core/types'
 import { ORCH_ID, Registry, canon, ORCH_REQUEST_RULES_MD, ORCH_ASK_HINT, ORCH_REPORT_HINT, LETTER_RULES_MD } from './registry'
-import { Routines, routineRun, routinesToDrop, RETRY_DELAY_MS } from './routines'
+import { Routines, routineRun, RETRY_DELAY_MS } from './routines'
+import { autoToDrop, sessArea } from '../core/autoArea'
 import { SessionManager, setOauthToken, setKeychainLogin, AUTH_ERROR, type SessionRec } from './session'
 import { readTodo, todoAdd, todoContext } from './todoStore'
 import { recent as recentFiles, tree as fileTree } from './files'
@@ -113,6 +114,8 @@ export class Host {
     // BW · 지운 지 7일 지난 세션 파일 → 앱 데이터 trash(6시간마다)
     const sweepS = () => { try { const n = this.sessions.sweepDeleted(); if (n.length) this.log(`지운 세션 ${n.length}개를 휴지통(앱 데이터 trash/sessions)으로 옮겼어요`) } catch (e) { this.log(`지운 세션 정리 실패: ${(e as Error).message}`) } }
     setTimeout(sweepS, 60_000).unref(); setInterval(sweepS, 6 * 3600_000).unref()
+    // CC · 자동화 영역 정리(매시간) — 루틴마다 2개 · 7일 지난 자동 세션
+    setInterval(() => { try { this.sweepAuto() } catch (e) { this.log(`자동화 세션 정리 실패: ${(e as Error).message}`) } }, 3600_000).unref()
   }
 
   /** BF · 충돌 사본 치우기 — 원본과 같아졌거나 7일 지난 것만. 사람이 고친 사본은 그 사람 것이라 두고 장부에서만 뺀다 */
@@ -164,7 +167,8 @@ export class Host {
       if (!notify || r.state === 'awaiting_input') return
       const bot = this.registry.bot(r.botId)
       const last = [...r.items].reverse().find((i) => i.kind === 'assistant') as { text: string } | undefined
-      if (r.state === 'done') this.notifier.emit(r.routine ? 'routine' : 'done', r.botId, `${bot?.name ?? ''} · ${STATE_LABEL.done}`, mdPlain(last?.text ?? r.name).slice(0, 140), r.id, { push: !r.routine || bot?.routines.find((x) => x.name === r.routine)?.push !== false })
+      const asRoutine = !!r.routine && !r.adopted   // CC · 사람이 이어받은 루틴 세션의 답은 사람 세션처럼 알린다
+      if (r.state === 'done') this.notifier.emit(asRoutine ? 'routine' : 'done', r.botId, `${bot?.name ?? ''} · ${STATE_LABEL.done}`, mdPlain(last?.text ?? r.name).slice(0, 140), r.id, { push: !asRoutine || bot?.routines.find((x) => x.name === r.routine)?.push !== false })
       if (r.state === 'error') this.notifier.emit('error', r.botId, `${bot?.name ?? ''} · ${STATE_LABEL.error}`, (r.lastError ?? '세션 오류').split('\n').pop()!.slice(0, 140), r.id)
     })
   }
@@ -196,7 +200,7 @@ export class Host {
     // 🔴 봇끼리 오가는 말은 받는 봇의 «🤝 소통» 세션 하나로 (2026-10-02 Dave) — 세션을 집어 보냈으면 그 세션으로(답 돌려주기)
     if (!r && from && !name) r = this.sessions.commOf(bot, from)
     if (!r) {
-      const list = this.sessions.list(bot.id).filter((x) => !x.comm)   // 사람의 «이어서» 는 소통 세션으로 가지 않는다
+      const list = this.sessions.list(bot.id).filter((x) => sessArea(x) === 'chat')   // 사람의 «이어서» 는 자동화 세션(소통·채널·루틴·봇끼리)으로 가지 않는다(CC)
       if (!name && list.length && !from) r = this.sessions.get(list[0].id)
       if (!r) {
         // BE · 봇당 4개도 같은 규칙 — 넘치면 그 봇의 가장 오래 안 쓴 쉬는 워커를 재운다. 전부 일하는 중일 때만 거절한다.
@@ -206,6 +210,8 @@ export class Host {
         r = this.sessions.create(bot, name ?? (from ? `위임 · ${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : '메인'), { ...opts, ...(from ? { delegatedFrom: from } : {}) })
       }
     }
+    // CC · 사람이 자동화 세션에 보낸 말 — 루틴·봇끼리는 그 세션을 채팅으로 옮기고, 소통·채널은 새 채팅을 갈라 연다
+    if (!from) r = this.sessions.takeOver(r, bot)
     if (this.auth.verdict === 'unreadable' || this.auth.verdict === 'loggedout') {
       this.queued.push({ botId: bot.id, sessionId: r.id, text, origin: from ? 'bot' : 'human' })
       this.sessions.get(r.id)!.items.push({ id: `q${Date.now()}`, t: Date.now(), kind: 'system', text: '미니의 Claude 로그인이 필요해 대기열에 뒀어요. 복구되면 이어서 보냅니다.' })
@@ -229,16 +235,22 @@ export class Host {
     this.runs.start(s.id, bot.id, bot.name, r.name, why)
     this.routineRuns.set(s.id, { botId: bot.id, attempt: why.attempt ?? 1 })
     /**
-     * AI · **루틴 세션은 둘까지만** (2026-09-24 Dave). 새로 만든 뒤 오래된 «끝난» 것부터 걷는다 —
-     * 🔴 도는 중·확인 대기는 걷지 않는다(하던 일을 끊고 안 읽은 답을 지우게 된다). 판정은 `core` 가 아니라
-     *    `routines.routinesToDrop` 한 곳에 있다(순수 · 유닛).
+     * AI · 루틴 세션은 둘까지 → CC · **루틴마다** 둘까지 + 7일 지난 자동 세션 (2026-10-12). 새로 만든 뒤 걷는다 —
+     * 🔴 채팅(사람이 이어받은 세션 포함)·도는 중·확인 대기·백그라운드·대기 말·30분 안 활동은 걷지 않는다(`core/autoArea`).
      */
-    for (const id of routinesToDrop(this.sessions.list(bot.id))) {
-      this.log(`루틴 세션 정리: ${id}`)
-      this.sessions.remove(id)
-    }
+    this.sweepAuto(bot.id)
     this.sessions.send(s, bot, run.text, undefined, 'routine')
     return s.id
+  }
+
+  /**
+   * CC · 자동화 영역 정리 — 루틴이 돌 때(그 봇)와 매시간(모든 봇). 지운 세션은 «지웠다» 표식 → 7일 뒤 앱 데이터 trash(되살리기 가능).
+   * @returns 지운 세션 id
+   */
+  sweepAuto(botId?: string, now = Date.now()): string[] {
+    const ids = autoToDrop(this.sessions.list(botId), now)
+    for (const id of ids) { const r = this.sessions.get(id); this.log(`자동화 세션 정리: ${id}${r ? ` · ${r.name}` : ''}`); this.sessions.remove(id) }
+    return ids
   }
 
   /** 메인(호스트) 이름 — 설정값이 없으면 맥의 컴퓨터 이름(시스템 설정 › 일반 › 정보), 그것도 없으면 hostname */

@@ -51,7 +51,7 @@ export function Cleanup({ onClose, say }: { onClose: () => void; say: (m: string
     if (!undo) return
     try { const r = await api<{ restored: string[] }>('/sessions/restore', { body: { ids: undo.ids } }); say(`세션 ${r.restored.length}개를 되살렸어요`); setUndo(null) } catch (e) { say((e as Error).message) }
   }
-  const kindCls = (x: SessionInfo) => ({ 소통: 'k-comm', 루틴: 'k-rt', 봇끼리: 'k-bot', 사람: 'k-me' })[sessKind(x)]
+  const kindCls = (x: SessionInfo) => ({ 소통: 'k-comm', 채널: 'k-comm', 루틴: 'k-rt', 봇끼리: 'k-bot', 사람: 'k-me' })[sessKind(x)]
 
   return <><div className="backdrop" onClick={onClose} /><div className="modal clean" role="dialog" aria-label="세션 정리">
     <div className="modal-h"><div className="t"><b>세션 정리</b><span className="cnt">전체 {all.length}개 · 고른 것 {pick.size}개</span></div><button className="ib" onClick={onClose} title="닫기 ⎋"><Icon n="x" size={14} /></button></div>

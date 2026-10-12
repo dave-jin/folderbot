@@ -109,6 +109,12 @@ rl.on('line', (raw) => {
     say({ type: 'result', subtype: 'success', duration_ms: 10, total_cost_usd: 0.001 })
     return
   }
+  // CC 검사용 — 워커가 받은 글 전체를 돌려준다(갈라 연 채팅의 맥락이 워커에게만 갔는지 재려고)
+  if (/전부되읊어/.test(text)) {
+    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text }], stop_reason: 'end_turn' } })
+    say({ type: 'result', subtype: 'success', duration_ms: 10, total_cost_usd: 0.001 })
+    return
+  }
   // 「채팅 칩」 검사용 — «되읊어:» 뒤를 답변으로 그대로 돌려준다(경로·파일명이 칩이 되는지 재려고)
   if (/^되읊어:/.test(text)) {
     say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: text.slice('되읊어:'.length).trim() }], stop_reason: 'end_turn' } })
