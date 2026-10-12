@@ -10,6 +10,7 @@ import { ACT_COLOR, ACT_ICON, ACT_LABEL, LONG, actOf, buzz, slotOf, useSwipeCfg,
 import { HOLD_MS, decide, dropIndex } from './gesture'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { FolderPicker, RoutineSheet, askName } from './Sheets'
+import { describeCron } from '../core/when'
 import { startSession } from './newSession'
 import { refreshModels } from './consts'
 import { Mark, VendorMark, useProviders } from './Brand'
@@ -45,7 +46,7 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
   const secOn = (k: 'sessions' | 'todo' | 'files') => (only === k ? true : only === 'todo' && k === 'sessions' ? open.sessions !== false : !!open[k])
   // 아이콘 열에서 누른 섹션은 펼쳐진 채로 온다
   useEffect(() => { if (focusSec) setOpen((o) => ({ ...o, [focusSec.sec]: true })) }, [focusSec?.n])
-  const [routines, setRoutines] = useState(false); const [menu, setMenu] = useState<Anchor | null>(null)
+  const [routines, setRoutines] = useState<boolean | string>(false); const [menu, setMenu] = useState<Anchor | null>(null)
   /**
    * 새 세션 — 🔴 **누가 맡을지(Claude / ChatGPT)는 세션마다 고른다.** 벤더는 폴더가 아니라 세션의 성질이라
    *    한 폴더에 둘이 섞여 산다(그래서 표식도 폴더 레일이 아니라 이 목록에 붙는다).
@@ -140,14 +141,14 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
      */}
     {only === 'todo' ? null : <div className="sec fix">
       <button className="sech" onClick={() => tog('routines')}><Icon n={open.routines ? 'chevd' : 'chev'} size={9} /><span>루틴</span><span className="c">{bot.routines.length}</span></button>
-      {open.routines ? <div style={{ padding: '0 0 6px' }}>{bot.routines.map((r) => <div key={r.name} className="kv"><Icon n="clock" size={12} color="var(--t3)" /><span className="n">{r.name}</span><span className="mono" style={{ fontSize: 11, color: 'var(--t3)' }}>{r.cron}</span></div>)}<button className="kv" onClick={() => setRoutines(true)}><Icon n="plus" size={12} /><span className="n">{bot.routines.length ? '루틴 편집' : '루틴 추가'}</span></button></div> : null}
+      {open.routines ? <div style={{ padding: '0 0 6px' }}>{/* CF-4 · 줄을 누르면 그 루틴이 골라진 채 열린다 · cron 원문 대신 사람 말 */}{bot.routines.map((r) => <button key={r.name} className="kv" onClick={() => setRoutines(r.name)}><Icon n="clock" size={12} color={r.lastError ? 'var(--error)' : 'var(--t3)'} /><span className="n">{r.name}</span><span style={{ fontSize: 11, color: r.enabled === false ? 'var(--t4, var(--t3))' : 'var(--t3)' }}>{r.enabled === false ? '꺼짐' : describeCron(r.cron)}</span></button>)}<button className="kv" onClick={() => setRoutines(true)}><Icon n="plus" size={12} /><span className="n">{bot.routines.length ? '루틴 편집' : '루틴 추가'}</span></button></div> : null}
     </div>}
     {/* AD · 「지우기 · 은퇴」는 **폴더 탭 아래에만 작게** 남긴다 (2026-09-23 Dave) — 할 일 탭에는 없다 */}
     {only === 'todo' ? null : <div className={`pfoot ${only ? 'sm' : ''}`}><button style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'inherit' }} onClick={(e) => setMenu(menu ? null : anchorOf(e.currentTarget as HTMLElement, { gap: 6 }))}><Icon n="more" size={12} />이 봇{bot.orchestrator ? '' : ' · 지우기 · 은퇴'}</button>
       {menu && !bot.orchestrator ? <Float at={menu} onClose={() => setMenu(null)}><div onClick={() => setMenu(null)} style={{ display: 'contents' }}>{sessions.some((x) => sessionUnread(x.lastReplyAt, x.readAt)) ? <button onClick={async () => { const r = await api<{ read: number }>(`/bots/${bot.id}/read-all`, { body: {} }); say(r.read ? `${r.read}개 세션을 읽음으로 했어요` : '안 읽은 세션이 없어요') }}><Icon n="check" size={13} /><span>모두 읽음</span></button> : null}<button onClick={async () => { await api(`/bots/${bot.id}/stop`, { body: {} }); say(`${bot.name} 을 레일에서 덜어냈어요`); await refresh(); go('orch') }}><Icon n="x" size={13} /><span style={{ flex: 1 }}>지우기 (연결 해지)</span><span className="k">폴더 유지</span></button><button className="warn" onClick={async () => { if (!confirm(`${bot.name} 을 Archive 로 옮기고 은퇴시킬까요? 세션 기록은 보관돼요.`)) return; try { await api(`/bots/${bot.id}/retire`, { body: {} }); say('옮기고 은퇴했어요'); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="archive" size={13} /><span style={{ flex: 1 }}>Archive 로 이동 (은퇴)</span></button></div></Float> : null}
       {menu && bot.orchestrator ? <Float at={menu} onClose={() => setMenu(null)}><div onClick={() => setMenu(null)} style={{ display: 'contents' }}>{sessions.some((x) => sessionUnread(x.lastReplyAt, x.readAt)) ? <button onClick={async () => { const r = await api<{ read: number }>(`/bots/${bot.id}/read-all`, { body: {} }); say(r.read ? `${r.read}개 세션을 읽음으로 했어요` : '안 읽은 세션이 없어요') }}><Icon n="check" size={13} /><span>모두 읽음</span></button> : null}<button onClick={() => onTalk('지금 뭐 돌고 있어? 봇별로 한 줄씩.')}><Icon n="sub" size={13} /><span>현황 물어보기</span></button></div></Float> : null}
     </div>}
-    {routines ? <RoutineSheet bot={bot} onClose={() => setRoutines(false)} /> : null}
+    {routines ? <RoutineSheet bot={bot} pick={typeof routines === 'string' ? routines : undefined} onClose={() => setRoutines(false)} /> : null}
   </div>
 }
 

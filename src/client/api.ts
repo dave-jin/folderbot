@@ -79,16 +79,53 @@ export function connectEvents(onFrame: (f: Frame) => void, onStatus: (s: 'on' | 
   }
 }
 
-export async function subscribePush(vapidPublic: string, device: string): Promise<boolean> {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false
+/**
+ * CF-④ · 폰 푸시 켜기. 종전엔 무엇이 막혀도 «실패» 한 마디였고, 맥미니에 HTTPS 가 없어 구독이 한 번도 안 생긴 것을 몇 주 몰랐다.
+ *   이제 막힌 까닭을 돌려준다. ⚠ 클릭 핸들러에서 곧바로 부른다 — iOS 는 `requestPermission` 이 사용자 제스처 안이어야 해서
+ *   그 앞에 다른 await(종전 `serviceWorker.ready`)를 두지 않는다.
+ */
+export type PushWhy = 'ok' | 'insecure' | 'not-installed' | 'unsupported' | 'denied' | 'no-sw' | 'error'
+export async function subscribePush(vapidPublic: string, device: string): Promise<PushWhy> {
+  if (!window.isSecureContext) return 'insecure'
+  const standalone = matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true
+  if (/iPhone|iPad/.test(navigator.userAgent) && !standalone) return 'not-installed'
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return 'unsupported'
   try {
-    const reg = await navigator.serviceWorker.ready
-    const perm = await Notification.requestPermission(); if (perm !== 'granted') return false
-    const key = Uint8Array.from(atob(vapidPublic.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))
-    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key })
+    const perm = await Notification.requestPermission()   // 첫 await — 제스처 안
+    if (perm !== 'granted') return 'denied'
+    const reg = await Promise.race([navigator.serviceWorker.ready, new Promise<null>((r) => setTimeout(() => r(null), 8000))])
+    if (!reg) return 'no-sw'
+    const key = vapidKey(vapidPublic)
+    let sub = await reg.pushManager.getSubscription()
+    if (sub && !sameKey(sub.options.applicationServerKey, key)) { await sub.unsubscribe(); sub = null }   // 호스트 키가 바뀌었다 — 옛 구독은 403 만 받는다
+    sub ??= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key })
     await api('/push/subscribe', { body: { sub: sub.toJSON(), device } })
-    return true
-  } catch { return false }
+    return 'ok'
+  } catch { return 'error' }
+}
+/** 버튼에 쓸 말 — 사람이 다음에 무엇을 하면 되는지까지 */
+export const pushWhyText: Record<PushWhy, string> = {
+  ok: '푸시 켜짐',
+  insecure: 'HTTPS 주소(…ts.net)로 열어야 켤 수 있어요',
+  'not-installed': '공유 › 홈 화면에 추가한 아이콘으로 열어 주세요',
+  unsupported: '이 브라우저는 푸시를 못 받아요',
+  denied: '알림이 거절돼 있어요 — 설정 › 알림에서 허용',
+  'no-sw': '서비스 워커가 안 떠요 — 새로 고침 뒤 다시',
+  error: '구독 실패 — 다시 눌러 주세요',
+}
+/** 앱을 열 때마다 — 이미 허용된 기기면 구독을 호스트에 다시 알린다(addSub 는 같은 endpoint 를 덮는다). 호스트가 잃은 구독이 스스로 돌아온다 */
+export async function resyncPush(vapidPublic: string, device: string): Promise<void> {
+  try {
+    if (!window.isSecureContext || !('serviceWorker' in navigator) || !('Notification' in window) || Notification.permission !== 'granted' || !vapidPublic) return
+    const reg = await navigator.serviceWorker.getRegistration(); const sub = await reg?.pushManager.getSubscription()
+    if (!sub || !sameKey(sub.options.applicationServerKey, vapidKey(vapidPublic))) return
+    await api('/push/subscribe', { body: { sub: sub.toJSON(), device } })
+  } catch { /* 다음에 열 때 다시 */ }
+}
+const vapidKey = (b64: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(b64.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))
+function sameKey(a: ArrayBuffer | null | undefined, b: Uint8Array): boolean {
+  if (!a) return true   // 브라우저가 키를 안 알려 주면 비교를 못 한다 — 그대로 쓴다
+  const x = new Uint8Array(a); return x.length === b.length && x.every((v, i) => v === b[i])
 }
 
 export async function uploadFile(botId: string, file: File, onProgress?: (pct: number) => void): Promise<{ rel: string; abs: string; size: number }> {

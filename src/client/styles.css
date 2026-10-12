@@ -1362,6 +1362,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .rtrow .pick .n { display:flex; align-items:center; gap:6px; color:var(--w); font-size:12.5px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .rtrow .pick .sub { color:var(--t3); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100% }
 .rtrow .rtacts { display:flex; gap:1px; opacity:0 } .rtrow:hover .rtacts, .rtrow.on .rtacts { opacity:1 }
+@media (hover: none) { .rtrow .rtacts { opacity:1 } }   /* CF-4 · 폰엔 hover 가 없다 — 켜기·돌려보기 단추가 안 보였다 */
 .rtwarn { display:inline-flex; align-items:center; gap:3px; color:var(--error); font-size:10.5px; border:1px solid var(--error); border-radius:5px; padding:0 4px }
 .rtpre { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px }
 .preset.sm { padding:4px 9px; font-size:11.5px; min-width:0 }

@@ -1284,7 +1284,8 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   useEffect(() => { if (attachReq.length) { for (const r of attachReq) addAtt(r); onAttached() } }, [attachReq])
   useEffect(() => { if (mentionReq.length) { for (const rel of mentionReq) mention(rel); onMentioned() } }, [mentionReq])
   // ⚠ `filesTick` 도 본다 — 새 슬래시 명령을 만들면(루프 8/10) 그 자리에서 `/` 메뉴에 나와야 한다
-  useEffect(() => { void api<SlashCmd[]>(`/bots/${bot.id}/slash${cur?.id ? `?sid=${cur.id}` : ''}`).then(setSlash).catch(() => {}) }, [bot.id, cur?.id, filesTick])
+  // ⚠ CF-2 · `slashN` 도 본다 — 실 CLI 는 init 을 첫 말 뒤에 낸다. 그때 목록을 다시 받아야 /goal·/loop 이 바로 뜬다
+  useEffect(() => { void api<SlashCmd[]>(`/bots/${bot.id}/slash${cur?.id ? `?sid=${cur.id}` : ''}`).then(setSlash).catch(() => {}) }, [bot.id, cur?.id, filesTick, cur?.slashN])
   useEffect(() => { setFiles(null) }, [bot.id, filesTick])
   const last = items[items.length - 1]
   const lastUser = useMemo(() => { for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === 'user') return items[i] as Extract<ChatItem, { kind: 'user' }>; return null }, [items])

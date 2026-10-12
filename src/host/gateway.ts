@@ -162,7 +162,12 @@ export class Gateway {
     }
     return { ok: false, device: '', id: '', main: false }
   }
-  private isLoopback(req: IncomingMessage): boolean { const a = req.socket.remoteAddress ?? ''; return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1' }
+  /**
+   * CF-④ · `tailscale serve`(폰 HTTPS — iOS 웹 푸시의 전제)는 tailnet 요청을 127.0.0.1 로 넘긴다. 그 요청은 **loopback 이 아니다** —
+   *   프록시가 붙이는 머리(`x-forwarded-for`·`tailscale-user-login`)가 있으면 바깥에서 온 것으로 본다. 안 그러면 serve 를 켜는 순간
+   *   `/mcp`·`/api/pairing` 의 «미니에서만» 울타리가 tailnet 에 열린다.
+   */
+  private isLoopback(req: IncomingMessage): boolean { return isLoopbackReq(req.socket.remoteAddress, req.headers) }
 
   private async route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://x')
@@ -188,7 +193,7 @@ export class Gateway {
     const mIn = /^\/api\/bridges\/([a-z0-9-]+)\/messages$/.exec(p)
     if (mIn && req.method === 'POST') return this.bridgeInbound(mIn[1], req, json, body)
     // ③ 승인을 기다리는 연결 채널 세션 수와 가장 오래 선 시간 — 이름은 안 낸다(인증 없는 창구다). 감시기가 이것을 본다
-    if (p === '/api/health') return json(200, { ok: true, name: 'folderbot', version: this.host.version, stallMs: this.stall.maxMs, channelWaits: this.host.sessions.channelWaits() })
+    if (p === '/api/health') return json(200, { ok: true, name: 'folderbot', version: this.host.version, stallMs: this.stall.maxMs, channelWaits: this.host.sessions.channelWaits(), pushSubs: this.host.notifier.subsView().length, lastPush: this.host.notifier.lastPush })
     if (p === '/api/pair' && req.method === 'POST') {
       const b = await body()
       const code = String(b.code ?? ''); const device = String(b.device ?? 'device').slice(0, 40)
@@ -419,7 +424,8 @@ export class Gateway {
     if (p === '/api/read-all' && m === 'POST') { const n = h.sessions.readEverything(); h.notifier.markRead(undefined); return json(200, { ok: true, read: n }) }
     if (p === '/api/notifications/read' && m === 'POST') { const b = await body(); h.notifier.markRead(Array.isArray(b.ids) ? (b.ids as string[]) : undefined); return json(200, { ok: true }) }
     if (p === '/api/push/subscribe' && m === 'POST') { const b = await body(); h.notifier.addSub(b.sub as { endpoint: string; keys: { p256dh: string; auth: string } }, device); return json(200, { ok: true }) }
-    if (p === '/api/push/test' && m === 'POST') { h.notifier.emit('done', 'orch', 'Folder Bot', '푸시가 도착하면 성공이에요', undefined, { mac: false }); return json(200, { ok: true }) }
+    if (p === '/api/push/test' && m === 'POST') { const subs = h.notifier.subsView(); h.notifier.emit('done', 'orch', 'Folder Bot', '푸시가 도착하면 성공이에요', undefined, { mac: false, force: true }); return json(200, { ok: true, subs: subs.length, mine: subs.some((s) => s.device === device) }) }
+    if (p === '/api/push/status' && m === 'GET') return json(200, { subs: h.notifier.subsView(), last: h.notifier.lastPush })
     if (p === '/api/tailnet') return json(200, await tailnetInfo())
     if (p === '/api/auth/refresh' && m === 'POST') return json(200, await h.refreshAuth())
     /**
@@ -518,7 +524,7 @@ export class Gateway {
           return json(200, { rel: relative(bot.abs, abs) })
         } catch (e) { return json(400, { error: (e as Error).message }) }
       }
-      if (sub === 'slash') { const sid = url.searchParams.get('sid') ?? ''; const v = sid ? h.sessions.get(sid)?.vendor : undefined; return json(200, slashCommands(bot.abs, reg.root, sid ? h.sessions.slashOf(sid) : [], v === 'codex' ? 'codex' : 'claude')) }
+      if (sub === 'slash') { const sid = url.searchParams.get('sid') ?? ''; const v = sid ? h.sessions.get(sid)?.vendor : undefined; return json(200, slashCommands(bot.abs, reg.root, h.sessions.slashList(sid || undefined), v === 'codex' ? 'codex' : 'claude')) }
       if (sub === 'todo' && m === 'GET') return json(200, h.todo(bot))
       if (sub === 'todo' && seg[4] === 'toggle' && m === 'POST') { const b = await body(); const items = todoToggle(bot.abs, Number(b.line), !!b.done); h.broadcast({ ev: 'todo', botId: bot.id, items }); return json(200, items) }
       if (sub === 'todo' && seg[4] === 'edit' && m === 'POST') { const b = await body(); const items = todoEdit(bot.abs, Number(b.line), String(b.title ?? ''), String(b.desc ?? '')); h.broadcast({ ev: 'todo', botId: bot.id, items }); return json(200, items) }
@@ -895,4 +901,10 @@ export class Gateway {
     res.end(readFileSync(f))
   }
   stop(): void { for (const s of this.servers) s.close() }
+}
+
+/** CF-④ · 프록시(tailscale serve)를 거친 요청은 출발지가 127.0.0.1 이어도 바깥 요청이다 */
+export function isLoopbackReq(addr: string | undefined, headers: Record<string, string | string[] | undefined>): boolean {
+  if (headers['x-forwarded-for'] || headers['tailscale-user-login'] || headers['forwarded']) return false
+  const a = addr ?? ''; return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1'
 }

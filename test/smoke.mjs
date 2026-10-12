@@ -143,6 +143,28 @@ try {
     ok('대화에서 바꾼 모델(/model)이 세션에 그대로 붙는다')
   }
   /**
+   * 🔴 **CF-2 · 사람이 친 슬래시 명령은 CLI 에 맨 글로 간다** (2026-10-12 Dave: «/goal·/loop 같은 기본 스킬이 특히 안 불러와져»).
+   *    J-1(9/19) 뒤로 모든 말 앞에 기기 블록이 붙어, 실 CLI 는 `/goal …` 을 명령이 아니라 프롬프트 글로 받았다.
+   * ⚠ 일반 말은 계속 기기 블록을 받는다 — 아래 J 블록이 지킨다.
+   * ⚠ 새 채팅(세션 id 없음)의 `/` 메뉴에도 CLI 명령이 떠야 한다 — 실 CLI 는 init 을 첫 말 뒤에 낸다.
+   */
+  {
+    const gs = await api(`/bots/${bot.id}/sessions`, { name: '슬래시 맨 글' })
+    await api(`/sessions/${gs.id}/send`, { text: '/goal 테스트 통과까지', client: { device: '스모크폰', tier: 'phone', touch: true } })
+    let said = ''
+    for (let i = 0; i < 40; i++) { const c = await api(`/sessions/${gs.id}/chat`); const a = c.items.filter((x) => x.kind === 'assistant').pop(); if (a) { said = a.text; break } await wait(150) }
+    if (said !== '슬래시 받음: goal') fail('🔴 CF-2 · /goal 이 CLI 에 명령으로 안 갔다 · ' + JSON.stringify(said))
+    const fresh = await api(`/bots/${bot.id}/slash`)
+    if (!fresh.some((c) => c.name === 'goal')) fail('🔴 CF-2 · 새 채팅의 / 메뉴에 /goal 이 없다 · ' + JSON.stringify(fresh.map((c) => c.name)))
+    const path = await api(`/bots/${bot.id}/sessions`, { name: '경로 말' })
+    await api(`/sessions/${path.id}/send`, { text: '/Users/dave 를 봐 줘' })
+    await wait(500)
+    const pc = await api(`/sessions/${path.id}/chat`)
+    if (!pc.items.some((x) => x.kind === 'assistant' && /스텁이 받았습니다/.test(x.text))) fail('CF-2 · 경로로 시작하는 말이 명령처럼 다뤄졌다')
+    await api(`/sessions/${gs.id}`, undefined, 'DELETE'); await api(`/sessions/${path.id}`, undefined, 'DELETE')
+    ok('CF-2 · /goal 은 맨 글로 CLI 에 · 새 채팅 / 메뉴에도 CLI 명령 · 경로 말은 그대로')
+  }
+  /**
    * 🔴 **첫 말이 제목이 된다** (2026-09-15 Dave: «첫 채팅이 진행되면 그에 맞는 채팅 제목을 자동으로»).
    * ⚠ 덮는 것은 앱이 붙인 이름(`메인` · `세션 3`)뿐이고, **사람이 지은 이름은 그대로 둔다** — 아래 두 번째 검사.
    */
@@ -2034,6 +2056,22 @@ try {
                 const ft = await hp.$('.tabbar [data-tab="files"]'); if (ft) { await ft.click(); await wait(600) }
                 const rt = await hp.evaluate(() => [...document.querySelectorAll('.panel .sech')].map((x) => (x.textContent ?? '').trim()))
                 if (!rt.some((t) => /루틴/.test(t))) fail('🔴 AR: 폰 「폴더」 탭에 루틴이 없다 ' + JSON.stringify(rt))
+                /* 🔴 CF-4 · 폰 루틴 시트는 편집 칸이 화면 폭을 쓴다 (2026-10-12 Dave: «루틴은 모바일에서 안 보여»).
+                      종전엔 목록 240px 가 옆에 붙어 374px 시트에 편집 칸이 92px — 단추 글자가 세로로 꺾였다 */
+                {
+                  await hp.evaluate(() => { const h = [...document.querySelectorAll('.panel .sech')].find((x) => /루틴/.test(x.textContent ?? '')); if (h && !h.querySelector('[data-n="chevd"]') && !h.nextElementSibling) h.click() })
+                  await wait(300)
+                  await hp.evaluate(() => { const b = [...document.querySelectorAll('.panel button.kv')].find((x) => /루틴 (편집|추가)/.test(x.textContent ?? '')); b?.click() })
+                  await wait(400)
+                  await hp.evaluate(() => { if (!document.querySelector('.sheet textarea')) { const n = [...document.querySelectorAll('.sheet button.srow')].find((x) => /새 루틴/.test(x.textContent ?? '')); n?.click() } })
+                  await wait(300)
+                  const sw = await hp.evaluate(() => { const t = document.querySelector('.sheet textarea'); return { ta: t ? Math.round(t.getBoundingClientRect().width) : 0, vw: innerWidth } })
+                  if (!sw.ta) fail('CF-4: 폰에서 루틴 시트의 편집 칸을 못 찾았다 — 검사가 헛돈다')
+                  else if (sw.ta < sw.vw * 0.7) fail('🔴 CF-4: 폰 루틴 시트의 편집 칸이 너무 좁다 ' + JSON.stringify(sw))
+                  await hp.evaluate(() => { const c = [...document.querySelectorAll('.sheet .sheet-h button')].find((x) => /취소/.test(x.textContent ?? '')); c?.click() })
+                  await wait(300)
+                  ok(`CF-4 폰 루틴 시트 — 편집 칸 ${sw.ta}/${sw.vw}px`)
+                }
                 const td = await hp.$('.tabbar [data-tab="todo"]'); if (td) { await td.click(); await wait(600) }
                 const rt2 = await hp.evaluate(() => [...document.querySelectorAll('.panel .sech')].map((x) => (x.textContent ?? '').trim()))
                 if (rt2.some((t) => /루틴/.test(t))) fail('🔴 AR: 「할 일」 탭에는 루틴이 없어야 한다(그 탭은 지금 할 일만) ' + JSON.stringify(rt2))

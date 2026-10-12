@@ -16,6 +16,17 @@ const attr = (v: string | boolean) => String(v).replace(/&/g, '&amp;').replace(/
 export function clientBlock(c: ClientCtx): string {
   return `<folderbot-client origin="${c.origin}" device="${attr(c.device)}" tier="${c.tier}" touch="${c.touch}" canOpenOnDevice="${c.canOpenOnDevice}" openMode="${c.openMode || 'none'}"/>`
 }
+/**
+ * CF-2 · CLI 가 슬래시 명령으로 받는 글인가 (2026-10-12 Dave: «/goal·/loop 이 안 불러와져»).
+ * 🔴 실 CLI 는 글 **맨 앞이 `/`** 일 때만 명령으로 받는다 — 기기 블록을 앞세우면 명령이 그냥 프롬프트 글이 된다.
+ * ⚠ `/Users/…`·`/tmp 정리해` 같은 글은 명령이 아니다 — CLI 가 안다고 한 이름일 때만 맨 글로 보낸다.
+ */
+export function isCliSlash(text: string, known: readonly string[]): boolean {
+  const m = /^\/([A-Za-z][\w:-]*)(?:\s|$)/.exec(text.trimStart())
+  return !!m && known.includes(m[1])
+}
+/** CLI 를 처음 띄우기 전에도 알아보는 명령 — init 목록이 없을 때만 쓴다(2.1.288 `slash_commands` 실측에서 고름) */
+export const CLI_SLASH_FALLBACK = ['compact', 'context', 'cost', 'init', 'review', 'loop', 'goal', 'schedule', 'simplify', 'code-review', 'model', 'security-review', 'pr-comments', 'release-notes']
 /** 워커로 가는 글 = 블록 + 빈 줄 + 사람의 글 */
 export function withClient(text: string, c?: ClientCtx | null): string { return c ? `${clientBlock(c)}\n\n${text}` : text }
 /** 블록을 읽는다(검사·스텁용) — 없으면 null. 사람의 글은 `rest` */

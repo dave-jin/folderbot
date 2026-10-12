@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react'
 import type { PermissionMode, AuthState, Bot, Candidate, ChatItem, FolderRules, Frame, NotifyEvent, PermissionRequest, SessionInfo, TodoItem } from '../core/types'
-import { api, connectEvents, token } from './api'
+import { api, connectEvents, resyncPush, token } from './api'
 
 export interface Tailnet { state: string; ip?: string; dnsName?: string }
 export interface StateShape {
@@ -140,6 +140,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     ])
     dispatch({ type: 'refiles' })
   }
+  // CF-④ · 이미 푸시를 허용한 기기는 열 때마다 구독을 호스트에 다시 알린다 — 호스트가 구독을 잃어도(데이터 옮김·410 정리) 스스로 돌아온다
+  useEffect(() => { if (s.loaded && s.vapidPublic) void resyncPush(s.vapidPublic, navigator.userAgent.slice(0, 30)) }, [s.loaded, s.vapidPublic])
   useEffect(() => {
     if (!token()) return
     let first = true

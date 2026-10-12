@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { HarnessItem, HarnessRow, PermissionMode } from '../core/types'
 import { AGENT_EFFORTS, CODEX_SANDBOX, DEFAULT_EFFORT, DEFAULT_MODEL, PROVIDER_LABEL, type Provider } from '../core/agents'
 import { copySay } from './clip'
-import { api, setToken, subscribePush } from './api'
+import { api, pushWhyText, setToken, subscribePush, type PushWhy } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { Mark } from './Brand'
 import { ICON_LABEL, ICON_PX, useIconSize, useTheme, type IconSize, type Theme } from './theme'
@@ -551,14 +551,14 @@ function TodoPane() {
 /** 알림 — 이 기기의 푸시와, 모든 기기에 같이 적용되는 조용한 시간. 조용한 시간은 종전엔 글자만 있고 고칠 길이 없었다(2026-09-17) */
 function NotifyPane() {
   const { s, refresh } = useStore()
-  const [pushOn, setPushOn] = useState<boolean | null>(null)
+  const [pushOn, setPushOn] = useState<PushWhy | null>(null)
   const q = s.quiet ?? { from: '23:00', to: '07:00' }
   const [from, setFrom] = useState(q.from); const [to, setTo] = useState(q.to); const [msg, setMsg] = useState('')
   useEffect(() => { setFrom(q.from); setTo(q.to) }, [q.from, q.to])
   const saveQ = async (f: string, t: string) => { if (f === q.from && t === q.to) return; try { await api('/quiet', { body: { from: f, to: t } }); await refresh(); setMsg('저장했어요') } catch (e) { setMsg((e as Error).message) } }
   return <>
     <Row t="이 기기 푸시" d="폰 푸시는 Tailscale serve 로 HTTPS 를 붙이고 홈 화면에 설치해야 동작해요." at="dev">
-      <button className="btn" onClick={async () => setPushOn(await subscribePush(s.vapidPublic, navigator.userAgent.slice(0, 30)))}>{pushOn === true ? '켜짐' : pushOn === false ? '실패' : '켜기'}</button>
+      <button className="btn" onClick={async () => setPushOn(await subscribePush(s.vapidPublic, navigator.userAgent.slice(0, 30)))}>{pushOn ? pushWhyText[pushOn] : '켜기'}</button>
     </Row>
     <Row t="조용한 시간" d={<>이 사이에는 «확인해 주세요» 만 통과합니다. 모든 기기에 같이 적용돼요.{msg ? ` · ${msg}` : ''}</>} at="main">
       <input className="sin tm" type="time" value={from} onChange={(e) => setFrom(e.target.value)} onBlur={() => void saveQ(from, to)} />

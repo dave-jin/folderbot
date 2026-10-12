@@ -103,6 +103,7 @@ export class Host {
     setTimeout(() => { try { this.routines.catchUp(this.registry.bots()) } catch (e) { this.log(`놓친 회차 보충 실패: ${(e as Error).message}`) } }, 20_000).unref()
     // 봇 폴더 감시 — 세션을 거치지 않은 쓰기(Bash·Codex·Dropbox·Finder)도 트리에 온다 (host/watch.ts 머리말)
     this.watcher.log = (m) => this.log(m)
+    this.notifier.log = (m) => this.log(m)   // CF-④ 푸시 결과도 호스트 로그로
     this.watcher.sync(this.registry.bots())
     this.bridges.reload()
     this.ops.reload()

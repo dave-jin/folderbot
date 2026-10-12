@@ -10,10 +10,14 @@ export class Notifier {
   events: NotifyEvent[] = []
   private file = join(ensureDir(dataDir()), 'notifications.json')
   onEvent: (n: NotifyEvent) => void = () => {}
+  /** CF-④ · 푸시 성공·실패를 호스트 로그에 한 줄씩 — 종전엔 다 삼켜서 구독 0건·403 을 몇 주 아무도 몰랐다. endpoint 전체·키는 안 쓴다 */
+  log: (s: string) => void = () => {}
+  /** 마지막 푸시 결과 — /api/health 가 감시기에 내보낸다 */
+  lastPush: { t: number; ok: number; fail: number; code?: number } | null = null
   constructor(private cfg: HostConfig) {
     try { this.events = JSON.parse(readFileSync(this.file, 'utf8')) as NotifyEvent[] } catch { this.events = [] }
     if (!cfg.vapid) { const k = webpush.generateVAPIDKeys(); cfg.vapid = { publicKey: k.publicKey, privateKey: k.privateKey }; saveConfig(cfg) }
-    webpush.setVapidDetails('mailto:folderbot@local', cfg.vapid!.publicKey, cfg.vapid!.privateKey)
+    webpush.setVapidDetails(vapidSubject(), cfg.vapid!.publicKey, cfg.vapid!.privateKey)
   }
   quiet(): boolean {
     const q = this.cfg.quiet ?? { from: '23:00', to: '07:00' }
@@ -21,12 +25,12 @@ export class Notifier {
     const d = new Date(); const cur = d.getHours() * 60 + d.getMinutes(); const f = fh * 60 + fm, t = th * 60 + tm
     return f > t ? cur >= f || cur < t : cur >= f && cur < t
   }
-  emit(kind: NotifyKind, botId: string, title: string, body: string, sessionId?: string, opts: { push?: boolean; mac?: boolean } = {}): NotifyEvent {
+  emit(kind: NotifyKind, botId: string, title: string, body: string, sessionId?: string, opts: { push?: boolean; mac?: boolean; force?: boolean } = {}): NotifyEvent {
     const n: NotifyEvent = { id: `n_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, t: Date.now(), kind, botId, sessionId, title, body, read: false }
     this.events.unshift(n); this.events = this.events.slice(0, 300)
     atomicWrite(this.file, JSON.stringify(this.events))
     this.onEvent(n)
-    const suppressed = this.quiet() && kind !== 'awaiting'
+    const suppressed = this.quiet() && kind !== 'awaiting' && !opts.force   // force — «푸시 테스트» 는 밤에도 간다
     if (!suppressed) {
       if (opts.mac !== false) this.mac(title, body, n)
       if (opts.push !== false) void this.push(n)
@@ -58,13 +62,21 @@ export class Notifier {
   }
   async push(n: NotifyEvent): Promise<void> {
     const subs = this.cfg.pushSubs ?? []
-    if (!subs.length) return
+    if (!subs.length) { this.lastPush = { t: Date.now(), ok: 0, fail: 0 }; return }
     const payload = JSON.stringify({ title: n.title, body: n.body, botId: n.botId, sessionId: n.sessionId, kind: n.kind, id: n.id })
-    const dead: string[] = []
+    const dead: string[] = []; let ok = 0, fail = 0, last: number | undefined
     await Promise.all(subs.map(async (s) => {
-      try { await webpush.sendNotification({ endpoint: s.endpoint, keys: s.keys }, payload, { TTL: 3600 }) }
-      catch (e) { const code = (e as { statusCode?: number }).statusCode; if (code === 404 || code === 410) dead.push(s.endpoint) }
+      const where = pushHost(s.endpoint)
+      try {
+        const r = await webpush.sendNotification({ endpoint: s.endpoint, keys: s.keys }, payload, { TTL: 3600, urgency: n.kind === 'awaiting' ? 'high' : 'normal' })
+        ok++; last = r.statusCode; this.log(`푸시 ${n.kind} → ${s.device} (${where}) ${r.statusCode}`)
+      } catch (e) {
+        const code = (e as { statusCode?: number }).statusCode, why = String((e as { body?: string }).body ?? (e as Error).message ?? '').slice(0, 80)
+        fail++; last = code; this.log(`⚠ 푸시 실패 ${code ?? 'net'} → ${s.device} (${where}) ${why}`)
+        if (code === 404 || code === 410) dead.push(s.endpoint)
+      }
     }))
+    this.lastPush = { t: Date.now(), ok, fail, code: last }
     if (dead.length) { this.cfg.pushSubs = subs.filter((s) => !dead.includes(s.endpoint)); saveConfig(this.cfg) }
   }
   addSub(sub: { endpoint: string; keys: { p256dh: string; auth: string } }, device: string): void {
@@ -72,4 +84,22 @@ export class Notifier {
     subs.push({ ...sub, device }); this.cfg.pushSubs = subs; saveConfig(this.cfg)
   }
   vapidPublic(): string { return this.cfg.vapid!.publicKey }
+  /** 구독 목록 — 기기 이름과 푸시 서버 호스트만(endpoint 전체·키는 내보내지 않는다) */
+  subsView(): { device: string; host: string }[] { return (this.cfg.pushSubs ?? []).map((s) => ({ device: s.device, host: pushHost(s.endpoint) })) }
+}
+
+const pushHost = (endpoint: string): string => { try { return new URL(endpoint).host } catch { return '?' } }
+
+/**
+ * CF-④ · VAPID `sub` 는 실제로 닿는 `mailto:` 나 `https:` 여야 한다(RFC 8292 §2.1).
+ *   Apple 은 `mailto:folderbot@local` 같은 .local·localhost 주소를 `403 BadJwtToken` 으로 거절한다 — 종전 값이 그것이었다.
+ */
+export function vapidSubject(env: string | undefined = process.env.FOLDERBOT_VAPID_SUBJECT): string {
+  return env && validVapidSubject(env) ? env : 'https://folderbot.dev'
+}
+export function validVapidSubject(s: string): boolean {
+  const m = /^mailto:[^@\s]+@([^\s>]+)$/.exec(s) ?? /^https:\/\/([^/:\s]+)/.exec(s)
+  if (!m) return false
+  const host = m[1].toLowerCase()
+  return host.includes('.') && !/(^|\.)(local|localhost|internal|lan|home)$/.test(host) && host !== 'localhost'
 }

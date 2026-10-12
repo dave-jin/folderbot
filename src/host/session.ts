@@ -1,4 +1,4 @@
-import { withClient, type ClientCtx } from '../core/clientCtx'
+import { CLI_SLASH_FALLBACK, isCliSlash, withClient, type ClientCtx } from '../core/clientCtx'
 import { providerBin } from './providers'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
@@ -21,6 +21,7 @@ import { channelSpawn, channelVerdict, type Trust } from '../core/bridges'
 import { compactReason, rotateReason } from '../core/compact'
 import { extraComms, forkHandover, migrateArea, takeoverMode } from '../core/autoArea'
 import { atomicWrite, dataDir, ensureDir } from './paths'
+import { slashCommands } from './slash'
 
 /**
  * 워커 env — 중첩 마커를 지우고, **필요할 때만** 장기 토큰을 넣는다.
@@ -329,6 +330,12 @@ export class SessionManager extends EventEmitter {
   private seen = new Map<string, Map<string, string | null>>()
   private turnAt = new Map<string, number>()
   private dir = ensureDir(join(dataDir(), 'sessions'))
+  /**
+   * CF-2 · 마지막으로 받은 CLI 명령 목록 — 실 CLI 는 init 을 **첫 사람 말 뒤에야** 낸다. 그래서 새 채팅·잠든 세션은
+   *   목록이 비어 /goal·/loop 이 메뉴에 안 떴다. 호스트 전체에서 마지막 init 을 디스크에 두고 그걸로 메운다.
+   */
+  private slashFile = join(dataDir(), 'cli-slash.json')
+  private lastSlash: string[] = (() => { try { const v = JSON.parse(readFileSync(join(dataDir(), 'cli-slash.json'), 'utf8')); return Array.isArray(v) ? v.map(String) : [] } catch { return [] } })()
   idleTtlMs = 60 * 60 * 1000
   /**
    * 동시에 살려 두는 워커 상한 (BE · 2026-09-27 Dave) — 넘치면 **가장 오래 안 쓴** 쉬는 워커부터 재운다(LRU 절전).
@@ -375,7 +382,7 @@ export class SessionManager extends EventEmitter {
   }
   info(r: SessionRec): SessionInfo {
     const w = this.workers.get(r.id)
-    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, inflight: r.inflight, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, ...(r.comm ? { comm: true } : {}), ...(r.channel ? { channel: r.channel } : {}), ...(r.delegatedFrom && !r.comm ? { delegated: true } : {}), ...(r.adopted ? { adopted: true } : {}), ...(r.exChannel ? { exChannel: true } : {}), ...(r.exComm ? { exComm: true } : {}), ...(r.queue?.length ? { queue: r.queue } : {}), activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending }
+    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, inflight: r.inflight, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, ...(r.comm ? { comm: true } : {}), ...(r.channel ? { channel: r.channel } : {}), ...(r.delegatedFrom && !r.comm ? { delegated: true } : {}), ...(r.adopted ? { adopted: true } : {}), ...(r.exChannel ? { exChannel: true } : {}), ...(r.exComm ? { exComm: true } : {}), ...(r.queue?.length ? { queue: r.queue } : {}), activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending, ...(r.slash?.length ? { slashN: r.slash.length } : {}) }
   }
   get(id: string): SessionRec | undefined { return this.recs.get(id) }
   /** 볼트 전체의 세션 기록 — 「지난 대화 찾기」 가 훑는다(읽기만) */
@@ -577,6 +584,15 @@ export class SessionManager extends EventEmitter {
     return { n, oldestMs }
   }
   slashOf(id: string): string[] { return this.recs.get(id)?.slash ?? [] }
+  /** CF-2 · 메뉴가 쓸 CLI 목록 — 그 세션의 init 이 있으면 그것, 없으면 호스트가 마지막으로 본 목록 */
+  slashList(id?: string): string[] { const own = id ? this.recs.get(id)?.slash : undefined; return own?.length ? own : this.lastSlash }
+  /** CF-2 · 이 세션에 보낸 글이 CLI 슬래시 명령인지 가를 때 쓰는 이름들 */
+  private knownSlash(r: SessionRec, bot: Bot): string[] {
+    if (r.slash?.length) return r.slash
+    // init 전 — 호스트가 본 마지막 목록 + 이 폴더·사용자 명령 파일 (폴더마다 스킬이 다르다)
+    let files: string[] = []; try { files = slashCommands(bot.abs, homedir()).map((c) => c.name) } catch { /* 못 읽으면 목록만 */ }
+    return [...(this.lastSlash.length ? this.lastSlash : CLI_SLASH_FALLBACK), ...files]
+  }
 
   private persist(r: SessionRec): void {
     const slim = { ...r, items: r.items.slice(-1500) }
@@ -891,7 +907,14 @@ export class SessionManager extends EventEmitter {
     if (line.session_id && r.cliSessionId !== line.session_id) { r.cliSessionId = line.session_id; this.persist(r) }
     if (line.type === 'system' && (line.subtype === 'task_started' || line.subtype === 'task_notification' || line.subtype === 'task_updated')) { this.onTask(r, line); return }
     this.noteModel(r, line)
-    if (line.type === 'system' && line.subtype === 'init') { if (Array.isArray(line.slash_commands)) { r.slash = line.slash_commands.map(String); this.emit('sessions', r.botId) } return }
+    if (line.type === 'system' && line.subtype === 'init') {
+      if (Array.isArray(line.slash_commands)) {
+        r.slash = line.slash_commands.map(String)
+        if (r.slash.join('\n') !== this.lastSlash.join('\n')) { this.lastSlash = r.slash; try { atomicWrite(this.slashFile, JSON.stringify(r.slash)) } catch { /* 다음 init 에 다시 */ } }
+        this.persist(r); this.emit('sessions', r.botId)
+      }
+      return
+    }
     const parent = line.parent_tool_use_id ?? null
     if (line.type === 'stream_event') {
       const ev = line.event as { type?: string; delta?: { type?: string; text?: string; thinking?: string }; index?: number } | undefined
@@ -993,7 +1016,9 @@ export class SessionManager extends EventEmitter {
   send(r: SessionRec, bot: Bot, text: string, client?: ClientCtx, origin: TurnFrom = 'human'): void {
     r.turnFrom = origin
     // BV-2 · 갈아탄 채널의 첫 말 앞에 인수인계를 한 번 붙인다
-    if (r.handover) { text = `[이전 채널 인수인계]\n${r.handover}\n\n---\n\n${text}`; r.handover = undefined }
+    // 🔴 CF-2 · 슬래시 명령은 맨 앞이 `/` 여야 CLI 가 명령으로 받는다 — 인수인계·기기 블록은 다음 일반 말로 미룬다
+    const slash = r.vendor !== 'codex' && isCliSlash(text, this.knownSlash(r, bot))
+    if (r.handover && !slash) { text = `[이전 채널 인수인계]\n${r.handover}\n\n---\n\n${text}`; r.handover = undefined }
     this.autoTitle(r, text)
     if (client) r.lastClient = client
     const from = client ? { device: client.device, main: client.origin === 'host', tier: client.tier } : undefined
@@ -1027,8 +1052,8 @@ export class SessionManager extends EventEmitter {
     this.push(r, { id: itemId('u'), t: Date.now(), kind: 'user', text, ...(from ? { from } : {}) })
     // J-1 · 워커에게만 기기 블록을 앞세운다 — 채팅에는 사람의 글 그대로
     // 🔴 남아 있던 미뤄진 질문은 이 글로 닫는다 — 안 닫으면 같은 질문 카드가 둘 선다(ClaudeWorker.sendClosingAsks)
-    const pre = r.prelude; r.prelude = undefined
-    const wtext = withClient(pre ? `${pre}\n\n---\n\n${text}` : text, client)
+    const pre = slash ? undefined : r.prelude; if (!slash) r.prelude = undefined
+    const wtext = slash ? text.trim() : withClient(pre ? `${pre}\n\n---\n\n${text}` : text, client)
     const closed = w instanceof ClaudeWorker ? w.sendClosingAsks(wtext) : (w.send(wtext), [])
     for (const id of closed) this.closeTool(r, id, '채팅으로 답했어요', true)
     if (closed.length) this.emit('sessions', r.botId)

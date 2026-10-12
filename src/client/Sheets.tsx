@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { createRoot, type Root } from 'react-dom/client'
 import type { Bot, NotifyEvent, RoutineDef } from '../core/types'
 import { notePlain } from '../core/mdPlain'
-import { api, setToken, subscribePush } from './api'
+import { api, pushWhyText, setToken, subscribePush, type PushWhy } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { hitRange, rank } from '../core/search'
 import { WHEN_EXAMPLES, describeCron, formatNext, nextRunOf, parseWhen } from '../core/when'
@@ -422,7 +422,8 @@ export function Pairing({ onDone }: { onDone: () => void }) {
 export function NotifyCenter({ onClose, onJump }: { onClose: () => void; onJump: (n: NotifyEvent) => void }) {
   const { s, refresh } = useStore()
   const [only, setOnly] = useState(false)
-  const [pushOn, setPushOn] = useState<boolean | null>(null)
+  const [pushOn, setPushOn] = useState<PushWhy | null>(null)
+  const [testMsg, setTestMsg] = useState('')
   const list = s.notifications.filter((n) => !only || n.kind === 'awaiting')
   const botOf = (id: string) => s.bots.find((b) => b.id === id)
   const readAll = async () => { await api('/read-all', { body: {} }); await refresh() }   // BL · 알림 + 모든 봇의 세션
@@ -436,7 +437,7 @@ export function NotifyCenter({ onClose, onJump }: { onClose: () => void; onJump:
       <div className="modal-b">
         {list.length ? list.map((n) => { const b = botOf(n.botId); return <button key={n.id} className={`nrow ${n.read ? '' : 'unread'}`} onClick={() => onJump(n)}><FolderBot color={b?.color ?? '#e08850'} size={28} mood={n.kind === 'awaiting' ? 'wait' : n.kind === 'done' ? 'done' : n.kind === 'error' ? 'error' : 'idle'} /><div className="t"><div className="l1"><b>{n.title}</b><time>{fmtTime(n.t)}</time></div><div className="l2">{notePlain(n)}</div></div></button> }) : <div className="empty">알림이 없어요</div>}
       </div>
-      <div className="modal-f"><button className="btn" onClick={readAll}>모두 읽음</button><span className="sp" /><button className="btn" onClick={enablePush}>{pushOn === true ? '폰 푸시 켜짐' : pushOn === false ? '푸시 실패 (HTTPS·홈 화면 설치 필요)' : '이 기기에 푸시 켜기'}</button><button className="btn" onClick={() => api('/push/test', { body: {} })}>푸시 테스트</button></div>
+      <div className="modal-f"><button className="btn" onClick={readAll}>모두 읽음</button><span className="sp" /><button className="btn" onClick={enablePush}>{pushOn ? pushWhyText[pushOn] : '이 기기에 푸시 켜기'}</button><button className="btn" onClick={async () => { try { const r = await api<{ subs: number; mine: boolean }>('/push/test', { body: {} }); setTestMsg(r.subs ? (r.mine ? '보냈어요' : `보냈어요 · 이 기기는 구독 없음(${r.subs}대)`) : '구독한 기기가 없어요') } catch (e) { setTestMsg((e as Error).message) } }}>{testMsg || '푸시 테스트'}</button></div>
     </div>
   </>
 }
@@ -447,13 +448,15 @@ export function NotifyCenter({ onClose, onJump }: { onClose: () => void; onJump:
  * 🔴 **채팅에서 온 것도 저장은 사람이 누른다** (2026-09-13 Dave: «채팅에서 바로 루틴 생성»).
  *    글에서 읽어낸 주기는 어디까지나 추측이라, 폼을 채워 주는 데서 멈춘다 — 틀려도 손해가 없다.
  */
-export function RoutineSheet({ bot, onClose, draft }: { bot: Bot; onClose: () => void; draft?: RoutineDef }) {
+export function RoutineSheet({ bot, onClose, draft, pick }: { bot: Bot; onClose: () => void; draft?: RoutineDef; pick?: string }) {
   const { refresh } = useStore()
+  /** CF-4 · 폰에서는 목록을 위·편집 칸을 아래로 쌓는다 — 옆으로 두면 374px 시트에 편집 칸이 92px 만 남았다(2026-10-12 실측) */
+  const phone = useIsPhone()
   /** 화면은 **사람 말**(`when`)을 들고 있고, cron 은 저장할 때 한 번 만들어진다 — 사람에게 cron 을 보여 주지 않는다 */
   type Row = RoutineDef & { when: string }
   const toRow = (r: RoutineDef): Row => ({ ...r, when: describeCron(r.cron) })
   const [list, setList] = useState<Row[]>(draft ? [...bot.routines.map(toRow), toRow(draft)] : bot.routines.map(toRow))
-  const [i, setI] = useState(draft ? bot.routines.length : 0)
+  const [i, setI] = useState(draft ? bot.routines.length : Math.max(0, pick ? bot.routines.findIndex((r) => r.name === pick) : 0))
   const [busy, setBusy] = useState(false); const [ran, setRan] = useState('')
   const cur = list[i]
   const upd = (p: Partial<Row>) => setList(list.map((r, k) => (k === i ? { ...r, ...p } : r)))
@@ -485,8 +488,8 @@ export function RoutineSheet({ bot, onClose, draft }: { bot: Bot; onClose: () =>
     <div className="backdrop" onClick={onClose} />
     <div className="sheet" style={{ ['--sheet-w' as string]: '52%' }}>
       <div className="sheet-h"><span className="tab"><Icon n="clock" size={13} color="var(--accent)" />루틴 · {bot.name}</span><span className="acts"><button className="btn" onClick={onClose}>취소</button><button className="btn primary" disabled={busy || bad > 0} title={bad ? '주기를 못 읽는 줄이 있어요' : ''} onClick={saveClose}>저장</button></span></div>
-      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        <div className="rtlist" style={{ width: 240, borderRight: '1px solid var(--border)', padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 2, overflow: 'auto' }}>
+      <div style={{ display: 'flex', flexDirection: phone ? 'column' : 'row', flex: 1, minHeight: 0 }}>
+        <div className="rtlist" style={{ ...(phone ? { maxHeight: '34vh', flexShrink: 0, borderBottom: '1px solid var(--border)' } : { width: 240, borderRight: '1px solid var(--border)' }), padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 2, overflow: 'auto' }}>
           {list.map((r, k) => {
             const v = read(r.when); const next = v.ok ? nextRunOf(v.cron) : null
             const off = r.enabled === false

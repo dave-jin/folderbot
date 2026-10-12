@@ -157,6 +157,8 @@ export interface SessionInfo {
   permissionMode?: PermissionMode
   /** 컨텍스트 사용량 — 마지막 턴의 입력 토큰(캐시 포함) / 창 크기 */
   ctx?: { used: number; window: number }
+  /** CF-2 · CLI init 이 알려 준 슬래시 명령 수 — 바뀌면 화면이 `/` 메뉴를 다시 받는다 */
+  slashN?: number
   /** 모델·노력·모드를 바꿨는데 턴이 도는 중이라 다음 턴부터 적용 */
   restartPending?: boolean
 }

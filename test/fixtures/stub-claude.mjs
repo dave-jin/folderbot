@@ -26,7 +26,7 @@ let model = at('--model') ?? 'stub'
 const say = (o) => process.stdout.write(JSON.stringify({ session_id: sessionId, ...o }) + '\n')
 // 트랜스크립트 파일을 흉내 — --resume 판정이 이걸 본다
 try { const dir = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-')); mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, `${sessionId}.jsonl`), JSON.stringify({ cwd: process.cwd() }) + '\n') } catch {}
-say({ type: 'system', subtype: 'init', model, tools: [], mcp_servers: [], slash_commands: ['compact', 'context', 'review'] })
+say({ type: 'system', subtype: 'init', model, tools: [], mcp_servers: [], slash_commands: ['compact', 'context', 'review', 'goal', 'loop'] })
 const rl = createInterface({ input: process.stdin })
 let pendingReq = null, pendingAsk = null, pendingDeferred = null
 rl.on('line', (raw) => {
@@ -147,8 +147,24 @@ rl.on('line', (raw) => {
     }, 50)
     return
   }
+  /**
+   * CF-2 · 실 CLI 는 글 **맨 앞이 `/`** 일 때만 슬래시 명령으로 받는다(2.1.288 실측 — 기기 블록이 붙은 `/context` 는 모델이 받아 Bash 를 돌렸다).
+   *   그래서 판정은 블록을 뗀 `text` 가 아니라 **받은 글 그대로(`rawText`)** 로 한다.
+   */
+  const sl = /^\/([a-z][\w:-]*)/i.exec(rawText.trimStart())
+  if (sl && (sl[1] === 'goal' || sl[1] === 'loop')) {
+    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: `슬래시 받음: ${sl[1]}` }], stop_reason: 'end_turn' } })
+    say({ type: 'result', subtype: 'success', duration_ms: 10, total_cost_usd: 0 })
+    return
+  }
+  const sl2 = /^\/(goal|loop|compact)\b/.exec(text.trimStart())
+  if (sl2 && !sl) {
+    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: `슬래시가 글로 들어옴: ${sl2[1]}` }], stop_reason: 'end_turn' } })
+    say({ type: 'result', subtype: 'success', duration_ms: 10, total_cost_usd: 0.001 })
+    return
+  }
   // 자동 압축(2026-10-02) — 실 CLI 처럼 경계 줄과 결과를 낸다. 잠깐 걸려야 «압축 중에 온 말은 큐» 를 잴 수 있다
-  if (text.trim() === '/compact') {
+  if (rawText.trim() === '/compact') {
     setTimeout(() => {
       say({ type: 'system', subtype: 'compact_boundary', compact_metadata: { trigger: 'manual', pre_tokens: 150000 } })
       say({ type: 'result', subtype: 'success', duration_ms: 400, total_cost_usd: 0.001 })
