@@ -220,13 +220,21 @@ const NEW_MARK = '/\u0000new'
  * 새 폴더 만들기 줄은 숨기고, 제목·단추 글자만 바뀐다. 칸(섹션)은 여전히 고를 수 없다.
  */
 export interface PickMode { title: string; sub: string; go: string; onPick: (rel: string) => Promise<void> | void }
+/** 폴더 찾기 색인 — 창을 닫아도 남겨 두고 다음에 열 때 바로 쓴다(새 것은 뒤에서 받는다) */
+let dirIndex: PNode[] | null = null
+let dirIndexInflight: Promise<PNode[] | null> | null = null
+function loadDirIndex(): Promise<PNode[] | null> {
+  dirIndexInflight ??= api<PNode[]>('/bots/orch/dirs?depth=6').then((l) => (dirIndex = l)).catch(() => dirIndex).finally(() => { dirIndexInflight = null })
+  return dirIndexInflight
+}
+
 export function FolderPicker({ onClose, onStarted, pick }: { onClose: () => void; onStarted: (bot: Bot) => void; pick?: PickMode }) {
   const { s, refresh } = useStore()
   const activeParents = useMemo(() => (s.rules?.roles.active ?? []).map((g) => g.replace(/\/\*$/, '')), [s.rules])
   const [dirs, setDirs] = useState<Record<string, PNode[]>>({})
   const [exp, setExp] = useState<Set<string>>(() => new Set(['', ...activeParents]))
   const [sel, setSel] = useState<string | null>(null)
-  const [q, setQ] = useState(''); const [flat, setFlat] = useState<PNode[] | null>(null)
+  const [q, setQ] = useState(''); const [flat, setFlat] = useState<PNode[] | null>(dirIndex)
   const [filter, setFilter] = useState<'all' | 'active' | 'free'>('all')
   const phone = useIsPhone(); const [cur, setCur] = useState('') // 폰: 지금 들어와 있는 폴더(«» 는 루트)
   const [newIn, setNewIn] = useState<string | null>(null); const [newName, setNewName] = useState('')
@@ -236,8 +244,14 @@ export function FolderPicker({ onClose, onStarted, pick }: { onClose: () => void
   useEffect(() => { for (const d of exp) if (!dirs[d]) void load(d) }, [exp])
   // 🔴 색인은 «폴더만» 받는다 — 종전의 files?depth=4 는 파일까지 세며 400개에서 끊겨
   //    볼트 뒤쪽 폴더가 검색에 아예 안 잡혔다 (2026-09-13 Dave 보고)
-  useEffect(() => { if (q && !flat) void api<PNode[]>('/bots/orch/dirs?depth=6').then(setFlat).catch(() => setFlat([])) }, [q])
+  // 🔴 색인은 «창을 열자마자» 받는다 (2026-10-12 Dave: *«한국어 검색이 바로바로 안될 때가 있어. 특히 처음에»*).
+  //    종전엔 첫 글자를 친 뒤에야 받기 시작해서, 원격에서 600KB 가 오는 동안 «찾는 폴더가 없어요» 가 떴다.
+  //    지난번 색인은 모듈에 남겨 다음에 열 때 바로 쓰고, 새 색인은 뒤에서 받아 갈아 끼운다. 실패해도 다음에 다시 받는다.
+  const [indexing, setIndexing] = useState(true)
+  useEffect(() => { let live = true; void loadDirIndex().then((l) => { if (live && l) setFlat(l) }).finally(() => { if (live) setIndexing(false) }); return () => { live = false } }, [])
   const byRel = useMemo(() => { const m = new Map<string, PNode>(); for (const l of Object.values(dirs)) for (const n of l) m.set(n.rel, n); for (const n of flat ?? []) if (!m.has(n.rel)) m.set(n.rel, n); return m }, [dirs, flat])
+  // 찾을 대상 — 색인이 아직이면 이미 펼쳐 받은 트리라도 먼저 찾는다
+  const pool = useMemo(() => flat ?? [...byRel.values()], [flat, byRel])
   const botOfRel = (rel: string) => s.bots.find((b) => b.rel === rel)
   const topRole = (rel: string) => byRel.get(rel.split('/')[0])?.role
   /**
@@ -251,7 +265,7 @@ export function FolderPicker({ onClose, onStarted, pick }: { onClose: () => void
   const rows = useMemo(() => {
     const out: { n: PNode; depth: number; kind: 'dir' | 'new' }[] = []
     // 찾는 중 — 평평하게. 판정은 core/search 한 곳에서(NFC 맞춤 · 가운데 일치 · 초성)
-    if (q.trim()) return rank(q, flat ?? [], (n) => ({ name: n.name, path: n.rel }), 200).map((n) => ({ n, depth: 0, kind: 'dir' as const }))
+    if (q.trim()) return rank(q, pool, (n) => ({ name: n.name, path: n.rel }), 200).map((n) => ({ n, depth: 0, kind: 'dir' as const }))
     const walk = (rel: string, depth: number) => {
       const list = dirs[rel] ?? []
       if (rel && exp.has(rel) && !pick) out.push({ n: { name: '새 폴더 만들기', rel: `${rel}${NEW_MARK}`, dir: true, mtime: 0 }, depth, kind: 'new' })
@@ -264,7 +278,7 @@ export function FolderPicker({ onClose, onStarted, pick }: { onClose: () => void
     }
     walk('', 0)
     return out
-  }, [dirs, exp, q, flat, filter, s.bots])
+  }, [dirs, exp, q, pool, filter, s.bots])
   const toggle = (rel: string) => setExp((e) => { const n = new Set(e); if (n.has(rel)) n.delete(rel); else n.add(rel); return n })
   const selNode = sel ? byRel.get(sel) : undefined
   const selBot = sel ? botOfRel(sel) : undefined
@@ -308,7 +322,7 @@ export function FolderPicker({ onClose, onStarted, pick }: { onClose: () => void
   if (phone) {
     const here = cur ? byRel.get(cur) : undefined
     const hereBot = cur ? botOfRel(cur) : undefined
-    const kids = q.trim() ? rank(q, flat ?? [], (n2) => ({ name: n2.name, path: n2.rel }), 200) : (dirs[cur] ?? [])
+    const kids = q.trim() ? rank(q, pool, (n2) => ({ name: n2.name, path: n2.rel }), 200) : (dirs[cur] ?? [])
     const label = (n2: PNode) => (n2.botId || botOfRel(n2.rel) ? '봇 있음 — 열기' : n2.harness ? '하네스 있음' : '시작하면 하네스를 깔아요')
     const tone = (n2: PNode) => (n2.botId || botOfRel(n2.rel) ? 'var(--run)' : n2.harness ? 'var(--done)' : 'var(--t3)')
     const mark = (n2: PNode) => (n2.botId || botOfRel(n2.rel) ? 'folder' : n2.harness ? 'check' : 'plus')
@@ -330,7 +344,7 @@ export function FolderPicker({ onClose, onStarted, pick }: { onClose: () => void
             <span className="n"><span className="nm">{q.trim() ? <Hit s={n2.name} q={q} /> : <Mid s={n2.name} tail={10} />}</span><span className="dsub">{q.trim() && n2.rel.includes('/') ? `${n2.rel.slice(0, n2.rel.lastIndexOf('/'))} · ` : ''}{label(n2)}</span></span>
             <Icon n="chev" size={11} />
           </button>)}
-          {!kids.length ? <div className="empty">{q.trim() ? '찾는 폴더가 없어요' : cur ? '하위 폴더가 없어요 — 여기서 시작할 수 있어요' : '읽는 중…'}</div> : null}
+          {!kids.length ? <div className="empty">{q.trim() ? (indexing && !flat ? '폴더 목록을 읽는 중…' : '찾는 폴더가 없어요') : cur ? '하위 폴더가 없어요 — 여기서 시작할 수 있어요' : '읽는 중…'}</div> : null}
           {!q && cur && !pick ? (newIn === cur ? <div className="newbox"><input className="nm" autoFocus placeholder="새 폴더 이름" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void create(); if (e.key === 'Escape') setNewIn(null) }} /><div className="pv"><span className="mono">{cur}/{preview(cur, newName || '이름')}</span></div></div>
             : <button className="ph-row new" onClick={() => { setNewIn(cur); setNewName('') }}><span className="ic"><Icon n="fplus" size={15} /></span><span className="n"><span className="nm">여기에 새 폴더</span></span></button>) : null}
         </div>
@@ -362,7 +376,7 @@ export function FolderPicker({ onClose, onStarted, pick }: { onClose: () => void
               <time style={{ visibility: 'visible', width: 52, textAlign: 'right' }}>{fmtTime(n.mtime)}</time>
             </span>
           </button>)}
-        {!rows.length ? <div className="empty">{q ? '찾는 폴더가 없어요' : '읽는 중…'}</div> : null}
+        {!rows.length ? <div className="empty">{q.trim() && !(indexing && !flat) ? '찾는 폴더가 없어요' : '읽는 중…'}</div> : q.trim() && indexing && !flat ? <div className="empty">폴더 목록을 더 읽는 중…</div> : null}
       </div>
       <div className="modal-f" style={{ flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>{pick ? null : <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--t2)', fontSize: 12, flex: 'none' }}><FolderBot color="#e08850" size={20} />또는 오케스트레이터에게 "X 폴더에서 시작해"</span>}<span className="crumb">{crumbs.length ? <span>{crumbs.slice(0, -1).map((c) => `${c} / `).join('')}<b>{crumbs[crumbs.length - 1]}</b></span> : <span style={{ color: 'var(--t3)' }}>폴더를 고르세요</span>}</span>{selIsSection && !err ? <span style={{ color: 'var(--t3)', fontSize: 12, flex: 'none' }}>칸이에요 — 그 안의 폴더를 고르세요</span> : null}{err ? <span className="err" style={{ color: 'var(--err)', fontSize: 12, flex: 'none' }}>{err}</span> : null}<button className="btn" onClick={onClose} style={{ flex: 'none' }}>취소</button><button className="btn primary" style={{ flex: 'none' }} disabled={busy || !sel || selIsSection} title={selIsSection ? '칸에는 봇을 만들지 않아요 — 그 안의 폴더를 고르세요' : ''} onClick={() => (pick ? (sel ? void runPick(sel) : undefined) : selBot ? onStarted(selBot) : sel ? void start(sel) : undefined)}>{pick ? pick.go : selBot ? '봇 열기' : selNode && topRole(sel!) === 'archive' ? '보관 폴더지만 시작' : '이 폴더에서 시작'}</button></div>
     </div>

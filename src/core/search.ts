@@ -26,6 +26,39 @@ export function chosung(s: string): string {
 /** 질의가 초성으로만(혹은 초성+영숫자로) 이뤄졌나 — 그럴 때만 초성 찾기를 켠다 */
 export const isChosungQuery = (q: string): boolean => /[ㄱ-ㅎ]/.test(q) && !/[가-힣]/.test(q)
 
+/**
+ * 자모 줄 — «디캠» → «ㄷㅣㅋㅐㅁ». 겹받침·겹모음은 낱자로 푼다(«닭» → «ㄷㅏㄹㄱ» · «과» → «ㄱㅗㅏ»).
+ * 🔴 왜 필요한가 (2026-10-12 Dave: *«한국어 검색이 바로바로 안될 때가 있어»*) — 입력기는 마지막 글자를
+ * **조합 중인 채로** 보낸다. «디캠프» 를 치는 동안 질의는 «디ㅋ» → «디캐» → «디캠ㅍ» 를 지나는데,
+ * 이 중간 상태는 글자 단위 `includes` 로는 «디캠프» 에 안 걸려 목록이 깜빡 비었다.
+ * 자모로 풀면 «ㄷㅣㅋㅐ» 는 «ㄷㅣㅋㅐㅁㅍㅡ» 의 앞부분이라 계속 걸린다.
+ * 받침이 다음 글자로 넘어가는 경우(«달» 다음 «ㄱ» → «닭» → «달가»)도 자모 줄에서는 이어진다.
+ */
+const JUNG = ['ㅏ', 'ㅐ', 'ㅑ', 'ㅒ', 'ㅓ', 'ㅔ', 'ㅕ', 'ㅖ', 'ㅗ', 'ㅗㅏ', 'ㅗㅐ', 'ㅗㅣ', 'ㅛ', 'ㅜ', 'ㅜㅓ', 'ㅜㅔ', 'ㅜㅣ', 'ㅠ', 'ㅡ', 'ㅡㅣ', 'ㅣ']
+const JONG = ['', 'ㄱ', 'ㄲ', 'ㄱㅅ', 'ㄴ', 'ㄴㅈ', 'ㄴㅎ', 'ㄷ', 'ㄹ', 'ㄹㄱ', 'ㄹㅁ', 'ㄹㅂ', 'ㄹㅅ', 'ㄹㅌ', 'ㄹㅍ', 'ㄹㅎ', 'ㅁ', 'ㅂ', 'ㅂㅅ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ']
+/** 입력기가 낱자로 보내는 겹자모(호환 자모) — 조합 중 «ㄺ» · «ㅘ» 같은 것 */
+const COMPAT: Record<string, string> = { ㄳ: 'ㄱㅅ', ㄵ: 'ㄴㅈ', ㄶ: 'ㄴㅎ', ㄺ: 'ㄹㄱ', ㄻ: 'ㄹㅁ', ㄼ: 'ㄹㅂ', ㄽ: 'ㄹㅅ', ㄾ: 'ㄹㅌ', ㄿ: 'ㄹㅍ', ㅀ: 'ㄹㅎ', ㅄ: 'ㅂㅅ', ㅘ: 'ㅗㅏ', ㅙ: 'ㅗㅐ', ㅚ: 'ㅗㅣ', ㅝ: 'ㅜㅓ', ㅞ: 'ㅜㅔ', ㅟ: 'ㅜㅣ', ㅢ: 'ㅡㅣ' }
+/** 자모 줄과 «글자가 시작하는 자리» — 찾은 자리가 글자 한가운데(모음·받침)면 걸린 것으로 치지 않는다 */
+function jamoOf(s: string): { j: string; starts: Set<number> } {
+  let j = ''; const starts = new Set<number>()
+  for (const ch of s.normalize('NFC').toLowerCase()) {
+    const c = ch.codePointAt(0) ?? 0
+    starts.add(j.length)
+    if (c >= 0xac00 && c <= 0xd7a3) { const k = c - 0xac00; j += CHO[Math.floor(k / 588)] + JUNG[Math.floor((k % 588) / 28)] + JONG[k % 28] }
+    else j += COMPAT[ch] ?? ch
+  }
+  return { j, starts }
+}
+export const jamo = (s: string): string => jamoOf(s).j
+/** 질의 자모 줄이 이름 자모 줄의 «글자 첫머리» 에서 시작해 들어맞나 */
+function jamoHit(q: string, t: string): boolean {
+  const qj = jamo(q); if (!qj) return false
+  const { j, starts } = jamoOf(t)
+  for (let i = j.indexOf(qj); i >= 0; i = j.indexOf(qj, i + 1)) if (starts.has(i)) return true
+  return false
+}
+const HANGUL = /[ㄱ-ㅣ가-힣]/
+
 /** 띄엄띄엄 들어맞나 — «ai gle» 처럼 순서만 맞으면 걸린다(가장 낮은 점수) */
 function subseq(q: string, t: string): boolean {
   let i = 0
@@ -35,7 +68,7 @@ function subseq(q: string, t: string): boolean {
 
 /**
  * 점수 — 0 이면 걸리지 않음. 클수록 위로.
- * 이름 전체일치 100 · 이름 앞머리 80 · **이름 가운데 60** · 경로 가운데 40 · 초성 30 · 띄엄띄엄 10
+ * 이름 전체일치 100 · 이름 앞머리 80 · **이름 가운데 60** · 조합 중 한글(자모) 55/35 · 경로 가운데 40 · 초성 30 · 띄엄띄엄 10
  * (가운데 일치가 60 인 게 이번 수정의 핵심 — 앞머리만 되던 것을 어디든 되게 한다)
  */
 export function scoreName(q: string, name: string, path = name): number {
@@ -44,7 +77,11 @@ export function scoreName(q: string, name: string, path = name): number {
   if (nn === nq) return 100
   if (nn.startsWith(nq)) return 80
   if (nn.includes(nq)) return 60
+  // 조합 중인 한글 — 마지막 글자가 덜 만들어졌어도 걸리게(이름 55 · 경로 35). 가운데 일치(60)보다 아래
+  const ko = HANGUL.test(nq) && !isChosungQuery(nq)
+  if (ko && jamoHit(nq, nn)) return 55
   if (np.includes(nq)) return 40
+  if (ko && jamoHit(nq, np)) return 35
   if (isChosungQuery(nq)) { const cn = chosung(name), cp = chosung(path); if (cn.includes(nq)) return 30; if (cp.includes(nq)) return 25 }
   if (subseq(nq, nn)) return 10
   return 0

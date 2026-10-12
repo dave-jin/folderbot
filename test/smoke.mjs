@@ -2426,6 +2426,40 @@ try {
         if (!cho.includes('5. Archive/2025-04_트레바리-북클럽')) fail('ui picker 초성 검색: ' + cho.join(','))
         await pg.fill('.pk .search input', '트레바리'); await wait(500); await pg.screenshot({ path: 'test/tmp/desktop-picker-search.png' })
         await pg.fill('.pk .search input', ''); await wait(300); if (await pg.$('.pk')) { await pg.click('.pk .modal-h .ib'); await wait(300) }
+        /**
+         * 🔴 CD · 첫 검색이 비지 않는다 · 조합 중인 한글도 걸린다 (2026-10-12 Dave: *«한국어 검색이 바로바로 안될 때가 있어. 특히 처음에»*)
+         *    새 창(색인 없음)에서 폴더 색인 응답을 2.5초 붙잡는다 — 그동안 «찾는 폴더가 없어요» 라고 단정하면 안 되고,
+         *    색인은 글자를 치기 «전에» 이미 요청돼 있어야 하며, 풀린 뒤에는 «트레ㅂ»·«트렙» 같은 조합 중 상태도 걸려야 한다.
+         */
+        {
+          const kp = await br.newPage({ viewport: vp, deviceScaleFactor: 1 })
+          await kp.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
+          let askedAt = 0, release; const held = new Promise((r) => { release = r })
+          await kp.route('**/api/bots/orch/dirs*', async (rt) => { askedAt ||= Date.now(); await held; await rt.continue() })
+          await kp.goto(base + `/#bot=${bot.id}`); await kp.waitForSelector('.col.side.left .nav:has-text("폴더 선택")', { timeout: 8000 })
+          await kp.click('.col.side.left .nav:has-text("폴더 선택")'); await kp.waitForSelector('.pk .search input', { timeout: 5000 }); await wait(300)
+          const typedAt = Date.now()
+          await kp.fill('.pk .search input', '트레바리'); await wait(500)
+          if (!askedAt || askedAt > typedAt) fail('CD: 폴더 색인을 글자를 친 뒤에야 요청했다 (창을 열 때 받아야 한다)')
+          const during = (await kp.textContent('.pk .modal-b')) ?? ''
+          if (/찾는 폴더가 없어요/.test(during)) fail('🔴 CD: 색인을 받는 중인데 «찾는 폴더가 없어요» 라고 했다')
+          if (!/읽는 중/.test(during)) fail('CD: 색인을 받는 중이라는 표시가 없다 · ' + during.slice(0, 80))
+          release(); await wait(900)
+          const rels = async () => kp.$$eval('.pk [data-rel]', (r) => r.map((x) => x.getAttribute('data-rel').normalize('NFC')))
+          if (!(await rels()).includes('5. Archive/2025-04_트레바리-북클럽')) fail('CD: 색인이 온 뒤에도 결과가 안 바뀐다')
+          for (const q of ['트레ㅂ', '트렙', '트레바']) {
+            await kp.fill('.pk .search input', q); await wait(250)
+            if (!(await rels()).includes('5. Archive/2025-04_트레바리-북클럽')) fail(`🔴 CD: 조합 중인 «${q}» 로 «트레바리» 가 안 걸린다`)
+          }
+          // 두 번째로 열 때는 기다리지 않는다 — 지난 색인을 바로 쓴다
+          await kp.click('.pk .modal-h .ib'); await wait(200)
+          await kp.route('**/api/bots/orch/dirs*', async (rt) => { await wait(3000); await rt.continue().catch(() => {}) })
+          await kp.click('.col.side.left .nav:has-text("폴더 선택")'); await kp.waitForSelector('.pk .search input', { timeout: 5000 })
+          await kp.fill('.pk .search input', '트레바리'); await wait(300)
+          if (!(await rels()).includes('5. Archive/2025-04_트레바리-북클럽')) fail('CD: 두 번째 열 때 지난 색인을 안 쓰고 다시 기다렸다')
+          await kp.close()
+          ok('CD 폴더 찾기 — 창을 열 때 색인 요청 · 받는 중엔 «없어요» 대신 «읽는 중» · 조합 중 한글(트레ㅂ·트렙) · 두 번째는 즉시')
+        }
         // 레일 폴더봇 크기 — 설정에서 고르고(작게·보통·크게), 마우스를 올리면 한 번 더 커진다
         // (2026-09-13 Dave: «너무 작게 보여서 귀여운 폴더 표정이 잘 안 보여» · «마우스 오버했을 때는 크게 보이면 더 좋아»)
         // 왼쪽 아래 — 두 줄이고, 아무것도 잘리지 않는다 (2026-09-13 Dave: «메뉴가 짤린다»)

@@ -5,6 +5,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, extname, normalize, relative, resolve, sep } from 'node:path'
 import { homedir } from 'node:os'
+import { gzipSync } from 'node:zlib'
 import { spawn } from 'node:child_process'
 /** zip 을 표준 출력으로 — 숨김 파일(.folderbot 등)은 뺀다 */
 function spawnZip(cwd: string, name: string) { return spawn('zip', ['-r', '-q', '-', name, '-x', '*/.*', '.*'], { cwd }) }
@@ -166,7 +167,12 @@ export class Gateway {
   private async route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://x')
     const p = url.pathname
-    const json = (code: number, body: unknown) => { res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)) }
+    // 큰 JSON 은 gzip — 폴더 찾기 색인이 600KB → 60KB (2026-10-12 · 원격에서 첫 검색이 비던 원인 하나). 받는 쪽이 gzip 을 말할 때만
+    const json = (code: number, body: unknown) => {
+      const text = JSON.stringify(body); const head: Record<string, string> = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
+      if (text.length > 32 * 1024 && /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''))) { res.writeHead(code, { ...head, 'content-encoding': 'gzip', vary: 'accept-encoding' }); res.end(gzipSync(text)); return }
+      res.writeHead(code, head); res.end(text)
+    }
     const body = async (): Promise<Record<string, unknown>> => { const chunks: Buffer[] = []; for await (const c of req) chunks.push(c as Buffer); const s = Buffer.concat(chunks).toString('utf8'); return s ? JSON.parse(s) : {} }
 
     if (p.startsWith('/mcp/')) {
