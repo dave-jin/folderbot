@@ -33,7 +33,7 @@ import { applyViewport, planViewport } from '../core/viewport'
 import { canStartSwipe, dragProgress, fromLeftEdge, lockOf, scrollableEats, stageOf, swipeVerdict } from '../core/drawer'
 import { curOf, dismiss, goTo, navInit, type Nav, type Page } from '../core/navstack'
 import { botUnread, openAnchor, shouldMarkRead, MOOD_RANK, recentDone, type BotMood } from '../core/unread'
-import { openSessionOf, takeoverMode } from '../core/autoArea'
+import { autoKind, openSessionOf, sessArea, takeoverMode } from '../core/autoArea'
 import { clampDockOffset, isDockDrag, readDockOffset } from '../core/dock'
 import { tabActive } from '../core/tabbar'
 import { SwipeRow } from './SwipeRow'
@@ -298,9 +298,11 @@ function Main() {
   if (hash.bot) lastBot.current = hash.bot
   const botId = hash.bot || lastBot.current || 'orch'
   const bot = s.bots.find((b) => b.id === botId) ?? s.bots[0]
-  // 🤝 소통 세션은 목록 맨 위에 고정한다 — 다만 «처음 열 세션» 은 사람의 세션이다 (2026-10-02)
-  //    CC · 그 «사람의 세션» 은 채팅 세션뿐이다 — 루틴·채널·봇끼리 세션으로 들어가지 않는다. 없으면 빈 채팅(첫 말이 «메인» 을 만든다)
-  const sessions = useMemo(() => { const l = s.sessionsByBot[bot?.id ?? ''] ?? []; return l.some((x) => x.comm) ? [...l.filter((x) => x.comm), ...l.filter((x) => !x.comm)] : l }, [s.sessionsByBot, bot?.id])
+  /**
+   * CC A안 · **채팅 세션이 먼저, 자동화 세션(소통·채널·루틴·봇끼리)은 뒤** (2026-10-12 Dave: *«내가 가급적 사용하지 않도록»* · 2026-10-19 A 확정).
+   * 패널은 자동화 세션을 목록 끝의 접힌 «자동화» 줄 아래에 둔다. 열 세션은 아래 `openSessionOf`(CM)가 정한다 — 채팅이 없을 때만 자동화로 간다.
+   */
+  const sessions = useMemo(() => { const l = s.sessionsByBot[bot?.id ?? ''] ?? []; return [...l.filter((x) => sessArea(x) === 'chat'), ...l.filter((x) => sessArea(x) === 'auto')] }, [s.sessionsByBot, bot?.id])
   /**
    * 🔴 **CM · 열 세션은 `openSessionOf` 하나가 정한다** — 채팅이 없으면 소통 세션을 연다(빈 창은 세션이 아예 없을 때만).
    * ⚠ 주소에 세션이 없을 때 고른 것은 **그 봇에 머무는 동안 붙잡아 둔다**(`picked`). 안 그러면 읽음이 적히는 순간(CO 의 «안 읽은 채팅 우선» 이 풀려)
@@ -844,7 +846,7 @@ function Main() {
   const startAt = async (rel: string, botId?: string) => { if (botId) { go(botId); return } if (!bot.orchestrator && !confirm(`상위 봇 ${bot.name} 와 폴더가 겹쳐요. 그래도 여기서 시작할까요?`)) return; const provider = await pickAgent(rel); if (!provider) return; try { const b = await api<Bot>('/bots/start', { body: { rel, provider } }); await refresh(); go(b.id); say(`${b.name} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
   const newFolderAt = async (parent: string) => { const name = await askName(`${parent || '볼트'} 안에 만들 폴더 이름`); if (!name?.trim()) return; const provider = await pickAgent(`${parent ? parent + '/' : ''}${name.trim()}`); if (!provider) return; try { const r = await api<{ rel: string; bot: Bot }>('/folders', { body: { section: parent, name: name.trim(), start: true, provider } }); await refresh(); go(r.bot.id); say(`${r.rel} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
   // BO · 누르는 순간 그 세션으로 간다 — 만들기는 뒤에서(`newSession.ts`). ⛔ 여기서 호스트 답이나 /state 를 기다리지 않는다
-  const newSession = async () => { startSession({ bot, name: `세션 ${sessions.length + 1}`, defaults: s.defaults, dispatch, go, prev: sessionId, say, after: () => void refreshModels() }) }
+  const newSession = async () => { startSession({ bot, name: `세션 ${sessions.filter((x) => sessArea(x) === 'chat').length + 1}`, defaults: s.defaults, dispatch, go, prev: sessionId, say, after: () => void refreshModels() }) }
   /**
    * 전역 단축키 — **맥 앱의 상식대로** (2026-09-13 Dave: «맥 기본 단축키로»).
    *
@@ -1101,7 +1103,9 @@ function botSummary(bot: Bot, sessions: SessionInfo[], notif: NotifyEvent[]) {
   const held = sessions.find((x) => (x.bg ?? 0) > 0)
   const top = wait ?? run ?? held ?? sessions[0]; const last = notif.find((n) => n.botId === bot.id)
   const state = top?.state ?? null
-  const unread = botUnread(sessions)   // S · 안 읽은 답이 하나라도 있나 (`core/unread`)
+  // S · 안 읽은 답이 하나라도 있나 (`core/unread`) — CC · 채팅 세션만 센다. 자동화 세션의 답이 사람을 부르지 않게
+  const chat = sessions.filter((x) => sessArea(x) === 'chat')
+  const unread = botUnread(chat)
   /**
    * 🔴 **레일·헤더·대기 줄이 같은 값에서 나온다** (AB · 2026-09-23). 셋이 다른 말을 하면 어느 쪽도 못 믿는다 —
    *    종전에는 레일만 「일하는 중 · 생각 중」이라 말하고 채팅은 아무 말이 없었다.
@@ -1111,7 +1115,7 @@ function botSummary(bot: Bot, sessions: SessionInfo[], notif: NotifyEvent[]) {
     : holder === 'other' ? `${holdHeader(holder, top?.inflight, top?.bg ?? 0)} · ${top?.inflight?.summary || top?.name || ''}`
       : run ? `일하는 중 · ${run.activity || run.name}` : last ? notePlain(last) : top ? `${top.name}${top.hibernated ? ' · 절전' : ''}` : '메시지를 보내 보세요'
   /** BH · 이 봇이 마지막으로 끝낸 시각 — 가장 최근에 봇이 낸 말(`lastReplyAt`). 도는 세션은 아직 안 끝났으므로 뺀다 */
-  const doneAt = Math.max(0, ...sessions.filter((x) => x.state !== 'running' && x.state !== 'awaiting_input').map((x) => x.lastReplyAt ?? 0)) || undefined
+  const doneAt = Math.max(0, ...chat.filter((x) => x.state !== 'running' && x.state !== 'awaiting_input').map((x) => x.lastReplyAt ?? 0)) || undefined
   return { state, text, unread, holder, t: Math.max(top?.lastActivity ?? bot.startedAt, last?.t ?? 0), mood: moodOf(state, !!top?.hibernated && !run && !wait, holder), doneAt, recent: false }
 }
 
@@ -1765,7 +1769,7 @@ function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled
   if (collapsed) return <div className="strip" style={{ background: 'var(--bg)' }}><button className="ib" onClick={onUncollapse} title="대화 펼치기"><Icon n="sub" size={14} /></button><div className="gap" /><FolderBot color={bot.color} size={17} mood={moodOf(state, !!cur?.hibernated)} mono />{running ? <span className="pulse" style={{ marginTop: 8 }} /> : null}</div>
   const sessMenuEl = sessMenu ? <div className="menu" style={phone ? { left: 0, top: 50 } : { left: 0, top: 28 }} onClick={() => setSessMenu(false)}>{/* ⚠ 세션 이름 **오른쪽에** 회사 표식 (2026-09-13 Dave: «세션 뒤에는 모든 곳에 … 세션이름 우측에
                   아이콘이 있어야 해»). 벤더는 폴더가 아니라 세션의 성질이라 세션이 보이는 곳마다 따라다녀야 한다 */}
-              {sessions.map((x) => <button key={x.id} className={x.id === cur?.id ? 'on' : ''} onClick={() => onSession(x.id)}><span className={`dot ${stateDot(x.state)}`} /><span>{x.name}</span><VendorMark vendor={x.vendor} size={11} /><span style={{ flex: 1 }} /><span className="k">{x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span></button>)}<hr /><button onClick={() => void newSession()}><Icon n="plus" size={12} /><span>새 세션</span></button>{cur ? <button onClick={async () => { const n = await askName('세션 이름', cur.name); if (n?.trim()) await api(`/sessions/${cur.id}/rename`, { body: { name: n.trim() } }) }}><Icon n="edit" size={12} /><span>이름 바꾸기</span></button> : null}{cur ? <button className="warn" onClick={async () => { if (confirm('이 세션 기록을 지울까요?')) { await api(`/sessions/${cur.id}`, { method: 'DELETE' }); await refreshAll() } }}><Icon n="x" size={12} /><span>세션 삭제</span></button> : null}</div> : null
+              {sessions.filter((x) => sessArea(x) === 'chat').map((x) => <button key={x.id} className={x.id === cur?.id ? 'on' : ''} onClick={() => onSession(x.id)}><span className={`dot ${stateDot(x.state)}`} /><span>{x.name}</span><VendorMark vendor={x.vendor} size={11} /><span style={{ flex: 1 }} /><span className="k">{x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span></button>)}{sessions.some((x) => sessArea(x) === 'auto') ? <><hr /><div className="mhead">자동화</div>{sessions.filter((x) => sessArea(x) === 'auto').map((x) => <button key={x.id} className={x.id === cur?.id ? 'on' : ''} onClick={() => onSession(x.id)}><span className={`dot ${stateDot(x.state)}`} /><span>{x.name}</span><VendorMark vendor={x.vendor} size={11} /><span style={{ flex: 1 }} /><span className="k">{x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span></button>)}</> : null}<hr /><button onClick={() => void newSession()}><Icon n="plus" size={12} /><span>새 세션</span></button>{cur ? <button onClick={async () => { const n = await askName('세션 이름', cur.name); if (n?.trim()) await api(`/sessions/${cur.id}/rename`, { body: { name: n.trim() } }) }}><Icon n="edit" size={12} /><span>이름 바꾸기</span></button> : null}{cur ? <button className="warn" onClick={async () => { if (confirm('이 세션 기록을 지울까요?')) { await api(`/sessions/${cur.id}`, { method: 'DELETE' }); await refreshAll() } }}><Icon n="x" size={12} /><span>세션 삭제</span></button> : null}</div> : null
   /**
    * 🔴 **채팅에 쓴 한 줄을 그대로 루틴으로** (2026-09-13 Dave: «루틴을 폴더 채팅에서 바로 채팅으로 생성»).
    *    「매주 월요일 아침 9시에 지난주 정리해 줘」 라고 써 두고 + → 루틴으로 만들기 를 누르면
@@ -2006,6 +2010,8 @@ function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled
       {/* 🔴 **입력창의 링크도 아이콘을 갖는다** (2026-09-13 Dave). ⚠ `textarea` 안에는 그림을 못 넣는다 —
           글자만 담는 칸이다. 그래서 쓰는 중인 주소를 **입력칸 위 칩**으로 올린다: 같은 캐시, 같은 아이콘,
           그리고 «이 주소가 맞나» 를 보내기 전에 확인할 수 있다. */}
+      {/* CC · 자동화 세션을 보고 있으면 — 여기에 쓴 말이 어디로 가는지 미리 말한다(2026-10-12 Dave) */}
+      {cur && takeoverMode(cur) !== 'none' ? <div className="autonote">{autoKind(cur)} 세션이에요 — {takeoverMode(cur) === 'fork' ? '여기에 쓰면 이 대화를 이어받은 새 채팅이 열려요' : '여기에 쓰면 이 세션이 채팅으로 옮겨져 자동 정리에서 빠져요'}</div> : null}
       {draftLinks.length ? <div className="files lchips">{draftLinks.map((u) => <LinkChip key={u} url={u} />)}</div> : null}
       <input ref={fileRef} type="file" multiple hidden onChange={(e) => void upload(Array.from(e.target.files ?? []))} />
       {/**
