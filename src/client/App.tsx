@@ -5,12 +5,12 @@ import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
 import { holdHeader, holdLine, holderOf, type Holder } from '../core/waiting'
 import { cliNeedsUpdate, cliVersionShort, cliUpdateLine } from '../core/cliUpdate'
 import { notePlain } from '../core/mdPlain'
-import { AskHost, ConfirmHost, DiffHost, FolderPicker, Md, NotifyCenter, chipMark, Onboarding, Pairing, RoutineSheet, Settings, askConfirm, askName, showDiff, useToast } from './Sheets'
+import { AskHost, ConfirmHost, DiffHost, FolderPicker, Md, NotifyCenter, chipMark, Onboarding, Pairing, RoutineSheet, Settings, preloadDirIndex, askConfirm, askName, showDiff, useToast } from './Sheets'
 import { AgentPickHost, pickAgent } from './AgentPick'
 import type { SecId } from './Settings'
 import { VendorMark } from './Brand'
 import { Float } from './Float'
-import { DocPane, useDocs } from './Doc'
+import { DocPane, preloadEditor, useDocs } from './Doc'
 import { Search } from './Search'
 import { Cleanup } from './Cleanup'
 import { cleanableCount } from '../core/cleanup'
@@ -377,6 +377,28 @@ function Main() {
   }, [])
   const docs = useDocs(bot?.id ?? '')
   useEffect(() => { if (sessionId && !s.chats[sessionId]) void loadChat(sessionId) }, [sessionId])
+  /**
+   * CF-1 · 대화 미리 받기 (2026-10-12 퍼포먼스 실측 A4). 처음 여는 봇은 원격에서 0.3초(나쁜 망 0.8초) 빈 칸이었다 — 다시 열 때는 0.04초.
+   *   ① 레일·목록 줄에 손(포인터·터치)이 닿으면 그 봇이 열 세션을 받는다 ② 첫 화면이 선 뒤 한가할 때 최근 봇 3개를 받는다.
+   * ⚠ 열 세션은 위 `sessionId` 와 같은 규칙(채팅 세션 중 첫 것)이다 — 다른 걸 받으면 헛걸음이다.
+   */
+  const prefetch = (bid: string) => {
+    const sid = (s.sessionsByBot[bid] ?? []).find((x) => sessArea(x) === 'chat')?.id
+    if (sid && !s.chats[sid]) void loadChat(sid).catch(() => {})
+    if (!s.todos[bid]) void loadTodo(bid).catch(() => {})
+  }
+  const warmed = useRef(false)
+  useEffect(() => {
+    if (warmed.current || !s.loaded || !s.bots.length) return
+    warmed.current = true
+    const idle = (window as unknown as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }).requestIdleCallback ?? ((f: () => void) => window.setTimeout(f, 600))
+    idle(() => {
+      const last = (bid: string) => Math.max(0, ...(s.sessionsByBot[bid] ?? []).map((x) => x.lastActivity))
+      for (const b of [...s.bots].filter((b) => b.id !== bot?.id).sort((a, c) => last(c.id) - last(a.id)).slice(0, 3)) prefetch(b.id)
+      // 데스크톱만 — 문서 편집기 조각과 폴더 색인. 폰은 데이터·배터리를 아낀다(번들 계약)
+      if (!matchMedia('(max-width: 760px)').matches) { preloadEditor(); preloadDirIndex() }
+    }, { timeout: 2500 })
+  }, [s.loaded, s.bots.length])
   useEffect(() => { if (bot) void loadTodo(bot.id) }, [bot?.id, s.filesTick[bot?.id ?? '']])
   /** 내가 놓은 해시인가 — 밖(셸의 알림 배너)에서 온 해시와 가르는 표식 (S-2). 내 걸음은 화면(칸)을 이미 스스로 챙긴다 */
   const navSelf = useRef(false)
@@ -858,7 +880,7 @@ function Main() {
     return off
   }, [bot?.id, sessions.length])
   // H · 같은 부품을 세 단계가 나눠 쓴다 — 넓음은 흐름 안, 중간·좁음은 서랍 안. 데이터(순서·표시 이름·확인 대기 점)는 한 곳(rows)
-  const homeEl = <Home rows={rows} bot={bot} go={go} setModal={setModal} waiting={waiting} unread={unread} onAsk={() => { go('orch'); setFocusReq(Date.now()) }} onTodo={goTodo} say={say} railSort={railSort} setRailSort={setRailSort} />
+  const homeEl = <Home rows={rows} bot={bot} go={go} setModal={setModal} waiting={waiting} unread={unread} onAsk={() => { go('orch'); setFocusReq(Date.now()) }} onTodo={goTodo} say={say} railSort={railSort} setRailSort={setRailSort} prefetch={prefetch} />
   const sidebarEl = <div className="col side left" style={{ width: stage === 'wide' ? fit.sb : undefined }}>
         <div className="hdr"><FolderBot color="#e08850" size={16} mood={waiting ? 'wait' : 'idle'} mono /><span className="ttl">Folder Bot</span><span className="sp" /><div className="acts"><button className="ib" onClick={closeSb} title="목록 접기 (⌘B)"><Icon n="panel" size={14} /></button></div></div>
         <div style={{ padding: '10px 8px 0' }}>
@@ -912,7 +934,7 @@ function Main() {
         <button className="ib" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span className="fly"><b>폴더 선택 · 시작</b><span>후보 {s.candidates.filter((c) => !c.active).length}</span></span></button>
         <button className="ib" onClick={() => setModal('notify')}><Icon n="bell" size={14} />{unread ? <span className="bd">{unread}</span> : null}<span className="fly"><b>알림</b><span>{unread ? `읽지 않음 ${unread}` : '없음'}</span></span></button>
         <div className="gap" />
-        {stripBots.map(({ b, sum }) => <button key={b.id} className={`bot ${b.id === bot.id ? 'on' : ''} ${sum.unread ? 'unread' : ''}`} onClick={() => go(b.id)}><FolderBot color={b.color} size={17} mood={sum.mood} unread={sum.unread} recent={sum.recent} mono /><span className="fly"><b><Mid s={b.displayName} /></b><span><span className={`dot ${stateDot(sum.state ?? undefined)}`} style={{ marginRight: 5 }} />{sum.text}</span><span className="t3">{b.section} · {fmtTime(sum.t)}</span></span></button>)}
+        {stripBots.map(({ b, sum }) => <button key={b.id} className={`bot ${b.id === bot.id ? 'on' : ''} ${sum.unread ? 'unread' : ''}`} onPointerEnter={() => prefetch(b.id)} onPointerDown={() => prefetch(b.id)} onClick={() => go(b.id)}><FolderBot color={b.color} size={17} mood={sum.mood} unread={sum.unread} recent={sum.recent} mono /><span className="fly"><b><Mid s={b.displayName} /></b><span><span className={`dot ${stateDot(sum.state ?? undefined)}`} style={{ marginRight: 5 }} />{sum.text}</span><span className="t3">{b.section} · {fmtTime(sum.t)}</span></span></button>)}
       </div>
   const docwrapEl = showDoc ? <div className="docwrap" style={{ width: wide || narrow ? undefined : fit.doc, flex: wide ? 3 : 'none', display: 'flex', minWidth: 0 }}><DocPane bot={bot} docs={docs} filesTick={s.filesTick[bot.id]} onTalk={(rel) => { setPrefill(`${rel} 파일 봐 줘: `); if (phone) setView('chat') }} onHide={() => setDocOpen((d) => ({ ...d, [bot.id]: false }))} wide={wide} onWide={() => setWide(!wide)} onAttach={(rel) => addAttach({ rel, abs: `${bot.abs}/${rel}` })} say={say} phone={phone} onBack={toList} /></div> : null
   /**
@@ -1164,7 +1186,7 @@ function BotName({ b, chip = true }: { b: Bot; chip?: boolean }) {
   return <span ref={ref} className="bname" title={b.name}><b className="dn">{b.displayName}</b>{b.kind && !hideTag ? <span className="tag">{b.kind}</span> : null}{due ? <span className={`due ${due.tone}`}>{due.text}</span> : null}</span>
 }
 
-function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say, railSort, setRailSort }: { railSort: RailSort; setRailSort: (k: RailSort) => void; rows: Row[]; bot: Bot; go: (b: string, sid?: string) => void; setModal: (m: 'picker' | 'notify' | 'settings') => void; waiting: number; unread: number; onAsk: () => void; onTodo: (botId: string) => void; say: (m: string) => void }) {
+function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say, railSort, setRailSort, prefetch }: { prefetch: (botId: string) => void; railSort: RailSort; setRailSort: (k: RailSort) => void; rows: Row[]; bot: Bot; go: (b: string, sid?: string) => void; setModal: (m: 'picker' | 'notify' | 'settings') => void; waiting: number; unread: number; onAsk: () => void; onTodo: (botId: string) => void; say: (m: string) => void }) {
   const usage = useUsage() // 폰 홈 맨 위 — 한 줄 띠. 누르면 카드가 시트로 올라온다
   const [uSheet, setUSheet] = useState(false)
   const { s, refresh } = useStore()
@@ -1197,7 +1219,7 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say, ra
       {rows.map(([sec, list]) => <div key={sec}>
         <div className="secl">{sec}</div>
         {list.map(({ b, sum }) => {
-          const row = <button key={b.id} className={`mrow ${sum.unread ? 'unread' : ''}`} onClick={() => go(b.id)}><span className="av"><FolderBot color={b.color} size={46} mood={sum.mood} unread={sum.unread} recent={sum.recent} mono /></span><span className="t"><span className="l1"><BotName b={b} chip={false} />{b.due ? (() => { const d = dueChip(b.due.date, b.due.precision); return d ? <span className={`due ${d.tone}`}>{d.text}</span> : null })() : <time>{fmtTime(sum.t)}</time>}</span><span className="l2">{sum.text}</span></span></button>
+          const row = <button key={b.id} className={`mrow ${sum.unread ? 'unread' : ''}`} onPointerDown={() => prefetch(b.id)} onClick={() => go(b.id)}><span className="av"><FolderBot color={b.color} size={46} mood={sum.mood} unread={sum.unread} recent={sum.recent} mono /></span><span className="t"><span className="l1"><BotName b={b} chip={false} />{b.due ? (() => { const d = dueChip(b.due.date, b.due.precision); return d ? <span className={`due ${d.tone}`}>{d.text}</span> : null })() : <time>{fmtTime(sum.t)}</time>}</span><span className="l2">{sum.text}</span></span></button>
           // 관제(오케스트레이터)는 고정·지우기·은퇴의 대상이 아니다 — 쓸리지 않는다
           return b.orchestrator ? row : <SwipeRow key={b.id} cfg={FOLDER_SWIPE} labelFor={(a) => (a === 'pin' && b.pinned ? '고정 풀기' : undefined)} onAct={(a) => void folderAct(b, a)}>{row}</SwipeRow>
         })}

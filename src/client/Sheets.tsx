@@ -228,6 +228,9 @@ function loadDirIndex(): Promise<PNode[] | null> {
   return dirIndexInflight
 }
 
+/** CF-1 · 데스크톱은 한가할 때 색인을 미리 받는다 — 원격 ⌘⇧N 첫 줄 176ms → 메모리 */
+export function preloadDirIndex(): void { if (!dirIndex) void loadDirIndex() }
+
 export function FolderPicker({ onClose, onStarted, pick }: { onClose: () => void; onStarted: (bot: Bot) => void; pick?: PickMode }) {
   const { s, refresh } = useStore()
   const activeParents = useMemo(() => (s.rules?.roles.active ?? []).map((g) => g.replace(/\/\*$/, '')), [s.rules])

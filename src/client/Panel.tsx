@@ -515,7 +515,20 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
    * 오케스트레이터가 `../../3. Area/…` 를 읽으려다 볼트 밖이 되어 호스트가 500 을 냈다.
    */
   const isRefRel = (rel: string) => !rel.startsWith('../') || refRootsRef.current.some((r) => rel === r || rel.startsWith(r + '/'))
-  const loadDir = async (rel: string) => { if (!isRefRel(rel)) return; try { const l = await api<Node[]>(`/bots/${bot.id}/ls?dir=${encodeURIComponent(rel)}${hidden ? '&all=1' : ''}`); setDirs((d) => ({ ...d, [rel]: l })) } catch { /* */ } }
+  /**
+   * CF-1 · 같은 폴더를 동시에 세 번 읽지 않는다 — 봇을 열 때 이펙트 셋이 같은 `ls` 를 겹쳐 쏘았다(2026-10-12 실측 A8).
+   * ⚠ 읽는 도중에 또 부르면 **버리지 않고 끝난 뒤 한 번 더** 읽는다 — 그 사이 파일이 생겼을 수 있다(스모크 M-1 이 잡았다).
+   */
+  const lsReq = useRef(new Map<string, boolean>())
+  const loadDir = async (rel: string): Promise<void> => {
+    if (!isRefRel(rel)) return
+    const k = `${bot.id}\n${rel}\n${hidden}`
+    if (lsReq.current.has(k)) { lsReq.current.set(k, true); return }
+    lsReq.current.set(k, false)
+    try { const l = await api<Node[]>(`/bots/${bot.id}/ls?dir=${encodeURIComponent(rel)}${hidden ? '&all=1' : ''}`); setDirs((d) => ({ ...d, [rel]: l })) } catch { /* */ }
+    const again = lsReq.current.get(k); lsReq.current.delete(k)
+    if (again) return loadDir(rel)
+  }
   useEffect(() => { setDirs({}); for (const d of exp) void loadDir(d) }, [hidden])
   useEffect(() => { setDirs({}); try { setExp(new Set(JSON.parse(localStorage.getItem(`fb:tree:${bot.id}`) ?? '[""]'))) } catch { setExp(new Set([''])) } }, [bot.id])
   useEffect(() => { localStorage.setItem(`fb:tree:${bot.id}`, JSON.stringify([...exp])); for (const d of exp) if (!dirs[d]) void loadDir(d) }, [exp, bot.id])

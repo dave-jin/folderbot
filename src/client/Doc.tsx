@@ -5,7 +5,11 @@ import { ImageView } from './ImageView'
 import { copyImageWhy } from './clip'
 
 /** ⚠ 지연 로드 — CodeMirror 와 마크다운 파서는 문서를 열 때만 받는다 (번들 계약) */
-const MdEditor = lazy(() => import('./MdEditor'))
+const loadMdEditor = () => import('./MdEditor')
+const MdEditor = lazy(loadMdEditor)
+/** CF-1 · 데스크톱에서 한가할 때 편집기 조각을 미리 받는다 — 원격에서 문서 처음 열기 844ms 의 대부분이 이 600KB 였다.
+ *  ⚠ 폰은 부르지 않는다(번들 계약: 문서를 안 연 폰이 마크다운 파서를 받으면 안 된다) */
+export function preloadEditor(): void { void loadMdEditor().catch(() => {}) }
 /** ⚠ 캔버스도 지연 로드 — `.canvas` 를 한 번도 안 연 사람이 이 코드를 받을 이유가 없다 */
 const Canvas = lazy(() => import('./Canvas'))
 import type { Bot } from '../core/types'

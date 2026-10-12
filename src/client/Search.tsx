@@ -44,7 +44,7 @@ export function Search({ go, onClose }: { go: (botId: string, sid?: string) => v
       void api<{ sessionId: string; botId: string; name: string; snippet: string; where: 'name' | 'text'; bot: string }[]>(`/search?q=${encodeURIComponent(qq)}`)
         .then((l) => setHits({ q: qq, rows: l.filter((h) => h.where === 'text').map((h) => ({ key: `h-${h.sessionId}`, kind: 'hit' as const, botId: h.botId, sid: h.sessionId, label: h.snippet, sub: `${h.bot} · ${h.name}` })) }))
         .catch(() => setHits({ q: qq, rows: [] }))
-    }, 200)
+    }, 100)   // CF-1 · 200 → 100ms — 이름 결과는 이미 즉시이고, 본문 결과만 앞당긴다
     return () => window.clearTimeout(t)
   }, [qq])
 

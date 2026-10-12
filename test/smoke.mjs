@@ -165,6 +165,33 @@ try {
     ok('CF-2 · /goal 은 맨 글로 CLI 에 · 새 채팅 / 메뉴에도 CLI 명령 · 경로 말은 그대로')
   }
   /**
+   * 🔴 **CF-1 · 퍼포먼스 — 기다리지 않게** (2026-10-12 Dave: «performance 를 정말 중요하게 생각해»).
+   *    ① 화면 자산은 압축본으로 나간다(폰 원격 첫 실행 1.4초 중 1.0초가 무압축 800KB 받기였다)
+   *    ② index.html 은 «안 바뀜» 이면 304 ③ 다시 붙을 때 안 바뀐 대화는 «그대로» 만 받는다(종전엔 본 대화 전부 264KB)
+   */
+  {
+    const html = await fetch(base + '/', { headers: { 'accept-encoding': 'gzip' } })
+    const tag = html.headers.get('etag'); await html.arrayBuffer()
+    const js = (await (await fetch(base + '/')).text()).match(/\/assets\/main-[^"]+\.js/)?.[0]
+    if (!js) fail('CF-1: index.html 에서 본체 스크립트를 못 찾았다 — 검사가 헛돈다')
+    const a = await fetch(base + js, { headers: { 'accept-encoding': 'gzip, br' } }); await a.arrayBuffer()
+    if (!/^(br|gzip)$/.test(a.headers.get('content-encoding') ?? '')) fail('🔴 CF-1: 본체 스크립트가 압축 없이 나간다 · ' + a.headers.get('content-encoding'))
+    const again = await fetch(base + '/', { headers: { 'if-none-match': tag ?? '' } })
+    if (!tag || again.status !== 304) fail('🔴 CF-1: 안 바뀐 index.html 을 다시 보낸다 · ' + again.status + ' ' + tag)
+    const vs = await api(`/bots/${bot.id}/sessions`, { name: '판 확인' })
+    await api(`/sessions/${vs.id}/send`, { text: '판 확인 첫 말' })
+    for (let i = 0; i < 40; i++) { const c = await api(`/sessions/${vs.id}/chat`); if (c.items.some((x) => x.kind === 'assistant') && c.info.state !== 'running') break; await wait(150) }
+    const c1 = await api(`/sessions/${vs.id}/chat`)
+    if (!c1.ver) fail('🔴 CF-1: 대화 응답에 판(ver)이 없다')
+    const c2 = await api(`/sessions/${vs.id}/chat?v=${encodeURIComponent(c1.ver)}`)
+    if (!c2.same || c2.items) fail('🔴 CF-1: 안 바뀐 대화를 다시 보낸다 · ' + JSON.stringify(Object.keys(c2)))
+    await api(`/sessions/${vs.id}/send`, { text: '판 확인 둘째 말' }); await wait(600)
+    const c3 = await api(`/sessions/${vs.id}/chat?v=${encodeURIComponent(c1.ver)}`)
+    if (c3.same || !c3.items?.some((x) => x.kind === 'user' && /둘째/.test(x.text))) fail('🔴 CF-1: 바뀐 대화를 «그대로» 라고 했다')
+    await api(`/sessions/${vs.id}`, undefined, 'DELETE')
+    ok(`CF-1 자산 ${a.headers.get('content-encoding')} · index.html 304 · 안 바뀐 대화는 «그대로»`)
+  }
+  /**
    * 🔴 **첫 말이 제목이 된다** (2026-09-15 Dave: «첫 채팅이 진행되면 그에 맞는 채팅 제목을 자동으로»).
    * ⚠ 덮는 것은 앱이 붙인 이름(`메인` · `세션 3`)뿐이고, **사람이 지은 이름은 그대로 둔다** — 아래 두 번째 검사.
    */

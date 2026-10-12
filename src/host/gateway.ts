@@ -13,7 +13,9 @@ import type { Frame, RoutineDef } from '../core/types'
 import { stripRuntime } from '../core/types'
 import { WHEN_EXAMPLES, confirmLine, cronOk, describeCron, parseWhen } from '../core/when'
 import type { Host } from './host'
-import { bindAddresses, tailnetInfo } from './tailnet'
+import { bindAddresses, tailnetInfo, tailnetInfoCached } from './tailnet'
+import { StaticCache, pickEncoding } from './staticCache'
+import { chatVer } from '../core/chatVer'
 import { saveConfig } from './paths'
 import { handleMcp } from './mcp'
 import { bearer, mcpGate } from './mcpAuth'
@@ -210,7 +212,7 @@ export class Gateway {
       if (!a.ok) return json(401, { error: 'unauthorized' })
       return this.api(p, url, req, res, json, body, a.device, a)
     }
-    return this.static(p, res)
+    return this.static(p, res, req)
   }
 
   /** BQ-11 · 상대별 토큰 확인 → 편지 파일 → 평소처럼 배달. 상한: 상대마다 시간당 60통 */
@@ -309,7 +311,7 @@ export class Gateway {
       return json(200, { meta: await preview(u) })
     }
     if (p === '/api/state') {
-      const tn = await tailnetInfo()
+      const tn = await tailnetInfoCached()
       return json(200, { version: h.version, root: reg.root, rules: reg.rules, rulesInstalled: reg.rulesInstalled(), bots: reg.bots(), candidates: reg.candidates(), auth: h.auth, inbox: reg.inboxItems().length, notifications: h.notifier.events.slice(0, 50), vapidPublic: h.notifier.vapidPublic(), tailnet: tn, addrs: this.addrs, port: h.cfg.port, devices: h.cfg.devices.filter((d) => d.name !== LOCAL_DEVICE).map((d) => ({ id: d.id, name: d.name, lastSeen: d.lastSeen })), sessionsByBot: Object.fromEntries(reg.bots().map((b) => [b.id, h.sessions.list(b.id)])), quiet: h.cfg.quiet ?? { from: '23:00', to: '07:00' }, defaults: { model: h.cfg.defaultModel ?? '', effort: h.cfg.defaultEffort ?? '', permissionMode: h.cfg.defaultPermissionMode ?? 'default', idleMinutes: h.cfg.idleMinutes ?? 60, codex: { model: h.cfg.defaultCodexModel ?? '', effort: h.cfg.defaultCodexEffort ?? '', sandbox: h.cfg.codexSandbox ?? 'read-only', auth: codexAuth(h.cfg.openaiApiKey) } }, hostName: h.hostName(), device: { id: who.id, name: who.main ? h.hostName() : who.device, main: who.main } })
     }
     /**
@@ -855,7 +857,13 @@ export class Gateway {
       const r = h.sessions.get(seg[2]); if (!r) return json(404, { error: '그런 세션이 없어요' })
       const bot = botOf(r.botId); const sub = seg[3]
       if (!sub && m === 'DELETE') { h.sessions.remove(r.id); return json(200, { ok: true }) }
-      if (sub === 'chat') return json(200, { info: h.sessions.info(r), items: r.items.slice(-800) })
+      if (sub === 'chat') {
+        const info = h.sessions.info(r); const items = r.items.slice(-800)
+        // CF-1 · 화면이 든 판과 같으면 «그대로» 만 — 다시 붙을 때 안 바뀐 대화를 다시 보내지 않는다
+        const ver = chatVer(items, info.state, info.lastActivity, info.pending.length)
+        if (url.searchParams.get('v') === ver) return json(200, { same: true, ver, info })
+        return json(200, { info, items, ver })
+      }
       // CC · 자동화 세션(소통·채널)에 보낸 사람 말은 새 채팅으로 갈라진다 — 화면이 그 세션으로 넘어가게 id 를 돌려준다
       if (sub === 'send' && m === 'POST') { const b = await body(); const sid = h.sendToBot(bot, String(b.text), r.id, undefined, undefined, { client: clientOf(who, b.client) }); return json(200, { ok: true, sessionId: sid }) }
       // 호스트 대기열(다른 봇이 보낸 말) 고치기·빼기 — 빈 글이면 뺀다 (2026-10-02)
@@ -889,7 +897,8 @@ export class Gateway {
     return json(404, { error: 'not found' })
   }
 
-  private static(p: string, res: ServerResponse): void {
+  private files = new StaticCache()
+  private static(p: string, res: ServerResponse, req?: IncomingMessage): void {
     let rel = normalize(decodeURIComponent(p)).replace(/^(\.\.[/\\])+/, '')
     if (rel === '/' || rel === '') rel = '/index.html'
     let f = join(this.webRoot, rel)
@@ -897,8 +906,15 @@ export class Gateway {
     if (!existsSync(f)) { res.writeHead(404); res.end('client not built'); return }
     const e = extname(f)
     const immutable = f.includes('/assets/')
-    res.writeHead(200, { 'content-type': mime(f) === 'application/octet-stream' ? ({ '.webmanifest': 'application/manifest+json', '.ico': 'image/x-icon', '.woff2': 'font/woff2' } as Record<string, string>)[e] ?? 'application/octet-stream' : mime(f), 'cache-control': immutable ? 'public, max-age=31536000, immutable' : 'no-store', 'service-worker-allowed': '/' })
-    res.end(readFileSync(f))
+    const type = mime(f) === 'application/octet-stream' ? ({ '.webmanifest': 'application/manifest+json', '.ico': 'image/x-icon', '.woff2': 'font/woff2' } as Record<string, string>)[e] ?? 'application/octet-stream' : mime(f)
+    // CF-1 · 자산은 압축본(br·gzip)을 메모리에서 · 나머지(index.html·sw.js)는 ETag 로 «안 바뀜» 을 304 로 — 매번 다시 받지 않는다
+    const ent = this.files.get(f)
+    const head: Record<string, string> = { 'content-type': type, 'cache-control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache', 'service-worker-allowed': '/', etag: ent.etag, vary: 'accept-encoding' }
+    if (!immutable && req?.headers['if-none-match'] === ent.etag) { res.writeHead(304, head); res.end(); return }
+    const enc = pickEncoding(req?.headers['accept-encoding'] as string | undefined)
+    const body = this.files.encoded(f, ent, enc)
+    if (body && enc) { res.writeHead(200, { ...head, 'content-encoding': enc }); res.end(body); return }
+    res.writeHead(200, head); res.end(ent.raw)
   }
   stop(): void { for (const s of this.servers) s.close() }
 }

@@ -101,7 +101,7 @@ function reducer(s: StateShape, a: Action): StateShape {
   }
 }
 
-interface Ctx { s: StateShape; refresh: () => Promise<void>; loadChat: (sid: string) => Promise<void>; loadTodo: (botId: string) => Promise<void>; dispatch: React.Dispatch<Action> }
+interface Ctx { s: StateShape; refresh: () => Promise<void>; loadChat: (sid: string, revalidate?: boolean) => Promise<void>; loadTodo: (botId: string) => Promise<void>; dispatch: React.Dispatch<Action> }
 const C = createContext<Ctx>(null as never)
 export const useStore = () => useContext(C)
 
@@ -114,8 +114,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     for (const list of Object.values(st.sessionsByBot ?? {})) for (const x of list) pending[x.id] = x.pending
     dispatch({ type: 'state', s: { ...st, pending } })
   }
-  const loadChat = async (sid: string) => { const r = await api<{ info: SessionInfo; items: ChatItem[] }>(`/sessions/${sid}/chat`); dispatch({ type: 'chat', sessionId: sid, items: r.items, pending: r.info.pending }) }
-  const loadTodo = async (botId: string) => { const items = await api<TodoItem[]>(`/bots/${botId}/todo`); dispatch({ type: 'todos', botId, items }) }
+  /**
+   * CF-1 · 같은 대화를 동시에 두 번 받지 않는다 — 미리 받기(레일에 손이 닿을 때 · 한가할 때 · 첫 화면 해시)와
+   *   «열 때 받기» 가 겹쳐도 요청은 하나다(2026-10-12 퍼포먼스 실측 A2·A4).
+   */
+  const chatReq = useRef(new Map<string, Promise<void>>())
+  /** CF-1 · 대화마다 마지막으로 받은 판 — 다시 붙을 때 이 판을 내밀어 안 바뀐 대화는 «그대로» 만 받는다 */
+  const chatVers = useRef(new Map<string, string>())
+  const loadChat = (sid: string, revalidate = false): Promise<void> => {
+    const had = chatReq.current.get(sid); if (had) return had
+    const v = revalidate ? chatVers.current.get(sid) : undefined
+    const p = api<{ info: SessionInfo; items?: ChatItem[]; same?: boolean; ver?: string }>(`/sessions/${sid}/chat${v ? `?v=${encodeURIComponent(v)}` : ''}`).then((r) => {
+      if (r.ver) chatVers.current.set(sid, r.ver)
+      if (r.same || !r.items) return
+      dispatch({ type: 'chat', sessionId: sid, items: r.items, pending: r.info.pending })
+    }).finally(() => { chatReq.current.delete(sid) })
+    chatReq.current.set(sid, p); return p
+  }
+  /**
+   * CF-1 · 할 일도 겹쳐 받지 않는다 — 다시 붙을 때 `resync` 가 받고, 곧이어 `refiles` 로 오른 filesTick 이 또 받았다(실측 A8).
+   *   진행 중이거나 0.3초 안에 받은 것이면 그대로 쓴다 — 겹침은 같은 순간에 나고, 사람이 고친 뒤 다시 읽기는 그보다 늦다.
+   */
+  const todoReq = useRef(new Map<string, { at: number; p: Promise<void> }>())
+  const loadTodo = (botId: string): Promise<void> => {
+    const had = todoReq.current.get(botId); if (had && Date.now() - had.at < 300) return had.p
+    const p = api<TodoItem[]>(`/bots/${botId}/todo`).then((items) => { dispatch({ type: 'todos', botId, items }) })
+    todoReq.current.set(botId, { at: Date.now(), p }); p.catch(() => todoReq.current.delete(botId)); return p
+  }
   /**
    * 🔴 **다시 붙으면 «본 것» 을 전부 다시 읽는다** (2026-09-13 Dave: «원격 모바일에서 수정된 파일이 바로 적용이 안 돼»).
    *
@@ -133,10 +158,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   seen.current.todos = new Set(Object.keys(s.todos))
   seen.current.chats = new Set(Object.keys(s.chats))
   const resync = async () => {
-    await refresh()
+    // CF-1 · 상태·할 일·대화를 **한꺼번에** — 종전엔 상태를 받은 뒤에야 나머지를 쏴서 1 RTT 를 더 썼다
     await Promise.allSettled([
+      refresh(),
       ...[...seen.current.todos].map((b) => loadTodo(b)),
-      ...[...seen.current.chats].map((sid) => loadChat(sid))
+      ...[...seen.current.chats].map((sid) => loadChat(sid, true))
     ])
     dispatch({ type: 'refiles' })
   }
@@ -145,7 +171,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!token()) return
     let first = true
-    void refresh()
+    /**
+     * CF-1 · 첫 화면 요청을 나란히 — 상태와, 해시가 가리키는 대화를 **같이** 쏜다(종전엔 상태 → 그린 뒤 대화, 1 RTT 더).
+     * 그리고 첫 `hello` 때 상태를 또 받던 것은, 첫 상태가 그 hello **뒤에** 도착했으면 건너뛴다(이미 구독 뒤의 값이다).
+     */
+    let stateDone = false; let helloSeen = false
+    void refresh().then(() => { if (!helloSeen) stateDone = true }, () => { if (helloSeen) void refresh().catch(() => {}); else stateDone = true })   // ⚠ 첫 상태가 실패하면 hello 때 꼭 다시 받는다
+    try { const hs = new URLSearchParams(location.hash.slice(1)).get('s'); if (hs) void loadChat(hs).catch(() => {}) } catch { /* 해시 없음 */ }
     // O · 토큰마다 그리지 않는다 — 같은 항목의 스트리밍 교체 프레임은 33ms 에 한 번(≤30fps)만 반영. 다른 프레임이 오면 먼저 비운다
     const pend = new Map<string, Frame>(); let timer: number | undefined
     const flush = () => { timer = undefined; for (const f of pend.values()) dispatch({ type: 'frame', f }); pend.clear() }
@@ -154,7 +186,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           /* 🔴 BJ · 호스트가 새 화면 판을 내보내면 **다시 읽는다** — 옛 코드가 계속 돌면 고친 저장 규칙이 안 먹는다(9/27 실측). 채팅 초안은 localStorage 에 있어 남는다 */
           const b = (f as { build?: string }).build
           if (b) { const w = window as unknown as { __fbBuild?: string }; if (w.__fbBuild && w.__fbBuild !== b) { location.reload(); return } w.__fbBuild = b }
-          if (first) { first = false; void refresh() } else void resync()
+          if (first) { first = false; helloSeen = true; if (stateDone) void refresh() } else void resync()
         } }, (v) => dispatch({ type: 'online', v }))
     return () => stopRef.current?.()
   }, [])

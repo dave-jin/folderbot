@@ -25,3 +25,14 @@ export function tailnetInfo(): Promise<TailnetInfo> {
     })
   })
 }
+/**
+ * CF-1 · `/api/state` 가 부를 때마다 `tailscale status` 프로세스를 띄워 42ms 를 썼다(2026-10-12 실측 A3).
+ * 30초 안의 값은 다시 쓰고, 동시에 온 요청은 한 번만 띄운다. 설정의 «Tailscale 확인» 은 `/api/tailnet` 이라 늘 새로 묻는다.
+ */
+let memo: { at: number; v: TailnetInfo } | null = null; let inflight: Promise<TailnetInfo> | null = null
+export function tailnetInfoCached(maxAgeMs = 30_000, now = Date.now(), load: () => Promise<TailnetInfo> = tailnetInfo): Promise<TailnetInfo> {
+  if (memo && now - memo.at < maxAgeMs) return Promise.resolve(memo.v)
+  if (inflight) return inflight
+  inflight = load().then((v) => { memo = { at: Date.now(), v }; return v }).finally(() => { inflight = null })
+  return inflight
+}

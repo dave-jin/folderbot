@@ -40,7 +40,7 @@ export async function api<T = unknown>(path: string, opts: { method?: string; bo
  */
 const HB_DEAD_MS = 30_000
 export function connectEvents(onFrame: (f: Frame) => void, onStatus: (s: 'on' | 'off') => void): () => void {
-  let stop = false; let ctl: AbortController | null = null; let backoff = 500; let lastAt = Date.now()
+  let stop = false; let ctl: AbortController | null = null; let backoff = 500; let lastAt = Date.now(); let now = false
   const run = async () => {
     while (!stop) {
       ctl = new AbortController()
@@ -63,11 +63,13 @@ export function connectEvents(onFrame: (f: Frame) => void, onStatus: (s: 'on' | 
       } catch { /* reconnect */ }
       onStatus('off')
       if (stop) return
-      await new Promise((r) => setTimeout(r, backoff)); backoff = Math.min(backoff * 2, 10000)
+      // CF-1 · 화면이 돌아왔거나 망이 붙었으면(kick) 기다리지 않고 바로 붙는다 — 오류 재시도에만 늘어나는 대기를 쓴다(종전엔 늘 0.5초)
+      const wait = now ? 0 : backoff; now = false
+      await new Promise((r) => setTimeout(r, wait)); if (wait) backoff = Math.min(backoff * 2, 10000)
     }
   }
   void run()
-  const kick = () => { backoff = 500; lastAt = Date.now(); ctl?.abort() }
+  const kick = () => { backoff = 500; now = true; lastAt = Date.now(); ctl?.abort() }
   const onVis = () => { if (document.visibilityState === 'visible') kick() }
   const watchdog = window.setInterval(() => { if (!stop && Date.now() - lastAt > HB_DEAD_MS) kick() }, 10_000)
   document.addEventListener('visibilitychange', onVis)
