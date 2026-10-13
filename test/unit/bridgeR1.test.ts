@@ -6,7 +6,7 @@ import { formatLetter, frontMatterClosed, ignoredLetterName, letterBatch, letter
 import { channelSpawn, channelVerdict, ownsPeer, parseBridges, type PeerDef } from '../../src/core/bridges'
 import { routineResult } from '../../src/core/runs'
 import { BridgeHub, STABLE_MS, type Incoming } from '../../src/host/bridge'
-import { RunLog } from '../../src/host/runs'
+import { INTERRUPTED_REASON, RunLog } from '../../src/host/runs'
 import type { Bot } from '../../src/core/types'
 
 /**
@@ -235,6 +235,29 @@ describe('BR-1 · 루틴 실행 기록 (host/runs)', () => {
     expect(main.map((e) => `${e.event}:${e.run}`)).toEqual(['start:s1', 'end:s1', 'start:s2', 'timeout:s2'])
     expect(main[1]).toMatchObject({ ok: false, result: 'fail', reason: '카톡 끊김', ms: 5000, host: 'mac-mini', routine: '정기동기화' })
     expect(copy).toHaveLength(4)
+    rmSync(root, { recursive: true, force: true })
+  })
+  it('🔴 CI · 켜질 때 끝 없는 회차를 닫는다 — 이 호스트 것만 · 지난달까지 · 7일 넘은 건 둔다 · 두 번 불러도 한 번', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fb-runs-'))
+    const ops = join(root, '.folderbot/ops'); mkdirSync(ops, { recursive: true })
+    const ev = (o: object) => JSON.stringify(o) + '\n'
+    writeFileSync(join(ops, 'runs-2026-09.jsonl'), ev({ ts: '2026-09-30T23:00:00+09:00', host: 'mac-mini', event: 'start', botId: 'b1', bot: '봇1', routine: '월말', run: 's_sep' })
+      + ev({ ts: '2026-09-01T09:00:00+09:00', host: 'mac-mini', event: 'start', botId: 'b1', bot: '봇1', routine: '옛것', run: 's_old' }))
+    writeFileSync(join(ops, 'runs-2026-10.jsonl'),
+      ev({ ts: '2026-10-01T00:30:00+09:00', host: 'mac-mini', event: 'start', botId: 'b1', bot: '봇1', routine: '끝남', run: 's_done' })
+      + ev({ ts: '2026-10-01T00:31:00+09:00', host: 'mac-mini', event: 'end', botId: 'b1', bot: '봇1', routine: '끝남', run: 's_done', ok: true, result: 'ok' })
+      + ev({ ts: '2026-10-01T00:40:00+09:00', host: 'mac-mini', event: 'start', botId: 'b2', bot: 'SNS', routine: '게시', run: 's_cut', attempt: 2 })
+      + ev({ ts: '2026-10-01T00:41:00+09:00', host: 'macbook', event: 'start', botId: 'b3', bot: '맥북봇', routine: '남의 것', run: 's_other' })
+      + 'not json\n')
+    const t = Date.parse('2026-10-01T01:00:00+09:00')
+    const rl = new RunLog(root, () => undefined, () => 'mac-mini', () => {}, () => t)
+    const cut = rl.recoverInterrupted()
+    expect(cut.map((c) => c.run).sort()).toEqual(['s_cut', 's_sep'])
+    expect(cut.find((c) => c.run === 's_cut')).toMatchObject({ botId: 'b2', routine: '게시', attempt: 2, at: Date.parse('2026-10-01T00:40:00+09:00') })
+    const ends = readFileSync(join(ops, 'runs-2026-10.jsonl'), 'utf8').trim().split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l)).filter((e) => e.event === 'end' && e.interrupted)
+    expect(ends).toHaveLength(2)
+    expect(ends.find((e) => e.run === 's_cut')).toMatchObject({ ok: false, result: 'fail', reason: INTERRUPTED_REASON, host: 'mac-mini', ms: 20 * 60_000 })
+    expect(rl.recoverInterrupted()).toEqual([])                    // 두 번째는 닫을 게 없다
     rmSync(root, { recursive: true, force: true })
   })
 })

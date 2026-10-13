@@ -16,14 +16,14 @@ import { Notifier } from './notify'
 import { type HostConfig, absRoot, dataDir, saveConfig } from './paths'
 import { McpAuth } from './mcpAuth'
 import { BridgeHub, type Incoming } from './bridge'
-import { RunLog } from './runs'
+import { INTERRUPTED_REASON, RunLog } from './runs'
 import { readWakeEnv, wakePeer } from './wake'
 import { OpsWatch } from './opsWatch'
 import { letterBatch } from '../core/fbmf'
 import type { PeerDef } from '../core/bridges'
 import type { QueuedMsg } from '../core/types'
 import { ORCH_ID, Registry, canon, ORCH_REQUEST_RULES_MD, ORCH_ASK_HINT, ORCH_REPORT_HINT, LETTER_RULES_MD } from './registry'
-import { Routines, routineRun, RETRY_DELAY_MS } from './routines'
+import { CATCHUP_WINDOW_MS, Routines, routineRun, RETRY_DELAY_MS } from './routines'
 import { autoToDrop, sessArea } from '../core/autoArea'
 import { SessionManager, setOauthToken, setKeychainLogin, AUTH_ERROR, type SessionRec } from './session'
 import { readTodo, todoAdd, todoContext } from './todoStore'
@@ -99,8 +99,13 @@ export class Host {
     this.wire()
     this.sessions.drainAll()   // 호스트가 다시 떴다 — 기다리던 봇 말을 내보낸다
     this.routines.reschedule(this.registry.bots())
-    // BR-2 · 꺼져 있던 사이 놓친 회차를 한 번 보충한다 — 세션·인증이 자리 잡은 뒤에
-    setTimeout(() => { try { this.routines.catchUp(this.registry.bots()) } catch (e) { this.log(`놓친 회차 보충 실패: ${(e as Error).message}`) } }, 20_000).unref()
+    // CI · 지난 프로세스가 끝을 못 적은 회차(재시작·업데이트로 끊김)를 바로 닫는다 — 감시기가 «실행 중» 으로 오래 보지 않게
+    const cut = this.recoverInterrupted()
+    // BR-2 · 꺼져 있던 사이 놓친 회차를 한 번 보충한다 — 세션·인증이 자리 잡은 뒤에. 끊긴 회차의 재시도가 먼저(그게 markRun 을 적어 보충이 같은 루틴을 또 돌리지 않는다)
+    setTimeout(() => {
+      try { this.afterInterrupted(cut) } catch (e) { this.log(`끊긴 회차 처리 실패: ${(e as Error).message}`) }
+      try { this.routines.catchUp(this.registry.bots()) } catch (e) { this.log(`놓친 회차 보충 실패: ${(e as Error).message}`) }
+    }, Number(process.env.FOLDERBOT_CATCHUP_MS) || 20_000).unref()   // 검사 시임 — 스모크가 줄인다
     // 봇 폴더 감시 — 세션을 거치지 않은 쓰기(Bash·Codex·Dropbox·Finder)도 트리에 온다 (host/watch.ts 머리말)
     this.watcher.log = (m) => this.log(m)
     this.notifier.log = (m) => this.log(m)   // CF-④ 푸시 결과도 호스트 로그로
@@ -242,6 +247,38 @@ export class Host {
     this.sweepAuto(bot.id)
     this.sessions.send(s, bot, run.text, undefined, 'routine')
     return s.id
+  }
+
+  /**
+   * 🔴 **CI · 끊긴 루틴 회차** (2026-10-13 오케스트레이터 제보 — 12:00 SNS 게시 루틴이 12:02 업데이트 적용으로 끊겨 조용히 빠졌다).
+   *    ① 켜질 때 기록을 닫고(`RunLog.recoverInterrupted` · fail · «호스트 재시작으로 중단») 그 세션에 한 줄 남긴다.
+   *    ② 다시 돌릴지는 루틴의 `retry` 가 정한다(BR-2 와 같은 값 · 기본 끔 — 외부 발송이 두 번 나가지 않게). 켜져 있으면 두 번째 시도로 한 번,
+   *       꺼져 있거나 이미 두 번째였으면 오케스트레이터 소통 세션에 한 줄 — 다시 돌릴지는 사람이 정한다.
+   */
+  recoverInterrupted(): ReturnType<RunLog['recoverInterrupted']> {
+    let cut: ReturnType<RunLog['recoverInterrupted']> = []
+    try { cut = this.runs.recoverInterrupted() } catch (e) { this.log(`끊긴 회차를 못 읽었어요: ${(e as Error).message}`) }
+    for (const c of cut) {
+      this.log(`끊긴 루틴 회차를 닫았어요: ${c.bot} · ${c.routine} · ${c.run}`)
+      this.sessions.systemNote(c.run, `이 루틴 회차는 호스트가 다시 뜨면서(업데이트 적용·앱 재시작) 끊겼어요 — 실행 기록에 «실패 · ${INTERRUPTED_REASON}» 로 닫았어요.`)
+    }
+    return cut
+  }
+  /** CI ② — 끊긴 회차를 다시 돌리거나(retry) 오케스트레이터에게 알린다 · 보충 창(6시간)보다 오래된 회차는 알리기만 */
+  afterInterrupted(cut: ReturnType<RunLog['recoverInterrupted']>, now = Date.now()): void {
+    const told: string[] = []
+    for (const c of cut) {
+      const b = this.registry.bot(c.botId), d = b?.routines.find((x) => x.name === c.routine)
+      const hm = new Date(c.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+      if (b && d && d.retry === true && d.enabled !== false && c.attempt === 1 && now - c.at <= CATCHUP_WINDOW_MS) {
+        this.runs.note({ event: 'retry', botId: c.botId, routine: c.routine, run: c.run, reason: INTERRUPTED_REASON })
+        this.runRoutine(b, d, { attempt: 2 })
+        continue
+      }
+      const why = !b || !d ? '루틴이 이제 없어요' : d.enabled === false ? '루틴이 꺼져 있어요' : c.attempt > 1 ? '이미 두 번째 시도였어요' : d.retry !== true ? '재시도가 꺼져 있어요(retry)' : '보충 창(6시간)이 지났어요'
+      told.push(`- ${c.bot} · «${c.routine}» · ${hm} 시작 · 세션 ${c.run} — 다시 안 돌림: ${why}`)
+    }
+    if (told.length) this.notifyOrch(`[운영 · 끊긴 루틴 ${told.length}건] 호스트가 다시 뜨면서(업데이트 적용·앱 재시작) 도중에 끊긴 루틴 회차예요. 실행 기록은 «실패 · ${INTERRUPTED_REASON}» 로 닫았어요.\n${told.join('\n')}\n다시 돌릴지는 그 봇이나 Dave 가 정합니다(routine_run). 외부 발송이 든 루틴이면 이미 나갔는지 먼저 확인하세요.`, 'ops')
   }
 
   /**

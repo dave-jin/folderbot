@@ -5857,5 +5857,60 @@ try {
     ok('세션 삭제 → 목록·기록에서 사라지고 재시작에도 안 돌아온다')
   }
 
+  /**
+   * 🔴 CI (2026-10-13 오케스트레이터 제보) — 루틴이 도는 도중 호스트가 죽으면(업데이트 적용) 다시 뜰 때
+   *    ① 실행 기록을 fail · «호스트 재시작으로 중단» 으로 닫고 그 세션에 한 줄 ② retry 켠 루틴은 두 번째 시도로, 끈 루틴은 오케스트레이터에게 알린다
+   */
+  {
+    for (let i = 0; i < 40 && !(await portFree(PORT)); i++) await wait(250) // 앞 블록 host2 가 내려가며 포트를 놓을 때까지
+    await needPort(PORT, 'CI 호스트')
+    const h3 = spawn('node', ['bin/folderbot.mjs', 'start', '--port', String(PORT)], { env })
+    h3.stdout.on('data', (d) => (hostLog += d)); h3.stderr.on('data', (d) => (hostLog += d))
+    for (let i = 0; i < 60; i++) { try { await api('/state'); break } catch { await wait(250) } }
+    const tb = (await api('/bots')).find((x) => x.rel === '3. Area/제품_Rondo')
+    const yml = join(root, '3. Area/제품_Rondo/.bot.yml'); const ymlWas = existsSync(yml) ? readFileSync(yml, 'utf8') : null
+    const put = await fetch(base + `/api/bots/${tb.id}/routines`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ routines: [
+      { name: 'CI 다시', cron: '매일 새벽 4시', prompt: '느린일 하고 끝', retry: true },
+      { name: 'CI 게시', cron: '매일 새벽 4시', prompt: '느린일 게시', retry: false }] }) })
+    if (!put.ok) { h3.kill(); fail('CI: 루틴을 못 넣었다 · ' + put.status) }
+    const d0 = new Date(), month = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}`
+    const runsF = join(root, `.folderbot/ops/runs-${month}.jsonl`)
+    const evs = () => (existsSync(runsF) ? readFileSync(runsF, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : []).filter((e) => e.routine === 'CI 다시' || e.routine === 'CI 게시')
+    const rr = async (name) => (await (await mcpFetch(base + `/mcp/${tb.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'routine_run', arguments: { name } } }) })).json()).result.content[0].text
+    await rr('CI 다시'); await rr('CI 게시')
+    for (let i = 0; i < 30 && evs().filter((e) => e.event === 'start').length < 2; i++) await wait(50)
+    // 도는 도중(«느린일» 은 2.5초) 호스트를 죽인다 — 업데이트 적용과 같은 자리
+    h3.kill('SIGKILL'); await wait(700)
+    const mid = evs()
+    if (mid.filter((e) => e.event === 'start').length !== 2 || mid.some((e) => e.event === 'end')) fail('CI: 죽이기 전에 두 회차가 «시작만» 이어야 한다 · ' + JSON.stringify(mid.map((e) => e.event)))
+    const runA = mid.find((e) => e.routine === 'CI 다시').run, runB = mid.find((e) => e.routine === 'CI 게시').run
+    const h4 = spawn('node', ['bin/folderbot.mjs', 'start', '--port', String(PORT)], { env: { ...env, FOLDERBOT_CATCHUP_MS: '600' } })
+    h4.stdout.on('data', (d) => (hostLog += d)); h4.stderr.on('data', (d) => (hostLog += d))
+    try {
+      for (let i = 0; i < 60; i++) { try { await api('/state'); break } catch { await wait(250) } }
+      const endOf = (run) => evs().find((e) => e.event === 'end' && e.run === run)
+      for (const run of [runA, runB]) { const e = endOf(run); if (!e || e.ok !== false || e.result !== 'fail' || e.reason !== '호스트 재시작으로 중단') fail('🔴 CI: 끊긴 회차가 fail · 호스트 재시작으로 닫히지 않았다 · ' + JSON.stringify(e ?? null)) }
+      const note = (await api(`/sessions/${runB}/chat`)).items.find((it) => it.kind === 'system' && /호스트가 다시 뜨면서/.test(it.text))
+      if (!note) fail('CI: 끊긴 세션에 «왜 멈췄나» 한 줄이 없다')
+      // ② retry 켠 루틴 → 두 번째 시도가 돌고 끝난다 · 끈 루틴은 다시 안 돈다
+      let seq = ''
+      for (let i = 0; i < 120; i++) { await wait(100); seq = evs().filter((e) => e.routine === 'CI 다시').map((e) => `${e.event}${e.attempt ? e.attempt : ''}${e.event === 'end' ? `:${e.result}` : ''}`).join(','); if (/^start,end:fail,retry,start2,end:/.test(seq)) break }
+      if (!/^start,end:fail,retry,start2,end:(ok|unknown)$/.test(seq)) fail('🔴 CI: retry 켠 루틴이 두 번째 시도로 다시 돌지 않았다 · ' + seq)
+      if (evs().filter((e) => e.routine === 'CI 게시' && e.event === 'start').length !== 1) fail('🔴 CI: retry 끈 루틴(외부 발송)을 다시 돌렸다')
+      let told = ''
+      for (let i = 0; i < 50 && !told; i++) {
+        const comm = (await api('/bots/orch/sessions')).find((x) => x.comm)
+        if (comm) told = (await api(`/sessions/${comm.id}/chat`)).items.filter((it) => it.kind === 'user').map((it) => it.text).find((t) => t.includes('끊긴 루틴')) ?? ''
+        if (!told) { const q = comm?.queue?.find((x) => x.text.includes('끊긴 루틴')); if (q) told = q.text }
+        if (!told) await wait(100)
+      }
+      if (!told || !told.includes('CI 게시') || told.includes('CI 다시') || !told.includes(runB)) fail('🔴 CI: 다시 안 돌린 회차를 오케스트레이터에게 안 알렸다 · ' + told.slice(0, 300))
+      ok(`CI 끊긴 루틴 — 도는 중 호스트를 죽였다 살리면 fail · «호스트 재시작으로 중단» 으로 닫고 세션에 한 줄 · retry 켠 루틴 = ${seq} · 끈 루틴은 오케스트레이터에게만`)
+    } finally {
+      h4.kill()
+      if (ymlWas === null) { try { rmSync(yml) } catch {} } else writeFileSync(yml, ymlWas)
+    }
+  }
+
   console.log('\nSMOKE OK')
 } catch (e) { fail(e.stack) } finally { host.kill(); rmSync(root, { recursive: true, force: true }); rmSync(data, { recursive: true, force: true }); rmSync(claudeCfg, { recursive: true, force: true }); rmSync(fbHome, { recursive: true, force: true }) }

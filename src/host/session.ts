@@ -1093,6 +1093,12 @@ export class SessionManager extends EventEmitter {
   }
   interrupt(r: SessionRec): void { this.workers.get(r.id)?.interrupt() }
   acknowledge(r: SessionRec): void { this.setState(r, { kind: 'acknowledged' }) }
+  /** CI · 시스템이 대화에 한 줄 남긴다(사람 말도 봇 말도 아니다) — 끊긴 루틴 회차처럼 «왜 여기서 멈췄나» 를 그 세션에서 보이게 */
+  systemNote(id: string, text: string): boolean {
+    const r = this.recs.get(id); if (!r) return false
+    this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text }); this.persist(r); this.emit('sessions', r.botId)
+    return true
+  }
   pendingOf(id: string): PermissionRequest[] { return [...(this.workers.get(id)?.pending.values() ?? [])] }
 
   /**

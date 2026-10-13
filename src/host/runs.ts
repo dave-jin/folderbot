@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { isoLocal } from '../core/fbmf'
 import { RUN_TIMEOUT_MS, routineResult } from '../core/runs'
@@ -11,6 +11,9 @@ import { RUN_TIMEOUT_MS, routineResult } from '../core/runs'
  * 쓰는 것은 그 루틴을 돌린 호스트 하나다(루틴은 호스트에서만 돈다).
  */
 export interface RunEvent { event: 'start' | 'end' | 'timeout' | 'retry' | 'peer_stale' | 'peer_ok' | 'wake' | 'report' | 'ops_watch'; botId?: string; bot?: string; routine?: string; run?: string; ok?: boolean; result?: string; reason?: string; error?: string; ms?: number; attempt?: number; catchup?: string; peer?: string; [k: string]: unknown }
+
+/** CI · 호스트가 다시 떠서 끊긴 회차의 끝 사유 — 감시기·화면이 이 말로 가른다 */
+export const INTERRUPTED_REASON = '호스트 재시작으로 중단'
 
 export class RunLog {
   private open = new Map<string, { botId: string; bot: string; routine: string; at: number; timedOut?: boolean }>()
@@ -38,6 +41,38 @@ export class RunLog {
     const r = routineResult(lastText)
     const out = { ok: ok && r.result !== 'fail', result: ok ? r.result : 'fail' }
     this.write({ event: 'end', botId: o.botId, bot: o.bot, routine: o.routine, run, ...out, ...(r.reason ? { reason: r.reason } : {}), ...(error ? { error: error.slice(0, 300) } : {}), ms: this.now() - o.at })
+    return out
+  }
+  /**
+   * 🔴 **CI · 켜질 때 한 번 — 시작만 적히고 끝이 없는 회차를 닫는다** (2026-10-13 오케스트레이터 제보).
+   *    10/13 12:00 SNS 게시 루틴이 2분 뒤 업데이트 적용(앱 재시작)으로 끊겼다. 세션은 «쉬는 중» 으로 돌아왔고(session.ts 생성자 —
+   *    다시 뜬 호스트에는 워커가 없다) 기록에는 start 만 남아, 감시기는 7시간 넘게 «실행 중» 으로만 봤다. Dave 가 승인한 게시가 조용히 빠졌다.
+   *    끝을 적는 `open` 은 메모리에만 있으니, 이 호스트가 시작하고 끝을 못 적은 회차는 켜지는 순간 전부 «끊긴 회차» 다.
+   * ⚠ 다른 호스트가 시작한 회차는 안 건드린다(그 호스트가 적는다) · 이번 달과 지난달 파일만 · `windowMs` 보다 오래된 것은 둔다.
+   * @returns 닫은 회차(시작 시각 · 몇 번째 시도) — 재시도·알림은 호스트가 정한다
+   */
+  recoverInterrupted(windowMs = 7 * 24 * 3600_000): { run: string; botId: string; bot: string; routine: string; at: number; attempt: number }[] {
+    const now = new Date(this.now()), me = this.host()
+    const months = [isoLocal(new Date(now.getFullYear(), now.getMonth() - 1, 1)).slice(0, 7), isoLocal(now).slice(0, 7)]
+    const starts = new Map<string, { botId: string; bot: string; routine: string; at: number; attempt: number }>(), ended = new Set<string>()
+    for (const m of months) {
+      const f = join(this.root, '.folderbot', 'ops', `runs-${m}.jsonl`)
+      if (!existsSync(f)) continue
+      let text = ''; try { text = readFileSync(f, 'utf8') } catch (e) { this.log(`실행 기록을 못 읽었어요 · ${f} · ${(e as Error).message}`); continue }
+      for (const line of text.split('\n')) {
+        if (!line.trim()) continue
+        let e: RunEvent & { ts?: string; host?: string }; try { e = JSON.parse(line) } catch { continue }
+        if (!e.run) continue
+        if (e.event === 'end') ended.add(e.run)
+        else if (e.event === 'start' && e.host === me && e.botId && e.routine) starts.set(e.run, { botId: e.botId, bot: e.bot ?? e.botId, routine: e.routine, at: Date.parse(e.ts ?? '') || 0, attempt: e.attempt ?? 1 })
+      }
+    }
+    const out: { run: string; botId: string; bot: string; routine: string; at: number; attempt: number }[] = []
+    for (const [run, s] of starts) {
+      if (ended.has(run) || this.open.has(run) || this.now() - s.at > windowMs) continue
+      this.write({ event: 'end', botId: s.botId, bot: s.bot, routine: s.routine, run, ok: false, result: 'fail', reason: INTERRUPTED_REASON, interrupted: true, ms: Math.max(0, this.now() - s.at) })
+      out.push({ run, ...s })
+    }
     return out
   }
   /** 오래 도는 회차를 한 번 적는다 — 호스트가 1분마다 부른다 */
