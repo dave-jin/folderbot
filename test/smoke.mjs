@@ -2570,7 +2570,7 @@ try {
          */
         {
           const navs = await pg.$$eval('.col.side.left .nav > span:nth-child(2)', (r) => r.map((x) => x.textContent))
-          if (navs[0] !== '검색' || navs[3] !== '세션 정리') fail('🔴 메뉴: 검색이 맨 위 · 세션 정리가 넷째가 아니다 ' + JSON.stringify(navs))
+          if (navs[0] !== '검색' || navs.includes('알림') || navs.includes('세션 정리')) fail('🔴 메뉴: 검색이 맨 위가 아니거나 «알림»·«세션 정리» 줄이 남았다(CJ — 네 칸이 흡수) ' + JSON.stringify(navs))
           const back = await pg.evaluate(() => location.hash)
           await pg.keyboard.press('Meta+k'); await pg.waitForSelector('.modal.srch', { timeout: 3000 }).catch(() => {})
           if (!(await pg.$('.modal.srch'))) fail('🔴 검색: ⌘K 로 안 열린다')
@@ -2590,12 +2590,21 @@ try {
           ok('검색 ⌘K — 메뉴 맨 위 · 봇 아래 세션 · ⏎ 로 그 세션 · 폴더 고르기는 ⌘⇧N')
         }
         /**
-         * 🔴 **세션 정리** (2026-10-02 Dave · 시안 B) — 메뉴 넷째 줄 · 모든 폴더의 세션 한 표 · 잠긴 줄은 못 고른다 · 지우고 10초 되돌리기.
+         * 🔴 **세션 정리** (2026-10-02 Dave · 시안 B) — 모든 폴더의 세션 한 표 · 잠긴 줄은 못 고른다 · 지우고 10초 되돌리기.
+         * 🔴 CJ (2026-10-16) — 레일 메뉴 대신 **홈 «세션» 칸**이 연다(세션 창). 처음엔 아무것도 안 골라져 있고 «정리할 만한 것 N 고르기» 로 고른다 ·
+         *    고르기는 왼쪽 체크 칸 · **줄을 누르면 그 세션으로 간다**.
          */
         {
           const tmp = await api(`/bots/${cfo.id}/sessions`, { name: '정리 검사용' })
-          await pg.click('.col.side.left .nav.nclean'); await pg.waitForSelector('.modal.clean', { timeout: 3000 }).catch(() => {})
-          if (!(await pg.$('.modal.clean'))) fail('🔴 세션 정리: 메뉴로 안 열린다')
+          const backC = await pg.evaluate(() => location.hash)
+          await pg.click('.sbtiles .mcards .t-sess'); await pg.waitForSelector('.modal.clean.manage', { timeout: 3000 }).catch(() => {})
+          if (!(await pg.$('.modal.clean.manage'))) fail('🔴 세션 창: 홈 «세션» 칸으로 안 열린다')
+          if (await pg.$$eval('.modal.clean tbody input:checked', (r) => r.length)) fail('🔴 세션 창: 처음 열었는데 골라진 줄이 있다(«고르기» 를 눌러야 고른다)')
+          {
+            const pc = await pg.$('.modal.clean .pill.pickc'); if (!pc) fail('세션 창: «정리할 만한 것 N 고르기» 단추가 없다')
+            const n0 = Number(((await pc.textContent()) ?? '').match(/(\d+)/)?.[1] ?? '-1')
+            if (n0 > 0) { await pc.click(); await wait(250); const k = await pg.$$eval('.modal.clean tbody input:checked', (r) => r.length); if (k !== n0) fail('세션 창: «고르기» 의 수와 골라진 줄 수가 다르다 · ' + JSON.stringify([n0, k])) }
+          }
           // «안 쓴 지» 를 일 단위로 (2026-10-16 Dave «하루 전·이틀 전») — 알약 안 ▾ 로 고르면 이름이 바뀌고 거름이 켜지고 이 기기에 남는다
           {
             const opts = await pg.$$eval('.modal.clean .pill.dpill .cdays option', (r) => r.map((x) => x.textContent))
@@ -2617,7 +2626,7 @@ try {
           await pg.click('.modal.clean thead input'); await wait(100)
           if (await pg.$$eval('.modal.clean tbody input:checked', (r) => r.length)) fail('세션 정리: 머리 칸으로 다 풀리지 않는다')
           // ⚠ 이름이 아니라 id 로 고른다 — 앞서 실패한 검사가 같은 이름의 세션을 남겨 둘 수 있다(실제로 그 옛 것을 지웠다)
-          await pg.click(`.modal.clean tbody tr[data-id="${tmp.id}"]`); await wait(150)
+          await pg.click(`.modal.clean tbody tr[data-id="${tmp.id}"] td.ck`); await wait(150)
           const n = await pg.$eval('.modal.clean .cfoot .btn.danger', (e) => e.textContent)
           if (!/선택한 1개/.test(n ?? '')) fail('세션 정리: 하나만 골랐는데 ' + n)
           const before = await pg.$$eval('.modal.clean tbody tr', (r) => r.map((x) => `${x.dataset.id}:${x.querySelector('td.sn')?.textContent}:${x.querySelector('input')?.checked ? 'Y' : '-'}${x.classList.contains('lock') ? 'L' : ''}`))
@@ -2627,9 +2636,13 @@ try {
           if (!(await pg.$('.modal.clean .cundo'))) fail('세션 정리: 되돌리기 띠가 없다')
           await pg.click('.modal.clean .cundo button'); await wait(700)
           if (!(await api(`/bots/${cfo.id}/sessions`)).some((x) => x.id === tmp.id)) fail('🔴 세션 정리: 되돌리기가 안 됐다')
-          await pg.keyboard.press('Escape'); await pg.click('.modal.clean .modal-h .ib').catch(() => {}); await wait(200)
+          // 🔴 CJ · 줄을 누르면 그 세션으로 간다(체크 칸이 아닌 자리)
+          await pg.click(`.modal.clean tbody tr[data-id="${tmp.id}"] td.sn`); await wait(500)
+          const hC = await pg.evaluate(() => Object.fromEntries(new URLSearchParams(location.hash.slice(1))))
+          if (await pg.$('.modal.clean') || hC.s !== tmp.id) fail('🔴 세션 창: 줄을 눌렀는데 그 세션으로 안 갔다 · ' + JSON.stringify(hC))
+          await pg.evaluate((x) => { location.hash = x }, backC); await wait(400)
           await api(`/sessions/${tmp.id}`, undefined, 'DELETE')
-          ok('세션 정리 — 메뉴 넷째 줄 · 모든 폴더 한 표 · 잠긴 줄 못 고름 · 지우고 10초 되돌리기')
+          ok('세션 창 — 홈 «세션» 칸으로 연다 · 처음엔 안 고름 · «고르기» · 모든 폴더 한 표 · 잠긴 줄 못 고름 · 지우고 10초 되돌리기 · 줄을 누르면 그 세션')
         }
         // 폴더 선택 = 트리: 1단계 폴더가 뜨고 활성 폴더는 펼쳐져 있다 · Resources 를 펼치면 하위가 보인다
         await pg.click('.col.side.left .nav:has-text("폴더 선택")'); await pg.waitForSelector('.pk [data-rel]', { timeout: 5000 }); await wait(500)
@@ -3607,7 +3620,7 @@ try {
            */
           {
             const labels = await pg.$$eval('.sbtiles .mcards button .n', (r) => r.map((x) => x.textContent ?? ''))
-            for (const want of ['확인 대기', '일하는 중', '할 일', '마지막 결과']) if (!labels.some((l) => l.includes(want))) fail(`레일 4칸: «${want}» 칸이 없다 · ` + JSON.stringify(labels))
+            for (const want of ['폴더봇', '세션', '알림', '할 일']) if (!labels.some((l) => l.includes(want))) fail(`레일 4칸: «${want}» 칸이 없다 · ` + JSON.stringify(labels))
             // 승인 대기를 하나 만들어 두고 — 칸 안의 [허용] 으로 푼다
             const hold = await api(`/bots/${bot.id}/sessions`, { name: '칸에서 허용' })
             await api(`/sessions/${hold.id}/send`, { text: '승인이 필요한 일 해 줘' })
@@ -3615,14 +3628,79 @@ try {
             for (let i = 0; i < 60; i++) { shown = await pg.evaluate(() => !!document.querySelector('.sbtiles .mcards button.hot .act')); if (shown) break; await wait(250) }
             if (!shown) fail('레일 4칸: 확인 대기가 생겼는데 칸에 [허용] 이 안 뜬다')
             const sub = await pg.textContent('.sbtiles .mcards button.hot .sub')
-            if (!/제품_Rondo/.test(sub ?? '')) fail('레일 4칸: 어느 폴더가 묻는지 안 보인다 · ' + JSON.stringify(sub))
+            const dnR = (await api('/bots')).find((b) => b.id === bot.id)?.displayName ?? '제품_Rondo'
+            if (!(sub ?? '').includes(dnR)) fail('레일 4칸: 어느 폴더가 묻는지 안 보인다 · ' + JSON.stringify([sub, dnR]))
+            if (!/확인 대기/.test(await pg.textContent('.sbtiles .mcards button.hot .n') ?? '')) fail('🔴 CJ: 확인 대기가 생겼는데 알림 칸이 «확인 대기» 로 안 바뀌었다')
             await pg.click('.sbtiles .mcards button.hot .act')
             let st = 'awaiting_input'
             for (let i = 0; i < 60; i++) { st = ((await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === hold.id) ?? {}).state; if (st !== 'awaiting_input') break; await wait(250) }
             if (st === 'awaiting_input') fail('레일 4칸: [허용] 을 눌렀는데 그대로 기다린다')
             await api(`/sessions/${hold.id}`, undefined, 'DELETE')
             await wait(400)
-            ok('레일 4칸 — 상태를 보여 주고 그 자리에서 허용까지')
+            ok('레일 4칸 — 확인 대기가 생기면 알림 칸이 «확인 대기» 로 바뀌고 그 자리에서 허용까지')
+          }
+          /**
+           * 🔴 **CJ · 네 칸 = 관리 입구 넷** (2026-10-16 Dave «전부 추천대로» · 기획안 §2) — 칸 숫자가 호스트의 bots · sessions · notifications · todos 와 같다.
+           *    할 일 칸은 **마감 7일 안 폴더의 열린 할 일**(볼트 전체가 아니다 — 결정 ① ⓒ). 칸을 누르면 관리 창이 열린다:
+           *    할 일 → 보드(폴더 묶음 · 검색 · 줄 칸으로 완료 · 줄을 누르면 그 폴더 할 일) · 폴더봇 → 현황 시트 · 세션 → 세션 창(아래 «세션 정리» 블록).
+           *    레일 «알림»·«세션 정리» 줄은 칸이 흡수했다.
+           */
+          {
+            const p2 = (n) => String(n).padStart(2, '0'), ymdL = (d) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`
+            const dueEndT = (d) => !d || d.precision === 'none' || !d.date ? null : d.precision === 'day' ? d.date.slice(0, 10) : d.precision === 'month' ? (() => { const [y, m] = d.date.split('-').map(Number); return `${y}-${p2(m)}-${p2(new Date(y, m, 0).getDate())}` })() : `${d.date.slice(0, 4)}-12-31`
+            const keyT = (b) => { const f = dueEndT(b.due), t = b.todoDue ?? null; return f === null ? t : t === null ? f : t < f ? t : f }
+            const want = async () => {
+              const bots = await api('/bots'); let sess = 0; for (const b of bots) sess += (await api(`/bots/${b.id}/sessions`)).length
+              const now = new Date(); const edge = ymdL(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7))
+              const todos = await api('/todos')
+              const wk = todos.rows.filter((r) => { const b = bots.find((x) => x.id === r.botId); const k = b && keyT(b); return r.open > 0 && k && k <= edge }).reduce((a, r) => a + r.open, 0)
+              return { fold: String(bots.filter((b) => !b.orchestrator).length), sess: String(sess), note: String((await api('/notifications')).filter((n) => !n.read).length), todo: String(wk), all: todos.open }
+            }
+            const got = () => pg.evaluate(() => Object.fromEntries([...document.querySelectorAll('.sbtiles .mcards button')].map((b) => [(b.className.match(/t-(\w+)/) ?? [])[1], b.querySelector('.big')?.textContent ?? ''])))
+            // 앞 검사들이 API 로 바로 읽음 처리·세션 지우기를 해서 화면 저장소가 호스트보다 뒤처져 있다 — 새로 받은 판끼리 견준다
+            await pg.reload(); await pg.waitForSelector('.sbtiles .mcards .t-todo', { timeout: 8000 }); await wait(800)
+            let w = null, g = null
+            for (let i = 0; i < 30; i++) { w = await want(); g = await got(); if (g.fold === w.fold && g.sess === w.sess && g.note === w.note && g.todo === w.todo) break; await wait(300) }
+            if (g.fold !== w.fold || g.sess !== w.sess || g.note !== w.note || g.todo !== w.todo) fail('🔴 CJ 네 칸: 칸 숫자가 호스트와 다르다 · ' + JSON.stringify({ got: g, want: w }))
+            const navs = await pg.$$eval('.col.side.left .nav > span:nth-child(2)', (r) => r.map((x) => x.textContent))
+            if (navs.includes('알림') || navs.includes('세션 정리')) fail('🔴 CJ: 레일에 «알림»·«세션 정리» 줄이 남았다(칸과 같은 숫자가 두 번) · ' + JSON.stringify(navs))
+            // 할 일 보드 — 검사용 줄 하나를 더해 찾고, 칸으로 끝내고, 줄을 눌러 그 폴더로
+            await api(`/bots/${bot.id}/todo`, { title: '보드 검사용 줄', desc: '' })
+            {   // 줄 번호가 밀렸을 때 엉뚱한 줄을 끝내지 않는다 — 제목이 다르면 409 (리뷰 10/16)
+              const l0 = (await api(`/bots/${bot.id}/todo`)).find((t) => t.title === '보드 검사용 줄')
+              const r409 = await fetch(base + '/api/bots/' + bot.id + '/todo/toggle', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ line: l0.line, done: true, title: '다른 줄' }) })
+              if (r409.status !== 409 || (await api(`/bots/${bot.id}/todo`)).find((t) => t.title === '보드 검사용 줄')?.done) fail('🔴 CJ 보드: 제목이 다른데 그 줄 번호를 끝냈다 · ' + r409.status)
+            }
+            await pg.click('.sbtiles .mcards .t-todo'); await pg.waitForSelector('.modal.board .bfold', { timeout: 6000 }).catch(() => {})
+            if (!(await pg.$('.modal.board .bfold'))) fail('🔴 CJ 보드: 할 일 칸을 눌렀는데 보드(폴더 묶음)가 안 열린다 · ' + await pg.evaluate(() => document.querySelector('.modal.board')?.textContent?.slice(0, 200)))
+            const cnt = await pg.textContent('.modal.board .modal-h .cnt'); const allN = (await api('/todos')).open
+            if (!cnt?.includes(`열린 ${allN}`)) fail('CJ 보드: 머리의 «열린 N» 이 호스트와 다르다 · ' + JSON.stringify([cnt, allN]))
+            await pg.fill('.modal.board .bsearch input', '보드 검사용'); await wait(250)
+            const hitT = await pg.$$eval('.modal.board .bti .tt', (r) => r.map((x) => x.textContent))
+            if (hitT.length !== 1 || hitT[0] !== '보드 검사용 줄') fail('CJ 보드: 검색이 그 줄 하나만 남기지 않는다 · ' + JSON.stringify(hitT))
+            await pg.click('.modal.board .bti .cb')
+            let doneT = false
+            for (let i = 0; i < 20; i++) { doneT = (await api(`/bots/${bot.id}/todo`)).some((t) => t.title === '보드 검사용 줄' && t.done); if (doneT) break; await wait(200) }
+            if (!doneT) fail('🔴 CJ 보드: 줄 왼쪽 칸을 눌렀는데 todo.md 에서 안 끝났다')
+            await wait(300)
+            if ((await pg.$$eval('.modal.board .bti .tt', (r) => r.map((x) => x.textContent))).includes('보드 검사용 줄')) fail('CJ 보드: 끝낸 줄이 보드에 남아 있다')
+            const lineT = (await api(`/bots/${bot.id}/todo`)).find((t) => t.title === '보드 검사용 줄'); if (lineT) await api(`/bots/${bot.id}/todo/delete`, { line: lineT.line })
+            await pg.fill('.modal.board .bsearch input', 'PRD'); await wait(250)
+            const backB = await pg.evaluate(() => location.hash)
+            await pg.click(`.modal.board .bfold[data-bot="${bot.id}"] .bti`); await wait(600)
+            const hB = await pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('bot'))
+            if (await pg.$('.modal.board') || hB !== bot.id) fail('CJ 보드: 줄을 눌렀는데 그 폴더로 안 갔다 · ' + JSON.stringify(hB))
+            await pg.evaluate((x) => { location.hash = x }, backB); await wait(400)
+            // 폴더봇 칸 → 현황 시트 — 폴더 수만큼 줄(오래 쉼은 접혀 있어 묶음 머리의 수로 센다) · 줄을 누르면 그 대화
+            await pg.click('.sbtiles .mcards .t-fold'); await pg.waitForSelector('.modal.fsheet', { timeout: 4000 }).catch(() => {})
+            if (!(await pg.$('.modal.fsheet'))) fail('🔴 CJ: 폴더봇 칸을 눌렀는데 현황 시트가 안 열린다')
+            const sumG = await pg.$$eval('.modal.fsheet .gh .c', (r) => r.reduce((a, x) => a + Number(x.textContent), 0))
+            if (String(sumG) !== w.fold) fail('CJ 현황 시트: 묶음 수의 합이 폴더봇 수와 다르다 · ' + JSON.stringify([sumG, w.fold]))
+            if (await pg.$('.modal.fsheet .act, .modal.fsheet [aria-label="중단"]')) fail('CJ 현황 시트: [중단] 은 두지 않기로 했다(결정 ②)')
+            await pg.keyboard.press('Escape'); await wait(200)
+            if (await pg.$('.modal.fsheet')) fail('CJ 현황 시트: ⎋ 로 안 닫힌다')
+            await (await pg.$('.sbtiles')).screenshot({ path: 'test/tmp/cj-tiles-rail.png' })
+            ok('CJ 네 칸 — 숫자가 호스트와 같다(할 일 = 마감 7일 안) · 레일 «알림»·«세션 정리» 줄 없음 · 보드 검색·칸으로 완료·줄로 그 폴더 · 현황 시트')
           }
           /**
            * 🔴 **모델 목록 — 첫 목록은 짧게, 「더 많은 모델」에 옛 판** (2026-09-15 Dave 스크린샷).
@@ -3816,7 +3894,7 @@ try {
              */
             {
               await wait(400)
-              const tile = await pg.evaluate(() => { const b = [...document.querySelectorAll('.mcards button')].find((x) => /확인 대기/.test(x.textContent ?? '')); return b ? { act: b.querySelector('.act')?.textContent ?? '', sub: b.querySelector('.sub')?.textContent ?? '' } : null })
+              const tile = await pg.evaluate(() => { const b = document.querySelector('.mcards .t-note.hot') /* CJ — 폴더봇 칸 아래 줄에도 «확인 대기 N» 이 서서 글자로 찾으면 그 칸을 집는다 */; return b ? { act: b.querySelector('.act')?.textContent ?? '', sub: b.querySelector('.sub')?.textContent ?? '' } : null })
               if (!tile) fail('확인 대기 타일: 화면에 없다(검사 전제 깨짐)'); else if (tile.act !== '답하기' || (tile.act === '허용' || /AskUserQuestion/.test(tile.sub))) fail('🔴 확인 대기 타일: 질문에 [허용]·도구 이름이 떴다 · ' + JSON.stringify(tile))
               let sidQ = '', reqQ = ''
               for (const x of await api(`/bots/${bot.id}/sessions`)) { const c = await api(`/sessions/${x.id}/chat`); const p = c.info.pending?.find((q) => q.ask); if (p) { sidQ = x.id; reqQ = p.requestId } }
@@ -5329,7 +5407,40 @@ try {
           const back = await pg.$('.chat-hdr .rb')
           if (back) { await back.click(); await wait(600) }
           const labels = await pg.$$eval('.mhome .mcards button .n', (r) => r.map((x) => x.textContent ?? ''))
-          for (const want of ['확인 대기', '일하는 중', '할 일', '마지막 결과']) if (!labels.some((l) => l.includes(want))) fail(`폰 홈 4칸: «${want}» 가 없다 · ` + JSON.stringify(labels))
+          for (const want of ['폴더봇', '세션', '알림', '할 일']) if (!labels.some((l) => l.includes(want))) fail(`폰 홈 4칸: «${want}» 가 없다 · ` + JSON.stringify(labels))
+          /**
+           * 🔴 **CJ · 폰 알약 = 폴더 찾기** (2026-10-16 Dave · 결정 ③ A안) — 조합 중인 «재ㅁ» 에 재무 폴더 한 줄 · 엔터는 맨 위 폴더로 ·
+           *    맞는 폴더가 없으면 «오케스트레이터에게 보내기» 가 맨 위에 서고 엔터가 곧 보내기. 위쪽 종은 빠졌다(알림 칸과 같은 숫자).
+           */
+          {
+            if (await pg.$('.mhome .mtop .rb[title="알림"]')) fail('CJ 폰: 위쪽 종이 남았다(알림 칸이 흡수)')
+            const cfoB = (await api('/bots')).find((b) => b.name === '재무_CFO')
+            await pg.click('.mhome .mpill'); await pg.waitForSelector('.mhome .mpill.edit input', { timeout: 3000 }).catch(() => {})
+            if (!(await pg.$('.mhome .mpill.edit input'))) fail('🔴 CJ 폰 알약: 눌렀는데 입력칸이 안 된다')
+            if (await pg.$('.mhome .mcards')) fail('CJ 폰 알약: 찾는 동안 네 칸이 안 접혔다')
+            await pg.keyboard.type('재ㅁ'); await wait(300)
+            const hitsP = await pg.$$eval('.mhome .mfind .mrow', (r) => r.map((x) => x.dataset.bot))
+            if (hitsP.length !== 1 || hitsP[0] !== cfoB.id) fail('🔴 CJ 폰 알약: «재ㅁ» 에 재무 폴더 한 줄이 아니다 · ' + JSON.stringify(hitsP))
+            if (!(await pg.$('.mhome .mfind .orchrow:not(.first)'))) fail('CJ 폰 알약: 결과 아래 «오케스트레이터에게 보내기» 줄이 없다')
+            await pg.screenshot({ path: 'test/tmp/cj-phone-find.png' })
+            await pg.keyboard.press('Enter'); await wait(700)
+            const hP = await pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('bot'))
+            if (hP !== cfoB.id) fail('🔴 CJ 폰 알약: 엔터가 맨 위 폴더로 안 갔다 · ' + hP)
+            const backP = await pg.$('.chat-hdr .rb'); if (backP) { await backP.click(); await wait(600) }
+            // 맞는 폴더가 없을 때 — 엔터가 오케스트레이터에게 보낸다
+            const ask = '알약에서 보낸 시험 문장 ' + Date.now().toString(36)
+            await pg.click('.mhome .mpill'); await pg.waitForSelector('.mhome .mpill.edit input', { timeout: 3000 })
+            await pg.keyboard.type(ask); await wait(300)
+            if (!(await pg.$('.mhome .mfind .orchrow.first'))) fail('🔴 CJ 폰 알약: 맞는 폴더가 없는데 «오케스트레이터에게 보내기» 가 맨 위가 아니다')
+            await pg.keyboard.press('Enter')
+            let sent = false
+            for (let i = 0; i < 30 && !sent; i++) { await wait(300); for (const x of await api('/bots/orch/sessions')) { const c = await api(`/sessions/${x.id}/chat`); if ((c.items ?? []).some((it) => it.kind === 'user' && it.text.includes(ask))) { sent = true; break } } }
+            if (!sent) fail('🔴 CJ 폰 알약: 엔터를 눌렀는데 오케스트레이터에게 말이 안 갔다')
+            const hO = await pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('bot'))
+            if (hO !== 'orch') fail('CJ 폰 알약: 보낸 뒤 오케스트레이터 대화로 안 갔다 · ' + hO)
+            const backO = await pg.$('.chat-hdr .rb'); if (backO) { await backO.click(); await wait(600) }
+            ok('CJ 폰 알약 — «재ㅁ» → 재무 한 줄 · 엔터는 그 폴더 · 맞는 폴더 없으면 엔터가 오케스트레이터에게 보낸다 · 위쪽 종 없음')
+          }
           // ⚠ 뒤 검사들은 **대화 화면**을 전제로 한다 — 홈으로 나왔으면 다시 들어가 둔다
           if (back) {
             await pg.evaluate((n) => { const r = [...document.querySelectorAll('.mhome .mrow')].find((x) => x.querySelector('.l1')?.textContent?.includes(n)); r?.click() }, wasName)   // ⚠ 이름 줄(.l1)로만 찾는다 — 다른 봇의 미리보기 줄에 이 이름이 섞일 수 있다(BH «요청 ← 봇 이름»)
@@ -5337,7 +5448,7 @@ try {
             const now = await pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('bot'))
             if (now !== wasBot) fail('폰 홈 4칸: 검사 뒤 원래 폴더로 안 돌아왔다 · ' + JSON.stringify([wasBot, now]))
           }
-          ok('폰 홈 4칸도 같은 것 — 확인 대기 · 일하는 중 · 할 일 · 마지막 결과')
+          ok('폰 홈 4칸도 같은 것 — 폴더봇 · 세션 · 알림 · 할 일')
           /**
            * 🔴 **폰도 껐다 켜면 마지막 화면이다** (2026-09-17 Dave: «모바일에서 화면으로 들어가면 마지막 화면이 저장이 안되네»).
            *    폴더는 돌아오는데 화면이 «목록» 에 남던 것 — 대화 화면으로 함께 돌아와야 한다.
@@ -5537,7 +5648,7 @@ try {
          */
         {
           const hdr = await pg.evaluate(() => [...document.querySelectorAll('.mhome .mtop .rb')].map((b) => b.getAttribute('title')))
-          if (hdr[0] !== '오케스트레이터' || hdr[hdr.length - 1] !== '설정') fail('🔴 CN: 폰 머리 단추 차례가 «오케스트레이터 … 🔔 · 📁+ · ⚙» 가 아니다 ' + JSON.stringify(hdr))
+          if (hdr[0] !== '오케스트레이터' || hdr[hdr.length - 1] !== '설정') fail('🔴 CN: 폰 머리 단추 차례가 «오케스트레이터 … 📁+ · ⚙» 가 아니다 ' + JSON.stringify(hdr))
           await pg.click('.mtop .rb.orchb'); await wait(700)
           const h = await pg.evaluate(() => ({ hash: location.hash, chat: !!document.querySelector('.col.chat:not(.off) .hdr') }))
           if (!/bot=orch/.test(h.hash)) fail('🔴 CN: 왼쪽 위를 눌렀는데 오케스트레이터 대화로 안 간다 ' + JSON.stringify(h))
@@ -5560,7 +5671,7 @@ try {
         }
         // 알림 — 버튼 줄이 화면 맨 아래에 붙는다 (2026-09-13 Dave: «하단 메뉴가 맨 아래에 · 여백 조정»)
         {
-          await pg.click('.mtop .rb:has(.bd), .mtop .rb >> nth=1'); await pg.waitForSelector('.nmodal', { timeout: 4000 }); await wait(400)
+          await pg.click('.mhome .mcards .t-note'); await pg.waitForSelector('.nmodal', { timeout: 4000 }); await wait(400)   // CJ · 종 단추가 빠졌다 — 알림 칸이 입구(확인 대기여도 몸통은 알림 센터)
           const nf = await pg.evaluate(() => {
             const m = document.querySelector('.nmodal').getBoundingClientRect()
             const f = document.querySelector('.nmodal .modal-f').getBoundingClientRect()

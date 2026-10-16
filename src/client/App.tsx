@@ -15,13 +15,15 @@ import { DocPane, preloadEditor, useDocs } from './Doc'
 import { Search } from './Search'
 import { Cleanup, savedCleanDays } from './Cleanup'
 import { cleanableCount } from '../core/cleanup'
+import { findFolders, pillEnter, weekTodo } from '../core/home'
+import { FolderSheet, TodoBoard } from './Manage'
 import { Elapsed, Panel, type SecH } from './Panel'
 import { machSummary } from '../core/chat'
 import { buildRows, type ChatRow } from '../core/chatRows'
 import { splitAttach } from '../core/attach'
 import { chipParts } from '../core/chipName'
 import { InlineInput, type InlineInputHandle } from './InlineInput'
-import { norm, scoreName } from '../core/search'
+import { hitRange, norm, scoreName } from '../core/search'
 import { fmtTime, useStore } from './store'
 import { ACT_ICON, FOLDER_SWIPE, type SwipeAct } from './swipe'
 import { CopyProgressHost } from './fileCopy'
@@ -365,13 +367,15 @@ function Main() {
   const [docOpen, setDocOpen] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem('fb:docopen') ?? '{}') } catch { return {} } })
   useEffect(() => { localStorage.setItem('fb:docopen', JSON.stringify(docOpen)) }, [docOpen])
   const [wide, setWide] = useState(false)
-  const [modal, setModal] = useState<'picker' | 'notify' | 'settings' | 'keys' | 'palette' | 'search' | 'cleanup' | null>(null)
+  const [modal, setModal] = useState<ModalKey | null>(null)
   // «설정의 그 칸을 열어 줘» — 에이전트 고르기 화면의 «바꾸기» 가 이걸 쏜다 (V24)
   const [setSec, setSetSec] = useState<SecId | undefined>(undefined)
   useEffect(() => { const f = (e: Event) => { setSetSec((e as CustomEvent).detail as SecId); setModal('settings') }; window.addEventListener('fb:settings', f); return () => window.removeEventListener('fb:settings', f) }, [])
   const [drag, setDrag] = useState<'' | 'x' | 'y'>('')
   const [toast, say] = useToast()
   const [prefill, setPrefill] = useState('')
+  /** CJ · 폰 알약에서 «오케스트레이터에게 보내기» — 그 봇의 대화가 화면에 선 뒤 한 번 보낸다(Chat 이 `botId` 를 맞춰 보고 보낸다) */
+  const [sendReq, setSendReq] = useState<{ botId: string; text: string; n: number } | null>(null)
   const [attachReq, setAttachReq] = useState<Att[]>([])
   const [mentionReq, setMentionReq] = useState<string[]>([])
   const [focusReq, setFocusReq] = useState(0)
@@ -433,8 +437,6 @@ function Main() {
   const [queues, setQueues] = useState<Record<string, string[]>>({})
   const flushing = useRef<Set<string>>(new Set())
   const allSessions = useMemo(() => Object.values(s.sessionsByBot).flat(), [s.sessionsByBot])
-  // 메뉴 «세션 정리» 옆 숫자 — 정리 창을 기본 거름으로 열었을 때 체크될 수(core/cleanup). 1분마다 «안 쓴 지» 문턱을 다시 잰다
-  const cleanable = useMemo(() => cleanableCount(allSessions, Date.now(), savedCleanDays()), [allSessions, Math.floor(Date.now() / 60_000), modal])   // 정리 창에서 고른 «안 쓴 지» 날 — 창을 닫으면 다시 잰다
   useEffect(() => {
     for (const [sid, list] of Object.entries(queues)) {
       if (!list.length || flushing.current.has(sid)) continue
@@ -894,20 +896,19 @@ function Main() {
     return off
   }, [bot?.id, sessions.length])
   // H · 같은 부품을 세 단계가 나눠 쓴다 — 넓음은 흐름 안, 중간·좁음은 서랍 안. 데이터(순서·표시 이름·확인 대기 점)는 한 곳(rows)
-  const homeEl = <Home rows={rows} bot={bot} go={go} setModal={setModal} waiting={waiting} unread={unread} onAsk={() => { go('orch'); setFocusReq(Date.now()) }} onTodo={goTodo} say={say} railSort={railSort} setRailSort={setRailSort} prefetch={prefetch} />
+  const homeEl = <Home rows={rows} bot={bot} go={go} setModal={setModal} waiting={waiting} onAsk={(text) => { go('orch'); if (text) setSendReq({ botId: 'orch', text, n: Date.now() }); else setFocusReq(Date.now()) }} say={say} railSort={railSort} setRailSort={setRailSort} prefetch={prefetch} />
   const sidebarEl = <div className="col side left" style={{ width: stage === 'wide' ? fit.sb : undefined }}>
         <div className="hdr"><FolderBot color="#e08850" size={16} mood={waiting ? 'wait' : 'idle'} mono /><span className="ttl">Folder Bot</span><span className="sp" /><div className="acts"><button className="ib" onClick={closeSb} title="목록 접기 (⌘B)"><Icon n="panel" size={14} /></button></div></div>
         <div style={{ padding: '10px 8px 0' }}>
-          {/* 🔴 검색은 맨 위 · 세션 정리는 넷째 줄 (2026-10-02 Dave · 시안 A·B) — 설정 안에 숨기지 않고 늘 보이는 자리 */}
+          {/* 🔴 검색은 맨 위 (2026-10-02 Dave · 시안 A). CJ (2026-10-16) — «알림»·«세션 정리» 줄은 네 칸(알림 · 세션)이 흡수했다.
+              같은 숫자가 두 번 보이지 않게 뺐다. ⌘⇧U · 명령 팔레트 · 접힌 레일 띠의 종은 남는다(기획안 §2-5) */}
           <button className="nav nsearch" onClick={() => setModal('search')}><Icon n="search" size={14} /><span>검색</span><span className="bd kb">⌘K</span></button>
           <button className="nav" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span>폴더 선택 · 시작</span><span className="bd">후보 {s.candidates.filter((c) => !c.active).length}</span></button>
-          <button className="nav" onClick={() => setModal('notify')}><Icon n="bell" size={14} /><span>알림</span>{unread ? <span className="bd" style={{ color: waiting ? 'var(--wait)' : undefined }}>{unread}</span> : null}</button>
-          <button className="nav nclean" onClick={() => setModal('cleanup')}><Icon n="trash" size={14} /><span>세션 정리</span>{cleanable ? <span className="bd">정리 가능 {cleanable}</span> : null}</button>
           <button className="nav" onClick={() => setModal('settings')}><Icon n="gear" size={14} /><span>설정</span></button>
         </div>
         {/* 🔴 **폰과 같은 네 칸을 레일 맨 위에** (2026-09-15 Dave: «이 메뉴가 데스크탑 화면에서도 좌측
             상단에 있으면 좋겠어»). 같은 컴포넌트를 `compact` 로 쓴다 — 두 화면이 갈리지 않게. */}
-        <div className="sbtiles"><ActionTiles go={go} setModal={setModal} onTodo={goTodo} say={say} compact /></div>
+        <div className="sbtiles"><ActionTiles go={go} setModal={setModal} say={say} modal={modal} compact /></div>
         {/* 정렬 갈래 — 마감일(2026-10-01 «이름» 대체) · 사용자(끌어 놓기, 구 «직접») · 상태. ⚠ 끌어 놓으면 «사용자» 로 알아서 넘어간다 */}
         <SortBar k={railSort} set={setRailSort} />
         <div className="sb-list">
@@ -982,7 +983,7 @@ function Main() {
       {stage === 'wide' ? <div className="divx" onPointerDown={sbOpen ? dragX('sb', 1) : undefined} onDoubleClick={() => setLay({ ...lay, sb: DEF.sb, sbOpen: true, sbPin: true })} /> : null}
 
       {/* ── 채팅 ── */}
-      <Chat bot={bot} sessions={sessions} cur={cur} items={items} loaded={!!sessionId && !!s.chats[sessionId]} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openInDocPane(rel, { pin })} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={toList} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} queue={queueFor(sessionId)} onQueue={(f) => { if (sessionId) onQueue(sessionId, f) }} onReveal={reveal} />
+      <Chat bot={bot} sessions={sessions} cur={cur} items={items} loaded={!!sessionId && !!s.chats[sessionId]} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} sendReq={sendReq} onSendReq={() => setSendReq(null)} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openInDocPane(rel, { pin })} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={toList} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} queue={queueFor(sessionId)} onQueue={(f) => { if (sessionId) onQueue(sessionId, f) }} onReveal={reveal} />
 
       {/* ── 문서 열 (넓음만 흐름 안 · 중간·좁음은 오른쪽 서랍) ── */}
       {stage === 'wide' && showDoc ? <><div className="divx" onPointerDown={dragX('doc', -1)} onDoubleClick={() => setLay({ ...lay, doc: DEF.doc })} />{docwrapEl}</> : null}
@@ -1023,6 +1024,9 @@ function Main() {
     {modal === 'keys' ? <KeysSheet onClose={() => setModal(null)} /> : null}
     {modal === 'search' ? <Search go={(b, sid) => go(b, sid)} onClose={() => setModal(null)} /> : null}
     {modal === 'cleanup' ? <Cleanup onClose={() => setModal(null)} say={say} /> : null}
+    {modal === 'sessions' ? <Cleanup manage onClose={() => setModal(null)} say={say} go={go} /> : null}
+    {modal === 'board' ? <TodoBoard onClose={() => setModal(null)} onTodo={goTodo} say={say} /> : null}
+    {modal === 'folders' ? <FolderSheet rows={rows.flatMap(([, l]) => l)} onClose={() => setModal(null)} go={go} onPick={() => setModal('picker')} /> : null}
     {/* 🔴 **명령 팔레트 (⌘P)** — 폴더 · 문서 · 세션 · 명령이 한 목록에 선다(Rondo 이식 D1).
         ⛔ 되돌리기 어려운 일(지우기·은퇴)은 여기 두지 않는다 — 손이 빠른 자리라 한 글자 잘못 치고
         ⏎ 를 누르면 그대로 실행된다. */}
@@ -1106,23 +1110,24 @@ function botSummary(bot: Bot, sessions: SessionInfo[], notif: NotifyEvent[]) {
 }
 
 /**
- * 🔴 **네 칸은 «세는 곳» 이 아니라 «하는 곳» 이다** (2026-09-15 Dave: *«실제로 쓸일이 별로 없거든.
- *    나는 상태 및 주요 사항들을 바로 보고 액션하고 싶어»* · 고정 4칸 · 전부 액션으로 확정).
+ * 🔴 **CJ · 네 칸 = 관리 입구 넷** (2026-10-16 Dave: *«이 영역은 거의 사용이 안되고 있어 — 폴더봇 수 · 세션 수 · 읽지 않은 알림 수 · 할 일은 누르면 전체가 한눈에»* · «전부 추천대로»).
+ *    기획안 `01_기획/2026-10-16_기획_홈-네-칸-재설계와-폰-폴더-찾기.md` · 목업 `03_디자인/2026-10-16_홈-네-칸-목업` ①.
  *
- * 왜 종전 넷(확인 필요·일하는 중·인박스·폴더 후보)이 안 쓰였나 — **셋이 이미 다른 데 있는 숫자**였다.
- * 확인 필요는 위 종 배지와 같고, 일하는 중은 아래 목록이 이미 말하고, 인박스·폴더 후보는 **처음
- * 차릴 때** 한 번 보는 것이다. 숫자만 있고 **거기서 할 수 있는 일이 없으면** 그 칸은 벽지가 된다.
- *
- * 그래서 넷 다 «지금 상태 + 그 자리에서 할 일» 로 바꾼다:
- *   ① 확인 대기 — 무엇을 묻는지 보이고 **[허용]** 이 칸 안에 있다 (하나일 때)
- *   ② 일하는 중 — 어느 폴더가 무엇을 하는지 · **[중단]**
- *   ③ 오늘 할 일 — 볼트 전체에서 안 끝난 것 · 맨 앞 하나를 **[✓]** 로 접는다
- *   ④ 마지막 결과 — 방금 끝난 턴으로 바로 간다
+ * 왜 바꿨나 — 9/15 의 넷(확인 대기·일하는 중·할 일·마지막 결과)은 **대부분의 시간에 «0 · 없음»** 이었다(스크린샷_1058).
+ * 9/15 원칙(«세는 곳이 아니라 하는 곳»)의 뜻은 지킨다 — 숫자마다 **누르면 바로 관리 창**이 열린다:
+ *   ① 폴더봇 — 레일에 선 폴더 수 · 작은 줄 «일하는 중 N · 후보 M» → 폴더 현황 시트
+ *   ② 세션 — 모든 세션 수 · «정리할 만한 것 N» → 세션 창(종전 레일 «세션 정리» 를 흡수)
+ *   ③ 알림 — 읽지 않은 수 → 알림 창(레일 «알림»·폰 위쪽 종을 흡수). 🔴 **확인 대기가 생기면 이 칸이 주황 «확인 대기» 로 바뀌고
+ *      칸 안에서 [허용]·[답하기]** — 대기가 덜 보이면 안 된다(기획안 §6). 질문(AskUserQuestion)에는 [허용] 이 아니라 [답하기](2026-09-25).
+ *   ④ 할 일 — **마감 7일 안 폴더의 열린 할 일 수**(결정 ① ⓒ · 볼트 전체 수는 보드 안에서만) → 전체 할 일 보드
+ * [중단] 은 칸에서 뺐다(결정 ② — 중단은 대화 안 단추가 제자리).
  * ⚠ 칸 안의 작은 단추는 `<span role="button">` 이다 — 단추 안에 단추를 넣으면 HTML 이 깨진다.
- * ⚠ 폰·맥이 **같은 컴포넌트**를 쓴다(맥은 레일 맨 위 `compact`). 둘이 갈리면 설명이 두 벌이 된다.
+ * ⚠ 폰·맥이 **같은 컴포넌트**를 쓴다(맥은 레일 맨 위 `compact`). 둘이 갈리면 설명이 두 벌이 된다. 판정은 `core/home`.
  */
-interface TodoAgg { open: number; rows: { botId: string; name: string; open: number; next: { line: number; title: string } | null }[] }
-function ActionTiles({ go, setModal, onTodo, say, compact }: { go: (b: string, sid?: string) => void; setModal: (m: 'picker' | 'notify' | 'settings') => void; onTodo: (botId: string) => void; say: (m: string) => void; compact?: boolean }) {
+/** 창 — CJ 로 «sessions»(세션 창) · «board»(할 일 보드) · «folders»(폴더 현황) 가 늘었다. «cleanup» 은 셸 메뉴의 옛 «세션 정리» 길 */
+type ModalKey = 'picker' | 'notify' | 'settings' | 'keys' | 'palette' | 'search' | 'cleanup' | 'sessions' | 'board' | 'folders'
+interface TodoAgg { open: number; rows: { botId: string; name: string; open: number; proposed?: number; next: { line: number; title: string } | null }[] }
+function ActionTiles({ go, setModal, say, compact, modal }: { go: (b: string, sid?: string) => void; setModal: (m: ModalKey) => void; say: (m: string) => void; compact?: boolean; modal?: ModalKey | null }) {
   const { s } = useStore()
   const [todo, setTodo] = useState<TodoAgg | null>(null)
   const [busy, setBusy] = useState('')
@@ -1133,44 +1138,50 @@ function ActionTiles({ go, setModal, onTodo, say, compact }: { go: (b: string, s
   const all = useMemo(() => Object.values(s.sessionsByBot).flat(), [s.sessionsByBot])
   const waiting = all.filter((x) => x.state === 'awaiting_input')
   const running = all.filter((x) => x.state === 'running')
+  const folders = s.bots.filter((b) => !b.orchestrator)
+  const cands = s.candidates.filter((c) => !c.active).length
+  const unread = s.notifications.filter((n) => !n.read).length
+  const cleanable = useMemo(() => cleanableCount(all, Date.now(), savedCleanDays()), [all, modal, Math.floor(Date.now() / 60_000)])   // modal — 세션 창에서 «안 쓴 지» 를 바꾸고 닫으면 바로 따라간다   // eslint-disable-line react-hooks/exhaustive-deps
+  const wk = useMemo(() => weekTodo(s.bots, todo?.rows ?? []), [s.bots, todo])
   const last = s.notifications.find((n) => n.kind === 'done' || n.kind === 'routine' || n.kind === 'error')
-  const nameOf = (id?: string) => s.bots.find((b) => b.id === id)?.name ?? ''
-  const w0 = waiting[0], r0 = running[0], t0 = todo?.rows[0]
+  const nameOf = (id?: string) => { const b = s.bots.find((x) => x.id === id); return b ? (b.displayName || b.name) : '' }
+  const w0 = waiting[0]
   const allow = async () => {
     const req = w0?.pending[0]; if (!w0 || !req) return
     setBusy('w'); try { await api(`/sessions/${w0.id}/permission`, { body: { requestId: req.requestId, allow: true } }); say('허용했어요') } catch (e) { say((e as Error).message) } finally { setBusy('') }
   }
-  const stop = async () => { if (!r0) return; setBusy('r'); try { await api(`/sessions/${r0.id}/interrupt`, { body: {} }); say('중단했어요') } catch (e) { say((e as Error).message) } finally { setBusy('') } }
-  const check = async () => {
-    if (!t0?.next) return
-    setBusy('t'); try { await api(`/bots/${t0.botId}/todo/toggle`, { body: { line: t0.next.line, done: true } }); load(); say(`«${t0.next.title}» 완료`) } catch (e) { say((e as Error).message) } finally { setBusy('') }
-  }
   const act = (on: () => void, label: string, key: string) => <span role="button" className="act" aria-label={label} onClick={(e) => { e.stopPropagation(); if (!busy) on() }}>{busy === key ? '…' : label}</span>
-  return <div className={`mcards ${compact ? 'mini' : ''}`}>
-    <button className={waiting.length ? 'hot' : ''} onClick={() => (w0 ? go(w0.botId, w0.id) : setModal('notify'))}>
-      <Icon n="bell" size={compact ? 16 : 22} color={waiting.length ? 'var(--wait)' : 'var(--t3)'} />
-      <span className="n">확인 대기<span>{waiting.length}</span></span>
-      {/* 🔴 질문(AskUserQuestion)은 «허용» 할 것이 아니라 **답할** 것이다 (2026-09-25 디자인 검수). 종전에는 질문에도 [허용] 이 떠서,
-          누르면 답 없이 허용이 가거나(보통 질문) 질문이 취소됐다(미뤄진 질문). 도구 이름도 사람 말로 바꾼다. */}
-      <span className="subrow"><span className="sub">{w0 ? `${nameOf(w0.botId)} · ${w0.pending[0]?.ask ? '질문에 답해 주세요' : w0.pending[0]?.displayName ?? w0.name}` : '없음'}</span>
-      {w0?.pending[0] ? (w0.pending[0].ask ? act(() => go(w0.botId, w0.id), '답하기', 'w') : act(allow, '허용', 'w')) : null}</span>
+  const sz = compact ? 15 : 20
+  const nearChip = wk.nearest ? botDueChip(wk.nearest) : null
+  return <div className={`mcards big4 ${compact ? 'mini' : ''}`}>
+    <button className="t-fold" onClick={() => setModal('folders')} aria-label={`폴더봇 ${folders.length}`}>
+      <Icon n="folder" size={sz} color="var(--t3)" />
+      <span className="n"><b className="big">{folders.length}</b>폴더봇</span>
+      <span className="sub">{running.length ? <em>일하는 중 {running.length}</em> : null}{running.length ? ' · ' : null}{waiting.length ? `확인 대기 ${waiting.length}` : `후보 ${cands}`}</span>
     </button>
-    <button onClick={() => (r0 ? go(r0.botId, r0.id) : setModal('notify'))}>
-      <Icon n="run" size={compact ? 16 : 22} color={running.length ? 'var(--run)' : 'var(--t3)'} />
-      <span className="n">일하는 중<span>{running.length}</span></span>
-      <span className="subrow"><span className="sub">{r0 ? `${nameOf(r0.botId)} · ${r0.activity || r0.name}` : '없음'}</span>
-      {r0 ? act(stop, '중단', 'r') : null}</span>
+    <button className="t-sess" onClick={() => setModal('sessions')} aria-label={`세션 ${all.length}`}>
+      <Icon n="clock" size={sz} color="var(--t3)" />
+      <span className="n"><b className="big">{all.length}</b>세션</span>
+      <span className="sub">{cleanable ? `정리할 만한 것 ${cleanable}` : '정리할 것 없음'}</span>
     </button>
-    <button onClick={() => (t0 ? onTodo(t0.botId) : go('orch'))}>
-      <Icon n="check" size={compact ? 16 : 22} color={todo?.open ? '#7fb0ff' : 'var(--t3)'} />
-      <span className="n">할 일<span>{todo?.open ?? 0}</span></span>
-      <span className="subrow"><span className="sub">{t0?.next ? `${t0.name} · ${t0.next.title}` : '다 끝냈어요'}</span>
-      {t0?.next ? act(check, '✓', 't') : null}</span>
-    </button>
-    <button onClick={() => (last ? go(last.botId, last.sessionId) : setModal('notify'))}>
-      <Icon n="check" size={compact ? 16 : 22} color={last?.kind === 'error' ? 'var(--err)' : 'var(--done)'} />
-      <span className="n">마지막 결과<span>{last ? fmtTime(last.t) : ''}</span></span>
-      <span className="sub">{last ? `${nameOf(last.botId)} · ${notePlain(last)}` : '아직 없어요'}</span>
+    {w0
+      // ⚠ 몸통은 알림 센터 — 미뤄진 질문이 몇 시간 떠 있어도 폰에서 알림 센터로 갈 길이 남는다(종 단추가 빠졌다 · 리뷰 10/16). 그 세션으로는 [답하기]·[허용] 이 간다.
+      ? <button className="t-note hot" onClick={() => setModal('notify')} aria-label={`확인 대기 ${waiting.length}`}>
+        <Icon n="bell" size={sz} color="var(--wait)" />
+        <span className="n"><b className="big">{waiting.length}</b>확인 대기</span>
+        {/* 🔴 질문(AskUserQuestion)은 «허용» 할 것이 아니라 **답할** 것이다 (2026-09-25 디자인 검수). 도구 이름도 사람 말로 바꾼다. */}
+        <span className="subrow"><span className="sub">{`${nameOf(w0.botId)} · ${w0.pending[0]?.ask ? '질문에 답해 주세요' : w0.pending[0]?.displayName ?? w0.name}`}</span>
+        {w0.pending[0] ? (w0.pending[0].ask ? act(() => go(w0.botId, w0.id), '답하기', 'w') : act(allow, '허용', 'w')) : act(() => go(w0.botId, w0.id), '열기', 'w')}</span>
+      </button>
+      : <button className="t-note" onClick={() => setModal('notify')} aria-label={`알림 ${unread}`}>
+        <Icon n="bell" size={sz} color={last?.kind === 'error' ? 'var(--err)' : 'var(--t3)'} />
+        <span className="n"><b className="big">{unread}</b>알림</span>
+        <span className="sub">{last ? `${nameOf(last.botId)} · ${notePlain(last)}` : '아직 없어요'}</span>
+      </button>}
+    <button className="t-todo" onClick={() => setModal('board')} aria-label={`할 일 ${wk.n}`}>
+      <Icon n="check" size={sz} color={wk.n ? '#7fb0ff' : 'var(--t3)'} />
+      <span className="n"><b className="big">{wk.n}</b>할 일</span>
+      <span className="sub">{wk.nearest ? <>이번 주 마감 · {wk.nearest.displayName || wk.nearest.name}{nearChip ? ` ${nearChip.text}` : ''}</> : todo ? `이번 주 마감 없음 · 전체 ${todo.open}` : ''}</span>
     </button>
   </div>
 }
@@ -1202,7 +1213,7 @@ function BotName({ b, chip = true }: { b: Bot; chip?: boolean }) {
   return <span ref={ref} className="bname" title={b.name}><b className="dn">{b.displayName}</b>{b.kind && !hideTag ? <span className="tag">{b.kind}</span> : null}{due ? <span className={`due ${due.tone}`} title={due.line ? `할 일 마감 — ${b.name}` : undefined}>{due.text}</span> : null}</span>
 }
 
-function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say, railSort, setRailSort, prefetch }: { prefetch: (botId: string) => void; railSort: RailSort; setRailSort: (k: RailSort) => void; rows: Row[]; bot: Bot; go: (b: string, sid?: string) => void; setModal: (m: 'picker' | 'notify' | 'settings') => void; waiting: number; unread: number; onAsk: () => void; onTodo: (botId: string) => void; say: (m: string) => void }) {
+function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, prefetch }: { prefetch: (botId: string) => void; railSort: RailSort; setRailSort: (k: RailSort) => void; rows: Row[]; bot: Bot; go: (b: string, sid?: string) => void; setModal: (m: ModalKey) => void; waiting: number; onAsk: (text?: string) => void; say: (m: string) => void }) {
   const usage = useUsage() // 폰 홈 맨 위 — 한 줄 띠. 누르면 카드가 시트로 올라온다
   const [uSheet, setUSheet] = useState(false)
   const { s, refresh } = useStore()
@@ -1223,18 +1234,41 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say, ra
   }
   const all = rows.flatMap(([, l]) => l)
   const orchRow = all.find((x) => x.b.orchestrator)
-  const running = all.filter((x) => x.sum.state === 'running')
-  const cands = s.candidates.filter((c) => !c.active).length
+  /**
+   * 🔴 **CJ · 하단 알약 = 폴더 찾기** (2026-10-16 Dave: *«폴더가 너무 많으니 모바일 하단의 오케스트레이터에게 바로 말거는 대신 거기에서 폴더 검색으로
+   *    필터링이 바로 되면»* · 결정 ③ A안). 알약을 누르면 그 자리가 입력칸이 되고, 네 칸·정렬 줄은 접혀 목록이 화면을 다 쓴다.
+   *    표시 이름·경로·칸에서 찾고 조합 중인 한글(«디ㅋ»)도 걸린다(`core/home` findFolders → `core/search`).
+   *    결과 맨 아래에는 늘 «"…" 오케스트레이터에게 보내기» — 맞는 폴더가 없으면 그 줄이 맨 위로 오고 **엔터가 곧 보내기**다.
+   * ⚠ `null` = 찾는 중 아님 · `''` = 알약을 열었는데 아직 안 침. 빈칸으로 키보드를 내리거나 ✕ 면 원래 홈 — 친 글자는 남기지 않는다.
+   */
+  const [q, setQ] = useState<string | null>(null)
+  const qRef = useRef<HTMLInputElement>(null)
+  const hits = useMemo(() => (q ? findFolders(s.bots, q) : []), [q, s.bots])
+  const sumOf = (id: string) => all.find((x) => x.b.id === id)?.sum
+  const closeFind = () => { setQ(null); qRef.current?.blur() }
+  const askOrch = () => { const t = (q ?? '').trim(); if (!t) return; closeFind(); onAsk(t) }
+  const enter = () => { const r = pillEnter(hits, q ?? ''); if (!r) return; if ('go' in r) { closeFind(); go(r.go) } else askOrch() }
+  const mark = (name: string) => { const r = q ? hitRange(q, name) : null; return r ? <>{name.normalize('NFC').slice(0, r[0])}<mark>{name.normalize('NFC').slice(r[0], r[1])}</mark>{name.normalize('NFC').slice(r[1])}</> : name }
+  const orchLine = (first: boolean) => <button className={`orchrow ${first ? 'first' : ''}`} onClick={askOrch}><Icon n="chat" size={16} /><span>«<b>{(q ?? '').trim()}</b>» 오케스트레이터에게 보내기</span>{first ? <span className="k">↵</span> : null}</button>
   return <div className="col mhome">
     {/* 🔴 CN · 왼쪽 위 = 오케스트레이터 바로 가기 (2026-10-16 Dave: «설정이라는 느낌이 안 들어서 클릭하면 바로 오케스트레이터로»).
         주황 얼굴은 오케스트레이터 색이라 생김새와 하는 일을 맞춘다 — 표정·배지·안 읽음 링도 «확인 대기 전체» 가 아니라 오케스트레이터 자기 것.
         설정은 오른쪽 끝 ⚙ 로 옮겼다(🔔 · 📁+ · ⚙). 끌어서 칸 주인을 바꾸는 안(B)은 쓸기·스크롤과 부딪혀 안 골랐다(기획안 §8) */}
-    <div className="mtop"><button className="rb orchb" onClick={() => go('orch')} title="오케스트레이터" aria-label="오케스트레이터">{orchRow ? <FolderBot color={orchRow.b.color} size={26} mood={orchRow.sum.mood} unread={orchRow.sum.unread} recent={orchRow.sum.recent} mono /> : <FolderBot color="#e08850" size={26} mood={waiting ? 'wait' : 'idle'} mono />}</button><span className="sp" /><button className="rb" onClick={() => setModal('notify')} title="알림"><Icon n="bell" size={20} />{unread ? <span className="bd">{unread}</span> : null}</button><button className="rb" onClick={() => setModal('picker')} title="폴더에서 시작"><Icon n="fplus" size={20} /></button><button className="rb setb" onClick={() => setModal('settings')} title="설정" aria-label="설정"><Icon n="gear" size={20} /></button></div>
+    <div className="mtop"><button className="rb orchb" onClick={() => go('orch')} title="오케스트레이터" aria-label="오케스트레이터">{orchRow ? <FolderBot color={orchRow.b.color} size={26} mood={orchRow.sum.mood} unread={orchRow.sum.unread} recent={orchRow.sum.recent} mono /> : <FolderBot color="#e08850" size={26} mood={waiting ? 'wait' : 'idle'} mono />}</button><span className="sp" /><button className="rb" onClick={() => setModal('picker')} title="폴더에서 시작"><Icon n="fplus" size={20} /></button><button className="rb setb" onClick={() => setModal('settings')} title="설정" aria-label="설정"><Icon n="gear" size={20} /></button></div>
     <div className="mscroll">
+      {q !== null ? <div className="mfind">
+        {q.trim() ? <>
+          <div className="secl">{hits.length ? `폴더 ${hits.length}` : '맞는 폴더 없음'}</div>
+          {!hits.length ? orchLine(true) : null}
+          {hits.map((b) => { const sum = sumOf(b.id); return <button key={b.id} className="mrow" data-bot={b.id} onPointerDown={() => prefetch(b.id)} onClick={() => { closeFind(); go(b.id) }}><span className="av"><FolderBot color={b.color} size={46} mood={sum?.mood} unread={sum?.unread} recent={sum?.recent} mono /></span><span className="t"><span className="l1"><b className="dn">{mark(b.displayName || b.name)}</b></span><span className="l2">{b.rel}</span></span></button> })}
+          {hits.length ? orchLine(false) : null}
+        </> : <div className="mfhint">폴더 이름이나 경로를 쳐 보세요 — 엔터는 맨 위 폴더로, 맞는 폴더가 없으면 오케스트레이터에게 보내요</div>}
+      </div> : <>
       <div className="mtitle">Folder Bot</div>
-      <div className="msub"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} style={{ width: 7, height: 7 }} />{s.hostName}<MrBadge /><span>· 봇 {s.bots.length} · 후보 {cands}</span></div>
+      {/* CJ · 봇·후보 수는 폴더봇 칸이 말한다 — 같은 숫자를 두 번 안 쓴다 */}
+      <div className="msub"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} style={{ width: 7, height: 7 }} />{s.hostName}<MrBadge /></div>
       {usage && usage.tools.length ? <div style={{ padding: '0 16px 12px' }}><UsageStrip u={usage} onOpen={() => setUSheet(true)} /></div> : null}
-      <ActionTiles go={go} setModal={setModal} onTodo={onTodo} say={say} />
+      <ActionTiles go={go} setModal={setModal} say={say} />
       {/* AZ (2026-09-25 Dave: «모바일에서도 데스크톱처럼 정렬 버튼») — 레일과 **같은 값**(`fb:railsort`)을 쓴다. 폰에서 고르면 맥 레일도 그 차례다(이 기기 기준) */}
       <SortBar k={railSort} set={setRailSort} />
       {rows.map(([sec, list]) => <div key={sec}>
@@ -1245,13 +1279,21 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say, ra
           return b.orchestrator ? row : <SwipeRow key={b.id} cfg={FOLDER_SWIPE} labelFor={(a) => (a === 'pin' && b.pinned ? '고정 풀기' : undefined)} onAct={(a) => void folderAct(b, a)}>{row}</SwipeRow>
         })}
       </div>)}
+      </>}
     </div>
     {fsheet ? <><div className="backdrop" onClick={() => setFsheet(null)} /><div className="tsheet">
       <div className="grip" />
       <div className="ti">{fsheet.name}</div>
       {([['pin', fsheet.pinned ? '고정 풀기' : '맨 위에 고정'], ...(fsheet.orderedBy === 'user' ? [['unfix', '순서 고정 해제 — 끌어 놓은 자리']] : []), ['color', '색 바꾸기'], ['unlink', '지우기 (연결 해지) — 폴더는 그대로'], ['retire', '은퇴 (Archive 로)']] as [SwipeAct, string][]).map(([a, l]) => <button key={a} onClick={() => { const b = fsheet; setFsheet(null); void folderAct(b, a) }}><Icon n={ACT_ICON[a] as 'edit'} size={16} />{l}</button>)}
     </div></> : null}
-    <button className="mpill glassb" onClick={onAsk}><span className="pl"><Icon n="plus" size={20} /></span><span className="tx">폴더에 시키기…</span><Icon n="sub" size={20} color="var(--t2)" /></button>
+    {q === null
+      ? <button className="mpill glassb" onClick={() => { setQ(''); requestAnimationFrame(() => qRef.current?.focus()) }} aria-label="폴더 찾기 · 시키기"><span className="pl"><Icon n="search" size={20} /></span><span className="tx">폴더 찾기 · 시키기…</span><Icon n="sub" size={20} color="var(--t2)" /></button>
+      : <div className="mpill glassb edit"><span className="pl"><Icon n="search" size={20} /></span>
+        <input ref={qRef} className="tx" value={q} autoFocus enterKeyHint="go" placeholder="폴더 찾기 · 시키기…" aria-label="폴더 찾기"
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); enter() } else if (e.key === 'Escape') closeFind() }}
+          onBlur={() => { if (!(qRef.current?.value ?? '').trim()) setQ(null) }} />
+        <button className="x" onPointerDown={(e) => e.preventDefault()} onClick={closeFind} aria-label="찾기 닫기"><Icon n="x" size={16} /></button></div>}
   {uSheet && usage ? <><div className="backdrop" onClick={() => setUSheet(false)} /><div className="tsheet usheet"><div className="grip" /><UsageCard u={usage} /></div></> : null}</div>
 }
 
@@ -1261,7 +1303,7 @@ interface FileNode { rel: string; dir: boolean; mtime: number }
 // ⚠ 맥 파일 이름은 NFD 로 저장된다 — 비교 전에 양쪽을 NFC 로 맞추지 않으면 한글이 «아예» 안 걸린다(core/search 머리말)
 const fuzzy = (q: string, s: string): number => { if (!q) return 1; const t = norm(s); const nq = norm(q); if (t.includes(nq)) return t.startsWith(nq) ? 3 : 2; let i = 0; for (const c of t) if (c === nq[i]) i++; return i === nq.length ? 1 : 0 }
 
-function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled, attachReq, onAttached, mentionReq, onMentioned, focusReq, onSession, onFile, docBadge, docTabs, docOn, onDocToggle, say, refreshAll, collapsed, onUncollapse, phone, onBack, onPanel, newSession, filesTick, queue, onQueue, onReveal }: { bot: Bot; sessions: SessionInfo[]; cur?: SessionInfo; items: ChatItem[]; loaded: boolean; pending: PermissionRequest[]; prefill: string; onPrefilled: () => void; attachReq: Att[]; onAttached: () => void; mentionReq: string[]; onMentioned: () => void; focusReq: number; onSession: (sid: string) => void; onFile: (rel: string, pin?: boolean) => void; docBadge: number; docTabs: string[]; docOn: boolean; onDocToggle: () => void; say: (m: string) => void; refreshAll: () => Promise<void>; collapsed: boolean; onUncollapse: () => void; phone: boolean; onBack: () => void; onPanel: () => void; newSession: () => Promise<void>; filesTick?: number; queue: string[]; onQueue: (f: (q: string[]) => string[]) => void; onReveal: (rel: string) => void }) {
+function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled, sendReq, onSendReq, attachReq, onAttached, mentionReq, onMentioned, focusReq, onSession, onFile, docBadge, docTabs, docOn, onDocToggle, say, refreshAll, collapsed, onUncollapse, phone, onBack, onPanel, newSession, filesTick, queue, onQueue, onReveal }: { bot: Bot; sessions: SessionInfo[]; cur?: SessionInfo; items: ChatItem[]; loaded: boolean; pending: PermissionRequest[]; prefill: string; onPrefilled: () => void; sendReq: { botId: string; text: string; n: number } | null; onSendReq: () => void; attachReq: Att[]; onAttached: () => void; mentionReq: string[]; onMentioned: () => void; focusReq: number; onSession: (sid: string) => void; onFile: (rel: string, pin?: boolean) => void; docBadge: number; docTabs: string[]; docOn: boolean; onDocToggle: () => void; say: (m: string) => void; refreshAll: () => Promise<void>; collapsed: boolean; onUncollapse: () => void; phone: boolean; onBack: () => void; onPanel: () => void; newSession: () => Promise<void>; filesTick?: number; queue: string[]; onQueue: (f: (q: string[]) => string[]) => void; onReveal: (rel: string) => void }) {
   const { s } = useStore()
   const [text, setText] = useState(''); const [caret, setCaret] = useState(0); const [sessMenu, setSessMenu] = useState(false); const [busy, setBusy] = useState(false)
   const [attach, setAttach] = useState<Att[]>([]); const [pop, setPop] = useState<'' | 'plus' | 'mode' | 'model' | 'effort' | 'ctx'>(''); const [pickOpen, setPickOpen] = useState(false); const [uploading, setUploading] = useState(false)
@@ -1462,6 +1504,16 @@ function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled
     setBusy(true); try { await post(t) } catch (e) { say((e as Error).message) } finally { setBusy(false) }
   }
   const send = () => sendText(text)
+  // CJ · 폰 알약 «오케스트레이터에게 보내기» — 이 봇의 대화가 선 뒤(세션이 골라졌거나 아직 세션이 하나도 없을 때) 한 번만 보낸다.
+  // ⚠ 봇 id 를 맞춰 본다 — 화면이 아직 옛 폴더면 그 폴더로 나가 버린다(대기열 사고와 같은 꼴 · 위 `queues` 머리말)
+  // ⚠ `sendText` 를 거치지 않는다 — 같은 커밋에서 옛 폴더의 첨부·고쳐 다시(`fixing`)·초안 키가 아직 남아 있어, 그 첨부가 딸려 가고 오케스트레이터 초안이 지워졌다(리뷰 10/16).
+  //    친 말만 보낸다: 일하는 중·확인 대기면 대기열, 아니면 바로. 바쁜 중이어도 말을 잃지 않는다.
+  useEffect(() => {
+    if (!sendReq || sendReq.botId !== bot.id || (!cur && sessions.length)) return
+    const t = sendReq.text.trim(); onSendReq(); if (!t) return
+    if (cur && (cur.state === 'running' || cur.state === 'awaiting_input')) { onQueue((q) => [...q, t]); return }
+    void post(t).catch((e) => say((e as Error).message))
+  }, [sendReq?.n, bot.id, cur?.id, sessions.length]) // eslint-disable-line react-hooks/exhaustive-deps
   /**
    * 🔴 **CL-1 · 멈추기** (2026-10-16 Dave «추천대로»). ⏹ 와 ⎋ 가 같은 길이다. 사람이 멈추면 호스트가 대기 말을 붙잡아 둔다(`held`) —
    *    [이어 보내기] 하거나 새 말을 보내야 나간다. 입력칸의 글은 지우지 않는다.

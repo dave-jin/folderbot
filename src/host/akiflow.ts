@@ -54,6 +54,19 @@ export class AkiflowSync {
   }
   routineOn = (): boolean => false
 
+  /**
+   * CJ · 할 일 보드 폴더 머리의 «Akiflow 맞음 · N분 전» — 켜져(live) 있을 때만. 폴더(rel)마다 이번 회차에 올릴 것 수와 마지막으로 돈 시각.
+   * 미리보기·꺼짐이면 null — 아직 아무것도 안 올라가는데 «맞음» 이라고 하면 거짓말이다.
+   */
+  folderState(): Record<string, { pending: number; at: number | null }> | null {
+    const l = this.ledger(); if (l.mode !== 'live') return null
+    const files = this.folders(); const { plan } = planSync(files, l, { vaultAbs: this.root, now: Date.now() })
+    const out: Record<string, { pending: number; at: number | null }> = {}
+    for (const f of files) out[f.rel] = { pending: 0, at: l.lastRun?.at ?? null }
+    for (const o of plan.ops) if (out[o.rel]) out[o.rel].pending++
+    return out
+  }
+
   setMode(mode: AkMode): AkLedger { const l = this.ledger(); l.mode = mode; this.save(l); return l }
 
   /**

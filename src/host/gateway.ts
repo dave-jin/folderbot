@@ -312,7 +312,7 @@ export class Gateway {
     }
     if (p === '/api/state') {
       const tn = await tailnetInfoCached()
-      return json(200, { version: h.version, root: reg.root, rules: reg.rules, rulesInstalled: reg.rulesInstalled(), bots: reg.bots(), candidates: reg.candidates(), auth: h.auth, inbox: reg.inboxItems().length, notifications: h.notifier.events.slice(0, 50), vapidPublic: h.notifier.vapidPublic(), tailnet: tn, addrs: this.addrs, port: h.cfg.port, devices: h.cfg.devices.filter((d) => d.name !== LOCAL_DEVICE).map((d) => ({ id: d.id, name: d.name, lastSeen: d.lastSeen })), sessionsByBot: Object.fromEntries(reg.bots().map((b) => [b.id, h.sessions.list(b.id)])), quiet: h.cfg.quiet ?? { from: '23:00', to: '07:00' }, defaults: { model: h.cfg.defaultModel ?? '', effort: h.cfg.defaultEffort ?? '', permissionMode: h.cfg.defaultPermissionMode ?? 'default', idleMinutes: h.cfg.idleMinutes ?? 60, codex: { model: h.cfg.defaultCodexModel ?? '', effort: h.cfg.defaultCodexEffort ?? '', sandbox: h.cfg.codexSandbox ?? 'read-only', auth: codexAuth(h.cfg.openaiApiKey) } }, hostName: h.hostName(), device: { id: who.id, name: who.main ? h.hostName() : who.device, main: who.main } })
+      return json(200, { version: h.version, root: reg.root, rules: reg.rules, rulesInstalled: reg.rulesInstalled(), bots: reg.bots(), candidates: reg.candidates(), auth: h.auth, inbox: reg.inboxItems().length, notifications: h.notifier.events.slice(0, 100) /* CJ · 알림 칸 숫자 = 알림 창(100)과 같은 창 — 50 이면 칸이 덜 셌다 */, vapidPublic: h.notifier.vapidPublic(), tailnet: tn, addrs: this.addrs, port: h.cfg.port, devices: h.cfg.devices.filter((d) => d.name !== LOCAL_DEVICE).map((d) => ({ id: d.id, name: d.name, lastSeen: d.lastSeen })), sessionsByBot: Object.fromEntries(reg.bots().map((b) => [b.id, h.sessions.list(b.id)])), quiet: h.cfg.quiet ?? { from: '23:00', to: '07:00' }, defaults: { model: h.cfg.defaultModel ?? '', effort: h.cfg.defaultEffort ?? '', permissionMode: h.cfg.defaultPermissionMode ?? 'default', idleMinutes: h.cfg.idleMinutes ?? 60, codex: { model: h.cfg.defaultCodexModel ?? '', effort: h.cfg.defaultCodexEffort ?? '', sandbox: h.cfg.codexSandbox ?? 'read-only', auth: codexAuth(h.cfg.openaiApiKey) } }, hostName: h.hostName(), device: { id: who.id, name: who.main ? h.hostName() : who.device, main: who.main } })
     }
     /**
      * 🔴 **볼트 루트는 앱에서 바꾼다** (2026-09-14 Dave: «지금 현재 기본 볼트 수정이 안되네»).
@@ -388,12 +388,22 @@ export class Gateway {
       const b = await body(); const ids = Array.isArray(b.ids) ? (b.ids as unknown[]).map(String) : []
       return json(200, { restored: h.sessions.restore(ids) })
     }
+    /**
+     * 볼트 할 일 — 폴더마다 열린 수와 첫 줄. 🔴 CJ · 제안(`<!-- bot:proposed -->`)은 정식 할 일이 아니라 `open` 에서 빼고 `proposed` 로 따로 센다(10/16 규칙 2).
+     * `?items=1` 이면 열린 줄 전체와 폴더별 Akiflow 상태(켜졌을 때만)까지 — 전체 할 일 보드가 쓴다(읽기 전용 · 60초 주기 읽기와 같은 양).
+     */
     if (p === '/api/todos' && m === 'GET') {
+      const full = url.searchParams.get('items') === '1'
+      // 동기화 상태를 못 읽어도 보드는 선다 — 머리 «Akiflow …» 만 빠진다
+      let ak: ReturnType<typeof h.akiflow.folderState> = null
+      if (full) try { ak = h.akiflow.folderState() } catch { ak = null }
       const rows = reg.bots().filter((b) => !b.orchestrator).map((b) => {
-        const open = readTodo(b.abs).filter((t) => !t.done)
-        return { botId: b.id, name: b.name, open: open.length, next: open[0] ? { line: open[0].line, title: open[0].title } : null }
-      }).filter((r) => r.open > 0)
-      return json(200, { open: rows.reduce((n, r) => n + r.open, 0), rows })
+        const all = readTodo(b.abs).filter((t) => !t.done)
+        const open = all.filter((t) => !t.proposed)
+        return { botId: b.id, name: b.name, open: open.length, proposed: all.length - open.length, next: open[0] ? { line: open[0].line, title: open[0].title } : null,
+          ...(full ? { items: open.map((t) => ({ line: t.line, title: t.title, desc: t.desc, by: t.by, ...(t.due ? { due: t.due } : {}), ...(t.ak ? { ak: t.ak } : {}) })), ak: ak?.[b.rel] ?? null } : {}) }
+      }).filter((r) => r.open > 0 || r.proposed > 0)
+      return json(200, { open: rows.reduce((n, r) => n + r.open, 0), rows, ...(full ? { items: true, akLive: !!ak } : {}) })
     }
     if (p === '/api/bots' && m === 'GET') return json(200, reg.bots())
     if (p === '/api/candidates') return json(200, reg.candidates())
@@ -536,7 +546,10 @@ export class Gateway {
       }
       if (sub === 'slash') { const sid = url.searchParams.get('sid') ?? ''; const v = sid ? h.sessions.get(sid)?.vendor : undefined; return json(200, slashCommands(bot.abs, reg.root, h.sessions.slashList(sid || undefined), v === 'codex' ? 'codex' : 'claude')) }
       if (sub === 'todo' && m === 'GET') return json(200, h.todo(bot))
-      if (sub === 'todo' && seg[4] === 'toggle' && m === 'POST') { const b = await body(); const items = todoToggle(bot.abs, Number(b.line), !!b.done); h.broadcast({ ev: 'todo', botId: bot.id, items }); return json(200, items) }
+      if (sub === 'todo' && seg[4] === 'toggle' && m === 'POST') { const b = await body()
+        // CJ 보드 · 줄 번호는 다른 손(봇·Akiflow·다른 기기)이 파일을 고치면 밀린다 — 제목을 같이 보내면 맞을 때만 고친다(엉뚱한 줄을 끝내지 않는다)
+        if (typeof b.title === 'string' && readTodo(bot.abs).find((t) => t.line === Number(b.line))?.title !== b.title) return json(409, { error: '할 일 목록이 그사이 바뀌었어요 — 다시 읽었어요' })
+        const items = todoToggle(bot.abs, Number(b.line), !!b.done); h.broadcast({ ev: 'todo', botId: bot.id, items }); return json(200, items) }
       if (sub === 'todo' && seg[4] === 'edit' && m === 'POST') { const b = await body(); const due = b.due === undefined ? undefined : b.due === null || b.due === '' ? null : String(b.due); if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) return json(400, { error: '마감은 YYYY-MM-DD 로 주세요' }); h.noteTodoTitle(bot.id, String(b.title ?? '')); const items = todoEdit(bot.abs, Number(b.line), String(b.title ?? ''), String(b.desc ?? ''), due); h.broadcast({ ev: 'todo', botId: bot.id, items }); return json(200, items) }
       // CK-3 · 봇 제안 [넣기] — `<!-- bot:proposed -->` → `<!-- bot -->`(정식 줄 · Akiflow 대상)
       if (sub === 'todo' && seg[4] === 'accept' && m === 'POST') { const b = await body(); const items = todoMeta(bot.abs, Number(b.line), { proposed: false }); h.broadcast({ ev: 'todo', botId: bot.id, items }); return json(200, items) }

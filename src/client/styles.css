@@ -1526,3 +1526,74 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .akprev .akt { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--t) } .akprev .akr { flex:none; color:var(--t3); font-size:11.5px }
 .akcard { display:flex; flex-wrap:wrap; gap:8px; align-items:center; font-size:12.5px; padding:8px 12px; margin:6px 0; border:1px solid var(--line2); border-radius:8px }
 .akcard b { color:var(--w); width:100% } .akcard span { color:var(--t2) } .akcard .sp { flex:1 } .akcard button { font-size:12px; padding:3px 9px; border-radius:6px; background:var(--sel); color:var(--w) }
+
+/* ── CJ · 홈 네 칸 = 관리 입구 넷 (2026-10-16 · 목업 03_디자인/2026-10-16_홈-네-칸-목업 ①) — 큰 숫자 + 이름. 확인 대기면 알림 칸이 주황 ── */
+.mcards.big4 button .n { display:block; color:var(--t2) }   /* ⚠ flex 면 긴 이름에 말줄임표가 안 선다 — 블록 + 숫자 오른쪽 여백 */
+.mcards.big4 button .n .big { margin-right:6px }
+.mcards.big4 button .n .big { font-size:26px; font-weight:600; color:var(--w); line-height:1; font-variant-numeric:tabular-nums; letter-spacing:-.3px }
+.mcards.big4 button.hot .n .big { color:var(--wait) } .mcards.big4 button.hot .n { color:var(--wait) }
+.mcards.big4 button .sub em { font-style:normal; color:var(--run) }
+.sbtiles .mcards.big4 button .n { font-size:11.5px; line-height:1.15 } .sbtiles .mcards.big4 button .n .big { margin-right:5px }
+.sbtiles .mcards.big4 button .n .big { font-size:16px }
+.sbtiles .mcards.big4 button { height:68px }
+
+/* ── CJ R2 · 전체 할 일 보드 · 폴더 현황 시트 — 맥은 가운데 창(세션 창 크기), 폰은 위 `.modal` 폰 규칙이 전체 높이 시트로 덮는다 ── */
+.modal > .grip { display:none }
+.modal.board, .modal.fsheet { width:min(720px, calc(100% - 24px)); height:min(680px, calc(100% - 24px)) }
+.modal.fsheet { width:min(520px, calc(100% - 24px)) }
+.modal.board .modal-h .cnt, .modal.fsheet .modal-h .cnt { font-size:12px; color:var(--t3) }
+.modal.board .bsearch { display:flex; align-items:center; gap:8px; margin:0 18px 8px; padding:0 10px; height:34px; border-radius:9px; background:var(--bg); border:1px solid var(--line2) }
+.modal.board .bsearch input { flex:1; min-width:0; background:transparent; border:0; outline:0; color:var(--w); font:inherit; font-size:13.5px }
+.modal.board .bbar { display:flex; gap:6px; padding:0 18px 10px }
+.modal.board .bbar .pill { font-size:12px; padding:3px 10px; border-radius:999px; background:var(--line2); color:var(--t2) }
+.modal.board .bbar .pill.on { background:var(--w); color:var(--onAccent, #111) }
+.modal.board .bbody, .modal.fsheet .bbody { flex:1; min-height:0; overflow:auto; padding:0 10px 12px }
+.modal.board .bempty { color:var(--t3); text-align:center; padding:28px 12px; font-size:13px; line-height:1.6 }
+.modal.board .bfold { margin-top:4px }
+.modal.board .fh { display:flex; align-items:center; gap:7px; width:100%; padding:9px 8px 5px; text-align:left; border-radius:7px; font-size:13px }
+.modal.board .fh:hover { background:var(--hover) }
+.modal.board .fh .nm { color:var(--w); font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.modal.board .fh .duec.sm { margin-left:0; vertical-align:0 }
+.modal.board .fh .c { color:var(--t3); font-size:12px; font-variant-numeric:tabular-nums } .modal.board .fh .sp { flex:1 }
+.modal.board .fh .bprop { flex:none; font-size:11px; color:var(--t2); background:var(--sel); padding:1px 7px; border-radius:5px }
+.modal.board .fh .bak { flex:none; font-size:11px; color:var(--t3); white-space:nowrap } .modal.board .fh .bak b { color:var(--done); font-weight:500 } .modal.board .fh .bak.wait { color:var(--wait) }
+.modal.board .bti { display:flex; align-items:center; gap:10px; padding:7px 8px 7px 10px; border-radius:7px; cursor:pointer; font-size:13.5px; color:var(--t) }
+.modal.board .bti:hover { background:var(--hover) }
+.modal.board .bti .cb { flex:none; width:16px; height:16px; border-radius:4px; border:1.5px solid var(--t3); display:inline-flex; align-items:center; justify-content:center; font-size:10px; color:var(--t3) }
+.modal.board .bti .cb:hover { border-color:var(--w) }
+.modal.board .bti .tt { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.modal.board .bti .duec.sm { margin-left:0; vertical-align:0 }
+.modal.board .bti .bt { flex:none; font-size:10.5px; color:var(--t3); border:1px solid var(--line2); border-radius:4px; padding:0 5px; line-height:16px }
+.modal.board .more { display:block; padding:4px 8px 6px 36px; font-size:12px; color:var(--t3) } .modal.board .more:hover { color:var(--w) }
+.modal.fsheet .fgrp { margin-top:6px }
+.modal.fsheet .gh { display:flex; align-items:center; gap:6px; padding:8px 8px 4px; font-size:12px; color:var(--t3); cursor:default } .modal.fsheet .g-idle .gh { cursor:pointer }
+.modal.fsheet .gh .c { font-variant-numeric:tabular-nums }
+.modal.fsheet .g-wait .gh { color:var(--wait) } .modal.fsheet .g-run .gh { color:var(--run) }
+.modal.fsheet .frow { display:flex; align-items:center; gap:10px; width:100%; padding:7px 8px; border-radius:8px; text-align:left }
+.modal.fsheet .frow:hover { background:var(--hover) }
+.modal.fsheet .frow .t { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px }
+.modal.fsheet .frow .t b { font-weight:500; color:var(--w); font-size:13.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.modal.fsheet .frow .t small { color:var(--t3); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.modal.fsheet .frow time { flex:none; color:var(--t3); font-size:11.5px }
+.modal.fsheet .ffoot { padding:10px 18px 14px; border-top:1px solid var(--line) } .modal.fsheet .ffoot .btn .k { color:var(--t3); margin-left:4px }
+.modal.clean .pill.pickc { background:transparent; border:1px solid var(--line2); color:var(--w) } .modal.clean .pill.pickc:disabled { color:var(--t3); cursor:default }
+.modal.clean.manage tbody td.ck { cursor:pointer }
+@media (max-width: 767px) {
+  .modal > .grip { display:block; width:36px; height:4px; border-radius:2px; background:var(--line2); margin:8px auto 0; flex:none }
+  .modal.board, .modal.fsheet { width:auto; height:auto }
+  .modal.board .bti { padding:11px 8px 11px 10px; font-size:15px } .modal.board .bti .cb { width:20px; height:20px; border-radius:50% }
+  .modal.board .fh { font-size:14px; padding-top:12px }
+  .modal.board .bsearch { height:40px } .modal.board .bsearch input { font-size:16px }
+  .modal.fsheet .frow { padding:10px 8px }
+  /* CJ · 폰 알약 = 폴더 찾기(A안) — 그 자리가 입력칸이 된다. 결과는 위 목록 자리에 */
+  .mpill.edit { color:var(--w) } .mpill.edit input.tx { min-width:0; background:transparent; border:0; outline:0; color:var(--w); font:inherit; font-size:17px }
+  .mpill.edit .x { width:36px; height:36px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; color:var(--t2); flex:none }
+  .mfind { padding-top:8px }
+  .mfind .mrow .l1 mark { background:transparent; color:var(--run); font-weight:700 }
+  .mfind .mrow .l2 { font-size:12.5px; color:var(--t3) }
+  .mfind .orchrow { display:flex; align-items:center; gap:10px; width:calc(100% - 24px); margin:8px 12px; padding:12px 14px; border-radius:14px; border:1px dashed var(--line2); color:var(--t2); font-size:15px; text-align:left }
+  .mfind .orchrow > span:first-of-type { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap } .mfind .orchrow b { color:var(--w) }
+  .mfind .orchrow.first { border-style:solid; border-color:color-mix(in srgb, var(--run) 45%, transparent); background:color-mix(in srgb, var(--run) 8%, transparent) }
+  .mfind .orchrow .k { color:var(--t3); flex:none }
+  .mfhint { padding:24px 22px; color:var(--t3); font-size:14px; line-height:1.6 }
+}

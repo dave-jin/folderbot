@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CLEAN_DAYS, CLEAN_DEFAULT, CLEAN_FILTER_LABEL, cleanDaysOf, cleanMatch, cleanPreselect, dayWord, sessKind, sessLocked, type CleanFilter } from '../core/cleanup'
 import { STATE_LABEL, type SessionInfo } from '../core/types'
 import { api } from './api'
@@ -15,15 +15,22 @@ import { useStore } from './store'
  * ⚠ 소통 세션은 봇마다 하나라 처음부터 체크하지 않는다(지워도 다음 봇 말이 오면 새로 선다).
  * 🔴 **줄 순서는 «만든 시각» 으로 고정한다** — «마지막 활동» 으로 세우면 다른 세션이 일할 때마다 줄이 커서 밑에서 자리를 바꿔
  *    누르는 순간 **다른 세션이 골라졌다**(검사에서 실제로 엉뚱한 세션을 지웠다).
+ *
+ * 🔴 **CJ · 세션 창(`manage`)** — 홈 «세션» 칸이 연다(2026-10-16 Dave «세션 정리 메뉴를 없애고 여기서» · 기획안 §2-4).
+ *    처음엔 아무것도 골라 두지 않은 **전체 목록**(최근 활동 순)이고, «정리할 만한 것 N 고르기» 를 눌러야 지금처럼 골라진다.
+ *    **줄을 누르면 그 세션으로 간다** — 고르기는 왼쪽 체크 칸으로. 지우기·10초 되돌리기·잠긴 줄 보호는 그대로.
+ *    ⚠ 최근 활동 순은 **연 순간의 차례로 얼린다** — 위 사고(일하는 세션이 자리를 바꿔 엉뚱한 줄이 눌림)를 다시 내지 않게. 새로 생긴 세션만 맨 위에 붙는다.
  */
 const DAY = 24 * 3600_000
 export const CLEAN_DAYS_KEY = 'fb:cleanDays'
 export const savedCleanDays = () => { try { return cleanDaysOf(localStorage.getItem(CLEAN_DAYS_KEY)) } catch { return cleanDaysOf(null) } }
 const ago = (t: number) => { const d = Math.floor((Date.now() - t) / DAY); if (d >= 1) return `${new Date(t).getMonth() + 1}/${new Date(t).getDate()} (${d}일 전)`; const h = Math.floor((Date.now() - t) / 3600_000); return h >= 1 ? `${h}시간 전` : '방금' }
 
-export function Cleanup({ onClose, say }: { onClose: () => void; say: (m: string) => void }) {
+export function Cleanup({ onClose, say, manage = false, go }: { onClose: () => void; say: (m: string) => void; manage?: boolean; go?: (botId: string, sid?: string) => void }) {
   const { s } = useStore()
-  const [on, setOn] = useState<CleanFilter[]>(CLEAN_DEFAULT)
+  const [on, setOn] = useState<CleanFilter[]>(manage ? ['all'] : CLEAN_DEFAULT)
+  /** 세션 창은 «고르기» 를 누르기 전까지 아무것도 골라 두지 않는다 */
+  const [auto, setAuto] = useState(!manage)
   const [days, setDays] = useState(savedCleanDays)
   const [folder, setFolder] = useState('')
   const [pick, setPick] = useState<Set<string>>(new Set())
@@ -31,9 +38,19 @@ export function Cleanup({ onClose, say }: { onClose: () => void; say: (m: string
   const [busy, setBusy] = useState(false)
   const botName = (id: string) => { const b = s.bots.find((x) => x.id === id); return b ? (b.displayName || b.name) : '(사라진 봇)' }
   const all = useMemo(() => Object.values(s.sessionsByBot).flat(), [s.sessionsByBot])
-  const shown = useMemo(() => all.filter((x) => (!folder || x.botId === folder) && cleanMatch(x, on, Date.now(), days)).sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id)), [all, on, folder, days])
-  // 거름을 바꾸면 체크도 처음 규칙대로 다시 — «보이는 것 중 지워도 되는 것»
-  useEffect(() => { setPick(new Set(shown.filter((x) => cleanPreselect(x, on, Date.now(), days)).map((x) => x.id))) }, [on, folder, days]) // eslint-disable-line react-hooks/exhaustive-deps
+  /** 세션 창 — 연 순간의 «최근 활동 순» 차례(얼림). 없는 id(새로 생긴 세션)는 맨 위 */
+  const rankAt = useRef<Map<string, number> | null>(null)
+  if (manage && !rankAt.current) rankAt.current = new Map([...all].sort((a, b) => b.lastActivity - a.lastActivity).map((x, i) => [x.id, i]))
+  const order = (a: SessionInfo, b: SessionInfo) => {
+    if (!manage) return a.createdAt - b.createdAt || a.id.localeCompare(b.id)
+    const ra = rankAt.current?.get(a.id) ?? -1, rb = rankAt.current?.get(b.id) ?? -1
+    return ra - rb || b.createdAt - a.createdAt || a.id.localeCompare(b.id)
+  }
+  const shown = useMemo(() => all.filter((x) => (!folder || x.botId === folder) && cleanMatch(x, on, Date.now(), days)).sort(order), [all, on, folder, days]) // eslint-disable-line react-hooks/exhaustive-deps
+  // 거름을 바꾸면 체크도 처음 규칙대로 다시 — «보이는 것 중 지워도 되는 것». 세션 창은 «고르기» 를 누른 뒤부터
+  useEffect(() => { if (!auto) return; setPick(new Set(shown.filter((x) => cleanPreselect(x, on, Date.now(), days)).map((x) => x.id))) }, [on, folder, days, auto]) // eslint-disable-line react-hooks/exhaustive-deps
+  const cleanN = useMemo(() => all.filter((x) => (!folder || x.botId === folder) && cleanPreselect(x, CLEAN_DEFAULT, Date.now(), days)).length, [all, folder, days])
+  const pickCleanable = () => { setAuto(true); setOn(CLEAN_DEFAULT) }
   // 목록이 바뀌어(지움·새 답) 잠기거나 사라진 줄은 체크에서 뺀다
   useEffect(() => { setPick((p) => { const ok = new Set(shown.filter((x) => !sessLocked(x)).map((x) => x.id)); const n = new Set([...p].filter((id) => ok.has(id))); return n.size === p.size ? p : n }) }, [shown])
   useEffect(() => { if (!undo) return; const t = window.setTimeout(() => setUndo(null), Math.max(0, undo.until - Date.now())); return () => window.clearTimeout(t) }, [undo])
@@ -59,9 +76,11 @@ export function Cleanup({ onClose, say }: { onClose: () => void; say: (m: string
   }
   const kindCls = (x: SessionInfo) => ({ 소통: 'k-comm', 채널: 'k-comm', 루틴: 'k-rt', 봇끼리: 'k-bot', 사람: 'k-me' })[sessKind(x)]
 
-  return <><div className="backdrop" onClick={onClose} /><div className="modal clean" role="dialog" aria-label="세션 정리">
-    <div className="modal-h"><div className="t"><b>세션 정리</b><span className="cnt">전체 {all.length}개 · 고른 것 {pick.size}개</span></div><button className="ib" onClick={onClose} title="닫기 ⎋"><Icon n="x" size={14} /></button></div>
+  const toggleRow = (id: string) => setPick((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  return <><div className="backdrop" onClick={onClose} /><div className={`modal clean ${manage ? 'manage' : ''}`} role="dialog" aria-label={manage ? '세션' : '세션 정리'}>
+    <div className="modal-h"><div className="t"><b>{manage ? '세션' : '세션 정리'}</b><span className="cnt">전체 {all.length}개 · 고른 것 {pick.size}개</span></div><button className="ib" onClick={onClose} title="닫기 ⎋"><Icon n="x" size={14} /></button></div>
     <div className="cbar">
+      {manage ? <button className="pill pickc" disabled={!cleanN} onClick={pickCleanable} title="7일 넘게 안 씀(또는 고른 날) + 봇끼리 대화 중 지워도 되는 것">정리할 만한 것 {cleanN} 고르기</button> : null}
       {(Object.keys(CLEAN_FILTER_LABEL) as CleanFilter[]).map((f) => f === 'old'
         ? <span key={f} className={`pill dpill ${on.includes(f) ? 'on' : ''}`}>
           <select className="cdays" value={days} onChange={(e) => pickDays(Number(e.target.value))} aria-label="안 쓴 지" title="며칠 넘게 안 쓴 세션인지 고르기">{CLEAN_DAYS.map((d) => <option key={d} value={d}>{dayWord(d)}</option>)}</select>
@@ -78,8 +97,8 @@ export function Cleanup({ onClose, say }: { onClose: () => void; say: (m: string
           <th>폴더</th><th>세션</th><th>종류</th><th>상태</th><th>마지막 활동</th>
         </tr></thead>
         <tbody>
-          {shown.map((x) => { const lock = sessLocked(x); return <tr key={x.id} data-id={x.id} className={lock ? 'lock' : ''} title={lock ? `지울 수 없어요 — ${lock}` : undefined} onClick={() => { if (lock) return; setPick((p) => { const n = new Set(p); if (n.has(x.id)) n.delete(x.id); else n.add(x.id); return n }) }}>
-            <td><input type="checkbox" checked={pick.has(x.id)} disabled={!!lock} readOnly /></td>
+          {shown.map((x) => { const lock = sessLocked(x); return <tr key={x.id} data-id={x.id} className={lock ? 'lock' : ''} title={manage ? '누르면 이 세션으로' : lock ? `지울 수 없어요 — ${lock}` : undefined} onClick={() => { if (manage && go) { onClose(); go(x.botId, x.id); return } if (lock) return; toggleRow(x.id) }}>
+            <td className="ck" onClick={(e) => { if (!manage) return; e.stopPropagation(); if (!lock) toggleRow(x.id) }} title={lock ? `지울 수 없어요 — ${lock}` : undefined}><input type="checkbox" checked={pick.has(x.id)} disabled={!!lock} readOnly /></td>
             <td>{botName(x.botId)}</td><td className="sn">{x.name}</td>
             <td><span className={`ktag ${kindCls(x)}`}>{sessKind(x)}</span></td>
             <td className={lock ? 'lk' : ''}>{lock ?? STATE_LABEL[x.state]}</td>
