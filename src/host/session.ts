@@ -159,7 +159,6 @@ export class ClaudeWorker extends EventEmitter {
         // CLI 제안이 비면(복합 Bash) 호스트가 만든다 — «이 세션에서 항상 허용» 이 항상 있어야 한다(core/permPolicy)
         const sugg = (req.permission_suggestions as unknown[] | undefined) ?? []
         p.suggestions = sugg.length ? sugg : fallbackRules(p.toolName, p.input)
-        if (p.ask) this.dropSameDeferred(p)
         this.pending.set(p.requestId, p)
         this.emit('permission', p)
       }
@@ -167,10 +166,11 @@ export class ClaudeWorker extends EventEmitter {
     }
     if (line.type === 'control_response') return
     if (line.session_id) this.cliSessionId = line.session_id
+    // CQ · 미뤄진 질문을 기다리는 동안 새 턴이 돌면(본 대화의 답 · 턴 끝) 그 질문은 CLI 가 이미 버렸다
+    if ((line.type === 'assistant' || line.type === 'result') && !line.parent_tool_use_id) this.dropDeferred()
     if (line.type === 'result' && line.stop_reason === 'tool_deferred' && line.deferred_tool_use?.name === 'AskUserQuestion' && line.deferred_tool_use.id) {
       const d = line.deferred_tool_use
       const p: PermissionRequest = { requestId: d.id!, toolName: 'AskUserQuestion', displayName: 'AskUserQuestion', description: '', input: d.input ?? {}, suggestions: [], ask: true, deferred: true }
-      this.dropSameDeferred(p)
       this.deferredAsks.add(p.requestId); this.pending.set(p.requestId, p)
       this.emit('permission', p)
       return
@@ -203,15 +203,21 @@ export class ClaudeWorker extends EventEmitter {
     return ids
   }
   /**
-   * 같은 질문이 또 오면 **앞의 미뤄진 카드는 걷는다** — 재시작 뒤 `--resume` 이 답 없는 질문을 다시 꺼내거나 모델이 되물을 때
-   * 같은 카드가 둘 서지 않게. ⚠ 미뤄진 것만 걷는다 — `control_request` 로 온 질문은 CLI 가 답을 기다리는 중이라 말없이 버리면 멈춘다.
+   * 🔴 **CQ · 새 턴이 돌면 앞의 미뤄진 질문 카드는 모두 걷는다** (2026-10-17 Dave: *«똑같은 질문 왜 두번씩해?»* · 스크린샷_2346).
+   *    미뤄진 질문(`tool_deferred`)은 턴을 끊고 답을 기다린다. 그 사이 사람 답이 아닌 것이 먼저 들어오면(백그라운드 하위
+   *    에이전트의 결과 보고 등) CLI 는 그 질문을 «결과 없음» 으로 닫고 새 턴을 돌린다 — 모델은 답을 못 받은 줄 알고 **문구를
+   *    조금 바꿔 새 id 로 다시 묻는다.** 종전에는 글자까지 같은 질문만 걷어(10/2) 옛 카드가 남았고, 사람이 옛 카드에 답하면
+   *    그 답이 죽은 질문 앞으로 가서 **지금 걸린 질문까지 끊었다**(연쇄 · 유미MCP 세션에서 두 번).
+   *    그래서 본 대화의 새 줄(`assistant`)이나 턴 끝(`result`)이 오면 그 전의 미뤄진 질문은 모두 죽은 것으로 본다.
+   * ⚠ 미뤄진 것만 걷는다 — `control_request` 로 온 질문은 CLI 가 답을 기다리는 중이라 말없이 버리면 멈춘다.
+   * ⚠ 하위 에이전트 줄(`parent_tool_use_id`)은 새 턴이 아니다 — 백그라운드 작업이 기다리는 동안에도 흘러나올 수 있다.
    */
-  private dropSameDeferred(p: PermissionRequest): void {
-    const key = JSON.stringify(p.input?.questions ?? p.input)
-    for (const id of [...this.deferredAsks]) {
-      const old = this.pending.get(id)
-      if (id !== p.requestId && old && JSON.stringify(old.input?.questions ?? old.input) === key) { this.pending.delete(id); this.deferredAsks.delete(id) }
-    }
+  private dropDeferred(): void {
+    if (!this.deferredAsks.size) return
+    const ids = [...this.deferredAsks]
+    for (const id of ids) this.pending.delete(id)
+    this.deferredAsks.clear()
+    this.emit('asks-dropped', ids)
   }
   /** @returns 미뤄진 질문에 **우리가 직접** 결과를 넣었으면 true — claude 가 되돌려 주지 않으니 화면 줄은 우리가 닫아야 한다(AX) */
   respondPermission(requestId: string, allow: boolean, always = false, why?: string): boolean {
@@ -861,6 +867,14 @@ export class SessionManager extends EventEmitter {
       if (r.channel && this.channelAnswer(r, w, p)) return
       if (this.autoAllow(r, w, p)) return
       this.setState(r, { kind: 'permission_requested' }); this.emit('permission', r, p)
+    })
+    // CQ · CLI 가 버린 미뤄진 질문 — 카드를 걷고(세션 목록의 pending) 도구 줄을 닫는다
+    w.on('asks-dropped', (ids: string[]) => {
+      if (replaced()) return
+      for (const id of ids) this.closeTool(r, id, '끊긴 질문이에요 — 답하지 않아도 돼요', true)
+      // 걸린 질문이 다 걷혔으면 «답 기다림» 에서 풀어 준다 — 카드 없이 채팅만 막히는 일이 없게(configure 와 같다)
+      if (!w.pending.size && r.state === 'awaiting_input') this.setState(r, { kind: 'input_provided' })
+      this.emit('sessions', r.botId)
     })
     w.on('exit', (code: number | null, _sig: string | null, err: string) => {
       if (replaced()) return

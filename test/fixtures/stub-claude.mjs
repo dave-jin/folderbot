@@ -123,6 +123,14 @@ rl.on('line', (raw) => {
    * 🔴 **미뤄진 질문에 답 없이 채팅만 오면 실 모델처럼 같은 질문을 새 id 로 다시 묻는다** (2026-10-02 Dave: «AskUserQuestion 을
    *    두번씩 동일한 내용을 보낼때가 있어»). 호스트가 남은 질문을 닫지 않으면 이 길로 들어와 카드가 둘 선다.
    */
+  if (pendingDeferred && tr && tr.tool_use_id !== pendingDeferred) {
+    // CQ · 죽은 질문 앞으로 온 답 — 실 CLI 는 이것을 새 턴으로 받아 지금 걸린 질문까지 버린다
+    const id = `stub-cut-C-${randomUUID().slice(0, 6)}`; pendingDeferred = id
+    const input = { questions: [{ question: '끊겨서 또 여쭤요 — 무엇으로 할까요?', header: '스택', options: [{ label: '정적 페이지' }] }] }
+    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input }] } })
+    say({ type: 'result', subtype: 'success', stop_reason: 'tool_deferred', deferred_tool_use: { id, name: 'AskUserQuestion', input }, duration_ms: 40, total_cost_usd: 0.001 })
+    return
+  }
   if (pendingDeferred && !tr) {
     const id = `stub-ask-${randomUUID().slice(0, 6)}`; pendingDeferred = id
     const input = { questions: [{ question: '미룬 질문은 무엇으로 할까요?', header: '미룸', options: [{ label: '예 안' }, { label: '아니오 안' }] }] }
@@ -276,6 +284,24 @@ rl.on('line', (raw) => {
   say({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `stub-task-${u}`, content: '하위 조사 결과: 2건' }] } })
   say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: `stub-todo-${u}`, name: 'TodoWrite', input: { todos: [{ content: '읽기', status: 'completed', activeForm: '읽는 중' }, { content: '답 쓰기', status: 'in_progress', activeForm: '답 쓰는 중' }] } }] } })
   say({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `stub-todo-${u}`, content: 'ok' }] } })
+  /**
+   * 🔴 **CQ · 질문을 기다리는 동안 하위 에이전트 결과가 먼저 든다** (2026-10-17 · 스크린샷_2346). 실 CLI 는 그 보고를 새 턴으로
+   *    돌리며 기다리던 질문을 «결과 없음» 으로 버리고, 모델은 **문구를 바꿔 새 id 로** 다시 묻는다. 그 흐름을 그대로 낸다.
+   */
+  if (/끼어든질문/.test(text)) {
+    const a = `stub-cut-A-${u}`, b = `stub-cut-B-${u}`; pendingDeferred = a
+    const qa = { questions: [{ question: '심사 앱 스택은 무엇으로 할까요?', header: '스택', options: [{ label: '정적 페이지' }, { label: '앱 서버' }] }] }
+    const qb = { questions: [{ question: '심사 앱 스택을 다시 여쭤요 — 무엇으로 할까요?', header: '스택', options: [{ label: '정적 페이지' }, { label: '앱 서버' }] }] }
+    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'tool_use', id: a, name: 'AskUserQuestion', input: qa }] } })
+    say({ type: 'result', subtype: 'success', stop_reason: 'tool_deferred', deferred_tool_use: { id: a, name: 'AskUserQuestion', input: qa }, duration_ms: 40, total_cost_usd: 0.001 })
+    setTimeout(() => {
+      pendingDeferred = b
+      say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: '하위 에이전트 결과를 받았어요.' }] } })
+      say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'tool_use', id: b, name: 'AskUserQuestion', input: qb }] } })
+      say({ type: 'result', subtype: 'success', stop_reason: 'tool_deferred', deferred_tool_use: { id: b, name: 'AskUserQuestion', input: qb }, duration_ms: 40, total_cost_usd: 0.001 })
+    }, 1200)
+    return
+  }
   if (/미룬질문/.test(text)) {
     const id = `stub-ask-${u}`; pendingDeferred = id
     const input = { questions: [{ question: '미룬 질문은 무엇으로 할까요?', header: '미룸', options: [{ label: '예 안' }, { label: '아니오 안' }] }] }

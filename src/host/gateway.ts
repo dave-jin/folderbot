@@ -905,7 +905,10 @@ export class Gateway {
         //    질문이 취소된다(미뤄진 질문). 거부(취소)는 그대로 받는다 (2026-09-25 디자인 검수)
         // ⚠ allow 는 불리언만 — `"false"` 같은 글자가 참으로 읽혀 허용이 나가면 안 된다 (리뷰 · Codex)
         const allow = b.allow === true
-        if (allow && h.sessions.pendingOf(r.id).find((x) => x.requestId === String(b.requestId))?.ask) return json(400, { error: '질문은 허용이 아니라 답으로 보내 주세요' })
+        const pend = h.sessions.pendingOf(r.id).find((x) => x.requestId === String(b.requestId))
+        // CQ · 이미 끝난(걷힌) 요청에는 아무것도 보내지 않는다 — 죽은 id 로 간 결과가 지금 걸린 질문을 끊었다
+        if (!pend) return json(400, { error: '이미 끝난 요청이에요 — 새로 온 카드를 봐 주세요' })
+        if (allow && pend.ask) return json(400, { error: '질문은 허용이 아니라 답으로 보내 주세요' })
         h.sessions.respondPermission(r, String(b.requestId), allow, b.always === true); return json(200, { ok: true })
       }
       /**
@@ -916,7 +919,9 @@ export class Gateway {
       if (sub === 'ask' && m === 'POST') {
         const b = await body()
         // 🔴 답은 **질문에만** 간다 — 종전에는 Bash·Edit 같은 권한 요청 id 를 넣어도 받아서 «허용» 을 보냈다(위 허용 가드를 옆길로 우회 · 리뷰 · Codex)
-        if (!h.sessions.pendingOf(r.id).find((x) => x.requestId === String(b.requestId))?.ask) return json(400, { error: '기다리는 질문이 아니에요' })
+        const pend = h.sessions.pendingOf(r.id).find((x) => x.requestId === String(b.requestId))
+        if (!pend) return json(400, { error: '이미 끝난 질문이에요 — 새로 온 카드에 답해 주세요' })   // CQ
+        if (!pend.ask) return json(400, { error: '기다리는 질문이 아니에요' })
         h.sessions.respondAsk(r, String(b.requestId), (b.answers ?? {}) as Record<string, string>); return json(200, { ok: true })
       }
       if (sub === 'interrupt' && m === 'POST') { const b = await body(); h.sessions.interrupt(r, b.by === 'human'); return json(200, { ok: true }) }

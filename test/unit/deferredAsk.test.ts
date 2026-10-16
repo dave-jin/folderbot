@@ -40,12 +40,34 @@ describe('미뤄진 질문 — 채팅으로 답하면 닫힌다 · 같은 질문
     feed(deferred('toolu_B'))
     expect([...w.pending.keys()]).toEqual(['toolu_B'])
   })
-  it('같은 질문이 새 id 로 또 오면 앞의 미뤄진 카드는 걷는다 · 다른 질문은 둔다', () => {
+  it('같은 질문이 새 id 로 또 오면 앞의 미뤄진 카드는 걷는다', () => {
     const { w, feed } = worker()
     feed(deferred('toolu_A')); feed(deferred('toolu_B'))
     expect([...w.pending.keys()]).toEqual(['toolu_B'])
-    feed(deferred('toolu_C', { questions: [{ question: '다른 것?', header: 'x', options: [{ label: '예' }] }] }))
-    expect([...w.pending.keys()].sort()).toEqual(['toolu_B', 'toolu_C'])
+  })
+  /**
+   * CQ (2026-10-17 · 스크린샷_2346) — 하위 에이전트 결과가 먼저 들어와 CLI 가 질문을 버리고, 모델이 **문구를 바꿔** 다시 물었다.
+   * 글자 비교로는 못 걸러 카드가 둘 섰다. 새 턴(본 대화 assistant · result)이 오면 앞의 미뤄진 질문은 모두 걷는다.
+   */
+  it('새 턴이 돌면 문구가 달라도 앞의 미뤄진 카드를 걷고 알린다 · 하위 에이전트 줄은 새 턴이 아니다', () => {
+    const { w, feed } = worker()
+    const dropped: string[][] = []; w.on('asks-dropped', (ids: string[]) => dropped.push(ids))
+    feed(deferred('toolu_A'))
+    feed(JSON.stringify({ type: 'assistant', parent_tool_use_id: 'toolu_bg', message: { role: 'assistant', content: [{ type: 'text', text: '하위 작업 중' }] } }))
+    expect([...w.pending.keys()]).toEqual(['toolu_A'])
+    feed(JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '하위 에이전트 결과를 받았어요' }] } }))
+    expect(w.pending.size).toBe(0); expect(dropped).toEqual([['toolu_A']])
+    feed(deferred('toolu_C', { questions: [{ question: '다시 — 어느 쪽?', header: 'x', options: [{ label: '예' }] }] }))
+    expect([...w.pending.keys()]).toEqual(['toolu_C'])
+    feed(JSON.stringify({ type: 'result', subtype: 'success' }))   // 다음 턴이 질문 없이 끝나도 걷는다
+    expect(w.pending.size).toBe(0); expect(dropped).toEqual([['toolu_A'], ['toolu_C']])
+  })
+  it('옛 질문이 걷힌 뒤 지금 질문에 답하면 그 질문 id 로 간다(죽은 id 는 게이트웨이가 400 — 스모크 CQ)', () => {
+    const { w, sent, feed } = worker()
+    feed(deferred('toolu_A')); feed(JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [] } })); feed(deferred('toolu_B'))
+    expect(w.respondAsk('toolu_B', { q: '가' })).toBe(true)
+    const m = sent.at(-1) as { message: { content: { tool_use_id?: string }[] } }
+    expect(m.message.content[0].tool_use_id).toBe('toolu_B')
   })
   it('남은 질문이 없으면 보통 글로 보낸다', () => {
     const { w, sent } = worker()

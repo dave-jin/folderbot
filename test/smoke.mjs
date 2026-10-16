@@ -3993,6 +3993,40 @@ try {
             await wait(3500)   // 스텁의 턴이 끝날 때까지
             ok('채팅으로 답하면 미룬 질문 카드가 닫힌다 — 같은 질문 카드가 둘 서지 않는다')
           }
+          /**
+           * 🔴 **CQ · 질문을 기다리는 동안 다른 턴이 돌면 옛 카드는 걷힌다 — 옛 카드의 답이 지금 질문을 끊지 않는다**
+           *    (2026-10-17 Dave: *«똑같은 질문 왜 두번씩해?»* · 스크린샷_2346). 하위 에이전트 결과가 먼저 들어와 CLI 가 질문을 버리고
+           *    모델이 문구를 바꿔 다시 물었다 — 글자 비교(10/2)로는 못 걸러 카드가 둘 섰고, 옛 카드에 답하면 죽은 id 로 가서 새 질문까지 끊겼다.
+           */
+          {
+            await pg.fill('.composer .cin', '끼어든질문 해 줘'); await pg.click('.composer .sendb')
+            await pg.waitForSelector('.card .opt', { timeout: 8000 })
+            let txt = ''
+            for (let i = 0; i < 40; i++) { txt = (await pg.textContent('.chat-body')) ?? ''; if (/다시 여쭤요/.test(txt)) break; await wait(250) }
+            await wait(400)
+            const cards = await pg.evaluate(() => [...document.querySelectorAll('.card')].filter((c) => /심사 앱 스택/.test(c.textContent ?? '')).length)
+            const asks = (await api(`/bots/${bot.id}/sessions`)).flatMap((x) => (x.pending ?? []).map((p) => ({ ...p, sid: x.id }))).filter((p) => p.toolName === 'AskUserQuestion')
+            if (cards !== 1 || asks.length !== 1) fail(`🔴 CQ: 끊긴 질문 카드가 남아 같은 질문이 둘 섰다 · 화면 ${cards} · 호스트 ${asks.length}`)
+            else if (!/^stub-cut-B-/.test(asks[0].requestId)) fail('CQ: 남은 카드가 새 질문이 아니다 · ' + asks[0].requestId)
+            let dead = null, sidC = asks[0]?.sid
+            for (const x of await api(`/bots/${bot.id}/sessions`)) { const c = await api(`/sessions/${x.id}/chat`); const t = c.items.find((t) => t.kind === 'tool' && /^t_stub-cut-A-/.test(t.id)); if (t) { dead = t; sidC = x.id } }
+            if (!dead) fail('CQ: 끊긴 질문의 도구 줄이 없다(검사 전제 깨짐)')
+            else {
+              if (dead.result === undefined) fail('🔴 CQ: 끊긴 질문의 도구 줄이 계속 돈다')
+              const r = await fetch(base + `/api/sessions/${sidC}/ask`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: dead.id.slice(2), answers: { q: '정적 페이지' } }) })
+              if (r.status !== 400) fail('🔴 CQ: 끊긴 질문에 늦게 온 답을 받아 CLI 로 보냈다(지금 질문이 끊긴다) · ' + r.status)
+              await wait(500)
+              const still = (await api(`/sessions/${sidC}/chat`)).info.pending.filter((p) => p.toolName === 'AskUserQuestion').map((p) => p.requestId)
+              if (still.length !== 1 || !/^stub-cut-B-/.test(still[0])) fail('🔴 CQ: 늦은 답 뒤에 지금 질문이 끊겼다 · ' + JSON.stringify(still))
+            }
+            await pg.evaluate(() => { const c = [...document.querySelectorAll('.card')].find((x) => /다시 여쭤요/.test(x.textContent ?? '')); [...(c?.querySelectorAll('.opt') ?? [])].find((x) => x.textContent?.includes('정적 페이지'))?.click() })
+            await wait(150); await pg.click('.card .btns .btn.primary')
+            let body = ''
+            for (let i = 0; i < 40; i++) { body = (await pg.textContent('.chat-body')) ?? ''; if (/미룬 답 받음/.test(body.split('끼어든질문').at(-1) ?? '')) break; await wait(250) }
+            if (!/미룬 답 받음/.test(body.split('끼어든질문').at(-1) ?? '')) fail('CQ: 새 질문에 단 답이 CLI 까지 안 갔다')
+            await wait(3500)   // 스텁의 턴이 끝날 때까지
+            ok('CQ — 질문을 기다리는 동안 다른 턴이 돌면 옛 카드는 걷히고, 옛 카드에 늦게 온 답은 지금 질문을 끊지 않는다')
+          }
           // 🔴 **링크 앞에 파비콘** (2026-09-13 Dave) — 자리표시자를 먼저 놓으므로 인터넷이 없어도 자리는 있다.
           //    ⛔ 비워 두고 도착할 때 넣으면 글줄이 그때마다 옆으로 밀린다.
           {
