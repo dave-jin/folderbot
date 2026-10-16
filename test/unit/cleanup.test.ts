@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sessKind, sessLocked, cleanMatch, cleanPreselect, cleanableCount, CLEAN_IDLE_MS } from '../../src/core/cleanup'
+import { sessKind, sessLocked, cleanMatch, cleanPreselect, cleanableCount, CLEAN_IDLE_MS, cleanDaysOf, dayWord } from '../../src/core/cleanup'
 import type { SessionInfo } from '../../src/core/types'
 
 /** 세션 정리 판정 (2026-10-02 · 시안 B) — 화면과 메뉴 숫자와 호스트가 같은 판정을 쓴다 */
@@ -32,5 +32,15 @@ describe('세션 정리 판정', () => {
     expect(cleanPreselect(S({ comm: true, lastActivity: 0 }), ['old'], now)).toBe(false)
     expect(cleanPreselect(S({ delegated: true, state: 'running' }), ['bot'], now)).toBe(false)
     expect(cleanableCount([old, S({ delegated: true }), S({}), S({ comm: true, lastActivity: 0 })], now)).toBe(2)
+  })
+  it('«안 쓴 지» 를 일 단위로 — 하루·이틀 문턱 · 목록 밖 값은 7일', () => {
+    const H = 3600_000
+    const y = S({ lastActivity: now - 30 * H })   // 30시간 전
+    expect(cleanMatch(y, ['old'], now, 1)).toBe(true)
+    expect(cleanMatch(y, ['old'], now, 2)).toBe(false)
+    expect(cleanMatch(y, ['old'], now)).toBe(false)
+    expect(cleanableCount([y, S({ lastActivity: now - 50 * H })], now, 2)).toBe(1)
+    expect(cleanDaysOf('1')).toBe(1); expect(cleanDaysOf('5')).toBe(7); expect(cleanDaysOf(null)).toBe(7)
+    expect(dayWord(1)).toBe('하루'); expect(dayWord(2)).toBe('이틀'); expect(dayWord(14)).toBe('14일')
   })
 })

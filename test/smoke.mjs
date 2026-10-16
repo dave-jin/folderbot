@@ -2566,6 +2566,18 @@ try {
           const tmp = await api(`/bots/${cfo.id}/sessions`, { name: '정리 검사용' })
           await pg.click('.col.side.left .nav.nclean'); await pg.waitForSelector('.modal.clean', { timeout: 3000 }).catch(() => {})
           if (!(await pg.$('.modal.clean'))) fail('🔴 세션 정리: 메뉴로 안 열린다')
+          // «안 쓴 지» 를 일 단위로 (2026-10-16 Dave «하루 전·이틀 전») — 알약 안 ▾ 로 고르면 이름이 바뀌고 거름이 켜지고 이 기기에 남는다
+          {
+            const opts = await pg.$$eval('.modal.clean .pill.dpill .cdays option', (r) => r.map((x) => x.textContent))
+            if (opts.join(',') !== '하루,이틀,3일,7일,14일') fail('세션 정리: «안 쓴 지» 날 목록이 다르다 ' + JSON.stringify(opts))
+            await pg.click('.modal.clean .pill:has-text("끝남")'); await wait(100)   // 다른 거름을 남겨 두고
+            await pg.click('.modal.clean .pill.dpill > button'); await wait(100)   // «안 쓴 지» 를 끈 뒤
+            await pg.selectOption('.modal.clean .pill.dpill .cdays', '1'); await wait(200)
+            const d = await pg.$eval('.modal.clean .pill.dpill', (e) => ({ on: e.classList.contains('on'), t: e.querySelector('button')?.getAttribute('aria-label'), ls: localStorage.getItem('fb:cleanDays') }))
+            if (!d.on || d.t !== '하루 넘게 안 씀' || d.ls !== '1') fail('세션 정리: 하루를 골랐는데 ' + JSON.stringify(d))
+            await (await pg.$('.modal.clean .cbar'))?.screenshot({ path: 'test/tmp/cleanup-days.png' })
+            await pg.selectOption('.modal.clean .pill.dpill .cdays', '7'); await wait(100)
+          }
           await pg.click('.modal.clean .pill:has-text("모든 세션")'); await wait(250)
           const lock = await pg.$$eval('.modal.clean tbody tr.lock input', (r) => r.map((x) => x.disabled))
           if (lock.some((d) => !d)) fail('세션 정리: 잠긴 줄의 체크 칸이 열려 있다')

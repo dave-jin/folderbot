@@ -8,6 +8,12 @@ import { autoKind } from './autoArea'
  */
 export type SessKind = '소통' | '채널' | '루틴' | '봇끼리' | '사람'
 export const CLEAN_IDLE_MS = 7 * 24 * 3600_000
+/** «안 쓴 지» 문턱 — 일 단위로 고른다 (2026-10-16 Dave: «2주는 너무 길어, 하루 전·이틀 전 이런식으로 일단위로도») */
+export const CLEAN_DAYS = [1, 2, 3, 7, 14] as const
+export const CLEAN_DAYS_DEFAULT = 7
+export const dayWord = (d: number) => (d === 1 ? '하루' : d === 2 ? '이틀' : `${d}일`)
+/** 저장된 값이 목록 밖이면 기본값 — 화면과 메뉴 숫자가 같은 값을 쓴다 */
+export const cleanDaysOf = (v: unknown): number => { const n = Number(v); return (CLEAN_DAYS as readonly number[]).includes(n) ? n : CLEAN_DAYS_DEFAULT }
 
 /** 판정은 `core/autoArea` 와 같다(CC) — 사람이 이어받은 자동 세션은 «사람» 이다 */
 export function sessKind(x: Pick<SessionInfo, 'comm' | 'routine' | 'delegated' | 'name' | 'channel' | 'adopted' | 'exChannel' | 'exComm'>): SessKind {
@@ -35,21 +41,21 @@ export const CLEAN_FILTER_LABEL: Record<CleanFilter, string> = { old: '7일 넘�
 export const CLEAN_DEFAULT: CleanFilter[] = ['old', 'bot']
 
 /** 거름에 걸리는가 — 켠 거름 중 **하나라도** 맞으면 보인다(«모든 세션» 은 다) */
-export function cleanMatch(x: SessionInfo, on: CleanFilter[], now = Date.now()): boolean {
+export function cleanMatch(x: SessionInfo, on: CleanFilter[], now = Date.now(), days = CLEAN_DAYS_DEFAULT): boolean {
   if (on.includes('all')) return true
   const k = sessKind(x)
-  return (on.includes('old') && now - x.lastActivity >= CLEAN_IDLE_MS)
+  return (on.includes('old') && now - x.lastActivity >= days * 24 * 3600_000)
     || (on.includes('bot') && k === '봇끼리')
     || (on.includes('routine') && k === '루틴')
     || (on.includes('done') && (x.state === 'done' || x.state === 'idle' || x.state === 'error'))
 }
 
 /** 처음부터 체크해 두는가 — 거름에 걸리고, 잠기지 않았고, 소통 세션이 아닌 것(소통 세션은 봇마다 하나라 일부러 고를 때만) */
-export function cleanPreselect(x: SessionInfo, on: CleanFilter[], now = Date.now()): boolean {
-  return cleanMatch(x, on, now) && !sessLocked(x) && !x.comm && !x.channel   // 살아 있는 소통·채널은 봇마다 하나라 일부러 고를 때만
+export function cleanPreselect(x: SessionInfo, on: CleanFilter[], now = Date.now(), days = CLEAN_DAYS_DEFAULT): boolean {
+  return cleanMatch(x, on, now, days) && !sessLocked(x) && !x.comm && !x.channel   // 살아 있는 소통·채널은 봇마다 하나라 일부러 고를 때만
 }
 
 /** 메뉴의 «정리 가능 N» — 기본 거름으로 열었을 때 체크될 수 */
-export function cleanableCount(all: SessionInfo[], now = Date.now()): number {
-  return all.filter((x) => cleanPreselect(x, CLEAN_DEFAULT, now)).length
+export function cleanableCount(all: SessionInfo[], now = Date.now(), days = CLEAN_DAYS_DEFAULT): number {
+  return all.filter((x) => cleanPreselect(x, CLEAN_DEFAULT, now, days)).length
 }

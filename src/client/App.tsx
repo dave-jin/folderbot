@@ -13,7 +13,7 @@ import { ColorHost, pickColor } from './ColorPick'
 import { Float } from './Float'
 import { DocPane, preloadEditor, useDocs } from './Doc'
 import { Search } from './Search'
-import { Cleanup } from './Cleanup'
+import { Cleanup, savedCleanDays } from './Cleanup'
 import { cleanableCount } from '../core/cleanup'
 import { Elapsed, Panel, type SecH } from './Panel'
 import { machSummary } from '../core/chat'
@@ -433,8 +433,8 @@ function Main() {
   const [queues, setQueues] = useState<Record<string, string[]>>({})
   const flushing = useRef<Set<string>>(new Set())
   const allSessions = useMemo(() => Object.values(s.sessionsByBot).flat(), [s.sessionsByBot])
-  // 메뉴 «세션 정리» 옆 숫자 — 정리 창을 기본 거름으로 열었을 때 체크될 수(core/cleanup). 1분마다 «7일» 문턱을 다시 잰다
-  const cleanable = useMemo(() => cleanableCount(allSessions), [allSessions, Math.floor(Date.now() / 60_000)])
+  // 메뉴 «세션 정리» 옆 숫자 — 정리 창을 기본 거름으로 열었을 때 체크될 수(core/cleanup). 1분마다 «안 쓴 지» 문턱을 다시 잰다
+  const cleanable = useMemo(() => cleanableCount(allSessions, Date.now(), savedCleanDays()), [allSessions, Math.floor(Date.now() / 60_000), modal])   // 정리 창에서 고른 «안 쓴 지» 날 — 창을 닫으면 다시 잰다
   useEffect(() => {
     for (const [sid, list] of Object.entries(queues)) {
       if (!list.length || flushing.current.has(sid)) continue

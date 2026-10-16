@@ -1429,6 +1429,11 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .modal.clean .cbar { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:0 18px 10px }
 .modal.clean .pill { font-size:12px; padding:3px 10px; border-radius:999px; background:var(--line2); color:var(--t2) }
 .modal.clean .pill.on { background:var(--w); color:var(--onAccent, #111) }
+/* «안 쓴 지» 알약 — 앞 «하루 ▾» 는 날 고르기(하루·이틀·3일·7일·14일), 뒤 «넘게 안 씀» 은 켜고 끄기 (2026-10-16) */
+.modal.clean .pill.dpill { display:inline-flex; align-items:center; gap:0; padding:0 }
+.modal.clean .pill.dpill > button { padding:3px 10px 3px 3px; color:inherit; font:inherit }
+.modal.clean .pill.dpill .cdays { appearance:auto; background:transparent; color:inherit; border:0; font:inherit; font-size:12px; font-weight:600; padding:1px 0 1px 8px; cursor:pointer }
+.modal.clean .pill.dpill .cdays option { color:var(--t); background:var(--bg) }
 .modal.clean .cfold { background:var(--bg); color:var(--t); border:1px solid var(--line2); border-radius:7px; padding:3px 6px; font:inherit; font-size:12px; max-width:200px }
 .modal.clean .ctab { flex:1; min-height:0; overflow:auto; padding:0 12px }
 .modal.clean table { width:100%; border-collapse:collapse; font-size:13px }
