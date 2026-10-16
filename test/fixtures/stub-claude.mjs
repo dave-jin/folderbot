@@ -221,6 +221,8 @@ rl.on('line', (raw) => {
   }
   // 「대기열」 검사용 — 한 턴이 **느리게** 돌아야 그 사이에 보낸 말이 대기열에 쌓인다
   if (/느린일/.test(text)) {
+    // CI-2 · «중간» 이면 끝나기 전에 답 한 줄을 먼저 낸다 — 턴 도중 저장(호스트가 그 사이 죽어도 남는가)을 잰다
+    if (/중간/.test(text)) say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '중간 보고 — 반쯤 했어요' }], stop_reason: 'tool_use' } })
     slowTimer = setTimeout(() => { slowTimer = null
       say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '느린 일 끝' }], stop_reason: 'end_turn' } })
       say({ type: 'result', subtype: 'success', duration_ms: 1500, total_cost_usd: 0.001 })

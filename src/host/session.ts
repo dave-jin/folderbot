@@ -23,6 +23,8 @@ import { extraComms, forkHandover, migrateArea, takeoverMode } from '../core/aut
 import { atomicWrite, dataDir, ensureDir } from './paths'
 import { rewindPoint } from '../core/rewind'
 import { slashCommands } from './slash'
+import { CUT_TURN_NOTE, cutTurnAtLoad } from '../core/cutTurn'
+import { mark } from './slow'
 
 /**
  * 워커 env — 중첩 마커를 지우고, **필요할 때만** 장기 토큰을 넣는다.
@@ -280,6 +282,8 @@ export interface SessionRec {
   stopping?: boolean
   /** CL-1 B · 다음에 띄울 워커가 되감을 자리(답 uuid) — 갈라진 새 세션 id 가 오면 지운다 */
   rewindAt?: string
+  /** CI-2 · 호스트가 내려가며 끊은 턴 — 다음에 뜰 때 «끊겼어요» 로 닫는다(`core/cutTurn`) */
+  cut?: { at: number }
   id: string
   botId: string
   name: string
@@ -374,6 +378,8 @@ export class SessionManager extends EventEmitter {
   /** Claude 새 세션의 기본 권한 모드 — 만들 때 값을 안 주면 이걸 쓴다(설정 › Claude). Codex 는 샌드박스가 그 자리다 */
   defaultPermissionMode?: PermissionMode
 
+  /** CI-2 · 이번에 켜질 때 닫은 끊긴 턴 — 호스트가 오케스트레이터에게 알릴지 정한다(`Host.afterCutTurns`) */
+  cutTurns: { id: string; botId: string; name: string; from?: TurnFrom; at: number }[] = []
   constructor() {
     super()
     for (const f of readdirSync(this.dir).filter((f) => f.endsWith('.json'))) {
@@ -382,8 +388,18 @@ export class SessionManager extends EventEmitter {
         // 🔴 지운 세션은 되살리지 않는다 — remove() 가 «지웠다» 표식을 남기는데 종전에는 그걸 안 읽어
         //    호스트를 다시 띄우면 삭제한 세션이 목록에 그대로 돌아왔다 (2026-09-13)
         if (r.deleted) continue
+        // 🔴 CI-2 · 끝을 못 본 턴을 닫는다 — 종전에는 상태만 «쉬는 중» 으로 돌려 «시작하는 중» 글씨와 턴 시각이 그대로 남았다(10/16 오사카 소통 세션)
+        const cut = cutTurnAtLoad(r, Date.now())
         if (r.state === 'running' || r.state === 'awaiting_input') r.state = 'idle' // 호스트가 다시 뜨면 워커는 없다
-        if (closeOpenItems(r.items, 'restore').length) atomicWrite(join(this.dir, f), JSON.stringify({ ...r, items: r.items.slice(-1500) })) // 스피너로 남은 항목도 함께 마감
+        let dirty = closeOpenItems(r.items, 'restore').length > 0   // 스피너로 남은 항목도 함께 마감
+        if (cut) {
+          if (cut === 'note') {
+            r.items.push({ id: itemId('s'), t: Date.now(), kind: 'system', text: CUT_TURN_NOTE })
+            this.cutTurns.push({ id: r.id, botId: r.botId, name: r.name, from: r.turnFrom, at: r.turnStartedAt ?? r.cut?.at ?? 0 })
+          }
+          r.activity = undefined; r.inflight = undefined; r.cut = undefined; dirty = true
+        }
+        if (dirty) atomicWrite(join(this.dir, f), JSON.stringify({ ...r, items: r.items.slice(-1500) }))   // 다시 켜도 두 번 닫지 않게 바로 쓴다
         if (migrateArea(r)) atomicWrite(join(this.dir, f), JSON.stringify(r))
         this.recs.set(r.id, r)
       } catch { /* skip */ }
@@ -611,8 +627,20 @@ export class SessionManager extends EventEmitter {
   }
 
   private persist(r: SessionRec): void {
+    const t = this.soon.get(r.id); if (t) { clearTimeout(t); this.soon.delete(r.id) }
+    mark('세션 저장')
     const slim = { ...r, items: r.items.slice(-1500) }
     atomicWrite(join(this.dir, `${r.id}.json`), JSON.stringify(slim))
+  }
+  /**
+   * 🔴 CI-2 · 턴 도중에도 저장한다 — 종전에는 상태가 바뀔 때만 써서, 턴 중간에 호스트가 내려가면 그 턴의 답·도구 줄이 하나도 안 남았다
+   *    (10/16 오사카 소통 세션 — 7분 일했는데 파일에는 사람 말 하나뿐). 새 줄이 생기면 몇 초 안에 한 번 쓴다(스트리밍 글자마다는 아니다).
+   */
+  private soon = new Map<string, NodeJS.Timeout>()
+  persistSoonMs = Number(process.env.FOLDERBOT_PERSIST_SOON_MS) || 3000   // 검사 시임 — 스모크가 줄인다
+  private persistSoon(r: SessionRec): void {
+    if (this.soon.has(r.id)) return
+    this.soon.set(r.id, setTimeout(() => { this.soon.delete(r.id); if (this.recs.has(r.id)) this.persist(r) }, this.persistSoonMs).unref())
   }
   private push(r: SessionRec, item: ChatItem, replace = false): void {
     if (replace) {
@@ -623,6 +651,7 @@ export class SessionManager extends EventEmitter {
     if (item.kind === 'assistant') r.lastReplyAt = Date.now()
     r.lastActivity = Date.now()
     this.emit('chat', r.id, item, replace)
+    this.persistSoon(r)
   }
   private setState(r: SessionRec, ev: Parameters<typeof transition>[1]): void {
     const prev = r.state
@@ -835,6 +864,7 @@ export class SessionManager extends EventEmitter {
     })
     w.on('exit', (code: number | null, _sig: string | null, err: string) => {
       if (replaced()) return
+      if (this.closing) return   // CI-2 · 호스트가 내려가는 중 — 끊김 표식(stopAll)을 «끝남» 으로 덮지 않는다
       if (this.workers.get(r.id) === w) this.workers.delete(r.id)
       if (w.cliSessionId) r.cliSessionId = w.cliSessionId
       for (const it of closeOpenItems(r.items, 'exit')) this.push(r, it, true)
@@ -945,6 +975,7 @@ export class SessionManager extends EventEmitter {
   }
 
   private onLine(r: SessionRec, line: StreamLine): void {
+    mark(`스트림 ${line.type}`)
     // CL-1 B · 되감은 워커는 새 id 를 받아야 비로소 되감긴 것이다 — 그 전에 죽으면 다음 워커가 다시 가른다(리뷰 10/16)
     if (line.session_id && r.cliSessionId !== line.session_id) { r.cliSessionId = line.session_id; r.rewindAt = undefined; this.persist(r) }
     if (line.type === 'system' && (line.subtype === 'task_started' || line.subtype === 'task_notification' || line.subtype === 'task_updated')) { this.onTask(r, line); return }
@@ -1247,7 +1278,20 @@ export class SessionManager extends EventEmitter {
     return { now, pending }
   }
   hibernate(id: string): void { const w = this.workers.get(id); if (w) { w.kill(); this.workers.delete(id) } const r = this.recs.get(id); if (r) this.emit('sessions', r.botId) }
-  stopAll(): void { for (const w of this.workers.values()) w.kill() }
+  /**
+   * 호스트가 내려간다(앱 종료·업데이트 적용). 🔴 CI-2 · 도는 턴은 «끊김» 표식과 함께 지금까지의 줄을 다 쓴 뒤 워커를 내린다 —
+   *    다음에 뜰 때 그 표식으로 «끊겼어요» 를 남긴다. 내리는 중에 오는 워커 종료는 상태를 다시 쓰지 않는다(표식을 덮지 않게).
+   */
+  private closing = false
+  stopAll(): void {
+    this.closing = true
+    for (const r of this.recs.values()) {
+      const live = r.state === 'running' || r.state === 'awaiting_input'
+      if (live) r.cut = { at: Date.now() }
+      if (live || this.soon.has(r.id)) { try { this.persist(r) } catch { /* 디스크가 막혀도 내리는 건 계속 */ } }
+    }
+    for (const w of this.workers.values()) w.kill()
+  }
   liveCount(): number { return [...this.workers.values()].filter((w) => w.alive).length }
   liveCountFor(botId: string): number { return [...this.workers.entries()].filter(([id, w]) => w.alive && this.recs.get(id)?.botId === botId).length }
 }

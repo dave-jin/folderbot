@@ -25,7 +25,7 @@ writeFileSync(join(root, '3. Area/제품_Rondo', '_MAP_전체구조.md'.normaliz
 // 맥 파일명처럼 NFD 인, 깊고 뒤쪽에 있는 폴더 — «가운데 낱말로 검색» 회귀 방어 (2026-09-13)
 mkdirSync(join(root, '5. Archive', '2025-04_트레바리-북클럽'.normalize('NFD'), '01_기획'), { recursive: true })
 mkdirSync(join(root, '.projectbot'), { recursive: true }); writeFileSync(join(root, '.projectbot/marker.txt'), 'legacy')
-const PORT = 7399
+const PORT = Number(process.env.FOLDERBOT_SMOKE_PORT) || 7399   // 다른 워크트리 스모크와 같이 돌 때 바꾼다(포트가 겹치면 needPort 가 멈춘다)
 const fbHome = mkdtempSync(join(tmpdir(), 'fb-home-'))
 // 사용량 픽스처 — 창 안(5시간) 두 줄. ⚠ Dave 의 실제 ~/.claude 를 읽지 않게 홈을 갈아 끼운다
 mkdirSync(join(fbHome, '.folderbot'), { recursive: true })
@@ -6345,6 +6345,67 @@ try {
       h4.kill()
       if (ymlWas === null) { try { rmSync(yml) } catch {} } else writeFileSync(yml, ymlWas)
     }
+  }
+
+  /**
+   * 🔴 CI-2 (2026-10-16 오케스트레이터 제보 — 오사카 소통 세션) — 루틴 아닌 턴이 도중에 끊기면 다시 뜰 때
+   *    ① «끊겼어요» 줄 · 활동 글씨 지움 ② 끊기기 전 줄이 남는다(턴 도중 저장) ③ 봇이 시킨 턴만 오케스트레이터에게 알린다 · 다시 돌리지 않는다
+   *    SIGKILL(충돌 꼴)과 SIGTERM(앱 종료·업데이트 적용 꼴) 둘 다
+   */
+  {
+    const envC = { ...env, FOLDERBOT_CATCHUP_MS: '600', FOLDERBOT_PERSIST_SOON_MS: '300' }
+    const up = async () => {
+      for (let i = 0; i < 40 && !(await portFree(PORT)); i++) await wait(250)
+      await needPort(PORT, 'CI-2 호스트')
+      const h = spawn('node', ['bin/folderbot.mjs', 'start', '--port', String(PORT)], { env: envC })
+      h.stdout.on('data', (d) => (hostLog += d)); h.stderr.on('data', (d) => (hostLog += d))
+      for (let i = 0; i < 60; i++) { try { await api('/state'); break } catch { await wait(250) } }
+      return h
+    }
+    const NOTE = /이 턴이 도중에 끊겼어요/
+    let h = await up()
+    try {
+      const tb = (await api('/bots')).find((x) => x.rel === '3. Area/제품_Rondo')
+      // ① 사람 턴 — 도는 중 SIGKILL(충돌 꼴)
+      const hs = await api(`/bots/${tb.id}/sessions`, { name: 'CI-2 사람' })
+      await api(`/sessions/${hs.id}/send`, { text: '느린일 길게 중간' })
+      let seen = false
+      for (let i = 0; i < 40 && !seen; i++) { await wait(100); seen = (await api(`/sessions/${hs.id}/chat`)).items.some((it) => it.kind === 'assistant' && /중간 보고/.test(it.text)) }
+      if (!seen) fail('CI-2: 스텁이 중간 답을 안 냈다')
+      await wait(700)   // 턴 도중 저장(300ms) 이 한 번 돌 시간
+      h.kill('SIGKILL'); await wait(500)
+      h = await up()
+      const c1 = await api(`/sessions/${hs.id}/chat`)
+      if (!c1.items.some((it) => it.kind === 'assistant' && /중간 보고/.test(it.text))) fail('🔴 CI-2: 턴 도중에 낸 답이 저장 안 돼 사라졌다(충돌 꼴)')
+      if (!c1.items.some((it) => it.kind === 'system' && NOTE.test(it.text))) fail('🔴 CI-2: 끊긴 사람 턴에 «끊겼어요» 줄이 없다')
+      if (c1.info.activity) fail('🔴 CI-2: 끊긴 턴의 활동 글씨가 남았다 · ' + c1.info.activity)
+      if (c1.info.state === 'running') fail('CI-2: 끊긴 턴이 «도는 중» 으로 남았다')
+      // ② 봇이 시킨 턴 — 도는 중 SIGTERM(앱 종료·업데이트 적용 꼴)
+      const sent = await mcp('tools/call', { name: 'bot_send', arguments: { bot: '제품_Rondo', text: '느린일 길게 중간 봇', name: 'CI-2 봇' } })
+      if (!/보냈어요/.test(sent.result.content[0].text)) fail('CI-2: bot_send 실패 · ' + sent.result.content[0].text)
+      let bs
+      for (let i = 0; i < 40 && !bs; i++) { await wait(100); bs = (await api(`/bots/${tb.id}/sessions`)).find((x) => x.name === 'CI-2 봇' && x.state === 'running') }
+      if (!bs) fail('CI-2: 봇이 시킨 턴이 안 돌았다')
+      await wait(400)
+      h.kill('SIGTERM'); for (let i = 0; i < 40 && h.exitCode === null; i++) await wait(100)
+      h = await up()
+      const c2 = await api(`/sessions/${bs.id}/chat`)
+      if (!c2.items.some((it) => it.kind === 'assistant' && /중간 보고/.test(it.text))) fail('🔴 CI-2: 앱을 끄며 도는 턴의 답을 안 남겼다(종료 꼴)')
+      if (c2.items.filter((it) => it.kind === 'system' && NOTE.test(it.text)).length !== 1) fail('🔴 CI-2: 끈 턴에 «끊겼어요» 줄이 하나가 아니다')
+      if (c2.info.activity) fail('🔴 CI-2: 끈 턴의 활동 글씨가 남았다')
+      if ((await api(`/sessions/${hs.id}/chat`)).items.filter((it) => it.kind === 'system' && NOTE.test(it.text)).length !== 1) fail('🔴 CI-2: 다시 켜니 앞 턴에 «끊겼어요» 가 또 붙었다')
+      let told = ''
+      for (let i = 0; i < 50 && !told; i++) {
+        const comm = (await api('/bots/orch/sessions')).find((x) => x.comm)
+        if (comm) told = (await api(`/sessions/${comm.id}/chat`)).items.filter((it) => it.kind === 'user').map((it) => it.text).find((t) => t.includes('끊긴 턴')) ?? ''
+        if (!told) { const q = comm?.queue?.find((x) => x.text.includes('끊긴 턴')); if (q) told = q.text }
+        if (!told) await wait(100)
+      }
+      if (!told.includes(bs.id) || told.includes(hs.id)) fail('🔴 CI-2: 봇이 시킨 끊긴 턴만 오케스트레이터에게 알려야 한다 · ' + told.slice(0, 300))
+      await wait(3000)
+      if ((await api(`/sessions/${bs.id}/chat`)).items.some((it) => it.kind === 'assistant' && /느린 일 끝/.test(it.text))) fail('🔴 CI-2: 끊긴 봇 턴을 저절로 다시 돌렸다')
+      ok('CI-2 끊긴 턴 — 충돌·종료 둘 다 «끊겼어요» 줄 · 활동 글씨 지움 · 끊기기 전 답이 남음 · 봇이 시킨 턴만 오케스트레이터에게 · 다시 안 돌림 · 다시 켜도 한 번만')
+    } finally { h.kill() }
   }
 
   console.log('\nSMOKE OK')

@@ -26,6 +26,7 @@ import type { QueuedMsg } from '../core/types'
 import { ORCH_ID, Registry, canon, ORCH_REQUEST_RULES_MD, ORCH_ASK_HINT, ORCH_REPORT_HINT, LETTER_RULES_MD } from './registry'
 import { CATCHUP_WINDOW_MS, Routines, routineRun, RETRY_DELAY_MS } from './routines'
 import { autoToDrop, sessArea } from '../core/autoArea'
+import { mark } from './slow'
 import { SessionManager, setOauthToken, setKeychainLogin, AUTH_ERROR, type SessionRec } from './session'
 import { readTodo, todoAdd, todoContext } from './todoStore'
 import { recent as recentFiles, tree as fileTree } from './files'
@@ -57,8 +58,8 @@ export class Host {
   broadcast: (f: Frame) => void = () => {}
   /** 🔴 `.bot.yml` 이 밖에서 바뀌면 **UI 로 저장한 것과 같은 길**을 탄다(AA-2) — 화면 갱신 + 스케줄 다시 걸기 */
   watcher = new FolderWatch(
-    (botId) => { this.broadcast({ ev: 'files', botId }); this.refreshNames() },
-    (botId) => { this.log(`설정 파일이 바뀌어 루틴·연결을 다시 읽어요 · ${this.registry.bot(botId)?.name ?? botId}`); this.afterBotsChanged(); if (botId === ORCH_ID) { this.bridges.reload(); this.ops.reload() } },
+    (botId) => { mark('폴더 바뀜'); this.broadcast({ ev: 'files', botId }); this.refreshNames() },
+    (botId) => { mark('설정 다시 읽기'); this.log(`설정 파일이 바뀌어 루틴·연결을 다시 읽어요 · ${this.registry.bot(botId)?.name ?? botId}`); this.afterBotsChanged(); if (botId === ORCH_ID) { this.bridges.reload(); this.ops.reload() } },
   )
   private lastNames = ''
   /** 봇 폴더의 CLAUDE.md `display_name:` 이 바뀌면 레일도 바뀌어야 한다 — 파일 신호 뒤에 표시 이름을 다시 재 본다 */
@@ -109,6 +110,7 @@ export class Host {
     // BR-2 · 꺼져 있던 사이 놓친 회차를 한 번 보충한다 — 세션·인증이 자리 잡은 뒤에. 끊긴 회차의 재시도가 먼저(그게 markRun 을 적어 보충이 같은 루틴을 또 돌리지 않는다)
     setTimeout(() => {
       try { this.afterInterrupted(cut) } catch (e) { this.log(`끊긴 회차 처리 실패: ${(e as Error).message}`) }
+      try { this.afterCutTurns(this.sessions.cutTurns) } catch (e) { this.log(`끊긴 턴 알림 실패: ${(e as Error).message}`) }
       try { this.routines.catchUp(this.registry.bots()) } catch (e) { this.log(`놓친 회차 보충 실패: ${(e as Error).message}`) }
     }, Number(process.env.FOLDERBOT_CATCHUP_MS) || 20_000).unref()   // 검사 시임 — 스모크가 줄인다
     // 봇 폴더 감시 — 세션을 거치지 않은 쓰기(Bash·Codex·Dropbox·Finder)도 트리에 온다 (host/watch.ts 머리말)
@@ -285,6 +287,23 @@ export class Host {
       told.push(`- ${c.bot} · «${c.routine}» · ${hm} 시작 · 세션 ${c.run} — 다시 안 돌림: ${why}`)
     }
     if (told.length) this.notifyOrch(`[운영 · 끊긴 루틴 ${told.length}건] 호스트가 다시 뜨면서(업데이트 적용·앱 재시작) 도중에 끊긴 루틴 회차예요. 실행 기록은 «실패 · ${INTERRUPTED_REASON}» 로 닫았어요.\n${told.join('\n')}\n다시 돌릴지는 그 봇이나 Dave 가 정합니다(routine_run). 외부 발송이 든 루틴이면 이미 나갔는지 먼저 확인하세요.`, 'ops')
+  }
+
+  /**
+   * 🔴 CI-2 · 루틴 아닌 턴이 끊겼다(세션 쪽이 켜질 때 «끊겼어요» 로 닫았다 · `core/cutTurn`). 봇·바깥 상대가 시킨 턴이면 시킨 쪽이 결과를
+   *    기다리고 있으니 오케스트레이터에게 한 턴으로 알린다. 다시 돌리지는 않는다 — 외부 발송·파일 쓰기가 두 번 나갈 수 있다.
+   *    사람이 시킨 턴은 그 사람이 대화에서 «끊겼어요» 줄을 본다.
+   */
+  afterCutTurns(cut: SessionManager['cutTurns']): void {
+    const told: string[] = []
+    for (const c of cut) {
+      const bot = this.registry.bot(c.botId)
+      this.log(`끊긴 턴을 닫았어요: ${bot?.name ?? c.botId} · ${c.name} · ${c.id}`)
+      if (c.from !== 'bot' && c.from !== 'peer' && c.from !== 'routine') continue
+      const hm = c.at ? new Date(c.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '시각 모름'
+      told.push(`- ${bot?.name ?? c.botId} · «${c.name}» · ${hm} 시작 · 세션 ${c.id} · 시킨 쪽: ${c.from === 'peer' ? '바깥 상대(연결)' : c.from === 'routine' ? '루틴' : '봇'}`)
+    }
+    if (told.length) this.notifyOrch(`[운영 · 끊긴 턴 ${told.length}건] 호스트가 다시 뜨면서(업데이트 적용·앱 재시작) 도중에 끊긴 턴이에요. 그 대화에 «끊겼어요» 줄을 남겼고 다시 돌리지는 않았어요.\n${told.join('\n')}\n이어서 시키려면 그 봇에게 다시 보내 주세요(같은 세션이면 끊기기 전 맥락을 이어받아요). 외부 발송이 든 일이면 이미 나갔는지 먼저 확인하세요.`, 'ops')
   }
 
   /**

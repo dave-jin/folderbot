@@ -16,6 +16,7 @@ import type { Host } from './host'
 import { bindAddresses, tailnetInfo, tailnetInfoCached } from './tailnet'
 import { StaticCache, pickEncoding } from './staticCache'
 import { chatVer } from '../core/chatVer'
+import { mark, routeLabel, slowSince } from './slow'
 import { saveConfig } from './paths'
 import { handleMcp } from './mcp'
 import { bearer, mcpGate } from './mcpAuth'
@@ -124,7 +125,8 @@ export class Gateway {
       const now = performance.now(); const late = Math.max(0, now - last - TICK); last = now
       if (Date.now() - this.stall.at > 60_000) this.stall = { maxMs: 0, at: Date.now() }
       if (late > this.stall.maxMs) this.stall = { maxMs: Math.round(late), at: this.stall.at }
-      if (late > 1000) this.host.log(`호스트가 ${Math.round(late)}ms 멈췄어요`)
+      // CI-3 · 무엇이 쥐고 있었나를 함께 — `mark` 의 기록은 check 단계(setImmediate)에서 들어오므로 그 뒤에 읽는다
+      if (late > 1000) setImmediate(() => { const who = slowSince(late + 2 * TICK); this.host.log(`호스트가 ${Math.round(late)}ms 멈췄어요 · ${who ? `그사이 길었던 일: ${who}` : '호스트 일 기록 없음(앱 화면·GC 쪽)'}`) })
     }, TICK).unref()
   }
   private rebind(): void {
@@ -172,6 +174,7 @@ export class Gateway {
   private isLoopback(req: IncomingMessage): boolean { return isLoopbackReq(req.socket.remoteAddress, req.headers) }
 
   private async route(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    mark(routeLabel(req.method, req.url))
     const url = new URL(req.url ?? '/', 'http://x')
     const p = url.pathname
     // 큰 JSON 은 gzip — 폴더 찾기 색인이 600KB → 60KB (2026-10-12 · 원격에서 첫 검색이 비던 원인 하나). 받는 쪽이 gzip 을 말할 때만
