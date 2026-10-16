@@ -36,6 +36,24 @@ export function shouldMarkRead(o: { atBottom: boolean; streaming: boolean; lastR
 }
 
 /**
+ * 🔴 **CO · 안 읽은 답은 처음부터 보여 준다** (2026-10-16 Dave: *«아직 읽지 않은 답변은 마지막 부분이 아니라 폴더 클릭시
+ *    답변 시작 부분부터 보여주면 내가 매번 스크롤 업할 필요가 없어서 편리할것 같아»*).
+ * 세션을 열 때 **어느 줄에서 열지** — 대화 줄(`buildRows` 의 줄) 중 «여기부터 새 답» 이 될 줄의 번호. -1 이면 맨 아래(지금과 같다).
+ * ① 안 읽은 답이 없으면 -1 ② 읽은 자리(`readAt`)가 있으면 그 뒤에 봇이 낸 첫 줄 — 사람 말은 건너뛴다(내가 친 말은 내가 읽었다)
+ * ③ 읽은 자리가 아예 없는 옛 세션은 **마지막 사람 말 다음 줄**(세션 처음까지 올라가지 않게).
+ * ⚠ 읽음 판정(`shouldMarkRead`)은 그대로다 — 연 것만으로는 읽음이 아니고 맨 아래까지 내려가야 읽음이다.
+ * ⚠ 시각이 0 인 줄(손댄 파일 칩 · 화면이 만든 줄)은 기준이 못 되므로 건너뛴다.
+ */
+export function openAnchor(rows: { t: number; user: boolean }[], lastReplyAt?: number, readAt?: number): number {
+  if (!sessionUnread(lastReplyAt, readAt)) return -1
+  if (readAt) return rows.findIndex((r) => !r.user && r.t > readAt)
+  let i = rows.length - 1
+  while (i >= 0 && !rows[i].user) i--
+  for (let j = i + 1; j < rows.length; j++) if (!rows[j].user && rows[j].t > 0) return j
+  return -1
+}
+
+/**
  * 🔴 **AN · 안 읽음 링은 「네가 볼 차례」일 때만 두른다** (2026-09-24 Dave: *«주황색 표시, 즉 안읽은게 있지만
  *    끝나지 않은 상태에서는 더블링이 나오면 안돼 … 그냥 진행 중일때는 주황색 원닷으로만 가자»* ·
  *    범위 확인 답: *«초록 + 노랑 + 빨강 처럼 **사람 확인이 필요한 모든 경우**에 링이 필요해»*).

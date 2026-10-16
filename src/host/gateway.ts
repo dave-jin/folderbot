@@ -76,7 +76,7 @@ import { hookState, setBudget, setHook, usageReport, warmUsage } from './usage'
 import { planNow } from './planUsage'
 import { saveDoc, fileVer } from './docSave'
 import { allDirs, findFiles, guard, headHash, kindOf, mime, readText, recent, resolveNF, resolveNFDeep, stream, tree, writeText, exists, listDir, renameEntry } from './files'
-import { readTodo, todoDelete, todoEdit, todoMove, todoToggle } from './todoStore'
+import { readTodo, todoDelete, todoDue, todoEdit, todoMeta, todoMove, todoToggle } from './todoStore'
 import { globParents, roleOf } from '../core/rules'
 import { createCommand, listCommandFiles, slashCommands } from './slash'
 import { globalHarness, harnessDetail, harnessRow } from './harness'
@@ -491,11 +491,18 @@ export class Gateway {
     // 레일 순서 — 끌어다 놓은 차례를 볼트에 남긴다(기기마다 달라지지 않게)
     if (p === '/api/idle' && m === 'POST') { const b = await body(); h.setIdle(Number(b.minutes)); return json(200, { minutes: h.cfg.idleMinutes ?? 60 }) }
     if (p === '/api/bots/pin' && m === 'POST') { const b = await body(); try { reg.pin(String(b.id), !!b.on) } catch (e) { return json(400, { error: (e as Error).message }) } h.afterBotsChanged(); return json(200, { ok: true }) }
+    // CK-2 · Akiflow 동기화 — 미리보기·켜기·카드 고르기(설정 «Akiflow 동기화»)
+    if (p === '/api/akiflow' && m === 'GET') return json(200, h.akiflow.status())
+    if (p === '/api/akiflow/mode' && m === 'POST') { const b = await body(); const mode = String(b.mode); if (!['off', 'preview', 'live'].includes(mode)) return json(400, { error: 'mode 는 off · preview · live 중 하나' }); h.akiflowMode(mode as 'off' | 'preview' | 'live'); return json(200, h.akiflow.status()) }
+    if (p === '/api/akiflow/legacy' && m === 'POST') { const n = h.akiflow.legacyToProposed(); return json(200, { moved: n, ...h.akiflow.status() }) }
+    if (p === '/api/akiflow/resolve' && m === 'POST') { const b = await body(); const kind = String(b.kind); if (!['gone', 'conflict', 'pair'].includes(kind)) return json(400, { error: 'kind' }); h.akiflow.resolve(kind as 'gone' | 'conflict' | 'pair', String(b.id), String(b.choice)); return json(200, h.akiflow.status()) }
     if (p === '/api/bots/reorder' && m === 'POST') { const b = await body(); reg.reorder((Array.isArray(b.ids) ? b.ids : []).map((x: unknown) => String(x)), b.moved ? String(b.moved) : undefined); h.afterBotsChanged(); return json(200, { ok: true }) }
     if (p === '/api/bots/unfix' && m === 'POST') { const b = await body(); try { reg.unfix(String(b.id)) } catch (e) { return json(400, { error: (e as Error).message }) } h.afterBotsChanged(); return json(200, { ok: true }) }
     if (seg[1] === 'bots' && seg[2]) {
       const bot = botOf(seg[2]); const sub = seg[3]
       if (sub === 'stop' && m === 'POST') { if (bot.orchestrator) throw new Error('오케스트레이터는 정지할 수 없어요'); reg.stop(bot.id); h.afterBotsChanged(); return json(200, { ok: true }) }
+      // CN · 몸 색 고르기 — 판 12색만 · 주황은 오케스트레이터 전용(registry.setColor 가 거절한다)
+      if (sub === 'color' && m === 'POST') { const b = await body(); try { const nb = reg.setColor(bot.id, String(b.color ?? '')); h.afterBotsChanged(); return json(200, nb) } catch (e) { return json(400, { error: (e as Error).message }) } }
       if (sub === 'retire' && m === 'POST') { const to = reg.retire(bot.id); h.afterBotsChanged(); return json(200, { to }) }
       // ⛔ **봇(폴더) 자체를 치우는 길은 없다** (2026-09-13 Dave 정정: *«실제 폴더를 삭제하는게 아니라
       //    에이전트 연동 삭제»*). 레일의 «지우기» 는 위 `stop` — 목록에서만 덜어낸다. 파일을 치우는 것은
@@ -529,10 +536,14 @@ export class Gateway {
       if (sub === 'slash') { const sid = url.searchParams.get('sid') ?? ''; const v = sid ? h.sessions.get(sid)?.vendor : undefined; return json(200, slashCommands(bot.abs, reg.root, h.sessions.slashList(sid || undefined), v === 'codex' ? 'codex' : 'claude')) }
       if (sub === 'todo' && m === 'GET') return json(200, h.todo(bot))
       if (sub === 'todo' && seg[4] === 'toggle' && m === 'POST') { const b = await body(); const items = todoToggle(bot.abs, Number(b.line), !!b.done); h.broadcast({ ev: 'todo', botId: bot.id, items }); return json(200, items) }
-      if (sub === 'todo' && seg[4] === 'edit' && m === 'POST') { const b = await body(); const items = todoEdit(bot.abs, Number(b.line), String(b.title ?? ''), String(b.desc ?? '')); h.broadcast({ ev: 'todo', botId: bot.id, items }); return json(200, items) }
+      if (sub === 'todo' && seg[4] === 'edit' && m === 'POST') { const b = await body(); const due = b.due === undefined ? undefined : b.due === null || b.due === '' ? null : String(b.due); if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) return json(400, { error: '마감은 YYYY-MM-DD 로 주세요' }); h.noteTodoTitle(bot.id, String(b.title ?? '')); const items = todoEdit(bot.abs, Number(b.line), String(b.title ?? ''), String(b.desc ?? ''), due); h.broadcast({ ev: 'todo', botId: bot.id, items }); return json(200, items) }
+      // CK-3 · 봇 제안 [넣기] — `<!-- bot:proposed -->` → `<!-- bot -->`(정식 줄 · Akiflow 대상)
+      if (sub === 'todo' && seg[4] === 'accept' && m === 'POST') { const b = await body(); const items = todoMeta(bot.abs, Number(b.line), { proposed: false }); h.broadcast({ ev: 'todo', botId: bot.id, items }); return json(200, items) }
+      // CK-1 · 마감만 바꾸기 — 날짜 또는 null(지우기)
+      if (sub === 'todo' && seg[4] === 'due' && m === 'POST') { const b = await body(); const due = b.due ? String(b.due) : null; if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) return json(400, { error: '마감은 YYYY-MM-DD 로 주세요' }); const items = todoDue(bot.abs, Number(b.line), due); h.broadcast({ ev: 'todo', botId: bot.id, items }); return json(200, items) }
       if (sub === 'todo' && seg[4] === 'move' && m === 'POST') { const b = await body(); const items = todoMove(bot.abs, Number(b.line), b.before === null || b.before === undefined ? null : Number(b.before)); h.broadcast({ ev: 'todo', botId: bot.id, items }); return json(200, items) }
       if (sub === 'todo' && seg[4] === 'delete' && m === 'POST') { const b = await body(); const items = todoDelete(bot.abs, Number(b.line)); h.broadcast({ ev: 'todo', botId: bot.id, items }); return json(200, items) }
-      if (sub === 'todo' && m === 'POST') { const b = await body(); h.todoAdd(bot, String(b.title), String(b.desc ?? ''), 'me', false, String(b.section ?? '')); return json(200, h.todo(bot)) }
+      if (sub === 'todo' && m === 'POST') { const b = await body(); const due = b.due && /^\d{4}-\d{2}-\d{2}$/.test(String(b.due)) ? String(b.due) : undefined; h.todoAdd(bot, String(b.title), String(b.desc ?? ''), 'me', false, String(b.section ?? ''), due ? { due } : {}); return json(200, h.todo(bot)) }
       if (sub === 'files') return json(200, tree(bot.abs, Number(url.searchParams.get('depth') ?? 2)))
       if (sub === 'ls') {
         // 폴더 항목에 «하네스 있음» · «봇 있음(id)» · 1단계 역할을 붙인다 — 피커와 우클릭 «여기서 시작» 이 쓴다
@@ -888,7 +899,9 @@ export class Gateway {
         if (!h.sessions.pendingOf(r.id).find((x) => x.requestId === String(b.requestId))?.ask) return json(400, { error: '기다리는 질문이 아니에요' })
         h.sessions.respondAsk(r, String(b.requestId), (b.answers ?? {}) as Record<string, string>); return json(200, { ok: true })
       }
-      if (sub === 'interrupt' && m === 'POST') { h.sessions.interrupt(r); return json(200, { ok: true }) }
+      if (sub === 'interrupt' && m === 'POST') { const b = await body(); h.sessions.interrupt(r, b.by === 'human'); return json(200, { ok: true }) }
+      // CL-1 · 멈춰 둔 대기 말 다시 내보내기
+      if (sub === 'resume' && m === 'POST') { h.sessions.resume(r); return json(200, { ok: true }) }
       if (sub === 'ack' && m === 'POST') { h.sessions.acknowledge(r); return json(200, { ok: true }) }
       if (sub === 'rename' && m === 'POST') { const b = await body(); h.sessions.rename(r.id, String(b.name)); return json(200, { ok: true }) }
       if (sub === 'hibernate' && m === 'POST') { h.sessions.hibernate(r.id); return json(200, { ok: true }) }

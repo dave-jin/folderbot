@@ -89,6 +89,8 @@ export interface Bot {
   kind?: string
   /** 폴더명의 날짜 — 표시용 마감 칩 */
   due?: { date: string; precision: 'day' | 'month' | 'year' }
+  /** CK-1 · 이 폴더 todo.md 의 안 끝난 줄 중 가장 이른 마감(`📅`) — 레일 «마감일» 정렬은 줄 마감이 폴더 마감보다 먼저 본다 */
+  todoDue?: string
   section: string
   color: string
   orchestrator: boolean
@@ -137,6 +139,10 @@ export interface SessionInfo {
   exComm?: boolean
   /** 호스트가 들고 있는 대기 말 — 다른 봇이 보낸 말이 이 세션이 일하는 중에 오면 끝날 때까지 기다린다 */
   queue?: QueuedMsg[]
+  /** CL-1 · 사람이 멈춰 대기 말을 붙잡아 둔 세션 */
+  held?: boolean
+  /** CL-1 · 사람이 멈춘 턴 — 다음 사람 말이 지운다 */
+  stopped?: { at: number }
   /** 지금 하는 일 한 줄 (도구명 · 요약 / 생각 중 / 답 쓰는 중) */
   activity?: string
   /**
@@ -238,6 +244,12 @@ export interface TodoItem {
   by: 'me' | 'bot'
   /** 이 줄 위의 가장 가까운 `## 제목` — 없으면 ''. 화면의 섹션이 된다 (V15) */
   section: string
+  /** CK-1 · 줄 끝 `📅 YYYY-MM-DD` — 바깥에서 정해진 날 */
+  due?: string
+  /** CK-2 · Akiflow 짝 — 줄 끝 `<!-- ak:ID -->` */
+  ak?: string
+  /** CK-3 · 봇이 제안만 한 줄(`<!-- bot:proposed -->`) — 사람이 [넣기] 하기 전에는 Akiflow 로 안 간다 */
+  proposed?: boolean
 }
 
 export interface AuthState {
@@ -291,6 +303,6 @@ export const STATE_LABEL: Record<SessionState, string> = {
   idle: '대기', running: '일하는 중', awaiting_input: '확인해 주세요', done: '끝났어요', error: '문제 있어요'
 }
 
-export const BOT_COLORS = ['#6ea6f7', '#b18cf2', '#3fc1c9', '#34c77b', '#e0a93e', '#f0a8c0', '#9ad0a0', '#8fb8ff', '#d9a0ff', '#f2c14e']
-export const ORCH_COLOR = '#e08850'
+// CN · 판과 주황 예약은 `core/botColor` 한 곳에 있다(2026-10-16)
+export { PALETTE_HEX as BOT_COLORS, ORCH_COLOR } from './botColor'
 export const DEFAULT_PORT = 7373

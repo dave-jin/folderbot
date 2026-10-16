@@ -33,6 +33,17 @@ export function parseFolderTemplate(md: string): string | null {
   return body ? body : null
 }
 
+/**
+ * 🔴 **CK-3 · 할 일 만들기 규칙** — 루트 CLAUDE.md 의 ```md todo-rules``` 블록 본문(2026-10-16 Dave «추천대로»).
+ * 종전에는 규약이 앱 코드(`TODO_RULES_PROMPT`)에 박혀 있어 바꾸려면 앱을 새로 내야 했다. 이제 볼트 주인이 이 블록을 고치면 다음 턴부터 모든 봇이 따른다.
+ * `new-folder` 블록과 같은 꼴 — 없거나 비면 null(앱의 기본 규약을 쓴다).
+ */
+export function parseTodoRules(md: string): string | null {
+  const m = /^(`{3,})(?:md|markdown)[ \t]+todo-rules[ \t]*\n([\s\S]*?)\n\1[ \t]*$/m.exec(md)
+  const body = m?.[2].trim()
+  return body ? body : null
+}
+
 /** 루트 CLAUDE.md 본문에서 folder-rules 블록을 찾아 파싱한다. 없으면 null. */
 export function parseRules(md: string): FolderRules | null {
   const m = FENCE.exec(md)

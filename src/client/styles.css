@@ -238,6 +238,9 @@ b,strong { color:var(--w); font-weight:600 }
 .chat-foot::before { content:''; position:absolute; left:0; right:0; top:-56px; bottom:0; background:linear-gradient(180deg, var(--fade0) 0%, var(--fadeA) 40%, var(--fadeB) 100%); pointer-events:none; z-index:-1 }
 .chat-foot .qlist, .chat-foot .files { width:100%; max-width:712px; margin-bottom:8px }
 /* 사람 말 — cursor 처럼 **입력칸 모양 상자**로 답 위에 놓인다 */
+/* CO · 세션을 열 때 정한 «여기부터 새 답» 선 — 그 아래가 아직 안 읽은 답이다 */
+.newmark { display:flex; align-items:center; gap:10px; color:var(--done); font-size:12px; margin:4px 0 -4px; user-select:none }
+.newmark::before, .newmark::after { content:''; flex:1; height:1px; background:currentColor; opacity:.55 }
 .umsg { background:var(--box); border-radius:8px; padding:11px 14px; color:var(--w); white-space:pre-wrap; word-break:break-word }
 .md { word-break:break-word } .md p { margin:0 0 10px } .md p:last-child { margin:0 } .md h1,.md h2,.md h3 { color:var(--w); font-size:15px; margin:10px 0 4px } .md h1 { font-size:17px } .md ul,.md ol { padding-left:20px; margin:4px 0 } .md li { margin:2px 0 } .md hr { border:0; border-top:1px solid var(--line); margin:12px 0 } .md pre { background:var(--box); border-radius:8px; padding:10px 12px; overflow:auto; font-size:12px } .md code { font-family:var(--mono); font-size:12px; background:var(--box); padding:1px 5px; border-radius:4px } .md pre code { padding:0; background:none } .md table { border-collapse:collapse; font-size:12.5px } .md td,.md th { border-bottom:1px solid var(--line); padding:4px 8px; text-align:left } .md th { color:var(--t3); font-weight:500 } .md blockquote { margin:0; padding-left:12px; border-left:2px solid var(--line2); color:var(--t2) } .md img { max-width:100%; border-radius:6px } .md img.wimg { display:block; max-height:360px; cursor:zoom-in; margin:4px 0 } .md img.wimg:not([src]) { display:none } .md .wlink { color:var(--w); text-decoration:underline; text-decoration-color:var(--line2); cursor:pointer } .md .wmiss { color:var(--t3); font-size:12px; border:1px dashed var(--line2); border-radius:4px; padding:1px 6px }
 .md.streaming > :last-child::after { content:''; display:inline-block; width:2px; height:14px; background:var(--w); vertical-align:-2px; margin-left:2px; animation:caret 1s steps(1) infinite }
@@ -1446,3 +1449,62 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 /* ── 트리 위치 표시 (2026-10-02 · 시안 C) — 채팅·문서에서 고른 것을 주황 상자로. 다른 것을 고를 때까지 남는다 ── */
 .trow.box { background:rgba(224,136,80,.10); outline:1.5px solid var(--run); outline-offset:-1.5px }
 .trow.box .n, .trow.box.dir .n { color:var(--w) }
+
+/* CN · 색 바꾸기 시트 — 폰은 아래에서 올라오는 시트, 데스크톱은 가운데 작은 창 */
+.colsheet { padding:10px 16px calc(var(--sab) + 22px) }
+.app:not(.phone) .colsheet { left:50%; right:auto; bottom:auto; top:18%; translate:-50% 0; width:380px; border-radius:18px; padding:14px 18px 18px }
+.app:not(.phone) .colsheet .grip { display:none }
+.colsheet .cprev { display:flex; align-items:center; gap:12px; margin:2px 0 14px }
+.colsheet .cprev b { display:block; color:var(--w); font-size:15px }
+.colsheet .cprev small { display:block; color:var(--t2); font-size:12px; margin-top:2px }
+.colsheet .cgrid { display:grid; grid-template-columns:repeat(6, 1fr); gap:12px; justify-items:center }
+.colsheet .csw { width:36px; height:36px; border-radius:50%; border:0; padding:0; cursor:pointer }
+.colsheet .csw.on { outline:2.5px solid var(--w); outline-offset:3px }
+.colsheet .csw:disabled { cursor:default }
+.colsheet .clock { display:flex; align-items:center; gap:8px; margin-top:16px; font-size:12px; color:var(--t2) }
+.colsheet .clock .csw { width:20px; height:20px; opacity:.45; cursor:default }
+.csdot { width:11px; height:11px; border-radius:50%; flex:none; margin:0 1px }
+
+/* CK-1 · 할 일 마감 칩 — 오늘(주황) · 지남(빨강) · 곧(강조) · 그 밖(흐림) */
+.duec { flex:none; align-self:center; font-size:10.5px; line-height:1; padding:3px 6px; border-radius:5px; color:var(--t2); background:var(--sel); border:0; cursor:pointer; white-space:nowrap; font-variant-numeric:tabular-nums }
+.duec.soon { color:var(--w) } .duec.today { color:#111; background:var(--run) } .duec.past { color:#fff; background:var(--err) }
+.duec.sm { display:inline-block; margin-left:7px; vertical-align:2px; font-size:11px; cursor:default }
+.duehint { display:flex; align-items:center; gap:4px; font-size:11px; color:var(--done); margin-top:3px }
+.menu.duem { min-width:220px } .menu.duem .dpick { display:flex; align-items:center; gap:8px; padding:6px 10px; font-size:13px; color:var(--t); cursor:pointer }
+.menu.duem .dpick input { background:transparent; color:var(--t2); border:1px solid var(--line2); border-radius:6px; padding:2px 4px; font:inherit; font-size:12px; color-scheme:dark }
+.fdue .seg { flex-wrap:wrap } .fdue .dpick { position:relative; display:inline-flex; align-items:center } .fdue .dpick input { position:absolute; inset:0; opacity:0 }
+.fdue .clr { color:var(--err) } .fdue .dueread { display:block; width:100%; color:var(--done); font-size:12px; margin-top:6px }
+/* CK-3 · 봇 제안 칸 — 정식 목록 위에 따로 */
+.tprops { margin:2px 8px 8px; border:1px dashed var(--line2); border-radius:8px; padding-bottom:4px }
+.tprops .tsec.ph { cursor:default } .tprops .tsec .why { font-size:10.5px; color:var(--t3) } .tprops .tsec .sp { flex:1 }
+.tprop { display:flex; gap:8px; align-items:center; padding:5px 10px 5px 12px }
+.tprop .bd { flex:1; min-width:0 } .tprop .tt { font-size:13px; color:var(--t); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.tprop .dsub { font-size:11px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.tprop .pacts { display:flex; gap:4px; flex:none } .tprop .pacts button { font-size:11.5px; padding:3px 7px; border-radius:5px; color:var(--t2); background:var(--sel) }
+.tprop .pacts .ok { color:#111; background:var(--done) } .tprop .pacts .no { color:var(--t3); background:transparent }
+.app.phone .tprop .tt { font-size:15px } .app.phone .tprop .pacts button { font-size:13px; padding:6px 9px }
+
+/* CL-1 · 멈추기 — 일하는 동안 [⏹][↑대기] 나란히 · 멈춘 자리 줄 · 대기 붙잡힘 */
+/* ⚠ ⏹ 는 `.sendb` 와 이름을 나눈다 — 둘이 나란히 설 때 «보내기» 를 찾는 길(검사·단축키)이 ⏹ 를 집지 않게 */
+.stopb { width:26px; height:26px; border-radius:50%; background:var(--w); color:var(--onAccent); display:inline-flex; align-items:center; justify-content:center; flex:none }
+.app.phone .stopb { width:36px; height:36px }
+.stopb + .sendb { margin-left:6px }
+.stopln { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12.5px; color:var(--t2); padding:8px 12px; margin:6px 0; border:1px solid var(--line2); border-radius:8px }
+.stopln button { font-size:12px; color:var(--w); background:var(--sel); border-radius:6px; padding:3px 9px }
+.qhead.held { display:flex; align-items:center; gap:8px; color:var(--wait) } .qhead.held .sp { flex:1 }
+.qhead.held .resume { font-size:12px; color:#111; background:var(--wait); border-radius:6px; padding:3px 9px }
+/* CL-2 · ⚡ 멈추고 보내기 */
+.nowrow { display:flex; justify-content:flex-end; padding:0 4px 6px }
+.nowchip { font-size:12px; color:var(--w); background:var(--sel); border:1px solid var(--line2); border-radius:14px; padding:4px 10px; display:inline-flex; gap:6px; align-items:center }
+.nowchip .k { color:var(--t3); font-size:11px }
+.fixrow { font-size:12px; color:var(--t2); padding:0 6px 6px } .fixrow button { color:var(--w); text-decoration:underline }
+.todo .tt.dueln { display:flex; align-items:center; gap:6px; min-width:0 } .todo .tt.dueln .ttx { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap } .todo .tt.dueln .byb { margin-left:0; flex:none }
+
+/* CK-2 · 설정 › Akiflow 동기화 */
+.akprev { margin:10px 0 12px; border:1px solid var(--line2); border-radius:8px; padding:6px 0; max-height:320px; overflow:auto }
+.akprev .akh { font-size:12px; color:var(--t2); padding:4px 12px 6px }
+.akprev .akrow { display:flex; gap:8px; align-items:center; padding:4px 12px; font-size:12.5px } .akprev .akrow.none { color:var(--t3) }
+.akprev .akop { flex:none; font-size:10.5px; padding:1px 6px; border-radius:4px; background:var(--sel); color:var(--t2) } .akprev .akop.create { color:var(--done) } .akprev .akop.delete { color:var(--err) }
+.akprev .akt { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--t) } .akprev .akr { flex:none; color:var(--t3); font-size:11.5px }
+.akcard { display:flex; flex-wrap:wrap; gap:8px; align-items:center; font-size:12.5px; padding:8px 12px; margin:6px 0; border:1px solid var(--line2); border-radius:8px }
+.akcard b { color:var(--w); width:100% } .akcard span { color:var(--t2) } .akcard .sp { flex:1 } .akcard button { font-size:12px; padding:3px 9px; border-radius:6px; background:var(--sel); color:var(--w) }

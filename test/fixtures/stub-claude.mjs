@@ -2,7 +2,7 @@
 // 가짜 claude CLI — 진짜와 같은 stream-json 프로토콜의 최소만 말한다 (테스트 전용)
 import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
-import { writeFileSync, existsSync, mkdirSync } from 'node:fs'
+import { writeFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 const argv = process.argv.slice(2)
@@ -28,7 +28,7 @@ const say = (o) => process.stdout.write(JSON.stringify({ session_id: sessionId, 
 try { const dir = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-')); mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, `${sessionId}.jsonl`), JSON.stringify({ cwd: process.cwd() }) + '\n') } catch {}
 say({ type: 'system', subtype: 'init', model, tools: [], mcp_servers: [], slash_commands: ['compact', 'context', 'review', 'goal', 'loop'] })
 const rl = createInterface({ input: process.stdin })
-let pendingReq = null, pendingAsk = null, pendingDeferred = null
+let pendingReq = null, pendingAsk = null, pendingDeferred = null, slowTimer = null
 rl.on('line', (raw) => {
   let msg; try { msg = JSON.parse(raw) } catch { return }
   /**
@@ -42,6 +42,19 @@ rl.on('line', (raw) => {
       subscription_type: 'max', rate_limits_available: true,
       rate_limits: { five_hour: { utilization: five, resets_at: new Date(Date.now() + 2 * 3600e3).toISOString() }, seven_day: { utilization: week, resets_at: new Date(Date.now() + 30 * 3600e3).toISOString() } }
     } } })
+    return
+  }
+  /**
+   * CL-1 · 멈추기 — 실 CLI(2.1.288)와 같은 순서: control_response(still_queued) → 거절된 도구 결과 → «[Request interrupted…]» → result(error_during_execution · is_error)
+   *    느린 턴(`느린일`)만 멈출 수 있다 — 나머지는 이미 끝났다.
+   */
+  if (msg.type === 'control_request' && msg.request?.subtype === 'interrupt') {
+    say({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response: { still_queued: [] } } })
+    if (slowTimer) {
+      clearTimeout(slowTimer); slowTimer = null
+      say({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }] } })
+      say({ type: 'result', subtype: 'error_during_execution', is_error: true, stop_reason: 'tool_use', duration_ms: 100, total_cost_usd: 0, errors: ['[ede_diagnostic] result_type=user'] })
+    }
     return
   }
   /**
@@ -171,9 +184,19 @@ rl.on('line', (raw) => {
     }, 400)
     return
   }
+  // CK-3 검사용 — 봇이 Edit 로 todo.md 에 바로 한 줄 쓴다(«제안» 경로를 안 거친 줄). 있던 줄의 설명도 하나 고친다
+  if (/할일몰래쓰기/.test(text)) {
+    const f = join(process.cwd(), 'todo.md'); const id = `stub-e-${u}`
+    say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id, name: 'Edit', input: { file_path: f, old_string: '', new_string: '- [ ] 봇이 몰래 쓴 줄: Edit 로 바로' } }] } })
+    try { const cur = readFileSync(f, 'utf8'); writeFileSync(f, cur.replace('- [ ] 원래 있던 줄: 설명 <!-- bot -->', '- [ ] 원래 있던 줄: 설명 고침(못 한 이유) <!-- bot -->') + `- [ ] 봇이 몰래 쓴 줄: Edit 로 바로\n`) } catch {}
+    say({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] } })
+    say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '할 일 썼어요' }], stop_reason: 'end_turn' } })
+    say({ type: 'result', subtype: 'success', duration_ms: 40, total_cost_usd: 0.001 })
+    return
+  }
   // 「대기열」 검사용 — 한 턴이 **느리게** 돌아야 그 사이에 보낸 말이 대기열에 쌓인다
   if (/느린일/.test(text)) {
-    setTimeout(() => {
+    slowTimer = setTimeout(() => { slowTimer = null
       say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '느린 일 끝' }], stop_reason: 'end_turn' } })
       say({ type: 'result', subtype: 'success', duration_ms: 1500, total_cost_usd: 0.001 })
     }, 2500)

@@ -133,7 +133,7 @@ export function channelSpawn(trust: Trust): { permissionMode: 'default' | 'bypas
   if (trust === 'act') return { permissionMode: 'bypassPermissions', strictMcp: false, disallowed: [], allowed: [] }
   const always = fb(['folder_move', 'folder_create', 'bot_retire', 'routine_add', 'routine_update', 'routine_remove', 'routine_run', 'orch_ask'])
   if (trust === 'propose') return { permissionMode: 'default', strictMcp: true, disallowed: [...WRITE_BUILTINS, ...always], allowed: [...CHANNEL_ALLOW.propose] }
-  return { permissionMode: 'default', strictMcp: true, disallowed: [...WRITE_BUILTINS, ...always, ...fb(['bot_send', 'todo_add', 'bot_start', 'bot_stop', 'bots_reorder'])], allowed: [...CHANNEL_ALLOW.read] }
+  return { permissionMode: 'default', strictMcp: true, disallowed: [...WRITE_BUILTINS, ...always, ...fb(['bot_send', 'todo_add', 'todo_propose', 'bot_start', 'bot_stop', 'bots_reorder'])], allowed: [...CHANNEL_ALLOW.read] }
 }
 
 /**
@@ -151,7 +151,7 @@ const READ_BUILTINS = ['Read', 'Grep', 'Glob', 'LS', 'NotebookRead', 'TodoWrite'
 const FB_READ = fb(['bots_list', 'bot_status', 'bot_sessions', 'vault_tree', 'vault_search', 'rules_get', 'routine_list', 'inbox_list', 'bots_candidates', 'bridge_send', 'orch_report'])
 export const CHANNEL_ALLOW: Record<'read' | 'propose', readonly string[]> = {
   read: [...READ_BUILTINS, ...FB_READ],
-  propose: [...READ_BUILTINS, ...FB_READ, ...fb(['bot_send', 'todo_add'])],
+  propose: [...READ_BUILTINS, ...FB_READ, ...fb(['bot_send', 'todo_add', 'todo_propose'])],   // CK-3 · 바깥 상대의 턴에서 todo_add 는 제안으로 내려간다
 }
 export function channelVerdict(trust: Trust, toolName: string): { allow: true } | { allow: false; message: string } {
   if (toolName === 'AskUserQuestion') return { allow: false, message: '이 세션은 연결(Bridge) 채널이라 물어볼 사람이 없습니다. 묻지 말고, 정할 것이 있으면 답장(bridge_send)에 needs_human 으로 적어 넘기세요.' }

@@ -943,6 +943,8 @@ try {
         window.__kbReset = () => { window.__ih = H; vv.height = H; vv.offsetTop = 0; vv.dispatchEvent(new Event('resize')) }
       })
       const errs = []; pg.on('pageerror', (e) => errs.push(e.message)); pg.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()) })
+      // 콘솔의 «Failed to load resource» 는 주소를 안 말한다 — 어느 주소가 4xx·5xx 였는지 함께 적는다(원인을 바로 찾게)
+      pg.on('response', (r) => { if (r.status() >= 400 && /\/api\//.test(r.url())) console.log(`  (${name} 화면 요청 ${r.status()} ${r.request().method()} ${r.url().replace(/^https?:\/\/[^/]+/, '')})`) })
       await pg.goto(base + `/#bot=${bot.id}`)
       /**
        * 🔴 **보기 설정을 매 판 같은 자리에서 시작한다.**
@@ -2415,6 +2417,119 @@ try {
           await fetch(base + `/api/sessions/${sidU}`, { method: 'DELETE' })
           await pg.evaluate((h) => { location.hash = h }, backHash); await wait(700)
           ok('S 읽음/안 읽음 — 안 본 답은 행 강조+배지 링 · 맨 아래까지 보면 볼트에 읽음 · 그 세션 알림도 함께 읽음')
+        }
+        /**
+         * 🔴 **CM · 봇끼리만 말한 봇을 열면 빈 창** (2026-10-16 Dave · 스크린샷_1222). 소통 세션만 있는 봇을 누르면 그 대화가 서야 한다.
+         *    옛 코드(`sessions.find(chat)`)는 채팅 세션이 없어 «새 대화» 빈 창을 띄워 여기서 빨개진다.
+         * 🔴 **CO · 안 읽은 답은 처음부터** (2026-10-16 Dave). 읽은 뒤 긴 답이 오면, 그 세션을 열 때 맨 아래가 아니라 «여기부터 새 답» 이 화면 위에 선다.
+         *    연 것만으로는 읽음이 아니고, 맨 아래까지 내려가면 읽음. 새 답이 한 화면 안이면 맨 아래 그대로.
+         *    옛 코드는 세션을 열면 무조건 맨 아래(`scrollTop = scrollHeight`)라 선도 없고 바닥에 붙어 여기서 빨개진다.
+         */
+        {
+          const backHash = await pg.evaluate(() => location.hash)
+          const rel = '2. Projects/2026-11_소통만-봇'; mkdirSync(join(root, rel), { recursive: true })
+          await mcp('tools/call', { name: 'bot_start', arguments: { rel } })
+          await mcp('tools/call', { name: 'bot_send', arguments: { bot: '2026-11_소통만-봇', text: '되읊어: 소통만 왔어요 CM' } })
+          const cmBot = (await api('/bots')).find((b) => b.rel === rel)
+          if (!cmBot) fail('CM: 소통만 있는 봇을 못 만들었다')
+          let xs = []; for (let i = 0; i < 40; i++) { xs = await api(`/bots/${cmBot.id}/sessions`); if (xs.length && xs.every((x) => x.state !== 'running')) break; await wait(200) }
+          if (xs.length !== 1 || !xs[0].comm) fail('CM: 픽스처 — 소통 세션 하나만 있어야 한다 ' + JSON.stringify(xs.map((x) => [x.name, x.comm])))
+          await pg.evaluate((h) => { location.hash = h }, `bot=${cmBot.id}`); await wait(1200)
+          const shown = await pg.evaluate(() => ({ body: document.querySelector('.chat-body')?.textContent ?? '', empty: !!document.querySelector('.chat-body > .empty'), ph: document.querySelector('.col.chat [contenteditable], .col.chat textarea')?.getAttribute('data-placeholder') ?? document.querySelector('.col.chat textarea')?.getAttribute('placeholder') ?? '' }))
+          if (shown.empty || !shown.body.includes('소통만 왔어요 CM')) fail('🔴 CM: 소통 세션만 있는 봇을 열었는데 그 대화가 안 선다(빈 창) ' + JSON.stringify(shown).slice(0, 300))
+          if (!/새 채팅으로 이어서/.test(shown.ph)) fail('CM: 소통 세션 입력칸에 «새 채팅으로 이어서 열려요» 안내가 없다 ' + JSON.stringify(shown.ph))
+          ok('CM 소통 세션만 있는 봇 — 열면 그 대화 · 입력칸은 «새 채팅으로 이어서»')
+
+          // CO — 같은 봇에 채팅 세션 하나: 첫 답을 읽고 → 긴 답이 온 뒤 연다
+          const sidC = (await api(`/bots/${cmBot.id}/sessions`, { name: 'co-채팅' })).id
+          const waitDone = async () => { for (let i = 0; i < 50; i++) { const x = (await api(`/bots/${cmBot.id}/sessions`)).find((y) => y.id === sidC); if (x && x.state !== 'running' && x.lastReplyAt) return x; await wait(200) } return null }
+          await api(`/sessions/${sidC}/send`, { text: '되읊어: 첫 답 CO' }); let x1 = await waitDone()
+          await api(`/sessions/${sidC}/read`, { at: x1.lastReplyAt })
+          await pg.evaluate((h) => { location.hash = h }, backHash); await wait(500)
+          const long = Array.from({ length: 50 }, (_, i) => `새 답 ${i + 1}번째 문단입니다 — 처음부터 읽혀야 한다`).join('\n\n')
+          await api(`/sessions/${sidC}/send`, { text: '되읊어: CO-첫줄 ' + long }); await wait(400); x1 = await waitDone()
+          await pg.evaluate((h) => { location.hash = h }, `bot=${cmBot.id}&s=${sidC}`); await wait(1600)
+          const pos = await pg.evaluate(() => { const sc = document.querySelector('.chat-scroll'); const m = document.querySelector('.newmark'); if (!sc) return null
+            return { mark: !!m, markTop: m ? Math.round(m.getBoundingClientRect().top - sc.getBoundingClientRect().top) : null, fromBottom: Math.round(sc.scrollHeight - sc.scrollTop - sc.clientHeight), firstVisible: [...document.querySelectorAll('.amsg')].some((a) => { const r = a.getBoundingClientRect(); return a.textContent.includes('CO-첫줄') && r.top >= sc.getBoundingClientRect().top - 2 && r.top < sc.getBoundingClientRect().bottom }) } })
+          await pg.screenshot({ path: 'test/tmp/co-open.png' })
+          if (!pos?.mark) fail('🔴 CO: 안 읽은 답이 있는 세션을 열었는데 «여기부터 새 답» 선이 없다 ' + JSON.stringify(pos))
+          if (pos.fromBottom < 200 || pos.markTop < 0 || pos.markTop > 200 || !pos.firstVisible) fail('🔴 CO: 열자마자 새 답의 처음이 화면 위에 서야 한다(지금은 맨 아래로 간다) ' + JSON.stringify(pos))
+          await wait(1200)
+          const still = (await api(`/bots/${cmBot.id}/sessions`)).find((y) => y.id === sidC)
+          if (still.readAt >= still.lastReplyAt) fail('CO: 열기만 했는데 읽음이 적혔다(맨 아래까지 봐야 읽음) ' + JSON.stringify([still.readAt, still.lastReplyAt]))
+          await pg.evaluate(() => { const sc = document.querySelector('.chat-scroll'); sc.scrollTop = sc.scrollHeight })
+          let rd = null; for (let i = 0; i < 30; i++) { await wait(200); rd = (await api(`/bots/${cmBot.id}/sessions`)).find((y) => y.id === sidC); if (rd.readAt >= rd.lastReplyAt) break }
+          if (!(rd.readAt >= rd.lastReplyAt)) fail('CO: 맨 아래까지 내려갔는데 읽음이 안 적혔다 ' + JSON.stringify([rd.readAt, rd.lastReplyAt]))
+          // 짧은 새 답 — 한 화면 안이면 맨 아래 그대로(선만)
+          await pg.evaluate((h) => { location.hash = h }, backHash); await wait(500)
+          await api(`/sessions/${sidC}/send`, { text: '되읊어: 짧은 새 답 CO' }); await wait(300); await waitDone()
+          await pg.evaluate((h) => { location.hash = h }, `bot=${cmBot.id}&s=${sidC}`); await wait(1400)
+          const pos2 = await pg.evaluate(() => { const sc = document.querySelector('.chat-scroll'); return { mark: !!document.querySelector('.newmark'), fromBottom: Math.round(sc.scrollHeight - sc.scrollTop - sc.clientHeight) } })
+          if (!pos2.mark || pos2.fromBottom > 60) fail('CO: 짧은 새 답은 맨 아래 그대로 + 선 ' + JSON.stringify(pos2))
+          // 폴더를 누르면(주소에 세션 없음) 안 읽은 채팅이 먼저 — 소통 세션이 더 최근이어도 채팅으로
+          await pg.evaluate((h) => { location.hash = h }, backHash); await wait(500)
+          await api(`/sessions/${sidC}/send`, { text: '되읊어: 또 새 답 CO' }); await wait(300); await waitDone()
+          await mcp('tools/call', { name: 'bot_send', arguments: { bot: '2026-11_소통만-봇', text: '되읊어: 소통이 더 최근 CO' } }); await wait(900)
+          await pg.evaluate((h) => { location.hash = h }, `bot=${cmBot.id}`); await wait(1200)
+          const body3 = await pg.evaluate(() => document.querySelector('.chat-body')?.textContent ?? '')
+          if (!body3.includes('또 새 답 CO')) fail('CO: 폴더를 누르면 안 읽은 채팅 세션이 먼저 열려야 한다 ' + body3.slice(-200))
+          await pg.evaluate((h) => { location.hash = h }, backHash); await wait(900)   // ⚠ 화면을 먼저 옮기고 봇을 내린다(404 방지)
+          await mcp('tools/call', { name: 'bot_stop', arguments: { bot: rel } }); await wait(300)
+          ok('CO 안 읽은 답은 처음부터 — 선 · 새 답 처음이 화면 위 · 연 것만으론 안 읽음 · 끝까지 내려가면 읽음 · 짧으면 맨 아래 · 폴더는 안 읽은 채팅 먼저')
+        }
+        /**
+         * 🔴 **CL-1 · ⎋ 로 멈추기 · 대기 붙잡기 · 멈춘 자리** · **CL-2 · ⌥⏎ 멈추고 바로 보내기** (2026-10-16 Dave «추천대로»).
+         *    옛 코드는 ① 글을 쓰면 ⏹ 가 사라지고 ② ⎋ 가 아무것도 안 멈추고 ③ 멈추자마자 대기 말이 나가고 ④ 멈춘 자리 줄·⌥⏎ 가 없어 여기서 빨개진다.
+         */
+        {
+          const backHash = await pg.evaluate(() => location.hash)
+          const sidS = (await api(`/bots/${bot.id}/sessions`, { name: 'cl-멈춤' })).id
+          const info = async () => (await api(`/bots/${bot.id}/sessions`)).find((y) => y.id === sidS)
+          const chatOf = async () => (await api(`/sessions/${sidS}/chat`)).items ?? []
+          const until = async (f, n = 40) => { for (let i = 0; i < n; i++) { const v = await f(); if (v) return v; await wait(150) } return null }
+          await pg.evaluate((h) => { location.hash = h }, `bot=${bot.id}&s=${sidS}`); await wait(900)
+          await api(`/sessions/${sidS}/send`, { text: '느린일 CL 첫째' })
+          await until(async () => (await info())?.state === 'running')
+          await pg.click('.composer .cin'); await pg.keyboard.type('되읊어: 대기 말 CL'); await wait(200)
+          const btns = await pg.evaluate(() => ({ stop: !!document.querySelector('.composer .stopb'), send: !!document.querySelector('.composer .sendb'), now: !!document.querySelector('.nowchip') }))
+          if (!btns.stop || !btns.send) fail('🔴 CL-1: 일하는 중에 글을 쓰면 ⏹ 가 사라진다 ' + JSON.stringify(btns))
+          if (!btns.now) fail('🔴 CL-2: 일하는 중에 글을 쓰면 «⚡ 멈추고 보내기» 가 떠야 한다')
+          await pg.click('.composer .sendb'); await wait(300)
+          await pg.keyboard.press('Escape')
+          const x = await until(async () => { const v = await info(); return v && v.state !== 'running' ? v : null })
+          if (!x || !x.held || !x.stopped) fail('🔴 CL-1: ⎋ 로 안 멈췄거나 대기를 안 붙잡았다 ' + JSON.stringify(x && { state: x.state, held: x.held, stopped: x.stopped }))
+          if (x.state === 'error') fail('🔴 CL-1: 사람이 멈춘 턴이 오류로 남았다')
+          await wait(1800)
+          if ((await chatOf()).some((it) => it.kind === 'user' && it.text.includes('대기 말 CL'))) fail('🔴 CL-1: 멈췄는데 대기 말이 바로 나갔다')
+          const ui = await pg.evaluate(() => ({ stopln: document.querySelector('.stopln')?.textContent ?? '', held: document.querySelector('.qhead.held')?.textContent ?? '' }))
+          if (!/응답을 멈췄어요/.test(ui.stopln) || !/프롬프트 고치기/.test(ui.stopln) || !/다시 시도/.test(ui.stopln)) fail('🔴 CL-1: «응답을 멈췄어요 — [프롬프트 고치기] [다시 시도]» 줄이 없다 ' + JSON.stringify(ui))
+          if (!/멈춰 둠/.test(ui.held)) fail('CL-1: 대기 머리에 «멈춰 둠 · 이어 보내기» 가 없다 ' + JSON.stringify(ui))
+          await pg.click('.qhead.held .resume')
+          if (!(await until(async () => (await chatOf()).some((it) => it.kind === 'assistant' && it.text.includes('대기 말 CL'))))) fail('🔴 CL-1: [이어 보내기] 를 눌렀는데 대기 말이 안 나갔다')
+          // 고쳐 다시(A) — 마지막 말을 입력칸으로 → 고쳐 보내면 «앞 요청은 멈췄다» 가 붙는다
+          await api(`/sessions/${sidS}/send`, { text: '느린일 CL 둘째' }); await until(async () => (await info())?.state === 'running')
+          await pg.click('.composer .cin'); await pg.keyboard.press('Escape')
+          await until(async () => (await info())?.stopped)
+          await pg.waitForSelector('.stopln', { timeout: 3000 })
+          await pg.click('.stopln button:has-text("프롬프트 고치기")'); await wait(300)
+          const pre = await pg.$eval('.composer .cin', (e) => e.dataset.value ?? e.textContent)
+          if (pre !== '느린일 CL 둘째') fail('CL-1: [프롬프트 고치기] 가 마지막 말을 입력칸으로 안 올렸다 ' + JSON.stringify(pre))
+          await pg.fill('.composer .cin', '되읊어: 고친 말 CL'); await pg.keyboard.press('Enter')
+          const fixed = await until(async () => (await chatOf()).find((it) => it.kind === 'user' && it.text.includes('고친 말 CL')))
+          if (!fixed || !fixed.text.startsWith('[앞 요청은 사람이 멈췄다')) fail('🔴 CL-1: 고쳐 보낸 말 앞에 «앞 요청은 사람이 멈췄다» 가 안 붙었다 ' + JSON.stringify(fixed))
+          if ((await until(async () => { const v = await info(); return v && !v.stopped && !v.held ? v : null })) === null) fail('CL-1: 사람이 새 말을 보냈는데 멈춤이 안 풀렸다')
+          // ⌥⏎ — 멈추고 바로 보내기: 느린 턴(2.5초)이 끝나기 전에 급한 말의 답이 온다
+          await until(async () => (await info())?.state !== 'running')
+          await api(`/sessions/${sidS}/send`, { text: '느린일 CL 셋째' }); await until(async () => (await info())?.state === 'running')
+          await pg.click('.composer .cin'); await pg.keyboard.type('되읊어: 급한 말 CL'); const t0 = Date.now(); await pg.keyboard.press('Alt+Enter')
+          const got = await until(async () => (await chatOf()).some((it) => it.kind === 'assistant' && it.text.includes('급한 말 CL')), 30)
+          if (!got || Date.now() - t0 > 2400) fail('🔴 CL-2: ⌥⏎ 가 느린 턴을 멈추고 바로 보내지 않았다 ' + (Date.now() - t0) + 'ms')
+          const items = await chatOf(); const lastSlow = items.filter((it) => it.kind === 'assistant' && it.text === '느린 일 끝').length
+          await wait(2600); if ((await chatOf()).filter((it) => it.kind === 'assistant' && it.text === '느린 일 끝').length !== lastSlow) fail('CL-2: 멈춘 느린 턴이 뒤늦게 끝났다(안 멈췄다)')
+          // ⚠ 화면을 먼저 옮기고 지운다 — 보던 세션을 지우면 화면이 그 세션을 다시 부르다 404 를 받아 «page errors» 에 걸린다
+          await pg.evaluate((h) => { location.hash = h }, backHash); await wait(900)
+          await fetch(base + `/api/sessions/${sidS}`, { method: 'DELETE' })
+          ok('CL ⎋ 멈추기 — 글이 있어도 ⏹ · 대기 붙잡기 · 멈춘 자리 줄 · [이어 보내기] · 고쳐 다시(앞 요청 멈춤 표시) · ⌥⏎ 멈추고 바로 보내기')
         }
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
         await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면|🤝 소통/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)   // ⚠ 2026-10-02 · 오케스트레이터는 세션이 «🤝 소통» 하나뿐일 수 있다(«세션 N» 줄이 안 선다)
@@ -4384,6 +4499,29 @@ try {
           if (!existsSync(join(root, tmpRel))) fail('🔴 지우기가 폴더를 지웠다 — 연결만 끊어야 한다')
           ok('레일 우클릭 — 지우기는 연결만 끊는다(폴더는 그대로) · 은퇴는 남아 있다')
           /**
+           * 🔴 **CN · 색 바꾸기** (2026-10-16 Dave: «오케스트레이터 고유 색상만 제외하고 사용자가 원하는 대로 지정 및 변경»).
+           *    레일 우클릭 › 색 바꾸기 → 12색 판 + 잠긴 주황 → 고르면 그 폴더 .bot.yml 에 적히고 레일 얼굴이 바뀐다. 주황·판 밖은 호스트가 거절.
+           *    옛 코드는 메뉴에 «색 바꾸기» 가 없고 `/color` 길도 없어 여기서 빨개진다.
+           */
+          {
+            const before = (await api('/bots')).find((b) => b.id === bot.id).color
+            await pg.click('.sb-list .brow:has-text("제품_Rondo")', { button: 'right' }); await wait(300)
+            await pg.click('.menu.ctx button:has-text("색 바꾸기")'); await pg.waitForSelector('.colsheet', { timeout: 3000 })
+            const sh = await pg.evaluate(() => ({ n: document.querySelectorAll('.colsheet .cgrid .csw').length, lock: document.querySelector('.colsheet .clock')?.textContent ?? '', on: document.querySelector('.colsheet .csw.on')?.getAttribute('title') }))
+            if (sh.n !== 12 || !/오케스트레이터 전용/.test(sh.lock)) fail('🔴 CN: 색 시트 — 12색 판과 잠긴 주황이 아니다 ' + JSON.stringify(sh))
+            const pickHex = ['#5fd3b5', '#7d86f0'].find((h) => h !== before)
+            await pg.click(`.colsheet .cgrid .csw[title="${pickHex === '#5fd3b5' ? '민트' : '남색'}"]`); await wait(900)
+            const after = (await api('/bots')).find((b) => b.id === bot.id).color
+            const yml = readFileSync(join(root, bot.rel, '.bot.yml'), 'utf8')
+            if (after !== pickHex || !yml.includes(pickHex)) fail('🔴 CN: 고른 색이 봇·.bot.yml 에 안 남았다 ' + JSON.stringify({ before, after, yml }))
+            const railFill = await pg.evaluate((id) => { const r = document.querySelector(`.brow[data-id="${id}"] svg`); return r ? r.outerHTML : '' }, bot.id)
+            if (!railFill.toLowerCase().includes(pickHex)) fail('CN: 색을 골랐는데 레일 얼굴이 그대로다 ' + railFill.slice(0, 200))
+            for (const bad of ['#e08850', '#e0a93e', '#123456']) { const r = await fetch(base + `/api/bots/${bot.id}/color`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ color: bad }) }); if (r.status !== 400) fail('🔴 CN: 판 밖·주황 색을 받았다 ' + bad + ' ' + r.status) }
+            const ro = await fetch(base + '/api/bots/orch/color', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ color: '#5fd3b5' }) }); if (ro.status !== 400) fail('CN: 오케스트레이터 색을 바꿀 수 있다 ' + ro.status)
+            await api(`/bots/${bot.id}/color`, { color: before && before !== '#e0a93e' ? before : '#6ea6f7' }); await wait(300)
+            ok('CN 색 바꾸기 — 레일 우클릭 › 12색 판 · 잠긴 주황 · .bot.yml 저장 · 레일 얼굴 · 주황·앰버·판 밖·오케스트레이터 거절')
+          }
+          /**
            * 🔴 **즐겨찾기 고정 — 레일 맨 위 「고정」 칸, 최대 3개** (루프 3/10). 봇이 늘수록 매일 가는 폴더가 묻힌다.
            *    고정은 볼트에 남는다 — 맥에서 고정한 것이 폰에서도 맨 위여야 한다.
            */
@@ -4660,6 +4798,105 @@ try {
           const md0 = readFileSync(join(root, '3. Area/제품_Rondo', 'todo.md'), 'utf8')
           if (!/- \[x\] 옛 완료 1[\s\S]*?- \[ \] Tailscale/.test(md0)) fail('🔴 AK: 화면 차례를 바꾸면서 파일까지 다시 썼다 — 파일에서는 끝난 줄이 원래 자리(안 끝난 줄 위)에 있어야 한다\n' + md0)
           ok('AK 할 일 차례 — 안 끝난 일이 위 · 완료는 최근 몇 개 + 더보기 · 파일은 그대로')
+        }
+        /**
+         * 🔴 **CK-1 · 할 일 줄 마감** (2026-10-16 Dave «추천대로»). 입력칸 끝 «내일» → 되읽기 → 줄 끝 `📅 날짜` · 칩 «내일».
+         *    칩/📅 → 날짜 고르기(다음 주 월) → 파일이 바뀐다 · 지우기 → 📅 가 빠진다. 옛 코드는 «내일» 을 제목에 그대로 넣고 칩이 없어 빨개진다.
+         */
+        {
+          const todoF = join(root, '3. Area/제품_Rondo', 'todo.md'); const pad = (n) => String(n).padStart(2, '0'); const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+          const t0 = new Date(); const tmr = ymd(new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() + 1)); const nmon = ymd(new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() - ((t0.getDay() + 6) % 7) + 7))
+          await pg.click('.todo.addbtn:not(.more)'); await pg.waitForSelector('.todo.add .ein', { timeout: 3000 })
+          await pg.fill('.todo.add .ein', '마감검사 줄: 설명 붙음 내일'); await wait(150)
+          const hint = await pg.textContent('.todo.add .duehint').catch(() => null)
+          if (!hint || !/마감/.test(hint)) fail('🔴 CK-1: 입력칸 끝 «내일» 을 마감으로 되읽어 주지 않는다 ' + hint)
+          await pg.keyboard.press('Enter'); await wait(700); await pg.keyboard.press('Escape'); await wait(200)
+          let md = readFileSync(todoF, 'utf8')
+          if (!md.includes(`- [ ] 마감검사 줄: 설명 붙음 📅 ${tmr}`)) fail('🔴 CK-1: 줄 끝에 📅 내일 날짜가 안 붙었다\n' + md)
+          const chip = await pg.evaluate(() => { const r = [...document.querySelectorAll('.todo')].find((x) => x.textContent.includes('마감검사 줄')); return r?.querySelector('.duec')?.textContent ?? null })
+          if (chip !== '내일') fail('🔴 CK-1: 마감 칩이 «내일» 이 아니다 ' + chip)
+          // ⚠ 떠 있는 메뉴(Float)는 스크롤에 닫힌다 — 줄을 먼저 화면에 들이고 스크롤이 멎은 뒤 누른다(긴 목록에서는 클릭 직전 스크롤이 메뉴를 닫았다)
+          const openDue = async () => { await pg.locator('.todo:has-text("마감검사 줄") .duec').scrollIntoViewIfNeeded(); await wait(500); await pg.click('.todo:has-text("마감검사 줄") .duec'); await pg.waitForSelector('.menu.duem', { timeout: 2000 }); await wait(150) }
+          await openDue()
+          await pg.click('.menu.duem button:has-text("다음 주 월")'); await wait(700)
+          md = readFileSync(todoF, 'utf8'); if (!md.includes(`마감검사 줄: 설명 붙음 📅 ${nmon}`)) fail('CK-1: 날짜 고르기(다음 주 월)가 파일에 안 남았다\n' + md)
+          await openDue()
+          await pg.click('.menu.duem button:has-text("지우기")'); await wait(700)
+          md = readFileSync(todoF, 'utf8'); if (!/- \[ \] 마감검사 줄: 설명 붙음\s*$/m.test(md)) fail('CK-1: 마감 지우기 뒤에도 📅 가 남았다\n' + md)
+          ok('CK-1 할 일 마감 — 입력칸 «내일» 되읽기 · 📅 줄 끝 · 칩 · 날짜 고르기 · 지우기')
+        }
+        /**
+         * 🔴 **CK-3 · 봇은 제안하고 사람이 정한다** — `todo_propose` 는 «제안» 칸에 뜨고(파일엔 `<!-- bot:proposed -->`) [넣기] 하면 정식 봇 줄, [버리기] 하면 지워진다.
+         *    옛 코드는 `todo_propose` 가 없어 여기서 빨개진다.
+         */
+        {
+          const todoF = join(root, '3. Area/제품_Rondo', 'todo.md')
+          const bmcp = async (name, args) => (await (await mcpFetch(base + `/mcp/${bot.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name, arguments: args } }) })).json())
+          const r1 = await bmcp('todo_propose', { title: '제안검사 하나', desc: '약 5분 · 첫 행동: 열기' })
+          if (r1.result?.isError || !/제안/.test(r1.result?.content?.[0]?.text ?? '')) fail('🔴 CK-3: todo_propose 가 없거나 실패했다 ' + JSON.stringify(r1).slice(0, 300))
+          await bmcp('todo_propose', { title: '제안검사 둘' }); await wait(700)
+          let md = readFileSync(todoF, 'utf8')
+          if (!md.includes('- [ ] 제안검사 하나: 약 5분 · 첫 행동: 열기 <!-- bot:proposed -->')) fail('CK-3: 제안 줄 표식이 틀렸다\n' + md)
+          const pv = await pg.evaluate(() => ({ props: [...document.querySelectorAll('.tprops .tprop .tt')].map((x) => x.textContent), inList: [...document.querySelectorAll('.todo .tt')].some((x) => x.textContent.includes('제안검사')) }))
+          if (pv.props.length !== 2 || pv.inList) fail('🔴 CK-3: 제안이 «제안» 칸에만 따로 떠야 한다 ' + JSON.stringify(pv))
+          await pg.click('.tprop:has-text("제안검사 하나") button.ok'); await wait(700)
+          await pg.click('.tprop:has-text("제안검사 둘") button.no'); await wait(700)
+          md = readFileSync(todoF, 'utf8')
+          if (!md.includes('- [ ] 제안검사 하나: 약 5분 · 첫 행동: 열기 <!-- bot -->') || md.includes('제안검사 둘') || md.includes('bot:proposed')) fail('🔴 CK-3: [넣기]·[버리기] 가 파일에 안 맞게 남았다\n' + md)
+          if (await pg.$('.tprops')) fail('CK-3: 제안을 다 처리했는데 «제안» 칸이 남았다')
+          ok('CK-3 제안 — todo_propose → «제안» 칸 · [넣기] 정식 봇 줄 · [버리기] 지움')
+        }
+        /**
+         * 🔴 **CK-3 · 지키게 하는 장치** — 사람이 시키지 않은 턴(봇이 보낸 말)이 todo.md 에 바로 쓴 줄은 «제안» 으로 돌린다. 사람 턴에 쓴 줄은 그대로.
+         *    (봇의 Edit 는 검사가 턴 도중 파일에 직접 한 줄 쓰는 것으로 흉내 낸다.) 옛 코드는 둘 다 정식 줄로 남아 여기서 빨개진다.
+         */
+        {
+          const cfoB = (await api('/bots')).find((b) => b.name === '재무_CFO')
+          const tf = join(root, cfoB.rel, 'todo.md'); writeFileSync(tf, '# todo\n\n- [ ] 원래 있던 줄: 설명 <!-- bot -->\n')
+          const st = async () => (await api(`/bots/${cfoB.id}/sessions`)).find((x) => x.comm)
+          const before = (await st())?.lastActivity ?? 0
+          await mcp('tools/call', { name: 'bot_send', arguments: { bot: '재무_CFO', text: '할일몰래쓰기 가드 검사' } })
+          for (let i = 0; i < 60; i++) { const x = await st(); if (x && x.lastActivity > before && x.state !== 'running') break; await wait(150) }
+          await wait(500)
+          const g = readFileSync(tf, 'utf8')
+          if (!g.includes('- [ ] 봇이 몰래 쓴 줄: Edit 로 바로 <!-- bot:proposed -->')) fail('🔴 CK-3 장치: 봇 턴이 바로 쓴 줄이 제안으로 안 돌았다\n' + g)
+          if (!g.includes('- [ ] 원래 있던 줄: 설명 고침(못 한 이유) <!-- bot -->')) fail('CK-3 장치: 있던 줄의 설명 고침까지 제안으로 돌렸다\n' + g)
+          ok('CK-3 지키는 장치 — 봇 턴이 바로 쓴 새 줄은 제안으로 · 있던 줄 설명 고침은 그대로')
+        }
+        /**
+         * 🔴 **CK-2 · Akiflow 동기화** — 처음은 미리보기(루틴 없음) · [켜기] 하면 오케스트레이터에 30분 루틴 · 첫 회차는 훑기만 ·
+         *    다음 회차 계획 → 결과(akId) → 줄 끝에 `<!-- ak:… -->` · 끄면 루틴이 사라진다. 옛 코드는 `/api/akiflow`·도구가 없어 여기서 빨개진다.
+         */
+        {
+          const st0 = await api('/akiflow')
+          if (st0.mode !== 'preview' || st0.routine) fail('🔴 CK-2: 처음은 미리보기여야 하고 루틴이 없어야 한다 ' + JSON.stringify({ mode: st0.mode, routine: st0.routine }))
+          const cfoB = (await api('/bots')).find((b) => b.name === '재무_CFO'); const tf = join(root, cfoB.rel, 'todo.md')
+          writeFileSync(tf, readFileSync(tf, 'utf8') + '- [ ] 동기화 검사 줄: 설명 📅 2026-12-01\n')
+          await pg.evaluate(() => window.dispatchEvent(new CustomEvent('fb:settings', { detail: 'akiflow' }))); await pg.waitForSelector('.akprev', { timeout: 4000 })
+          const pv = await pg.textContent('.akprev')
+          if (!/동기화 검사 줄/.test(pv ?? '') || !/만들기/.test(pv ?? '')) fail('CK-2: 설정 미리보기에 만들 줄이 안 보인다 ' + (pv ?? '').slice(0, 200))
+          await pg.keyboard.press('Escape'); await wait(300)
+          await api('/akiflow/mode', { mode: 'live' })
+          const orchR = (await api('/bots')).find((b) => b.orchestrator).routines.map((r) => r.name)
+          if (!orchR.includes('Akiflow 동기화')) fail('🔴 CK-2: 켰는데 오케스트레이터에 «Akiflow 동기화» 루틴이 없다 ' + JSON.stringify(orchR))
+          const call = async (name, args) => JSON.parse((await mcp('tools/call', { name, arguments: args })).result.content[0].text)
+          // ① 읽기 — 켠 첫 회차는 훑기(scanOnly) · 만들 것은 아직 없다
+          const r1 = await call('akiflow_sync_plan', { projects: [{ id: 'P-CFO', name: '📁 재무_CFO (Work)' }] })
+          if (r1.phase !== 'read' || !r1.scanOnly || r1.ops.length) fail('🔴 CK-2: 첫 걸음은 읽을 것만(훑기) 줘야 한다 ' + JSON.stringify(r1).slice(0, 300))
+          // ② 읽은 것(없음)을 주면 → 같은 일 후보를 본 뒤 만들기 계획
+          const p2 = await call('akiflow_sync_plan', { remote: [] })
+          const mine = p2.ops.find((o) => o.op === 'create' && o.title === '동기화 검사 줄')
+          if (p2.phase !== 'push' || !mine || mine.deadline !== '2026-12-01' || mine.project_id !== 'P-CFO' || !/📍 출처: /.test(mine.description)) fail('🔴 CK-2: 만들기 계획이 틀렸다 ' + JSON.stringify(mine ?? p2).slice(0, 400))
+          const a2 = await call('akiflow_sync_ack', { runId: p2.runId, results: [{ key: mine.key, ok: true, akId: 'AK-SMOKE-1' }] })
+          if (!readFileSync(tf, 'utf8').includes('- [ ] 동기화 검사 줄: 설명 📅 2026-12-01 <!-- ak:AK-SMOKE-1 -->')) fail('🔴 CK-2: 만든 태스크 id 가 줄 끝에 안 붙었다 ' + JSON.stringify(a2) + '\n' + readFileSync(tf, 'utf8'))
+          const r3 = await call('akiflow_sync_plan', {})
+          if (!r3.check.includes('AK-SMOKE-1')) fail('CK-2: 짝지은 태스크의 상태를 안 읽는다 ' + JSON.stringify(r3).slice(0, 300))
+          const p3 = await call('akiflow_sync_plan', { remote: [{ id: 'AK-SMOKE-1', title: '동기화 검사 줄', done: true, deadline: '2026-12-01' }] }); await wait(300)
+          if (p3.ops.some((o) => o.key === mine.key)) fail('CK-2: 짝지은 줄을 또 만들려 한다')
+          if (!/- \[x\] 동기화 검사 줄/.test(readFileSync(tf, 'utf8'))) fail('🔴 CK-2: Akiflow 에서 끝낸 일이 todo.md 로 안 내려왔다\n' + readFileSync(tf, 'utf8'))
+          await api('/akiflow/mode', { mode: 'preview' })
+          if ((await api('/bots')).find((b) => b.orchestrator).routines.some((r) => r.name === 'Akiflow 동기화')) fail('CK-2: 미리보기로 돌렸는데 루틴이 남았다')
+          ok('CK-2 Akiflow — 처음 미리보기 · 켜면 루틴 · 읽고 나서 민다(첫 회차 훑기) · 만들기(마감·프로젝트·출처) → 짝 표식 · Akiflow 완료가 내려옴 · 끄면 루틴 없음')
         }
         const cbar = await pg.textContent('.composer .cbar'); if (!/Fable 5.1|Sonnet 5/.test(cbar) || !/자동|계획/.test(cbar) || !/높음/.test(cbar)) fail('ui cbar labels: ' + cbar)
         // 슬래시 자동완성 → 스킬이 뜬다 · @ → 파일이 뜬다
@@ -5220,7 +5457,20 @@ try {
           ok('폰 홈 폴더 행 쓸기 — ←짧게 메뉴(고정·지우기·은퇴) · →길게 고정 · 관제는 안 쓸림')
         }
         const ov = await pg.evaluate(() => { const m = document.querySelector('.mscroll'); return { sw: m.scrollWidth, cw: m.clientWidth, dw: document.documentElement.scrollWidth, iw: innerWidth } }); if (ov.sw > ov.cw || ov.dw > ov.iw) fail('phone: horizontal overflow ' + JSON.stringify(ov))
-        await pg.click('.mtop .rb'); await pg.waitForSelector('.setp', { timeout: 4000 }); await wait(300)
+        /**
+         * 🔴 **CN · 폰 왼쪽 위 = 오케스트레이터 · 설정은 오른쪽 끝 ⚙** (2026-10-16 Dave: «설정이라는 느낌이 안 들어서 클릭하면 바로 오케스트레이터로»).
+         *    옛 코드는 왼쪽 위 주황 얼굴이 설정을 열고 ⚙ 가 없어 여기서 빨개진다.
+         */
+        {
+          const hdr = await pg.evaluate(() => [...document.querySelectorAll('.mhome .mtop .rb')].map((b) => b.getAttribute('title')))
+          if (hdr[0] !== '오케스트레이터' || hdr[hdr.length - 1] !== '설정') fail('🔴 CN: 폰 머리 단추 차례가 «오케스트레이터 … 🔔 · 📁+ · ⚙» 가 아니다 ' + JSON.stringify(hdr))
+          await pg.click('.mtop .rb.orchb'); await wait(700)
+          const h = await pg.evaluate(() => ({ hash: location.hash, chat: !!document.querySelector('.col.chat:not(.off) .hdr') }))
+          if (!/bot=orch/.test(h.hash)) fail('🔴 CN: 왼쪽 위를 눌렀는데 오케스트레이터 대화로 안 간다 ' + JSON.stringify(h))
+          await pg.click('.chat-hdr .rb'); await pg.waitForSelector('.mhome .mtop', { timeout: 4000 }); await wait(400)
+          ok('CN 폰 왼쪽 위 = 오케스트레이터 대화 · 설정은 오른쪽 끝 ⚙')
+        }
+        await pg.click('.mtop .rb.setb'); await pg.waitForSelector('.setp', { timeout: 4000 }); await wait(300)
         {
           const rows = await pg.$$eval('.setp .sec-row', (r) => r.map((x) => x.textContent))
           if (rows.length < 8 || !rows.some((r) => /할 일/.test(r))) fail('폰 설정: 목차가 목록이 아니거나 폰 전용 «할 일» 이 없다 ' + JSON.stringify(rows))
@@ -5494,7 +5744,7 @@ try {
         await pg.screenshot({ path: 'test/tmp/phone-320.png' })
         await pg.setViewportSize({ width: 390, height: 844 }); await wait(500)
 
-        await pg.evaluate(() => { const b = [...document.querySelectorAll('.mhome .mtop .rb')].pop(); b.click() })
+        await pg.evaluate(() => { document.querySelector('.mhome .mtop .rb[title="폴더에서 시작"]').click() })   // CN · 맨 끝은 이제 ⚙
         await pg.waitForSelector('.pk.phone .ph-row', { timeout: 8000 }); await wait(400)
         const pf = await pg.evaluate(() => { const f = document.querySelector('.pk.phone .ph-f').getBoundingClientRect(); const g = document.querySelector('.pk.phone .ph-f .go').getBoundingClientRect(); const r = document.querySelector('.pk.phone .ph-row'); const rb = r.getBoundingClientRect(); const nm = r.querySelector('.n').getBoundingClientRect(); return { fw: f.width, iw: innerWidth, goH: g.height, goRight: g.right, rowH: rb.height, gapRight: rb.right - nm.right } })
         if (pf.goRight > pf.iw + 1) fail('폰 피커: 버튼이 화면을 넘는다 ' + JSON.stringify(pf))

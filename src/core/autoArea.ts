@@ -34,6 +34,21 @@ export function autoKind(x: AreaFacts): AutoKind | null {
 export function sessArea(x: AreaFacts): Area { return autoKind(x) ? 'auto' : 'chat' }
 
 /**
+ * 🔴 **CM · 봇을 열 때 보여 줄 세션** (2026-10-16 Dave · 스크린샷_1222: *«봇끼리 소통한 경우 마지막 대화가 봇 소통 세션으로 안가고 빈창이 뜨거든»*).
+ *    종전에는 «처음 열 세션 = 채팅 세션 중 첫 것» 이라, 사람과 한 번도 말하지 않은 봇(🤝 소통만 있음)은 빈 창이 떴다.
+ *    ① 주소에 세션이 있으면 그 세션 ② 채팅 중 **안 읽은 답이 있는 세션**(CO · 열자마자 새 답을 보게) ③ 가장 최근 채팅
+ *    ④ 채팅이 없으면 가장 최근 자동화 세션 ⑤ 세션이 아예 없을 때만 없음(빈 창).
+ * ⚠ 첫 세션 고르기(`App` 의 `sessionId`)와 미리 받기(CF-1 `prefetch`)가 **이 함수 하나**를 쓴다 — 두 곳에 식이 따로 있으면 또 어긋난다.
+ * ⚠ 목록 순서를 믿지 않는다 — 화면은 🤝 소통을 맨 위로 올려 둔다. 최근은 `lastActivity` 로 직접 잰다.
+ */
+export function openSessionOf<T extends AreaFacts & { id: string; lastActivity: number; lastReplyAt?: number; readAt?: number }>(list: T[], want?: string): string | undefined {
+  if (want && list.some((x) => x.id === want)) return want
+  const recent = [...list].sort((a, b) => b.lastActivity - a.lastActivity)
+  const chats = recent.filter((x) => sessArea(x) === 'chat')
+  return (chats.find((x) => sessionUnread(x.lastReplyAt, x.readAt)) ?? chats[0] ?? recent[0])?.id
+}
+
+/**
  * 사람이 자동화 세션에 말을 보내면 어떻게 하나.
  * - `adopt` — 그 세션을 채팅으로 옮긴다(하던 일·백그라운드 작업·맥락을 그대로 잇는다). 루틴·봇끼리·옛 채널·옛 소통
  * - `fork` — 새 채팅 세션을 갈라 연다. 🤝 소통·연결 채널은 봇마다 하나여야 해서 옮길 수 없다

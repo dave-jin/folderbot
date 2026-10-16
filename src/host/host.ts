@@ -1,19 +1,20 @@
+import { AK_ROUTINE, AkiflowSync } from './akiflow'
 import { invalidateUsage } from './usage'
 import { planNow, refreshPlan } from './planUsage'
 import { DEVICE_RULES_MD, type ClientCtx } from '../core/clientCtx'
 import { mdPlain } from '../core/mdPlain'   // 알림 미리보기는 글자만 — 마크다운 기호가 그대로 나왔다(2026-09-25)
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { execFile, execFileSync } from 'node:child_process'
 import { hostname } from 'node:os'
 import { join, relative, resolve } from 'node:path'
-import { TODO_RULES_PROMPT } from '../core/todo'
+import { TODO_RULES_PROMPT, parseTodo, setMetaLine } from '../core/todo'
 import type { AuthState, Bot, Frame, PermissionMode, PermissionRequest, RoutineDef, SessionState } from '../core/types'
-import { STATE_LABEL } from '../core/types'
+import { STATE_LABEL, stripRuntime } from '../core/types'
 import type { TurnFrom } from '../core/turnGuard'
 import { checkAuth } from './auth'
 import { FolderWatch } from './watch'
 import { Notifier } from './notify'
-import { type HostConfig, absRoot, dataDir, saveConfig } from './paths'
+import { type HostConfig, absRoot, atomicWrite, dataDir, saveConfig } from './paths'
 import { McpAuth } from './mcpAuth'
 import { BridgeHub, type Incoming } from './bridge'
 import { INTERRUPTED_REASON, RunLog } from './runs'
@@ -47,6 +48,8 @@ export class Host {
   readonly bridges: BridgeHub
   /** BR-1 · 루틴 실행 기록 */
   readonly runs: RunLog
+  /** CK-2 · Akiflow 동기화(짝 장부 · 계획 · 결과) */
+  readonly akiflow: AkiflowSync
   /** BZ · 호스트 운영 감시(`.claude/ops.yml` 의 명령을 주기마다) */
   readonly ops: OpsWatch
   auth: AuthState = { verdict: 'unknown', checkedAt: 0 }
@@ -86,6 +89,8 @@ export class Host {
     this.sessions.systemPromptFor = (bot) => this.systemPrompt(bot)
     this.sessions.botOf = (id) => this.registry.bot(id)
     this.routines = new Routines({ run: (b, r, why) => { this.runRoutine(b, r, why ?? {}) }, log: this.log })
+    this.akiflow = new AkiflowSync(this.registry.root, () => this.registry.bots(), (botId) => { const b = this.registry.bot(botId); if (b) this.broadcast({ ev: 'todo', botId, items: readTodo(b.abs) }) }, (botId, title) => { if (title) this.noteTodoTitle(botId, title) })
+    this.akiflow.routineOn = () => !!this.registry.bot('orch')?.routines.some((x) => x.name === AK_ROUTINE && x.enabled !== false)
     this.bridges = new BridgeHub({ root: this.registry.root, dataDir: dataDir(), hostNames: () => [hostname(), this.hostName(), this.cfg.hostName ?? ''], log: (m) => this.log(m), deliver: (peer, items) => this.deliverLetters(peer, items),
       wake: (peer, payload) => { void this.wakePeer(peer, payload) },
       onStale: (peer, last) => this.peerSignal(peer, last, false),
@@ -153,6 +158,7 @@ export class Host {
     })
     this.sessions.on('state', (r: SessionRec, prev: SessionState, notify: boolean) => {
       this.broadcast({ ev: 'state', sessionId: r.id, botId: r.botId, state: r.state })
+      this.guardTodo(r, prev)
       // BR-1 · 루틴 회차가 끝났다 — 결과 줄(`결과: ok|fail|skip`)까지 읽어 기록한다
       if (r.routine && prev === 'running' && (r.state === 'done' || r.state === 'error')) {
         const lastA = [...r.items].reverse().find((i) => i.kind === 'assistant') as { text: string } | undefined
@@ -186,7 +192,7 @@ export class Host {
     else parts.push(`너는 Folder Bot 의 봇이다. 폴더 "${bot.rel}" 안에서 일한다. 산출물은 이 폴더에 둔다.\n${ORCH_ASK_HINT}\n${ORCH_REPORT_HINT}`)
     // BQ · 연결 편지를 받거나 보낼 수 있는 봇에게만 편지 규칙을 준다
     if (this.bridges?.cfg.peers.some((p) => p.enabled && (this.isDeliverTarget(p, bot) || p.maySend.includes(bot.id)))) parts.push(LETTER_RULES_MD)
-    parts.push(TODO_RULES_PROMPT)
+    parts.push(this.registry.todoRules() ?? TODO_RULES_PROMPT)   // CK-3 · 볼트 `todo-rules` 블록이 이긴다
     parts.push(DEVICE_RULES_MD)   // J-2 · 볼트 CLAUDE.md 에도 같은 글이 있지만, 옛 볼트에는 없으므로 시스템 프롬프트로도 준다
     const ctx = todoContext(bot.abs)
     if (ctx) parts.push(ctx)
@@ -386,12 +392,66 @@ export class Host {
     if (n !== this.lastInbox) { this.lastInbox = n; this.broadcast({ ev: 'inbox', count: n }) }
   }
 
-  todoAdd(bot: Bot, title: string, desc: string, by: 'me' | 'bot', notify = false, section = ''): void {
-    const items = todoAdd(bot.abs, title, desc, by, section)
+  todoAdd(bot: Bot, title: string, desc: string, by: 'me' | 'bot', notify = false, section = '', meta: { due?: string; proposed?: boolean } = {}): void {
+    const items = todoAdd(bot.abs, title, desc, by, section, meta)
+    this.noteTodoTitle(bot.id, title)
     this.broadcast({ ev: 'todo', botId: bot.id, items })
     if (notify && by === 'bot') this.notifier.emit('todo', bot.id, `${bot.name} · 할 일 남김`, `${title}${desc ? `: ${desc}` : ''}`)
   }
   todo(bot: Bot) { return readTodo(bot.abs) }
+  /**
+   * CK-2 · 미리보기 ↔ 켜기. 🔴 켜기(live)는 사람이 설정에서 누를 때만 — 그때 오케스트레이터에 30분 루틴 «Akiflow 동기화» 가 생긴다.
+   * 끄면(미리보기·off) 루틴을 지운다. 짝 장부는 그대로 둔다.
+   */
+  akiflowMode(mode: 'off' | 'preview' | 'live'): void {
+    this.akiflow.setMode(mode)
+    const orch = this.registry.bot('orch'); if (!orch) return
+    const rest = orch.routines.filter((x) => x.name !== AK_ROUTINE).map(stripRuntime)
+    this.registry.saveRoutines(orch, mode === 'live' ? [...rest, this.akiflow.routineDef()] : rest)
+    this.afterBotsChanged()
+  }
+  /**
+   * 🔴 **CK-3 · 지키게 하는 장치** — 사람이 시키지 않은 턴(봇·루틴·바깥 상대)이 `Edit` 로 todo.md 에 바로 쓴 `- [ ]` 줄은 «제안» 으로 돌린다.
+   *    규칙만 적으면 도구를 안 거치는 길이 남는다(기획안 §4). 줄은 지우지 않고 `<!-- bot:proposed -->` 로 바꿔 Akiflow 로 안 가게 한다.
+   * ⚠ 호스트가 쓴 줄(화면의 + · todo_add/todo_propose)은 건드리지 않는다 — 턴 동안 그 줄들을 따로 적어 둔다(`hostWrote`).
+   * ⚠ 사람이 시킨 턴은 거르지 않는다 — «할 일로 적어 줘» 는 그 대화가 곧 상의다(규칙 2의 예외).
+   */
+  private todoSnap = new Map<string, { titles: Set<string>; at: number }>()
+  private hostWrote = new Map<string, Set<string>>()
+  /** CK-3 · 호스트가 쓴 줄(화면의 + · 고치기 · 도구 · Akiflow)은 지키는 장치가 건드리지 않는다 — 최근 200개만 기억한다 */
+  noteTodoTitle(botId: string, title: string): void {
+    const w = this.hostWrote.get(botId) ?? new Set<string>(); w.add(title.trim().replace(/\s*:\s*$/, '')); if (w.size > 200) w.delete(w.values().next().value as string); this.hostWrote.set(botId, w)
+  }
+  private guardTodo(r: SessionRec, prev: SessionState): void {
+    const bot = this.registry.bot(r.botId); if (!bot || bot.orchestrator) return
+    const p = join(bot.abs, 'todo.md')
+    // ⚠ 비교는 **제목**으로 한다 — 봇이 있던 줄의 설명을 고치는 것(규약: 못 한 이유 갱신)은 새 줄이 아니다
+    const open = () => { try { return parseTodo(readFileSync(p, 'utf8')).map((t) => t.title) } catch { return [] } }
+    if (r.state === 'running' && prev !== 'running') {
+      if (r.turnFrom && r.turnFrom !== 'human') this.todoSnap.set(r.id, { titles: new Set(open()), at: Date.now() })
+      return
+    }
+    if (prev !== 'running' || r.state === 'running') return
+    const snap = this.todoSnap.get(r.id); this.todoSnap.delete(r.id)
+    if (!snap) return
+    // 🔴 이 턴이 도구(Edit·Write)로 **이 todo.md 를 썼을 때만** 본다 — 그사이 사람이 패널·옵시디언에서 고친 줄이나 Akiflow 에서 내려온 줄을 봇 줄로 바꾸면 안 된다(리뷰 10/16)
+    const same = (v: unknown) => { if (typeof v !== 'string') return false; try { return realpathSync(v).normalize('NFC') === realpathSync(p).normalize('NFC') } catch { return v.normalize('NFC') === p.normalize('NFC') } }
+    const wrote = r.items.some((it) => it.kind === 'tool' && it.t >= snap.at - 1000 && ((/^(Edit|Write|MultiEdit)$/.test(it.name) && [it.input?.file_path, it.input?.path].some(same)) || (it.name === 'Bash' && /todo\.md/.test(String(it.input?.command ?? '')))))
+    if (!wrote) return
+    const mine = this.hostWrote.get(bot.id) ?? new Set<string>()
+    let md: string; try { md = readFileSync(p, 'utf8') } catch { return }
+    const items = parseTodo(md)
+    let changed = 0
+    for (const t of items) {
+      if (t.done || t.proposed || t.ak) continue   // 짝 있는 줄(Akiflow)은 사람 몫이다
+      if (snap.titles.has(t.title) || mine.has(t.title)) continue
+      md = setMetaLine(md, t.line, { by: 'bot', proposed: true }); changed++
+    }
+    if (!changed) return
+    atomicWrite(p, md)
+    this.broadcast({ ev: 'todo', botId: bot.id, items: readTodo(bot.abs) })
+    console.log(`[folderbot] CK-3 · ${bot.name} — 사람이 시키지 않은 턴이 todo.md 에 바로 쓴 ${changed}줄을 제안으로 돌렸어요`)
+  }
 
   tree(dir: string, depth: number) {
     const base = join(this.registry.root, dir || '')

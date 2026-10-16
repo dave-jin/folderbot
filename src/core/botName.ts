@@ -78,8 +78,10 @@ export function dueEnd(due?: { date: string; precision: Precision } | null): str
  * 마감이 가까운 것부터 — 지난 마감이 맨 위(아직 안 닫힌 일이다), 날짜 없는 폴더는 뒤에 이름순.
  * 마감이 같으면 날이 박힌 쪽 → 이름순으로 묶어 자리가 흔들리지 않게 한다.
  */
-export function byDue<T extends { name: string; due?: { date: string; precision: Precision } | null }>(a: T, b: T): number {
-  const ka = dueEnd(a.due), kb = dueEnd(b.due)
+export function byDue<T extends { name: string; due?: { date: string; precision: Precision } | null; todoDue?: string }>(a: T, b: T): number {
+  // CK-1 · 줄 마감(📅)이 폴더 마감보다 이르면 그것으로 선다 — 폴더는 «10월» 인데 줄 하나가 내일이면 내일 일이다
+  const key = (x: T) => { const f = dueEnd(x.due), t = x.todoDue ?? null; return f === null ? t : t === null ? f : t < f ? t : f }
+  const ka = key(a), kb = key(b)
   if (ka !== kb) { if (ka === null) return 1; if (kb === null) return -1; return ka < kb ? -1 : 1 }
   const pr = { day: 0, month: 1, year: 2, none: 3 }   // 끝날이 같으면 날이 박힌 쪽이 먼저(10/31 이 «10월» 보다 앞)
   const dp = pr[a.due?.precision ?? 'none'] - pr[b.due?.precision ?? 'none']; if (dp) return dp

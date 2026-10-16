@@ -29,7 +29,7 @@ import { norm } from '../core/search'
  *    인덱스를 빼먹으면 빨개진다. 종전엔 절전·진단·다시 연결이 검색에 안 걸렸다.
  */
 
-export type SecId = 'general' | 'host' | 'devices' | 'claude' | 'codex' | 'sessions' | 'notify' | 'todo' | 'ref'
+export type SecId = 'general' | 'host' | 'devices' | 'claude' | 'codex' | 'sessions' | 'notify' | 'todo' | 'akiflow' | 'ref'
 const SECS: { id: SecId; label: string; icon: 'gear'; phoneOnly?: boolean; ref?: boolean }[] = [
   { id: 'general', label: '일반', icon: 'gear' },
   { id: 'host', label: '호스트 · 볼트', icon: 'folder' as 'gear' },
@@ -39,6 +39,8 @@ const SECS: { id: SecId; label: string; icon: 'gear'; phoneOnly?: boolean; ref?:
   { id: 'sessions', label: '세션 · 사용량', icon: 'clock' as 'gear' },
   { id: 'notify', label: '알림', icon: 'bell' as 'gear' },
   { id: 'todo', label: '할 일', icon: 'list' as 'gear', phoneOnly: true },
+  // ⚠ 칸 이름은 범용으로 — 특정 서비스 이름은 그 칸 안에서만 쓴다(2026-09-13 «화면 문구는 범용» · 스모크가 잡는다)
+  { id: 'akiflow', label: '할 일 동기화', icon: 'cal' as 'gear' },
   { id: 'ref', label: '참고 · 커넥터 · 스킬', icon: 'eye' as 'gear', ref: true }
 ]
 
@@ -165,6 +167,8 @@ export const INDEX: { sec: SecId; t: string; d: string }[] = [
   { sec: 'sessions', t: '예산 — 5시간 창', d: '달러 사용량 예산' },
   { sec: 'sessions', t: '예산 — 하루', d: '달러 사용량 예산' },
   { sec: 'sessions', t: '예산 — 한 주', d: '달러 사용량 예산' },
+  { sec: 'akiflow', t: '동기화 상태', d: 'Akiflow 할 일 todo.md 미리보기 켜기' },
+  { sec: 'akiflow', t: '옛 봇 줄', d: 'Akiflow 제안으로 돌리기 봇이 쓴 할 일' },
   { sec: 'notify', t: '이 기기 푸시', d: '알림 폰 푸시 켜기' },
   { sec: 'notify', t: '조용한 시간', d: '알림 밤 시간 확인해 주세요만 통과' },
   { sec: 'notify', t: '푸시 테스트', d: '알림 한 번 보내기' },
@@ -200,6 +204,7 @@ function Pane({ sec, onClose, providers }: { sec: SecId; onClose: () => void; pr
   if (sec === 'sessions') return <SessionsPane />
   if (sec === 'notify') return <NotifyPane />
   if (sec === 'todo') return <TodoPane />
+  if (sec === 'akiflow') return <AkiflowPane />
   return <RefPane />
 }
 
@@ -547,6 +552,40 @@ function TodoPane() {
   </>
 }
 
+
+/**
+ * 🔴 **CK-2 · Akiflow 동기화** (2026-10-16 Dave «추천대로» · 기획안 §3). 처음은 **미리보기** — 무엇을 만들지 보여 주기만 하고 Akiflow 는 안 건드린다.
+ * [켜기] 를 눌러야 오케스트레이터에 30분 루틴이 생기고 실제로 쓴다(일주일 미리보기 뒤 Dave 가 켠다 · 기획안 §11).
+ * 카드 셋 — todo.md 에서 사라진 짝(지울까요) · 양쪽이 다르게 고친 제목(어느 쪽) · 처음 켤 때 이미 있던 같은 일(짝지을까요).
+ */
+type AkStatus = { mode: 'off' | 'preview' | 'live'; pairs: number; folders: number; counts: { create: number; update: number; complete: number; delete: number }; legacy: number; legacyLeft: number; proposed: number; held: number
+  preview: { op: string; rel: string; title: string; deadline: string | null }[]; gone: { akId: string; rel: string; title: string }[]; conflicts: { id: string; rel: string; local: string; remote: string }[]; pairAsks: { id: string; rel: string; title: string; remoteTitle: string }[]; lastRun: { at: number; ok: number; fail: number; note?: string } | null; routine: boolean }
+const AK_OP: Record<string, string> = { create: '만들기', update: '고치기', complete: '완료', delete: '지우기' }
+function AkiflowPane() {
+  const [st, setSt] = useState<AkStatus | null>(null); const [msg, setMsg] = useState('')
+  const load = async () => { try { setSt(await api<AkStatus>('/akiflow')) } catch (e) { setMsg((e as Error).message) } }
+  useEffect(() => { void load() }, [])
+  const call = async (path: string, body: Record<string, unknown>, done?: (r: AkStatus & { moved?: number }) => string) => { try { const r = await api<AkStatus & { moved?: number }>(path, { body }); setSt(r); setMsg(done ? done(r) : '') } catch (e) { setMsg((e as Error).message) } }
+  if (!st) return <p className="lead">{msg || '읽는 중…'}</p>
+  const c = st.counts
+  return <>
+    <p className="lead">레일에 선 폴더의 todo.md 줄 하나가 Akiflow 태스크 하나가 됩니다. 봇이 쓴 줄은 «🤖» 로 시작하고, 첫 줄에 출처 폴더가 붙어요. 봇의 제안은 [넣기] 한 것만 갑니다.</p>
+    <Row t="동기화 상태" d={<>{st.mode === 'live' ? `켜짐 — 30분마다 맞춰요${st.routine ? '' : ' (루틴이 없어요 — 다시 켜 주세요)'}` : st.mode === 'preview' ? '미리보기 — 무엇을 할지 보여 주기만 해요. Akiflow 는 안 건드려요' : '꺼짐'} · 짝 {st.pairs}개 · 폴더 {st.folders}개{st.lastRun ? ` · 마지막 ${new Date(st.lastRun.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 성공 ${st.lastRun.ok} · 실패 ${st.lastRun.fail}` : ''}{msg ? ` · ${msg}` : ''}</>} at="main">
+      <span className="seg">{([['preview', '미리보기'], ['live', '켜기'], ['off', '끄기']] as const).map(([m, l]) => <button key={m} className={st.mode === m ? 'on' : ''} onClick={() => { if (m === 'live' && st.mode !== 'live' && !confirm(`Akiflow 에 실제로 씁니다 — 지금 기준 만들기 ${c.create}건. 처음 회차는 Akiflow 를 먼저 읽어 제목이 같은 일은 «같은 일?» 로 묻고 붙잡아 두며, 나머지는 바로 만들어요. 켤까요?`)) return; void call('/akiflow/mode', { mode: m }, () => (m === 'live' ? '켰어요 — 오케스트레이터에 «Akiflow 동기화» 루틴이 생겼어요' : ''))
+      }}>{l}</button>)}</span>
+    </Row>
+    <Row t="옛 봇 줄" d={st.legacyLeft ? `처음 볼 때 이미 있던 봇 줄 ${st.legacyLeft}개는 올리지 않아요. 제안 칸으로 돌리면 폴더마다 [넣기] 한 것만 Akiflow 로 갑니다.` : '남은 옛 봇 줄이 없어요.'} at="main">
+      {st.legacyLeft ? <button className="btn" onClick={() => { if (confirm(`옛 봇 줄 ${st.legacyLeft}개를 «제안» 으로 돌릴까요? 각 폴더 todo.md 의 표식만 바뀌고 줄은 지우지 않아요.`)) void call('/akiflow/legacy', {}, (r) => `${r.moved ?? 0}줄을 제안으로 돌렸어요`) }}>제안으로 돌리기</button> : null}
+    </Row>
+    <div className="akprev">
+      <div className="akh">이번에 할 일 — 만들기 {c.create} · 고치기 {c.update} · 완료 {c.complete}{c.delete ? ` · 지우기 ${c.delete}` : ''}{st.proposed ? ` · 제안 ${st.proposed}(안 감)` : ''}{st.held ? ` · 같은 일 확인 대기 ${st.held}` : ''}</div>
+      {st.preview.length ? st.preview.map((o, i) => <div key={i} className="akrow"><span className={`akop ${o.op}`}>{AK_OP[o.op] ?? o.op}</span><span className="akt">{o.title}</span><span className="akr">{o.rel.split('/').pop()}{o.deadline ? ` · 📅 ${o.deadline}` : ''}</span></div>) : <div className="akrow none">할 일이 없어요 — 양쪽이 같아요</div>}
+    </div>
+    {st.pairAsks.map((a) => <div key={a.id} className="akcard"><b>같은 일인가요?</b><span>{a.rel.split('/').pop()} «{a.title}» ↔ Akiflow «{a.remoteTitle}»</span><span className="sp" /><button onClick={() => void call('/akiflow/resolve', { kind: 'pair', id: a.id, choice: 'pair' })}>같은 일 · 짝짓기</button><button onClick={() => void call('/akiflow/resolve', { kind: 'pair', id: a.id, choice: 'new' })}>다른 일</button></div>)}
+    {st.conflicts.map((k) => <div key={k.id} className="akcard"><b>제목이 양쪽에서 다르게 바뀌었어요</b><span>{k.rel.split('/').pop()} — todo.md «{k.local}» · Akiflow «{k.remote}»</span><span className="sp" /><button onClick={() => void call('/akiflow/resolve', { kind: 'conflict', id: k.id, choice: 'local' })}>todo.md 쪽</button><button onClick={() => void call('/akiflow/resolve', { kind: 'conflict', id: k.id, choice: 'remote' })}>Akiflow 쪽</button></div>)}
+    {st.gone.map((g) => <div key={g.akId} className="akcard"><b>todo.md 에서 지워졌어요</b><span>{g.rel.split('/').pop()} «{g.title}» — Akiflow 에서도 지울까요?</span><span className="sp" /><button onClick={() => void call('/akiflow/resolve', { kind: 'gone', id: g.akId, choice: 'delete' })}>지우기</button><button onClick={() => void call('/akiflow/resolve', { kind: 'gone', id: g.akId, choice: 'keep' })}>Akiflow 에 남기기</button></div>)}
+  </>
+}
 
 /** 알림 — 이 기기의 푸시와, 모든 기기에 같이 적용되는 조용한 시간. 조용한 시간은 종전엔 글자만 있고 고칠 길이 없었다(2026-09-17) */
 function NotifyPane() {

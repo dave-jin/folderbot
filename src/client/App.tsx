@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Bot, ChatItem, NotifyEvent, PermissionMode, PermissionRequest, RoutineDef, SessionInfo, SessionState, SlashCmd } from '../core/types'
 import { api, setToken, token, uploadFile } from './api'
 import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
@@ -9,6 +9,7 @@ import { AskHost, ConfirmHost, DiffHost, FolderPicker, Md, NotifyCenter, chipMar
 import { AgentPickHost, pickAgent } from './AgentPick'
 import type { SecId } from './Settings'
 import { VendorMark } from './Brand'
+import { ColorHost, pickColor } from './ColorPick'
 import { Float } from './Float'
 import { DocPane, preloadEditor, useDocs } from './Doc'
 import { Search } from './Search'
@@ -28,8 +29,8 @@ import { attachRoom } from '../core/attach'
 import { applyViewport, planViewport } from '../core/viewport'
 import { canStartSwipe, dragProgress, fromLeftEdge, lockOf, scrollableEats, stageOf, swipeVerdict } from '../core/drawer'
 import { curOf, dismiss, goTo, navInit, type Nav, type Page } from '../core/navstack'
-import { botUnread, shouldMarkRead, MOOD_RANK, recentDone, type BotMood } from '../core/unread'
-import { sessArea, takeoverMode } from '../core/autoArea'
+import { botUnread, openAnchor, shouldMarkRead, MOOD_RANK, recentDone, type BotMood } from '../core/unread'
+import { openSessionOf, takeoverMode } from '../core/autoArea'
 import { clampDockOffset, isDockDrag, readDockOffset } from '../core/dock'
 import { tabActive } from '../core/tabbar'
 import { SwipeRow } from './SwipeRow'
@@ -297,7 +298,19 @@ function Main() {
   // 🤝 소통 세션은 목록 맨 위에 고정한다 — 다만 «처음 열 세션» 은 사람의 세션이다 (2026-10-02)
   //    CC · 그 «사람의 세션» 은 채팅 세션뿐이다 — 루틴·채널·봇끼리 세션으로 들어가지 않는다. 없으면 빈 채팅(첫 말이 «메인» 을 만든다)
   const sessions = useMemo(() => { const l = s.sessionsByBot[bot?.id ?? ''] ?? []; return l.some((x) => x.comm) ? [...l.filter((x) => x.comm), ...l.filter((x) => !x.comm)] : l }, [s.sessionsByBot, bot?.id])
-  const sessionId = hash.s && sessions.some((x) => x.id === hash.s) ? hash.s : sessions.find((x) => sessArea(x) === 'chat')?.id
+  /**
+   * 🔴 **CM · 열 세션은 `openSessionOf` 하나가 정한다** — 채팅이 없으면 소통 세션을 연다(빈 창은 세션이 아예 없을 때만).
+   * ⚠ 주소에 세션이 없을 때 고른 것은 **그 봇에 머무는 동안 붙잡아 둔다**(`picked`). 안 그러면 읽음이 적히는 순간(CO 의 «안 읽은 채팅 우선» 이 풀려)
+   *   또는 다른 채팅에 활동이 생기는 순간 보던 대화가 다른 세션으로 바뀐다. 폴더를 다시 누르면(`go`) 새로 고른다.
+   */
+  const picked = useRef<{ bot: string; sid?: string }>({ bot: '' })
+  const sessionId = (() => {
+    if (hash.s && sessions.some((x) => x.id === hash.s)) return hash.s
+    if (picked.current.bot === bot?.id && picked.current.sid && sessions.some((x) => x.id === picked.current.sid)) return picked.current.sid
+    const sid = openSessionOf(sessions, hash.s)
+    picked.current = { bot: bot?.id ?? '', sid }
+    return sid
+  })()
   /**
    * 🔴 **BH · 알림이 가리키는 세션이 화면 목록에 없으면 목록을 곧바로 새로 받는다** (2026-09-27 Dave · 스크린샷_1759:
    *    *«알림을 클릭하면 해당 폴더봇으로는 가는데, 세션이 여러 개 있을 때 특정 세션으로는 이동을 못해»* — 맥 배너).
@@ -383,7 +396,7 @@ function Main() {
    * ⚠ 열 세션은 위 `sessionId` 와 같은 규칙(채팅 세션 중 첫 것)이다 — 다른 걸 받으면 헛걸음이다.
    */
   const prefetch = (bid: string) => {
-    const sid = (s.sessionsByBot[bid] ?? []).find((x) => sessArea(x) === 'chat')?.id
+    const sid = openSessionOf(s.sessionsByBot[bid] ?? [])
     if (sid && !s.chats[sid]) void loadChat(sid).catch(() => {})
     if (!s.todos[bid]) void loadTodo(bid).catch(() => {})
   }
@@ -403,7 +416,7 @@ function Main() {
   /** 내가 놓은 해시인가 — 밖(셸의 알림 배너)에서 온 해시와 가르는 표식 (S-2). 내 걸음은 화면(칸)을 이미 스스로 챙긴다 */
   const navSelf = useRef(false)
   const setHashSelf = (p: Record<string, string>) => { navSelf.current = true; setHash(p) }
-  const go = (b: string, sid?: string) => { setHashSelf(sid ? { bot: b, s: sid } : { bot: b }); setView('chat') }
+  const go = (b: string, sid?: string) => { picked.current = { bot: '' }; setHashSelf(sid ? { bot: b, s: sid } : { bot: b }); setView('chat') }
   /**
    * 🔴 **대기 메시지는 «그 세션의 것»이다** (2026-09-15 Dave: *«que 메시지를 보내놓은 상태에서 다른
    *    폴더를 띄우면 거기에 큐 메시지가 전달되는 버그»*).
@@ -428,6 +441,7 @@ function Main() {
       const info = allSessions.find((x) => x.id === sid)
       if (!info) { setQueues((q) => { const { [sid]: _gone, ...rest } = q; return rest }); continue }
       if (info.state === 'running' || info.state === 'awaiting_input') continue
+      if (info.held) continue   // CL-1 · 사람이 멈췄다 — [이어 보내기] 나 새 말이 풀 때까지 붙잡아 둔다
       flushing.current.add(sid)
       const [next, ...rest] = list
       setQueues((q) => ({ ...q, [sid]: rest }))
@@ -921,6 +935,7 @@ function Main() {
           <div className="h">{railCtx.name}</div>
           <button onClick={async () => { const b = s.bots.find((x) => x.id === railCtx.id); try { await api('/bots/pin', { body: { id: railCtx.id, on: !b?.pinned } }); say(b?.pinned ? '고정을 풀었어요' : '맨 위에 고정했어요'); await refresh() } catch (e) { say((e as Error).message) } }}><Icon n="pin" size={13} /><span style={{ flex: 1 }}>{s.bots.find((x) => x.id === railCtx.id)?.pinned ? '고정 풀기' : '맨 위에 고정'}</span><span className="k">3개까지</span></button>
           {s.bots.find((x) => x.id === railCtx.id)?.orderedBy === 'user' ? <button className="unfix" onClick={async () => { try { await api('/bots/unfix', { body: { id: railCtx.id } }); say('순서 고정을 풀었어요 — 오케스트레이터가 옮길 수 있어요'); await refresh() } catch (e) { say((e as Error).message) } }}><Icon n="sort" size={13} /><span style={{ flex: 1 }}>순서 고정 해제</span><span className="k">끌어 놓은 자리</span></button> : null}
+          <button onClick={() => { const b = s.bots.find((x) => x.id === railCtx.id); if (b) pickColor(b) }}><span className="csdot" style={{ background: s.bots.find((x) => x.id === railCtx.id)?.color }} /><span style={{ flex: 1 }}>색 바꾸기</span></button>
           <button onClick={async () => { try { await api(`/bots/${railCtx.id}/stop`, { body: {} }); say(`${railCtx.name} 을 레일에서 덜어냈어요 — 폴더는 그대로예요`); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="x" size={13} /><span style={{ flex: 1 }}>지우기 (연결 해지)</span><span className="k">폴더 유지</span></button>
           <button onClick={async () => { if (!confirm(`${railCtx.name} 을 Archive 로 옮기고 은퇴시킬까요? 세션 기록은 보관돼요.`)) return; try { const r = await api<{ to: string }>(`/bots/${railCtx.id}/retire`, { body: {} }); say(`${r.to} 로 은퇴`); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="archive" size={13} /><span style={{ flex: 1 }}>은퇴 (Archive 로)</span></button>
         </div></Float> : null}
@@ -967,7 +982,7 @@ function Main() {
       {stage === 'wide' ? <div className="divx" onPointerDown={sbOpen ? dragX('sb', 1) : undefined} onDoubleClick={() => setLay({ ...lay, sb: DEF.sb, sbOpen: true, sbPin: true })} /> : null}
 
       {/* ── 채팅 ── */}
-      <Chat bot={bot} sessions={sessions} cur={cur} items={items} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openInDocPane(rel, { pin })} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={toList} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} queue={queueFor(sessionId)} onQueue={(f) => { if (sessionId) onQueue(sessionId, f) }} onReveal={reveal} />
+      <Chat bot={bot} sessions={sessions} cur={cur} items={items} loaded={!!sessionId && !!s.chats[sessionId]} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openInDocPane(rel, { pin })} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={toList} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} queue={queueFor(sessionId)} onQueue={(f) => { if (sessionId) onQueue(sessionId, f) }} onReveal={reveal} />
 
       {/* ── 문서 열 (넓음만 흐름 안 · 중간·좁음은 오른쪽 서랍) ── */}
       {stage === 'wide' && showDoc ? <><div className="divx" onPointerDown={dragX('doc', -1)} onDoubleClick={() => setLay({ ...lay, doc: DEF.doc })} />{docwrapEl}</> : null}
@@ -1016,6 +1031,7 @@ function Main() {
       toggle={(w) => { if (w === 'sb') setLay((l) => ({ ...l, sbOpen: !l.sbOpen })); else if (w === 'rp') setLay((l) => ({ ...l, rpOpen: !l.rpOpen })); else setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] })) }} /> : null}
     <AskHost />
     <ConfirmHost />
+    <ColorHost say={say} />
     <LocalOpenHost />
     {pickFile ? <><div className="backdrop" onClick={() => setPickFile(null)} /><div className="modal conf pickfile" style={{ width: 'min(520px,calc(100% - 24px))' }}>
       <div className="modal-h"><div className="t"><b>{pickFile.name} — {pickFile.rels.length}곳에 있어요</b></div></div>
@@ -1202,13 +1218,18 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say, ra
         const r = await api<{ to: string }>(`/bots/${b.id}/retire`, { body: {} }); say(`${r.to} 로 은퇴`); await refresh()
       }
       else if (a === 'menu') setFsheet(b)
+      else if (a === 'color') pickColor(b)
     } catch (e) { say((e as Error).message) }
   }
   const all = rows.flatMap(([, l]) => l)
+  const orchRow = all.find((x) => x.b.orchestrator)
   const running = all.filter((x) => x.sum.state === 'running')
   const cands = s.candidates.filter((c) => !c.active).length
   return <div className="col mhome">
-    <div className="mtop"><button className="rb" onClick={() => setModal('settings')} title="설정"><FolderBot color="#e08850" size={26} mood={waiting ? 'wait' : 'idle'} mono /></button><span className="sp" /><button className="rb" onClick={() => setModal('notify')}><Icon n="bell" size={20} />{unread ? <span className="bd">{unread}</span> : null}</button><button className="rb" onClick={() => setModal('picker')}><Icon n="fplus" size={20} /></button></div>
+    {/* 🔴 CN · 왼쪽 위 = 오케스트레이터 바로 가기 (2026-10-16 Dave: «설정이라는 느낌이 안 들어서 클릭하면 바로 오케스트레이터로»).
+        주황 얼굴은 오케스트레이터 색이라 생김새와 하는 일을 맞춘다 — 표정·배지·안 읽음 링도 «확인 대기 전체» 가 아니라 오케스트레이터 자기 것.
+        설정은 오른쪽 끝 ⚙ 로 옮겼다(🔔 · 📁+ · ⚙). 끌어서 칸 주인을 바꾸는 안(B)은 쓸기·스크롤과 부딪혀 안 골랐다(기획안 §8) */}
+    <div className="mtop"><button className="rb orchb" onClick={() => go('orch')} title="오케스트레이터" aria-label="오케스트레이터">{orchRow ? <FolderBot color={orchRow.b.color} size={26} mood={orchRow.sum.mood} unread={orchRow.sum.unread} recent={orchRow.sum.recent} mono /> : <FolderBot color="#e08850" size={26} mood={waiting ? 'wait' : 'idle'} mono />}</button><span className="sp" /><button className="rb" onClick={() => setModal('notify')} title="알림"><Icon n="bell" size={20} />{unread ? <span className="bd">{unread}</span> : null}</button><button className="rb" onClick={() => setModal('picker')} title="폴더에서 시작"><Icon n="fplus" size={20} /></button><button className="rb setb" onClick={() => setModal('settings')} title="설정" aria-label="설정"><Icon n="gear" size={20} /></button></div>
     <div className="mscroll">
       <div className="mtitle">Folder Bot</div>
       <div className="msub"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} style={{ width: 7, height: 7 }} />{s.hostName}<MrBadge /><span>· 봇 {s.bots.length} · 후보 {cands}</span></div>
@@ -1228,7 +1249,7 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say, ra
     {fsheet ? <><div className="backdrop" onClick={() => setFsheet(null)} /><div className="tsheet">
       <div className="grip" />
       <div className="ti">{fsheet.name}</div>
-      {([['pin', fsheet.pinned ? '고정 풀기' : '맨 위에 고정'], ...(fsheet.orderedBy === 'user' ? [['unfix', '순서 고정 해제 — 끌어 놓은 자리']] : []), ['unlink', '지우기 (연결 해지) — 폴더는 그대로'], ['retire', '은퇴 (Archive 로)']] as [SwipeAct, string][]).map(([a, l]) => <button key={a} onClick={() => { const b = fsheet; setFsheet(null); void folderAct(b, a) }}><Icon n={ACT_ICON[a] as 'edit'} size={16} />{l}</button>)}
+      {([['pin', fsheet.pinned ? '고정 풀기' : '맨 위에 고정'], ...(fsheet.orderedBy === 'user' ? [['unfix', '순서 고정 해제 — 끌어 놓은 자리']] : []), ['color', '색 바꾸기'], ['unlink', '지우기 (연결 해지) — 폴더는 그대로'], ['retire', '은퇴 (Archive 로)']] as [SwipeAct, string][]).map(([a, l]) => <button key={a} onClick={() => { const b = fsheet; setFsheet(null); void folderAct(b, a) }}><Icon n={ACT_ICON[a] as 'edit'} size={16} />{l}</button>)}
     </div></> : null}
     <button className="mpill glassb" onClick={onAsk}><span className="pl"><Icon n="plus" size={20} /></span><span className="tx">폴더에 시키기…</span><Icon n="sub" size={20} color="var(--t2)" /></button>
   {uSheet && usage ? <><div className="backdrop" onClick={() => setUSheet(false)} /><div className="tsheet usheet"><div className="grip" /><UsageCard u={usage} /></div></> : null}</div>
@@ -1240,7 +1261,7 @@ interface FileNode { rel: string; dir: boolean; mtime: number }
 // ⚠ 맥 파일 이름은 NFD 로 저장된다 — 비교 전에 양쪽을 NFC 로 맞추지 않으면 한글이 «아예» 안 걸린다(core/search 머리말)
 const fuzzy = (q: string, s: string): number => { if (!q) return 1; const t = norm(s); const nq = norm(q); if (t.includes(nq)) return t.startsWith(nq) ? 3 : 2; let i = 0; for (const c of t) if (c === nq[i]) i++; return i === nq.length ? 1 : 0 }
 
-function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attachReq, onAttached, mentionReq, onMentioned, focusReq, onSession, onFile, docBadge, docTabs, docOn, onDocToggle, say, refreshAll, collapsed, onUncollapse, phone, onBack, onPanel, newSession, filesTick, queue, onQueue, onReveal }: { bot: Bot; sessions: SessionInfo[]; cur?: SessionInfo; items: ChatItem[]; pending: PermissionRequest[]; prefill: string; onPrefilled: () => void; attachReq: Att[]; onAttached: () => void; mentionReq: string[]; onMentioned: () => void; focusReq: number; onSession: (sid: string) => void; onFile: (rel: string, pin?: boolean) => void; docBadge: number; docTabs: string[]; docOn: boolean; onDocToggle: () => void; say: (m: string) => void; refreshAll: () => Promise<void>; collapsed: boolean; onUncollapse: () => void; phone: boolean; onBack: () => void; onPanel: () => void; newSession: () => Promise<void>; filesTick?: number; queue: string[]; onQueue: (f: (q: string[]) => string[]) => void; onReveal: (rel: string) => void }) {
+function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled, attachReq, onAttached, mentionReq, onMentioned, focusReq, onSession, onFile, docBadge, docTabs, docOn, onDocToggle, say, refreshAll, collapsed, onUncollapse, phone, onBack, onPanel, newSession, filesTick, queue, onQueue, onReveal }: { bot: Bot; sessions: SessionInfo[]; cur?: SessionInfo; items: ChatItem[]; loaded: boolean; pending: PermissionRequest[]; prefill: string; onPrefilled: () => void; attachReq: Att[]; onAttached: () => void; mentionReq: string[]; onMentioned: () => void; focusReq: number; onSession: (sid: string) => void; onFile: (rel: string, pin?: boolean) => void; docBadge: number; docTabs: string[]; docOn: boolean; onDocToggle: () => void; say: (m: string) => void; refreshAll: () => Promise<void>; collapsed: boolean; onUncollapse: () => void; phone: boolean; onBack: () => void; onPanel: () => void; newSession: () => Promise<void>; filesTick?: number; queue: string[]; onQueue: (f: (q: string[]) => string[]) => void; onReveal: (rel: string) => void }) {
   const { s } = useStore()
   const [text, setText] = useState(''); const [caret, setCaret] = useState(0); const [sessMenu, setSessMenu] = useState(false); const [busy, setBusy] = useState(false)
   const [attach, setAttach] = useState<Att[]>([]); const [pop, setPop] = useState<'' | 'plus' | 'mode' | 'model' | 'effort' | 'ctx'>(''); const [pickOpen, setPickOpen] = useState(false); const [uploading, setUploading] = useState(false)
@@ -1419,8 +1440,11 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   // CC · 소통·채널 세션에 쓴 말은 호스트가 새 채팅으로 갈라 연다 — 돌려받은 id 가 다르면 그리로 넘어간다
   const post = async (t: string) => { if (cur) { const r = await api<{ sessionId?: string }>(`/sessions/${cur.id}/send`, { body: { text: t, client: clientCtx() } }); if (r?.sessionId && r.sessionId !== cur.id) { await refreshAll(); onSession(r.sessionId) } } else { const r = await api<{ sessionId: string }>(`/bots/${bot.id}/send`, { body: { text: t, name: '메인', client: clientCtx(), ...draft } }); await refreshAll(); onSession(r.sessionId) } }
   // ⚠ 대기열을 내보내는 일은 **부모**가 한다 — 보고 있지 않은 세션의 것도 나가야 하기 때문(위 머리말)
-  const sendText = async (raw: string) => {
+  const sendText = async (raw: string, direct = false) => {
     let t = raw.trim(); if ((!t && !attach.length) || busy || uploading) return
+    // CL-1 · 고쳐 다시(A · 이어서 고치기) — 앞 대화는 두고, 멈춘 요청을 따르지 말라는 한 줄을 앞에 붙인다
+    if (fixing && cur?.stopped && t) t = `[앞 요청은 사람이 멈췄다 — 아래로 바꾼다]\n${t}`
+    setFixing(false)
     if (attach.length) t = `${t || '첨부한 파일을 봐 줘.'}\n\n첨부 파일 (읽어서 참고해):\n${attach.map((a) => (a.dir ? `- ${a.abs}/ (폴더 — 안의 파일들)` : `- ${a.abs}`)).join('\n')}`
     setText(''); setAttach([])
     // 보냈으면 초안은 그 자리에서 지운다. ⚠ 첫 메시지는 세션을 만들며 키가 `new` → 실제 id 로 바뀌므로
@@ -1431,10 +1455,76 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
     const deferredOnly = state === 'awaiting_input' && pending.length > 0 && pending.every((p) => p.deferred)
     // CC · 갈라 열릴 자동화 세션(소통·채널)은 기다리지 않는다 — 말은 그 세션이 아니라 새 채팅으로 간다
     const forks = !!cur && takeoverMode(cur) === 'fork'
-    if (!forks && (running || (state === 'awaiting_input' && !deferredOnly))) { onQueue((q) => [...q, t]); return }
+    if (!direct && !forks && (running || (state === 'awaiting_input' && !deferredOnly))) { onQueue((q) => [...q, t]); return }
     setBusy(true); try { await post(t) } catch (e) { say((e as Error).message) } finally { setBusy(false) }
   }
   const send = () => sendText(text)
+  /**
+   * 🔴 **CL-1 · 멈추기** (2026-10-16 Dave «추천대로»). ⏹ 와 ⎋ 가 같은 길이다. 사람이 멈추면 호스트가 대기 말을 붙잡아 둔다(`held`) —
+   *    [이어 보내기] 하거나 새 말을 보내야 나간다. 입력칸의 글은 지우지 않는다.
+   */
+  const stopNow = () => { if (cur && (running || state === 'awaiting_input')) void api(`/sessions/${cur.id}/interrupt`, { body: { by: 'human' } }).catch((e) => say((e as Error).message)) }
+  /**
+   * 🔴 **CL-2 · 멈추고 바로 보내기(⌥⏎ · ⚡)** — 실 CLI(2.1.288) 스파이크(10/16): 턴 중에 넣은 말은 다음 단계의 도구 결과 옆에 끼어 들어가는데,
+   *    모델이 그것을 «도구 결과 속 지시(주입)» 로 보고 따르지 않았다. 그래서 끼워 넣지 않고 **멈춘 뒤 새 턴으로** 보낸다(기획안 §6 의 대안).
+   *    지금 하던 단계가 잘린다는 것을 단추 이름에 드러낸다.
+   */
+  const curRef = useRef(cur); curRef.current = cur
+  const sendNow = async () => {
+    if (!cur || (!text.trim() && !attach.length) || busy || uploading) return
+    const sid = cur.id
+    // 보낼 글은 지금 떼어 두고 입력칸은 바로 비운다 — 멈추기를 기다리는 동안 새로 친 글을 지우지 않게(리뷰 10/16)
+    let t = text.trim()
+    if (fixing && cur.stopped && t) t = `[앞 요청은 사람이 멈췄다 — 아래로 바꾼다]\n${t}`   // 고쳐 다시 중에 ⌥⏎ 해도 머리말이 붙는다
+    setFixing(false)
+    if (attach.length) t = `${t || '첨부한 파일을 봐 줘.'}\n\n첨부 파일 (읽어서 참고해):\n${attach.map((a) => (a.dir ? `- ${a.abs}/ (폴더 — 안의 파일들)` : `- ${a.abs}`)).join('\n')}`
+    setText(''); setAttach([]); try { localStorage.removeItem(draftRef.current) } catch { /* */ }
+    await api(`/sessions/${sid}/interrupt`, { body: { by: 'human' } }).catch(() => {})
+    let idle = false
+    for (let i = 0; i < 60; i++) { const c = curRef.current; if (!c || c.id !== sid || (c.state !== 'running' && c.state !== 'awaiting_input')) { idle = true; break } await new Promise((r) => setTimeout(r, 150)) }
+    // ⚠ 9초 안에 안 멈췄으면 끼워 넣지 않고 대기열 맨 앞에 둔다 — 일하는 중에 밀어 넣으면 «주입» 으로 읽힌다(스파이크)
+    // 대기열은 멈춤으로 붙잡혀 있으니 풀어 둔다 — 안 그러면 [이어 보내기] 를 누를 때까지 이 말이 묶인다
+    if (!idle) { onQueue((q) => [t, ...q]); void api(`/sessions/${sid}/resume`, { body: {} }).catch(() => {}); say('아직 멈추는 중이라 대기열 맨 앞에 넣었어요 — 지금 일이 끝나면 바로 나가요'); return }
+    try { await post(t) } catch (e) { onQueue((q) => [t, ...q]); say((e as Error).message) }
+  }
+  /** 대기 줄의 [⚡ 지금] — 그 말을 대기열에서 빼고 멈춘 뒤 바로 보낸다(입력칸은 건드리지 않는다) */
+  const nowQueued = async (i: number) => {
+    const t = queue[i]; if (!cur || !t) return
+    const sid = cur.id
+    onQueue((l) => l.filter((_, k) => k !== i))
+    if (running || state === 'awaiting_input') {
+      await api(`/sessions/${sid}/interrupt`, { body: { by: 'human' } }).catch(() => {})
+      let idle = false
+      for (let k = 0; k < 60; k++) { const c = curRef.current; if (!c || c.id !== sid || (c.state !== 'running' && c.state !== 'awaiting_input')) { idle = true; break } await new Promise((r) => setTimeout(r, 150)) }
+      if (!idle) { onQueue((q) => [t, ...q]); void api(`/sessions/${sid}/resume`, { body: {} }).catch(() => {}); say('아직 멈추는 중이라 대기열 맨 앞에 넣었어요 — 지금 일이 끝나면 바로 나가요'); return }
+    }
+    try { await post(t) } catch (e) { onQueue((q) => [t, ...q]); say((e as Error).message) }   // 실패하면 말을 잃지 않게 되돌린다
+  }
+  const [fixing, setFixing] = useState(false)
+  useEffect(() => { setFixing(false) }, [cur?.id])
+  /** 멈춘 자리 — [프롬프트 고치기] 는 마지막 말을 입력칸으로 올린다(⎋ 취소) · [다시 시도] 는 같은 말을 다시 보낸다 */
+  const fixPrompt = () => { if (!lastUser) return; setText(lastUser.text); setFixing(true); window.setTimeout(() => taRef.current?.focus(), 0) }
+  /**
+   * ⎋ = 멈추기 — 단 **먼저 닫을 것이 있으면 그쪽이 먼저**다(창·시트·메뉴·팝업 · 입력칸의 `/`·`@` 목록 · 대기 줄 고치기).
+   * ⚠ 창을 닫는 ⎋ 처리기가 먼저 돌아 창을 지운 뒤에 이 처리기가 «아무것도 없네» 하고 멈추면 안 된다 — 그래서 **누르는 순간(capture)** 에 열린 것을 재 두고,
+   *   입력칸 처리기가 쓴 ⎋ 는 `defaultPrevented` 로 거른다.
+   */
+  useEffect(() => {
+    let open = false
+    const cap = (e: KeyboardEvent) => { if (e.key === 'Escape') open = !!document.querySelector('.modal-w, .modal, .backdrop, .tsheet, .menu, .cpop, .colsheet') }
+    const f = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.isComposing || e.defaultPrevented || open) return
+      // ⚠ 초점이 대화 열 밖(할 일 편집·필터·문서 편집기…)에 있으면 그쪽의 ⎋ 다 — 거기서 누른 ⎋ 로 턴을 멈추지 않는다(리뷰 10/16)
+      const ae = document.activeElement as HTMLElement | null
+      if (ae && ae !== document.body && !ae.closest('.col.chat')) return
+      // 초점이 어디에도 없을 때는 대화 열이 화면에 보일 때만 — 폰에서 폴더·문서 화면을 ⎋ 로 닫는 길과 겹치지 않게
+      const col = colRef.current?.getBoundingClientRect(); if (!col || col.width < 120 || col.right <= 0 || col.left >= window.innerWidth) return
+      const c = curRef.current; if (!c || (c.state !== 'running' && c.state !== 'awaiting_input')) return
+      e.preventDefault(); void api(`/sessions/${c.id}/interrupt`, { body: { by: 'human' } }).catch(() => {})
+    }
+    window.addEventListener('keydown', cap, true); window.addEventListener('keydown', f)
+    return () => { window.removeEventListener('keydown', cap, true); window.removeEventListener('keydown', f) }
+  }, [])
   /** ⏎ 가 보내기인 기기인가 — 폰 화면도 아니고 손가락 포인터도 아닐 때만 (위 `onKey` 머리말) */
   const touch = useMedia('(pointer: coarse)'); const [lcfgC] = useLocalSettings()
   // BO · 방금 «＋ 새 세션» 으로 연 세션(아직 임시)이면 바로 칠 수 있게 입력칸에 커서를 둔다. 터치 기기는 자판이 튀어 올라 두지 않는다
@@ -1492,6 +1582,39 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const chipsByName = useMemo(() => Object.fromEntries(attach.map((a) => { const abs = a.abs || `${bot.abs}/첨부/${a.name ?? ''}`; return [attName(a), { abs, dir: a.dir, folder: chipParts(abs, bot.abs, !!a.dir).folder, busy: a.uploading, icon: <Icon n={a.dir ? 'folder' : 'doc'} size={11} color="var(--t3)" /> }] })), [attach, bot.abs])
   const relOf = (p: string) => (p.startsWith(bot.abs + '/') ? p.slice(bot.abs.length + 1) : null)
   const rows = useMemo(() => buildRows(items, drill), [items, drill])
+  /**
+   * 🔴 **CO · 안 읽은 답은 처음부터** (2026-10-16 Dave). 세션을 **열 때 한 번** «여기부터 새 답» 줄을 정하고(`core/unread.openAnchor`) 그 줄을 화면 위에 맞춘다.
+   *    판정 기준은 볼트의 읽은 자리(`readAt` · 폰·맥 공유)라 새로 셀 것이 없다. 연 것만으로는 읽음이 아니다 — 맨 아래까지 내려가야 읽음(9/21).
+   * ⚠ 정하는 것은 **대화가 처음 받아진 뒤 한 번**이다(`loaded`). 그 뒤 답이 더 와도, 읽음이 적혀도 줄은 그대로 둔다 — 다시 세면 선이 따라 내려가며 자리가 튄다.
+   * ⚠ 새 답이 한 화면에 다 들어가면 맨 아래 그대로 둔다(지금과 같다). 선만 남는다.
+   * ⚠ iOS Safari 는 `overflow-anchor` 가 없어 위쪽 그림·코드가 늦게 그려지면 자리가 밀린다 — 120·400·800ms 에 다시 맞추되,
+   *   **사람이 그사이 움직였으면 손대지 않는다**(우리가 놓은 값과 다르면 사람이다 · P 라운드와 같은 판정).
+   */
+  const [newMark, setNewMark] = useState<{ sid: string; id: string | null }>({ sid: '', id: null })
+  useEffect(() => {
+    if (!cur || !loaded || drill || newMark.sid === cur.id) return
+    const keyed = rows.map((r) => (r.k === 'group' ? { id: r.items[0].id, t: r.items[0].t, user: false } : { id: r.it.id, t: r.it.t, user: r.it.kind === 'user' }))
+    const i = openAnchor(keyed, cur.lastReplyAt, cur.readAt)
+    setNewMark({ sid: cur.id, id: i >= 0 ? keyed[i].id : null })
+  }, [cur?.id, loaded, rows, drill])
+  useEffect(() => {
+    if (!cur || newMark.sid !== cur.id || !newMark.id) return
+    const sc = scRef.current; if (!sc) return
+    let ours: number | null = null
+    const place = (): boolean => {
+      const el = sc.querySelector<HTMLElement>('.newmark'); if (!el) return false
+      if (ours != null && Math.abs(sc.scrollTop - ours) > 2) return false   // 사람이 움직였다
+      const top = Math.max(0, sc.scrollTop + el.getBoundingClientRect().top - sc.getBoundingClientRect().top - (phone ? 56 : 48))
+      if (sc.scrollHeight - top <= sc.clientHeight + 4) return false        // 새 답이 한 화면 안 — 맨 아래 그대로
+      if (followRaf.current) { cancelAnimationFrame(followRaf.current); followRaf.current = 0 }
+      atBottomRef.current = false; autoScrollRef.current = null; setAtBottom(false)
+      sc.scrollTop = top; ours = sc.scrollTop
+      return true
+    }
+    if (!place()) return
+    const ts = [120, 400, 800].map((ms) => window.setTimeout(place, ms))
+    return () => ts.forEach((t) => window.clearTimeout(t))
+  }, [newMark])
   const drillSub = drill ? (items.find((x) => x.id === drill) as Sub | undefined) : undefined
   // 슬래시 · @ — 캐럿 앞 토큰으로 판단
   const before = text.slice(0, caret)
@@ -1547,7 +1670,10 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
      * ⚠ `/` · `@` 목록이 떠 있을 때의 ⏎ 는 **고르기**다(위 분기) — 보내기가 아니라 채우기다.
      * ⚠ ⌘⏎ 는 **어느 기기에서나** 보내기로 남긴다 — 맥 메뉴가 쓰는 길이고, 폰에 외장 자판을 붙인 사람의 길이다.
      */
+    if (e.key === 'Escape' && fixing) { e.preventDefault(); setFixing(false); setText(''); return }
     if (e.key !== 'Enter') return
+    // CL-2 · ⌥⏎ = 멈추고 바로 보내기(일하는 중일 때만 · 결정 ⑤ A — ⏎ 는 지금처럼 대기)
+    if (e.altKey && cur && (running || state === 'awaiting_input')) { e.preventDefault(); void sendNow(); return }
     if (e.metaKey || e.ctrlKey) { e.preventDefault(); void send(); return }
     if (!enterSends || e.shiftKey || e.altKey) return
     e.preventDefault(); void send()
@@ -1608,7 +1734,9 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
   const effortBtn = <button className={`cbtn ${pop === 'effort' ? 'on' : ''}`} onClick={() => setPop(pop === 'effort' ? '' : 'effort')} title="노력">{effortLabel(cfg.effort, vend)}{phone ? <span className="chev">▾</span> : null}</button>
   const ringBtn = <button className={`ring ${pct >= 80 ? 'hot' : ''}`} onClick={() => setPop(pop === 'ctx' ? '' : 'ctx')} title={ctx ? `컨텍스트 ${pct}%` : '컨텍스트'}><Ring pct={pct} size={phone ? 20 : 18} />{pct >= 80 && !phone ? <span style={{ fontSize: 11.5, marginLeft: 4 }}>압축</span> : null}</button>
   const plusBtn = <button className={phone ? 'plusb' : `cbtn ${pop === 'plus' ? 'on' : ''}`} style={phone ? undefined : { padding: '3px 6px' }} title="첨부" onClick={() => setPop(pop === 'plus' ? '' : 'plus')} disabled={uploading}><Icon n="plus" size={phone ? 20 : 14} /></button>
-  const sendBtn = mode === 'stop' ? <button className="sendb" onClick={() => cur && api(`/sessions/${cur.id}/interrupt`, { body: {} })} title="중단"><Icon n="stop" size={phone ? 14 : 11} /></button>
+  // CL-1 · 일하는 동안엔 글이 있어도 ⏹ 가 남는다 — [⏹] [↑ 대기] 를 나란히(폰도 같다)
+  const stopBtn = <button className="stopb" onMouseDown={(e) => e.preventDefault()} onClick={stopNow} title="멈추기 (⎋)" aria-label="멈추기"><Icon n="stop" size={phone ? 14 : 11} /></button>
+  const sendBtn = mode === 'stop' ? stopBtn
     : mode === 'off' && phone ? <span className="sendb mic"><Icon n="mic" size={20} /></span>
       /**
        * 🔴 **보내기 단추는 초점을 뺏지 않는다** (2026-09-22 실측). 누르는 순간 입력칸에서 초점이 빠지면 키보드가 닫히고,
@@ -1617,6 +1745,9 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
        *    보낸 뒤에도 키보드가 남아 있는 것이 사람이 바라는 동작이기도 하다.
        */
       : <button className={`sendb ${mode === 'off' ? 'off' : ''}`} onMouseDown={(e) => e.preventDefault()} onClick={send} disabled={mode === 'off' || busy || uploading} title={mode === 'queue' ? `대기열에 넣기 (${sendKey})` : `보내기 (${sendKey})`}><Icon n="up" size={phone ? 16 : 12} />{mode === 'queue' ? <span className="bd">+{queue.length + 1}</span> : null}</button>
+  const sendEl = mode === 'queue' && (running || state === 'awaiting_input') ? <>{stopBtn}{sendBtn}</> : sendBtn
+  /** CL-2 · 일하는 중에 글을 쓰면 «⚡ 멈추고 보내기» — 보내기 단추는 그대로 «대기» 다 */
+  const nowChip = mode === 'queue' && running && !drill ? <button className="nowchip" onMouseDown={(e) => e.preventDefault()} onClick={() => void sendNow()} title={enterSends ? '지금 하던 단계를 멈추고 이 말을 바로 보내요 (⌥⏎)' : '지금 하던 단계를 멈추고 이 말을 바로 보내요'}>⚡ 멈추고 보내기{enterSends ? <span className="k">⌥⏎</span> : null}</button> : null
   const popEl = pop === 'mode' ? <div className="cpop"><div className="h">모드 · 이 세션</div>{MODES.map((m, i) => <button key={m.v} className={`prow2 ${cfg.mode === m.v ? 'on' : ''}`} onClick={() => void applyCfg({ permissionMode: m.v })}><div className="t"><b>{m.t}</b><small>{m.d}</small></div>{cfg.mode === m.v ? <Icon n="check" size={13} /> : <span className="k">{i + 1}</span>}</button>)}<div className="hint"><span>1~4</span><span className="sp" /><span>새 세션은 설정의 기본값으로</span></div>{cur?.restartPending ? <div className="hint pend">{modePendTitle}</div> : null}</div>
     /**
      * 🔴 **종류별 최신 하나씩만 보인다** (2026-09-14 Dave: «다른 모델은 안쓰고 최신 버전만 종류별로만
@@ -1736,10 +1867,15 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
       <div className="chat-body">
         {!cur && !drill ? <div className="empty" style={{ flex: 1 }}><FolderBot color={bot.color} size={40} mood="idle" /><div><b>{bot.name}</b>{bot.orchestrator ? ' — 볼트 전체를 보는 관제 봇이에요. "지금 뭐 돌고 있어?", "Inbox 정리해 줘", "X 폴더에서 시작해".' : ' 봇이에요. 이 폴더의 지침·기억·자료를 들고 일해요.'}</div></div> : null}
         {drillSub ? <div className="drill-p"><div className="meta" style={{ cursor: 'default' }}>무엇을 시켰나</div><div className="tx">{drillSub.prompt || drillSub.name}</div><hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '4px 0', width: '100%' }} /></div> : null}
-        <SidCtx.Provider value={{ sid: cur?.id ?? '', botId: bot.id }}>{rows.map((r) => r.k === 'group'
-          ? <ToolGroup key={r.items[0].id} items={r.items} endT={r.endT} base={bot.abs} onFile={(p) => { const rel = relOf(p); if (rel) onFile(rel) }} />
-          : <Item key={r.it.id} it={r.it} bot={bot} items={items} onFile={(p) => onFile(p)} onReveal={onReveal} onDrill={(id) => setDrill(id)} state={state} say={say} isLastAssistant={r.it.id === lastAssistant} isLastUser={r.it.id === lastUser?.id} userRef={lastUserRef} onRetry={lastUser ? () => void sendText(lastUser.text) : undefined} />)}</SidCtx.Provider>
+        <SidCtx.Provider value={{ sid: cur?.id ?? '', botId: bot.id }}>{rows.map((r) => { const rid = r.k === 'group' ? r.items[0].id : r.it.id; return <Fragment key={rid}>
+          {/* CO · 이 세션을 열 때 정한 «여기부터 새 답» — 세션을 바꾸기 전까지 그 자리에 둔다 */}
+          {newMark.id === rid && newMark.sid === cur?.id && !drill ? <div className="newmark" role="separator"><span>여기부터 새 답</span></div> : null}
+          {r.k === 'group'
+          ? <ToolGroup items={r.items} endT={r.endT} base={bot.abs} onFile={(p) => { const rel = relOf(p); if (rel) onFile(rel) }} />
+          : <Item it={r.it} bot={bot} items={items} onFile={(p) => onFile(p)} onReveal={onReveal} onDrill={(id) => setDrill(id)} state={state} say={say} isLastAssistant={r.it.id === lastAssistant} isLastUser={r.it.id === lastUser?.id} userRef={lastUserRef} onRetry={lastUser ? () => void sendText(lastUser.text) : undefined} />}</Fragment> })}</SidCtx.Provider>
         {cur && !drill ? pending.map((p) => <PermCard key={p.requestId} p={p} sid={cur.id} />) : null}
+        {/* 🔴 CL-1 · 멈춘 자리 — Claude 웹처럼 «응답을 멈췄어요» 줄에서 바로 고치거나 다시 보낸다(멈춘 턴에는 답이 없어 ↶ 단추가 안 떴다) */}
+        {cur?.stopped && !running && state !== 'awaiting_input' && !drill ? <div className="stopln" role="status"><Icon n="stop" size={10} /><span>응답을 멈췄어요</span>{lastUser ? <><button onClick={fixPrompt}>프롬프트 고치기</button><button onClick={() => void sendText(lastUser.text)}>다시 시도</button></> : null}</div> : null}
         {/* O · 본문과 상태 줄 사이는 8px 고정 — 남는 공간은 상태 줄 **뒤**로 보낸다(종전엔 스페이서가 앞에 있어 큰 빈 공간이 생겼다) */}
         {/* AB · 🔴 턴이 끝나도 `bg` 가 남아 있으면 대기 줄은 남는다 — 사라지는 순간이 「끝났나?」의 정체였다 */}
         {cur && (running || state === 'awaiting_input' || (cur.bg ?? 0) > 0) ? <Live cur={cur} state={state} color={bot.color} /> : null}
@@ -1770,14 +1906,19 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
           12px 한 줄 입력칸이라 긴 말은 읽지도 고치지도 못했다. 이제 줄마다 카드 — 세 줄까지 보이고, 고칠 때는 커지는 글 상자.
           호스트 대기열(다른 봇이 보낸 말 · `cur.queue`)도 같은 목록에 «봇» 표시로 선다 — 고치고 빼는 길은 호스트로 간다. */}
       {(cur?.queue?.length ?? 0) + queue.length ? <div className="qlist">
-        <div className="qhead">대기 {(cur?.queue?.length ?? 0) + queue.length}개 · 지금 일이 끝나면 차례로 보내요</div>
+        {/* CL-1 · 사람이 멈췄으면 대기 말은 붙잡혀 있다 — [이어 보내기] 를 눌러야 나간다 */}
+        {cur?.held ? <div className="qhead held">대기 {(cur?.queue?.length ?? 0) + queue.length}개 · 멈춰 둠<span className="sp" /><button className="resume" onClick={() => { if (cur) void api(`/sessions/${cur.id}/resume`, { body: {} }).catch((e) => say((e as Error).message)) }}>이어 보내기</button></div>
+          : <div className="qhead">대기 {(cur?.queue?.length ?? 0) + queue.length}개 · 지금 일이 끝나면 차례로 보내요</div>}
         {(cur?.queue ?? []).map((q, i) => <QueueRow key={`h${i}${q.t}`} n={i + 1} text={q.text} who={q.fromName ?? '다른 봇'}
           onSave={(v) => { if (cur) void api(`/sessions/${cur.id}/queue`, { body: { i, text: v } }).catch((e) => say((e as Error).message)) }}
           onDrop={() => { if (cur) void api(`/sessions/${cur.id}/queue`, { body: { i, text: '' } }).catch((e) => say((e as Error).message)) }} />)}
         {queue.map((q, i) => <QueueRow key={i} n={(cur?.queue?.length ?? 0) + i + 1} text={q}
+          onNow={() => void nowQueued(i)}
           onSave={(v) => onQueue((l) => (v.trim() ? l.map((x, k) => (k === i ? v : x)) : l.filter((_, k) => k !== i)))}
           onDrop={() => onQueue((l) => l.filter((_, k) => k !== i))} />)}
       </div> : null}
+      {nowChip ? <div className="nowrow">{nowChip}</div> : null}
+      {fixing ? <div className="fixrow">멈춘 요청을 고쳐 보내요 — 보내면 «앞 요청은 멈췄다» 가 붙어요 · <button onClick={() => { setFixing(false); setText('') }}>취소 (⎋)</button></div> : null}
       {/* 🔴 **입력창의 링크도 아이콘을 갖는다** (2026-09-13 Dave). ⚠ `textarea` 안에는 그림을 못 넣는다 —
           글자만 담는 칸이다. 그래서 쓰는 중인 주소를 **입력칸 위 칩**으로 올린다: 같은 캐시, 같은 아이콘,
           그리고 «이 주소가 맞나» 를 보내기 전에 확인할 수 있다. */}
@@ -1801,10 +1942,10 @@ function Chat({ bot, sessions, cur, items, pending, prefill, onPrefilled, attach
         {/* Q-1 (2026-09-19 Dave: «+ 하나만 있는 UX가 더 좋아 · 2스텝 안에 카메라/이미지첨부») — 📷 단추는 뺐다. 카메라·사진은 + 메뉴 첫 두 줄 */}
         {phone ? <div className="cleft">{plusBtn}</div> : null}
         <div className={phone ? 'ctext' : 'crow'}>
-          <InlineInput ref={taRef} placeholder={drill ? '메인 대화로 보냅니다 — 이 안에는 직접 말을 걸 수 없어요' : running ? (touch ? '보내면 대기열에 들어갑니다' : `보내면 대기열에 들어갑니다 (${sendKey})`) : state === 'awaiting_input' ? '답을 기다리는 중 — 보내면 대기열에' : enterSends ? '메시지…  ⏎ 보내기 · ⇧⏎ 줄 바꿈 · / 스킬 · @ 파일' : '메시지…  / 스킬 · @ 파일'} value={text} chips={chipsByName} onChange={(t, c) => { setText(t); setCaret(c) }} onCaret={setCaret} onKeyDown={onKey} onFocus={() => { if (phone) stickBottom() }} onChipClick={(name) => { const a = attach.find((x) => attName(x) === name); if (a && !a.uploading && !a.dir) onFile(a.rel) }} />
+          <InlineInput ref={taRef} placeholder={drill ? '메인 대화로 보냅니다 — 이 안에는 직접 말을 걸 수 없어요' : cur && takeoverMode(cur) === 'fork' ? '여기 쓰면 새 채팅으로 이어서 열려요' : running ? (touch ? '보내면 대기열에 들어갑니다' : `보내면 대기열에 들어갑니다 (${sendKey})`) : state === 'awaiting_input' ? '답을 기다리는 중 — 보내면 대기열에' : enterSends ? '메시지…  ⏎ 보내기 · ⇧⏎ 줄 바꿈 · / 스킬 · @ 파일' : '메시지…  / 스킬 · @ 파일'} value={text} chips={chipsByName} onChange={(t, c) => { setText(t); setCaret(c) }} onCaret={setCaret} onKeyDown={onKey} onFocus={() => { if (phone) stickBottom() }} onChipClick={(name) => { const a = attach.find((x) => attName(x) === name); if (a && !a.uploading && !a.dir) onFile(a.rel) }} />
         </div>
-        {phone ? <div className={`cright ${uploading ? 'dis' : ''}`}>{ringBtn}{sendBtn}</div> : null}
-        {!phone ? <div className="cbar">{modeBtn}{plusBtn}{attach.length ? <span className="acount">첨부 {attach.length}개 · 봇이 읽어서 참고</span> : null}<span className="sp" />{modelBtn}{effortBtn}{ringBtn}{sendBtn}</div> : null}
+        {phone ? <div className={`cright ${uploading ? 'dis' : ''}`}>{ringBtn}{sendEl}</div> : null}
+        {!phone ? <div className="cbar">{modeBtn}{plusBtn}{attach.length ? <span className="acount">첨부 {attach.length}개 · 봇이 읽어서 참고</span> : null}<span className="sp" />{modelBtn}{effortBtn}{ringBtn}{sendEl}</div> : null}
       </div>
       {!phone ? <div className="cfoot"><span className={`dot ${cur?.alive || running ? 'done' : 'none'}`} style={{ width: 5, height: 5 }} /><span>{cur?.hibernated && !running ? `${s.hostName} · 절전 (첫 답이 몇 초 늦어요)` : s.hostName}</span>{cur?.restartPending ? <span>· 턴이 끝나면 새 설정으로 재시작</span> : null}<span className="sp" />{uploading ? <span>올리는 중…</span> : null}</div> : null}
     </div>
@@ -1847,7 +1988,7 @@ function LinkChip({ url }: { url: string }) {
  * 보기: 세 줄까지 · 누르면 고치기. 고치기: 글에 맞춰 커지는 글 상자(최대 화면 40%) — ⏎ 는 줄바꿈, **⌘⏎ 저장 · ⎋ 취소**.
  * ⛔ 빈 글로 저장하면 그 줄은 빠진다. ⚠ 밖을 눌러도(blur) 저장한다 — 고친 말을 잃지 않게.
  */
-function QueueRow({ n, text, who, onSave, onDrop }: { n: number; text: string; who?: string; onSave: (v: string) => void; onDrop: () => void }) {
+function QueueRow({ n, text, who, onSave, onDrop, onNow }: { n: number; text: string; who?: string; onSave: (v: string) => void; onDrop: () => void; /** CL-2 · 줄 서 있던 말을 앞으로 — 멈추고 바로 보내기 */ onNow?: () => void }) {
   const [edit, setEdit] = useState(false)
   const [v, setV] = useState(text)
   const ta = useRef<HTMLTextAreaElement>(null)
@@ -1860,6 +2001,7 @@ function QueueRow({ n, text, who, onSave, onDrop }: { n: number; text: string; w
     <div className="qh">
       <span className="qn">대기 {n}</span>{who ? <span className="qwho">{who}</span> : null}
       <span style={{ flex: 1 }} />
+      {edit || !onNow ? null : <button className="qb" title="지금 하던 단계를 멈추고 이 말을 바로 보내요" onClick={onNow}><span>⚡ 지금</span></button>}
       {edit ? null : <button className="qb" title="고치기" onClick={() => setEdit(true)}><Icon n="edit" size={12} /><span>고치기</span></button>}
       <button className="qb drop" title="대기열에서 빼기" onClick={onDrop}><Icon n="x" size={12} /><span>빼기</span></button>
     </div>

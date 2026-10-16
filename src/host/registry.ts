@@ -1,10 +1,12 @@
+import { parseTodo } from '../core/todo'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, renameSync, realpathSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { parse as parseYaml, stringify } from 'yaml'
 import { EventEmitter } from 'node:events'
-import { applyNaming, globMatch, globParents, isSectionRoot, PARA_PRESET, JD_PRESET, parseRules, parseFolderTemplate, rulesSection, roleOf } from '../core/rules'
+import { applyNaming, globMatch, globParents, isSectionRoot, PARA_PRESET, JD_PRESET, parseRules, parseFolderTemplate, parseTodoRules, rulesSection, roleOf } from '../core/rules'
 import type { Bot, BotConfig, Candidate, FolderRules, RoutineDef } from '../core/types'
-import { BOT_COLORS, ORCH_COLOR } from '../core/types'
+import { ORCH_COLOR } from '../core/types'
+import { OLD_AMBER, colorAllowed, isOrchLike, leastUsed } from '../core/botColor'
 import { atomicWrite } from './paths'
 import { DEFAULT_TYPES, parseFolderName } from '../core/botName'
 import { DEVICE_RULES_MD } from '../core/clientCtx'
@@ -40,6 +42,7 @@ export class Registry extends EventEmitter {
     migrateStateDir(this.root)
     this.loadRules()
     this.loadActive()
+    this.migrateColors()
   }
 
   // ── 규칙 ────────────────────────────────────────────────────────────────
@@ -238,6 +241,51 @@ export class Registry extends EventEmitter {
       this.orderBackup = Array.isArray(y?.orderBackup) && y.orderBackup.length ? y.orderBackup.map(String) : undefined
     } catch { this.active = []; this.orderBackup = undefined }
   }
+  /**
+   * CN · 옛 앰버(판에서 뺌)와 주황 언저리 색을 가진 봇을 **한 번** 가장 덜 쓰인 판 색으로 옮긴다(2026-10-16).
+   * 앰버는 판에 없으니 다시 생기지 않는다 — 그래서 «한 번» 이 저절로 지켜진다. 마음에 안 들면 사람이 다시 고른다.
+   */
+  private migrateColors(): void {
+    let changed = false
+    for (const a of this.active) {
+      if (a.color && a.color.toLowerCase() !== OLD_AMBER && !isOrchLike(a.color)) continue
+      a.color = leastUsed(this.active.filter((x) => x !== a).map((x) => x.color ?? ''))
+      changed = true
+    }
+    if (changed) { try { atomicWrite(this.activeFile(), stringify({ bots: this.active, ...(this.orderBackup ? { orderBackup: this.orderBackup } : {}) })) } catch { /* 다음 저장 때 같이 쓴다 */ } }
+  }
+  /** CK-1 · todo.md 의 가장 이른 줄 마감 — 파일 mtime 이 같으면 다시 안 읽는다(bots() 는 자주 불린다) */
+  private dueCache = new Map<string, { mtime: number; due?: string }>()
+  private todoDueOf(abs: string): { todoDue?: string } {
+    const f = join(abs, 'todo.md')
+    let st; try { st = statSync(f) } catch { return {} }
+    const c = this.dueCache.get(f)
+    if (c && c.mtime === st.mtimeMs) return c.due ? { todoDue: c.due } : {}
+    let due: string | undefined
+    try { for (const t of parseTodo(readFileSync(f, 'utf8'))) if (!t.done && !t.proposed && t.due && (!due || t.due < due)) due = t.due } catch { /* 못 읽으면 없음 */ }
+    this.dueCache.set(f, { mtime: st.mtimeMs, due })
+    return due ? { todoDue: due } : {}
+  }
+  /** `.bot.yml` 의 색 — 주황 언저리와 옛 앰버는 받지 않는다(오케스트레이터 전용 · 판에서 뺀 색) */
+  private cfgColor(c?: string): string | undefined {
+    if (!c || typeof c !== 'string') return undefined
+    return c.toLowerCase() === OLD_AMBER || isOrchLike(c) ? undefined : c
+  }
+  /**
+   * CN · 사람이 고른 색을 그 폴더 `.bot.yml` 에 적는다 — 폴더를 따라다니니 두 맥·폰이 같은 색을 본다.
+   * ⛔ 판 밖의 색·오케스트레이터는 거절한다(주황은 오케스트레이터 전용).
+   */
+  setColor(id: string, color: string): Bot {
+    const b = this.bot(id); if (!b) throw new Error('봇을 못 찾았어요')
+    if (b.orchestrator) throw new Error('오케스트레이터 색은 바꿀 수 없어요 — 주황은 오케스트레이터 전용이에요')
+    const c = String(color ?? '').toLowerCase()
+    if (isOrchLike(c)) throw new Error('주황은 오케스트레이터 전용이라 고를 수 없어요')
+    if (!colorAllowed(c)) throw new Error('고르기 판의 12색 중에서 골라 주세요')
+    this.saveBotConfig(b.abs, { ...this.botConfig(b.abs), color: c })
+    const a = this.active.find((x) => x.id === id); if (a) a.color = c
+    this.saveActive()
+    return this.bot(id)!
+  }
   /** `meta` 는 방송 프레임에 그대로 실린다 — 재정렬의 주체(`reorderedBy`)처럼 «왜 바뀌었나» 를 화면이 알아야 할 때 */
   private saveActive(meta?: Record<string, unknown>): void {
     const dir = join(this.root, STATE_DIR)
@@ -287,7 +335,7 @@ export class Registry extends EventEmitter {
     const abs = join(this.root, a.rel)
     if (!existsSync(abs)) return null
     const cfg = this.botConfig(abs)
-    return { id: a.id, rel: a.rel, abs, name: this.botName(a), ...this.display(a, abs), section: a.rel.split('/')[0] === a.rel ? '' : a.rel.split('/')[0], color: cfg.color ?? a.color, orchestrator: false, startedAt: a.startedAt, vendor: a.vendor ?? cfg.vendor ?? 'claude', repo: cfg.repo ? resolve(abs, cfg.repo.replace(/^~/, process.env.HOME ?? '')) : undefined, refs: this.refsOf(cfg), routines: cfg.routines ?? [], pinned: a.pinned, orderedBy: a.orderedBy }
+    return { id: a.id, rel: a.rel, abs, name: this.botName(a), ...this.display(a, abs), section: a.rel.split('/')[0] === a.rel ? '' : a.rel.split('/')[0], color: this.cfgColor(cfg.color) ?? a.color, ...this.todoDueOf(abs), orchestrator: false, startedAt: a.startedAt, vendor: a.vendor ?? cfg.vendor ?? 'claude', repo: cfg.repo ? resolve(abs, cfg.repo.replace(/^~/, process.env.HOME ?? '')) : undefined, refs: this.refsOf(cfg), routines: cfg.routines ?? [], pinned: a.pinned, orderedBy: a.orderedBy }
   }
   bot(id: string): Bot | undefined { return this.bots().find((b) => b.id === id) }
   botByRel(rel: string): Bot | undefined { return this.bots().find((b) => b.rel === rel) }
@@ -321,7 +369,7 @@ export class Registry extends EventEmitter {
     //    다른 일이다 — 폴더를 목록에 올리는 데는 프로세스가 하나도 안 든다. 동시 실행은 세션 쪽
     //    상한(봇당 4)이 이미 막고 있다.
     if (!this.hasHarness(abs)) this.scaffold(abs, basename(rel))
-    const color = BOT_COLORS[this.active.length % BOT_COLORS.length]
+    const color = leastUsed(this.active.map((x) => this.cfgColor(this.botConfig(join(this.root, x.rel)).color) ?? x.color ?? ''))   // CN · 가장 덜 쓰인 판 색
     const rec: ActiveRec = { id: `b_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, rel, color, startedAt: Date.now(), vendor: v }
     this.active.push(rec)
     this.saveActive()
@@ -477,6 +525,11 @@ export class Registry extends EventEmitter {
     this.scaffold(abs, name)
     this.emit('bots', this.bots())
     return rel
+  }
+  /** CK-3 · 볼트의 할 일 만들기 규칙(루트 CLAUDE.md 의 ```md todo-rules``` 블록) — 턴마다 읽는다(파일이 바뀌면 다음 턴부터) */
+  todoRules(): string | null {
+    const f = this.rulesFile()
+    try { return existsSync(f) ? parseTodoRules(readFileSync(f, 'utf8')) : null } catch { return null }
   }
   /** 볼트 공통 지침(루트 CLAUDE.md 의 ```md new-folder``` 블록) — 스캐폴드 때마다 새로 읽는다 */
   folderTemplate(): string | null {

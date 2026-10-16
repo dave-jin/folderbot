@@ -62,9 +62,17 @@ const COMMON: Tool[] = [
    *    봇이 여는 길은 **오케스트레이터 한 곳**이고, 다른 봇에 나눠 주는 일은 여전히 오케스트레이터만 한다. 받는 쪽은 고정이라 인자가 없다.
    */
   { name: 'orch_ask', description: '다른 폴더 봇의 도움이 필요하거나 내 권한 밖의 일(폴더 이동·생성 등)이 필요할 때 오케스트레이터에게 요청한다. 받는 쪽은 오케스트레이터로 고정이다. 답은 이 세션으로 돌아온다 — 기다리는 동안 다른 일을 해도 된다. 한 세션에서 한 시간에 3건까지. 위임받은 세션·소통 세션에서는 못 쓴다.', inputSchema: obj({ text: { type: 'string', description: '무엇이 필요한지 · 왜 · 어떤 답을 원하는지' } }, ['text']) },
-  { name: 'todo_add', description: '이 봇 폴더의 todo.md 에 항목을 추가한다. 봇이 적은 줄로 표시된다.', inputSchema: obj({ title: { type: 'string' }, desc: { type: 'string' }, for_user: { type: 'boolean', description: '사용자가 할 일이면 true (알림이 간다)' } }, ['title']) }
+  /**
+   * 🔴 CK-3 · 봇은 할 일을 **제안**하고 사람이 정한다 (2026-10-16 Dave «추천대로» · 볼트 `todo-rules`).
+   *   `todo_add` 는 사람이 대화에서 «할 일로 적어 줘» 라고 한 턴에서만 정식 줄이 된다 — 그 밖의 턴(봇·루틴·바깥 상대)이 부르면 제안으로 내려간다.
+   */
+  { name: 'todo_add', description: '이 봇 폴더의 todo.md 에 정식 할 일 줄을 쓴다. 사람이 대화에서 «할 일로 적어 줘» 라고 했을 때만 쓴다 — 그 밖에 할 일이 생기면 todo_propose 로 제안한다(사람이 시키지 않은 턴에서 부르면 제안으로 내려간다). 봇이 적은 줄로 표시된다.', inputSchema: obj({ title: { type: 'string', description: '한글 15자 이내' }, desc: { type: 'string', description: '설명 — 약 N분 · 첫 행동: … 처럼 소요 시간과 첫 행동을 붙인다' }, due: { type: 'string', description: '마감 YYYY-MM-DD — 바깥에서 정해진 날(제출일·행사일·약속일)만. 지어내지 않는다' }, for_user: { type: 'boolean', description: '사용자가 할 일이면 true (알림이 간다)' } }, ['title']) },
+  { name: 'todo_propose', description: '할 일을 제안한다 — todo.md 에 «제안» 줄로 들어가고 화면 «제안» 칸에 뜬다. 사람이 [넣기] 해야 정식 할 일이 되고 Akiflow 로 간다. 같은 일이 이미 있으면 새로 제안하지 말고 그 줄 설명에 덧붙이자고 대화에서 말한다. 봇 자신이 다음 세션에 할 일은 여기가 아니라 state.md «다음 작업» 에 쓴다.', inputSchema: obj({ title: { type: 'string', description: '한글 15자 이내' }, desc: { type: 'string', description: '설명 — 약 N분 · 첫 행동: …' }, due: { type: 'string', description: '마감 YYYY-MM-DD — 바깥에서 정해진 날만' } }, ['title']) }
 ]
 const ORCH: Tool[] = [
+  // CK-2 · Akiflow 동기화 루틴 전용 — 무엇을 할지는 호스트가 정하고 루틴은 Akiflow MCP 로 손만 쓴다
+  { name: 'akiflow_sync_plan', description: 'Akiflow 동기화 루틴 전용 · 두 번 부른다. ① remote 없이(projects 에 list_projects 결과) → 읽을 태스크 id(check)·훑을 프로젝트(watchProjects)·scanOnly. ② 읽어 온 태스크를 remote 로 주면 → 그 변화를 todo.md 로 내린 뒤 이번 회차의 runId 와 ops(create·update·complete·delete). mode 가 live 가 아니면 아무것도 하지 않는다.', inputSchema: obj({ projects: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' } } } }, remote: { type: 'array', items: { type: 'object' } } }) },
+  { name: 'akiflow_sync_ack', description: 'Akiflow 동기화 루틴 전용. akiflow_sync_plan(②)의 ops 를 실행한 결과(results: {key, ok, akId?, error?})를 runId 와 함께 돌려준다. 호스트가 만든 태스크 id 를 todo.md 줄에 단다.', inputSchema: obj({ runId: { type: 'string' }, results: { type: 'array', items: { type: 'object' } }, remote: { type: 'array', items: { type: 'object' } } }, ['runId']) },
   { name: 'bots_candidates', description: '봇 후보 폴더(규칙의 active 글롭에 맞는 폴더)를 최근 수정순으로. 하네스 유무·활성 여부 포함.', inputSchema: obj({}) },
   { name: 'bot_start', description: '폴더에서 봇을 시작한다. 하네스가 없으면 깔아 준다. rel 은 루트 기준 상대 경로.', inputSchema: obj({ rel: { type: 'string' } }, ['rel']) },
   { name: 'bot_stop', description: '봇을 정지(휴면)한다. 기록은 남는다.', inputSchema: obj({ bot: { type: 'string' } }, ['bot']) },
@@ -241,7 +249,22 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       const out = host.bridges.send(s('peer'), botId, { kind: s('kind'), text: s('text'), title: s('title') || undefined, re: s('re') || undefined, urgent: a.urgent === true, needsHuman: a.needs_human === true })
       return `편지를 썼어요 · ${out.id} · ${out.rel}`
     }
-    case 'todo_add': { const b = reg.bot(botId); if (!b) throw new Error('봇을 못 찾았어요'); host.todoAdd(b, s('title'), s('desc'), 'bot', !!a.for_user); return '추가했어요' }
+    case 'akiflow_sync_plan': case 'akiflow_sync_ack': {
+      const arr = (k: string) => (Array.isArray(a[k]) ? (a[k] as Record<string, unknown>[]) : [])
+      const remoteOf = () => arr('remote').filter((x) => typeof x.id === 'string').map((x) => ({ id: String(x.id), title: String(x.title ?? ''), description: typeof x.description === 'string' ? x.description : undefined, done: x.done === true, deadline: typeof x.deadline === 'string' ? x.deadline.slice(0, 10) : null, project_id: typeof x.project_id === 'string' ? x.project_id : null }))
+      if (name === 'akiflow_sync_plan') return host.akiflow.plan(Array.isArray(a.projects) ? (a.projects as { id: string; name: string }[]).filter((x) => x && typeof x.id === 'string' && typeof x.name === 'string') : undefined, Array.isArray(a.remote) ? remoteOf() : undefined)
+      const results = arr('results').map((x) => ({ key: String(x.key ?? ''), ok: x.ok === true, akId: typeof x.akId === 'string' ? x.akId : undefined, error: typeof x.error === 'string' ? x.error : undefined }))
+      return host.akiflow.ack(s('runId'), results, remoteOf())
+    }
+    case 'todo_add': case 'todo_propose': {
+      const b = reg.bot(botId); if (!b) throw new Error('봇을 못 찾았어요')
+      const due = s('due').trim(); if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) throw new Error('마감은 YYYY-MM-DD 로 주세요(바깥에서 정해진 날만)')
+      const from = sid ? host.sessions.get(sid)?.turnFrom : undefined
+      // 사람이 시킨 턴의 todo_add 만 정식 줄 — 나머지는 제안(CK-3 규칙 2)
+      const proposed = name === 'todo_propose' || (from !== undefined && from !== 'human')
+      host.todoAdd(b, s('title'), s('desc'), 'bot', !proposed && !!a.for_user, '', { ...(due ? { due } : {}), ...(proposed ? { proposed: true } : {}) })
+      return proposed ? `제안으로 올렸어요 — 사람이 «제안» 칸에서 [넣기] 하면 할 일이 돼요${name === 'todo_add' ? ' (사람이 시킨 턴이 아니라 제안으로 내렸어요)' : ''}` : '추가했어요'
+    }
   }
   throw new Error('unknown tool')
 }

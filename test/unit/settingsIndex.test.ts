@@ -26,7 +26,7 @@ describe('설정 검색 인덱스', () => {
     expect(ghosts.map((g) => g.t), '화면에 없는 인덱스').toEqual([])
   })
   it('칸 id 는 SecId 에 있는 것만', () => {
-    const secs = new Set(['general', 'host', 'devices', 'claude', 'codex', 'sessions', 'notify', 'todo', 'ref'])
+    const secs = new Set(['general', 'host', 'devices', 'claude', 'codex', 'sessions', 'notify', 'todo', 'akiflow', 'ref'])
     expect(index.filter((i) => !secs.has(i.sec)).map((i) => i.sec)).toEqual([])
   })
   it('Claude 새 채팅 기본 권한이 줄로도 인덱스로도 있다 (2026-09-17 Dave)', () => {

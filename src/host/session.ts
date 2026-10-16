@@ -264,6 +264,15 @@ export interface SessionRec {
   handover?: string
   /** BS · 지금(마지막) 턴을 누가 시작했나 — 사람만 시킬 수 있는 도구를 MCP 가 이것으로 거른다(core/turnGuard) */
   turnFrom?: TurnFrom
+  /**
+   * 🔴 CL-1 · 사람이 멈췄다 — 대기 말(화면·호스트 둘 다)을 붙잡아 둔다. 사람이 [이어 보내기] 하거나 새 말을 보내면 풀린다(2026-10-16 Dave «추천대로»).
+   *    종전에는 멈추자마자 대기열 첫 말이 나가서 «멈추고 생각하려던» 순간에 다음 말이 나갔다.
+   */
+  held?: boolean
+  /** CL-1 · 사람이 멈춘 턴 — 화면 끝에 «응답을 멈췄어요 — [프롬프트 고치기] [다시 시도]» 를 세운다. 다음 사람 말이 지운다 */
+  stopped?: { at: number }
+  /** CL-1 · 사람이 멈춤을 보냈고 그 턴의 끝(result)을 아직 못 받았다 — 끝이 오류 꼴이어도 오류로 두지 않는다 */
+  stopping?: boolean
   id: string
   botId: string
   name: string
@@ -382,7 +391,7 @@ export class SessionManager extends EventEmitter {
   }
   info(r: SessionRec): SessionInfo {
     const w = this.workers.get(r.id)
-    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, inflight: r.inflight, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, ...(r.comm ? { comm: true } : {}), ...(r.channel ? { channel: r.channel } : {}), ...(r.delegatedFrom && !r.comm ? { delegated: true } : {}), ...(r.adopted ? { adopted: true } : {}), ...(r.exChannel ? { exChannel: true } : {}), ...(r.exComm ? { exComm: true } : {}), ...(r.queue?.length ? { queue: r.queue } : {}), activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending, ...(r.slash?.length ? { slashN: r.slash.length } : {}) }
+    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, inflight: r.inflight, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, ...(r.comm ? { comm: true } : {}), ...(r.channel ? { channel: r.channel } : {}), ...(r.delegatedFrom && !r.comm ? { delegated: true } : {}), ...(r.adopted ? { adopted: true } : {}), ...(r.exChannel ? { exChannel: true } : {}), ...(r.exComm ? { exComm: true } : {}), ...(r.queue?.length ? { queue: r.queue } : {}), ...(r.held ? { held: true } : {}), ...(r.stopped ? { stopped: r.stopped } : {}), activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending, ...(r.slash?.length ? { slashN: r.slash.length } : {}) }
   }
   get(id: string): SessionRec | undefined { return this.recs.get(id) }
   /** 볼트 전체의 세션 기록 — 「지난 대화 찾기」 가 훑는다(읽기만) */
@@ -667,7 +676,7 @@ export class SessionManager extends EventEmitter {
    * @returns 'sent' · 'queued'
    */
   sendFromBot(r: SessionRec, bot: Bot, msg: QueuedMsg): 'sent' | 'queued' {
-    if (this.mustWait(r) || r.queue?.length) { this.enqueue(r, msg); return 'queued' }
+    if (this.mustWait(r) || r.queue?.length || r.held) { this.enqueue(r, msg); return 'queued' }   // CL-1 · 사람이 멈춰 둔 세션에는 봇 말도 줄을 선다
     const why = r.comm || r.channel ? compactReason({ ...r, comm: true }, 'before') : null
     if (why) { this.enqueue(r, msg); this.compact(r, bot, why); return 'queued' }
     this.send(r, bot, msg.text, undefined, msg.origin ?? 'bot')
@@ -711,6 +720,7 @@ export class SessionManager extends EventEmitter {
     if (!this.recs.has(r.id) || r.state === 'running' || r.state === 'awaiting_input') return
     const bot = this.botOf(r.botId); if (!bot) return
     if (r.rotating) { this.finishRotate(r, bot); return }
+    if (r.held) return   // CL-1 · 사람이 멈췄다 — 대기 말도 압축도 사람이 [이어 보내기] 할 때까지
     if (r.queue?.length) {
       // BQ-4 · 편지는 묶어서 한 턴에 — 큐에 쌓인 편지 묶음을 모두 모아 한 번에 보낸다(봇 말은 종전대로 하나씩)
       const head = r.queue[0]
@@ -1001,11 +1011,16 @@ export class SessionManager extends EventEmitter {
       const cur = this.streaming.get(r.id); if (cur) { cur.streaming = false; this.streaming.delete(r.id); this.push(r, cur, true) }
       this.endThinking(r)
       for (const it of closeOpenItems(r.items, 'result')) this.push(r, it, true)
-      this.push(r, { id: itemId('r'), t: Date.now(), kind: 'result', ok: !line.is_error, durationMs: line.duration_ms ?? 0, costUsd: line.total_cost_usd, error: line.is_error ? String(line.error ?? line.result ?? '') : undefined })
+      /**
+       * CL-1 · 사람이 멈춘 턴의 끝 — 실 CLI(2.1.288)는 `error_during_execution`·`is_error` 로 끝낸다(10/16 실측). 그건 오류가 아니라 사람의 뜻이므로
+       * 빨간 오류 줄·오류 상태로 두지 않는다. 화면 끝의 «응답을 멈췄어요» 줄이 그 자리를 말한다.
+       */
+      const humanStop = !!r.stopping && !!line.is_error; r.stopping = undefined
+      if (!humanStop) this.push(r, { id: itemId('r'), t: Date.now(), kind: 'result', ok: !line.is_error, durationMs: line.duration_ms ?? 0, costUsd: line.total_cost_usd, error: line.is_error ? String(line.error ?? line.result ?? '') : undefined })
       const ctx = contextOf(line, r.ctx, r.model); if (ctx) r.ctx = ctx
       r.inflight = undefined                        // 턴이 끝났으면 아무도 안 들고 있다 (AB)
       this.setActivity(r, '', true)
-      this.setState(r, { kind: 'result_received', isError: !!line.is_error })
+      this.setState(r, { kind: 'result_received', isError: !!line.is_error && !humanStop })
       // 안전망 — 이 턴에 파일을 썼으면 턴이 끝날 때 한 번 더 알린다(중간 신호를 놓친 화면도 여기서 따라잡는다)
       if (r.wroteThisTurn) { r.wroteThisTurn = false; this.emit('files', r.botId) }
       if (r.restartPending) { const w = this.workers.get(r.id); if (!w || !w.pending.size) { r.restartPending = false; if (w) { w.kill(); this.workers.delete(r.id) } } }
@@ -1015,6 +1030,9 @@ export class SessionManager extends EventEmitter {
 
   send(r: SessionRec, bot: Bot, text: string, client?: ClientCtx, origin: TurnFrom = 'human'): void {
     r.turnFrom = origin
+    // CL-1 · 사람이 새 말을 보내면 멈춤이 풀린다 — 붙잡아 둔 대기 말은 이 턴 뒤에 차례로 나간다
+    if (origin === 'human' && (r.held || r.stopped)) { r.held = undefined; r.stopped = undefined }
+    r.stopping = undefined   // 멈춘 턴의 끝이 안 왔어도 새 턴의 진짜 오류를 숨기지 않게
     // BV-2 · 갈아탄 채널의 첫 말 앞에 인수인계를 한 번 붙인다
     // 🔴 CF-2 · 슬래시 명령은 맨 앞이 `/` 여야 CLI 가 명령으로 받는다 — 인수인계·기기 블록은 다음 일반 말로 미룬다
     const slash = r.vendor !== 'codex' && isCliSlash(text, this.knownSlash(r, bot))
@@ -1091,7 +1109,17 @@ export class SessionManager extends EventEmitter {
     this.push(r, { id: itemId('s'), t: Date.now(), kind: 'user', text: Object.values(answers).join(' · ') })
     this.setState(r, { kind: 'input_provided' })
   }
-  interrupt(r: SessionRec): void { this.workers.get(r.id)?.interrupt() }
+  /** 멈추기 — `human` 이면 대기 말을 붙잡고(CL-1) 멈춘 자리를 적는다. 쉬는 세션에는 아무 일도 안 한다 */
+  interrupt(r: SessionRec, human = false): void {
+    if (human && (r.state === 'running' || r.state === 'awaiting_input')) { r.held = true; r.stopped = { at: Date.now() }; r.stopping = true; this.persist(r); this.emit('sessions', r.botId) }
+    this.workers.get(r.id)?.interrupt()
+  }
+  /** CL-1 · [이어 보내기] — 붙잡아 둔 대기 말을 다시 내보낸다 */
+  resume(r: SessionRec): void {
+    if (!r.held) return
+    r.held = undefined; r.stopped = undefined; this.persist(r); this.emit('sessions', r.botId)
+    this.afterTurn(r)
+  }
   acknowledge(r: SessionRec): void { this.setState(r, { kind: 'acknowledged' }) }
   /** CI · 시스템이 대화에 한 줄 남긴다(사람 말도 봇 말도 아니다) — 끊긴 루틴 회차처럼 «왜 여기서 멈췄나» 를 그 세션에서 보이게 */
   systemNote(id: string, text: string): boolean {
