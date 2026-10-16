@@ -34,7 +34,7 @@ import { openSessionOf, takeoverMode } from '../core/autoArea'
 import { clampDockOffset, isDockDrag, readDockOffset } from '../core/dock'
 import { tabActive } from '../core/tabbar'
 import { SwipeRow } from './SwipeRow'
-import { byDue, dueChip } from '../core/botName'
+import { botDueChip, byDue } from '../core/botName'
 import { LocalOpenHost, localBridge, openOnThisDevice, useLocalSettings } from './localOpen'
 import { botRelOf } from '../core/paths'
 import { ICON_PX, useIconSize, useTheme } from './theme'
@@ -920,7 +920,7 @@ function Main() {
               onDragOver={(e) => { if (!dragBot || b.orchestrator || dragBot === b.id) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOverBot(b.id) }}
               onDragLeave={() => setOverBot((x) => (x === b.id ? null : x))}
               onDrop={(e) => { e.preventDefault(); void dropBot(b.id) }}
-              onContextMenu={(e) => { e.preventDefault(); hovOut(); if (!b.orchestrator) setRailCtx({ x: e.clientX, y: e.clientY, id: b.id, name: b.name }) }} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={ICON_PX[iconSz]} mood={sum.mood} unread={sum.unread} recent={sum.recent} mono /><span className="n"><BotName b={b} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span>{b.due ? null : <time>{fmtTime(sum.t)}</time>}</button>)}
+              onContextMenu={(e) => { e.preventDefault(); hovOut(); if (!b.orchestrator) setRailCtx({ x: e.clientX, y: e.clientY, id: b.id, name: b.name }) }} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={ICON_PX[iconSz]} mood={sum.mood} unread={sum.unread} recent={sum.recent} mono /><span className="n"><BotName b={b} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span>{b.due || b.todoDue ? null : <time>{fmtTime(sum.t)}</time>}</button>)}
           </div>)}
         </div>
         {hovRow ? <HoverCard b={hovRow.b} sum={hovRow.sum} top={hov!.top} left={fit.sb + 6} /> : null}
@@ -1184,7 +1184,7 @@ type Row = [string, { b: Bot; sum: ReturnType<typeof botSummary> }[]]
  * 툴팁은 원래 폴더명 전체. 관제·규칙 밖 폴더는 제목만 나온다.
  */
 function BotName({ b, chip = true }: { b: Bot; chip?: boolean }) {
-  const due = chip && b.due ? dueChip(b.due.date, b.due.precision) : null
+  const due = chip ? botDueChip(b) : null
   const ref = useRef<HTMLSpanElement>(null); const tagW = useRef(0)
   const [hideTag, setHideTag] = useState(false)
   // 태그는 «반쯤» 보이지 않는다 — 제목의 본래 폭 + 태그 + 칩이 안 들어가면 태그를 통째로 접고, 다시 들어가면 편다
@@ -1199,7 +1199,7 @@ function BotName({ b, chip = true }: { b: Bot; chip?: boolean }) {
     }
     fit(); const ro = new ResizeObserver(fit); ro.observe(el); return () => ro.disconnect()
   }, [b.kind, b.displayName, due?.text])
-  return <span ref={ref} className="bname" title={b.name}><b className="dn">{b.displayName}</b>{b.kind && !hideTag ? <span className="tag">{b.kind}</span> : null}{due ? <span className={`due ${due.tone}`}>{due.text}</span> : null}</span>
+  return <span ref={ref} className="bname" title={b.name}><b className="dn">{b.displayName}</b>{b.kind && !hideTag ? <span className="tag">{b.kind}</span> : null}{due ? <span className={`due ${due.tone}`} title={due.line ? `할 일 마감 — ${b.name}` : undefined}>{due.text}</span> : null}</span>
 }
 
 function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say, railSort, setRailSort, prefetch }: { prefetch: (botId: string) => void; railSort: RailSort; setRailSort: (k: RailSort) => void; rows: Row[]; bot: Bot; go: (b: string, sid?: string) => void; setModal: (m: 'picker' | 'notify' | 'settings') => void; waiting: number; unread: number; onAsk: () => void; onTodo: (botId: string) => void; say: (m: string) => void }) {
@@ -1240,7 +1240,7 @@ function Home({ rows, bot, go, setModal, waiting, unread, onAsk, onTodo, say, ra
       {rows.map(([sec, list]) => <div key={sec}>
         <div className="secl">{sec}</div>
         {list.map(({ b, sum }) => {
-          const row = <button key={b.id} className={`mrow ${sum.unread ? 'unread' : ''}`} onPointerDown={() => prefetch(b.id)} onClick={() => go(b.id)}><span className="av"><FolderBot color={b.color} size={46} mood={sum.mood} unread={sum.unread} recent={sum.recent} mono /></span><span className="t"><span className="l1"><BotName b={b} chip={false} />{b.due ? (() => { const d = dueChip(b.due.date, b.due.precision); return d ? <span className={`due ${d.tone}`}>{d.text}</span> : null })() : <time>{fmtTime(sum.t)}</time>}</span><span className="l2">{sum.text}</span></span></button>
+          const row = <button key={b.id} className={`mrow ${sum.unread ? 'unread' : ''}`} onPointerDown={() => prefetch(b.id)} onClick={() => go(b.id)}><span className="av"><FolderBot color={b.color} size={46} mood={sum.mood} unread={sum.unread} recent={sum.recent} mono /></span><span className="t"><span className="l1"><BotName b={b} chip={false} />{b.due || b.todoDue ? (() => { const d = botDueChip(b); return d ? <span className={`due ${d.tone}`} title={d.line ? '할 일 마감' : undefined}>{d.text}</span> : null })() : <time>{fmtTime(sum.t)}</time>}</span><span className="l2">{sum.text}</span></span></button>
           // 관제(오케스트레이터)는 고정·지우기·은퇴의 대상이 아니다 — 쓸리지 않는다
           return b.orchestrator ? row : <SwipeRow key={b.id} cfg={FOLDER_SWIPE} labelFor={(a) => (a === 'pin' && b.pinned ? '고정 풀기' : undefined)} onAct={(a) => void folderAct(b, a)}>{row}</SwipeRow>
         })}
@@ -1332,6 +1332,8 @@ function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled
   useEffect(() => { setFiles(null) }, [bot.id, filesTick])
   const last = items[items.length - 1]
   const lastUser = useMemo(() => { for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === 'user') return items[i] as Extract<ChatItem, { kind: 'user' }>; return null }, [items])
+  /** CL-1 · 멈춘 턴이 고친 파일 — «응답을 멈췄어요» 줄에 칩으로(⇄ 로 무엇이 바뀌었나). 파일은 되돌리지 않는다 */
+  const stoppedFiles = useMemo(() => { const out: string[] = []; for (let i = items.length - 1; i >= 0; i--) { const it = items[i]; if (it.kind === 'user') break; if (it.kind === 'files') for (const p of it.paths) if (!out.includes(p)) out.push(p) } return out }, [items])
   const pinnedItem = useMemo(() => (pinnedId ? (items.find((x) => x.id === pinnedId && x.kind === 'user') as Extract<ChatItem, { kind: 'user' }> | undefined) ?? null : null), [items, pinnedId])
   const lastAssistant = useMemo(() => { for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === 'assistant') return items[i].id; return null }, [items])
   /**
@@ -1442,10 +1444,11 @@ function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled
   // ⚠ 대기열을 내보내는 일은 **부모**가 한다 — 보고 있지 않은 세션의 것도 나가야 하기 때문(위 머리말)
   const sendText = async (raw: string, direct = false) => {
     let t = raw.trim(); if ((!t && !attach.length) || busy || uploading) return
-    // CL-1 · 고쳐 다시(A · 이어서 고치기) — 앞 대화는 두고, 멈춘 요청을 따르지 말라는 한 줄을 앞에 붙인다
-    if (fixing && cur?.stopped && t) t = `[앞 요청은 사람이 멈췄다 — 아래로 바꾼다]\n${t}`
+    const wasFixing = fixing && !!cur?.stopped && !running && !!t
     setFixing(false)
     if (attach.length) t = `${t || '첨부한 파일을 봐 줘.'}\n\n첨부 파일 (읽어서 참고해):\n${attach.map((a) => (a.dir ? `- ${a.abs}/ (폴더 — 안의 파일들)` : `- ${a.abs}`)).join('\n')}`
+    // 🔴 CL-1 · 고쳐 다시 — B(되감기)가 되면 멈춘 말 직전으로 갈라 보낸다. 안 되면(Codex · 기록에 멈춘 말이 없음) A — 앞 대화는 두고 머리말 한 줄
+    if (wasFixing) { if (await rewindSend(t)) return; t = `[앞 요청은 사람이 멈췄다 — 아래로 바꾼다]\n${t}` }
     setText(''); setAttach([])
     // 보냈으면 초안은 그 자리에서 지운다. ⚠ 첫 메시지는 세션을 만들며 키가 `new` → 실제 id 로 바뀌므로
     //    지연 저장이 새 키에 대고 지우는 수가 있다 — 둘 다 명시적으로 치운다.
@@ -1470,15 +1473,20 @@ function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled
    *    지금 하던 단계가 잘린다는 것을 단추 이름에 드러낸다.
    */
   const curRef = useRef(cur); curRef.current = cur
+  /** 지금 말을 넣으면 안 되나 — 호스트 `mustWait` 와 같은 판정(미뤄진 질문만 걸렸으면 넣어도 된다) */
+  const mustWaitNow = () => running || (state === 'awaiting_input' && !(pending.length > 0 && pending.every((p) => p.deferred)))
   const sendNow = async () => {
     if (!cur || (!text.trim() && !attach.length) || busy || uploading) return
     const sid = cur.id
     // 보낼 글은 지금 떼어 두고 입력칸은 바로 비운다 — 멈추기를 기다리는 동안 새로 친 글을 지우지 않게(리뷰 10/16)
+    // 고쳐 다시 중에 ⌥⏎ — 이미 멈춘 뒤라 ⏎ 와 같은 길(되감기 B · 안 되면 머리말 A)로 보낸다
+    if (fixing && cur.stopped && !running && state !== 'awaiting_input') { void sendText(text); return }
     let t = text.trim()
-    if (fixing && cur.stopped && t) t = `[앞 요청은 사람이 멈췄다 — 아래로 바꾼다]\n${t}`   // 고쳐 다시 중에 ⌥⏎ 해도 머리말이 붙는다
     setFixing(false)
     if (attach.length) t = `${t || '첨부한 파일을 봐 줘.'}\n\n첨부 파일 (읽어서 참고해):\n${attach.map((a) => (a.dir ? `- ${a.abs}/ (폴더 — 안의 파일들)` : `- ${a.abs}`)).join('\n')}`
     setText(''); setAttach([]); try { localStorage.removeItem(draftRef.current) } catch { /* */ }
+    // 미뤄진 질문만 걸린 대기는 턴이 이미 끝났다 — 멈출 것 없이 바로 보낸다(그 말이 질문을 닫는다 · 리뷰 10/16)
+    if (!mustWaitNow()) { try { await post(t) } catch (e) { onQueue((q) => [t, ...q]); say((e as Error).message) } return }
     await api(`/sessions/${sid}/interrupt`, { body: { by: 'human' } }).catch(() => {})
     let idle = false
     for (let i = 0; i < 60; i++) { const c = curRef.current; if (!c || c.id !== sid || (c.state !== 'running' && c.state !== 'awaiting_input')) { idle = true; break } await new Promise((r) => setTimeout(r, 150)) }
@@ -1492,7 +1500,7 @@ function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled
     const t = queue[i]; if (!cur || !t) return
     const sid = cur.id
     onQueue((l) => l.filter((_, k) => k !== i))
-    if (running || state === 'awaiting_input') {
+    if (mustWaitNow()) {
       await api(`/sessions/${sid}/interrupt`, { body: { by: 'human' } }).catch(() => {})
       let idle = false
       for (let k = 0; k < 60; k++) { const c = curRef.current; if (!c || c.id !== sid || (c.state !== 'running' && c.state !== 'awaiting_input')) { idle = true; break } await new Promise((r) => setTimeout(r, 150)) }
@@ -1501,6 +1509,15 @@ function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled
     try { await post(t) } catch (e) { onQueue((q) => [t, ...q]); say((e as Error).message) }   // 실패하면 말을 잃지 않게 되돌린다
   }
   const [fixing, setFixing] = useState(false)
+  /** CL-1 B · 되감기로 보내기 — 호스트가 못 하면 false(화면이 A 로 보낸다) */
+  const rewindSend = async (t: string): Promise<boolean> => {
+    if (!cur || !cur.stopped) return false
+    setText(''); setAttach([]); try { localStorage.removeItem(draftRef.current) } catch { /* */ }
+    setBusy(true)
+    try { const r = await api<{ ok: boolean }>(`/sessions/${cur.id}/rewind`, { body: { text: t, client: clientCtx() } }); return !!r.ok } catch { return false } finally { setBusy(false) }
+  }
+  /** [다시 시도] — 되감아 같은 말을 다시(대화에 같은 말이 두 번 서지 않게). 안 되면 그냥 다시 보낸다 */
+  const retryStopped = async () => { if (!lastUser) return; if (!(await rewindSend(lastUser.text))) void sendText(lastUser.text) }
   useEffect(() => { setFixing(false) }, [cur?.id])
   /** 멈춘 자리 — [프롬프트 고치기] 는 마지막 말을 입력칸으로 올린다(⎋ 취소) · [다시 시도] 는 같은 말을 다시 보낸다 */
   const fixPrompt = () => { if (!lastUser) return; setText(lastUser.text); setFixing(true); window.setTimeout(() => taRef.current?.focus(), 0) }
@@ -1590,15 +1607,21 @@ function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled
    * ⚠ iOS Safari 는 `overflow-anchor` 가 없어 위쪽 그림·코드가 늦게 그려지면 자리가 밀린다 — 120·400·800ms 에 다시 맞추되,
    *   **사람이 그사이 움직였으면 손대지 않는다**(우리가 놓은 값과 다르면 사람이다 · P 라운드와 같은 판정).
    */
-  const [newMark, setNewMark] = useState<{ sid: string; id: string | null }>({ sid: '', id: null })
+  const [newMark, setNewMark] = useState<{ sid: string; id: string | null; stay?: boolean }>({ sid: '', id: null })
   useEffect(() => {
     if (!cur || !loaded || drill || newMark.sid === cur.id) return
-    const keyed = rows.map((r) => (r.k === 'group' ? { id: r.items[0].id, t: r.items[0].t, user: false } : { id: r.it.id, t: r.it.t, user: r.it.kind === 'user' }))
+    // ⚠ 다른 봇에 갔다 와도 **같은 새 답이면** 자리를 다시 정하지 않는다(기획안 §9) — 그새 새 답이 왔을 때만 다시 정한다
+    //    표시는 처음 정한 자리에 그대로 두되 다시 굴리지는 않는다(`stay` · 리뷰 10/16 — 종전에는 표시가 사라졌다)
+    const was = ANCHORED.get(cur.id)
+    if (was && was.at === (cur.lastReplyAt ?? 0)) { setNewMark({ sid: cur.id, id: was.id, stay: true }); return }
+    const keyed = rows.map((r) => (r.k === 'group' ? { id: r.items[0].id, t: r.items[0].t, user: false } : r.k === 'prior' ? { id: r.id, t: r.items[0].t, user: true } : { id: r.it.id, t: r.it.t, user: r.it.kind === 'user' }))
     const i = openAnchor(keyed, cur.lastReplyAt, cur.readAt)
-    setNewMark({ sid: cur.id, id: i >= 0 ? keyed[i].id : null })
+    const id = i >= 0 ? keyed[i].id : null
+    ANCHORED.set(cur.id, { at: cur.lastReplyAt ?? 0, id })
+    setNewMark({ sid: cur.id, id })
   }, [cur?.id, loaded, rows, drill])
   useEffect(() => {
-    if (!cur || newMark.sid !== cur.id || !newMark.id) return
+    if (!cur || newMark.sid !== cur.id || !newMark.id || newMark.stay) return
     const sc = scRef.current; if (!sc) return
     let ours: number | null = null
     const place = (): boolean => {
@@ -1747,7 +1770,7 @@ function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled
       : <button className={`sendb ${mode === 'off' ? 'off' : ''}`} onMouseDown={(e) => e.preventDefault()} onClick={send} disabled={mode === 'off' || busy || uploading} title={mode === 'queue' ? `대기열에 넣기 (${sendKey})` : `보내기 (${sendKey})`}><Icon n="up" size={phone ? 16 : 12} />{mode === 'queue' ? <span className="bd">+{queue.length + 1}</span> : null}</button>
   const sendEl = mode === 'queue' && (running || state === 'awaiting_input') ? <>{stopBtn}{sendBtn}</> : sendBtn
   /** CL-2 · 일하는 중에 글을 쓰면 «⚡ 멈추고 보내기» — 보내기 단추는 그대로 «대기» 다 */
-  const nowChip = mode === 'queue' && running && !drill ? <button className="nowchip" onMouseDown={(e) => e.preventDefault()} onClick={() => void sendNow()} title={enterSends ? '지금 하던 단계를 멈추고 이 말을 바로 보내요 (⌥⏎)' : '지금 하던 단계를 멈추고 이 말을 바로 보내요'}>⚡ 멈추고 보내기{enterSends ? <span className="k">⌥⏎</span> : null}</button> : null
+  const nowChip = mode === 'queue' && (running || state === 'awaiting_input') && !drill ? <button className="nowchip" onMouseDown={(e) => e.preventDefault()} onClick={() => void sendNow()} title={enterSends ? '지금 하던 단계를 멈추고 이 말을 바로 보내요 (⌥⏎)' : '지금 하던 단계를 멈추고 이 말을 바로 보내요'}>⚡ 멈추고 보내기{enterSends ? <span className="k">⌥⏎</span> : null}</button> : null
   const popEl = pop === 'mode' ? <div className="cpop"><div className="h">모드 · 이 세션</div>{MODES.map((m, i) => <button key={m.v} className={`prow2 ${cfg.mode === m.v ? 'on' : ''}`} onClick={() => void applyCfg({ permissionMode: m.v })}><div className="t"><b>{m.t}</b><small>{m.d}</small></div>{cfg.mode === m.v ? <Icon n="check" size={13} /> : <span className="k">{i + 1}</span>}</button>)}<div className="hint"><span>1~4</span><span className="sp" /><span>새 세션은 설정의 기본값으로</span></div>{cur?.restartPending ? <div className="hint pend">{modePendTitle}</div> : null}</div>
     /**
      * 🔴 **종류별 최신 하나씩만 보인다** (2026-09-14 Dave: «다른 모델은 안쓰고 최신 버전만 종류별로만
@@ -1867,15 +1890,17 @@ function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled
       <div className="chat-body">
         {!cur && !drill ? <div className="empty" style={{ flex: 1 }}><FolderBot color={bot.color} size={40} mood="idle" /><div><b>{bot.name}</b>{bot.orchestrator ? ' — 볼트 전체를 보는 관제 봇이에요. "지금 뭐 돌고 있어?", "Inbox 정리해 줘", "X 폴더에서 시작해".' : ' 봇이에요. 이 폴더의 지침·기억·자료를 들고 일해요.'}</div></div> : null}
         {drillSub ? <div className="drill-p"><div className="meta" style={{ cursor: 'default' }}>무엇을 시켰나</div><div className="tx">{drillSub.prompt || drillSub.name}</div><hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '4px 0', width: '100%' }} /></div> : null}
-        <SidCtx.Provider value={{ sid: cur?.id ?? '', botId: bot.id }}>{rows.map((r) => { const rid = r.k === 'group' ? r.items[0].id : r.it.id; return <Fragment key={rid}>
+        <SidCtx.Provider value={{ sid: cur?.id ?? '', botId: bot.id }}>{rows.map((r) => { const rid = r.k === 'group' ? r.items[0].id : r.k === 'prior' ? r.id : r.it.id; return <Fragment key={rid}>
           {/* CO · 이 세션을 열 때 정한 «여기부터 새 답» — 세션을 바꾸기 전까지 그 자리에 둔다 */}
           {newMark.id === rid && newMark.sid === cur?.id && !drill ? <div className="newmark" role="separator"><span>여기부터 새 답</span></div> : null}
-          {r.k === 'group'
+          {r.k === 'prior'
+          ? <PriorTry items={r.items} files={r.files} bot={bot} onFile={(p) => onFile(p)} />
+          : r.k === 'group'
           ? <ToolGroup items={r.items} endT={r.endT} base={bot.abs} onFile={(p) => { const rel = relOf(p); if (rel) onFile(rel) }} />
           : <Item it={r.it} bot={bot} items={items} onFile={(p) => onFile(p)} onReveal={onReveal} onDrill={(id) => setDrill(id)} state={state} say={say} isLastAssistant={r.it.id === lastAssistant} isLastUser={r.it.id === lastUser?.id} userRef={lastUserRef} onRetry={lastUser ? () => void sendText(lastUser.text) : undefined} />}</Fragment> })}</SidCtx.Provider>
         {cur && !drill ? pending.map((p) => <PermCard key={p.requestId} p={p} sid={cur.id} />) : null}
         {/* 🔴 CL-1 · 멈춘 자리 — Claude 웹처럼 «응답을 멈췄어요» 줄에서 바로 고치거나 다시 보낸다(멈춘 턴에는 답이 없어 ↶ 단추가 안 떴다) */}
-        {cur?.stopped && !running && state !== 'awaiting_input' && !drill ? <div className="stopln" role="status"><Icon n="stop" size={10} /><span>응답을 멈췄어요</span>{lastUser ? <><button onClick={fixPrompt}>프롬프트 고치기</button><button onClick={() => void sendText(lastUser.text)}>다시 시도</button></> : null}</div> : null}
+        {cur?.stopped && !running && state !== 'awaiting_input' && !drill ? <div className="stopln" role="status"><Icon n="stop" size={10} /><span>응답을 멈췄어요</span>{lastUser ? <><button onClick={fixPrompt}>프롬프트 고치기</button><button onClick={() => void retryStopped()}>다시 시도</button></> : null}{stoppedFiles.length ? <div className="files sfiles"><span className="fl">멈추기 전에 고친 파일 — 되돌리지 않았어요</span>{stoppedFiles.map((p) => <span key={p} className="fpair"><FileChip abs={p} botAbs={bot.abs} botId={bot.id} onClick={() => onFile(p)} /><DiffBtn abs={p} onOpen={() => onFile(p)} /></span>)}</div> : null}</div> : null}
         {/* O · 본문과 상태 줄 사이는 8px 고정 — 남는 공간은 상태 줄 **뒤**로 보낸다(종전엔 스페이서가 앞에 있어 큰 빈 공간이 생겼다) */}
         {/* AB · 🔴 턴이 끝나도 `bg` 가 남아 있으면 대기 줄은 남는다 — 사라지는 순간이 「끝났나?」의 정체였다 */}
         {cur && (running || state === 'awaiting_input' || (cur.bg ?? 0) > 0) ? <Live cur={cur} state={state} color={bot.color} /> : null}
@@ -1911,14 +1936,15 @@ function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled
           : <div className="qhead">대기 {(cur?.queue?.length ?? 0) + queue.length}개 · 지금 일이 끝나면 차례로 보내요</div>}
         {(cur?.queue ?? []).map((q, i) => <QueueRow key={`h${i}${q.t}`} n={i + 1} text={q.text} who={q.fromName ?? '다른 봇'}
           onSave={(v) => { if (cur) void api(`/sessions/${cur.id}/queue`, { body: { i, text: v } }).catch((e) => say((e as Error).message)) }}
-          onDrop={() => { if (cur) void api(`/sessions/${cur.id}/queue`, { body: { i, text: '' } }).catch((e) => say((e as Error).message)) }} />)}
+          onDrop={() => { if (cur) void api(`/sessions/${cur.id}/queue`, { body: { i, text: '' } }).catch((e) => say((e as Error).message)) }}
+          onNow={() => { if (cur) void api(`/sessions/${cur.id}/queue-now`, { body: { i } }).catch((e) => say((e as Error).message)) }} />)}
         {queue.map((q, i) => <QueueRow key={i} n={(cur?.queue?.length ?? 0) + i + 1} text={q}
           onNow={() => void nowQueued(i)}
           onSave={(v) => onQueue((l) => (v.trim() ? l.map((x, k) => (k === i ? v : x)) : l.filter((_, k) => k !== i)))}
           onDrop={() => onQueue((l) => l.filter((_, k) => k !== i))} />)}
       </div> : null}
-      {nowChip ? <div className="nowrow">{nowChip}</div> : null}
-      {fixing ? <div className="fixrow">멈춘 요청을 고쳐 보내요 — 보내면 «앞 요청은 멈췄다» 가 붙어요 · <button onClick={() => { setFixing(false); setText('') }}>취소 (⎋)</button></div> : null}
+      {nowChip ? <div className="nowrow">{nowChip}{!phone ? <span className="khint">⎋ 멈추기 · {sendKey} 대기{enterSends ? ' · ⌥⏎ 지금' : ''}</span> : null}</div> : null}
+      {fixing ? <div className="fixrow">멈춘 요청을 고쳐 보내요 — 그 요청 직전으로 대화를 되감아 새로 보내요(파일은 그대로) · <button onClick={() => { setFixing(false); setText('') }}>취소 (⎋)</button></div> : null}
       {/* 🔴 **입력창의 링크도 아이콘을 갖는다** (2026-09-13 Dave). ⚠ `textarea` 안에는 그림을 못 넣는다 —
           글자만 담는 칸이다. 그래서 쓰는 중인 주소를 **입력칸 위 칩**으로 올린다: 같은 캐시, 같은 아이콘,
           그리고 «이 주소가 맞나» 를 보내기 전에 확인할 수 있다. */}
@@ -2071,6 +2097,23 @@ function FileChip({ abs, dir, botAbs, botId, rel, onClick, tail, busy }: { abs: 
     {busy ? <span className="spin" /> : <Icon n={dir ? 'folder' : 'doc'} size={11} color="var(--t3)" />}<span className="nm">{p.name}</span>{p.folder ? <span className="fb">{p.folder}</span> : null}{tail}
   </button>
 }
+/**
+ * 🔴 **CL-1 B · 이전 시도** — 고쳐 다시(되감기)로 대화에서 빠진 멈춘 턴. 접어 두고, 그 턴이 고친 파일은 접어도 칩으로 보인다
+ *    (파일은 되돌리지 않는다 — ⇄ 로 무엇이 바뀌었는지 본다 · 기획안 §5).
+ */
+function PriorTry({ items, files, bot, onFile }: { items: ChatItem[]; files: string[]; bot: Bot; onFile: (p: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const first = items.find((x) => x.kind === 'user') as Extract<ChatItem, { kind: 'user' }> | undefined
+  const said = items.filter((x): x is Extract<ChatItem, { kind: 'user' | 'assistant' }> => x.kind === 'user' || x.kind === 'assistant')
+  const tools = items.filter((x) => x.kind === 'tool').length
+  return <div className="prior" role="group" aria-label="이전 시도">
+    <button type="button" className="ph" onClick={() => setOpen(!open)} aria-expanded={open}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span className="lb">이전 시도</span><span className="q">«{(first?.text ?? '').split('\n')[0].slice(0, 60)}»</span><span className="why">멈춘 요청 · 대화에서 뺐어요{tools ? ` · 도구 ${tools}번` : ''}</span></button>
+    {files.length ? <div className="files"><span className="fl">이때 고친 파일 — 되돌리지 않았어요</span>{files.map((p) => <span key={p} className="fpair"><FileChip abs={p} botAbs={bot.abs} botId={bot.id} onClick={() => onFile(p)} /><DiffBtn abs={p} onOpen={() => onFile(p)} /></span>)}</div> : null}
+    {open ? <div className="pb">{said.map((x) => <div key={x.id} className={x.kind === 'user' ? 'pu' : 'pa'}>{x.text}</div>)}</div> : null}
+  </div>
+}
+/** CO · 이 앱을 켠 뒤 «여기부터 새 답» 자리를 이미 정한 세션 — 그때의 마지막 답 시각과 표시 자리 */
+const ANCHORED = new Map<string, { at: number; id: string | null }>()
 /** 어느 세션의 줄인가 — 「전후 diff」 가 «전» 을 찾을 때 쓴다. 줄마다 prop 으로 내리면 ToolLine·Item 셋을 다 바꿔야 한다 */
 const SidCtx = createContext<{ sid: string; botId: string }>({ sid: '', botId: '' })
 function DiffBtn({ abs, onOpen }: { abs: string; onOpen: () => void }) {

@@ -60,6 +60,17 @@ export function dueChip(date: string, precision: Precision, today = new Date()):
 }
 
 /**
+ * CK-1 · 레일·폰 목록의 마감 칩 — 줄 마감(`todoDue`)이 폴더 마감보다 이르면 그 날을 보인다(기획안 §2 «줄 마감이 폴더 마감보다 먼저»).
+ * 정렬(`byDue`)과 같은 규칙이라 칩과 차례가 어긋나지 않는다. `line` 이면 칩 툴팁에 «할 일 마감» 이라고 쓴다.
+ */
+export function botDueChip(b: { due?: { date: string; precision: Precision } | null; todoDue?: string }, today = new Date()): (DueChip & { line: boolean }) | null {
+  const f = dueEnd(b.due), t = b.todoDue ?? null
+  if (t && (f === null || t < f)) { const c = dueChip(t, 'day', today); return c ? { ...c, line: true } : null }
+  const c = b.due ? dueChip(b.due.date, b.due.precision, today) : null
+  return c ? { ...c, line: false } : null
+}
+
+/**
  * 레일 «마감일» 정렬의 열쇠 (2026-10-01 Dave: *«'이름' 소팅 대신 '마감일' 소팅으로»*).
  * 폴더명 날짜는 볼트 규칙상 **마감일**이다. 정밀도가 낮으면 그 기간의 **끝날**로 본다 —
  * `2026-10` 은 10/31, `2026` 은 12/31. 그래야 «10월 중» 이 «10/5» 보다 뒤에 선다.

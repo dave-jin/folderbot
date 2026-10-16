@@ -1,4 +1,5 @@
-import type { TodoItem } from './types'
+import { ymd } from './due'
+import type { ChatItem, TodoItem } from './types'
 
 const LINE = /^(\s*)- \[( |x|X)\] (.*)$/
 const HEAD = /^#{1,6}\s+(.*)$/
@@ -9,7 +10,7 @@ const BOT_MARK = /\s*<!--\s*bot\s*-->\s*$/
  * 줄 끝 표식 — 보이는 마감(`📅 날짜` · CK-1)과 보이지 않는 주석들(`<!-- ak:ID -->` 짝 · `<!-- bot -->`/`<!-- bot:proposed -->` 주인).
  * 쓰는 차례는 늘 `본문 📅 날짜 <!-- ak:ID --> <!-- bot -->` 이고, 읽을 때는 주석 차례를 따지지 않는다(사람이 옵시디언에서 옮겨 적어도 읽힌다).
  */
-export interface LineMeta { by: TodoItem['by']; due?: string; ak?: string; proposed?: boolean }
+export interface LineMeta { by: TodoItem['by']; due?: string; ak?: string; proposed?: boolean; /** 제안한 날(`<!-- bot:proposed YYYY-MM-DD -->`) — 7일 지난 제안을 접는다 */ proposedAt?: string }
 const TAIL_NOTE = /\s*<!--\s*([^>]*?)\s*-->\s*$/
 const TAIL_DUE = /\s*📅\s*(\d{4}-\d{2}-\d{2})\s*$/
 export function splitMeta(body: string): { text: string; meta: LineMeta } {
@@ -22,15 +23,35 @@ export function splitMeta(body: string): { text: string; meta: LineMeta } {
     const m = TAIL_NOTE.exec(t); if (!m) break
     const v = m[1].trim()
     if (v === 'bot') meta.by = 'bot'
-    else if (v === 'bot:proposed') { meta.by = 'bot'; meta.proposed = true }
+    else if (/^bot:proposed(\s+\d{4}-\d{2}-\d{2})?$/.test(v)) { meta.by = 'bot'; meta.proposed = true; const d = v.slice(12).trim(); if (d) meta.proposedAt = d }
     else if (/^ak:\S+$/.test(v)) meta.ak = v.slice(3)
     else break                                   // 모르는 주석은 본문으로 둔다
     t = t.slice(0, m.index)
   }
   return { text: t.trim(), meta }
 }
+/**
+ * CK-3 규칙 2의 예외 — 사람이 대화에서 «할 일로 적어 줘» 라고 한 턴인가. 그 대화가 곧 상의라 봇이 정식 줄을 바로 쓴다.
+ * ⚠ 사람이 시킨 턴이라도 할 일 이야기가 없으면(개발·문서 일 중에 봇이 스스로 남기는 줄) 제안으로 돌린다 — 봇 줄 65% 가 그렇게 쌓였다(기획안 §1).
+ */
+export const asksTodo = (text: string): boolean => /(할\s?일|todo(?:\.md)?|투두|체크\s?리스트|태스크|task)[^\n.?!]{0,14}?(적|넣|추가|등록|남기|남겨|써|쓰|만들|올려|옮겨|정리|고쳐|바꿔|지워|빼|완료|체크)/i.test(text)
+/** 그 세션에서 사람이 마지막으로 한 말 — 다른 봇·루틴이 넣은 말(`from` 없는 사람 줄도 사람 말이다)은 턴 주인(`turnFrom`)으로 거른다 */
+export const lastHumanText = (items: readonly ChatItem[]): string => { for (let i = items.length - 1; i >= 0; i--) { const it = items[i]; if (it.kind === 'user') return it.text } return '' }
+/** CK-3 · 7일 지난 제안 — 제안 칸이 또 하나의 받은편지함이 되지 않게 접는다(기획안 §12). 날짜 없는 옛 제안은 접지 않는다 */
+export const PROPOSAL_STALE_DAYS = 7
+export function staleProposal(t: { proposed?: boolean; proposedAt?: string }, today = new Date()): boolean {
+  if (!t.proposed || !t.proposedAt || !/^\d{4}-\d{2}-\d{2}$/.test(t.proposedAt)) return false
+  const [y, m, d] = t.proposedAt.split('-').map(Number)
+  const base = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+  return Math.round((base - new Date(y, m - 1, d).getTime()) / 86_400_000) >= PROPOSAL_STALE_DAYS
+}
+/** 제안이 되는 순간 날짜를 찍고, 정식이 되면 지운다 — 7일 지난 제안을 접는 근거다 */
+function stampProposed<T extends Partial<LineMeta>>(m: T, was?: boolean): T {
+  if (!m.proposed) { const { proposedAt: _x, ...rest } = m; return rest as T }
+  return m.proposedAt || was ? m : { ...m, proposedAt: ymd(new Date()) }
+}
 export function metaTail(meta: Partial<LineMeta>): string {
-  return `${meta.due ? ` 📅 ${meta.due}` : ''}${meta.ak ? ` <!-- ak:${meta.ak} -->` : ''}${meta.by === 'bot' ? (meta.proposed ? ' <!-- bot:proposed -->' : ' <!-- bot -->') : ''}`
+  return `${meta.due ? ` 📅 ${meta.due}` : ''}${meta.ak ? ` <!-- ak:${meta.ak} -->` : ''}${meta.by === 'bot' ? (meta.proposed ? ` <!-- bot:proposed${meta.proposedAt ? ` ${meta.proposedAt}` : ''} -->` : ' <!-- bot -->') : ''}`
 }
 
 /** `- [ ] 제목: 설명 <!-- bot -->` 줄들을 읽는다. 중첩은 평평하게. 각 줄에 위쪽 `## 제목`(절)을 붙인다. */
@@ -47,7 +68,7 @@ export function parseTodo(md: string): TodoItem[] {
     const c = body.indexOf(':')
     const title = c > 0 ? body.slice(0, c).trim() : body
     const desc = c > 0 ? body.slice(c + 1).trim() : ''
-    out.push({ line: i, done: m[2] !== ' ', title, desc, by: meta.by, section, ...(meta.due ? { due: meta.due } : {}), ...(meta.ak ? { ak: meta.ak } : {}), ...(meta.proposed ? { proposed: true } : {}) })
+    out.push({ line: i, done: m[2] !== ' ', title, desc, by: meta.by, section, ...(meta.due ? { due: meta.due } : {}), ...(meta.ak ? { ak: meta.ak } : {}), ...(meta.proposed ? { proposed: true, ...(meta.proposedAt ? { proposedAt: meta.proposedAt } : {}) } : {}) })
   })
   return out
 }
@@ -100,7 +121,7 @@ export function setMetaLine(md: string, line: number, patch: Partial<LineMeta>):
   const m = LINE.exec(lines[line] ?? '')
   if (!m) return md
   const { text, meta } = splitMeta(m[3])
-  lines[line] = `${m[1]}- [${m[2]}] ${text}${metaTail({ ...meta, ...patch })}`
+  lines[line] = `${m[1]}- [${m[2]}] ${text}${metaTail(stampProposed({ ...meta, ...patch }, meta.proposed))}`
   return lines.join(nl)
 }
 /** 줄 삭제 — 그 줄만 지운다 (되돌리기는 화면이 addLine 으로) */
@@ -116,7 +137,7 @@ export function deleteLine(md: string, line: number): string {
 export function addLine(md: string, title: string, desc: string, by: TodoItem['by'], section = '', meta: Omit<Partial<LineMeta>, 'by'> = {}): string {
   const nl = md.includes('\r\n') ? '\r\n' : '\n'
   const lines = md.length ? md.split(/\r?\n/) : []
-  const entry = formatLine(title, desc, by, false, meta)
+  const entry = formatLine(title, desc, by, false, stampProposed(meta))
   if (section) { // 그 절 안 마지막 항목 뒤 (절 끝의 빈 줄 위)
     const start = lines.findIndex((l) => { const hm = HEAD.exec(l); return !!hm && hm[1].trim() === section })
     if (start >= 0) {

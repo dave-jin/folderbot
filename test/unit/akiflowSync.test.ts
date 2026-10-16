@@ -116,7 +116,7 @@ describe('CK-2 · 호스트 왕복', () => {
     const p5 = ak2.plan(undefined, [{ id: 'K-1', title: '첫 일', done: false }]); expect(p5.phase).toBe('push')
     expect(readFileSync(join(root, '2. Area/x/todo.md'), 'utf8').match(/첫 일/g)).toHaveLength(1)
     expect(ak.legacyToProposed()).toBe(1)
-    expect(readFileSync(join(root, '2. Area/x/todo.md'), 'utf8')).toContain('- [ ] 옛 봇 <!-- bot:proposed -->')
+    expect(readFileSync(join(root, '2. Area/x/todo.md'), 'utf8')).toMatch(/- \[ \] 옛 봇 <!-- bot:proposed \d{4}-\d{2}-\d{2} -->/)
     rmSync(root, { recursive: true, force: true })
   })
 })

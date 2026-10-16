@@ -2,6 +2,8 @@ import type { ChatItem } from './types'
 type Tool = Extract<ChatItem, { kind: 'tool' }>
 
 export type ChatRow = { k: 'item'; it: ChatItem } | { k: 'group'; items: Tool[]; endT?: number }
+  /** CL-1 B · 되감기로 대화에서 빠진 «이전 시도» — 접어 둔다. 그 턴이 고친 파일(`files`)은 접어도 보인다 */
+  | { k: 'prior'; id: string; items: ChatItem[]; files: string[] }
 /**
  * 대화를 줄로 편다 — 「A · 문서처럼」(2026-09-13 Dave 확정).
  *
@@ -27,7 +29,17 @@ export function buildRows(items: ChatItem[], drill: string | null): ChatRow[] {
    */
   let held: string[] = []
   const chips = () => { if (held.length) out.push({ k: 'item', it: { id: `f_${out.length}`, t: 0, kind: 'files', paths: held } as ChatItem }); held = [] }
+  // CL-1 B · 되감기 표시 줄(`rewind`)이 가리키는 사람 말부터 그 줄 앞까지를 «이전 시도» 한 줄로 접는다
+  const starts = new Map<string, string>()
+  if (!drill) for (const it of items) if (it.kind === 'rewind') starts.set(it.from, it.id)
+  let prior: { id: string; end: string; items: ChatItem[]; files: string[] } | null = null
   for (const it of items) {
+    if (prior) {
+      if (it.id !== prior.end) { prior.items.push(it); if (it.kind === 'files') for (const p of it.paths) if (!prior.files.includes(p)) prior.files.push(p); continue }
+      out.push({ k: 'prior', id: prior.id, items: prior.items, files: prior.files }); prior = null; continue
+    }
+    if (starts.has(it.id)) { flush(it.t); chips(); prior = { id: `pr_${it.id}`, end: starts.get(it.id)!, items: [it], files: [] }; continue }
+    if (it.kind === 'rewind') continue
     if (drill) { if ((it.kind === 'tool' && it.parentId === drill)) out.push({ k: 'item', it }); continue }
     if (it.kind === 'tool' && it.parentId) continue
     if (it.kind === 'result' && it.ok) continue
@@ -36,5 +48,6 @@ export function buildRows(items: ChatItem[], drill: string | null): ChatRow[] {
     flush(it.t); out.push({ k: 'item', it })
     if (it.kind === 'assistant' && !it.streaming) chips()
   }
+  if (prior) out.push({ k: 'prior', id: prior.id, items: prior.items, files: prior.files })
   flush(); chips(); return out
 }

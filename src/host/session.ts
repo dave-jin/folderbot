@@ -21,6 +21,7 @@ import { channelSpawn, channelVerdict, type Trust } from '../core/bridges'
 import { compactReason, rotateReason } from '../core/compact'
 import { extraComms, forkHandover, migrateArea, takeoverMode } from '../core/autoArea'
 import { atomicWrite, dataDir, ensureDir } from './paths'
+import { rewindPoint } from '../core/rewind'
 import { slashCommands } from './slash'
 
 /**
@@ -75,19 +76,21 @@ export function claudeBin(override?: string): string {
 }
 
 /** `~/.claude/projects/<slug>/<sid>.jsonl` 이 있는가 — 없으면 --resume 을 붙이지 않는다(무한 재시도 사고 방지) */
-export function transcriptExists(cwd: string, sid: string): boolean {
+export function transcriptExists(cwd: string, sid: string): boolean { return transcriptPath(cwd, sid) !== null }
+/** CLI 기록 파일(jsonl) 자리 — 없으면 null */
+export function transcriptPath(cwd: string, sid: string): string | null {
   const roots = [process.env.CLAUDE_CONFIG_DIR ? join(process.env.CLAUDE_CONFIG_DIR, 'projects') : join(homedir(), '.claude', 'projects')]
   for (const base of roots) {
     if (!existsSync(base)) continue
     const slugs = new Set<string>()
     for (const form of [cwd, cwd.normalize('NFC'), cwd.normalize('NFD')]) slugs.add(form.replace(/[^a-zA-Z0-9]/g, '-'))
-    for (const s of slugs) if (existsSync(join(base, s, `${sid}.jsonl`))) return true
+    for (const s of slugs) { const f = join(base, s, `${sid}.jsonl`); if (existsSync(f)) return f }
     // 교차 디렉터리 조회(신형 CLI) — 전체 훑기
     try {
-      for (const d of readdirSync(base)) if (existsSync(join(base, d, `${sid}.jsonl`))) return true
+      for (const d of readdirSync(base)) { const f = join(base, d, `${sid}.jsonl`); if (existsSync(f)) return f }
     } catch { /* skip */ }
   }
-  return false
+  return null
 }
 
 export interface SpawnSpec {
@@ -107,6 +110,8 @@ export interface SpawnSpec {
   disallowed?: string[]
   /** 묻지 않고 쓰게 할 도구 — 채널 세션 허용 목록(core/bridges.CHANNEL_ALLOW) */
   allowed?: string[]
+  /** CL-1 B · 되감기 — 이 답 uuid 직후로 갈라 새 세션으로 이어간다(`--resume-session-at` · `--fork-session`) */
+  resumeAt?: string
 }
 
 /** Claude Code 상주 워커 (stream-json, 다중 턴, stdio 권한) */
@@ -120,7 +125,7 @@ export class ClaudeWorker extends EventEmitter {
 
   constructor(spec: SpawnSpec) {
     super()
-    this.cliSessionId = spec.resume ?? null
+    this.cliSessionId = spec.resumeAt ? null : spec.resume ?? null   // 되감으면 새 id 가 init 으로 온다 — 옛 id 로 되돌아가지 않게
     const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-prompt-tool', 'stdio']
     if (spec.permissionMode && (spec.permissionMode !== 'default' || spec.explicitMode)) args.push('--permission-mode', spec.permissionMode)
     for (const d of spec.addDirs ?? []) args.push('--add-dir', d)
@@ -133,7 +138,7 @@ export class ClaudeWorker extends EventEmitter {
     if (spec.name) args.push('--name', spec.name.replace(/[^\p{L}\p{N}_-]+/gu, '-').slice(0, 60))
     if (spec.appendSystemPrompt) args.push('--append-system-prompt', spec.appendSystemPrompt)
     args.push('--settings', JSON.stringify({ crossSessionInbound: 'accept' }))
-    if (spec.resume && transcriptExists(spec.cwd, spec.resume)) args.push('--resume', spec.resume)
+    if (spec.resume && transcriptExists(spec.cwd, spec.resume)) { args.push('--resume', spec.resume); if (spec.resumeAt) args.push('--resume-session-at', spec.resumeAt, '--fork-session') }
     this.proc = spawn(claudeBin(spec.bin), args, { cwd: spec.cwd, env: cleanClaudeEnv() })
     this.proc.stderr.on('data', (d: Buffer) => { this.stderrBuf = (this.stderrBuf + d.toString()).slice(-4000); this.lastError = this.stderrBuf })
     this.proc.stdin.on('error', (e: Error) => { this.lastError = e.message })
@@ -273,6 +278,8 @@ export interface SessionRec {
   stopped?: { at: number }
   /** CL-1 · 사람이 멈춤을 보냈고 그 턴의 끝(result)을 아직 못 받았다 — 끝이 오류 꼴이어도 오류로 두지 않는다 */
   stopping?: boolean
+  /** CL-1 B · 다음에 띄울 워커가 되감을 자리(답 uuid) — 갈라진 새 세션 id 가 오면 지운다 */
+  rewindAt?: string
   id: string
   botId: string
   name: string
@@ -713,6 +720,24 @@ export class SessionManager extends EventEmitter {
     this.persist(r); this.emit('sessions', r.botId)
     return q
   }
+  /**
+   * CL-2 · 호스트 대기 말(다른 봇이 보낸 말)의 [⚡ 지금] — 그 말을 맨 앞으로 당기고, 일하는 중이면 멈춘다. 멈춘 턴이 끝나면 그 말이 먼저 나간다.
+   * 사람이 멈춰 둔 세션이었으면 멈춤도 푼다 — 사람이 «지금 보내라» 한 것이다.
+   */
+  nowQueue(r: SessionRec, i: number): void {
+    const q = [...(r.queue ?? [])]
+    if (i < 0 || i >= q.length) throw new Error('없는 대기 말이에요')
+    const [m] = q.splice(i, 1); r.queue = [m, ...q]; r.held = undefined; r.stopped = undefined
+    this.persist(r); this.emit('sessions', r.botId)
+    if (this.mustWait(r)) { r.stopping = true; this.workers.get(r.id)?.interrupt(); return }
+    // 미뤄진 질문만 걸린 대기 — 턴은 이미 끝났다(멈춰도 result 가 다시 안 온다). 바로 보낸다 · 그 말이 질문을 닫는다(리뷰 10/16)
+    if (r.state === 'awaiting_input') {
+      const bot = this.botOf(r.botId); const head = r.queue?.[0]; if (!bot || !head) return
+      r.queue = r.queue!.length > 1 ? r.queue!.slice(1) : undefined; this.persist(r)
+      this.send(r, bot, head.text, undefined, head.origin ?? 'bot'); return
+    }
+    this.afterTurn(r)
+  }
   /** 이 세션의 봇을 찾는 길 — 호스트가 꽂는다(대기열을 내보낼 때 워커를 띄우려면 봇이 필요하다) */
   botOf: (botId: string) => Bot | undefined = () => undefined
   /** 턴이 끝났다 — ① 대기 말이 있으면 하나 내보낸다 ② 없으면 컨텍스트가 클 때 압축한다 */
@@ -790,9 +815,14 @@ export class SessionManager extends EventEmitter {
       // ⚠ 모델 이름은 CLI 마다 다르다 — Claude 이름(claude-opus-5)을 Codex 에 넘기면 그 자리에서 죽는다.
       //    Codex 것처럼 보이는 이름만 넘기고 아니면 CLI 의 기본값에 맡긴다.
       ? new CodexWorker({ cwd: r.cwd, resume: r.cliSessionId, model: fitsProvider('codex', r.model) ? r.model : undefined, effort: r.effort, sandbox: this.codexSandbox, apiKey: this.openaiApiKey, addDirs: extraDirs(bot) })
-      : new ClaudeWorker({ cwd: r.cwd, resume: r.cliSessionId, permissionMode: r.permissionMode, addDirs: extraDirs(bot), mcpConfig: this.mcpUrl(r.id, bot.id), model: r.model, effort: r.effort, name: `${bot.name}-${r.name}`, appendSystemPrompt: this.systemPromptFor(bot) || undefined, bin: this.bin, ...(r.channel ? channelWorkerSpec(r.trust ?? 'propose') : {}) })
+      : new ClaudeWorker({ cwd: r.cwd, resume: r.cliSessionId, ...(r.rewindAt ? { resumeAt: r.rewindAt } : {}), permissionMode: r.permissionMode, addDirs: extraDirs(bot), mcpConfig: this.mcpUrl(r.id, bot.id), model: r.model, effort: r.effort, name: `${bot.name}-${r.name}`, appendSystemPrompt: this.systemPromptFor(bot) || undefined, bin: this.bin, ...(r.channel ? channelWorkerSpec(r.trust ?? 'propose') : {}) })
     this.workers.set(r.id, w)
-    w.on('line', (line: StreamLine) => this.onLine(r, line))
+    /**
+     * 🔴 CL-1 B · 갈아 끼운 옛 워커(되감기가 죽인 것)의 줄·종료는 버린다 — 늦게 온 `exit` 가 새 워커를 띄운 뒤
+     *    `cliSessionId` 를 옛 id 로 되돌리고 흐르던 글을 비우던 경쟁(리뷰 10/16). 맵에서 빠지기만 한 워커는 그대로 받는다.
+     */
+    const replaced = () => { const cur = this.workers.get(r.id); return !!cur && cur !== w }
+    w.on('line', (line: StreamLine) => { if (!replaced()) this.onLine(r, line) })
     w.on('permission', (p: PermissionRequest) => {
       /**
        * 🔴 **모드는 스폰 인자다 — 바꾼 뒤 이 턴이 끝날 때까지 워커는 옛 모드로 묻는다** (2026-09-18 Dave:
@@ -804,6 +834,7 @@ export class SessionManager extends EventEmitter {
       this.setState(r, { kind: 'permission_requested' }); this.emit('permission', r, p)
     })
     w.on('exit', (code: number | null, _sig: string | null, err: string) => {
+      if (replaced()) return
       if (this.workers.get(r.id) === w) this.workers.delete(r.id)
       if (w.cliSessionId) r.cliSessionId = w.cliSessionId
       for (const it of closeOpenItems(r.items, 'exit')) this.push(r, it, true)
@@ -914,7 +945,8 @@ export class SessionManager extends EventEmitter {
   }
 
   private onLine(r: SessionRec, line: StreamLine): void {
-    if (line.session_id && r.cliSessionId !== line.session_id) { r.cliSessionId = line.session_id; this.persist(r) }
+    // CL-1 B · 되감은 워커는 새 id 를 받아야 비로소 되감긴 것이다 — 그 전에 죽으면 다음 워커가 다시 가른다(리뷰 10/16)
+    if (line.session_id && r.cliSessionId !== line.session_id) { r.cliSessionId = line.session_id; r.rewindAt = undefined; this.persist(r) }
     if (line.type === 'system' && (line.subtype === 'task_started' || line.subtype === 'task_notification' || line.subtype === 'task_updated')) { this.onTask(r, line); return }
     this.noteModel(r, line)
     if (line.type === 'system' && line.subtype === 'init') {
@@ -1113,6 +1145,29 @@ export class SessionManager extends EventEmitter {
   interrupt(r: SessionRec, human = false): void {
     if (human && (r.state === 'running' || r.state === 'awaiting_input')) { r.held = true; r.stopped = { at: Date.now() }; r.stopping = true; this.persist(r); this.emit('sessions', r.botId) }
     this.workers.get(r.id)?.interrupt()
+  }
+  /**
+   * 🔴 **CL-1 B · 고쳐 다시 = 되감기** — 멈춘 말 **직전**으로 대화를 갈라 고친 말을 보낸다(Claude 웹의 «프롬프트 편집»).
+   * 멈춘 턴은 화면에서 «이전 시도» 로 접힌다(`rewind` 표시 줄). 그 턴이 고친 파일은 되돌리지 않는다 — 칩으로 남는다.
+   * 못 하면 false — Codex · 멈춘 상태가 아님 · 기록에서 멈춘 말을 못 찾음. 그때 화면은 A(이어서 고치기)로 보낸다.
+   */
+  rewind(r: SessionRec, bot: Bot, text: string, client?: ClientCtx): boolean {
+    if ((r.vendor ?? bot.vendor) === 'codex' || !r.stopped || r.state === 'running' || r.state === 'awaiting_input' || !r.cliSessionId) return false
+    // CC · 자동화 세션(루틴·봇끼리·소통·채널)은 되감지 않는다 — 화면이 A(이어서 고치기)로 보내 `/send` 의 이어받기(takeOver)를 거친다(리뷰 10/16)
+    if (takeoverMode(this.info(r)) !== 'none') return false
+    let stopped = -1
+    for (let i = r.items.length - 1; i >= 0; i--) if (r.items[i].kind === 'user' && r.items[i].t <= r.stopped.at) { stopped = i; break }
+    const su = r.items[stopped] as Extract<ChatItem, { kind: 'user' }> | undefined; if (!su) return false
+    const file = transcriptPath(r.cwd, r.cliSessionId); if (!file) return false
+    let entries: { type?: string }[] = []
+    try { entries = readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l) } catch { return {} } }) } catch { return false }
+    const pt = rewindPoint(entries, su.text); if (!pt) return false
+    const w = this.workers.get(r.id); if (w) { w.kill(); this.workers.delete(r.id) }
+    if ('fresh' in pt) r.cliSessionId = null; else r.rewindAt = pt.at
+    r.ctx = undefined
+    this.push(r, { id: itemId('s'), t: Date.now(), kind: 'rewind', from: su.id })
+    this.send(r, bot, text, client, 'human')
+    return true
   }
   /** CL-1 · [이어 보내기] — 붙잡아 둔 대기 말을 다시 내보낸다 */
   resume(r: SessionRec): void {

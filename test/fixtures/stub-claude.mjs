@@ -2,7 +2,7 @@
 // 가짜 claude CLI — 진짜와 같은 stream-json 프로토콜의 최소만 말한다 (테스트 전용)
 import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
-import { writeFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { writeFileSync, existsSync, mkdirSync, readFileSync, appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 const argv = process.argv.slice(2)
@@ -17,15 +17,31 @@ if (/못쓰는모델/.test(at('--model') ?? '')) {
   process.stderr.write(`Error: The model '${at('--model')}' is not supported on your plan.\n`)
   process.exit(1)
 }
-const sessionId = at('--resume') ?? `stub-${randomUUID()}`
+/**
+ * CL-1 B · 되감기 — 진짜 CLI 처럼 `--resume-session-at <답 uuid> --fork-session` 이면 그 답까지의 기록만 가진 **새 세션**으로 시작한다.
+ *    «기억확인» 에는 기록에 남은 사람 말을 되읊어, 되감긴 뒤의 대화가 멈춘 말을 모르는지 검사가 본다.
+ */
+const tdir = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-'))
+const forkAt = argv.includes('--fork-session') ? at('--resume-session-at') : undefined
+const sessionId = forkAt ? `stub-fork-${randomUUID()}` : at('--resume') ?? `stub-${randomUUID()}`
 /**
  * 🔴 **대화 안에서 모델을 바꾼다** — 진짜 CLI 는 `/model <이름>` 을 받아 그 세션의 모델을 갈고,
  *    그 뒤의 답에는 **바뀐 이름**이 찍혀 온다 (2026-09-15 Dave: «모델이 바뀌었지만 하단에 반영이 안되네»).
  */
 let model = at('--model') ?? 'stub'
-const say = (o) => process.stdout.write(JSON.stringify({ session_id: sessionId, ...o }) + '\n')
+const say = (o) => { process.stdout.write(JSON.stringify({ session_id: sessionId, ...o }) + '\n'); if (o.type === 'assistant') rec({ type: 'assistant', uuid: randomUUID(), message: { content: o.message?.content } }) }
 // 트랜스크립트 파일을 흉내 — --resume 판정이 이걸 본다
-try { const dir = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-')); mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, `${sessionId}.jsonl`), JSON.stringify({ cwd: process.cwd() }) + '\n') } catch {}
+const tfile = join(tdir, `${sessionId}.jsonl`)
+try {
+  mkdirSync(tdir, { recursive: true })
+  if (forkAt) {
+    const old = readFileSync(join(tdir, `${at('--resume')}.jsonl`), 'utf8').split('\n').filter(Boolean)
+    const k = old.findIndex((l) => { try { return JSON.parse(l).uuid === forkAt } catch { return false } })
+    writeFileSync(tfile, (k >= 0 ? old.slice(0, k + 1) : [JSON.stringify({ cwd: process.cwd() })]).join('\n') + '\n')
+  } else if (!existsSync(tfile)) writeFileSync(tfile, JSON.stringify({ cwd: process.cwd() }) + '\n')
+} catch {}
+const rec = (o) => { try { appendFileSync(tfile, JSON.stringify(o) + '\n') } catch {} }
+const memory = () => { try { return readFileSync(tfile, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.type === 'user' && typeof e.text === 'string').map((e) => e.text) } catch { return [] } }
 say({ type: 'system', subtype: 'init', model, tools: [], mcp_servers: [], slash_commands: ['compact', 'context', 'review', 'goal', 'loop'] })
 const rl = createInterface({ input: process.stdin })
 let pendingReq = null, pendingAsk = null, pendingDeferred = null, slowTimer = null
@@ -53,6 +69,7 @@ rl.on('line', (raw) => {
     if (slowTimer) {
       clearTimeout(slowTimer); slowTimer = null
       say({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }] } })
+      rec({ type: 'user', uuid: randomUUID(), message: { content: [{ type: 'text', text: '[Request interrupted by user]' }] } })   // 실 CLI 는 기록에도 이 줄을 남긴다(리뷰 10/16)
       say({ type: 'result', subtype: 'error_during_execution', is_error: true, stop_reason: 'tool_use', duration_ms: 100, total_cost_usd: 0, errors: ['[ede_diagnostic] result_type=user'] })
     }
     return
@@ -117,6 +134,13 @@ rl.on('line', (raw) => {
   // J · 메시지 앞의 기기 블록은 떼고 본다(실제 CLI 는 그대로 읽는다). «기기확인» 이면 블록을 그대로 되읊어 검사가 값을 본다
   const cm = /^<folderbot-client\s+[^>]*\/>\s*/.exec(rawText); const clientBlock = cm ? cm[0].trim() : ''; const text = cm ? rawText.slice(cm[0].length) : rawText
   const u = randomUUID().slice(0, 6)
+  const before = memory()
+  rec({ type: 'user', uuid: randomUUID(), text, message: { content: rawText } })
+  if (/기억확인/.test(text)) {
+    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: `기억: ${before.join(' | ')}` }], stop_reason: 'end_turn' } })
+    say({ type: 'result', subtype: 'success', duration_ms: 30, total_cost_usd: 0.001 })
+    return
+  }
   if (/^기기확인/.test(text)) {
     say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: clientBlock ? '기기 블록: `' + clientBlock + '`' : '기기 블록 없음' }], stop_reason: 'end_turn' } })
     say({ type: 'result', subtype: 'success', duration_ms: 10, total_cost_usd: 0.001 })
@@ -185,10 +209,11 @@ rl.on('line', (raw) => {
     return
   }
   // CK-3 검사용 — 봇이 Edit 로 todo.md 에 바로 한 줄 쓴다(«제안» 경로를 안 거친 줄). 있던 줄의 설명도 하나 고친다
-  if (/할일몰래쓰기/.test(text)) {
+  if (/할일몰래쓰기|몰래한줄:/.test(text)) {   // `몰래한줄:` — «할 일»·«쓰기» 가 없어 사람 턴 검사에서 할 일 요청으로 안 읽힌다
     const f = join(process.cwd(), 'todo.md'); const id = `stub-e-${u}`
-    say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id, name: 'Edit', input: { file_path: f, old_string: '', new_string: '- [ ] 봇이 몰래 쓴 줄: Edit 로 바로' } }] } })
-    try { const cur = readFileSync(f, 'utf8'); writeFileSync(f, cur.replace('- [ ] 원래 있던 줄: 설명 <!-- bot -->', '- [ ] 원래 있던 줄: 설명 고침(못 한 이유) <!-- bot -->') + `- [ ] 봇이 몰래 쓴 줄: Edit 로 바로\n`) } catch {}
+    const nm = /(?:할일몰래쓰기|몰래한줄):(\S+)/.exec(text)?.[1] ?? '봇이 몰래 쓴 줄'   // 사람 턴 검사는 줄 이름을 바꿔 쓴다
+    say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id, name: 'Edit', input: { file_path: f, old_string: '', new_string: `- [ ] ${nm}: Edit 로 바로` } }] } })
+    try { const cur = readFileSync(f, 'utf8'); writeFileSync(f, cur.replace('- [ ] 원래 있던 줄: 설명 <!-- bot -->', '- [ ] 원래 있던 줄: 설명 고침(못 한 이유) <!-- bot -->') + `- [ ] ${nm}: Edit 로 바로\n`) } catch {}
     say({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] } })
     say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '할 일 썼어요' }], stop_reason: 'end_turn' } })
     say({ type: 'result', subtype: 'success', duration_ms: 40, total_cost_usd: 0.001 })
@@ -199,7 +224,7 @@ rl.on('line', (raw) => {
     slowTimer = setTimeout(() => { slowTimer = null
       say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '느린 일 끝' }], stop_reason: 'end_turn' } })
       say({ type: 'result', subtype: 'success', duration_ms: 1500, total_cost_usd: 0.001 })
-    }, 2500)
+    }, /느린일 길게/.test(text) ? 8000 : 2500)
     return
   }
   // 「mermaid · KaTeX」 검사용 — 그림 펜스와 수식

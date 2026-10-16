@@ -2439,6 +2439,19 @@ try {
           if (shown.empty || !shown.body.includes('소통만 왔어요 CM')) fail('🔴 CM: 소통 세션만 있는 봇을 열었는데 그 대화가 안 선다(빈 창) ' + JSON.stringify(shown).slice(0, 300))
           if (!/새 채팅으로 이어서/.test(shown.ph)) fail('CM: 소통 세션 입력칸에 «새 채팅으로 이어서 열려요» 안내가 없다 ' + JSON.stringify(shown.ph))
           ok('CM 소통 세션만 있는 봇 — 열면 그 대화 · 입력칸은 «새 채팅으로 이어서»')
+          // 거기서 사람이 친 말은 새 채팅으로 갈라 열리고 화면도 그리로 간다(소통 세션엔 사람 말이 안 섞인다)
+          {
+            await pg.click('.composer .cin'); await pg.keyboard.type('되읊어: 소통에서 친 사람 말 CM'); await pg.keyboard.press('Enter')
+            let fork = null; for (let i = 0; i < 40; i++) { const h = await pg.evaluate(() => location.hash); const m = /[&#]s=([^&]+)/.exec(h); if (m && m[1] !== xs[0].id) { fork = decodeURIComponent(m[1]); break } await wait(150) }
+            if (!fork) fail('🔴 CM: 소통 세션에서 친 말이 새 채팅으로 안 열렸다(화면이 그대로)')
+            const all = await api(`/bots/${cmBot.id}/sessions`); const f = all.find((x) => x.id === fork); const commNow = (await api(`/sessions/${xs[0].id}/chat`)).items ?? []
+            if (!f || f.comm) fail('CM: 갈라 열린 세션이 채팅이 아니다 ' + JSON.stringify(f))
+            if (commNow.some((it) => it.kind === 'user' && it.text.includes('소통에서 친 사람 말'))) fail('🔴 CM: 사람 말이 소통 세션에 섞였다')
+            for (let i = 0; i < 40; i++) { const x = (await api(`/bots/${cmBot.id}/sessions`)).find((y) => y.id === fork); if (x && x.state !== 'running') break; await wait(150) }
+            await pg.evaluate((h) => { location.hash = h }, backHash); await wait(700)
+            await fetch(base + `/api/sessions/${fork}`, { method: 'DELETE' })
+            ok('CM 소통 세션에서 친 사람 말 — 새 채팅으로 갈라 열리고 화면도 그리로 · 소통엔 안 섞임')
+          }
 
           // CO — 같은 봇에 채팅 세션 하나: 첫 답을 읽고 → 긴 답이 온 뒤 연다
           const sidC = (await api(`/bots/${cmBot.id}/sessions`, { name: 'co-채팅' })).id
@@ -2488,13 +2501,23 @@ try {
           const chatOf = async () => (await api(`/sessions/${sidS}/chat`)).items ?? []
           const until = async (f, n = 40) => { for (let i = 0; i < n; i++) { const v = await f(); if (v) return v; await wait(150) } return null }
           await pg.evaluate((h) => { location.hash = h }, `bot=${bot.id}&s=${sidS}`); await wait(900)
-          await api(`/sessions/${sidS}/send`, { text: '느린일 CL 첫째' })
+          await api(`/sessions/${sidS}/send`, { text: '느린일 길게 CL 첫째' })
           await until(async () => (await info())?.state === 'running')
           await pg.click('.composer .cin'); await pg.keyboard.type('되읊어: 대기 말 CL'); await wait(200)
           const btns = await pg.evaluate(() => ({ stop: !!document.querySelector('.composer .stopb'), send: !!document.querySelector('.composer .sendb'), now: !!document.querySelector('.nowchip') }))
           if (!btns.stop || !btns.send) fail('🔴 CL-1: 일하는 중에 글을 쓰면 ⏹ 가 사라진다 ' + JSON.stringify(btns))
           if (!btns.now) fail('🔴 CL-2: 일하는 중에 글을 쓰면 «⚡ 멈추고 보내기» 가 떠야 한다')
           await pg.click('.composer .sendb'); await wait(300)
+          // 🔴 ⎋ 차례(기획안 §12) — 열린 것(입력칸의 / 목록 · 팝업)이 있으면 그것부터 닫고 턴은 안 멈춘다. 아무것도 없을 때만 멈춘다
+          await pg.click('.composer .cin'); await pg.keyboard.type('/'); await wait(300)
+          if (!(await pg.$('.cpop'))) fail('CL-1 ⎋ 차례: 픽스처 — «/» 목록이 안 열렸다')
+          await pg.keyboard.press('Escape'); await wait(400)
+          if (await pg.$('.cpop')) fail('CL-1 ⎋ 차례: 첫 ⎋ 가 «/» 목록을 안 닫았다')
+          if ((await info())?.state !== 'running') fail('🔴 CL-1 ⎋ 차례: 목록을 닫으려던 ⎋ 가 턴까지 멈췄다')
+          await pg.keyboard.press('Backspace')
+          await pg.click('.cbtn[title="모드"], .cbtn[title*="모드"]').catch(() => {}); await wait(250)
+          if (await pg.$('.cpop')) { await pg.keyboard.press('Escape'); await wait(400); if (await pg.$('.cpop')) fail('CL-1 ⎋ 차례: ⎋ 가 모드 팝업을 안 닫았다'); if ((await info())?.state !== 'running') fail('🔴 CL-1 ⎋ 차례: 팝업을 닫으려던 ⎋ 가 턴을 멈췄다') }
+          await pg.click('.composer .cin')
           await pg.keyboard.press('Escape')
           const x = await until(async () => { const v = await info(); return v && v.state !== 'running' ? v : null })
           if (!x || !x.held || !x.stopped) fail('🔴 CL-1: ⎋ 로 안 멈췄거나 대기를 안 붙잡았다 ' + JSON.stringify(x && { state: x.state, held: x.held, stopped: x.stopped }))
@@ -2514,9 +2537,16 @@ try {
           await pg.click('.stopln button:has-text("프롬프트 고치기")'); await wait(300)
           const pre = await pg.$eval('.composer .cin', (e) => e.dataset.value ?? e.textContent)
           if (pre !== '느린일 CL 둘째') fail('CL-1: [프롬프트 고치기] 가 마지막 말을 입력칸으로 안 올렸다 ' + JSON.stringify(pre))
-          await pg.fill('.composer .cin', '되읊어: 고친 말 CL'); await pg.keyboard.press('Enter')
+          // 🔴 B · 되감기 — 고쳐 보낸 말은 멈춘 말 «직전» 으로 갈라 나간다(머리말 없음). 새 갈래는 멈춘 말을 모른다 · 멈춘 턴은 «이전 시도» 로 접힌다
+          await pg.fill('.composer .cin', '기억확인 고친 말 CL'); await pg.keyboard.press('Enter')
           const fixed = await until(async () => (await chatOf()).find((it) => it.kind === 'user' && it.text.includes('고친 말 CL')))
-          if (!fixed || !fixed.text.startsWith('[앞 요청은 사람이 멈췄다')) fail('🔴 CL-1: 고쳐 보낸 말 앞에 «앞 요청은 사람이 멈췄다» 가 안 붙었다 ' + JSON.stringify(fixed))
+          if (!fixed || fixed.text.startsWith('[앞 요청은')) fail('🔴 CL-1 B: 되감기로 보내야 하는데 머리말(A)로 갔다 ' + JSON.stringify(fixed))
+          const mem = await until(async () => (await chatOf()).find((it) => it.kind === 'assistant' && it.text.startsWith('기억:')))
+          if (!mem || mem.text.includes('느린일 CL 둘째') || !mem.text.includes('대기 말 CL')) fail('🔴 CL-1 B: 되감긴 대화가 멈춘 말을 기억하거나 앞 대화를 잃었다 ' + JSON.stringify(mem?.text))
+          const rwi = (await chatOf()).find((it) => it.kind === 'rewind'); const stoppedU = (await chatOf()).find((it) => it.kind === 'user' && it.text === '느린일 CL 둘째')
+          if (!rwi || !stoppedU || rwi.from !== stoppedU.id) fail('CL-1 B: 되감기 표시 줄이 멈춘 말을 안 가리킨다 ' + JSON.stringify({ rwi, stoppedU: stoppedU?.id }))
+          if (!(await until(async () => /이전 시도[\s\S]*느린일 CL 둘째/.test((await pg.textContent('.prior').catch(() => '')) ?? '')))) fail('🔴 CL-1 B: 멈춘 턴이 «이전 시도» 로 접히지 않았다')
+          if (!/stub-fork-/.test((await info())?.cliSessionId ?? '')) fail('CL-1 B: 되감은 뒤 새 갈래(fork) 세션으로 안 갔다 ' + (await info())?.cliSessionId)
           if ((await until(async () => { const v = await info(); return v && !v.stopped && !v.held ? v : null })) === null) fail('CL-1: 사람이 새 말을 보냈는데 멈춤이 안 풀렸다')
           // ⌥⏎ — 멈추고 바로 보내기: 느린 턴(2.5초)이 끝나기 전에 급한 말의 답이 온다
           await until(async () => (await info())?.state !== 'running')
@@ -2529,7 +2559,7 @@ try {
           // ⚠ 화면을 먼저 옮기고 지운다 — 보던 세션을 지우면 화면이 그 세션을 다시 부르다 404 를 받아 «page errors» 에 걸린다
           await pg.evaluate((h) => { location.hash = h }, backHash); await wait(900)
           await fetch(base + `/api/sessions/${sidS}`, { method: 'DELETE' })
-          ok('CL ⎋ 멈추기 — 글이 있어도 ⏹ · 대기 붙잡기 · 멈춘 자리 줄 · [이어 보내기] · 고쳐 다시(앞 요청 멈춤 표시) · ⌥⏎ 멈추고 바로 보내기')
+          ok('CL ⎋ 멈추기 — 글이 있어도 ⏹ · 대기 붙잡기 · 멈춘 자리 줄 · [이어 보내기] · 고쳐 다시 = 되감기(B · 이전 시도) · ⌥⏎ 멈추고 바로 보내기')
         }
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
         await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면|🤝 소통/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)   // ⚠ 2026-10-02 · 오케스트레이터는 세션이 «🤝 소통» 하나뿐일 수 있다(«세션 N» 줄이 안 선다)
@@ -4848,7 +4878,7 @@ try {
           if (r1.result?.isError || !/제안/.test(r1.result?.content?.[0]?.text ?? '')) fail('🔴 CK-3: todo_propose 가 없거나 실패했다 ' + JSON.stringify(r1).slice(0, 300))
           await bmcp('todo_propose', { title: '제안검사 둘' }); await wait(700)
           let md = readFileSync(todoF, 'utf8')
-          if (!md.includes('- [ ] 제안검사 하나: 약 5분 · 첫 행동: 열기 <!-- bot:proposed -->')) fail('CK-3: 제안 줄 표식이 틀렸다\n' + md)
+          if (!/- \[ \] 제안검사 하나: 약 5분 · 첫 행동: 열기 <!-- bot:proposed \d{4}-\d{2}-\d{2} -->/.test(md)) fail('CK-3: 제안 줄 표식이 틀렸다\n' + md)
           const pv = await pg.evaluate(() => ({ props: [...document.querySelectorAll('.tprops .tprop .tt')].map((x) => x.textContent), inList: [...document.querySelectorAll('.todo .tt')].some((x) => x.textContent.includes('제안검사')) }))
           if (pv.props.length !== 2 || pv.inList) fail('🔴 CK-3: 제안이 «제안» 칸에만 따로 떠야 한다 ' + JSON.stringify(pv))
           await pg.click('.tprop:has-text("제안검사 하나") button.ok'); await wait(700)
@@ -4871,12 +4901,23 @@ try {
           for (let i = 0; i < 60; i++) { const x = await st(); if (x && x.lastActivity > before && x.state !== 'running') break; await wait(150) }
           await wait(500)
           const g = readFileSync(tf, 'utf8')
-          if (!g.includes('- [ ] 봇이 몰래 쓴 줄: Edit 로 바로 <!-- bot:proposed -->')) fail('🔴 CK-3 장치: 봇 턴이 바로 쓴 줄이 제안으로 안 돌았다\n' + g)
+          if (!/- \[ \] 봇이 몰래 쓴 줄: Edit 로 바로 <!-- bot:proposed \d{4}-\d{2}-\d{2} -->/.test(g)) fail('🔴 CK-3 장치: 봇 턴이 바로 쓴 줄이 제안으로 안 돌았다\n' + g)
           if (!g.includes('- [ ] 원래 있던 줄: 설명 고침(못 한 이유) <!-- bot -->')) fail('CK-3 장치: 있던 줄의 설명 고침까지 제안으로 돌렸다\n' + g)
           ok('CK-3 지키는 장치 — 봇 턴이 바로 쓴 새 줄은 제안으로 · 있던 줄 설명 고침은 그대로')
+          // 사람이 시킨 턴이라도 «할 일로 적어 줘» 가 없으면 제안 · 있으면 정식(규칙 2의 예외). 옛 코드는 사람 턴이면 다 정식이라 첫 줄에서 빨개진다
+          const human = async (text) => {
+            const s0 = await api(`/bots/${cfoB.id}/send`, { text, name: '할일 사람턴' })
+            for (let i = 0; i < 60; i++) { const x = (await api(`/bots/${cfoB.id}/sessions`)).find((y) => y.id === s0.sessionId); if (x && x.state !== 'running' && x.state !== 'starting') break; await wait(150) }
+            await wait(500); return readFileSync(tf, 'utf8')
+          }
+          const h1 = await human('배포 얘기하다가 몰래한줄:사람턴줄')
+          if (!/- \[ \] 사람턴줄: Edit 로 바로 <!-- bot:proposed \d{4}-\d{2}-\d{2} -->/.test(h1)) fail('🔴 CK-3 장치: 할 일 이야기가 없는 사람 턴에 봇이 쓴 줄이 정식으로 남았다\n' + h1)
+          const h2 = await human('이거 할 일로 적어 줘 할일몰래쓰기:시킨줄')
+          if (!/- \[ \] 시킨줄: Edit 로 바로\s*$/m.test(h2)) fail('CK-3 장치: «할 일로 적어 줘» 턴의 줄까지 제안으로 돌렸다\n' + h2)
+          ok('CK-3 지키는 장치 — 사람 턴은 «할 일로 적어 줘» 일 때만 정식 · 아니면 제안')
         }
         /**
-         * 🔴 **CK-2 · Akiflow 동기화** — 처음은 미리보기(루틴 없음) · [켜기] 하면 오케스트레이터에 30분 루틴 · 첫 회차는 훑기만 ·
+         * 🔴 **CK-2 · Akiflow 동기화** — 처음은 미리보기(루틴 없음) · [켜기] 하면 오케스트레이터에 15분 루틴 · 첫 회차는 훑기만 ·
          *    다음 회차 계획 → 결과(akId) → 줄 끝에 `<!-- ak:… -->` · 끄면 루틴이 사라진다. 옛 코드는 `/api/akiflow`·도구가 없어 여기서 빨개진다.
          */
         {
@@ -4906,9 +4947,30 @@ try {
           const p3 = await call('akiflow_sync_plan', { remote: [{ id: 'AK-SMOKE-1', title: '동기화 검사 줄', done: true, deadline: '2026-12-01' }] }); await wait(300)
           if (p3.ops.some((o) => o.key === mine.key)) fail('CK-2: 짝지은 줄을 또 만들려 한다')
           if (!/- \[x\] 동기화 검사 줄/.test(readFileSync(tf, 'utf8'))) fail('🔴 CK-2: Akiflow 에서 끝낸 일이 todo.md 로 안 내려왔다\n' + readFileSync(tf, 'utf8'))
+          // 🔴 다시 연 줄 — Akiflow MCP 는 완료를 못 되돌린다(10/16 실측) → 끝난 옛 태스크 대신 새 태스크를 만들고 줄의 짝 표식을 바꾼다
+          { const md0 = readFileSync(tf, 'utf8'); writeFileSync(tf, md0.replace(/- \[x\] 동기화 검사 줄/, '- [ ] 동기화 검사 줄')) }
+          await call('akiflow_sync_plan', {})
+          const p4 = await call('akiflow_sync_plan', { remote: [{ id: 'AK-SMOKE-1', title: '동기화 검사 줄', done: true, deadline: '2026-12-01' }] })
+          const re = p4.ops.find((o) => o.op === 'create' && o.replaces === 'AK-SMOKE-1')
+          if (!re) fail('🔴 CK-2: todo.md 에서 다시 연 줄을 Akiflow 로 안 보낸다 ' + JSON.stringify(p4.ops).slice(0, 300))
+          else {
+            await call('akiflow_sync_ack', { runId: p4.runId, results: [{ key: re.key, ok: true, akId: 'AK-SMOKE-2' }] })
+            const md4 = readFileSync(tf, 'utf8')
+            if (!/- \[ \] 동기화 검사 줄: 설명 📅 2026-12-01 <!-- ak:AK-SMOKE-2 -->/.test(md4)) fail('🔴 CK-2: 다시 연 줄의 짝이 새 태스크로 안 바뀌었다\n' + md4)
+          }
+          // CK-1 · 마감 후보 — 설명 속 «10/20 까지» 는 자동으로 안 옮기고 후보로만 · [마감으로] 하면 📅
+          { const md5 = readFileSync(tf, 'utf8'); writeFileSync(tf, md5.trimEnd() + '\n- [ ] 후보 검사 줄: 담당자에게 12/24 까지 보내기\n') }
+          const st5 = await api('/akiflow')
+          const cand = st5.dueCands?.list?.find((c) => c.title === '후보 검사 줄')
+          if (!cand || !/-12-24$/.test(cand.date)) fail('🔴 CK-1: 마감 후보가 안 뜬다 ' + JSON.stringify(st5.dueCands).slice(0, 300))
+          else {
+            await api('/akiflow/due', { rel: cand.rel, line: cand.line, title: cand.title, date: cand.date })
+            if (!new RegExp(`- \\[ \\] 후보 검사 줄: 담당자에게 12/24 까지 보내기 📅 ${cand.date}`).test(readFileSync(tf, 'utf8'))) fail('🔴 CK-1: [마감으로] 가 줄에 📅 를 안 붙였다\n' + readFileSync(tf, 'utf8'))
+            if ((await api('/akiflow')).dueCands?.list?.some((c) => c.title === '후보 검사 줄')) fail('CK-1: 마감을 붙였는데 후보에 또 뜬다')
+          }
           await api('/akiflow/mode', { mode: 'preview' })
           if ((await api('/bots')).find((b) => b.orchestrator).routines.some((r) => r.name === 'Akiflow 동기화')) fail('CK-2: 미리보기로 돌렸는데 루틴이 남았다')
-          ok('CK-2 Akiflow — 처음 미리보기 · 켜면 루틴 · 읽고 나서 민다(첫 회차 훑기) · 만들기(마감·프로젝트·출처) → 짝 표식 · Akiflow 완료가 내려옴 · 끄면 루틴 없음')
+          ok('CK-2 Akiflow — 처음 미리보기 · 켜면 루틴 · 읽고 나서 민다(첫 회차 훑기) · 만들기(마감·프로젝트·출처) → 짝 표식 · Akiflow 완료가 내려옴 · 다시 연 줄은 새 짝 · 마감 후보 · 끄면 루틴 없음')
         }
         const cbar = await pg.textContent('.composer .cbar'); if (!/Fable 5.1|Sonnet 5/.test(cbar) || !/자동|계획/.test(cbar) || !/높음/.test(cbar)) fail('ui cbar labels: ' + cbar)
         // 슬래시 자동완성 → 스킬이 뜬다 · @ → 파일이 뜬다

@@ -1475,6 +1475,10 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .duec.soon { color:var(--w) } .duec.today { color:#111; background:var(--run) } .duec.past { color:#fff; background:var(--err) }
 .duec.sm { display:inline-block; margin-left:7px; vertical-align:2px; font-size:11px; cursor:default }
 .duehint { display:flex; align-items:center; gap:4px; font-size:11px; color:var(--done); margin-top:3px }
+.duehint.ask { color:var(--t3) }
+.duec0 { opacity:0; background:transparent; color:var(--t3); padding:0 4px; flex:none } .todo:hover .duec0, .duec0:focus-visible { opacity:.7 }
+.akb { flex:none; margin-left:6px; font-size:9.5px; letter-spacing:.02em; color:var(--t3); border:1px solid var(--line2); border-radius:4px; padding:0 4px; line-height:14px }
+.menu.duem button.on { color:var(--w) }
 .menu.duem { min-width:220px } .menu.duem .dpick { display:flex; align-items:center; gap:8px; padding:6px 10px; font-size:13px; color:var(--t); cursor:pointer }
 .menu.duem .dpick input { background:transparent; color:var(--t2); border:1px solid var(--line2); border-radius:6px; padding:2px 4px; font:inherit; font-size:12px; color-scheme:dark }
 .fdue .seg { flex-wrap:wrap } .fdue .dpick { position:relative; display:inline-flex; align-items:center } .fdue .dpick input { position:absolute; inset:0; opacity:0 }
@@ -1485,6 +1489,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .tprop { display:flex; gap:8px; align-items:center; padding:5px 10px 5px 12px }
 .tprop .bd { flex:1; min-width:0 } .tprop .tt { font-size:13px; color:var(--t); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
 .tprop .dsub { font-size:11px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.tprop.stale .tt { color:var(--t2) } .tprops .pstale { margin:2px 0 0 } .tprops .pstale span:last-child { font-size:11.5px; color:var(--t3) }
 .tprop .pacts { display:flex; gap:4px; flex:none } .tprop .pacts button { font-size:11.5px; padding:3px 7px; border-radius:5px; color:var(--t2); background:var(--sel) }
 .tprop .pacts .ok { color:#111; background:var(--done) } .tprop .pacts .no { color:var(--t3); background:transparent }
 .app.phone .tprop .tt { font-size:15px } .app.phone .tprop .pacts button { font-size:13px; padding:6px 9px }
@@ -1495,7 +1500,15 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .app.phone .stopb { width:36px; height:36px }
 .stopb + .sendb { margin-left:6px }
 .stopln { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12.5px; color:var(--t2); padding:8px 12px; margin:6px 0; border:1px solid var(--line2); border-radius:8px }
-.stopln button { font-size:12px; color:var(--w); background:var(--sel); border-radius:6px; padding:3px 9px }
+.stopln > button { font-size:12px; color:var(--w); background:var(--sel); border-radius:6px; padding:3px 9px }
+.stopln .sfiles { width:100%; display:flex; flex-wrap:wrap; gap:6px; align-items:center } .stopln .sfiles .fl { font-size:11px; color:var(--t3); width:100% }
+.nowrow .khint { font-size:11px; color:var(--t3); margin-left:8px }
+.prior { margin:6px 0; border:1px dashed var(--line2); border-radius:8px; padding:4px 0 }
+.prior .ph { display:flex; align-items:center; gap:7px; width:100%; padding:4px 12px; font-size:12px; color:var(--t3); text-align:left }
+.prior .ph .lb { color:var(--t2); font-weight:600 } .prior .ph .q { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--t2) } .prior .ph .why { margin-left:auto; flex:none }
+.prior .files { padding:2px 12px 4px; display:flex; flex-wrap:wrap; gap:6px; align-items:center } .prior .files .fl { font-size:11px; color:var(--t3); width:100% }
+.prior .pb { padding:2px 12px 6px; display:flex; flex-direction:column; gap:6px; font-size:12.5px; color:var(--t3); opacity:.85 }
+.prior .pb .pu { color:var(--t2); white-space:pre-wrap } .prior .pb .pa { white-space:pre-wrap; max-height:220px; overflow:auto }
 .qhead.held { display:flex; align-items:center; gap:8px; color:var(--wait) } .qhead.held .sp { flex:1 }
 .qhead.held .resume { font-size:12px; color:#111; background:var(--wait); border-radius:6px; padding:3px 9px }
 /* CL-2 · ⚡ 멈추고 보내기 */

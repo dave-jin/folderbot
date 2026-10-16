@@ -101,3 +101,35 @@ export function splitDue(input: string, today = new Date()): { text: string; due
   if (!rest) return { text: raw }           // 날짜 말만 쓴 줄은 제목이다
   return { text: rest, due }
 }
+
+/**
+ * CK-1 · «마감 후보» — 이미 있는 줄의 설명 속 날짜를 **자동으로 마감으로 옮기지 않는다**(기획안 §2). «10/12 재현» 같은 기록 날짜가 섞여 오탐이 많다.
+ * 그래서 «까지·마감·제출·기한» 이 날짜에 붙은 것만 후보로 뽑고, 사람이 하나씩 [마감으로] 를 누른다.
+ * 해가 없는 날짜는 올해로 읽되, 두 달 넘게 지났으면 내년으로 본다(지난 마감도 후보다 — «2일 지남» 으로 보여야 한다).
+ */
+const CAND_DATE = String.raw`(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\s?\/\s?\d{1,2}|\d{1,2}월\s?\d{1,2}일)(?:\s?\([일월화수목금토]\))?`
+const CAND_AFTER = new RegExp(`${CAND_DATE}\\s*(?:까지|마감|제출|기한)`)
+const CAND_BEFORE = new RegExp(`(?:마감|기한|제출일|데드라인|due)\\s*[:：]?\\s*${CAND_DATE}`, 'i')
+export function dueCandidate(text: string, today = new Date()): { date: string; quote: string } | null {
+  const m = CAND_AFTER.exec(text) ?? CAND_BEFORE.exec(text)
+  if (!m) return null
+  const raw = m[1].replace(/\s+/g, '')
+  let date: string | null = null
+  let x = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(raw)
+  if (x) date = valid(+x[1], +x[2], +x[3])
+  else {
+    x = /^(\d{1,2})\/(\d{1,2})$/.exec(raw) ?? /^(\d{1,2})월(\d{1,2})일$/.exec(raw)
+    if (x) {
+      date = valid(today.getFullYear(), +x[1], +x[2])
+      if (date && date < ymd(addDays(today, -60))) date = valid(today.getFullYear() + 1, +x[1], +x[2])
+    }
+  }
+  return date ? { date, quote: m[0].trim() } : null
+}
+
+/** 끝이 맨 숫자(«… 20»)면 그 숫자 — 마감으로 읽지 않고, «20일 마감이면 «20일» 로» 라고 묻는다(기획안 §2 «뜻이 갈리면 묻는다») */
+export function bareDayAsk(input: string): number | null {
+  if (splitDue(input).due) return null
+  const m = /(?:^|\s)(\d{1,2})\s*$/.exec(input.trimEnd()); if (!m) return null
+  const n = Number(m[1]); return n >= 1 && n <= 31 && input.trimEnd().length > m[0].length ? n : null
+}

@@ -5,8 +5,8 @@ import { copyImageWhy, copySay } from './clip'
 import { copyFiles } from './fileCopy'
 import { copyIntent } from '../core/copyIntent'
 import { api } from './api'
-import { isDoneSection, orderItems, orderSections, peekDone } from '../core/todo'
-import { dueChipOf, dueText, quickDues, splitDue } from '../core/due'
+import { isDoneSection, orderItems, orderSections, peekDone, staleProposal } from '../core/todo'
+import { dueChipOf, dueText, quickDues, splitDue, bareDayAsk } from '../core/due'
 import { sessionUnread } from '../core/unread'
 import { ACT_COLOR, ACT_ICON, ACT_LABEL, LONG, actOf, buzz, slotOf, useSwipeCfg, type SwipeAct } from './swipe'
 import { HOLD_MS, decide, dropIndex } from './gesture'
@@ -234,6 +234,10 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
   const setDue = async (t: TodoItem, due: string | null) => { setDueMenu(null); await api(`/bots/${bot.id}/todo/due`, { body: { line: t.line, due } }); await reload() }
   /** CK-3 · 봇이 제안만 한 줄 — 정식 목록과 따로 «제안» 칸에 모은다. [넣기] 해야 정식 할 일이 되고 Akiflow 로 간다 */
   const props = items.filter((t) => t.proposed && !t.done)
+  const staleN = props.filter((t) => staleProposal(t)).length
+  /** 제안한 지 — «오늘» · «N일 전» */
+  const propAge = (d: string) => { const [y, m, dd] = d.split('-').map(Number); const n = Math.round((new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime() - new Date(y, m - 1, dd).getTime()) / 86_400_000); return n <= 0 ? '오늘' : n === 1 ? '어제' : `${n}일 전` }
+  const [showStale, setShowStale] = useState(false)
   const accept = async (t: TodoItem) => { await api(`/bots/${bot.id}/todo/accept`, { body: { line: t.line } }); await reload() }
 
   // 절 순서는 파일 순서 그대로. 절이 없는 파일이면 빈 이름 하나로 모인다
@@ -381,6 +385,8 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
    * 누르면 날짜 고르기(오늘 · 내일 · 이번 주 금 · 다음 주 월 · 날짜 고르기 · 지우기). 폰은 편집 시트에서 고른다.
    */
   const dueBadge = (t: TodoItem, small: boolean) => {
+    // 마감이 없으면 칩 자리에 흐린 📅 — 손을 올리면 보인다(데스크톱 · 폰 행엔 칩을 두지 않는다 V19)
+    if (!t.due && !t.done && !small && !phone) return <button className="duec0" title="마감 정하기" aria-label="마감 정하기" onClick={(e) => { e.stopPropagation(); setDueMenu({ t, at: anchorOf(e.currentTarget as HTMLElement, { gap: 4 }) }) }}><Icon n="cal" size={10} /></button>
     if (!t.due || t.done) return null
     const ch = dueChipOf(t.due); if (!ch) return null
     return small ? <span className={`duec sm ${ch.tone}`} title={`${dueText(t.due)} 마감`}>{ch.text}</span>
@@ -450,7 +456,7 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
       <button className="bx" onClick={(e) => { e.stopPropagation(); void toggle(t) }} aria-label={t.done ? '되돌리기' : '완료'}>{t.done ? <Icon n="check" size={9} color="#111" /> : null}</button>
       <div className="bd">
         {/* CK-1 · 마감 칩은 제목 바로 옆 — 오른쪽 끝은 손을 올리면 도구 줄이 덮는 자리라 칩을 누를 수 없다(스모크가 잡았다) */}
-        <div className="tt dueln" onClick={(e) => { if (isOpen) { e.stopPropagation(); startEdit(t) } }} title={phone ? '누르면 펼치기' : '더블클릭하면 펼치기'}><span className="ttx">{t.title}</span>{t.by === 'bot' ? <span className="byb" title="봇이 적음"><Icon n="sub" size={10} /></span> : null}{dueBadge(t, false)}</div>
+        <div className="tt dueln" onClick={(e) => { if (isOpen) { e.stopPropagation(); startEdit(t) } }} title={phone ? '누르면 펼치기' : '더블클릭하면 펼치기'}><span className="ttx">{t.title}</span>{t.by === 'bot' ? <span className="byb" title="봇이 적음"><Icon n="sub" size={10} /></span> : null}{dueBadge(t, false)}{t.ak && !phone ? <span className="akb" title="Akiflow 와 짝 — 제목·설명·완료·마감이 같이 움직여요">Akiflow</span> : null}</div>
         {isOpen && t.desc ? <div className="dsc" onClick={(e) => { e.stopPropagation(); startEdit(t) }}>{t.desc}</div> : null}
       </div>
       {t.desc ? <span className="mk"><Icon n={isOpen ? 'chevd' : 'chev'} size={9} /></span> : null}
@@ -475,11 +481,12 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
       {/* 🔴 CK-3 · 봇의 제안 — [넣기] 한 것만 정식 할 일이 되고 Akiflow 로 간다. [버리기] 는 그 줄을 지운다 */}
       {props.length ? <div className="tprops">
         <div className="tsec ph"><Icon n="sub" size={10} /><span>제안</span><span className="c">{props.length}</span><span className="sp" /><span className="why">봇이 올림 · 넣어야 할 일이 돼요</span></div>
-        {props.map((t) => <div key={t.line} className="tprop" data-line={t.line}>
+        {props.filter((t) => showStale || !staleProposal(t)).map((t) => <div key={t.line} className={`tprop ${staleProposal(t) ? 'stale' : ''}`} data-line={t.line}>
           {edit === t.line && !phone ? <div className="bd"><input autoFocus className="ein" value={draft} placeholder="제목: 설명" onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save(); if (e.key === 'Escape') { e.preventDefault(); setEdit(null) } }} onBlur={() => void save()} /></div>
-            : <div className="bd"><div className="tt">{t.title}{dueBadge(t, true)}</div>{t.desc ? <div className="dsub"><span className="tx">{t.desc.replace(/\s*\n+\s*/g, ' · ').trim()}</span></div> : null}</div>}
+            : <div className="bd"><div className="tt">{t.title}{dueBadge(t, true)}</div><div className="dsub"><span className="pby">{bot.displayName || bot.name} 봇{t.proposedAt ? ` · ${propAge(t.proposedAt)}` : ''}</span>{t.desc ? <span className="tx"> · {t.desc.replace(/\s*\n+\s*/g, ' · ').trim()}</span> : null}</div></div>}
           <span className="pacts"><button className="ok" onClick={() => void accept(t)}>넣기</button><button onClick={() => (phone ? setESheet({ line: t.line, title: t.title, desc: t.desc, section: t.section, due: t.due ?? null }) : startEdit(t))}>고치기</button><button className="no" onClick={() => void remove(t)}>버리기</button></span>
         </div>)}
+        {staleN ? <button className="todo addbtn more pstale" onClick={() => setShowStale(!showStale)}><span className="bx ghost" /><span>{showStale ? '7일 지난 제안 접기' : `7일 지난 제안 ${staleN}개 — 접어 뒀어요`}</span></button> : null}
       </div> : null}
       {secs.map(([name, list]) => <div key={name || '_'}>
         {name ? <button className="tsec" onClick={() => setOpenSecs({ ...openSecs, [name]: !secOpen(name) })}><Icon n={secOpen(name) ? 'chevd' : 'chev'} size={9} /><span>{name}</span><span className="c">{list.length}</span></button> : null}
@@ -491,7 +498,7 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
             {hidden ? <button className="todo addbtn more" onClick={() => setAllDone({ ...allDone, [name]: true })}><span className="bx ghost" /><span>끝난 일 {hidden}개 더보기</span></button>
               : allDone[name] && rows.length > 3 ? <button className="todo addbtn more" onClick={() => setAllDone({ ...allDone, [name]: false })}><span className="bx ghost" /><span>끝난 일 접기</span></button> : null}
           </> })()}
-          {adding === name ? <div className="todo add"><span className="bx ghost" /><div className="bd"><input autoFocus className="ein" placeholder="제목: 설명 (Enter) · 끝에 «내일»·«10/20» 이면 마감" value={line} onChange={(e) => setLine(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void add(name); if (e.key === 'Escape') { setAdding(null); setLine('') } }} onBlur={() => { if (!line.trim()) setAdding(null) }} />{(() => { const d = splitDue(line).due; return d ? <div className="duehint"><Icon n="cal" size={10} />{dueText(d)} 마감</div> : null })()}</div></div>
+          {adding === name ? <div className="todo add"><span className="bx ghost" /><div className="bd"><input autoFocus className="ein" placeholder="제목: 설명 (Enter) · 끝에 «내일»·«10/20» 이면 마감" value={line} onChange={(e) => setLine(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void add(name); if (e.key === 'Escape') { setAdding(null); setLine('') } }} onBlur={() => { if (!line.trim()) setAdding(null) }} />{(() => { const d = splitDue(line).due; if (d) return <div className="duehint"><Icon n="cal" size={10} />{dueText(d)} 마감</div>; const n = bareDayAsk(line); return n ? <div className="duehint ask"><Icon n="cal" size={10} />«{n}» 은 마감으로 안 읽어요 — {n}일 마감이면 «{n}일» 로 써 주세요</div> : null })()}</div></div>
             : !isDoneSection(name) ? <button className={`todo addbtn ${phone ? 'ph' : ''}`} onClick={() => (phone ? setESheet({ line: -1, title: '', desc: '', section: name }) : setAdding(name))}><span className="bx ghost dash" /><span>새 할 일</span></button> : null}
         </> : null}
       </div>)}
@@ -499,9 +506,9 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
     </div> : null}
     {dueMenu ? <Float at={dueMenu.at} onClose={() => setDueMenu(null)} className="menu duem">
       <div className="h">{dueMenu.t.due ? `${dueText(dueMenu.t.due)} 마감` : '마감 정하기'}</div>
-      {quickDues().map((q) => <button key={q.label} onClick={() => void setDue(dueMenu.t, q.date)}><span style={{ flex: 1 }}>{q.label}</span><span className="k">{dueText(q.date)}</span></button>)}
+      {quickDues().map((q) => <button key={q.label} className={dueMenu.t.due === q.date ? 'on' : ''} onClick={() => void setDue(dueMenu.t, q.date)}><span style={{ flex: 1 }}>{q.label}</span><span className="k">{dueText(q.date)}</span>{dueMenu.t.due === q.date ? <Icon n="check" size={11} /> : null}</button>)}
       <label className="dpick"><span style={{ flex: 1 }}>날짜 고르기</span><input type="date" defaultValue={dueMenu.t.due ?? ''} onChange={(e) => { if (e.target.value) void setDue(dueMenu.t, e.target.value) }} /></label>
-      {dueMenu.t.due ? <button onClick={() => void setDue(dueMenu.t, null)}><span style={{ flex: 1, color: 'var(--err)' }}>지우기</span></button> : null}
+      {dueMenu.t.due ? <button onClick={() => void setDue(dueMenu.t, null)}><span style={{ flex: 1, color: 'var(--err)' }}>마감 지우기</span></button> : null}
     </Float> : null}
     {sheet ? <><div className="backdrop" onClick={() => setSheet(null)} /><div className="tsheet">
       <div className="grip" />

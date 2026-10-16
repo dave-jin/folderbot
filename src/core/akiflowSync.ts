@@ -1,3 +1,4 @@
+import { dueCandidate } from './due'
 import type { TodoItem } from './types'
 
 /**
@@ -14,7 +15,7 @@ import type { TodoItem } from './types'
  */
 export type AkMode = 'off' | 'preview' | 'live'
 export interface AkPair { rel: string; title: string; desc: string; done: boolean; due: string | null; bot: boolean; syncedAt: number }
-export interface AkConflict { id: string; akId: string; rel: string; field: 'title' | 'desc' | 'done'; local: string; remote: string; at: number }
+export interface AkConflict { id: string; akId: string; rel: string; field: 'title' | 'desc'; local: string; remote: string; at: number }
 export interface AkPairAsk { id: string; rel: string; title: string; akId: string; remoteTitle: string; at: number }
 export interface AkLedger {
   mode: AkMode
@@ -39,17 +40,30 @@ export interface AkLedger {
   /** 계획한 회차의 할 일 — 호스트가 재시작해도 결과를 맞출 수 있게 장부에 둔다(최근 5개) */
   runs: Record<string, { at: number; ops: AkOp[] }>
   lastRun?: { at: number; ok: number; fail: number; note?: string }
+  /** CK-1 · «마감 후보» 에서 사람이 «아님» 한 줄(폴더\n제목) — 다시 묻지 않는다 */
+  dueSkip?: string[]
 }
+/** 다시 연 줄의 만들기 열쇠 — `폴더\n↺옛id`. 계획 기록을 잃어도 ack 가 어느 줄(옛 짝 표식)인지 찾는다(리뷰 10/16) */
+export const REOPEN = '↺'
 export const emptyLedger = (): AkLedger => ({ mode: 'preview', legacy: {}, pairs: {}, projects: {}, gone: {}, conflicts: [], pairAsks: [], pairDone: [], ignore: [], runs: {} })
 
 export interface AkFile { rel: string; name: string; items: TodoItem[] }
 export type AkOp =
-  | { op: 'create'; key: string; rel: string; title: string; description: string; links: string[]; deadline?: string; project_id?: string }
+  | { op: 'create'; key: string; rel: string; title: string; description: string; links: string[]; deadline?: string; project_id?: string; /** 다시 연 줄 — 끝난 옛 짝 대신 새 태스크(Akiflow MCP 는 완료를 되돌리지 못한다 · 10/16 실측) */ replaces?: string }
   | { op: 'update'; key: string; akId: string; rel: string; title?: string; description?: string; deadline?: string | null; links?: string[] }
   | { op: 'complete'; key: string; akId: string; rel: string }
   | { op: 'delete'; key: string; akId: string; rel: string }
 export interface AkPlan { mode: AkMode; ops: AkOp[]; check: string[]; watchProjects: string[]; scanOnly: boolean; legacy: number; proposedSkipped: number; held: number }
 
+/** CK-1 · 마감 후보 — 마감 없는 열린 정식 줄 중 설명에 «10/20 까지» 처럼 마감 말이 붙은 것. 자동으로 옮기지 않고 사람이 고른다 */
+export function dueCandidates(files: AkFile[], skip: string[], today = new Date()): { rel: string; line: number; title: string; date: string; quote: string }[] {
+  const no = new Set(skip); const out: { rel: string; line: number; title: string; date: string; quote: string }[] = []
+  for (const f of files) for (const t of f.items) {
+    if (t.done || t.due || t.proposed || no.has(akKey(f.rel, t.title))) continue
+    const c = dueCandidate(`${t.title} ${t.desc}`, today); if (c) out.push({ rel: f.rel, line: t.line, title: t.title, ...c })
+  }
+  return out
+}
 export const akKey = (rel: string, title: string) => `${rel}\n${title}`
 const strip = (t: string) => t.replace(/^🤖\s*/, '').replace(/\s*—\s*확인 필요$/, '').trim()
 const norm = (s: string) => strip(s).normalize('NFC').replace(/\s+/g, ' ').toLowerCase()
@@ -86,7 +100,8 @@ export function planSync(files: AkFile[], ledger: AkLedger, o: { vaultAbs: strin
   let legacyN = 0, proposedN = 0, held = 0
   const seen = new Set<string>(), changed: string[] = []
   const gone = { ...ledger.gone }
-  const titleHeld = new Set(ledger.conflicts.map((c) => c.akId))
+  const titleHeld = new Set(ledger.conflicts.filter((c) => c.field === 'title').map((c) => c.akId))
+  const descHeld = new Set(ledger.conflicts.filter((c) => c.field === 'desc').map((c) => c.akId))
   const askTitles = new Set(ledger.pairAsks.map((a) => akKey(a.rel, a.title)))
   for (const f of files) {
     const url = folderUrl(o.vaultAbs, f.rel)
@@ -98,11 +113,15 @@ export function planSync(files: AkFile[], ledger: AkLedger, o: { vaultAbs: strin
         const p = ledger.pairs[t.ak]; if (!p) continue
         const due = t.due ?? null
         if (t.done && !p.done) { ops.push({ op: 'complete', key: t.ak, akId: t.ak, rel: f.rel }); continue }
+        // 🔴 todo.md 에서 다시 연 줄 — Akiflow MCP 는 완료를 되돌리지 못한다(edit_task status 를 줘도 done 그대로 · 10/16 실측).
+        //    끝난 옛 태스크는 Akiflow 에 기록으로 두고, 열린 줄에는 새 태스크를 단다 — «열린 줄 하나 = 태스크 하나» 가 지켜진다
+        if (!t.done && p.done) { ops.push({ op: 'create', key: `${f.rel}\n${REOPEN}${t.ak}`, rel: f.rel, title: akTitle(t), description: akDesc(f.name, url, t.desc, at), links: url ? [url] : [], ...(due ? { deadline: due } : {}), ...(ledger.projects[f.rel] ? { project_id: ledger.projects[f.rel] } : {}), replaces: t.ak }); continue }
+        if (t.done && p.done) continue
         if (t.title !== p.title || t.desc !== p.desc || due !== p.due || (t.by === 'bot') !== p.bot) {
           changed.push(t.ak)
           // ⚠ 제목이 양쪽에서 다르게 바뀐 짝(카드)은 사람이 고를 때까지 제목을 밀지 않는다
           const title = (t.title !== p.title || (t.by === 'bot') !== p.bot) && !titleHeld.has(t.ak)
-          const op = { op: 'update' as const, key: t.ak, akId: t.ak, rel: f.rel, ...(title ? { title: akTitle(t) } : {}), ...(t.desc !== p.desc ? { description: akDesc(f.name, url, t.desc, at), links: url ? [url] : [] } : {}), ...(due !== p.due ? { deadline: due } : {}) }
+          const op = { op: 'update' as const, key: t.ak, akId: t.ak, rel: f.rel, ...(title ? { title: akTitle(t) } : {}), ...(t.desc !== p.desc && !descHeld.has(t.ak) ? { description: akDesc(f.name, url, t.desc, at), links: url ? [url] : [] } : {}), ...(due !== p.due ? { deadline: due } : {}) }
           if (Object.keys(op).length > 4) ops.push(op)
         }
         continue
@@ -137,12 +156,28 @@ export function mapProjects(files: { rel: string; name: string }[], projects: { 
   return out
 }
 
+/** Akiflow 가 돌려준 설명 → todo.md 설명. `<br />` 를 줄로 읽고, 우리가 붙인 첫 줄 `📍 출처:` 는 뗀다. 줄이 여럿이면 « · » 로 잇는다(todo 줄은 한 줄이다) */
+/**
+ * ⚠ 아는 태그만 뗀다 — 사람이 쓴 `<파일명>` · `A <-> B` 를 지우지 않게. 문단·목록 끝도 줄로 읽는다(출처 줄과 본문이 붙지 않게).
+ *    엔티티는 한 번만 푼다 — `&amp;` 를 마지막에 풀어야 `&amp;lt;` 가 `<` 가 되지 않는다(리뷰 10/16).
+ */
+export function remoteDesc(d: string): string {
+  const lines = d.replace(/<br\s*\/?>|<\/(?:p|div|li|h[1-6])>/gi, '\n').replace(/<\/?(?:p|div|span|b|i|u|s|em|strong|a|ul|ol|li|h[1-6]|code|pre|blockquote)(?:\s[^<>]*)?>/gi, '')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+    .split('\n').map((x) => x.trim()).filter(Boolean)
+  if (lines[0]?.startsWith('📍 출처:')) lines.shift()
+  return lines.join(' · ')
+}
+/** 설명 비교 — 줄바꿈·« · »·공백 차이는 같은 설명이다(우리가 올린 설명이 Akiflow 를 돌아 조금 다른 꼴로 와도 덮어쓰지 않게) */
+const sameDesc = (a: string, b: string) => a.replace(/[\s·]+/g, '') === b.replace(/[\s·]+/g, '')
 export interface AkRemote { id: string; title: string; description?: string; done: boolean; deadline?: string | null; project_id?: string | null }
 export type AkLocalFix =
   | { kind: 'title'; rel: string; akId: string; title: string; mine?: boolean }
   | { kind: 'done'; rel: string; akId: string }
+  | { kind: 'undone'; rel: string; akId: string }
+  | { kind: 'desc'; rel: string; akId: string; desc: string }
   | { kind: 'due'; rel: string; akId: string; due: string | null }
-  | { kind: 'add'; rel: string; akId: string; title: string; due: string | null }
+  | { kind: 'add'; rel: string; akId: string; title: string; due: string | null; desc?: string }
 
 /**
  * Akiflow 쪽에서 바뀐 것 → todo.md 로 내릴 것. 한쪽만 바뀌었으면 그쪽을 따르고, 양쪽이 다르게 바뀐 제목은 카드로 묻는다.
@@ -163,9 +198,9 @@ export function pullRemote(files: AkFile[], ledger: AkLedger, remote: AkRemote[]
     if (!p) {
       const rel = r.project_id ? relOfProject.get(r.project_id) : undefined
       if (!rel || r.done || !o.allowAdd || noAdd.has(r.id)) continue
-      const title = strip(r.title)
-      fixes.push({ kind: 'add', rel, akId: r.id, title, due: r.deadline ?? null })
-      pairs[r.id] = { rel, title, desc: '', done: false, due: r.deadline ?? null, bot: false, syncedAt: now }
+      const title = strip(r.title); const desc = r.description ? remoteDesc(r.description) : ''
+      fixes.push({ kind: 'add', rel, akId: r.id, title, due: r.deadline ?? null, ...(desc ? { desc } : {}) })
+      pairs[r.id] = { rel, title, desc, done: false, due: r.deadline ?? null, bot: false, syncedAt: now }
       continue
     }
     const l = local.get(r.id); if (!l) continue
@@ -177,6 +212,18 @@ export function pullRemote(files: AkFile[], ledger: AkLedger, remote: AkRemote[]
       else if (lt !== rt && !conflicts.some((c) => c.akId === r.id && c.field === 'title')) conflicts.push({ id: `c_${r.id.slice(0, 8)}_${now.toString(36)}`, akId: r.id, rel: l.rel, field: 'title', local: lt, remote: rt, at: now })
     }
     if (r.done && !p.done && !l.t.done) { fixes.push({ kind: 'done', rel: l.rel, akId: r.id }); next.done = true }
+    // Akiflow 에서 다시 연 태스크 — todo.md 줄도 다시 연다(todo.md 쪽이 그대로일 때만)
+    if (!r.done && p.done && l.t.done) { fixes.push({ kind: 'undone', rel: l.rel, akId: r.id }); next.done = false }
+    // 설명 — 한쪽만 바뀌었으면 그쪽을, 양쪽이 다르게 바뀌었으면 카드로 묻는다(제목과 같다)
+    if (r.description !== undefined && p.desc === undefined) next.desc = remoteDesc(r.description)   // 설명을 안 적어 둔 옛 짝 — 이번엔 기준만 잡는다
+    else if (r.description !== undefined) {
+      const rd = remoteDesc(r.description), ld = l.t.desc
+      // 🔴 Akiflow 에서 비어 온 설명으로 todo.md 설명을 지우지 않는다 — 꼴을 못 읽어 빈 것과 사람이 지운 것을 가릴 수 없다
+      if (rd && !sameDesc(rd, p.desc)) {
+        if (ld === p.desc) { fixes.push({ kind: 'desc', rel: l.rel, akId: r.id, desc: rd }); next.desc = rd }
+        else if (ld !== rd && !conflicts.some((c) => c.akId === r.id && c.field === 'desc')) conflicts.push({ id: `d_${r.id.slice(0, 8)}_${now.toString(36)}`, akId: r.id, rel: l.rel, field: 'desc', local: ld, remote: rd, at: now })
+      }
+    }
     const rd = r.deadline ?? null
     if (rd !== p.due && (l.t.due ?? null) === p.due) { fixes.push({ kind: 'due', rel: l.rel, akId: r.id, due: rd }); next.due = rd }
     pairs[r.id] = next

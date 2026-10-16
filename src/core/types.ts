@@ -235,6 +235,8 @@ export type ChatItem =
   | { id: string; t: number; kind: 'system'; text: string }
   | { id: string; t: number; kind: 'result'; ok: boolean; durationMs: number; costUsd?: number; error?: string }
   | { id: string; t: number; kind: 'files'; paths: string[] }
+  /** CL-1 B · 되감기 — `from`(멈춘 사람 말) 부터 이 줄 앞까지는 CLI 대화에서 빠졌다. 화면은 «이전 시도» 로 접는다 */
+  | { id: string; t: number; kind: 'rewind'; from: string }
 
 export interface TodoItem {
   line: number
@@ -250,6 +252,8 @@ export interface TodoItem {
   ak?: string
   /** CK-3 · 봇이 제안만 한 줄(`<!-- bot:proposed -->`) — 사람이 [넣기] 하기 전에는 Akiflow 로 안 간다 */
   proposed?: boolean
+  /** 제안한 날 — 7일 지나면 제안 칸에서 접는다 */
+  proposedAt?: string
 }
 
 export interface AuthState {

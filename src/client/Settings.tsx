@@ -12,6 +12,7 @@ import { fmtTime, useStore } from './store'
 import { LocalOpenPicker, localBridge, useLocalSettings } from './localOpen'
 import { EFFORTS, MODES, modelsFor, moreModelsFor, setFoundModels } from './consts'
 import { norm } from '../core/search'
+import { dueText } from '../core/due'
 
 /**
  * 설정 — 2026-09-17 «1안» (Dave: «설정 메뉴가 엉망진창임 … 종류별로 정리가 필요함»).
@@ -555,11 +556,12 @@ function TodoPane() {
 
 /**
  * 🔴 **CK-2 · Akiflow 동기화** (2026-10-16 Dave «추천대로» · 기획안 §3). 처음은 **미리보기** — 무엇을 만들지 보여 주기만 하고 Akiflow 는 안 건드린다.
- * [켜기] 를 눌러야 오케스트레이터에 30분 루틴이 생기고 실제로 쓴다(일주일 미리보기 뒤 Dave 가 켠다 · 기획안 §11).
+ * [켜기] 를 눌러야 오케스트레이터에 15분 루틴이 생기고 실제로 쓴다(일주일 미리보기 뒤 Dave 가 켠다 · 기획안 §11).
  * 카드 셋 — todo.md 에서 사라진 짝(지울까요) · 양쪽이 다르게 고친 제목(어느 쪽) · 처음 켤 때 이미 있던 같은 일(짝지을까요).
  */
 type AkStatus = { mode: 'off' | 'preview' | 'live'; pairs: number; folders: number; counts: { create: number; update: number; complete: number; delete: number }; legacy: number; legacyLeft: number; proposed: number; held: number
-  preview: { op: string; rel: string; title: string; deadline: string | null }[]; gone: { akId: string; rel: string; title: string }[]; conflicts: { id: string; rel: string; local: string; remote: string }[]; pairAsks: { id: string; rel: string; title: string; remoteTitle: string }[]; lastRun: { at: number; ok: number; fail: number; note?: string } | null; routine: boolean }
+  preview: { op: string; rel: string; title: string; deadline: string | null }[]; gone: { akId: string; rel: string; title: string }[]; conflicts: { id: string; rel: string; field?: 'title' | 'desc'; local: string; remote: string }[]; pairAsks: { id: string; rel: string; title: string; remoteTitle: string }[]; lastRun: { at: number; ok: number; fail: number; note?: string } | null; routine: boolean
+  dueCands?: { n: number; list: { rel: string; line: number; title: string; date: string; quote: string }[] } }
 const AK_OP: Record<string, string> = { create: '만들기', update: '고치기', complete: '완료', delete: '지우기' }
 function AkiflowPane() {
   const [st, setSt] = useState<AkStatus | null>(null); const [msg, setMsg] = useState('')
@@ -570,7 +572,7 @@ function AkiflowPane() {
   const c = st.counts
   return <>
     <p className="lead">레일에 선 폴더의 todo.md 줄 하나가 Akiflow 태스크 하나가 됩니다. 봇이 쓴 줄은 «🤖» 로 시작하고, 첫 줄에 출처 폴더가 붙어요. 봇의 제안은 [넣기] 한 것만 갑니다.</p>
-    <Row t="동기화 상태" d={<>{st.mode === 'live' ? `켜짐 — 30분마다 맞춰요${st.routine ? '' : ' (루틴이 없어요 — 다시 켜 주세요)'}` : st.mode === 'preview' ? '미리보기 — 무엇을 할지 보여 주기만 해요. Akiflow 는 안 건드려요' : '꺼짐'} · 짝 {st.pairs}개 · 폴더 {st.folders}개{st.lastRun ? ` · 마지막 ${new Date(st.lastRun.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 성공 ${st.lastRun.ok} · 실패 ${st.lastRun.fail}` : ''}{msg ? ` · ${msg}` : ''}</>} at="main">
+    <Row t="동기화 상태" d={<>{st.mode === 'live' ? `켜짐 — 15분마다 맞춰요${st.routine ? '' : ' (루틴이 없어요 — 다시 켜 주세요)'}` : st.mode === 'preview' ? '미리보기 — 무엇을 할지 보여 주기만 해요. Akiflow 는 안 건드려요' : '꺼짐'} · 짝 {st.pairs}개 · 폴더 {st.folders}개{st.lastRun ? ` · 마지막 ${new Date(st.lastRun.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 성공 ${st.lastRun.ok} · 실패 ${st.lastRun.fail}` : ''}{msg ? ` · ${msg}` : ''}</>} at="main">
       <span className="seg">{([['preview', '미리보기'], ['live', '켜기'], ['off', '끄기']] as const).map(([m, l]) => <button key={m} className={st.mode === m ? 'on' : ''} onClick={() => { if (m === 'live' && st.mode !== 'live' && !confirm(`Akiflow 에 실제로 씁니다 — 지금 기준 만들기 ${c.create}건. 처음 회차는 Akiflow 를 먼저 읽어 제목이 같은 일은 «같은 일?» 로 묻고 붙잡아 두며, 나머지는 바로 만들어요. 켤까요?`)) return; void call('/akiflow/mode', { mode: m }, () => (m === 'live' ? '켰어요 — 오케스트레이터에 «Akiflow 동기화» 루틴이 생겼어요' : ''))
       }}>{l}</button>)}</span>
     </Row>
@@ -582,7 +584,13 @@ function AkiflowPane() {
       {st.preview.length ? st.preview.map((o, i) => <div key={i} className="akrow"><span className={`akop ${o.op}`}>{AK_OP[o.op] ?? o.op}</span><span className="akt">{o.title}</span><span className="akr">{o.rel.split('/').pop()}{o.deadline ? ` · 📅 ${o.deadline}` : ''}</span></div>) : <div className="akrow none">할 일이 없어요 — 양쪽이 같아요</div>}
     </div>
     {st.pairAsks.map((a) => <div key={a.id} className="akcard"><b>같은 일인가요?</b><span>{a.rel.split('/').pop()} «{a.title}» ↔ Akiflow «{a.remoteTitle}»</span><span className="sp" /><button onClick={() => void call('/akiflow/resolve', { kind: 'pair', id: a.id, choice: 'pair' })}>같은 일 · 짝짓기</button><button onClick={() => void call('/akiflow/resolve', { kind: 'pair', id: a.id, choice: 'new' })}>다른 일</button></div>)}
-    {st.conflicts.map((k) => <div key={k.id} className="akcard"><b>제목이 양쪽에서 다르게 바뀌었어요</b><span>{k.rel.split('/').pop()} — todo.md «{k.local}» · Akiflow «{k.remote}»</span><span className="sp" /><button onClick={() => void call('/akiflow/resolve', { kind: 'conflict', id: k.id, choice: 'local' })}>todo.md 쪽</button><button onClick={() => void call('/akiflow/resolve', { kind: 'conflict', id: k.id, choice: 'remote' })}>Akiflow 쪽</button></div>)}
+    {st.conflicts.map((k) => <div key={k.id} className="akcard"><b>{k.field === 'desc' ? '설명' : '제목'}이 양쪽에서 다르게 바뀌었어요</b><span>{k.rel.split('/').pop()} — todo.md «{k.local}» · Akiflow «{k.remote}»</span><span className="sp" /><button onClick={() => void call('/akiflow/resolve', { kind: 'conflict', id: k.id, choice: 'local' })}>todo.md 쪽</button><button onClick={() => void call('/akiflow/resolve', { kind: 'conflict', id: k.id, choice: 'remote' })}>Akiflow 쪽</button></div>)}
+    {/* CK-1 · 마감 후보 — 설명 속 «10/20 까지» 를 자동으로 옮기지 않는다(기록 날짜 오탐). 하나씩 고른다 */}
+    {st.dueCands?.n ? <div className="akprev akdue">
+      <div className="akh">마감 후보 {st.dueCands.n}개 — 설명에 «까지·마감·제출» 이 붙은 날짜예요. 맞는 것만 [마감으로] 를 누르면 줄 끝에 📅 가 붙어요</div>
+      {st.dueCands.list.map((d) => <div key={`${d.rel}:${d.line}`} className="akrow"><span className="akt">{d.title}<small> · «{d.quote}»</small></span><span className="akr">{d.rel.split('/').pop()} · 📅 {dueText(d.date)}</span><button className="btn" onClick={() => void call('/akiflow/due', { rel: d.rel, line: d.line, title: d.title, date: d.date }, () => `«${d.title}» 에 마감을 붙였어요`)}>마감으로</button><button className="btn ghost" onClick={() => void call('/akiflow/due', { rel: d.rel, line: d.line, title: d.title, date: null })}>아님</button></div>)}
+      {st.dueCands.n > st.dueCands.list.length ? <div className="akrow none">앞 {st.dueCands.list.length}개만 보여요 — 고르면 다음 것이 올라와요</div> : null}
+    </div> : null}
     {st.gone.map((g) => <div key={g.akId} className="akcard"><b>todo.md 에서 지워졌어요</b><span>{g.rel.split('/').pop()} «{g.title}» — Akiflow 에서도 지울까요?</span><span className="sp" /><button onClick={() => void call('/akiflow/resolve', { kind: 'gone', id: g.akId, choice: 'delete' })}>지우기</button><button onClick={() => void call('/akiflow/resolve', { kind: 'gone', id: g.akId, choice: 'keep' })}>Akiflow 에 남기기</button></div>)}
   </>
 }

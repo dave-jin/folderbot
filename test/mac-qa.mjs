@@ -258,6 +258,35 @@ ok(`봇 화면 · ${bot.name} · 스크린샷 test/tmp/mac-qa-app.png`)
   ok(`화면 확대·축소 · ${z0} → ${z1} → ⌘= ${z2} → ⌘− ${z3} · 저장 · 다시 읽어도 ${z4} · ⌘0 → 1 · ${toast || '(알림 문구 못 읽음)'}${keysWork ? '' : ' · ⚠ sendInputEvent 키는 메뉴에 안 닿음(메뉴 클릭으로만 쟀다)'}`)
 }
 
+// ── ⑬ ⎋ 멈추기 · ⌥⏎ 멈추고 바로 보내기 (CL-1·CL-2 · 기획안 §11 «R2 는 qa:mac 으로 ⎋·⌥⏎ 를 실제 앱에서 잰다») ──
+// 키는 Electron `sendInputEvent` 로 창에 직접 넣는다(브라우저 흉내가 아니라 앱 창의 키 이벤트). 느린 턴(`느린일` · 2.5초)을 멈추는지 본다.
+{
+  const sid = (await api(`/bots/${bot.id}/sessions`, { name: 'mac-멈춤' })).id
+  const info = async () => (await api(`/bots/${bot.id}/sessions`)).find((y) => y.id === sid)
+  const chat = async () => (await api(`/sessions/${sid}/chat`)).items ?? []
+  const until = async (f, n = 40) => { for (let i = 0; i < n; i++) { const v = await f(); if (v) return v; await wait(150) } return null }
+  const key = (keyCode, mods = []) => app.evaluate(({ BrowserWindow }, a) => { const w = BrowserWindow.getAllWindows().find((x) => x.isVisible()) || BrowserWindow.getAllWindows()[0]; w.focus(); w.webContents.sendInputEvent({ type: 'keyDown', keyCode: a.keyCode, modifiers: a.mods }); if (a.keyCode.length === 1) w.webContents.sendInputEvent({ type: 'char', keyCode: a.keyCode, modifiers: a.mods }); w.webContents.sendInputEvent({ type: 'keyUp', keyCode: a.keyCode, modifiers: a.mods }) }, { keyCode, mods })
+  await page.evaluate((h) => { location.hash = h }, `bot=${bot.id}&s=${sid}`); await page.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(700)
+  await api(`/sessions/${sid}/send`, { text: '느린일 mac 첫째' })
+  if (!(await until(async () => (await info())?.state === 'running'))) await fail('⑬ 느린 턴이 안 돌았다')
+  await page.click('.composer .cin'); await page.keyboard.type('맥 대기 말'); await wait(200)
+  if (!(await page.$('.composer .stopb'))) await fail('🔴 ⑬ 일하는 중에 글을 쓰니 ⏹ 가 사라졌다')
+  await key('Escape')
+  const x = await until(async () => { const v = await info(); return v && v.state !== 'running' ? v : null })
+  if (!x || !x.stopped || !x.held) await fail('🔴 ⑬ 앱 창의 ⎋ 가 턴을 안 멈췄다 ' + JSON.stringify(x && { state: x.state, stopped: x.stopped, held: x.held }))
+  const kept = await page.$eval('.composer .cin', (e) => e.dataset.value ?? e.textContent)
+  if (!String(kept).includes('맥 대기 말')) await fail('⑬ ⎋ 로 멈췄더니 입력칸의 글이 지워졌다 ' + JSON.stringify(kept))
+  await page.evaluate(() => { const el = document.querySelector('.composer .cin'); el?.focus() }); await page.keyboard.press('Meta+A'); await page.keyboard.press('Backspace')
+  await api(`/sessions/${sid}/send`, { text: '느린일 mac 둘째' }); await until(async () => (await info())?.state === 'running')
+  await page.click('.composer .cin'); await page.keyboard.type('되읊어: 맥 급한 말'); await wait(150)
+  const t0 = Date.now(); await key('Enter', ['alt'])
+  const got = await until(async () => (await chat()).some((it) => it.kind === 'assistant' && it.text.includes('맥 급한 말')), 30)
+  if (!got || Date.now() - t0 > 2400) await fail(`🔴 ⑬ 앱 창의 ⌥⏎ 가 느린 턴을 멈추고 바로 보내지 않았다 (${Date.now() - t0}ms)`)
+  await page.evaluate(() => { location.hash = '' }); await wait(500)
+  await fetch(base + `/api/sessions/${sid}`, { method: 'DELETE' })
+  ok(`⎋ 멈추기 · 글 그대로 · 대기 붙잡기 · ⌥⏎ 멈추고 바로 보내기 ${Date.now() - t0}ms (앱 창 키 이벤트)`)
+}
+
 if (errs.length) console.log('  ⚠ pageerror:', errs.join(' | ').slice(0, 500))
 console.log('\n🍎 맥 QA 통과')
 await cleanup()

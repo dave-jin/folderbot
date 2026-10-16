@@ -7,7 +7,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'n
 import { execFile, execFileSync } from 'node:child_process'
 import { hostname } from 'node:os'
 import { join, relative, resolve } from 'node:path'
-import { TODO_RULES_PROMPT, parseTodo, setMetaLine } from '../core/todo'
+import { TODO_RULES_PROMPT, asksTodo, lastHumanText, parseTodo, setMetaLine } from '../core/todo'
 import type { AuthState, Bot, Frame, PermissionMode, PermissionRequest, RoutineDef, SessionState } from '../core/types'
 import { STATE_LABEL, stripRuntime } from '../core/types'
 import type { TurnFrom } from '../core/turnGuard'
@@ -400,7 +400,7 @@ export class Host {
   }
   todo(bot: Bot) { return readTodo(bot.abs) }
   /**
-   * CK-2 · 미리보기 ↔ 켜기. 🔴 켜기(live)는 사람이 설정에서 누를 때만 — 그때 오케스트레이터에 30분 루틴 «Akiflow 동기화» 가 생긴다.
+   * CK-2 · 미리보기 ↔ 켜기. 🔴 켜기(live)는 사람이 설정에서 누를 때만 — 그때 오케스트레이터에 15분 루틴 «Akiflow 동기화» 가 생긴다.
    * 끄면(미리보기·off) 루틴을 지운다. 짝 장부는 그대로 둔다.
    */
   akiflowMode(mode: 'off' | 'preview' | 'live'): void {
@@ -414,9 +414,9 @@ export class Host {
    * 🔴 **CK-3 · 지키게 하는 장치** — 사람이 시키지 않은 턴(봇·루틴·바깥 상대)이 `Edit` 로 todo.md 에 바로 쓴 `- [ ]` 줄은 «제안» 으로 돌린다.
    *    규칙만 적으면 도구를 안 거치는 길이 남는다(기획안 §4). 줄은 지우지 않고 `<!-- bot:proposed -->` 로 바꿔 Akiflow 로 안 가게 한다.
    * ⚠ 호스트가 쓴 줄(화면의 + · todo_add/todo_propose)은 건드리지 않는다 — 턴 동안 그 줄들을 따로 적어 둔다(`hostWrote`).
-   * ⚠ 사람이 시킨 턴은 거르지 않는다 — «할 일로 적어 줘» 는 그 대화가 곧 상의다(규칙 2의 예외).
+   * ⚠ 사람이 «할 일로 적어 줘» 한 턴(`asksTodo`)은 거르지 않는다 — 그 대화가 곧 상의다(규칙 2의 예외). 사람이 시킨 턴이라도 할 일 이야기가 없으면 거른다.
    */
-  private todoSnap = new Map<string, { titles: Set<string>; at: number }>()
+  private todoSnap = new Map<string, { titles: Set<string>; descs: Set<string>; n: number; human: boolean; at: number }>()
   private hostWrote = new Map<string, Set<string>>()
   /** CK-3 · 호스트가 쓴 줄(화면의 + · 고치기 · 도구 · Akiflow)은 지키는 장치가 건드리지 않는다 — 최근 200개만 기억한다 */
   noteTodoTitle(botId: string, title: string): void {
@@ -426,9 +426,12 @@ export class Host {
     const bot = this.registry.bot(r.botId); if (!bot || bot.orchestrator) return
     const p = join(bot.abs, 'todo.md')
     // ⚠ 비교는 **제목**으로 한다 — 봇이 있던 줄의 설명을 고치는 것(규약: 못 한 이유 갱신)은 새 줄이 아니다
-    const open = () => { try { return parseTodo(readFileSync(p, 'utf8')).map((t) => t.title) } catch { return [] } }
+    const all = () => { try { return parseTodo(readFileSync(p, 'utf8')) } catch { return [] } }
     if (r.state === 'running' && prev !== 'running') {
-      if (r.turnFrom && r.turnFrom !== 'human') this.todoSnap.set(r.id, { titles: new Set(open()), at: Date.now() })
+      if (r.turnFrom && (r.turnFrom !== 'human' || !asksTodo(lastHumanText(r.items)))) {
+        const xs = all()
+        this.todoSnap.set(r.id, { titles: new Set(xs.map((t) => t.title)), descs: new Set(xs.map((t) => t.desc).filter(Boolean)), n: xs.length, human: r.turnFrom === 'human', at: Date.now() })
+      }
       return
     }
     if (prev !== 'running' || r.state === 'running') return
@@ -441,10 +444,14 @@ export class Host {
     const mine = this.hostWrote.get(bot.id) ?? new Set<string>()
     let md: string; try { md = readFileSync(p, 'utf8') } catch { return }
     const items = parseTodo(md)
+    // 🔴 사람이 시킨 턴은 **줄이 늘었을 때만** 본다 — 봇이 사람 줄의 제목을 고친 것(개명)을 새 봇 줄로 바꾸면 사람 줄의 주인이 봇으로 넘어간다(리뷰 10/16)
+    if (snap.human && items.length <= snap.n) return
+    const vanished = [...snap.titles].some((x) => !items.some((t) => t.title === x))
     let changed = 0
     for (const t of items) {
       if (t.done || t.proposed || t.ak) continue   // 짝 있는 줄(Akiflow)은 사람 몫이다
       if (snap.titles.has(t.title) || mine.has(t.title)) continue
+      if (vanished && t.desc && snap.descs.has(t.desc)) continue   // 제목만 바뀐 있던 줄(설명이 같다) — 새 줄이 아니다
       md = setMetaLine(md, t.line, { by: 'bot', proposed: true }); changed++
     }
     if (!changed) return

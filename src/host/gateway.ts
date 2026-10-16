@@ -495,6 +495,7 @@ export class Gateway {
     if (p === '/api/akiflow' && m === 'GET') return json(200, h.akiflow.status())
     if (p === '/api/akiflow/mode' && m === 'POST') { const b = await body(); const mode = String(b.mode); if (!['off', 'preview', 'live'].includes(mode)) return json(400, { error: 'mode 는 off · preview · live 중 하나' }); h.akiflowMode(mode as 'off' | 'preview' | 'live'); return json(200, h.akiflow.status()) }
     if (p === '/api/akiflow/legacy' && m === 'POST') { const n = h.akiflow.legacyToProposed(); return json(200, { moved: n, ...h.akiflow.status() }) }
+    if (p === '/api/akiflow/due' && m === 'POST') { const b = await body(); const date = b.date == null ? null : String(b.date); if (date !== null && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return json(400, { error: 'date 는 YYYY-MM-DD' }); if (!h.akiflow.dueCand(String(b.rel), Number(b.line), String(b.title), date)) return json(409, { error: '그 줄이 바뀌었어요 — 다시 읽어 주세요' }); return json(200, h.akiflow.status()) }
     if (p === '/api/akiflow/resolve' && m === 'POST') { const b = await body(); const kind = String(b.kind); if (!['gone', 'conflict', 'pair'].includes(kind)) return json(400, { error: 'kind' }); h.akiflow.resolve(kind as 'gone' | 'conflict' | 'pair', String(b.id), String(b.choice)); return json(200, h.akiflow.status()) }
     if (p === '/api/bots/reorder' && m === 'POST') { const b = await body(); reg.reorder((Array.isArray(b.ids) ? b.ids : []).map((x: unknown) => String(x)), b.moved ? String(b.moved) : undefined); h.afterBotsChanged(); return json(200, { ok: true }) }
     if (p === '/api/bots/unfix' && m === 'POST') { const b = await body(); try { reg.unfix(String(b.id)) } catch (e) { return json(400, { error: (e as Error).message }) } h.afterBotsChanged(); return json(200, { ok: true }) }
@@ -877,7 +878,10 @@ export class Gateway {
       }
       // CC · 자동화 세션(소통·채널)에 보낸 사람 말은 새 채팅으로 갈라진다 — 화면이 그 세션으로 넘어가게 id 를 돌려준다
       if (sub === 'send' && m === 'POST') { const b = await body(); const sid = h.sendToBot(bot, String(b.text), r.id, undefined, undefined, { client: clientOf(who, b.client) }); return json(200, { ok: true, sessionId: sid }) }
+      // CL-1 B · 고쳐 다시 = 되감기 — 못 하면 { ok: false } 로 답하고 화면이 A(이어서 고치기)로 보낸다
+      if (sub === 'rewind' && m === 'POST') { const b = await body(); if (h.auth.verdict === 'unreadable' || h.auth.verdict === 'loggedout') return json(200, { ok: false }); return json(200, { ok: h.sessions.rewind(r, bot, String(b.text ?? ''), clientOf(who, b.client)) }) }
       // 호스트 대기열(다른 봇이 보낸 말) 고치기·빼기 — 빈 글이면 뺀다 (2026-10-02)
+      if (sub === 'queue-now' && m === 'POST') { const b = await body(); try { h.sessions.nowQueue(r, Number(b.i)); return json(200, { ok: true }) } catch (e) { return json(400, { error: (e as Error).message }) } }
       if (sub === 'queue' && m === 'POST') { const b = await body(); try { return json(200, { queue: h.sessions.editQueue(r, Number(b.i), String(b.text ?? '')) }) } catch (e) { return json(400, { error: (e as Error).message }) } }
       if (sub === 'permission' && m === 'POST') {
         const b = await body()

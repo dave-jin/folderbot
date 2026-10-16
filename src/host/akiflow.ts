@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import { type AkFile, type AkLedger, type AkMode, type AkOp, type AkRemote, akKey, emptyLedger, mapProjects, pairCandidates, planSync, pullRemote, seedLegacy } from '../core/akiflowSync'
+import { type AkFile, type AkLedger, type AkMode, type AkOp, type AkRemote, REOPEN, akKey, dueCandidates, emptyLedger, mapProjects, pairCandidates, planSync, pullRemote, seedLegacy } from '../core/akiflowSync'
 import { addLine, editLine, parseTodo, setDueLine, setMetaLine, toggleAndMove } from '../core/todo'
 import type { Bot, RoutineDef } from '../core/types'
 import { atomicWrite } from './paths'
@@ -49,6 +49,7 @@ export class AkiflowSync {
       preview: plan.ops.slice(0, 40).map((o) => ({ op: o.op, rel: o.rel, title: 'title' in o && o.title ? o.title : o.key.split('\n').pop() ?? '', deadline: 'deadline' in o ? o.deadline ?? null : null })),
       gone: Object.entries(l.gone).filter(([, v]) => v === 'ask').map(([id]) => ({ akId: id, rel: l.pairs[id]?.rel ?? '', title: l.pairs[id]?.title ?? '' })),
       conflicts: l.conflicts, pairAsks: l.pairAsks, lastRun: l.lastRun ?? null, routine: this.routineOn(),
+      dueCands: (() => { const all = dueCandidates(files, l.dueSkip ?? []); return { n: all.length, list: all.slice(0, 30) } })(),
     }
   }
   routineOn = (): boolean => false
@@ -84,11 +85,13 @@ export class AkiflowSync {
     for (const fx of pr.fixes) {
       const f = files.find((x) => x.rel === fx.rel); if (!f) continue
       const p = todoPath(f.abs); let md = readFileSync(p, 'utf8')
-      if (fx.kind === 'add') md = addLine(md, fx.title, '', 'me', '', { ak: fx.akId, ...(fx.due ? { due: fx.due } : {}) })
+      if (fx.kind === 'add') md = addLine(md, fx.title, fx.desc ?? '', 'me', '', { ak: fx.akId, ...(fx.due ? { due: fx.due } : {}) })
       else {
         const t = parseTodo(md).find((x) => x.ak === fx.akId); if (!t) continue
         if (fx.kind === 'title') { md = editLine(md, t.line, fx.title, t.desc); if (fx.mine) md = setMetaLine(md, t.line, { by: 'me' }) }
         else if (fx.kind === 'done') md = toggleAndMove(md, t.line, true)
+        else if (fx.kind === 'undone') md = toggleAndMove(md, t.line, false)
+        else if (fx.kind === 'desc') md = editLine(md, t.line, t.title, fx.desc)
         else if (fx.kind === 'due') md = setDueLine(md, t.line, fx.due)
       }
       atomicWrite(p, md); this.onWrite(f.botId, fx.kind === 'add' || fx.kind === 'title' ? fx.title : ''); this.onTodo(f.botId)
@@ -106,7 +109,8 @@ export class AkiflowSync {
     const byRel = new Map(this.folders().map((f) => [f.rel, f]))
     for (const res of results) {
       // 계획 기록을 잃었어도(밀려난 회차) 만들기의 열쇠는 «폴더\n제목» 이라 줄을 찾아 짝을 달 수 있다
-      const op = ops.find((o) => o.key === res.key) ?? (res.key.includes('\n') && res.ok && res.akId ? { op: 'create' as const, key: res.key, rel: res.key.split('\n')[0], title: '', description: '', links: [] } : undefined)
+      const last = res.key.split('\n').pop() ?? ''
+      const op = ops.find((o) => o.key === res.key) ?? (res.key.includes('\n') && res.ok && res.akId ? { op: 'create' as const, key: res.key, rel: res.key.split('\n')[0], title: '', description: '', links: [], ...(last.startsWith(REOPEN) ? { replaces: last.slice(REOPEN.length) } : {}) } : undefined)
       if (!op) { if (res.ok && res.akId) { l.ignore = [...(l.ignore ?? []), res.akId]; orphan++ } continue }
       if (!res.ok) { fail++; continue }
       ok++
@@ -114,7 +118,10 @@ export class AkiflowSync {
       if (op.op === 'create' && res.akId) {
         const title = op.key.split('\n').pop()!
         const p = f ? todoPath(f.abs) : ''; const md = f ? readFileSync(p, 'utf8') : ''
-        const t = f ? parseTodo(md).find((x) => x.title === title && !x.ak && !x.done) : undefined
+        // 다시 연 줄은 옛 짝 표식을 달고 있다 — 그 표식을 새 태스크로 바꾼다(옛 태스크는 Akiflow 에 끝난 기록으로 남는다)
+        // ⚠ 다시 연 줄을 ack 전에 또 끝냈어도 새 태스크를 단다 — 짝을 «열림» 으로 적어 두면 다음 회차가 완료를 보낸다(Akiflow 에 열린 고아가 안 남게)
+        const t = f ? parseTodo(md).find((x) => (op.replaces ? x.ak === op.replaces : x.title === title && !x.ak && !x.done)) : undefined
+        if (op.replaces && t) { delete l.pairs[op.replaces]; l.ignore = [...(l.ignore ?? []), op.replaces] }
         if (!f || !t) { l.ignore = [...(l.ignore ?? []), res.akId]; orphan++; continue }
         atomicWrite(p, setMetaLine(md, t.line, { ak: res.akId })); touched.add(f.botId)
         l.pairs[res.akId] = { rel: op.rel, title: t.title, desc: t.desc, done: false, due: t.due ?? null, bot: t.by === 'bot', syncedAt: Date.now() }
@@ -146,6 +153,15 @@ export class AkiflowSync {
     }
     l.legacy = {}; this.save(l); return n
   }
+  /** CK-1 · 마감 후보 고르기 — [마감으로] 는 그 줄에 `📅` 를 붙이고, [아님] 은 다시 묻지 않게 적어 둔다. 줄이 그새 바뀌었으면 손대지 않는다 */
+  dueCand(rel: string, line: number, title: string, date: string | null): boolean {
+    const l = this.load()
+    if (!date) { l.dueSkip = [...new Set([...(l.dueSkip ?? []), akKey(rel, title)])]; this.save(l); return true }
+    const f = this.folders().find((x) => x.rel === rel); if (!f) return false
+    const p = todoPath(f.abs); const md = readFileSync(p, 'utf8')
+    const t = parseTodo(md).find((x) => x.line === line && x.title === title && !x.done); if (!t) return false
+    atomicWrite(p, setDueLine(md, t.line, date)); this.onTodo(f.botId); return true
+  }
   /** 카드 고르기 — 사라진 짝 지우기/남기기 · 어긋난 제목 고르기 · 같은 일 짝짓기/새로 만들기 */
   resolve(kind: 'gone' | 'conflict' | 'pair', id: string, choice: string): void {
     const l = this.load()
@@ -154,11 +170,12 @@ export class AkiflowSync {
       const c = l.conflicts.find((x) => x.id === id); if (!c) return
       l.conflicts = l.conflicts.filter((x) => x.id !== id)
       const p = l.pairs[c.akId]
-      if (p && choice === 'local') p.title = c.remote   // 다음 계획에서 todo.md 제목으로 Akiflow 를 고친다
+      if (p && choice === 'local' && c.field === 'title') p.title = c.remote   // 다음 계획에서 todo.md 제목으로 Akiflow 를 고친다
+      if (p && choice === 'local' && c.field === 'desc') p.desc = c.remote   // 다음 계획에서 todo.md 설명으로 Akiflow 를 고친다
       if (p && choice === 'remote') {
         const f = this.folders().find((x) => x.rel === c.rel); const t = f?.items.find((x) => x.ak === c.akId)
-        if (f && t) { const pth = todoPath(f.abs); atomicWrite(pth, editLine(readFileSync(pth, 'utf8'), t.line, c.remote, t.desc)); this.onTodo(f.botId) }
-        p.title = c.remote
+        if (f && t) { const pth = todoPath(f.abs); atomicWrite(pth, editLine(readFileSync(pth, 'utf8'), t.line, c.field === 'desc' ? t.title : c.remote, c.field === 'desc' ? c.remote : t.desc)); this.onTodo(f.botId) }
+        if (c.field === 'desc') p.desc = c.remote; else p.title = c.remote
       }
     }
     if (kind === 'pair') {
@@ -176,5 +193,5 @@ export class AkiflowSync {
     this.save(l)
   }
   // Akiflow MCP 쓰기가 손이라 묻지 않고 돈다 — 무엇을 쓸지는 호스트가 정한다
-  routineDef(): RoutineDef { return { name: AK_ROUTINE, cron: '*/30 * * * *', prompt: AK_PROMPT, approve: 'always', push: false, retry: false } }
+  routineDef(): RoutineDef { return { name: AK_ROUTINE, cron: '*/15 * * * *', prompt: AK_PROMPT, approve: 'always', push: false, retry: false } }
 }

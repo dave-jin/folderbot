@@ -80,7 +80,7 @@ describe('CK-1·2·3 · 줄 끝 표식', () => {
   it('제안 → 정식 · 새 줄에 마감', () => {
     expect(setMetaLine('- [ ] 제안 <!-- bot:proposed -->', 0, { proposed: false })).toBe('- [ ] 제안 <!-- bot -->')
     expect(addLine('# todo\n', '새 일', '', 'me', '', { due: '2026-10-20' })).toContain('- [ ] 새 일 📅 2026-10-20')
-    expect(addLine('# todo\n', '봇 제안', '', 'bot', '', { proposed: true })).toContain('- [ ] 봇 제안 <!-- bot:proposed -->')
+    expect(addLine('# todo\n', '봇 제안', '', 'bot', '', { proposed: true })).toMatch(/- \[ \] 봇 제안 <!-- bot:proposed \d{4}-\d{2}-\d{2} -->/)
   })
 })
 

@@ -8,6 +8,7 @@ import { relUnder } from '../core/paths'
 import { stripRuntime, type RoutineDef } from '../core/types'
 import { confirmLine, describeCron, formatNext, parseWhen } from '../core/when'
 import { turnBlock } from '../core/turnGuard'
+import { asksTodo, lastHumanText } from '../core/todo'
 
 interface Rpc { jsonrpc: '2.0'; id?: number | string; method?: string; params?: Record<string, unknown> }
 type Tool = { name: string; description: string; inputSchema: Record<string, unknown> }
@@ -259,11 +260,11 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
     case 'todo_add': case 'todo_propose': {
       const b = reg.bot(botId); if (!b) throw new Error('봇을 못 찾았어요')
       const due = s('due').trim(); if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) throw new Error('마감은 YYYY-MM-DD 로 주세요(바깥에서 정해진 날만)')
-      const from = sid ? host.sessions.get(sid)?.turnFrom : undefined
-      // 사람이 시킨 턴의 todo_add 만 정식 줄 — 나머지는 제안(CK-3 규칙 2)
-      const proposed = name === 'todo_propose' || (from !== undefined && from !== 'human')
+      const rec = sid ? host.sessions.get(sid) : undefined; const from = rec?.turnFrom
+      // 사람이 «할 일로 적어 줘» 한 턴의 todo_add 만 정식 줄 — 나머지는 제안(CK-3 규칙 2와 그 예외)
+      const proposed = name === 'todo_propose' || (from !== undefined && (from !== 'human' || !asksTodo(lastHumanText(rec?.items ?? []))))
       host.todoAdd(b, s('title'), s('desc'), 'bot', !proposed && !!a.for_user, '', { ...(due ? { due } : {}), ...(proposed ? { proposed: true } : {}) })
-      return proposed ? `제안으로 올렸어요 — 사람이 «제안» 칸에서 [넣기] 하면 할 일이 돼요${name === 'todo_add' ? ' (사람이 시킨 턴이 아니라 제안으로 내렸어요)' : ''}` : '추가했어요'
+      return proposed ? `제안으로 올렸어요 — 사람이 «제안» 칸에서 [넣기] 하면 할 일이 돼요${name === 'todo_add' ? ' (사람이 «할 일로 적어 줘» 한 턴이 아니라 제안으로 내렸어요)' : ''}` : '추가했어요'
     }
   }
   throw new Error('unknown tool')
