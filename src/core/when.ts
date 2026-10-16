@@ -14,11 +14,36 @@ import { Cron } from 'croner'
 
 export type WhenAsk = { q: string; options: { label: string; cron: string; text: string }[] }
 export type WhenResult =
-  | { ok: true; cron: string; text: string }
+  | { ok: true; cron: string; text: string; once?: true; past?: true }
   | { ok: false; ask: WhenAsk }
   | { ok: false; error: string; examples: string[] }
 
-export const WHEN_EXAMPLES = ['매일 저녁 8시', '평일 아침 9시 반', '일요일 오전 10시', '두 시간마다', '매달 1일 아침 9시', '매시 20분']
+export const WHEN_EXAMPLES = ['매일 저녁 8시', '평일 아침 9시 반', '일요일 오전 10시', '두 시간마다', '매달 1일 아침 9시', '매시 20분', '내일 아침 9시', '10/20 오후 3시', '30분 뒤']
+
+/**
+ * 🔴 **CR · 한 번만 도는 루틴** (2026-10-17 Dave: *«기본 루틴 기능에 1회만 실행되는 루틴 기능도 추가해줘»*).
+ *    10/12 SNS 봇이 12:30 게시를 루틴 세션 안 대기로 걸었다가 세션째 지워져 게시가 안 나갔다 — «정해진 시각에 한 번» 을
+ *    걸 자리가 루틴에 없었다. 이제 «언제» 칸에 날짜나 «내일»·«30분 뒤» 를 쓰면 그 시각에 한 번만 돈다.
+ *    저장 꼴은 지역 시각 `YYYY-MM-DDTHH:mm` 하나다 — croner 가 날짜 하나를 받아 **한 번만** 걸고, 지난 날짜면 안 건다.
+ *    따로 칸(`once`)을 두지 않아 `.bot.yml`·스케줄러·화면이 지금 길을 그대로 쓴다.
+ * ⚠ 지난 시각은 사람 말로는 못 건다(«이미 지났어요») — 저장된 날짜가 지난 것(끝난 루틴)만 그대로 둔다.
+ */
+const ONCE_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/
+const p2 = (n: number) => String(n).padStart(2, '0')
+/** 한 번만 도는 루틴의 시각 — 아니면(또는 없는 날짜면) null */
+export function onceAt(cron: string): Date | null {
+  const m = ONCE_RE.exec(String(cron ?? '').trim()); if (!m) return null
+  const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] ?? 0))   // 초까지 — 손으로 «…:05» 를 적었으면 그 초에 돈다(croner 와 같게)
+  return d.getFullYear() === +m[1] && d.getMonth() === +m[2] - 1 && d.getDate() === +m[3] && d.getHours() === +m[4] && d.getMinutes() === +m[5] ? d : null
+}
+export const isOnce = (cron: string): boolean => ONCE_RE.test(String(cron ?? '').trim())
+/** 한 번만 도는 루틴이 이미 돌았거나 시각이 지났다 — 다시 안 돈다 */
+export const onceDone = (cron: string, now = new Date()): boolean => { const d = onceAt(cron); return !!d && d.getTime() <= now.getTime() }
+/** CR · 두 값이 같은 한 번짜리 시각인가 — 지난 시각은 «이미 저장돼 있던 값» 일 때만 받는다 */
+export const sameOnce = (a: string, b?: string): boolean => { const x = onceAt(a), y = b ? onceAt(b) : null; return !!x && !!y && x.getTime() === y.getTime() }
+const onceCron = (d: Date) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}${d.getSeconds() ? `:${p2(d.getSeconds())}` : ''}`
+/** 「10/20(화) 오후 3시」 — 해가 다르면 「2027/1/3(일) …」. 이 말을 다시 읽어도 같은 시각이 된다(왕복) */
+const onceWhen = (d: Date, now = new Date()) => `${d.getFullYear() === now.getFullYear() ? '' : `${d.getFullYear()}/`}${d.getMonth() + 1}/${d.getDate()}(${'일월화수목금토'[d.getDay()]}) ${hhmmText(d.getHours(), d.getMinutes())}`
 
 /** cron 식이 croner 로 실제로 서는가 — 저장 시점과 스케줄 시점이 **같은 판정**을 쓴다 */
 export function cronOk(cron: string): { ok: true } | { ok: false; error: string } {
@@ -61,7 +86,7 @@ function readTime(s: string): { h: number; m: number } | null {
     let h = +hm[1]; const m = hm[2] === '반' ? 30 : hm[3] ? +hm[3] : 0
     if (h > 23 || m > 59) return null
     if (pm && h < 12) h += 12
-    if (pm === false && h === 12) h = 0            // 「오전 12시」 는 자정이다
+    if (pm === false && h === 12 && part !== '정오' && part !== '점심') h = 0   // 「오전 12시」 는 자정이다 — 「정오 12시」 는 낮이다(CR · 되읽은 말을 다시 저장하면 자정이 됐다)
     return { h, m }
   }
   if (part) return { h: PART[part].base, m: 0 }     // 「아침」 처럼 때만 말했으면 그 때의 기본 시각
@@ -74,9 +99,16 @@ const hhmmText = (h: number, m: number) => `${partName(h)} ${h12(h)}시${m ? ` $
  * 사람 말을 cron 으로. 못 읽으면 **지어내지 않고** 되묻거나 이유를 돌려준다.
  * 이미 cron 식이면 그대로 검증만 한다(봇이 지어낸 cron 도 여기서 걸린다).
  */
-export function parseWhen(input: string): WhenResult {
+export function parseWhen(input: string, now = new Date()): WhenResult {
   const raw = String(input ?? '').trim()
   if (!raw) return { ok: false, error: '언제 돌릴지 적어 주세요', examples: WHEN_EXAMPLES }
+
+  // CR · 저장된 한 번짜리 시각이면 검증만 한다 — 지난 것(끝난 루틴)도 그대로 둔다
+  if (ONCE_RE.test(raw)) {
+    const d = onceAt(raw)
+    if (!d) return { ok: false, error: `「${raw}」 은 없는 날짜예요`, examples: WHEN_EXAMPLES }
+    return { ok: true, cron: onceCron(d), text: describeCron(raw, now), once: true, ...(d.getTime() <= now.getTime() ? { past: true as const } : {}) }
+  }
 
   // 이미 cron 식(빈칸으로 갈린 5~7 덩이)이면 검증만 한다
   if (/^[\d*/,\-?LW#a-zA-Z]+(\s+[\d*/,\-?LW#a-zA-Z]+){4,6}$/.test(raw)) {
@@ -97,7 +129,8 @@ export function parseWhen(input: string): WhenResult {
   }
 
   // N분마다 · N시간마다 (「두 시간마다」 처럼 한글 숫자도)
-  const every = /(?:^|\s)(\d+|[가-힣]{1,2})\s*(분|시간)\s*(?:마다|간격|에 한 ?번)/.exec(s)
+  const every0 = /(?:^|\s)(\d+|[가-힣]{1,2})\s*(분|시간)\s*(?:마다|간격|에 한 ?번)/.exec(s)
+  const every = every0 && !/시$/.test(s.slice(0, every0.index).trimEnd()) ? every0 : null   // CR · 「오후 3시 30분에 한 번」 은 30분마다가 아니다
   if (every) {
     const n = /^\d+$/.test(every[1]) ? +every[1] : DIGITS[every[1]]
     if (!n) return { ok: false, error: `「${every[1]}」 을 숫자로 못 읽었어요`, examples: WHEN_EXAMPLES }
@@ -108,6 +141,10 @@ export function parseWhen(input: string): WhenResult {
     if (n < 1 || n > 23) return { ok: false, error: '시간 간격은 1~23 시간이어야 해요', examples: WHEN_EXAMPLES }
     return { ok: true, cron: `0 */${n} * * *`, text: `${n}시간마다` }
   }
+
+  // CR · 한 번만 — 날짜·«내일»·«30분 뒤»·«한 번»
+  const once = parseOnce(s, now)
+  if (once) return once
 
   // 매시 N분
   const hourly = /매\s*시(?:간)?\s*(\d{1,2})\s*분/.exec(s)
@@ -143,8 +180,82 @@ export function parseWhen(input: string): WhenResult {
   return { ok: true, cron: `${tt.m} ${tt.h} * * *`, text: `매일 ${hhmmText(tt.h, tt.m)}` }
 }
 
+const KDAY: Record<string, number> = { 오늘: 0, 내일: 1, 모레: 2, 글피: 3, 내일모레: 2 }
+/**
+ * CR · 한 번만 도는 시각을 읽는다. 반복을 뜻하는 말(매·마다·평일·주말·씩·«하루/주 한 번»·«주 1회»)이 있으면 null — 반복 쪽이 읽는다.
+ * 한 번짜리 단서(오늘·내일·다음 주·…뒤)를 봤는데 못 읽었으면 null 이 아니라 이유를 돌려준다 — 반복 쪽이 «그 외 말은 무시» 하고 매일로 읽는다.
+ * 날짜(`10/20`·`10월 20일`·`2026-10-20`)·«오늘/내일/모레»·«이번 주/다음 주 X요일»·«N분/시간 뒤»·«(X요일) 오후 3시 한 번».
+ * 시각을 안 말하면 아침 9시(매달 N일과 같다) · 해를 안 말한 날짜가 반년 넘게 지났으면 내년으로 본다(12/30 의 «1/3»).
+ */
+function parseOnce(s: string, now: Date): WhenResult | null {
+  // 「주 1회」·「하루 한 번」·「한 번씩」 은 반복이다 — «한 번» 만 보고 한 번짜리로 읽으면 루틴이 한 번 돌고 조용히 멈춘다
+  if (/매|마다|평일|주말|주중|간격|씩|격주|(?:하루|일주일|주|달)\s*(?:에\s*)?(?:한|1|두|2|세|3)\s*(?:번|회|차례)/.test(s)) return null
+  const fail = (error: string): WhenResult => ({ ok: false, error, examples: WHEN_EXAMPLES })
+  const done = (d: Date): WhenResult => d.getTime() <= now.getTime()
+    ? fail(`${onceWhen(d, now)} — 이미 지난 시각이에요`)
+    : { ok: true, cron: onceCron(d), text: `${onceWhen(d, now)} 한 번`, once: true }
+  const t = readTime(s)
+  const at = (y: number, mo: number, day: number) => { const tt = t ?? { h: 9, m: 0 }; return new Date(y, mo, day, tt.h, tt.m) }
+
+  const rel = /(\d+|[가-힣]{1,2})\s*(분|시간|일)\s*(?:뒤|후|있다가)/.exec(s)
+  if (rel) {
+    const n = /^\d+$/.test(rel[1]) ? +rel[1] : DIGITS[rel[1]]
+    if (!n) return fail(`「${rel[1]}」 을 숫자로 못 읽었어요`)
+    if (rel[2] === '일') return done(at(now.getFullYear(), now.getMonth(), now.getDate() + n))   // 「3일 뒤 오후 3시」 · 시각을 안 말하면 아침 9시
+    const d = new Date(now); d.setSeconds(0, 0); d.setMinutes(d.getMinutes() + n * (rel[2] === '분' ? 1 : 60))
+    return done(d)
+  }
+  const real = (d: Date, y: number, mo: number, day: number) => d.getFullYear() === y && d.getMonth() === mo && d.getDate() === day
+
+  const ymd = /(\d{4})\s*[-./년]\s*(\d{1,2})\s*[-./월]\s*(\d{1,2})/.exec(s)
+  if (ymd) { const [y, mo, day] = [+ymd[1], +ymd[2] - 1, +ymd[3]]; const d = at(y, mo, day); return real(d, y, mo, day) ? done(d) : fail(`「${ymd[0]}」 은 없는 날짜예요`) }
+  const md = /(\d{1,2})\s*(?:[/.-]|월\s*)(\d{1,2})(?!\d)/.exec(s)
+  if (md) {
+    const [mo, day] = [+md[1] - 1, +md[2]]; let y = now.getFullYear(); let d = at(y, mo, day)
+    if (!real(d, y, mo, day)) return fail(`「${md[0]}」 은 없는 날짜예요`)
+    if (now.getTime() - d.getTime() > 183 * 86400_000) { y += 1; d = at(y, mo, day) }
+    return done(d)
+  }
+  const kd = /(내일모레|오늘|내일|모레|글피)/.exec(s)
+  if (kd) {
+    if (!t && kd[1] === '오늘') return fail('오늘 몇 시에 돌릴까요? 예: 오늘 오후 3시')
+    return done(at(now.getFullYear(), now.getMonth(), now.getDate() + KDAY[kd[1]]))
+  }
+  const wk = /(이번\s*주|다음\s*주|담주)\s*([일월화수목금토])(?:\s*요일)?(?![가-힣])/.exec(s)   // 「다음 주 화 9시」 처럼 «요일» 을 빼도
+  const dayOnly = /([일월화수목금토])\s*요일/.exec(s)
+  const marker = /한\s*번|1\s*회|한\s*차례|일회/.test(s)
+  if (wk || (dayOnly && marker)) {
+    const want = DOW[(wk ?? dayOnly)![wk ? 2 : 1]]
+    if (wk) {
+      // 주는 월요일에 시작한다 — 오늘이 일요일이면 «다음 주 월요일» 은 내일이고 «이번 주 월요일» 은 6일 전(지난 시각)이다
+      const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7) + (/이번/.test(wk[1]) ? 0 : 7))
+      return done(at(mon.getFullYear(), mon.getMonth(), mon.getDate() + ((want + 6) % 7)))
+    }
+    for (let k = 0; k <= 7; k++) { const d = at(now.getFullYear(), now.getMonth(), now.getDate() + k); if (d.getDay() === want && d.getTime() > now.getTime()) return done(d) }
+  }
+  // «N일 오전 9시» — 매달인지 이번 한 번인지 갈린다. 추측하지 않고 되묻는다(AA-3 ①)
+  const dom = /(?:^|[^\d월/])(\d{1,2})\s*일(?!\s*(?:마다|간격))/.exec(s)
+  if (dom && +dom[1] >= 1 && +dom[1] <= 31) {
+    const n = +dom[1], tt = t ?? { h: 9, m: 0 }
+    let d = new Date(now.getFullYear(), now.getMonth(), n, tt.h, tt.m)
+    if (d.getTime() <= now.getTime() || d.getDate() !== n) d = new Date(now.getFullYear(), now.getMonth() + 1, n, tt.h, tt.m)
+    if (marker && d.getDate() === n) return done(d)   // 「3일 오후 3시 한 번」 — 한 번이라고 했으니 묻지 않는다
+    const opts: WhenAsk['options'] = [{ label: `매달 ${n}일`, cron: `${tt.m} ${tt.h} ${n} * *`, text: `매달 ${n}일 ${hhmmText(tt.h, tt.m)}` }]
+    if (d.getDate() === n) opts.push({ label: `${d.getMonth() + 1}/${n} 한 번만`, cron: onceCron(d), text: `${onceWhen(d, now)} 한 번` })
+    return { ok: false, ask: { q: `「${s}」 은 ${opts.map((o) => o.label).join(', ')} 중 어느 쪽인가요?`, options: opts } }
+  }
+  if (marker) {
+    if (!t) return fail('몇 시에 한 번 돌릴까요? 예: 오후 3시 한 번')
+    const d = at(now.getFullYear(), now.getMonth(), now.getDate())
+    return done(d.getTime() > now.getTime() ? d : at(now.getFullYear(), now.getMonth(), now.getDate() + 1))
+  }
+  if (/오늘|내일|모레|글피|이번\s*주|다음\s*주|담주|있다가|(?:분|시간|일)\s*(?:뒤|후)/.test(s)) return fail(`「${s}」 를 한 번 돌릴 시각으로 못 읽었어요 — 예: 다음 주 화요일 오후 3시`)
+  return null
+}
+
 /** cron 을 사람 말로 되읽는다 — 목록에 원시 cron 을 띄우지 않으려고 (AA-4) */
-export function describeCron(cron: string): string {
+export function describeCron(cron: string, now = new Date()): string {
+  const once = onceAt(cron); if (once) return `${onceWhen(once, now)} 한 번`
   const p = String(cron ?? '').trim().split(/\s+/)
   if (p.length < 5 || p.length > 7) return cron
   const [mi, ho, dom, , dow] = p.length === 6 ? p.slice(1) : p
@@ -163,5 +274,7 @@ export function describeCron(cron: string): string {
 
 /** 저장 전에 사람에게 보여 줄 한 줄 — 「매일 저녁 8시에 돌립니다. 다음 실행은 9/23(화) 20:00 입니다.」 */
 export function confirmLine(cron: string, from = new Date()): string {
+  const once = onceAt(cron)
+  if (once) return once.getTime() <= from.getTime() ? `${onceWhen(once, from)}에 한 번 도는 루틴이었어요 — 그 시각이 지나 다시 돌지 않아요.` : `${onceWhen(once, from)}에 한 번만 돌립니다. 그 뒤로는 다시 돌지 않아요.`
   return `${describeCron(cron)}에 돌립니다. 다음 실행은 ${formatNext(nextRunOf(cron, from))} 입니다.`
 }

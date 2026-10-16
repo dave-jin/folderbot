@@ -6,7 +6,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 import { relUnder } from '../core/paths'
 import { stripRuntime, type RoutineDef } from '../core/types'
-import { confirmLine, describeCron, formatNext, parseWhen } from '../core/when'
+import { WHEN_EXAMPLES, confirmLine, describeCron, formatNext, isOnce, onceDone, parseWhen, sameOnce } from '../core/when'
 import { turnBlock } from '../core/turnGuard'
 import { asksTodo, lastHumanText } from '../core/todo'
 
@@ -29,7 +29,7 @@ function saveRoutines(reg: Registry, host: Host, bot: { orchestrator?: boolean; 
 }
 
 /** 도구 설명에 **「주기는 사람 말로 적는다」**를 분명히 써 둔다 — 안 쓰면 봇이 cron 식을 지어낸다(AA-5) */
-const WHEN_DESC = '언제 돌릴지 **사람 말로** 적는다 — 「매일 저녁 8시」·「평일 아침 9시 반」·「두 시간마다」·「매달 1일 아침 9시」. 🔴 cron 식을 지어내지 마라. 뜻이 갈리는 값(「20」)은 저장되지 않고 되묻는 답이 온다 — 그때 사람에게 물어라.'
+const WHEN_DESC = '언제 돌릴지 **사람 말로** 적는다 — 「매일 저녁 8시」·「평일 아침 9시 반」·「두 시간마다」·「매달 1일 아침 9시」. **한 번만** 돌리려면 날짜나 때를 적는다 — 「내일 아침 9시」·「10/20 오후 3시」·「오늘 12:30」·「30분 뒤」·「금요일 오후 3시 한 번」(그 시각에 한 번 돌고 끝난다 · 정해진 시각의 게시·발송은 세션 안에서 기다리지 말고 이것으로 건다). 🔴 cron 식을 지어내지 마라. 뜻이 갈리는 값(「20」)은 저장되지 않고 되묻는 답이 온다 — 그때 사람에게 물어라.'
 
 const COMMON: Tool[] = [
   { name: 'bots_list', description: '활성 봇 목록과 상태(세션 수·확인 대기)를 돌려준다.', inputSchema: obj({}) },
@@ -209,6 +209,7 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
         enabled: r.enabled !== false, push: !!r.push, approve: r.approve ?? 'always',
         next: r.nextRun ? formatNext(new Date(r.nextRun)) : null,
         error: r.lastError ?? null,
+        ...(isOnce(r.cron) ? { once: true, finished: onceDone(r.cron) && !r.lastError } : {}),   // CR · 한 번짜리 · 지났고 돌았으면 끝난 것(안 돌았으면 error 에 «놓침»)
       }))
     }
     case 'routine_add': {
@@ -217,6 +218,7 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       if (b.routines.some((r) => r.name === name)) throw new Error(`「${name}」 은 이미 있어요 — 고치려면 routine_update 를 쓰세요`)
       const w = parseWhen(s('when'))
       if (!w.ok) return whenProblem(w)
+      if (w.past) return whenProblem({ ok: false, error: `${w.text.replace(/ 한 번$/, '')} — 이미 지난 시각이에요`, examples: WHEN_EXAMPLES })   // CR · 저장된 값이 아니면 지난 시각은 막는다
       const def: RoutineDef = { name, cron: w.cron, prompt: s('prompt'), ...(a.push === undefined ? {} : { push: !!a.push }) }
       saveRoutines(reg, host, b, [...b.routines, def])
       return { ok: true, name, when: w.text, confirm: confirmLine(w.cron), note: '승인 수준(approve)은 사람이 화면에서 정해요 — 기본은 «묻지 않고 바로 한다» 입니다(루틴은 사람이 없을 때 도니까)' }
@@ -227,7 +229,11 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       const cur = b.routines.find((r) => r.name === name); if (!cur) throw new Error(`「${name}」 이라는 루틴이 없어요`)
       const before = stripRuntime(cur)
       const patch: Partial<RoutineDef> = {}
-      if (a.when !== undefined) { const w = parseWhen(s('when')); if (!w.ok) return whenProblem(w); patch.cron = w.cron }
+      if (a.when !== undefined) {
+        const w = parseWhen(s('when')); if (!w.ok) return whenProblem(w)
+        if (w.past && !sameOnce(w.cron, cur.cron)) return whenProblem({ ok: false, error: `${w.text.replace(/ 한 번$/, '')} — 이미 지난 시각이에요`, examples: WHEN_EXAMPLES })
+        patch.cron = w.cron
+      }
       if (a.prompt !== undefined) patch.prompt = s('prompt')
       if (a.push !== undefined) patch.push = !!a.push
       if (a.enabled !== undefined) patch.enabled = !!a.enabled

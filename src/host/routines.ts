@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from '
 import { dirname } from 'node:path'
 import { Cron } from 'croner'
 import type { Bot, PermissionMode, RoutineDef } from '../core/types'
-import { cronOk, describeCron } from '../core/when'
+import { cronOk, describeCron, onceAt, onceDone } from '../core/when'
 import { RESULT_LINE_HINT } from '../core/runs'
 
 export interface RoutineRunner { run: (bot: Bot, r: RoutineDef, why?: { catchup?: number }) => void; log: (msg: string) => void }
@@ -18,7 +18,7 @@ export interface RoutineRunner { run: (bot: Bot, r: RoutineDef, why?: { catchup?
 export class Routines {
   private jobs: Cron[] = []
   /** `${botId}::${name}` → 마지막 스케줄 결과. 화면으로 나가는 값이라 파일에는 안 쓴다 */
-  private state = new Map<string, { error?: string; next?: number }>()
+  private state = new Map<string, { error?: string; next?: number; job?: Cron; once?: number; catchup?: boolean }>()
   constructor(private runner: RoutineRunner) {}
 
   private key(botId: string, name: string): string { return `${botId}::${name}` }
@@ -34,6 +34,19 @@ export class Routines {
     for (const b of bots) for (const r of b.routines) {
       delete r.lastError; delete r.nextRun
       if (r.enabled === false) { this.state.set(this.key(b.id, r.name), {}); continue }
+      // CR · 한 번짜리가 이미 지났으면 걸 것이 없다. 돌았으면 끝난 루틴, 안 돌았으면 «놓침» 이다(status 가 그때 판정)
+      if (onceDone(r.cron)) {
+        const t = onceAt(r.cron)!.getTime(), k = this.key(b.id, r.name)
+        this.state.set(k, { once: t, catchup: r.catchup !== false })
+        // 다시 짜는 틈(타이머를 지운 순간 그 시각이 지나감)에 놓친 것은 켜진 뒤라면 바로 보충한다 — 보충은 켜질 때 한 번뿐이라 여기서 안 하면 사라진다
+        if (this.started && r.catchup !== false && !this.ran(k, t) && Date.now() - t <= CATCHUP_WINDOW_MS) {
+          this.runner.log(`놓친 한 번짜리 보충: ${b.name} · ${r.name} · 예정 ${new Date(t).toLocaleString('ko-KR')}`)
+          this.runner.run(b, r, { catchup: t })
+        }
+        const miss = this.status(b.id, r.name).error
+        if (miss) r.lastError = miss
+        continue
+      }
       const v = cronOk(r.cron)
       if (!v.ok) {
         r.lastError = v.error
@@ -46,7 +59,7 @@ export class Routines {
         this.jobs.push(job)
         const next = job.nextRun()?.getTime()
         if (next) r.nextRun = next
-        this.state.set(this.key(b.id, r.name), { next })
+        this.state.set(this.key(b.id, r.name), { next, job })
       } catch (e) {
         // cronOk 가 통과했는데도 여기서 터지면 croner 판이 바뀐 것이다 — 그때도 조용히 넘기지 않는다
         const msg = (e as Error).message
@@ -58,10 +71,23 @@ export class Routines {
   }
 
   /** 화면·도구가 묻는다 — 「이 루틴 지금 어떤가」 */
-  status(botId: string, name: string): { error?: string; next?: number } { return this.state.get(this.key(botId, name)) ?? {} }
+  status(botId: string, name: string): { error?: string; next?: number } {
+    const k = this.key(botId, name), st = this.state.get(k)
+    if (!st) return {}
+    // CR · 지난 한 번짜리가 돈 기록이 없으면 «놓침» — 조용히 «끝남» 으로 보이면 10/12 게시 사고가 그대로 되풀이된다.
+    //    켜진 직후(보충 전)에는 보충 창 안이면 아직 판정하지 않는다 · 기록 파일이 없으면(검사) 판정하지 않는다
+    if (st.once !== undefined) {
+      if (!this.file || this.ran(k, st.once)) return {}
+      if (!this.started && st.catchup && Date.now() - st.once <= CATCHUP_WINDOW_MS) return {}
+      return { error: MISSED_ONCE }
+    }
+    // CR · 다음 실행은 걸린 작업에 그때 묻는다 — 다시 짠 시각에 적어 둔 값은 한 번 돈 뒤에도 남아 «끝난 한 번짜리» 가 아직 남은 것처럼 보였다
+    const next = st.job ? st.job.nextRun()?.getTime() : st.next
+    return { ...(st.error ? { error: st.error } : {}), ...(next ? { next } : {}) }
+  }
   /** 한 봇의 루틴 목록에 화면용 값을 얹어 돌려준다(원본은 안 건드린다) */
   decorate(botId: string, routines: RoutineDef[]): RoutineDef[] {
-    return routines.map((r) => { const st = this.status(botId, r.name); return { ...r, ...(st.error ? { lastError: st.error } : {}), ...(st.next ? { nextRun: st.next } : {}) } })
+    return routines.map((r) => { const st = this.status(botId, r.name); const { nextRun: _n, lastError: _e, ...rest } = r; return { ...rest, ...(st.error ? { lastError: st.error } : {}), ...(st.next ? { nextRun: st.next } : {}) } })
   }
   /** 사람이 읽는 한 줄 — 「매일 저녁 8시」 */
   static describe(cron: string): string { return describeCron(cron) }
@@ -80,6 +106,10 @@ export class Routines {
     try { mkdirSync(dirname(this.file), { recursive: true }); const tmp = `${this.file}.${process.pid}.tmp`; writeFileSync(tmp, JSON.stringify(this.last)); renameSync(tmp, this.file) } catch (e) { this.runner.log(`루틴 실행 시각을 못 적었어요 · ${(e as Error).message}`) }
   }
   markRun(botId: string, name: string, at = Date.now()): void { this.loadLast()[this.key(botId, name)] = at; this.saveLast() }
+  /** CR · 그 시각 이후로 돈 기록이 있나 */
+  private ran(k: string, t: number): boolean { return (this.loadLast()[k] ?? 0) >= t }
+  /** CR · 켜질 때 보충(catchUp)이 한 번 돌았나 — 그 뒤로는 다시 짤 때 놓친 한 번짜리를 바로 보충한다 */
+  private started = false
   /**
    * 🔴 **켜질 때 한 번 — 꺼져 있던 사이 놓친 회차를 보충한다** (BR-2 · 2026-10-09). 업데이트로 앱이 다시 뜨거나 맥이 멈춘 사이에
    *    걸린 회차는 croner 가 다시 돌려주지 않는다. 마지막으로 돌린 뒤 예정 시각이 한 번이라도 지나갔고 그게 `CATCHUP_WINDOW_MS` 안이면 한 번 돌린다.
@@ -92,6 +122,20 @@ export class Routines {
     for (const b of bots) for (const r of b.routines) {
       if (r.enabled === false || r.catchup === false || !cronOk(r.cron).ok) continue
       const k = this.key(b.id, r.name)
+      /**
+       * CR · 한 번짜리는 «처음 보는 루틴은 기준선만» 을 따르지 않는다 — 기록이 없으면 **아직 안 돈 것**이다.
+       *    켜져 있는 동안 만들고 그 시각에 앱이 꺼져 있었으면 기록이 없는 채로 여기 온다. 그 회차가 곧 전부라 보충한다.
+       */
+      const once = onceAt(r.cron)
+      if (once) {
+        const t = once.getTime()
+        if (t <= now && now - t <= CATCHUP_WINDOW_MS && !((last[k] ?? 0) >= t)) {
+          this.runner.log(`놓친 한 번짜리 보충: ${b.name} · ${r.name} · 예정 ${once.toLocaleString('ko-KR')}`)
+          this.runner.run(b, r, { catchup: t })
+          done.push(k)
+        }
+        continue
+      }
       if (!last[k]) { last[k] = now; continue }
       const prev = missedSince(r.cron, last[k], now)
       if (prev === null) continue
@@ -100,9 +144,13 @@ export class Routines {
       done.push(`${b.id}::${r.name}`)
     }
     this.saveLast()
+    this.started = true
     return done
   }
 }
+
+/** CR · 지난 한 번짜리가 돈 기록이 없다 */
+export const MISSED_ONCE = '그 시각에 돌지 못했어요(앱이 꺼져 있었거나 보충 시간 6시간이 지났어요) — 다시 돌리려면 새 시각을 적거나 [지금 한 번 돌려보기]를 누르세요'
 
 /** BR-2 · 이만큼 지난 회차까지만 보충한다 */
 export const CATCHUP_WINDOW_MS = 6 * 3600_000

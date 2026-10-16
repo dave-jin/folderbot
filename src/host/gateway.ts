@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process'
 function spawnZip(cwd: string, name: string) { return spawn('zip', ['-r', '-q', '-', name, '-x', '*/.*', '.*'], { cwd }) }
 import type { Frame, RoutineDef } from '../core/types'
 import { stripRuntime } from '../core/types'
-import { WHEN_EXAMPLES, confirmLine, cronOk, describeCron, parseWhen } from '../core/when'
+import { WHEN_EXAMPLES, confirmLine, cronOk, describeCron, parseWhen, sameOnce } from '../core/when'
 import type { Host } from './host'
 import { bindAddresses, tailnetInfo, tailnetInfoCached } from './tailnet'
 import { StaticCache, pickEncoding } from './staticCache'
@@ -861,6 +861,8 @@ export class Gateway {
           const when = String(r?.cron ?? '').trim()
           const v = parseWhen(when)                    // 사람 말도 여기서 cron 이 된다 — 화면과 봇이 같은 문을 쓴다
           if (!v.ok) { bad.push({ name, cron: when, error: 'ask' in v ? v.ask.q : v.error }); return null }
+          // CR · 지난 한 번짜리는 이미 저장돼 있던 값(끝난 루틴)일 때만 둔다 — 새로 넣는 지난 시각은 조용히 «끝남» 이 된다
+          if (v.past && !sameOnce(v.cron, bot.routines.find((x) => x.name === name)?.cron)) { bad.push({ name, cron: when, error: `${v.text.replace(/ 한 번$/, '')} — 이미 지난 시각이에요` }); return null }
           return stripRuntime({ ...r, name, cron: v.cron })
         })
         if (bad.length) return json(400, { error: '주기를 못 읽었어요', bad, examples: WHEN_EXAMPLES })

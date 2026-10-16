@@ -5,7 +5,7 @@ import { notePlain } from '../core/mdPlain'
 import { api, pushWhyText, setToken, subscribePush, type PushWhy } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { hitRange, rank } from '../core/search'
-import { WHEN_EXAMPLES, describeCron, formatNext, nextRunOf, parseWhen } from '../core/when'
+import { WHEN_EXAMPLES, describeCron, formatNext, nextRunOf, onceAt, parseWhen } from '../core/when'
 import { candidatePaths } from '../core/paths'
 import { diffLines, diffStat, foldSame } from '../core/diff'
 import { extractMath } from '../core/math'
@@ -464,15 +464,28 @@ export function RoutineSheet({ bot, onClose, draft, pick }: { bot: Bot; onClose:
   const cur = list[i]
   const upd = (p: Partial<Row>) => setList(list.map((r, k) => (k === i ? { ...r, ...p } : r)))
 
-  /** 🔴 미리보기와 스케줄러가 **같은 파서**를 쓴다 — 갈리면 «미리보기는 맞는데 안 도는» 새 사고가 난다 */
-  const read = (w: string) => parseWhen(w)
-  const curRead = cur ? read(cur.when) : null
-  const bad = list.map((r) => read(r.when)).filter((v) => !v.ok).length
+  /**
+   * 🔴 미리보기와 스케줄러가 **같은 파서**를 쓴다 — 갈리면 «미리보기는 맞는데 안 도는» 새 사고가 난다.
+   * CR · 사람이 «언제» 를 안 고친 줄은 **저장된 값을 그대로** 읽고 보낸다 — 되읽은 말을 다시 읽으면 끝난 한 번짜리(지난 날짜)가
+   *    «이미 지났어요» 로 막혀 다른 루틴까지 저장을 못 했다.
+   */
+  const kept = (r: Row) => r.when === describeCron(r.cron)
+  const read = (r: Row) => parseWhen(kept(r) ? r.cron : r.when)
+  const curRead = cur ? read(cur) : null
+  const bad = list.map(read).filter((v) => !v.ok).length
 
-  const payload = () => list.map((r) => { const { when, lastError: _e, nextRun: _n, ...rest } = r; return { ...rest, cron: when } })
+  /**
+   * CR · 고친 줄이 한 번짜리로 읽히면 **읽은 시각(ISO)** 을 보낸다 — «30분 뒤» 를 말 그대로 보내면 저장할 때마다 서버가 다시 계산해 시각이 밀렸다.
+   *    저장한 뒤에는 서버가 돌려준 목록으로 다시 맞춘다(그 줄은 이제 «안 고친 줄» 이다).
+   */
+  const payload = () => list.map((r) => { const { when, lastError: _e, nextRun: _n, ...rest } = r; const v = read(r); return { ...rest, cron: kept(r) ? r.cron : v.ok && v.once ? v.cron : when } })
+  const put = async () => {
+    const res = await api<{ routines?: RoutineDef[] }>(`/bots/${bot.id}/routines`, { method: 'PUT', body: { routines: payload() } })
+    if (res?.routines) setList(res.routines.map(toRow))
+  }
   const save = async () => {
     setBusy(true)
-    try { await api(`/bots/${bot.id}/routines`, { method: 'PUT', body: { routines: payload() } }); await refresh(); return true }
+    try { await put(); await refresh(); return true }
     finally { setBusy(false) }
   }
   const saveClose = async () => { if (await save()) onClose() }
@@ -480,7 +493,7 @@ export function RoutineSheet({ bot, onClose, draft, pick }: { bot: Bot; onClose:
   const runNow = async (name: string) => {
     setBusy(true)
     try {
-      await api(`/bots/${bot.id}/routines`, { method: 'PUT', body: { routines: payload() } })
+      await put()
       const r = await api<{ ran: string; warn?: string | null }>(`/bots/${bot.id}/routines/run`, { method: 'POST', body: { name } })
       await refresh(); setRan(r.warn ? `${name} 을 돌렸어요 — ${r.warn}` : `${name} 을 지금 한 번 돌렸어요 · 채팅에서 결과를 보세요`)
     } catch (e) { setRan(`못 돌렸어요 — ${(e as Error).message}`) } finally { setBusy(false) }
@@ -494,13 +507,13 @@ export function RoutineSheet({ bot, onClose, draft, pick }: { bot: Bot; onClose:
       <div style={{ display: 'flex', flexDirection: phone ? 'column' : 'row', flex: 1, minHeight: 0 }}>
         <div className="rtlist" style={{ ...(phone ? { maxHeight: '34vh', flexShrink: 0, borderBottom: '1px solid var(--border)' } : { width: 240, borderRight: '1px solid var(--border)' }), padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 2, overflow: 'auto' }}>
           {list.map((r, k) => {
-            const v = read(r.when); const next = v.ok ? nextRunOf(v.cron) : null
+            const v = read(r); const next = v.ok ? nextRunOf(v.cron) : null
             const off = r.enabled === false
             return <div key={k} className={`rtrow ${k === i ? 'on' : ''} ${off ? 'off' : ''}`}>
               <button className="pick" onClick={() => setI(k)}>
                 <span className="n">{r.name || '(이름 없음)'}{r.lastError ? <span className="rtwarn" title={r.lastError}><Icon n="warn" size={11} />안 걸림</span> : null}</span>
                 {/* 🔴 목록에는 **원시 cron 대신 사람 말과 다음 실행**이 뜬다 — 「20」 이라고만 떠서 사고를 못 봤다 */}
-                <span className="sub">{v.ok ? v.text : <span className="err">주기를 못 읽어요</span>}{next && !off ? ` · 다음 ${formatNext(next)}` : off ? ' · 꺼짐' : ''}</span>
+                <span className="sub">{v.ok ? v.text : <span className="err">주기를 못 읽어요</span>}{off ? ' · 꺼짐' : v.ok && v.once ? (v.past ? (r.lastError ? ' · 놓침' : ' · 끝남') : '') : next ? ` · 다음 ${formatNext(next)}` : ''}</span>
               </button>
               <span className="rtacts">
                 <button className="ib" title={off ? '켜기' : '끄기'} onClick={() => setList(list.map((x, q) => (q === k ? { ...x, enabled: off } : x)))}><Icon n={off ? 'run' : 'pause'} size={12} /></button>
@@ -518,7 +531,9 @@ export function RoutineSheet({ bot, onClose, draft, pick }: { bot: Bot; onClose:
             <div className="field"><label>언제</label>
               <input value={cur.when} placeholder="매일 저녁 8시" onChange={(e) => upd({ when: e.target.value })} />
               <div className="rtpre">{PRESETS.map((p) => <button key={p} className="preset sm" onClick={() => upd({ when: p })}>{p}</button>)}</div>
-              {curRead?.ok
+              {curRead?.ok && curRead.once
+                ? <small className="rtnext">{curRead.past ? '이미 지난 시각이라 다시 돌지 않아요 — 다시 쓰려면 새 시각을 적으세요' : <>한 번만 돌아요: <b>{formatNext(onceAt(curRead.cron))}</b> · 그 뒤로는 안 돌아요</>}</small>
+                : curRead?.ok
                 ? <small className="rtnext">다음 실행: <b>{formatNext(nextRunOf(curRead.cron))}</b> <span className="mono dim">{curRead.cron}</span></small>
                 : curRead && 'ask' in curRead
                   ? <small className="rterr">{curRead.ask.q} <span className="rtpre">{curRead.ask.options.map((o) => <button key={o.cron} className="preset sm" onClick={() => upd({ when: o.text })}>{o.label}</button>)}</span></small>

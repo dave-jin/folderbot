@@ -478,6 +478,56 @@ try {
       else ok('CC 10/12 사고 재현 — 사람이 답한 루틴 세션은 채팅으로 옮겨지고 다른 루틴이 세 번 돌아도 남는다')
       writeFileSync(yml, goodYml); await wait(700)
     }
+    /**
+     * 🔴 CR · 한 번만 도는 루틴 (2026-10-17 Dave «1회만 실행되는 루틴»). «언제» 에 날짜·때를 쓰면 그 시각에 한 번.
+     *    옛 코드는 «내일 아침 9시» 를 «매일 아침 9시» 로 읽어 날마다 돌렸다 — 여기서 빨개진다.
+     */
+    {
+      const p2 = (n) => String(n).padStart(2, '0')
+      const iso = (d, sec = false) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}${sec ? `:${p2(d.getSeconds())}` : ''}`
+      const tm = new Date(); tm.setDate(tm.getDate() + 1); tm.setHours(9, 0, 0, 0)
+      const once = await putR([{ name: '게시 한 번', cron: '내일 아침 9시', prompt: '게시해 줘' }])
+      if (once.status !== 200) fail('CR: «내일 아침 9시» 가 안 들어갔다 · ' + JSON.stringify(once))
+      if (!readFileSync(yml, 'utf8').includes(iso(tm))) fail('🔴 CR: «내일 아침 9시» 가 한 번짜리 시각으로 저장되지 않았다(매일로 읽었나) · ' + readFileSync(yml, 'utf8'))
+      const l1 = (await api(`/bots/${bot.id}/routines`))[0]
+      if (!/한 번$/.test(l1?.when ?? '') || l1.nextRun !== tm.getTime() || l1.lastError) fail('CR: 목록에 «… 한 번» 과 그 시각의 다음 실행이 있어야 한다 · ' + JSON.stringify(l1))
+      // 사람 말로 지난 시각은 막는다 · 저장돼 있던 지난 시각(끝난 루틴)은 둔다
+      const y = new Date(Date.now() - 86400_000)
+      const past = await putR([{ name: '지난 것', cron: `${y.getMonth() + 1}/${y.getDate()} 아침 9시`, prompt: 'p' }])
+      if (past.status !== 400 || !/지난 시각/.test(JSON.stringify(past.body))) fail('CR: 어제 날짜를 사람 말로 넣었는데 안 막혔다 · ' + JSON.stringify(past))
+      const fresh = await putR([{ name: '새 지난 것', cron: '2020-01-01T09:00', prompt: 'p' }])
+      if (fresh.status !== 400) fail('CR: 새로 넣는 지난 시각(ISO)은 막아야 한다 — 조용히 «끝남» 이 된다 · ' + JSON.stringify(fresh))
+      writeFileSync(yml, `routines:\n  - name: 끝난 것\n    cron: "2020-01-01T09:00"\n    prompt: p\n`); await wait(700)
+      const ended = await putR([{ name: '끝난 것', cron: '2020-01-01T09:00', prompt: 'p' }])
+      const l2 = (await api(`/bots/${bot.id}/routines`))[0]
+      if (ended.status !== 200 || l2?.nextRun || !/한 번$/.test(l2?.when ?? '')) fail('CR: 저장돼 있던 지난 한 번짜리는 그대로 저장돼야 한다 · ' + JSON.stringify({ ended, l2 }))
+      // 🔴 돈 기록이 없으면 «끝남» 이 아니라 «놓침» — 조용히 끝난 척하면 10/12 게시 사고가 되풀이된다
+      if (!/돌지 못했어요/.test(l2?.lastError ?? '')) fail('🔴 CR: 안 돈 지난 한 번짜리가 «놓침» 으로 안 보인다 · ' + JSON.stringify(l2))
+      // 봇 도구 — «30분 뒤» · 목록에 once
+      const added = JSON.parse((await mcpB('routine_add', { name: '알림 한 번', when: '30분 뒤', prompt: '알려 줘' })).content[0].text)
+      if (!added.ok || !/한 번만 돌립니다/.test(added.confirm ?? '')) fail('CR: routine_add «30분 뒤» · ' + JSON.stringify(added))
+      const lst = JSON.parse((await mcpB('routine_list', {})).content[0].text).find((r) => r.name === '알림 한 번')
+      if (!lst?.once || lst.finished !== false || !lst.next) fail('CR: routine_list 에 once·next 가 없다 · ' + JSON.stringify(lst))
+      // 🔴 «정오 12시» 를 시트처럼 되읽은 말로 다시 저장해도 낮 12시 — 종전엔 자정이 됐다
+      await putR([{ name: '점심', cron: '매일 정오 12시', prompt: 'p' }])
+      const noon = (await api(`/bots/${bot.id}/routines`))[0]
+      await putR([{ name: '점심', cron: noon.when, prompt: 'p' }])
+      if ((await api(`/bots/${bot.id}/routines`))[0]?.cron !== '0 12 * * *') fail('🔴 CR: «정오 12시» 를 다시 저장했더니 낮 12시가 아니다(자정으로 바뀜) · ' + JSON.stringify(await api(`/bots/${bot.id}/routines`)))
+      // 실제로 한 번 돈다 — 손으로 몇 초 뒤 시각을 적으면 그 초에 루틴 세션이 생긴다
+      const had = new Set((await api(`/bots/${bot.id}/sessions`)).map((x) => x.id))
+      const soon = new Date(Date.now() + 4000)
+      writeFileSync(yml, `routines:\n  - name: 곧 한 번\n    cron: "${iso(soon, true)}"\n    prompt: "되읊어: 한 번 돌았음"\n`)
+      let fired = null
+      for (let i = 0; i < 100 && !fired; i++) { await wait(100); fired = (await api(`/bots/${bot.id}/sessions`)).find((x) => !had.has(x.id) && x.routine === '곧 한 번') ?? null }
+      if (!fired) fail('🔴 CR: 몇 초 뒤로 적은 한 번짜리 루틴이 안 돌았다')
+      await wait(1500)
+      const runs = (await api(`/bots/${bot.id}/sessions`)).filter((x) => x.routine === '곧 한 번').length
+      if (runs !== 1) fail('CR: 한 번짜리가 ' + runs + '번 돌았다')
+      const l3 = (await api(`/bots/${bot.id}/routines`))[0]
+      if (l3?.nextRun || l3?.lastError) fail('CR: 돈 뒤에는 다음 실행도 «놓침» 도 없어야 한다 · ' + JSON.stringify(l3))
+      writeFileSync(yml, goodYml); await wait(700)
+      ok('CR 한 번만 도는 루틴 — «내일 아침 9시» = 그 시각 한 번 · 지난 시각 400 · 저장된 지난 것은 둠(안 돌았으면 «놓침») · 봇 «30분 뒤» · 정오 왕복 · 몇 초 뒤 시각에 실제로 한 번')
+    }
     // 치우기 — 루틴이 만든 세션과 `.bot.yml` 을 원래대로 (이 블록 때문에 뒤 검사가 달라지면 안 된다)
     for (const x of await api(`/bots/${bot.id}/sessions`)) if (!sessWas.has(x.id)) await fetch(base + `/api/sessions/${x.id}`, { method: 'DELETE' })
     if (ymlWas === null) { try { rmSync(yml) } catch { /* */ } } else writeFileSync(yml, ymlWas)

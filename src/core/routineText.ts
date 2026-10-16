@@ -6,6 +6,8 @@
  * ⛔ **cron 을 사람이 외우게 하지 않는다.** 「매주 월요일 아침 9시」 라고 쓰면 그게 `0 9 * * 1` 이다.
  * ⚠ 못 읽으면 **조용히 기본값(매일 오전 9시)** 으로 두고 `matched: false` 로 알린다 — 틀린 값을 맞은 척하지 않는다.
  */
+import { parseWhen } from './when'
+
 export interface CronGuess {
   cron: string
   /** 사람이 읽는 말 — 「매주 월요일 09:00」 */
@@ -21,8 +23,21 @@ const DOW_NAME = ['일', '월', '화', '수', '목', '금', '토']
 /** 말로 된 시각 — 「아침」 은 9시다 */
 const WORD_HOUR: [RegExp, number][] = [[/새벽/, 5], [/아침/, 9], [/오전/, 9], [/점심|정오/, 12], [/오후/, 14], [/저녁/, 19], [/밤/, 21]]
 
+/** CR · 한 번짜리 단서 — 「내일 아침 9시에 블로그 올려줘」 를 «매일 09:00» 으로 읽지 않게 */
+const ONCE_CUE = /(내일모레|오늘|내일|모레|글피|(?:이번|다음)\s*주|담주|\d+\s*(?:분|시간|일)\s*(?:뒤|후)|\d{1,2}\s*(?:\/|월\s*)\d{1,2}\s*일?)/
+const ONCE_EAT = [ONCE_CUE, /(?:새벽|아침|오전|점심|정오|낮|오후|저녁|밤|자정)?\s*\d{1,2}\s*(?:시(?:\s*(?:반|\d{1,2}\s*분))?|:\d{2})/, /새벽|아침|오전|점심|정오|오후|저녁|밤|자정/, /[일월화수목금토]\s*요일/, /한\s*번만?/]
+
 export function cronFromText(text: string): CronGuess {
   const t = text.replace(/\s+/g, ' ').trim()
+  if (ONCE_CUE.test(t)) {
+    const v = parseWhen(t)
+    if (v.ok && v.once) {
+      let rest = t
+      for (const re of ONCE_EAT) rest = rest.replace(re, ' ')
+      rest = rest.replace(/\s+/g, ' ').trim().replace(/^(에|에는)\s+/, '')
+      return { cron: v.cron, label: v.text, rest, matched: true }
+    }
+  }
   let matched = false
   let hour = 9, min = 0
   let dom = '*', dow = '*'
