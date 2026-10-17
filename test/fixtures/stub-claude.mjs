@@ -8,6 +8,14 @@ import { homedir } from 'node:os'
 const argv = process.argv.slice(2)
 const at = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined }
 if (argv[0] === 'auth') { process.stdout.write(JSON.stringify({ loggedIn: process.env.STUB_LOGGED_OUT ? false : true, authMethod: 'claude.ai', email: 'qa@example.com', subscriptionType: 'max' }) + '\n'); process.exit(0) }
+/** DC · 세션 제목 한 번 묻기(`titleLLM.ts`) — `-p --output-format text` 로 오면 질문 앞머리로 «“제목: …”» 꼴을 돌려준다(호스트가 꾸밈을 걷는지도 잰다) */
+if (at('--output-format') === 'text') {
+  let inp = ''; process.stdin.on('data', (c) => { inp += c }); process.stdin.on('end', () => {
+    const q = (/\[질문\] (.*)/.exec(inp)?.[1] ?? '').slice(0, 8)
+    if (/제목실패/.test(inp)) { process.stderr.write('boom\n'); process.exit(1) }
+    process.stdout.write(`제목: “요약 ${q}”\n`); process.exit(0)
+  })
+} else {
 /**
  * 🔴 **계정이 안 받아 주는 모델** — 요금제마다 쓸 수 있는 모델이 다르다(긴 문맥은 특히).
  *    `--model` 로 그 이름이 오면 진짜 CLI 처럼 **그 자리에서 죽는다.** 호스트가 모델을 빼고
@@ -351,3 +359,5 @@ rl.on('line', (raw) => {
   say({ type: 'result', subtype: 'success', duration_ms: 123, total_cost_usd: 0.001, usage: { input_tokens: 3483000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 9000 }, modelUsage: { stub: { contextWindow: 200000, inputTokens: 3400000, outputTokens: 9000 }, 'stub-sub[1m]': { contextWindow: 1000000, inputTokens: 500, outputTokens: 40 } } })
 })
 rl.on('close', () => process.exit(0))
+
+}

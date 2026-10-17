@@ -15,3 +15,23 @@ describe('titleFromText', () => {
   it('슬래시 명령은 떼고 본다', () => { expect(t('/compact 지난 대화 줄여 줘')).toBe('지난 대화 줄여 줘'); expect(t('/clear')).toBe('/clear') })
   it('제목감이 없으면 빈 문자열', () => { expect(t('   ')).toBe(''); expect(t('')).toBe('') })
 })
+
+import { cleanLlmTitle, titlePrompt } from '../../src/core/sessionTitle'
+/** DC · Haiku 제목 (2026-10-17 Dave «처음 질문과 답변 내용 바탕으로 hiku 이용해서») */
+describe('DC cleanLlmTitle', () => {
+  it('꾸밈을 걷는다', () => {
+    expect(cleanLlmTitle('제목: “원격 캐시와 문서 탭”\n')).toBe('원격 캐시와 문서 탭')
+    expect(cleanLlmTitle('## **PDF 열기 속도 개선**.')).toBe('PDF 열기 속도 개선')
+    expect(cleanLlmTitle('\n\n「세션 이름 자동 생성」')).toBe('세션 이름 자동 생성')
+  })
+  it('길면 줄이고, 비거나 오류면 빈 문자열', () => {
+    expect(cleanLlmTitle('가'.repeat(50)).length).toBeLessThanOrEqual(31)
+    expect(cleanLlmTitle('   ')).toBe('')
+    expect(cleanLlmTitle('Error: not logged in')).toBe('')
+  })
+  it('보내는 말은 질문·답 앞부분만', () => {
+    const p = titlePrompt('질'.repeat(3000), '답'.repeat(3000))
+    expect(p.length).toBeLessThan(3400)
+    expect(p).toContain('[질문]'); expect(p).toContain('[답]')
+  })
+})

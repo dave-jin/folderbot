@@ -197,8 +197,16 @@ try {
    */
   {
     const list = await api(`/bots/${bot.id}/sessions`)
-    const me = list.find((x) => x.id === s1.sessionId)
-    if (!me || me.name !== 'PRD 를 읽어 줘') fail('세션 제목: 첫 말이 제목이 안 됐다 · ' + JSON.stringify(me && me.name))
+    // DC · 첫 답이 끝나면 Haiku 가 다시 짓는다(스텁은 «제목: “요약 <질문 앞 8자>”» — 꾸밈을 걷는지도 본다). 고치기 전 판: 첫 말 그대로
+    let me = list.find((x) => x.id === s1.sessionId)
+    for (let i = 0; i < 30 && me?.name !== '요약 PRD 를 읽어'; i++) { await wait(100); me = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === s1.sessionId) }
+    if (!me || me.name !== '요약 PRD 를 읽어') fail('🔴 DC 세션 제목: 첫 답 뒤에 Haiku 제목으로 안 바뀌었다 · ' + JSON.stringify(me && me.name))
+    // Haiku 가 실패하면 첫 말 제목이 그대로 남는다
+    const bad = await api(`/bots/${bot.id}/send`, { text: '제목실패 보고서를 정리해 줘', name: '세션 7' })
+    let bs = null; for (let i = 0; i < 40; i++) { await wait(100); bs = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === bad.sessionId); if (bs?.state === 'done' || bs?.state === 'idle') break }
+    await wait(500); bs = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === bad.sessionId)
+    if (bs?.name !== '제목실패 보고서를 정리해 줘') fail('DC: Haiku 가 실패했는데 첫 말 제목이 안 남았다 · ' + JSON.stringify(bs?.name))
+    await api(`/sessions/${bad.sessionId}`, undefined, 'DELETE')
     const mine = await api(`/bots/${bot.id}/sessions`, { name: '세션 9' })
     await api(`/sessions/${mine.id}/rename`, { name: '내가 지은 이름' })
     await api(`/sessions/${mine.id}/send`, { text: '이 말로 제목을 덮으면 안 된다' })
@@ -206,7 +214,7 @@ try {
     const after = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === mine.id)
     if (after.name !== '내가 지은 이름') fail('세션 제목: 사람이 지은 이름을 덮었다 · ' + JSON.stringify(after.name))
     await api(`/sessions/${mine.id}`, undefined, 'DELETE')
-    ok('세션 제목 — 첫 말로 자동 · 사람이 지은 이름은 안 덮는다')
+    ok('세션 제목 — 첫 말로 자동 → 첫 답 뒤 Haiku 제목(DC) · 실패면 첫 말 그대로 · 사람이 지은 이름은 안 덮는다')
   }
   // 서브에이전트 · 생각 · TodoWrite
   const sub = chat.items.find((i) => i.kind === 'subagent'); if (!sub || sub.tools !== 1 || sub.status !== 'done' || !/2건/.test(sub.result ?? '')) fail('subagent item: ' + JSON.stringify(sub))
@@ -992,7 +1000,7 @@ try {
         window.__kbBoth = (h) => { window.__ih = H - h; vv.height = H - h; vv.offsetTop = 0; vv.dispatchEvent(new Event('resize')) }
         window.__kbReset = () => { window.__ih = H; vv.height = H; vv.offsetTop = 0; vv.dispatchEvent(new Event('resize')) }
       })
-      const errs = []; pg.on('pageerror', (e) => errs.push(e.message)); pg.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()) })
+      const errs = []; pg.on('pageerror', (e) => errs.push(e.message)); pg.on('console', (m) => { if (m.type() === 'error') errs.push(m.text() + (m.location()?.url ? ' @ ' + m.location().url.replace(/token=[^&]*/, 'token=…') : '')) })
       // 콘솔의 «Failed to load resource» 는 주소를 안 말한다 — 어느 주소가 4xx·5xx 였는지 함께 적는다(원인을 바로 찾게)
       pg.on('response', (r) => { if (r.status() >= 400 && /\/api\//.test(r.url())) console.log(`  (${name} 화면 요청 ${r.status()} ${r.request().method()} ${r.url().replace(/^https?:\/\/[^/]+/, '')})`) })
       await pg.goto(base + `/#bot=${bot.id}`)
@@ -6038,6 +6046,72 @@ try {
         if (errs.length) fail('page errors: ' + errs.join(' | '))
       }
       await pg.close()
+    }
+    /**
+     * 🔴 DA · 원격 캐시 · 문서 탭 (2026-10-17 Dave «다른 세션을 누를 때 · PDF 열 때 느리다» · «전부 미리 받기» · «누를 때마다 새 탭»)
+     *   ① 데스크톱에서 파일 셋을 한 번씩 누르면 탭 셋이 남는다(미리보기로 바뀌지 않는다) · 옆 문서 넘기기(‹)는 탭을 늘리지 않는다
+     *   ② `/raw` — 판 표식으로 304 · 조각(Range) 206 · 파일이 바뀌면 다시 200 ③ `/file?v=` 가 같으면 글 없이 «그대로»
+     *   ④ 원격 데스크톱(스모크는 `__fbCacheOn`)은 모든 세션을 받아 IndexedDB 에 둔다 → 다시 켜면 `/chat` 이 늦어도 대화가 먼저 보인다
+     * ⚠ 고치기 전 판에서: ① 탭 1개(미리보기) ② `no-store` 라 304·206 없음 ③ `same` 없음 ④ IndexedDB 가 비고, 대화는 `/chat` 이 와야 보인다
+     */
+    {
+      const bdir = join(root, '3. Area/제품_Rondo')
+      for (const f of ['da-a.md', 'da-b.md', 'da-c.md']) writeFileSync(join(bdir, f), `# ${f}\n`)
+      // ②·③ API
+      const pdfAbs = join(bdir, 'da.pdf'); writeFileSync(pdfAbs, '%PDF-1.4\n' + 'x'.repeat(5000) + '\n%%EOF\n')
+      const ru = `${base}/api/bots/${bot.id}/raw?rel=da.pdf`
+      const r1 = await fetch(ru); await r1.arrayBuffer(); const tag = r1.headers.get('etag')
+      if (r1.status !== 200 || !tag || r1.headers.get('accept-ranges') !== 'bytes' || /no-store/.test(r1.headers.get('cache-control') ?? '')) fail('🔴 DA: /raw 에 판 표식·조각 받기가 없다(매번 통째로 받는다) · ' + JSON.stringify([r1.status, tag, r1.headers.get('accept-ranges'), r1.headers.get('cache-control')]))
+      const r2 = await fetch(ru, { headers: { 'if-none-match': tag } }); await r2.arrayBuffer()
+      if (r2.status !== 304) fail('🔴 DA: 같은 판을 들고 물었는데 304 가 아니다 · ' + r2.status)
+      const r3 = await fetch(ru, { headers: { range: 'bytes=0-7' } }); const t3 = await r3.text()
+      if (r3.status !== 206 || t3 !== '%PDF-1.4' || !/^bytes 0-7\/\d+$/.test(r3.headers.get('content-range') ?? '')) fail('🔴 DA: 조각(Range) 받기가 안 된다 · ' + JSON.stringify([r3.status, t3, r3.headers.get('content-range')]))
+      writeFileSync(pdfAbs, '%PDF-1.4\n' + 'y'.repeat(6000) + '\n%%EOF\n')
+      const r4 = await fetch(ru, { headers: { 'if-none-match': tag } }); await r4.arrayBuffer()
+      if (r4.status !== 200) fail('🔴 DA: 파일이 바뀌었는데 옛 판에 304 를 줬다 — 봇이 고친 PDF 가 옛것으로 보인다 · ' + r4.status)
+      const f1 = await api(`/bots/${bot.id}/file?rel=da-a.md`); const f2 = await api(`/bots/${bot.id}/file?rel=da-a.md&v=${encodeURIComponent(f1.ver)}`)
+      if (!f2.same || f2.text !== undefined || !Array.isArray(f2.clashes)) fail('🔴 DA: /file?v= 가 같은 판인데 글을 또 보냈다 · ' + JSON.stringify(f2).slice(0, 200))
+      const f3 = await api(`/bots/${bot.id}/file?rel=da-a.md&v=old`); if (f3.same || f3.text !== '# da-a.md\n') fail('DA: 판이 다르면 글을 줘야 한다 · ' + JSON.stringify(f3).slice(0, 200))
+      ok('DA /raw 304 · 조각 206 · 바뀌면 200 · /file?v= «그대로»')
+      // ① 탭
+      const dp = await br.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
+      const derr = []; dp.on('pageerror', (e) => derr.push(e.message))
+      await dp.addInitScript((bid) => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark'); if (!sessionStorage.getItem('da')) { localStorage.removeItem('fb:docs:' + bid); sessionStorage.setItem('da', '1') } }, bot.id)
+      await dp.goto(base + `/#bot=${bot.id}`)
+      for (const f of ['da-a.md', 'da-b.md', 'da-c.md']) { await dp.waitForSelector(`.trow[data-rel="${f}"]`, { timeout: 8000 }); await dp.click(`.trow[data-rel="${f}"]`); await wait(450) }
+      const tabs = await dp.$$eval('.doc .tab', (r) => r.map((x) => ({ t: (x.textContent ?? '').trim(), pv: x.classList.contains('pv'), on: x.classList.contains('on') })))
+      if (tabs.length !== 3 || tabs.some((t) => t.pv) || !tabs[2]?.on || !/da-c/.test(tabs[2]?.t ?? '')) fail('🔴 DA: 파일 셋을 눌렀는데 탭 셋이 안 남았다(미리보기 탭이 바뀌었나) · ' + JSON.stringify(tabs))
+      await dp.click('.doc .tab >> nth=0'); await wait(400)
+      await dp.click('.dtb .nb >> nth=0'); await wait(500)
+      const tabs2 = await dp.$$eval('.doc .tab', (r) => r.map((x) => (x.textContent ?? '').trim()))
+      if (tabs2.length !== 3 || tabs2.some((t) => /^da-a/.test(t))) fail('DA: 옆 문서 넘기기(‹)가 지금 탭을 안 바꾸고 탭을 늘렸다 · ' + JSON.stringify(tabs2))
+      await dp.reload(); await dp.waitForSelector('.doc .tab', { timeout: 8000 }); await wait(300)
+      if ((await dp.$$eval('.doc .tab', (r) => r.length)) !== 3) fail('DA: 다시 켜면 탭이 남아 있어야 한다')
+      if (derr.length) fail('DA 탭 page errors: ' + derr.join(' | '))
+      await dp.close()
+      ok('DA 문서 탭 — 누를 때마다 새 탭(셋) · ‹ 넘기기는 지금 탭 · 다시 켜도 남음')
+      // ④ 디스크 캐시
+      const sidsAll = (await api('/state')).sessionsByBot; const allIds = Object.values(sidsAll).flat().map((x) => x.id)
+      let target = null; for (const x of (sidsAll[bot.id] ?? [])) { const c = await api(`/sessions/${x.id}/chat`); if ((c.items ?? []).some((i) => i.kind === 'user')) { target = x.id; break } }
+      if (!target || allIds.length < 2) fail('DA: 캐시 검사 전제 — 말이 있는 세션이 없다 · ' + JSON.stringify({ target, n: allIds.length }))
+      const cp = await br.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
+      const cerr = []; cp.on('pageerror', (e) => cerr.push(e.message))
+      await cp.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark'); window.__fbCacheOn = true })
+      await cp.goto(base + `/#bot=orch`)
+      const idb = () => cp.evaluate(() => new Promise((res) => { const r = indexedDB.open('fb-cache'); r.onsuccess = () => { try { const g = r.result.transaction('chats').objectStore('chats').getAllKeys(); g.onsuccess = () => res(g.result); g.onerror = () => res([]) } catch { res([]) } }; r.onerror = () => res([]) }))
+      let keys = []; for (let i = 0; i < 40; i++) { await wait(300); keys = await idb(); if (allIds.every((x) => keys.includes(x))) break }
+      if (!allIds.every((x) => keys.includes(x))) fail('🔴 DA: 원격 데스크톱이 모든 세션을 미리 받아 디스크에 두지 않았다 · ' + JSON.stringify({ want: allIds.length, got: keys.length }))
+      // 다시 켤 때 /chat 을 3초 늦춘다 — 디스크에서 먼저 보여야 한다
+      await cp.route('**/api/sessions/*/chat*', (rt) => { setTimeout(() => rt.continue().catch(() => {}), 3000) })
+      await cp.goto(base + `/#bot=${bot.id}&s=${target}`); await cp.reload()
+      const t0 = Date.now(); let seen = false
+      for (let i = 0; i < 40 && !seen; i++) { await wait(50); seen = !!(await cp.$('.chat-body .umsg')) }
+      const took = Date.now() - t0
+      if (!seen || took > 1800) fail(`🔴 DA: 다시 켰을 때 디스크의 대화가 먼저 안 보였다(/chat 3초를 기다렸다) · ${seen ? took + 'ms' : '안 보임'}`)
+      await cp.unroute('**/api/sessions/*/chat*')
+      if (cerr.length) fail('DA 캐시 page errors: ' + cerr.join(' | '))
+      await cp.close()
+      ok(`DA 디스크 캐시 — 세션 ${allIds.length}개 전부 미리 받음 · 다시 켜면 ${took}ms 에 대화(/chat 3초 지연 중)`)
     }
     await br.close(); ok('ui renders (desktop · phone) → test/tmp/*.png')
   } catch (e) { try { await globalThis.__br?.close() } catch {} if (/executablePath|Executable doesn't exist|Cannot find (module|package) 'playwright/.test(String(e.message))) console.log('(화면 검사 건너뜀 — 브라우저 없음:', e.message.split('\n')[0], ')'); else fail('ui: ' + e.stack.split('\n').slice(0, 4).join(' | ')) }

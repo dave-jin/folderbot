@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react'
 import type { PermissionMode, AuthState, Bot, Candidate, ChatItem, FolderRules, Frame, NotifyEvent, PermissionRequest, SessionInfo, TodoItem } from '../core/types'
 import { api, connectEvents, resyncPush, token } from './api'
+import { cacheWriter, pool, readChats, storeVer, writeChats } from './cache'
 
 export interface Tailnet { state: string; ip?: string; dnsName?: string }
 export interface StateShape {
@@ -41,7 +42,7 @@ export interface StateShape {
 }
 const init: StateShape = { version: '', root: '', rules: null, rulesInstalled: false, bots: [], candidates: [], sessionsByBot: {}, chats: {}, pending: {}, todos: {}, auth: { verdict: 'unknown', checkedAt: 0 }, inbox: 0, notifications: [], vapidPublic: '', tailnet: null, addrs: [], port: 7373, devices: [], defaults: { model: 'claude-fable-5-1', effort: 'high' }, hostName: '', device: { id: '', name: '', main: false }, online: 'off', loaded: false, filesTick: {}, railReorder: 0, ghosts: {} }
 
-type Action = { type: 'state'; s: Partial<StateShape> } | { type: 'frame'; f: Frame } | { type: 'chat'; sessionId: string; items: ChatItem[]; pending: PermissionRequest[] } | { type: 'online'; v: 'on' | 'off' } | { type: 'todos'; botId: string; items: TodoItem[] } | { type: 'refiles' } | { type: 'ghost'; info: SessionInfo } | { type: 'unghost'; id: string }
+type Action = { type: 'state'; s: Partial<StateShape> } | { type: 'hydrate'; chats: Record<string, ChatItem[]> } | { type: 'frame'; f: Frame } | { type: 'chat'; sessionId: string; items: ChatItem[]; pending: PermissionRequest[] } | { type: 'online'; v: 'on' | 'off' } | { type: 'todos'; botId: string; items: TodoItem[] } | { type: 'refiles' } | { type: 'ghost'; info: SessionInfo } | { type: 'unghost'; id: string }
 
 /**
  * BO · 호스트 목록에 임시 세션을 덧댄다. 호스트 목록에 이미 있는 id 는 임시 표시를 걷는다(호스트 것이 정답).
@@ -71,6 +72,8 @@ function reducer(s: StateShape, a: Action): StateShape {
     }
     case 'online': return { ...s, online: a.v }
     case 'chat': return { ...s, chats: { ...s.chats, [a.sessionId]: a.items }, pending: { ...s.pending, [a.sessionId]: a.pending } }
+    // DA · 디스크 캐시에서 꺼낸 대화 — **이미 받은 것은 덮지 않는다**(호스트에서 막 온 것이 더 새것이다)
+    case 'hydrate': { const add = Object.fromEntries(Object.entries(a.chats).filter(([k]) => !s.chats[k])); return Object.keys(add).length ? { ...s, chats: { ...s.chats, ...add } } : s }
     case 'todos': return { ...s, todos: { ...s.todos, [a.botId]: a.items } }
     // 다시 붙었다 — 파일을 읽는 화면(트리 · 문서 탭)에게 «다시 읽어라» 를 한 번에 알린다
     case 'refiles': { const t = Date.now(); return { ...s, filesTick: Object.fromEntries(s.bots.map((b) => [b.id, t])) } }
@@ -101,12 +104,15 @@ function reducer(s: StateShape, a: Action): StateShape {
   }
 }
 
-interface Ctx { s: StateShape; refresh: () => Promise<void>; loadChat: (sid: string, revalidate?: boolean) => Promise<void>; loadTodo: (botId: string) => Promise<void>; dispatch: React.Dispatch<Action> }
+interface Ctx { s: StateShape; refresh: () => Promise<void>; loadChat: (sid: string, revalidate?: boolean) => Promise<void>; ensureChat: (sid: string) => Promise<void>; prefetchAll: (first?: string) => Promise<void>; loadTodo: (botId: string) => Promise<void>; dispatch: React.Dispatch<Action> }
 const C = createContext<Ctx>(null as never)
+/** 해시가 가리키는 세션(`#…s=<id>`) — 지금 보고 있는 대화 */
+const hashSid = (): string | null => { try { return new URLSearchParams(location.hash.slice(1)).get('s') } catch { return null } }
 export const useStore = () => useContext(C)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [s, dispatch] = useReducer(reducer, init)
+  const sRef = useRef(s); sRef.current = s
   const stopRef = useRef<(() => void) | null>(null)
   const refresh = async () => {
     const st = await api<Partial<StateShape> & { sessionsByBot: Record<string, SessionInfo[]> }>('/state')
@@ -121,11 +127,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const chatReq = useRef(new Map<string, Promise<void>>())
   /** CF-1 · 대화마다 마지막으로 받은 판 — 다시 붙을 때 이 판을 내밀어 안 바뀐 대화는 «그대로» 만 받는다 */
   const chatVers = useRef(new Map<string, string>())
+  /** DA · 이번 실행에 호스트에서 받거나 «그대로» 를 확인한 대화 — 디스크에서 꺼내기만 한 것은 여기 없다 */
+  const fresh = useRef(new Set<string>())
+  /** 대화를 연다 — 없으면 받고, 디스크에서 꺼내기만 한 것이면 판을 내밀어 맞춘다(먼저 보이고 뒤에 바뀐다) */
+  // ⚠ 다시 묻는 것은 «디스크에서 꺼내기만 한» 대화뿐이다 — 프레임으로 생긴 대화(막 만든 세션 등)는 종전대로 그대로 둔다(호스트가 아직 모르면 404)
+  const ensureChat = (sid: string): Promise<void> => (!sRef.current.chats[sid] ? loadChat(sid) : fromDisk.current.has(sid) && !fresh.current.has(sid) ? loadChat(sid, true) : Promise.resolve())
   const loadChat = (sid: string, revalidate = false): Promise<void> => {
     const had = chatReq.current.get(sid); if (had) return had
     const v = revalidate ? chatVers.current.get(sid) : undefined
     const p = api<{ info: SessionInfo; items?: ChatItem[]; same?: boolean; ver?: string }>(`/sessions/${sid}/chat${v ? `?v=${encodeURIComponent(v)}` : ''}`).then((r) => {
       if (r.ver) chatVers.current.set(sid, r.ver)
+      fresh.current.add(sid)
       if (r.same || !r.items) return
       dispatch({ type: 'chat', sessionId: sid, items: r.items, pending: r.info.pending })
     }).finally(() => { chatReq.current.delete(sid) })
@@ -159,13 +171,64 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   seen.current.chats = new Set(Object.keys(s.chats))
   const resync = async () => {
     // CF-1 · 상태·할 일·대화를 **한꺼번에** — 종전엔 상태를 받은 뒤에야 나머지를 쏴서 1 RTT 를 더 썼다
+    // DA · 전부 미리 받는 기기는 대화가 수십 개다 — 지금 보는 대화를 먼저, 나머지는 넷씩(안 바뀐 것은 «그대로» 한 줄)
+    const chats = [...seen.current.chats]; const cur = hashSid(); if (cur && chats.includes(cur)) chats.splice(chats.indexOf(cur), 1)
+    const rest = pool(chats, 4, (sid) => loadChat(sid, true))
     await Promise.allSettled([
       refresh(),
       ...[...seen.current.todos].map((b) => loadTodo(b)),
-      ...[...seen.current.chats].map((sid) => loadChat(sid, true))
+      ...(cur && seen.current.chats.has(cur) ? [loadChat(cur, true)] : [])
     ])
-    dispatch({ type: 'refiles' })
+    dispatch({ type: 'refiles' })   // 트리·문서는 나머지 대화(수십 개)를 기다리지 않는다
+    await rest
   }
+  /**
+   * DA · 원격 데스크톱의 디스크 캐시 (`cache.ts` 머리말 · 2026-10-17 Dave «전부 미리 받기»).
+   *   ① 켜자마자 디스크의 대화를 꺼내 판과 함께 둔다 — 누르면 바로 보이고, 판을 내밀어 «그대로» 인지만 묻는다
+   *   ② 첫 화면이 선 뒤 **모든 봇의 모든 세션**을 셋씩 받는다(지금 보는 것 먼저 · 판이 있으면 «그대로» 한 줄) — 받은 뒤로는 SSE 가 최신으로 둔다
+   *   ③ 대화가 바뀌면 3초 모아 디스크에 쓴다. 목록에서 사라진 세션은 지운다
+   * ⚠ 읽기는 데스크톱 앱이면 늘 한다(쓴 기기만 들어 있다). 쓰기와 미리 받기는 원격 데스크톱만 — 맥미니 자신·폰은 종전대로.
+   */
+  const saved = useRef(new Map<string, ChatItem[]>())   // 디스크에 쓴 대화(참조) — 같으면 다시 안 쓴다
+  const fromDisk = useRef(new Set<string>())             // 디스크에서 꺼내기만 하고 아직 호스트에 판을 안 맞춘 대화
+  const hydrated = useRef<Promise<void> | null>(null)
+  const onDisk = useRef(new Set<string>())
+  if (!hydrated.current) hydrated.current = !(window as unknown as { folderbotDesktop?: unknown; __fbCacheOn?: boolean }).folderbotDesktop && !(window as unknown as { __fbCacheOn?: boolean }).__fbCacheOn
+    ? Promise.resolve()
+    : readChats().then((recs) => {
+      if (!recs.length) return
+      // saved 에도 넣는다 — 안 넣으면 3초 뒤 꺼낸 대화 전부를 디스크에 통째로 다시 쓴다(켤 때마다)
+      for (const r of recs) { onDisk.current.add(r.sid); saved.current.set(r.sid, r.items); if (!sRef.current.chats[r.sid]) fromDisk.current.add(r.sid); if (r.ver && !chatVers.current.has(r.sid)) chatVers.current.set(r.sid, r.ver) }
+      dispatch({ type: 'hydrate', chats: Object.fromEntries(recs.map((r) => [r.sid, r.items])) })
+    }).catch(() => {})
+  const prefetchRun = useRef<Promise<void> | null>(null)
+  const prefetchAll = (first?: string): Promise<void> => {
+    if (prefetchRun.current) return prefetchRun.current
+    prefetchRun.current = (async () => {
+      await hydrated.current
+      const st = sRef.current
+      const all = Object.values(st.sessionsByBot).flat().filter((x) => !st.ghosts[x.id]).sort((a, b) => b.lastActivity - a.lastActivity).map((x) => x.id)
+      const lead = first && all.includes(first) ? [first] : []
+      await pool([...lead, ...all.filter((x) => x !== first)], 3, (sid) => loadChat(sid, true))
+      await pool(st.bots.map((b) => b.id).filter((b) => !sRef.current.todos[b]), 3, (b) => loadTodo(b))
+    })()
+    return prefetchRun.current
+  }
+  const writer = s.loaded && cacheWriter(s.device.main)
+  useEffect(() => {
+    if (!writer) return
+    const t = window.setTimeout(() => {
+      const st = sRef.current
+      const live = new Set(Object.values(st.sessionsByBot).flat().map((x) => x.id))
+      const put = Object.entries(st.chats).filter(([sid, items]) => live.has(sid) && !st.ghosts[sid] && saved.current.get(sid) !== items)
+        .map(([sid, items]) => ({ sid, ver: storeVer(items, chatVers.current.get(sid)), items, at: Date.now() }))
+      const del = live.size ? [...onDisk.current].filter((sid) => !live.has(sid)) : []
+      for (const r of put) { saved.current.set(r.sid, r.items); onDisk.current.add(r.sid) }
+      for (const sid of del) { onDisk.current.delete(sid); saved.current.delete(sid) }
+      void writeChats(put, del)
+    }, 3000)
+    return () => window.clearTimeout(t)
+  }, [writer, s.chats, s.sessionsByBot])
   // CF-④ · 이미 푸시를 허용한 기기는 열 때마다 구독을 호스트에 다시 알린다 — 호스트가 구독을 잃어도(데이터 옮김·410 정리) 스스로 돌아온다
   useEffect(() => { if (s.loaded && s.vapidPublic) void resyncPush(s.vapidPublic, navigator.userAgent.slice(0, 30)) }, [s.loaded, s.vapidPublic])
   useEffect(() => {
@@ -190,7 +253,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         } }, (v) => dispatch({ type: 'online', v }))
     return () => stopRef.current?.()
   }, [])
-  const v = useMemo(() => ({ s, refresh, loadChat, loadTodo, dispatch }), [s])
+  const v = useMemo(() => ({ s, refresh, loadChat, ensureChat, loadTodo, prefetchAll, dispatch }), [s])
   return <C.Provider value={v}>{children}</C.Provider>
 }
 

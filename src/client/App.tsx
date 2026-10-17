@@ -25,6 +25,7 @@ import { chipParts } from '../core/chipName'
 import { InlineInput, type InlineInputHandle } from './InlineInput'
 import { hitRange, norm, scoreName } from '../core/search'
 import { fmtTime, useStore } from './store'
+import { cacheWriter } from './cache'
 import { ACT_ICON, FOLDER_SWIPE, type SwipeAct } from './swipe'
 import { CopyProgressHost } from './fileCopy'
 import { attachRoom } from '../core/attach'
@@ -285,7 +286,7 @@ function UpdateChip({ version, st, onCheck, onApply }: { version: string; st: Up
 }
 
 function Main() {
-  const { s, refresh, loadChat, loadTodo, dispatch } = useStore()
+  const { s, refresh, loadChat, ensureChat, loadTodo, prefetchAll, dispatch } = useStore()
   const [hash, setHash] = useHash()
   /**
    * 🔴 **AJ · 해시가 비어도 오케스트레이터로 떨어지지 않는다** (2026-09-24 Dave: *«CCAF 폴더를 보다가 폴더봇
@@ -392,8 +393,9 @@ function Main() {
     window.addEventListener('dragover', stop); window.addEventListener('drop', stop)
     return () => { window.removeEventListener('dragover', stop); window.removeEventListener('drop', stop) }
   }, [])
-  const docs = useDocs(bot?.id ?? '')
-  useEffect(() => { if (sessionId && !s.chats[sessionId]) void loadChat(sessionId) }, [sessionId])
+  const docs = useDocs(bot?.id ?? '', !phone)   // DA · 데스크톱은 누를 때마다 새 탭 · 폰은 한 장(탭 줄이 없다)
+  // DA · 디스크에서 꺼내기만 한 대화는 먼저 보이고, 판을 내밀어 맞춘다(`ensureChat`)
+  useEffect(() => { if (sessionId) void ensureChat(sessionId).catch(() => {}) }, [sessionId])
   /**
    * CF-1 · 대화 미리 받기 (2026-10-12 퍼포먼스 실측 A4). 처음 여는 봇은 원격에서 0.3초(나쁜 망 0.8초) 빈 칸이었다 — 다시 열 때는 0.04초.
    *   ① 레일·목록 줄에 손(포인터·터치)이 닿으면 그 봇이 열 세션을 받는다 ② 첫 화면이 선 뒤 한가할 때 최근 봇 3개를 받는다.
@@ -410,8 +412,12 @@ function Main() {
     warmed.current = true
     const idle = (window as unknown as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }).requestIdleCallback ?? ((f: () => void) => window.setTimeout(f, 600))
     idle(() => {
-      const last = (bid: string) => Math.max(0, ...(s.sessionsByBot[bid] ?? []).map((x) => x.lastActivity))
-      for (const b of [...s.bots].filter((b) => b.id !== bot?.id).sort((a, c) => last(c.id) - last(a.id)).slice(0, 3)) prefetch(b.id)
+      // DA · 원격 데스크톱은 **모든 봇의 모든 세션**을 받아 디스크에 둔다(2026-10-17 Dave «전부 미리 받기») — 지금 보는 세션 먼저
+      if (cacheWriter(s.device.main)) void prefetchAll(sessionId ?? undefined)
+      else {
+        const last = (bid: string) => Math.max(0, ...(s.sessionsByBot[bid] ?? []).map((x) => x.lastActivity))
+        for (const b of [...s.bots].filter((b) => b.id !== bot?.id).sort((a, c) => last(c.id) - last(a.id)).slice(0, 3)) prefetch(b.id)
+      }
       // 데스크톱만 — 문서 편집기 조각과 폴더 색인. 폰은 데이터·배터리를 아낀다(번들 계약)
       if (!matchMedia('(max-width: 760px)').matches) { preloadEditor(); preloadDirIndex() }
     }, { timeout: 2500 })

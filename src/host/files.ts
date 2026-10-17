@@ -156,7 +156,7 @@ export function findFiles(base: string, name: string, limit = 5, depth = 8): str
   }
   walk(base, depth); return out
 }
-export function stream(abs: string) { return createReadStream(abs) }
+export function stream(abs: string, range?: { start: number; end: number }) { return range ? createReadStream(abs, range) : createReadStream(abs) }
 export function exists(abs: string): boolean { return existsSync(abs) }
 
 /**

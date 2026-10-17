@@ -40,3 +40,25 @@ export function titleFromText(text: string, max = 26): string {
   const sp = cut.lastIndexOf(' ')
   return `${(sp >= Math.floor(max * 0.6) ? cut.slice(0, sp) : cut).trim()}…`
 }
+
+/** DC · Haiku 에게 보낼 말 — 질문·답 앞부분만(긴 붙여 넣기로 토큰을 쓰지 않게) */
+export function titlePrompt(question: string, answer: string): string {
+  const cut = (t: string, n: number) => { const x = (t ?? '').replace(/```[\s\S]*?```/g, ' ').replace(/\s+/g, ' ').trim(); return x.length > n ? x.slice(0, n) + '…' : x }
+  return [
+    '아래 대화에 붙일 짧은 제목을 지어 줘.',
+    '- 한국어로, 20자 안쪽의 명사구 하나. 무엇을 하는 대화인지 드러나게.',
+    '- 따옴표·마침표·이모지·머리말 없이 제목 한 줄만 답해.',
+    '',
+    `[질문] ${cut(question, 1500)}`,
+    `[답] ${cut(answer, 1500)}`
+  ].join('\n')
+}
+
+/** DC · 모델 답을 제목으로 — 첫 줄 · 꾸밈 걷기 · 30자. 제목감이 아니면 '' */
+export function cleanLlmTitle(raw: string, max = 30): string {
+  const line = (raw ?? '').split('\n').map((l) => l.trim()).find((l) => l) ?? ''
+  let t = line.replace(/^(제목|title)\s*[:：]\s*/i, '').replace(/^#{1,6}\s*/, '').replace(/\*\*|__|`/g, '').replace(/^["'“”‘’「『«]+|["'“”‘’」』»]+$/g, '').replace(/[.。]+$/, '').trim()
+  if (!t || /^(error|오류)/i.test(t)) return ''
+  if (t.length > max) t = t.slice(0, max).trim() + '…'
+  return t
+}

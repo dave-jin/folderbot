@@ -14,17 +14,30 @@ export function preloadEditor(): void { void loadMdEditor().catch(() => {}) }
 const Canvas = lazy(() => import('./Canvas'))
 import type { Bot } from '../core/types'
 import { copySay, copyText } from './clip'
-import { api, uploadFile } from './api'
+import { api, ApiError, uploadFile } from './api'
 import { normalizeDepth, outline } from '../core/outline'
 import { Icon, Mid } from './FolderBot'
 import { Md } from './Sheets'
 import { Float, anchorOf, type Anchor } from './Float'
 import { fmtTime, useStore } from './store'
 import { openOnThisDevice, useLocalSettings, vaultRelOf } from './localOpen'
+import { cacheWriter, dropDoc, readDoc, writeDoc, type DocRec } from './cache'
+import { openTab, replaceTab, type DocTab } from '../core/docTabs'
 
-/** 문서 탭 — 봇별로 기억. 미리보기 탭(pinned=false)은 다음 클릭에 바뀐다 */
-export interface DocTab { rel: string; pinned: boolean }
-export interface DocsApi { tabs: DocTab[]; active: string | null; open: (rel: string, pin?: boolean) => void; close: (rel: string) => void; pin: (rel: string) => void; setActive: (rel: string) => void }
+/** DA · 이번 실행에 받은 문서 — 봇·탭을 오가도 남는다(디스크 사본은 `cache.ts`) */
+const docMem = new Map<string, DocRec>()
+
+/**
+ * 문서 탭 — 봇별로 기억.
+ * 🔴 DA · **누를 때마다 새 탭** (2026-10-17 Dave: *«상단에 여러 탭이 동시에 켜질 수 있으면 좋겠어»* → «누를 때마다 새 탭»).
+ *    종전엔 VS Code 식 미리보기 탭(기울어진 제목 · 다음 클릭에 바뀜 · 두 번 눌러야 고정)이라, 탭이 늘 하나로 보였다 —
+ *    봇이 열어 준 문서도 미리보기라 사람이 고정하는 법을 알 길이 없었다. 이제 연 문서는 사람이 닫을 때까지 남고,
+ *    탭이 많으면 탭 줄을 옆으로 넘긴다(잘라 «+N» 으로 숨기지 않는다).
+ * ⚠ **폰은 종전대로 한 장**(`multi=false`) — 폰엔 탭 줄이 없다(`styles.css` 의 `.doc .tabs`). 보이지 않는 탭을 쌓지 않는다.
+ * ⚠ **옆 문서로 넘기기(↑↓ · ‹ ›)는 새 탭이 아니라 지금 탭을 바꾼다**(`replace`) — 넘길 때마다 탭이 쌓이면 줄이 금세 가득 찬다.
+ */
+export type { DocTab }
+export interface DocsApi { tabs: DocTab[]; active: string | null; open: (rel: string, pin?: boolean) => void; replace: (rel: string) => void; close: (rel: string) => void; pin: (rel: string) => void; setActive: (rel: string) => void }
 
 type DocsSt = { key: string; tabs: DocTab[]; active: string | null }
 const readDocs = (key: string): DocsSt => { try { const j = JSON.parse(localStorage.getItem(key) ?? ''); return { key, tabs: Array.isArray(j?.tabs) ? j.tabs : [], active: j?.active ?? null } } catch { return { key, tabs: [], active: null } } }
@@ -34,7 +47,7 @@ const readDocs = (key: string): DocsSt => { try { const j = JSON.parse(localStor
  *    그 틈에 옛 편집기가 떠나며 낸 저장이 새 봇의 같은 이름 파일(state.md)로 갔고, 새 키에 옛 탭이 한 번 써지기도 했다.
  *    이제 상태에 키를 달고, 키가 다르면 그 자리에서 새 봇 것을 읽는다.
  */
-export function useDocs(botId: string): DocsApi {
+export function useDocs(botId: string, multi = true): DocsApi {
   const key = `fb:docs:${botId}`
   const [st0, setSt0] = useState<DocsSt>(() => readDocs(key))
   const st = st0.key === key ? st0 : readDocs(key)
@@ -42,18 +55,13 @@ export function useDocs(botId: string): DocsApi {
   useEffect(() => { if (st0.key !== key) setSt0(readDocs(key)) }, [key])
   useEffect(() => { if (st0.key === key) try { localStorage.setItem(key, JSON.stringify({ tabs: st0.tabs, active: st0.active })) } catch { /* */ } }, [key, st0])
   return useMemo(() => ({
-    tabs: st.tabs, active: st.active,
-    open: (rel, pin = false) => setSt((s) => {
-      const has = s.tabs.find((t) => t.rel === rel)
-      if (has) return { tabs: pin ? s.tabs.map((t) => (t.rel === rel ? { ...t, pinned: true } : t)) : s.tabs, active: rel }
-      const pv = s.tabs.findIndex((t) => !t.pinned)
-      const tabs = pin || pv < 0 ? [...s.tabs, { rel, pinned: pin }] : s.tabs.map((t, i) => (i === pv ? { rel, pinned: false } : t))
-      return { tabs, active: rel }
-    }),
+    tabs: multi && st.tabs.some((t) => !t.pinned) ? st.tabs.map((t) => ({ ...t, pinned: true })) : st.tabs, active: st.active,   // DA · 옛 미리보기 탭도 고정으로 보인다
+    open: (rel, pin = false) => setSt((s) => openTab(s, rel, pin, multi)),
+    replace: (rel) => setSt((s) => (multi ? replaceTab(s, rel) : openTab(s, rel, false, false))),
     close: (rel) => setSt((s) => { const i = s.tabs.findIndex((t) => t.rel === rel); const tabs = s.tabs.filter((t) => t.rel !== rel); const active = s.active === rel ? (tabs[Math.min(i, tabs.length - 1)]?.rel ?? null) : s.active; return { tabs, active } }),
     pin: (rel) => setSt((s) => ({ ...s, tabs: s.tabs.map((t) => (t.rel === rel ? { ...t, pinned: true } : t)) })),
     setActive: (rel) => setSt((s) => ({ ...s, active: rel }))
-  }), [st, key])
+  }), [st, key, multi])
 }
 
 interface DocData { kind: string; text?: string; size?: number; mtime?: number; truncated?: boolean; ver?: string; clashes?: string[] }
@@ -128,17 +136,57 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
   const bases = useRef(new Map<string, string>()); const lastText = useRef(new Map<string, string>())
   const chain = useRef(new Map<string, Promise<void>>()); const blocked = useRef(new Set<string>())
   const raw = (r: string) => `/api/bots/${bot.id}/raw?rel=${encodeURIComponent(r)}&token=${encodeURIComponent(localStorage.getItem('folderbot:token') ?? '')}`
+  /**
+   * DA · 한 번 받은 문서는 먼저 보인다 (2026-10-17 Dave: *«한번 다운로드 받은건 더 빠르게 가져 올 수 있을것 같아»*).
+   *   원격 데스크톱이면 받은 문서를 메모리·디스크(`cache.ts`)에 두고, 다시 열 때 그것부터 그린 뒤 판(`v`)만 내밀어 «그대로» 인지 묻는다.
+   * ⚠ 먼저 보인 뒤 판이 달랐는데 **그새 사람이 고치기 시작했으면 덮지 않는다** — 그 글이 저장될 때 판이 달라 «충돌 사본» 으로 간다(글은 안 잃는다).
+   */
+  const cacheOn = cacheWriter(main)
+  /** DA · 탭 줄이 넘치면 옆으로 — 지금 탭이 늘 보이게 끌어온다 */
+  const tabsRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { const el = tabsRef.current; if (!el || !rel) return; const b = [...el.querySelectorAll<HTMLElement>('.tab')].find((x) => x.dataset.rel === rel); if (!b) return
+    // ⚠ scrollIntoView 를 안 쓴다 — 넘친 조상(앱 틀)까지 옆으로 밀린다. 탭 줄만 굴린다
+    if (b.offsetLeft < el.scrollLeft) el.scrollLeft = b.offsetLeft
+    else if (b.offsetLeft + b.offsetWidth > el.scrollLeft + el.clientWidth) el.scrollLeft = b.offsetLeft + b.offsetWidth - el.clientWidth
+  }, [rel, docs.tabs.length])
   const load = async (r: string, silent = false) => {
-    const id: DocId = { botId: bot.id, rel: r }
+    const id: DocId = { botId: bot.id, rel: r }; const k = keyOf(id)
+    let shown: DocRec | undefined
+    if (!silent && cacheOn) {
+      // 저장이 날아가는 중이면 끝난 뒤에 본다 — 저장 전 글을 캐시에서 꺼내 그 위에 다시 쓰면 방금 저장한 글이 지워진다
+      // ⚠ silent 는 저장 안(충돌)에서 부른다 — 거기서 기다리면 제 꼬리를 기다린다
+      await chain.current.get(k)?.catch(() => {})
+      const c = docMem.get(k) ?? await readDoc(k)
+      if (c && isCur(id)) {
+        shown = c; docMem.set(k, c); const d = c.data as DocData
+        if (d.ver) { bases.current.set(k, d.ver); lastText.current.set(k, d.text ?? '') }
+        blocked.current.delete(k)
+        setDoc({ ...d, ...id }); setDraft(d.text ?? ''); setErr(''); dirtyRef.current = false; setSaveSt(''); setBotTouched(null)
+      }
+    }
     try {
-      const d = await api<DocData>(`/bots/${id.botId}/file?rel=${encodeURIComponent(r)}`)
+      const sv = shown && (shown.data as DocData).ver
+      const d = await api<DocData & { same?: boolean }>(`/bots/${id.botId}/file?rel=${encodeURIComponent(r)}${sv ? `&v=${encodeURIComponent(sv)}` : ''}`)
       if (!isCur(id)) return                                   // 그새 다른 문서로 갔다 — 늦게 온 답을 새 자리에 두지 않는다
-      const k = keyOf(id)
+      if (d.same) { setDoc((o) => (o && keyOf(o) === k ? { ...o, clashes: d.clashes } : o)); const c = docMem.get(k) ?? shown; if (c) remember(k, { ...(c.data as DocData), clashes: d.clashes }); return }
+      if (shown && dirtyRef.current) return
       if (d.ver) { bases.current.set(k, d.ver); lastText.current.set(k, d.text ?? '') }
       blocked.current.delete(k)
       setDoc({ ...d, ...id }); setDraft(d.text ?? ''); setErr('')
       if (!silent) { dirtyRef.current = false; setSaveSt(''); setBotTouched(null) }
-    } catch (e) { if (isCur(id)) setErr((e as Error).message) }
+      if (cacheOn) remember(k, d)
+    } catch (e) {
+      // 먼저 보인 캐시가 있어도 «파일이 없다·막혔다» 는 알린다 — 그 글을 고치면 충돌 사본만 생긴다. 끊김(네트워크)만 조용히 넘긴다
+      const gone = e instanceof ApiError && e.status >= 400 && e.status < 500
+      if (gone) { docMem.delete(k); void dropDoc(k) }
+      if (isCur(id) && (!shown || gone)) setErr((e as Error).message)
+    }
+  }
+  /** 받은 문서를 기억한다 — 1MB 넘는 글은 디스크에 안 둔다(PDF·그림은 몸통이 없어 작다 · 몸통은 브라우저 캐시가 304 로 쥔다) */
+  const remember = (k: string, d: DocData) => {
+    if ((d.text?.length ?? 0) > 1_000_000) { docMem.delete(k); void dropDoc(k); return }
+    const rec: DocRec = { key: k, ver: d.ver ?? '', data: { ...d, same: undefined }, at: Date.now() }
+    docMem.set(k, rec); void writeDoc(rec)
   }
   const saveTo = (id: DocId, text: string): Promise<void> => {
     const k = keyOf(id)
@@ -151,6 +199,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
       try { r = await api(`/bots/${id.botId}/file`, { body: { rel: id.rel, text, base } }) } catch { if (isCur(id)) setSaveSt('fail'); return }
       if (r.ok && r.ver) {
         bases.current.set(k, r.ver); lastText.current.set(k, text)
+        if (cacheOn) { const c = docMem.get(k); if (c) remember(k, { ...(c.data as DocData), text, ver: r.ver }) }   // DA · 다음에 열 때 내 글이 먼저 보이게
         if (isCur(id)) { setSaveSt('saved'); dirtyRef.current = false }
       } else if (r.conflict) {
         const c = r.conflict
@@ -236,7 +285,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
        */
       const typing = !!t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable)
       const inDoc = !!t?.closest?.('.col.doc')
-      if (!typing && !inDoc && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && sibs.length) { const i = sibs.indexOf(rel); const n = sibs[(i + (e.key === 'ArrowDown' ? 1 : -1) + sibs.length) % sibs.length]; if (n) { e.preventDefault(); docs.open(n) } }
+      if (!typing && !inDoc && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && sibs.length) { const i = sibs.indexOf(rel); const n = sibs[(i + (e.key === 'ArrowDown' ? 1 : -1) + sibs.length) % sibs.length]; if (n) { e.preventDefault(); docs.replace(n) } }
     }
     window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
   })
@@ -277,12 +326,12 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
     <div className="hdr" style={phone ? undefined : { paddingLeft: 10 }}>
       {/* AG · **좌상단은 네 화면이 같다** (2026-09-24 Dave: «왼쪽 위 폴더봇으로 가는 버튼이 문서와 다르다 · 통일») */}
       {phone ? <><button className="rb glassb" onClick={onBack} title="봇 목록"><Icon n="list" size={20} /></button><span className="ttl"><Mid s={name || '문서'} /></span><span className="sp" /></> : null}
-      <div className="tabs">{docs.tabs.slice(0, 6).map((t) => <button key={t.rel} className={`tab ${t.rel === docs.active ? 'on' : ''} ${t.pinned ? '' : 'pv'}`} onClick={() => docs.setActive(t.rel)} onDoubleClick={() => docs.pin(t.rel)} title={t.rel}>{t.rel.split('/').pop()}<span className="x" onClick={(e) => { e.stopPropagation(); docs.close(t.rel) }}><Icon n="x" size={9} /></span></button>)}{docs.tabs.length > 6 ? <span className="more">+{docs.tabs.length - 6}</span> : null}</div>
+      <div className="tabs" ref={tabsRef} onWheel={(e) => { const el = e.currentTarget; if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) el.scrollLeft += e.deltaY }}>{docs.tabs.map((t) => <button key={t.rel} data-rel={t.rel} className={`tab ${t.rel === docs.active ? 'on' : ''} ${t.pinned ? '' : 'pv'}`} onClick={() => docs.setActive(t.rel)} onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); docs.close(t.rel) } }} onDoubleClick={() => docs.pin(t.rel)} title={t.rel}>{t.rel.split('/').pop()}<span className="x" onClick={(e) => { e.stopPropagation(); docs.close(t.rel) }}><Icon n="x" size={9} /></span></button>)}</div>
       <div className="acts"><button className={`ib ${wide ? 'on' : ''}`} onClick={onWide} title="넓게"><Icon n="expand" size={13} /></button><button className="ib" onClick={onHide} title="문서 열 접기 (⌘⇧D)"><Icon n="x" size={13} /></button></div>
     </div>
     {rel ? <div className="dtb"><span>{dir}</span><span>/</span><span className="nm">{name}</span>{outside ? <span className="scp out" title={`볼트 기준: ${vaultRel}`}>폴더 외</span> : null}{!main && lcfg && lcfg.openMode !== 'sync' ? <span className="scp copy" title="이 기기에서 «열기» 를 누르면 호스트에서 받은 사본을 열어요 — 고쳐도 되돌아가지 않아요">사본</span> : null}
       <span className="r">
-        {sibs.length > 1 ? <><button className="nb" onClick={() => docs.open(sibs[(idx - 1 + sibs.length) % sibs.length])}><Icon n="back" size={10} /></button><span className="pos">{idx + 1} / {sibs.length}</span><button className="nb" style={{ transform: 'scaleX(-1)' }} onClick={() => docs.open(sibs[(idx + 1) % sibs.length])}><Icon n="back" size={10} /></button></> : null}
+        {sibs.length > 1 ? <><button className="nb" onClick={() => docs.replace(sibs[(idx - 1 + sibs.length) % sibs.length])}><Icon n="back" size={10} /></button><span className="pos">{idx + 1} / {sibs.length}</span><button className="nb" style={{ transform: 'scaleX(-1)' }} onClick={() => docs.replace(sibs[(idx + 1) % sibs.length])}><Icon n="back" size={10} /></button></> : null}
         {/* 모드가 없으니 알릴 상태도 없다 — 저장 중·실패일 때만 한 마디. ⛔ 「편집 중」 배지를 다시 만들지 마라 */}
         {saveSt === 'saving' || saveSt === 'fail' ? <span className={`st ${saveSt === 'fail' ? 'err' : ''}`}>{saveSt === 'saving' ? '저장 중' : '저장 실패'}</span> : null}
         {/* 🔴 **외부로 열기는 메뉴 밖에 둔다** (2026-09-13 Dave) — 문서를 보다가 «진짜 앱에서 열자» 는
@@ -354,6 +403,6 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
         </div>
       : doc.kind === 'pdf' ? <iframe className="dbody" style={{ padding: 0, border: 0, background: '#fff' }} src={raw(rel)} />
       : <div className="empty nopv">미리보기 없음 · {name} · {doc.size} bytes<button className="btn on" onClick={openHere}>외부에서 열기 ↗</button><a href={raw(rel)} target="_blank" rel="noreferrer" className="btn">새 창에서 열기</a></div>}
-    {phone && rel ? <div className="dfoot">{sibs.length > 1 ? <><button className="rb" title="이전 문서" onClick={() => docs.open(sibs[(idx - 1 + sibs.length) % sibs.length])}><Icon n="up" size={18} /></button><span className="pos">{idx + 1} / {sibs.length}</span><button className="rb" title="다음 문서" onClick={() => docs.open(sibs[(idx + 1) % sibs.length])}><Icon n="chevd" size={18} /></button></> : null}<button className="talk" onClick={() => onAttach(rel)}>봇에게 이 문서로 말하기</button></div> : null}
+    {phone && rel ? <div className="dfoot">{sibs.length > 1 ? <><button className="rb" title="이전 문서" onClick={() => docs.replace(sibs[(idx - 1 + sibs.length) % sibs.length])}><Icon n="up" size={18} /></button><span className="pos">{idx + 1} / {sibs.length}</span><button className="rb" title="다음 문서" onClick={() => docs.replace(sibs[(idx + 1) % sibs.length])}><Icon n="chevd" size={18} /></button></> : null}<button className="talk" onClick={() => onAttach(rel)}>봇에게 이 문서로 말하기</button></div> : null}
   </div>
 }

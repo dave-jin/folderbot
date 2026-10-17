@@ -13,6 +13,7 @@ import { CodexWorker } from './codex'
 import { fitsProvider, modelParts, sameModel } from '../core/agents'
 import { CODEX_LOCAL, parseLocalSlash } from '../core/slashLocal'
 import { isAutoSessionName, titleFromText } from '../core/sessionTitle'
+import { llmTitle } from './titleLLM'
 import { isModelRejected } from '../core/codexMap'
 import { autoAllows, fallbackRules, rulesLabel } from '../core/permPolicy'
 import type { Bot, ChatItem, PermissionMode, PermissionRequest, QueuedMsg, SessionInfo, SessionState } from '../core/types'
@@ -322,6 +323,10 @@ export interface SessionRec {
   slash?: string[]
   /** 사람이 직접 지은 이름인가 — 그렇다면 자동 제목이 덮지 않는다 */
   named?: boolean
+  /** DC · 앱이 지은 마지막 제목 — 이름이 이것과 같을 때만 Haiku 제목이 덮는다 */
+  autoName?: string
+  /** DC · Haiku 에게 제목을 한 번 물었다(다시 안 묻는다) */
+  llmTitled?: boolean
   /** S · 마지막으로 봇이 낸 말의 시각 (`core/unread`) */
   lastReplyAt?: number
   /** S · 사람이 맨 아래까지 봤다고 적은 시각 — 볼트에 남아 폰·맥이 같은 값을 본다 */
@@ -566,8 +571,25 @@ export class SessionManager extends EventEmitter {
     if (r.items.some((i) => i.kind === 'user')) return
     const t = titleFromText(text)
     if (!t || t === r.name) return
-    r.name = t
+    r.name = t; r.autoName = t
     this.emit('sessions', r.botId)
+  }
+  /**
+   * DC · 첫 답이 끝나면 Haiku 가 제목을 다시 짓는다(`titleLLM.ts` 머리말). 한 세션에 한 번.
+   * ⚠ 그사이 사람이 이름을 바꿨으면(`named` · 이름이 첫 말 제목과 다름) 덮지 않는다 — 답이 오는 동안에도 다시 본다.
+   */
+  private llmRetitle(r: SessionRec): void {
+    if (r.llmTitled || r.named || r.routine || r.channel || !r.autoName || r.name !== r.autoName) return
+    const q = r.items.find((i) => i.kind === 'user') as { text?: string } | undefined
+    const a = r.items.find((i) => i.kind === 'assistant' && i.text) as { text?: string } | undefined
+    if (!q?.text || !a?.text) return
+    r.llmTitled = true
+    void llmTitle(q.text, a.text, this.bin).then((t) => {
+      if (this.recs.get(r.id) !== r) return   // 답을 기다리는 사이 지운 세션 — 다시 쓰면 지운 세션이 되살아난다
+      if (!t || r.named || r.name !== r.autoName || t === r.name) return
+      r.name = t; r.autoName = t
+      this.persist(r); this.emit('sessions', r.botId)
+    }).catch(() => {})
   }
 
   /** 세션의 모델·노력·모드 — 셋 다 스폰 인자라 워커를 내리고 같은 id 로 이어서 띄운다. 턴이 도는 중이면 끝난 뒤에 */
@@ -1102,6 +1124,7 @@ export class SessionManager extends EventEmitter {
       if (r.wroteThisTurn) { r.wroteThisTurn = false; this.emit('files', r.botId) }
       if (r.restartPending) { const w = this.workers.get(r.id); if (!w || !w.pending.size) { r.restartPending = false; if (w) { w.kill(); this.workers.delete(r.id) } } }
       this.persist(r); this.emit('sessions', r.botId)
+      if (!line.is_error) this.llmRetitle(r)
     }
   }
 

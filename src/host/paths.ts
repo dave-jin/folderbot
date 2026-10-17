@@ -54,7 +54,14 @@ const CONFIG = () => join(ensureDir(dataDir()), 'config.json')
 export function loadConfig(): HostConfig {
   try {
     const j = JSON.parse(readFileSync(CONFIG(), 'utf8')) as Partial<HostConfig>
-    return { root: j.root ?? null, port: j.port ?? DEFAULT_PORT, devices: j.devices ?? [], vapid: j.vapid, pushSubs: j.pushSubs ?? [], quiet: j.quiet, claudeBin: j.claudeBin, claudeOauthToken: j.claudeOauthToken, defaultModel: j.defaultModel ?? 'claude-fable-5-1', defaultEffort: j.defaultEffort ?? 'high', defaultCodexModel: j.defaultCodexModel, defaultCodexEffort: j.defaultCodexEffort, codexSandbox: j.codexSandbox, openaiApiKey: j.openaiApiKey, hostName: j.hostName }
+    /**
+     * 🔴 DB · **읽은 값을 통째로 먼저 깐다** (2026-10-17 Dave: *«새 채팅 기본 권한이 업데이트 할때마다 이전 설정으로 돌아가»*).
+     *    종전엔 아는 칸만 골라 옮겨서, 목록에 빠진 `defaultPermissionMode`·`idleMinutes` 가 켤 때마다 사라졌다 —
+     *    업데이트는 앱을 다시 켜므로 «업데이트마다 되돌아감» 으로 보였다. 새 칸을 더할 때 여기를 잊어도 이제 남는다.
+     */
+    // 손으로 고친 설정이 CLI 인자로 그대로 가지 않게 — 모르는 권한 값은 버린다(host.ts PERM_MODES 와 같은 목록)
+    if (j.defaultPermissionMode && !['acceptEdits', 'plan', 'bypassPermissions', 'dontAsk'].includes(j.defaultPermissionMode)) delete j.defaultPermissionMode
+    return { ...j, root: j.root ?? null, port: j.port ?? DEFAULT_PORT, devices: j.devices ?? [], vapid: j.vapid, pushSubs: j.pushSubs ?? [], quiet: j.quiet, claudeBin: j.claudeBin, claudeOauthToken: j.claudeOauthToken, defaultModel: j.defaultModel ?? 'claude-fable-5-1', defaultEffort: j.defaultEffort ?? 'high', defaultCodexModel: j.defaultCodexModel, defaultCodexEffort: j.defaultCodexEffort, codexSandbox: j.codexSandbox, openaiApiKey: j.openaiApiKey, hostName: j.hostName }
   } catch {
     return { root: null, port: DEFAULT_PORT, devices: [], pushSubs: [], defaultModel: 'claude-fable-5-1', defaultEffort: 'high' }
   }

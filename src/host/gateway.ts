@@ -16,6 +16,8 @@ import type { Host } from './host'
 import { bindAddresses, tailnetInfo, tailnetInfoCached } from './tailnet'
 import { StaticCache, pickEncoding } from './staticCache'
 import { chatVer } from '../core/chatVer'
+import { etagHit, ifRangeOk, parseRange, rawEtag } from './rawServe'
+import { pipeline } from 'node:stream'
 import { mark, routeLabel, slowSince } from './slow'
 import { saveConfig } from './paths'
 import { handleMcp } from './mcp'
@@ -618,7 +620,8 @@ export class Gateway {
         if (!exists(abs)) return json(404, { error: '없는 파일' })
         const kind = kindOf(abs)
         // ⚠ 캔버스도 **글로 내려보낸다** — 화면이 JSON 을 읽어 노드를 그린다(원문으로 그리지는 않는다)
-        if (kind === 'text' || kind === 'canvas') { const r = readText(abs); const q = url.searchParams.get('rel') ?? ''; return json(200, { kind, rel: q, text: r.text, truncated: r.truncated, size: statSync(abs).size, mtime: statSync(abs).mtimeMs, ver: fileVer(abs), clashes: h.clashes.of(bot.id, q).map((c) => c.copy) }) }
+        // DA · 화면이 든 판(`v`)과 같으면 글은 안 보낸다 — 한 번 받은 문서는 «그대로» 한 줄로 끝난다(충돌 사본 목록은 늘 새로)
+        if (kind === 'text' || kind === 'canvas') { const q = url.searchParams.get('rel') ?? ''; const ver = fileVer(abs); const clashes = h.clashes.of(bot.id, q).map((c) => c.copy); if (url.searchParams.get('v') === ver) return json(200, { same: true, kind, rel: q, ver, clashes }); const r = readText(abs); return json(200, { kind, rel: q, text: r.text, truncated: r.truncated, size: statSync(abs).size, mtime: statSync(abs).mtimeMs, ver, clashes }) }
         return json(200, { kind, rel: url.searchParams.get('rel'), size: statSync(abs).size, mtime: statSync(abs).mtimeMs })
       }
       /**
@@ -844,7 +847,20 @@ export class Gateway {
         const z = spawnZip(dirname(abs), name); z.stdout.pipe(res); z.on('error', () => { try { res.end() } catch { /* */ } }); req.on('close', () => { try { z.kill() } catch { /* */ } })
         return
       }
-      if (sub === 'raw') { const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')).slice(1)); if (!exists(abs)) return json(404, { error: 'none' }); res.writeHead(200, { 'content-type': mime(abs), 'cache-control': 'no-store' }); stream(abs).pipe(res); return }
+      /** DA · 원본 — 판 표식으로 «그대로면 304» · 조각(Range)으로 큰 PDF 첫 쪽부터 (`rawServe.ts` 머리말) */
+      if (sub === 'raw') {
+        const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')).slice(1)); if (!exists(abs)) return json(404, { error: 'none' })
+        const st = statSync(abs); const tag = rawEtag(st.size, st.mtimeMs)
+        const head: Record<string, string> = { 'content-type': mime(abs), 'cache-control': 'private, no-cache', etag: tag, 'last-modified': new Date(st.mtimeMs).toUTCString(), 'accept-ranges': 'bytes' }
+        if (etagHit(req.headers['if-none-match'], tag)) { res.writeHead(304, head); res.end(); return }
+        const ir = req.headers['if-range']
+        const rg = ifRangeOk(Array.isArray(ir) ? ir[0] : ir, tag, st.mtimeMs) ? parseRange(req.headers.range, st.size) : null   // 바뀐 파일이면 조각 대신 전체
+        // ⚠ pipeline — 크롬 PDF 보기가 받다 끊으면 읽던 파일을 닫고, 그새 파일이 지워져도 호스트가 죽지 않는다
+        const send = (s: ReturnType<typeof stream>) => pipeline(s, res, () => { /* 끊김 — 정리는 pipeline 이 한다 */ })
+        if (rg === 'bad') { res.writeHead(416, { ...head, 'content-range': `bytes */${st.size}` }); res.end(); return }
+        if (rg) { res.writeHead(206, { ...head, 'content-range': `bytes ${rg.start}-${rg.end}/${st.size}`, 'content-length': String(rg.end - rg.start + 1) }); send(stream(abs, rg)); return }
+        res.writeHead(200, { ...head, 'content-length': String(st.size) }); send(stream(abs)); return
+      }
       // AA-1 · 목록에는 **사람 말 · 다음 실행 · 오류**가 함께 간다 — 원시 cron 만 보여 주던 것이 사고를 못 보게 했다
       if (sub === 'routines' && !seg[4] && m === 'GET') return json(200, h.routines.decorate(bot.id, bot.routines).map((r) => ({ ...r, when: describeCron(r.cron) })))
       /**
