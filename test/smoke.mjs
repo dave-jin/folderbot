@@ -191,6 +191,19 @@ try {
     await api(`/sessions/${vs.id}`, undefined, 'DELETE')
     ok(`CF-1 자산 ${a.headers.get('content-encoding')} · index.html 304 · 안 바뀐 대화는 «그대로»`)
   }
+  /** 🔴 **홈 화면 아이콘** (2026-10-19 Dave: «홈 화면 추가에서 아이콘이 안 보여» — iOS 가 글자 «F» 를 그렸다). 기본 자리에 그림이 있고, 없는 파일은 HTML 이 아니라 404 */
+  {
+    const html = await (await fetch(base + '/')).text()
+    const href = html.match(/rel="apple-touch-icon"[^>]*href="([^"]+)"/)?.[1]
+    if (!href) fail('🔴 홈 화면 아이콘: index.html 에 apple-touch-icon 링크가 없다')
+    for (const p of [href, '/apple-touch-icon.png', '/apple-touch-icon-precomposed.png']) {
+      const r = await fetch(base + p); const b = Buffer.from(await r.arrayBuffer())
+      if (r.status !== 200 || r.headers.get('content-type') !== 'image/png' || b.readUInt32BE(0) !== 0x89504e47) fail(`🔴 홈 화면 아이콘: ${p} 가 PNG 가 아니다 · ${r.status} ${r.headers.get('content-type')}`)
+    }
+    const miss = await fetch(base + '/없는-그림.png'); await miss.arrayBuffer()
+    if (miss.status !== 404) fail('🔴 없는 파일에 index.html 을 준다 · ' + miss.status)
+    ok('홈 화면 아이콘 · 기본 자리 PNG · 없는 파일은 404')
+  }
   /**
    * 🔴 **첫 말이 제목이 된다** (2026-09-15 Dave: «첫 채팅이 진행되면 그에 맞는 채팅 제목을 자동으로»).
    * ⚠ 덮는 것은 앱이 붙인 이름(`메인` · `세션 3`)뿐이고, **사람이 지은 이름은 그대로 둔다** — 아래 두 번째 검사.

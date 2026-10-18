@@ -959,7 +959,10 @@ export class Gateway {
     let rel = normalize(decodeURIComponent(p)).replace(/^(\.\.[/\\])+/, '')
     if (rel === '/' || rel === '') rel = '/index.html'
     let f = join(this.webRoot, rel)
-    if (!f.startsWith(this.webRoot) || !existsSync(f) || statSync(f).isDirectory()) f = join(this.webRoot, 'index.html')
+    const missing = !f.startsWith(this.webRoot) || !existsSync(f) || statSync(f).isDirectory()
+    // 없는 파일(확장자가 있는 길)은 404 — 종전엔 index.html 을 200 으로 줘서 iOS 가 아이콘 자리(/apple-touch-icon.png)에서 HTML 을 받았다 (2026-10-19)
+    if (missing && extname(rel) && extname(rel) !== '.html') { res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }); res.end('not found'); return }
+    if (missing) f = join(this.webRoot, 'index.html')
     if (!existsSync(f)) { res.writeHead(404); res.end('client not built'); return }
     const e = extname(f)
     const immutable = f.includes('/assets/')
