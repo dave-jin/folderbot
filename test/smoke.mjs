@@ -3576,6 +3576,17 @@ try {
           if (!ex['todo.md'] || ex['todo.md'].dir || ex['todo.md'].rel !== 'todo.md') fail('exists: 있는 파일을 없다고 한다 ' + JSON.stringify(ex))
           if (ex['없는파일.md'] !== false) fail('exists: 없는 파일을 있다고 한다 ' + JSON.stringify(ex))
           if (ex['../밖.md'] !== false) fail('exists: 루트 밖이 새어 나간다 ' + JSON.stringify(ex))
+          // 🔴 10/18 · 이름만 적힌 것은 이제 색인(host/nameIndex)에서 찾는다 — 없던 이름을 한 번 물은 뒤 봇이 그 파일을 만들어도 바로 칩이 돼야 한다
+          {
+            const NM = `색인확인-${Date.now()}.md`
+            const miss = await api(`/bots/${bot.id}/exists`, { rels: [NM] })
+            if (miss[NM] !== false) fail('exists 색인: 없는 이름을 있다고 한다 ' + JSON.stringify(miss))
+            mkdirSync(join(root, '3. Area/제품_Rondo/깊은/곳'), { recursive: true }); writeFileSync(join(root, '3. Area/제품_Rondo/깊은/곳', NM), 'x')
+            let hit = false
+            for (let i = 0; i < 20 && !hit; i++) { await wait(150); hit = !!(await api(`/bots/${bot.id}/exists`, { rels: [NM] }))[NM] }
+            if (!hit) fail('🔴 exists 색인: 방금 만든 파일을 이름으로 못 찾는다(색인이 낡았다)')
+            rmSync(join(root, '3. Area/제품_Rondo/깊은'), { recursive: true, force: true })
+          }
           // 화면 — 스텁이 되돌려 주는 문장 안의 경로 중 **있는 것만** 칩이 된다
           await pg.fill('.composer .cin', '첨부/회의록.txt 와 없는폴더/없음.md 를 봐')
           await pg.keyboard.press('Meta+Enter')
@@ -4889,6 +4900,44 @@ try {
           if (!existsSync(join(root, '3. Area/제품_Rondo', gone.rel))) fail('🔴 되돌리기가 파일을 제자리로 못 돌렸다')
           rmSync(join(root, '3. Area/제품_Rondo', gone.rel))
           ok('트리 — 여럿 고르기 · 휴지통 · ⌘Z 되돌리기 · 숨김 파일')
+        }
+        /**
+         * 🔴 **끌어 놓기 목적지** (2026-10-18 Dave: *«여기로 끌면 맨 위로… 솔직히 의미가 없어. 트리가 열려 있을 때 맨 밑으로 가기 어렵다»*).
+         *    밑의 띠는 없앴다. 맨 위로는 «파일» 제목 줄에, 파일 줄에 놓으면 그 파일이 든 폴더로 간다(Finder 와 같다).
+         */
+        {
+          const B = join(root, '3. Area/제품_Rondo')
+          mkdirSync(join(B, '끌기폴더'), { recursive: true }); writeFileSync(join(B, '끌기폴더/끌기.md'), 'a'); writeFileSync(join(B, '끌기폴더/옆.md'), 'b')
+          await wait(900)
+          await pg.$eval('.panel .secb button.trow[data-rel="끌기폴더"]', (e) => { e.scrollIntoView({ block: 'center' }); e.click() }).catch(() => {}); await wait(700)
+          if (await pg.$('.tdrop')) fail('끌어 놓기: 옛 «여기로 끌면 맨 위로» 띠가 아직 있다')
+          const drag = (sel, rels, find) => pg.evaluate(([sel, rels, find]) => {
+            const el = find ? [...document.querySelectorAll(sel)].find((b) => b.querySelector('span:not(.cv)')?.textContent === find) : document.querySelector(sel)
+            if (!el) return 'no target'
+            const dt = new DataTransfer(); dt.setData('text/x-fb-rels', JSON.stringify(rels))
+            el.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }))
+            return el.className
+          }, [sel, rels, find])
+          const drop = (sel, rels, find) => pg.evaluate(([sel, rels, find]) => {
+            const el = find ? [...document.querySelectorAll(sel)].find((b) => b.querySelector('span:not(.cv)')?.textContent === find) : document.querySelector(sel)
+            const dt = new DataTransfer(); dt.setData('text/x-fb-rels', JSON.stringify(rels))
+            el.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
+          }, [sel, rels, find])
+          // ① «파일» 제목 줄 — 끌고 들어오면 밝아지고 안내가 붙는다 · 놓으면 맨 위로
+          if (await drag('.panel button.sech', ['끌기폴더/끌기.md'], '파일') === 'no target') fail('끌어 놓기: «파일» 제목 줄을 못 찾았다')
+          await wait(150)
+          const hint = await pg.evaluate(() => document.querySelector('.panel button.sech.dover .dhint')?.textContent ?? '')
+          if (!/맨 위로/.test(hint)) fail('끌어 놓기: 제목 줄 위에서 «여기 놓으면 맨 위로» 가 안 보인다 · ' + JSON.stringify(hint))
+          await drop('.panel button.sech', ['끌기폴더/끌기.md'], '파일'); await wait(900)
+          if (!existsSync(join(B, '끌기.md')) || existsSync(join(B, '끌기폴더/끌기.md'))) fail('🔴 끌어 놓기: 제목 줄에 놓았는데 맨 위로 안 갔다')
+          // ② 파일 줄 — 그 파일이 든 폴더로 · 밝아지는 건 그 폴더 줄
+          await drag('.panel .secb button.trow[data-rel="끌기폴더/옆.md"]', ['끌기.md']); await wait(150)
+          const lit = await pg.evaluate(() => [...document.querySelectorAll('.panel .trow.dover')].map((e) => e.getAttribute('data-rel')))
+          if (JSON.stringify(lit) !== JSON.stringify(['끌기폴더'])) fail('끌어 놓기: 파일 줄 위에서 그 폴더 줄이 안 밝아진다 · ' + JSON.stringify(lit))
+          await drop('.panel .secb button.trow[data-rel="끌기폴더/옆.md"]', ['끌기.md']); await wait(900)
+          if (!existsSync(join(B, '끌기폴더/끌기.md'))) fail('🔴 끌어 놓기: 파일 줄에 놓았는데 그 폴더로 안 갔다')
+          rmSync(join(B, '끌기폴더'), { recursive: true, force: true }); rmSync(join(B, '끌기.md'), { force: true })
+          ok('끌어 놓기 — 밑의 띠 없음 · «파일» 제목 줄 = 맨 위로 · 파일 줄 = 그 파일의 폴더로')
         }
         // 🔴 **호스트 자신의 열쇠(this-mac)는 기기 목록에 안 보인다** (2026-09-13 Dave)
         //    ⛔ 목록에 두면 «끊기» 가 달리는데, 누르면 지금 보고 있는 창이 제 권한을 끊는다.

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useReducer, useRef, type
 import type { PermissionMode, AuthState, Bot, Candidate, ChatItem, FolderRules, Frame, NotifyEvent, PermissionRequest, SessionInfo, TodoItem } from '../core/types'
 import { api, connectEvents, resyncPush, token } from './api'
 import { cacheWriter, pool, readChats, storeVer, writeChats } from './cache'
+import { forgetMissing } from './existsCache'
 
 export interface Tailnet { state: string; ip?: string; dnsName?: string }
 export interface StateShape {
@@ -245,7 +246,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const pend = new Map<string, Frame>(); let timer: number | undefined
     const flush = () => { timer = undefined; for (const f of pend.values()) dispatch({ type: 'frame', f }); pend.clear() }
     // QA 손잡이 — 스모크가 «화면 줄이 늦은 때»(맥이 자고 깬 직후 등)를 흉내 내려고 프레임을 잠깐 흘려 버린다(BH). 제품 코드는 안 쓴다
-    stopRef.current = connectEvents((f) => { if ((window as unknown as { __fbHoldFrames?: boolean }).__fbHoldFrames) return; if (f.ev === 'chat' && f.replace && (f.item as { streaming?: boolean }).streaming) { pend.set(`${f.sessionId}:${f.item.id}`, f); if (timer === undefined) timer = window.setTimeout(flush, 33); return } if (pend.size) { window.clearTimeout(timer); flush() }   /* flush 가 timer 를 undefined 로 되돌린다 */ dispatch({ type: 'frame', f }); if (f.ev === 'state' && f.state !== 'running') window.dispatchEvent(new Event('fb:usage'));  /* L · 턴이 끝나면 사용량 카드가 바로 다시 묻는다 */ if (f.ev === 'hello') {
+    stopRef.current = connectEvents((f) => { if ((window as unknown as { __fbHoldFrames?: boolean }).__fbHoldFrames) return; if (f.ev === 'chat' && f.replace && (f.item as { streaming?: boolean }).streaming) { pend.set(`${f.sessionId}:${f.item.id}`, f); if (timer === undefined) timer = window.setTimeout(flush, 33); return } if (pend.size) { window.clearTimeout(timer); flush() }   /* flush 가 timer 를 undefined 로 되돌린다 */ dispatch({ type: 'frame', f }); if (f.ev === 'files') forgetMissing();  /* 파일이 바뀌면 «없다» 답을 버린다 — 방금 만든 파일이 칩이 되게 */ if (f.ev === 'state' && f.state !== 'running') window.dispatchEvent(new Event('fb:usage'));  /* L · 턴이 끝나면 사용량 카드가 바로 다시 묻는다 */ if (f.ev === 'hello') {
           /* 🔴 BJ · 호스트가 새 화면 판을 내보내면 **다시 읽는다** — 옛 코드가 계속 돌면 고친 저장 규칙이 안 먹는다(9/27 실측). 채팅 초안은 localStorage 에 있어 남는다 */
           const b = (f as { build?: string }).build
           if (b) { const w = window as unknown as { __fbBuild?: string }; if (w.__fbBuild && w.__fbBuild !== b) { location.reload(); return } w.__fbBuild = b }

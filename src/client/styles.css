@@ -1143,9 +1143,9 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
    ⚠ «고름»(sel)과 «열려 있음»(on)은 다른 일이다 — 색을 하나로 합치면 무엇을 지우는지 안 보인다. */
 .trow.sel { background:var(--sel) } .trow.sel .n { color:var(--w) }
 .trow.dover { box-shadow:inset 0 0 0 1px var(--run) }
-.tdrop { margin:4px 4px 0; padding:5px 0; border:1px dashed var(--line2); border-radius:6px; text-align:center; font-size:11px; color:var(--t3); opacity:0; transition:opacity .12s }
-.secb:hover .tdrop, .tdrop.dover { opacity:1 }
-.tdrop.dover { border-color:var(--run); color:var(--w) }
+/* «파일» 제목 줄 = 맨 위로 옮길 자리 — 끌고 들어오면 밝아지고 안내가 붙는다 (10/18 · 옛 «여기로 끌면 맨 위로» 띠를 대신) */
+.sech.dover { color:var(--w); box-shadow:inset 0 0 0 1px var(--run); border-radius:6px }
+.sech .dhint { flex:none; font-size:11px; color:var(--run) }
 
 /* 코드 블록 머리 — 언어 이름 · 복사 (Rondo 이식 B3)
    ⚠ 머리줄은 `pre` **밖**에 있다(`.cbwrap` 이 둘을 감싼다) — 안에 두면 코드 글자에 섞여 복사에 딸려 온다. */

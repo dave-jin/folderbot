@@ -1,5 +1,6 @@
 import { watch, type FSWatcher } from 'node:fs'
 import { CONFIG_DEBOUNCE_MS, ignoredChange, isBotConfigChange, WATCH_DEBOUNCE_MS } from '../core/fileWatch'
+import { SKIP_DIRS } from './files'
 
 /**
  * 봇 폴더 감시자 (2026-09-18) — 호스트가 봇 폴더를 직접 보고 «파일 바뀜»(`files` 프레임)을 알린다.
@@ -21,6 +22,8 @@ export class FolderWatch {
   private timers = new Map<string, NodeJS.Timeout>()
   private cfgTimers = new Map<string, NodeJS.Timeout>()
   log: (s: string) => void = () => {}
+  /** 디바운스 **전** 신호 — 이름 색인처럼 «바뀐 것 같다» 만 알면 되는 쪽이 300ms 를 안 기다리게 */
+  onRaw: () => void = () => {}
   /** `onConfig` — 봇 폴더의 `.bot.yml` 이 바뀌었다(AA-2). 파일 신호와 **따로** 알린다: 하는 일이 다르다(스케줄 다시 걸기) */
   constructor(private onChange: (botId: string) => void, private onConfig: (botId: string) => void = () => {}) {}
 
@@ -42,6 +45,8 @@ export class FolderWatch {
       const w = watch(abs, { recursive: true, persistent: false }, (_ev, name) => {
         const rel = name == null ? '' : String(name)
         if (ignoredChange(rel)) return
+        // 이름 색인이 안 보는 곳(node_modules·dist·점 폴더)의 바뀜은 색인을 낡게 하지 않는다 — 빌드·동기화가 볼트 훑기를 줄줄이 부르지 않게
+        if (!rel.split(/[\\/]/).slice(0, -1).some((d) => SKIP_DIRS.has(d) || d.startsWith('.'))) this.onRaw()
         if (isBotConfigChange(rel)) this.bumpCfg(id)
         this.bump(id)
       })

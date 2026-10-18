@@ -16,6 +16,7 @@ import { loadKatex, renderMath, renderMermaid } from './mathmaid'
 import { decorateLinks } from './favicons'
 import { boxifyLinks, decorateCode, hoverLinks, hoverable } from './previews'
 import { copyText } from './clip'
+import { askExists } from './existsCache'
 import { pickAgent } from './AgentPick'
 import { fmtTime, useStore } from './store'
 
@@ -180,7 +181,7 @@ export function Md({ text, streaming, botId, onPath, onDir, user, chips }: { tex
     const cands = [...new Set([...candidatePaths(text), ...wiki])]
     if (!cands.length) return
     let live = true
-    void api<Record<string, { rel: string; dir: boolean; matches?: string[] } | false>>(`/bots/${botId}/exists`, { body: { rels: cands } })
+    void askExists(botId, cands)   // 한 번 들은 답은 기억해 둔다(existsCache) — 다시 그릴 때마다 호스트에 또 묻지 않게
       .then((ok) => {
         if (!live || !ref.current) return
         // 한 자리에서 여러 후보가 걸리면 **긴 것**이 이긴다 — `3. Area/…` 가 `Area/…` 보다 맞다

@@ -13,6 +13,7 @@ import { STATE_LABEL, stripRuntime } from '../core/types'
 import type { TurnFrom } from '../core/turnGuard'
 import { checkAuth } from './auth'
 import { FolderWatch } from './watch'
+import { NameIndex } from './nameIndex'
 import { Notifier } from './notify'
 import { type HostConfig, absRoot, atomicWrite, dataDir, saveConfig } from './paths'
 import { McpAuth } from './mcpAuth'
@@ -53,6 +54,8 @@ export class Host {
   readonly akiflow: AkiflowSync
   /** BZ · 호스트 운영 감시(`.claude/ops.yml` 의 명령을 주기마다) */
   readonly ops: OpsWatch
+  /** 파일 이름 색인 — `/exists` 가 이름만 적힌 것을 볼트 전체에서 찾을 때 (host/nameIndex 머리말) */
+  readonly names = new NameIndex()
   auth: AuthState = { verdict: 'unknown', checkedAt: 0 }
   private queued: { botId: string; sessionId: string; text: string; origin: TurnFrom }[] = []
   broadcast: (f: Frame) => void = () => {}
@@ -115,6 +118,7 @@ export class Host {
     }, Number(process.env.FOLDERBOT_CATCHUP_MS) || 20_000).unref()   // 검사 시임 — 스모크가 줄인다
     // 봇 폴더 감시 — 세션을 거치지 않은 쓰기(Bash·Codex·Dropbox·Finder)도 트리에 온다 (host/watch.ts 머리말)
     this.watcher.log = (m) => this.log(m)
+    this.watcher.onRaw = () => this.names.touch()
     this.notifier.log = (m) => this.log(m)   // CF-④ 푸시 결과도 호스트 로그로
     this.watcher.sync(this.registry.bots())
     this.bridges.reload()

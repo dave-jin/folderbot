@@ -78,7 +78,7 @@ import { preview } from './preview'
 import { hookState, setBudget, setHook, usageReport, warmUsage } from './usage'
 import { planNow } from './planUsage'
 import { saveDoc, fileVer } from './docSave'
-import { allDirs, findFiles, guard, headHash, kindOf, mime, readText, recent, resolveNF, resolveNFDeep, stream, tree, writeText, exists, listDir, renameEntry } from './files'
+import { allDirs, guard, headHash, kindOf, mime, readText, recent, resolveNF, resolveNFDeep, stream, tree, writeText, exists, listDir, renameEntry } from './files'
 import { readTodo, todoDelete, todoDue, todoEdit, todoMeta, todoMove, todoToggle } from './todoStore'
 import { globParents, roleOf } from '../core/rules'
 import { createCommand, listCommandFiles, slashCommands } from './slash'
@@ -703,7 +703,8 @@ export class Gateway {
             const found: string[] = []
             // K-1 · 위키링크 `[[노트]]` 는 확장자를 안 쓴다 — 이름 그대로 없으면 `노트.md` 로도 찾는다
             const names = extname(c) ? [c] : [c, `${c}.md`]
-            for (const base of [bot.abs, ...(bot.repo ? [bot.repo] : []), reg.root]) { for (const n of names) for (const f of findFiles(base, n)) if (!found.includes(f)) found.push(f); if (found.length) break }
+            // 🔴 볼트를 매번 훑지 않는다 — 표에서 찾는다(host/nameIndex · 10/18 파일 칸 느림의 원인)
+            for (const base of [bot.abs, ...(bot.repo ? [bot.repo] : []), reg.root]) { for (const n of names) for (const f of await h.names.find(base, n)) if (!found.includes(f)) found.push(f); if (found.length) break }
             if (found.length) out[c] = { rel: relative(bot.abs, found[0]), dir: false, matches: found.map((f) => relative(bot.abs, f)) }
           }
         }

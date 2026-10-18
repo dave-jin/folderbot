@@ -546,6 +546,20 @@ function InboxSec({ open, tog, onSend }: { open: boolean; tog: () => void; onSen
 }
 
 /* ── 파일 트리 (게으른 로드) ── */
+/**
+ * 끄는 동안 칸 위·아래 끝에 가까이 가면 저절로 굴린다 (10/18) — 트리를 펼쳐 두면 목적지가 화면 밖에 있다.
+ * dragover 는 커서가 멈춰 있어도 계속 오므로, 끝에서 가까울수록 한 번에 더 많이 굴린다.
+ */
+const EDGE_PX = 36
+function edgeScroll(from: HTMLElement, y: number): void {
+  let el: HTMLElement | null = from
+  while (el && !(el.scrollHeight > el.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(el).overflowY))) el = el.parentElement
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  if (y < r.top + EDGE_PX) el.scrollTop -= Math.ceil((r.top + EDGE_PX - y) / 3)
+  else if (y > r.bottom - EDGE_PX) el.scrollTop += Math.ceil((y - (r.bottom - EDGE_PX)) / 3)
+}
+
 function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFolderAt, touched, tick, say, active }: { bot: Bot; phone?: boolean; open: boolean; tog: () => void; onOpen: (rel: string, pin?: boolean) => void; onAttach: (rel: string, dir?: boolean) => void; onMention: (rel: string) => void; onStartAt: (vaultRel: string, botId?: string) => void; onNewFolderAt: (vaultRel: string) => void; touched: string[]; tick?: number; say: (m: string) => void; active: string | null }) {
   const [dirs, setDirs] = useState<Record<string, Node[]>>({})
   const refRootsRef = useRef<string[]>([])   // 참조 폴더의 봇 기준 rel — loadDir 이 먼저 정의돼서 ref 로 넘긴다
@@ -735,7 +749,9 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
     } catch (e) { say((e as Error).message) }
   }
   /** 끌어다 놓아 옮기기 (A7) — 목적지는 **폴더 줄**이다. 같은 자리면 아무 일도 안 한다(호스트가 안다) */
-  const moveTo = async (rels: string[], dir: string) => {
+  const moveTo = async (rels0: string[], dir: string) => {
+    // 이미 그 폴더에 있는 것·자기 자신은 뺀다 — 제 줄이나 옆 파일 줄에 놓으면 아무 일도 없어야 한다
+    const rels = rels0.filter((r) => r !== dir && (r.includes('/') ? r.slice(0, r.lastIndexOf('/')) : '') !== dir)
     if (!rels.length) return
     try {
       const r = await api<{ moved: { from: string; to: string }[]; failed: string[] }>(`/bots/${bot.id}/move`, { body: { rels, dir } })
@@ -745,6 +761,8 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
       refreshOpen()
     } catch (e) { say((e as Error).message) }
   }
+  /** 이 줄에 놓으면 어디로 가나 — 폴더면 그 폴더, 파일이면 그 파일이 든 폴더('' = 맨 위) */
+  const dropDir = (n: Node) => (n.dir ? n.rel : n.rel.includes('/') ? n.rel.slice(0, n.rel.lastIndexOf('/')) : '')
   /** 펼쳐 둔 폴더를 다시 읽는다 — 옮기고 치운 뒤에 화면이 낡아 있으면 안 된다 */
   const refreshOpen = () => { for (const d of exp) void loadDir(d) }
   /**
@@ -821,7 +839,11 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
   const toggleDir = (rel: string) => setExp((e) => { const n = new Set(e); if (n.has(rel)) n.delete(rel); else n.add(rel); return n })
   const rename = async (n: Node) => { const name = await askName(`${n.dir ? '폴더' : '파일'} 이름 바꾸기`, n.name); if (!name || name === n.name) return; try { const r = await api<{ rel: string }>(`/bots/${bot.id}/rename`, { body: { rel: n.rel, name } }); say(`→ ${r.rel}`); const parent = n.rel.includes('/') ? n.rel.slice(0, n.rel.lastIndexOf('/')) : ''; void loadDir(parent) } catch (e) { say((e as Error).message) } }
   return <>
-    <button className="sech" onClick={tog}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>파일</span>
+    {/* 🔴 «파일» 제목 줄 = 맨 위(봇 폴더)로 옮길 자리 (10/18 Dave: 트리 밑의 «여기로 끌면 맨 위로» 띠는 트리를 펼치면 닿지 않았다) */}
+    <button className={`sech ${dropOn === '' ? 'dover' : ''}`} onClick={tog}
+      onDragOver={(e) => { if (!e.dataTransfer.types.includes('text/x-fb-rels')) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropOn('') }}
+      onDragLeave={(e) => { if (e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) return; setDropOn((x) => (x === '' ? null : x)) }}
+      onDrop={(e) => { setDropOn(null); const raw = e.dataTransfer.getData('text/x-fb-rels'); if (!raw) return; e.preventDefault(); try { void moveTo(JSON.parse(raw) as string[], '') } catch { /* */ } }}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>파일</span>{dropOn === '' ? <span className="dhint">여기 놓으면 맨 위로</span> : null}
       <span className={`tools ${sort !== 'name' || filter !== null ? 'on' : ''}`} onClick={(e) => e.stopPropagation()}>
         <span style={{ position: 'relative' }}><span className={`ib ${sort !== 'name' ? 'on' : ''}`} title="정렬" onClick={() => setSortMenu(!sortMenu)}><Icon n="sort" size={12} /></span>{sortMenu ? <div className="menu" style={{ right: 0, top: 26 }} onClick={() => setSortMenu(false)}><div className="h">정렬</div><button className={sort === 'name' ? 'on' : ''} onClick={() => setSort('name')}><span style={{ flex: 1 }}>이름 (폴더 먼저)</span>{sort === 'name' ? <Icon n="check" size={11} /> : null}</button><button className={sort === 'mtime' ? 'on' : ''} onClick={() => setSort('mtime')}><span style={{ flex: 1 }}>수정순 — 최근 변경</span>{sort === 'mtime' ? <Icon n="check" size={11} /> : null}</button><hr /><button className={hidden ? 'on' : ''} onClick={() => setHidden(!hidden)}><span style={{ flex: 1 }}>숨김 파일 보기</span>{hidden ? <Icon n="check" size={11} /> : null}</button></div> : null}</span>
         <span className={`ib ${filter !== null ? 'on' : ''}`} title="이름으로 거르기" onClick={() => setFilter(filter === null ? '' : null)}><Icon n="search" size={12} /></span>
@@ -830,7 +852,7 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
       </span></button>
     {open ? <>
       {filter !== null ? <div className="tfilter"><Icon n="search" size={12} /><input autoFocus placeholder="이름으로 거르기…" value={filter} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setFilter(null) }} /><span onClick={() => setFilter(null)} style={{ cursor: 'pointer' }}><Icon n="x" size={11} /></span></div> : null}
-      <div className="secb" style={{ padding: '0 6px 8px' }}>
+      <div className="secb" style={{ padding: '0 6px 8px' }} onDragOver={(e) => { if (e.dataTransfer.types.includes('text/x-fb-rels')) edgeScroll(e.currentTarget, e.clientY) }}>
         {rows.map(({ n, depth }, ri) => <button key={n.rel} data-rel={n.rel} onPointerDown={() => { if (box && box !== n.rel) setBox('') }} className={`trow ${n.dir ? 'dir' : ''} ${active === n.rel ? 'on' : ''} ${sel.has(n.rel) ? 'sel' : ''} ${dropOn === n.rel ? 'dover' : ''} ${flash.has(n.rel) ? 'flash' : ''} ${box === n.rel ? 'box' : ''}`} style={{ ['--pad' as string]: `${10 + depth * 14}px` }}
           /**
            * ⌘/⌃ 하나씩 더하기 · ⇧ 사이 채우기 · 맨 클릭은 **열기**(고른 것은 풀린다).
@@ -857,24 +879,19 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
             e.dataTransfer.setData('text/x-fb-dir', n.dir ? '1' : '0')
             e.dataTransfer.setData('text/plain', rels.map((r) => `${bot.abs}/${r}`).join('\n'))
           }}
-          onDragOver={(e) => { if (!n.dir || !e.dataTransfer.types.includes('text/x-fb-rels')) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropOn(n.rel) }}
-          onDragLeave={() => setDropOn((x) => (x === n.rel ? null : x))}
+          /* 파일 줄에 놓으면 **그 파일이 든 폴더**로 — Finder 와 같다. 밝아지는 것도 그 폴더 줄(맨 위면 «파일» 제목 줄)이다 */
+          onDragOver={(e) => { if (!e.dataTransfer.types.includes('text/x-fb-rels')) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropOn(dropDir(n)) }}
+          onDragLeave={() => setDropOn((x) => (x === dropDir(n) ? null : x))}
           onDrop={(e) => {
             setDropOn(null)
-            if (!n.dir) return
             const raw = e.dataTransfer.getData('text/x-fb-rels')
             if (!raw) return
             e.preventDefault(); e.stopPropagation()
-            try { void moveTo(JSON.parse(raw) as string[], n.rel) } catch { /* */ }
+            try { void moveTo(JSON.parse(raw) as string[], dropDir(n)) } catch { /* */ }
           }}>
           <span className="cv">{n.dir ? <Icon n={exp.has(n.rel) ? 'chevd' : 'chev'} size={9} /> : null}</span><Icon n={n.dir ? 'folder' : 'doc'} size={12} color={n.dir && exp.has(n.rel) ? 'var(--wait)' : 'var(--t3)'} /><span className="n"><Mid s={n.name} /></span>{n.botId ? <span className="dot run" title="봇 있음" style={{ width: 5, height: 5 }} /> : null}<time>{flash.has(n.rel) ? '방금' : fmtTime(n.mtime)}</time>
         </button>)}
         {!rows.length ? <div className="kv" style={{ color: 'var(--t3)' }}>{dirs[''] ? '비어 있어요' : <><div className="skel" style={{ width: '70%' }} /></>}</div> : null}
-        {/* ⚠ 맨 위(봇 폴더 자체)로 돌려놓을 자리 — 하위 폴더에서 꺼낼 길이 없으면 끌어 놓기가 한 방향뿐이다 */}
-        <div className={`tdrop ${dropOn === '' ? 'dover' : ''}`}
-          onDragOver={(e) => { if (!e.dataTransfer.types.includes('text/x-fb-rels')) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropOn('') }}
-          onDragLeave={() => setDropOn((x) => (x === '' ? null : x))}
-          onDrop={(e) => { setDropOn(null); const raw = e.dataTransfer.getData('text/x-fb-rels'); if (!raw) return; e.preventDefault(); try { void moveTo(JSON.parse(raw) as string[], '') } catch { /* */ } }}>여기로 끌면 맨 위로</div>
         {bot.rel ? <>
           <div className="trefsep" />
           {refRows.map(({ n, depth, root }) => root
