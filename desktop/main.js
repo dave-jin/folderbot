@@ -138,7 +138,8 @@ async function startHostMode(root) {
    */
   process.env.FOLDERBOT_NO_MAC_NOTIFY = '1'
   const mod = await import(pathToFileURL(HOST_BUNDLE).href)
-  hostRun = await mod.startHost({ root, port: settings.port || 7373, webRoot: HOST_CLIENT, log: (m) => console.log('[host]', m), onRoot: (r) => switchRoot(r) })
+  // BX · 업데이트 손잡이를 호스트에 넘긴다 — 원격 화면(폰·맥북)이 이 맥의 «새벽 4시에 적용» 을 걸고 풀 수 있게(`/api/update/dawn`)
+  hostRun = await mod.startHost({ root, port: settings.port || 7373, webRoot: HOST_CLIENT, log: (m) => console.log('[host]', m), onRoot: (r) => switchRoot(r), update: { state: () => updater.state(), dawn: (on) => updater.dawn(!!on) } })
   settings.mode = 'host'; settings.root = root; settings.hostUrl = `http://127.0.0.1:${settings.port || 7373}`; settings.token = hostRun.gateway.localToken(); save()
   pairing = hostRun.gateway.openPairing()
   startSse(); refreshTray(); startUsagePoll()
@@ -327,6 +328,7 @@ ipcMain.handle('fb:local-pick', async () => { if (!win) return ''; const r = awa
 ipcMain.handle('fb:update-state', () => updater.state())
 ipcMain.handle('fb:update-check', async () => { await updater.check(true); return updater.state() })
 ipcMain.on('fb:update-apply', () => { updater.apply() })
+ipcMain.handle('fb:update-dawn', (_e, on) => updater.dawn(!!on))
 ipcMain.on('fb:change-host', () => { settings.mode = ''; settings.hostUrl = ''; settings.token = ''; save(); stopSse(); if (win) loadHome() })
 ipcMain.on('fb:token', (_e, token) => { if (typeof token === 'string' && token !== settings.token) { settings.token = token; save(); startSse() } })
 
@@ -624,7 +626,9 @@ app.whenReady().then(async () => {
   app.on('activate', showWin)
   // 자기 업데이트 — 호스트 모드에선 세션이 전부 유휴일 때만 적용한다
   const busyCount = () => { let b = 0; for (const st of states.values()) if (st === 'running' || st === 'awaiting_input') b++; return b }
-  if (!QA) updater.start({ isHost: () => settings.mode === 'host', port: () => settings.port || 7373, isBusy: () => busyCount() > 0, busyCount, onChange: () => { pushTrayState(); try { win?.webContents.send('fb:update', updater.state()) } catch {} } })
+  // BX · 새벽 적용은 30분 안에 도는 루틴이 있으면 미룬다 — 루틴 시각은 이 앱 안 호스트에게 묻는다(원격 화면 모드면 루틴이 없다)
+  const routineSoon = () => { try { return !!hostRun?.host?.routineSoon?.() } catch { return false } }
+  if (!QA) updater.start({ isHost: () => settings.mode === 'host', port: () => settings.port || 7373, isBusy: () => busyCount() > 0, busyCount, routineSoon, onChange: () => { pushTrayState(); try { win?.webContents.send('fb:update', updater.state()) } catch {} } })
 })
 app.on('window-all-closed', () => { /* 메뉴바에 남는다 */ })
 app.on('before-quit', () => {

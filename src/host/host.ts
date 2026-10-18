@@ -24,6 +24,8 @@ import { OpsWatch } from './opsWatch'
 import { letterBatch } from '../core/fbmf'
 import type { PeerDef } from '../core/bridges'
 import type { QueuedMsg } from '../core/types'
+/** BX · 셸이 주는 업데이트 상태(`desktop/updater.js state()`) · 새벽 적용 걸기/풀기 */
+export interface ShellUpdate { state: () => unknown; dawn: (on: boolean) => unknown }
 import { ORCH_ID, Registry, canon, ORCH_REQUEST_RULES_MD, ORCH_ASK_HINT, ORCH_REPORT_HINT, LETTER_RULES_MD } from './registry'
 import { CATCHUP_WINDOW_MS, Routines, routineRun, RETRY_DELAY_MS } from './routines'
 import { autoToDrop, sessArea } from '../core/autoArea'
@@ -78,6 +80,11 @@ export class Host {
    *    다음 시작에 적용된다 — 그 사실을 화면이 말해 준다.
    */
   onRoot: ((root: string) => void | Promise<void>) | null = null
+  /**
+   * BX · 셸(Electron 호스트 모드)이 넘겨 준 업데이트 손잡이 — 원격 화면(폰·맥북)도 이 맥의 «새벽 4시에 적용» 을 걸고 풀 수 있다.
+   * 터미널로 띄운 호스트에는 셸이 없다(null) — 그때 화면은 이 칸을 안 그린다.
+   */
+  update: ShellUpdate | null = null
 
   constructor(public cfg: HostConfig, version: string) {
     this.version = version
@@ -98,7 +105,8 @@ export class Host {
     this.bridges = new BridgeHub({ root: this.registry.root, dataDir: dataDir(), hostNames: () => [hostname(), this.hostName(), this.cfg.hostName ?? ''], log: (m) => this.log(m), deliver: (peer, items) => this.deliverLetters(peer, items),
       wake: (peer, payload) => { void this.wakePeer(peer, payload) },
       onStale: (peer, last) => this.peerSignal(peer, last, false),
-      onAlive: (peer, last) => this.peerSignal(peer, last, true) })
+      onAlive: (peer, last) => this.peerSignal(peer, last, true),
+      onChange: () => this.bridgesChanged() })
     this.routines.file = join(dataDir(), 'routine-runs.json')   // BR-2 · 놓친 회차 판단 기준
     this.runs = new RunLog(this.registry.root, () => this.bridges.cfg.runsCopy, () => hostname().replace(/\.local$/, ''), (m) => this.log(m))
     this.ops = new OpsWatch({ root: this.registry.root, hostNames: () => [hostname(), this.hostName(), this.cfg.hostName ?? ''], log: (m) => this.log(m),
@@ -549,6 +557,7 @@ export class Host {
     let res: { ok: boolean; status?: number; error?: string }
     try { res = await wakePeer(readWakeEnv(peer.wake.env), payload) } catch (e) { res = { ok: false, error: (e as Error).message } }
     this.runs.note({ event: 'wake', peer: peer.id, id: String(payload.id), ok: res.ok, ...(res.status ? { status: res.status } : {}), ...(res.error ? { error: res.error } : {}) })
+    this.bridges.noteWake(String(payload.id), res)
     if (!res.ok) this.log(`⚠ 연결 «${peer.name}» 깨우기 실패 · ${res.error ?? res.status}`)
   }
   /**
@@ -566,6 +575,27 @@ export class Host {
     if (!alive && peer.fallbackNotify) execFile('/bin/sh', ['-c', `${peer.fallbackNotify} "$1"`, 'sh', text], { timeout: 30_000 }, (e) => { if (e) this.log(`⚠ 연결 «${peer.name}» 대체 알림 실패 · ${e.message}`) })
   }
 
+  /**
+   * BQ-9 · 연결 화면을 다시 읽으라는 신호 — 편지가 몰려도 0.5초에 한 번만 보낸다.
+   * ⚠ 화면은 이 프레임만 믿지 않는다 — 다시 붙을 때와 30초마다 스스로 다시 읽는다(store 재접속 계약).
+   */
+  private bridgesTimer: NodeJS.Timeout | null = null
+  private bridgesChanged(): void {
+    if (this.bridgesTimer) return
+    this.bridgesTimer = setTimeout(() => { this.bridgesTimer = null; this.broadcast({ ev: 'bridges' }) }, 500)
+    this.bridgesTimer.unref?.()
+  }
+  /** BX · 이만큼 안에 도는(켜진) 루틴이 있나 — 셸의 «새벽 적용» 이 루틴과 겹치지 않게 30분씩 미룬다(desktop/dawn.js) */
+  routineSoon(ms = 30 * 60_000): boolean {
+    const now = Date.now()
+    return this.registry.bots().some((b) => this.routines.decorate(b.id, b.routines).some((r) => r.enabled !== false && !!r.nextRun && r.nextRun >= now - 60_000 && r.nextRun - now <= ms))
+  }
+  /** BQ-9 · 그 상대의 채널 세션(받는 봇 · 채널 id 가 같은 것) — 스레드의 «채널 세션 열기» */
+  channelFor(p: PeerDef): { botId: string; sid?: string } | null {
+    const bot = this.registry.bots().find((b) => this.isDeliverTarget(p, b)); if (!bot) return null
+    const sid = this.sessions.list(bot.id).filter((x) => x.channel === p.id).sort((a, b) => b.createdAt - a.createdAt)[0]?.id
+    return { botId: bot.id, ...(sid ? { sid } : {}) }
+  }
   private isDeliverTarget(p: PeerDef, bot: Bot): boolean { const q = p.deliver.bot; return q === bot.id || q === bot.name || q === bot.rel }
   /**
    * BQ-3·4 · 편지 묶음을 상대의 채널 세션에 넣는다 — 사람이 아니라 «바깥 상대» 의 턴(`turnFrom: peer`)이다.

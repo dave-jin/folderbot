@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, extname, normalize, relative, resolve, sep } from 'node:path'
-import { homedir } from 'node:os'
+import { homedir, hostname } from 'node:os'
 import { gzipSync } from 'node:zlib'
 import { spawn } from 'node:child_process'
 /** zip 을 표준 출력으로 — 숨김 파일(.folderbot 등)은 뺀다 */
@@ -23,6 +23,8 @@ import { saveConfig } from './paths'
 import { handleMcp } from './mcp'
 import { bearer, mcpGate } from './mcpAuth'
 import { readTokenEnv } from './wake'
+import { isoLocal } from '../core/fbmf'
+import { handoffLine, presetOf } from '../core/bridgeView'
 import { providers, forgetProviders } from './providers'
 import { agentModels, codexAuth, diagnose, forgetModels } from './auth'
 import { canon } from './registry'
@@ -257,6 +259,43 @@ export class Gateway {
       req.on('close', () => this.clients.delete(c))
       return
     }
+    // ── 연결(Bridge) 화면 — 레일 «연결» 절 · 편지 스레드 · 새 연결 마법사 (BQ-9 · BQ-10) ──
+    // ⚠ `/api/bridges/<상대>/messages`(POST)는 상대의 웹훅 창구라 기기 인증 앞에서 따로 받는다(route) — 여기 길과 이름이 안 겹치게 «letters»
+    if (p === '/api/bridges' && m === 'GET') {
+      const peers = h.bridges.views().map((v) => { const pd = h.bridges.peer(v.id); const c = pd ? h.channelFor(pd) : null; return { ...v, ...(c ? { deliverBot: c.botId } : {}), ...(c?.sid ? { channelSid: c.sid } : {}) } })
+      return json(200, { peers, errors: h.bridges.cfg.errors, taken: { ids: h.bridges.cfg.peers.map((x) => x.id), mailboxes: h.bridges.cfg.peers.map((x) => x.mailbox) }, host: hostname().replace(/\.local$/, ''), port: h.cfg.port })
+    }
+    if (p === '/api/bridges' && m === 'POST') {
+      const b = await body()
+      const deliverBot = String(b.deliverBot ?? 'orch')
+      const bot = reg.bot(deliverBot); if (!bot) return json(400, { error: '편지를 받을 봇이 없어요' })
+      try {
+        const nb = { preset: presetOf(String(b.preset ?? '')).id, id: String(b.id ?? '').trim(), name: String(b.name ?? '').trim(), icon: String(b.icon ?? '✉️').trim() || '✉️', mailbox: String(b.mailbox ?? '').trim(), deliverBot: bot.id, trust: String(b.trust ?? 'propose') as never,
+          host: hostname().replace(/\.local$/, ''), since: isoLocal(new Date()), ...(b.expectEvery ? { expectEvery: String(b.expectEvery) } : {}), ...(b.inbound === true ? { inbound: true } : {}), ...(b.wake === true ? { wake: true } : {}) }
+        const out = h.bridges.create(nb, { deliverName: bot.displayName || bot.name, port: h.cfg.port })
+        h.log(`연결 만들기 · ${device} · ${nb.id} → ${out.mailbox}`)
+        return json(200, { ok: true, ...out, line: handoffLine(out.mailbox) })
+      } catch (e) { return json(400, { error: (e as Error).message }) }
+    }
+    const mBr = /^\/api\/bridges\/([a-z0-9-]+)\/(letters|seen)$/.exec(p)
+    if (mBr) {
+      const [, pid, what] = mBr
+      if (what === 'seen' && m === 'POST') { if (!h.bridges.peer(pid)) return json(404, { error: '그런 연결이 없어요' }); h.bridges.markSeen(pid); return json(200, { ok: true }) }
+      if (what === 'letters' && m === 'GET') {
+        const t = h.bridges.thread(pid, Math.min(500, Number(url.searchParams.get('limit')) || 150)); if (!t) return json(404, { error: '그런 연결이 없어요' })
+        const pd = h.bridges.peer(pid)!; const c = h.channelFor(pd)
+        return json(200, { ...t, peer: { ...t.peer, ...(c ? { deliverBot: c.botId } : {}), ...(c?.sid ? { channelSid: c.sid } : {}) } })
+      }
+      if (what === 'letters' && m === 'POST') {
+        const b = await body()
+        try { const out = h.bridges.sendHuman(pid, { kind: String(b.kind ?? 'report'), text: String(b.text ?? ''), title: typeof b.title === 'string' ? b.title : undefined, re: typeof b.re === 'string' && b.re ? b.re : undefined, urgent: b.urgent === true, needsHuman: b.needsHuman === true }); h.log(`연결 «${pid}» 사람 편지 · ${device} · ${out.id}`); return json(200, { ok: true, ...out }) }
+        catch (e) { return json(400, { error: (e as Error).message }) }
+      }
+    }
+    // BX · 셸의 업데이트 상태 · «새벽 4시에 적용» 걸기/풀기 — 원격 화면도 이 맥의 적용 시각을 정할 수 있게. 셸이 없으면(터미널 호스트) 404
+    // ⚠ 셸이 없어도 200 — 원격 화면이 이 길을 늘 묻는데, 404 는 브라우저 콘솔에 오류로 찍힌다
+    if (p === '/api/update' && m === 'GET') return json(200, h.update ? h.update.state() : { shell: false })
+    if (p === '/api/update/dawn' && m === 'POST') { if (!h.update) return json(404, { error: 'no desktop shell' }); const b = await body(); h.log(`새벽 적용 ${b.on ? '예약' : '취소'} · ${device}`); return json(200, h.update.dawn(b.on === true)) }
     if (p === '/api/agents' && m === 'GET') return json(200, providers())
     // 쓸 수 있는 모델 — **기계에서 주워 온다**(빌트인 목록은 화면이 빈 자리를 메울 때만 쓴다)
     if (p === '/api/agents/models' && m === 'GET') return json(200, agentModels())

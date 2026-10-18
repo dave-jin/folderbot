@@ -13,6 +13,7 @@ files:
   - updater.js
   - update-pick.js
   - apply-script.js
+  - dawn.js
   - perms.js
   - perm-core.js
   - trayIcon.js

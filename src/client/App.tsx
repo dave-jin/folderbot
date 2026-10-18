@@ -39,6 +39,8 @@ import { tabActive } from '../core/tabbar'
 import { SwipeRow } from './SwipeRow'
 import { botDueChip, byDue } from '../core/botName'
 import { LocalOpenHost, localBridge, openOnThisDevice, useLocalSettings } from './localOpen'
+import { BridgeRail, BridgeThread } from './Bridges'
+import type { PeerView } from '../core/bridgeView'
 import { botRelOf } from '../core/paths'
 import { ICON_PX, useIconSize, useTheme } from './theme'
 import { UsageCard, UsageStrip, useUsage } from './Usage'
@@ -193,7 +195,7 @@ const CHAT_MIN = 360
 const DOC_MIN = 380, SIDE_MIN = 200, STRIP_W = 45
 function useWinW(): number { const [w, setW] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1440)); useEffect(() => { const f = () => setW(window.innerWidth); window.addEventListener('resize', f); return () => window.removeEventListener('resize', f) }, []); return w }
 const DEF: Layout = { sb: 250, rp: 290, doc: 520, sbOpen: true, rpOpen: true, sbPin: false, rpPin: false, secH: { sessions: 120, todo: 128 } }
-interface UpdState { lastCheck: number; current: string; staged: { version: string; ready: boolean; progress: number; notes: string } | null; downloading: boolean; checking: boolean; lastError: string; deferred: boolean; busy: number; host: boolean }
+interface UpdState { lastCheck: number; current: string; staged: { version: string; ready: boolean; progress: number; notes: string } | null; downloading: boolean; checking: boolean; lastError: string; deferred: boolean; busy: number; host: boolean; /** BX · «새벽 4시에 적용» 예약 — 시각 · 미룬 까닭 */ dawn?: { at: number; note: string } | null }
 /**
  * 단축키 표 — 🔴 **여기가 정본이고 ⌘/ 가 이걸 그대로 보여 준다.**
  *    표를 따로 쓰면 실제 동작과 갈리고, 갈린 표는 없느니만 못하다.
@@ -231,7 +233,7 @@ function KeysSheet({ onClose }: { onClose: () => void }) {
   </div></div>
 }
 
-interface DesktopBridge { version?: string; onCmd?: (cb: (c: string) => void) => () => void; pathOf?: (f: File) => string; update?: { state: () => Promise<UpdState>; check: () => Promise<UpdState>; apply: () => void; onChange: (cb: (st: UpdState) => void) => () => void } }
+interface DesktopBridge { version?: string; onCmd?: (cb: (c: string) => void) => () => void; pathOf?: (f: File) => string; update?: { state: () => Promise<UpdState>; check: () => Promise<UpdState>; apply: () => void; dawn?: (on: boolean) => Promise<UpdState>; onChange: (cb: (st: UpdState) => void) => () => void } }
 const desk = (window as unknown as { folderbotDesktop?: DesktopBridge }).folderbotDesktop
 const isDesktop = typeof desk !== 'undefined'
 
@@ -242,7 +244,7 @@ const isDesktop = typeof desk !== 'undefined'
  *    셸(updater.js)은 이제 어느 모드에서도 스스로 적용하지 않는다. 다 받으면 이 훅이 **버전 칩 위 팝업**을 한 번
  *    연다(`ask`) — 누르는 건 사람이다. 「나중에」 하면 칩만 초록으로 남고, 칩을 누르면 같은 팝업이 다시 뜬다.
  */
-function useUpdate(say: (m: string) => void): [UpdState | null, () => void, () => void, string, (v: string) => void] {
+function useUpdate(say: (m: string) => void): [UpdState | null, () => void, () => void, string, (v: string) => void, (on: boolean) => void] {
   const [st, setSt] = useState<UpdState | null>(null)
   const [ask, setAsk] = useState('')          // 팝업을 열어 둘 버전 — '' 이면 닫힘
   const readyRef = useRef('')
@@ -262,27 +264,58 @@ function useUpdate(say: (m: string) => void): [UpdState | null, () => void, () =
     }).catch((e: unknown) => say(`확인 실패 — ${e instanceof Error ? e.message : String(e)}`))
   }
   const apply = () => { const u = desk?.update; if (!u || !st?.staged?.ready) return; setAsk(''); u.apply() }
-  return [st, check, apply, ask, setAsk]
+  /** BX · 새벽 4시에 적용 걸기/풀기 — 적용 «시각» 만 옮긴다. 자동 적용은 여전히 없다(9/15) */
+  const dawn = (on: boolean) => { const u = desk?.update; if (!u?.dawn) return; setAsk(''); void u.dawn(on).then((n) => { setSt(n); say(on ? (n.dawn ? `새벽 ${dawnText(n.dawn.at)} 에 적용해요 — 칩을 눌러 취소할 수 있어요` : '받아 둔 판이 없어 예약하지 못했어요') : '새벽 적용 예약을 풀었어요') }).catch((e: unknown) => say(`예약 실패 — ${e instanceof Error ? e.message : String(e)}`)) }
+  return [st, check, apply, ask, setAsk, dawn]
 }
 /** 버전 칩 위 팝업 — «받아 뒀어요, 적용할까요?» 한 장. 돌고 있는 세션 수는 여기서 말한다(적용하면 끊긴다) */
-function UpdateAsk({ st, onApply, onLater }: { st: UpdState; onApply: () => void; onLater: () => void }) {
+/** BX · «M/D 4:00» — 오늘 밤이면 «오늘», 내일이면 «내일» */
+function dawnText(at: number): string { const d = new Date(at), now = new Date(); const day = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime(); const dd = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); const w = dd === day ? '오늘' : dd - day === 86400_000 ? '내일' : `${d.getMonth() + 1}/${d.getDate()}`; return `${w} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}` }
+function UpdateAsk({ st, onApply, onLater, onDawn, anchor = '.sb-foot .bd.upd' }: { st: UpdState; onApply?: () => void; onLater: () => void; /** BX · 새벽 4시에 적용 걸기/풀기 — 없으면 단추를 안 그린다 */ onDawn?: (on: boolean) => void; /** 팝업을 띄울 칩 — 호스트 칩은 따로 */ anchor?: string }) {
   // ⚠ 레일은 overflow 로 잘린다 — 팝업은 칩 자리를 재서 **화면 좌표(fixed)** 로 띄운다 (오늘 아침 미리보기 카드와 같은 교훈)
   const [pos, setPos] = useState<{ left: number; bottom: number }>({ left: 12, bottom: 48 })
-  useEffect(() => { const el = document.querySelector('.sb-foot .bd.upd'); if (el) { const r = el.getBoundingClientRect(); setPos({ left: Math.max(8, r.left), bottom: Math.max(8, window.innerHeight - r.top + 8) }) } }, [])
+  useEffect(() => { const el = document.querySelector(anchor); if (el) { const r = el.getBoundingClientRect(); setPos({ left: Math.max(8, r.left), bottom: Math.max(8, window.innerHeight - r.top + 8) }) } }, [])
   if (!st.staged?.ready) return null
   return <div className="updask" role="dialog" style={{ position: 'fixed', left: pos.left, bottom: pos.bottom }}>
     <div className="t"><b>v{st.staged.version} 을 받아 두었어요</b><small>지금 v{st.current}</small></div>
     {st.staged.notes ? <div className="notes">{st.staged.notes.split('\n').slice(0, 4).join('\n')}</div> : null}
     <div className="warn">{st.busy > 0 ? `적용하면 돌고 있는 세션 ${st.busy}개가 끊겨요 — 끝난 뒤에 하는 게 좋아요` : '지금 돌고 있는 세션은 없어요'}</div>
-    <div className="btns"><button className="btn ghost" onClick={onLater}>나중에</button><button className="btn on" onClick={onApply}>지금 재시작해서 적용</button></div>
+    {/* 🔴 BX (2026-10-19 Dave «A») — 결정은 사람이, 적용은 새벽에. 같은 자리를 다시 누르면 취소(목업 ③A). 켜지다 실패하면 옛 판으로 돌아온다(apply-script) */}
+    {st.dawn ? <div className="dawn-on" data-dawn={st.dawn.at}><span className="dot hold" />새벽 {dawnText(st.dawn.at)} 에 적용 예약{st.dawn.note ? <small> · {st.dawn.note}</small> : null}</div> : null}
+    <div className="btns"><button className="btn ghost" onClick={onLater}>나중에</button>
+      {onDawn ? <button className="btn ghost dawn-b" onClick={() => onDawn(!st.dawn)} title="4시에 도는 세션·30분 안 루틴이 있으면 30분씩 미뤄요(5시 넘으면 다음 날)">{st.dawn ? '새벽 예약 취소' : '새벽 4시에 적용'}</button> : null}
+      {onApply ? <button className="btn on" onClick={onApply}>지금 재시작해서 적용</button> : null}</div>
   </div>
 }
 function UpdateChip({ version, st, onCheck, onApply }: { version: string; st: UpdState | null; onCheck: () => void; onApply: () => void }) {
   if (!isDesktop || !st) return <button className="bd mono upd" onClick={onCheck} title={isDesktop ? '업데이트 확인' : '호스트 버전'}>v{version}</button>
   // ⚠ 준비된 칩을 누르면 **묻는 팝업**이 뜬다 — 바로 갈아끼우지 않는다 (2026-09-15 Dave)
+  if (st.staged?.ready && st.dawn) return <button className="bd upd dawn" style={{ color: 'var(--hold)' }} onClick={onApply} title={`v${st.staged.version} — 새벽 ${dawnText(st.dawn.at)} 에 적용 예약 · 눌러서 취소하거나 지금 적용`}><span className="dot hold" style={{ width: 5, height: 5 }} />v{st.staged.version} · 새벽 적용 예약</button>
   if (st.staged?.ready) return <button className="bd upd" style={{ color: 'var(--done)' }} onClick={onApply} title={`v${st.staged.version} 준비됨 — 눌러서 적용할지 정하기`}><span className="dot done" style={{ width: 5, height: 5 }} />v{st.staged.version} · 적용</button>
   if (st.downloading) return <span className="bd" title="조용히 받는 중 — 다 받으면 알려 드려요">v{st.staged?.version} 받는 중 {Math.round((st.staged?.progress ?? 0) * 100)}%</span>
   return <button className="bd mono upd" onClick={onCheck} title={st.lastError ? `마지막 확인 실패 — ${st.lastError}` : st.lastCheck ? `업데이트 확인 · 마지막 ${fmtTime(st.lastCheck)}` : '업데이트 확인'} style={st.lastError ? { color: 'var(--wait)' } : undefined}><Icon n="undo" size={10} style={st.checking ? { animation: 'spin 1s linear infinite' } : undefined} />v{st.current}{st.checking ? ' · 확인 중…' : ''}</button>
+}
+
+/**
+ * BX · 원격 화면(폰 아닌 브라우저 · 맥북 원격 앱)에서 **호스트 맥의** 받아 둔 업데이트 — «새벽 4시에 적용» 만 건다(목업 ③A «원격에서도 누를 수 있다»).
+ * «지금 적용» 은 호스트 맥 화면에서만 — 원격에서 누르면 보고 있던 화면째 끊긴다. 셸 없는 호스트(터미널)는 404 라 아무것도 안 그린다.
+ */
+function HostUpdateChip({ say }: { say: (m: string) => void }) {
+  const [st, setSt] = useState<UpdState | null>(null)
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    let dead = false
+    const load = () => api<UpdState>('/update').then((n) => { if (!dead) setSt(n) }).catch(() => { if (!dead) setSt(null) })
+    void load(); const iv = window.setInterval(() => { if (document.visibilityState === 'visible') void load() }, 60_000)
+    window.addEventListener('fb:bridges', load)
+    return () => { dead = true; window.clearInterval(iv); window.removeEventListener('fb:bridges', load) }
+  }, [])
+  if (!st?.staged?.ready) return null
+  const dawn = (on: boolean) => { setOpen(false); void api<UpdState>('/update/dawn', { body: { on } }).then((n) => { setSt(n); say(on ? (n.dawn ? `호스트가 새벽 ${dawnText(n.dawn.at)} 에 적용해요` : '호스트에 받아 둔 판이 없어요') : '호스트 새벽 적용 예약을 풀었어요') }).catch((e: unknown) => say(`예약 실패 — ${e instanceof Error ? e.message : String(e)}`)) }
+  return <>
+    <button className="bd upd hostupd" style={{ color: st.dawn ? 'var(--hold)' : 'var(--done)' }} onClick={() => setOpen(!open)} title={`호스트 v${st.staged.version} 받아 둠${st.dawn ? ` · 새벽 ${dawnText(st.dawn.at)} 적용 예약` : ''}`}><span className={`dot ${st.dawn ? 'hold' : 'done'}`} style={{ width: 5, height: 5 }} />호스트 v{st.staged.version}{st.dawn ? ' · 새벽 적용 예약' : ''}</button>
+    {open ? <UpdateAsk st={st} onLater={() => setOpen(false)} onDawn={dawn} anchor=".sb-foot .bd.hostupd" /> : null}
+  </>
 }
 
 function Main() {
@@ -381,7 +414,7 @@ function Main() {
   const [mentionReq, setMentionReq] = useState<string[]>([])
   const [focusReq, setFocusReq] = useState(0)
   const [focusSec, setFocusSec] = useState<{ sec: string; n: number } | null>(null)
-  const [upd, updCheck, updApply, updAsk, setUpdAsk] = useUpdate(say)
+  const [upd, updCheck, updApply, updAsk, setUpdAsk, updDawn] = useUpdate(say)
   /**
    * 🔴 **파일을 엉뚱한 데 놓아도 앱이 그 파일로 떠나지 않는다** (2026-09-15 Dave: «finder 에서 파일 드래그 & 드롭도
    *    되어야 하는데 지금 기능이 안되는것 같더라고»). 크롬은 놓을 자리가 아닌 곳에 파일을 놓으면 창을 통째로
@@ -427,6 +460,9 @@ function Main() {
   const navSelf = useRef(false)
   const setHashSelf = (p: Record<string, string>) => { navSelf.current = true; setHash(p) }
   const go = (b: string, sid?: string) => { picked.current = { bot: '' }; setHashSelf(sid ? { bot: b, s: sid } : { bot: b }); setView('chat') }
+  /** BQ-9 · 연결 상대의 편지 스레드 — 가운데 칸에 연다. 받는 봇(보통 오케스트레이터)으로 옮겨 오른쪽 패널에 그 채널 세션이 보이게 */
+  const peerId = hash.peer ?? ''
+  const openPeer = (p: PeerView) => { picked.current = { bot: '' }; setHashSelf({ bot: p.deliverBot, peer: p.id }); setView('chat') }
   /**
    * 🔴 **대기 메시지는 «그 세션의 것»이다** (2026-09-15 Dave: *«que 메시지를 보내놓은 상태에서 다른
    *    폴더를 띄우면 거기에 큐 메시지가 전달되는 버그»*).
@@ -902,7 +938,7 @@ function Main() {
     return off
   }, [bot?.id, sessions.length])
   // H · 같은 부품을 세 단계가 나눠 쓴다 — 넓음은 흐름 안, 중간·좁음은 서랍 안. 데이터(순서·표시 이름·확인 대기 점)는 한 곳(rows)
-  const homeEl = <Home rows={rows} bot={bot} go={go} setModal={setModal} waiting={waiting} onAsk={(text) => { go('orch'); if (text) setSendReq({ botId: 'orch', text, n: Date.now() }); else setFocusReq(Date.now()) }} say={say} railSort={railSort} setRailSort={setRailSort} prefetch={prefetch} />
+  const homeEl = <Home onPeer={openPeer} rows={rows} bot={bot} go={go} setModal={setModal} waiting={waiting} onAsk={(text) => { go('orch'); if (text) setSendReq({ botId: 'orch', text, n: Date.now() }); else setFocusReq(Date.now()) }} say={say} railSort={railSort} setRailSort={setRailSort} prefetch={prefetch} />
   const sidebarEl = <div className="col side left" style={{ width: stage === 'wide' ? fit.sb : undefined }}>
         <div className="hdr"><FolderBot color="#e08850" size={16} mood={waiting ? 'wait' : 'idle'} mono /><span className="ttl">Folder Bot</span><span className="sp" /><div className="acts"><button className="ib" onClick={closeSb} title="목록 접기 (⌘B)"><Icon n="panel" size={14} /></button></div></div>
         <div style={{ padding: '10px 8px 0' }}>
@@ -920,7 +956,7 @@ function Main() {
         <div className="sb-list">
           {rows.map(([sec, list]) => <div key={sec}>
             <div className="secl">{sec === '관제' ? '관제' : sec}</div>
-            {list.map(({ b, sum }) => <button key={b.id} data-id={b.id} className={`brow ${b.id === bot.id && view !== 'list' ? 'on' : ''} ${sum.unread ? 'unread' : ''} ${overBot === b.id ? 'dover' : ''} ${dragBot === b.id ? 'dsrc' : ''}`}
+            {list.map(({ b, sum }) => <button key={b.id} data-id={b.id} className={`brow ${b.id === bot.id && view !== 'list' && !peerId ? 'on' : ''} ${sum.unread ? 'unread' : ''} ${overBot === b.id ? 'dover' : ''} ${dragBot === b.id ? 'dsrc' : ''}`}
               draggable={!b.orchestrator}
               onDragStart={(e) => { setDragBot(b.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/x-fb-bot', b.id) }}
               onDragEnd={() => { setDragBot(null); setOverBot(null) }}
@@ -928,6 +964,8 @@ function Main() {
               onDragLeave={() => setOverBot((x) => (x === b.id ? null : x))}
               onDrop={(e) => { e.preventDefault(); void dropBot(b.id) }}
               onContextMenu={(e) => { e.preventDefault(); hovOut(); if (!b.orchestrator) setRailCtx({ x: e.clientX, y: e.clientY, id: b.id, name: b.name }) }} onClick={() => { hovOut(); go(b.id) }} onMouseEnter={(e) => hovIn(b.id, e.currentTarget)} onMouseLeave={hovOut}><FolderBot color={b.color} size={ICON_PX[iconSz]} mood={sum.mood} unread={sum.unread} recent={sum.recent} mono /><span className="n"><BotName b={b} />{b.rel.split('/').length > 2 ? <small>{b.rel.slice(0, b.rel.lastIndexOf('/'))}</small> : null}</span>{b.due || b.todoDue ? null : <time>{fmtTime(sum.t)}</time>}</button>)}
+            {/* BQ-9 · 「연결」 절 — 관제 바로 아래(목업 ①A). 상대가 없으면 안 그린다 */}
+            {sec === '관제' ? <BridgeRail active={peerId} onOpen={openPeer} /> : null}
           </div>)}
         </div>
         {hovRow ? <HoverCard b={hovRow.b} sum={hovRow.sum} top={hov!.top} left={fit.sb + 6} /> : null}
@@ -949,7 +987,7 @@ function Main() {
         {/* ⛔ 맥에서는 사용량을 앱 안에 안 그린다 — **메뉴바에서만** 본다 (2026-09-13 Dave: «맥에서는 그냥 메뉴바 안에서만 이게 보이면 좋겠어»).
             폰은 첫 화면 위 스트립 하나로 남는다. 두 표면 다 있으면 같은 숫자가 두 번 보이고 아래 줄이 또 비좁아진다. */}
         <div className="sb-foot two">
-          <div className="r2"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} /><span className="hn">{s.hostName}</span><MrBadge />{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<UpdateChip version={s.version} st={upd} onCheck={updCheck} onApply={() => { if (upd?.staged?.ready) setUpdAsk(upd.staged.version) }} />{updAsk && upd ? <UpdateAsk st={upd} onApply={updApply} onLater={() => setUpdAsk('')} /> : null}</div>
+          <div className="r2"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} /><span className="hn">{s.hostName}</span><MrBadge />{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<UpdateChip version={s.version} st={upd} onCheck={updCheck} onApply={() => { if (upd?.staged?.ready) setUpdAsk(upd.staged.version) }} />{updAsk && upd ? <UpdateAsk st={upd} onApply={updApply} onLater={() => setUpdAsk('')} onDawn={desk?.update?.dawn ? updDawn : undefined} /> : null}{!s.device.main ? <HostUpdateChip say={say} /> : null}</div>
         </div>
       </div>
   const stripEl = <div className="strip left" onClick={(e) => { if (mid && e.target === e.currentTarget) setView('list') }}><button className="ib" onClick={openSb} title={mid ? '봇 목록 (덮여서 열림)' : '목록 펼치기 (⌘B)'}><Icon n="panel" size={14} /></button><div className="gap" />
@@ -989,7 +1027,7 @@ function Main() {
       {stage === 'wide' ? <div className="divx" onPointerDown={sbOpen ? dragX('sb', 1) : undefined} onDoubleClick={() => setLay({ ...lay, sb: DEF.sb, sbOpen: true, sbPin: true })} /> : null}
 
       {/* ── 채팅 ── */}
-      <Chat bot={bot} sessions={sessions} cur={cur} items={items} loaded={!!sessionId && !!s.chats[sessionId]} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} sendReq={sendReq} onSendReq={() => setSendReq(null)} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openInDocPane(rel, { pin })} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={toList} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} queue={queueFor(sessionId)} onQueue={(f) => { if (sessionId) onQueue(sessionId, f) }} onReveal={reveal} />
+      {peerId ? <BridgeThread peerId={peerId} go={go} say={say} phone={phone} onBack={toList} /> : <Chat bot={bot} sessions={sessions} cur={cur} items={items} loaded={!!sessionId && !!s.chats[sessionId]} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} sendReq={sendReq} onSendReq={() => setSendReq(null)} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openInDocPane(rel, { pin })} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={toList} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} queue={queueFor(sessionId)} onQueue={(f) => { if (sessionId) onQueue(sessionId, f) }} onReveal={reveal} />}
 
       {/* ── 문서 열 (넓음만 흐름 안 · 중간·좁음은 오른쪽 서랍) ── */}
       {stage === 'wide' && showDoc ? <><div className="divx" onPointerDown={dragX('doc', -1)} onDoubleClick={() => setLay({ ...lay, doc: DEF.doc })} />{docwrapEl}</> : null}
@@ -1219,7 +1257,7 @@ function BotName({ b, chip = true }: { b: Bot; chip?: boolean }) {
   return <span ref={ref} className="bname" title={b.name}><b className="dn">{b.displayName}</b>{b.kind && !hideTag ? <span className="tag">{b.kind}</span> : null}{due ? <span className={`due ${due.tone}`} title={due.line ? `할 일 마감 — ${b.name}` : undefined}>{due.text}</span> : null}</span>
 }
 
-function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, prefetch }: { prefetch: (botId: string) => void; railSort: RailSort; setRailSort: (k: RailSort) => void; rows: Row[]; bot: Bot; go: (b: string, sid?: string) => void; setModal: (m: ModalKey) => void; waiting: number; onAsk: (text?: string) => void; say: (m: string) => void }) {
+function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, prefetch, onPeer }: { /** BQ-9 · 연결 상대를 누르면 편지 스레드 */ onPeer?: (p: PeerView) => void; prefetch: (botId: string) => void; railSort: RailSort; setRailSort: (k: RailSort) => void; rows: Row[]; bot: Bot; go: (b: string, sid?: string) => void; setModal: (m: ModalKey) => void; waiting: number; onAsk: (text?: string) => void; say: (m: string) => void }) {
   const usage = useUsage() // 폰 홈 맨 위 — 한 줄 띠. 누르면 카드가 시트로 올라온다
   const [uSheet, setUSheet] = useState(false)
   const { s, refresh } = useStore()
@@ -1284,6 +1322,7 @@ function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, 
           // 관제(오케스트레이터)는 고정·지우기·은퇴의 대상이 아니다 — 쓸리지 않는다
           return b.orchestrator ? row : <SwipeRow key={b.id} cfg={FOLDER_SWIPE} labelFor={(a) => (a === 'pin' && b.pinned ? '고정 풀기' : undefined)} onAct={(a) => void folderAct(b, a)}>{row}</SwipeRow>
         })}
+        {sec === '관제' && onPeer ? <BridgeRail phone onOpen={onPeer} /> : null}
       </div>)}
       </>}
     </div>

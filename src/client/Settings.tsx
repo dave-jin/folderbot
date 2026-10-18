@@ -13,6 +13,7 @@ import { LocalOpenPicker, localBridge, useLocalSettings } from './localOpen'
 import { EFFORTS, MODES, modelsFor, moreModelsFor, setFoundModels } from './consts'
 import { norm } from '../core/search'
 import { dueText } from '../core/due'
+import { BridgesPane } from './Bridges'
 
 /**
  * 설정 — 2026-09-17 «1안» (Dave: «설정 메뉴가 엉망진창임 … 종류별로 정리가 필요함»).
@@ -30,7 +31,7 @@ import { dueText } from '../core/due'
  *    인덱스를 빼먹으면 빨개진다. 종전엔 절전·진단·다시 연결이 검색에 안 걸렸다.
  */
 
-export type SecId = 'general' | 'host' | 'devices' | 'claude' | 'codex' | 'sessions' | 'notify' | 'todo' | 'akiflow' | 'ref'
+export type SecId = 'general' | 'host' | 'devices' | 'claude' | 'codex' | 'sessions' | 'notify' | 'todo' | 'akiflow' | 'bridges' | 'ref'
 const SECS: { id: SecId; label: string; icon: 'gear'; phoneOnly?: boolean; ref?: boolean }[] = [
   { id: 'general', label: '일반', icon: 'gear' },
   { id: 'host', label: '호스트 · 볼트', icon: 'folder' as 'gear' },
@@ -42,6 +43,8 @@ const SECS: { id: SecId; label: string; icon: 'gear'; phoneOnly?: boolean; ref?:
   { id: 'todo', label: '할 일', icon: 'list' as 'gear', phoneOnly: true },
   // ⚠ 칸 이름은 범용으로 — 특정 서비스 이름은 그 칸 안에서만 쓴다(2026-09-13 «화면 문구는 범용» · 스모크가 잡는다)
   { id: 'akiflow', label: '할 일 동기화', icon: 'cal' as 'gear' },
+  // BQ-10 · 연결(Bridge) — 바깥 에이전트와 편지 파일로 대화하는 길. 새 연결 마법사가 여기 산다(2026-10-19 Dave «A»)
+  { id: 'bridges', label: '연결', icon: 'chat' as 'gear' },
   { id: 'ref', label: '참고 · 커넥터 · 스킬', icon: 'eye' as 'gear', ref: true }
 ]
 
@@ -179,6 +182,8 @@ export const INDEX: { sec: SecId; t: string; d: string }[] = [
   { sec: 'todo', t: '왼쪽으로 길게', d: '쓸어서 처리 스와이프' },
   { sec: 'todo', t: '진동', d: '스와이프 햅틱' },
   { sec: 'todo', t: '기본값으로', d: '스와이프 되돌리기' },
+  { sec: 'bridges', t: '지금 연결', d: '바깥 에이전트 편지 우편함 Bridge 상대 목록' },
+  { sec: 'bridges', t: '새 연결 만들기', d: '마법사 Grok 웹훅 우편함 README bridges.yml 연결 추가' },
   { sec: 'ref', t: '커넥터 (MCP)', d: '연결된 도구 서버 mcp' },
   { sec: 'ref', t: '스킬', d: '슬래시 명령 skills' },
   { sec: 'ref', t: '폴더별 하네스', d: 'CLAUDE.md AGENTS.md 스킬 커넥터 지침' }
@@ -206,6 +211,7 @@ function Pane({ sec, onClose, providers }: { sec: SecId; onClose: () => void; pr
   if (sec === 'notify') return <NotifyPane />
   if (sec === 'todo') return <TodoPane />
   if (sec === 'akiflow') return <AkiflowPane />
+  if (sec === 'bridges') return <BridgesPane />
   return <RefPane />
 }
 

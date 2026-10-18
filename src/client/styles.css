@@ -1597,3 +1597,49 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
   .mfind .orchrow .k { color:var(--t3); flex:none }
   .mfhint { padding:24px 22px; color:var(--t3); font-size:14px; line-height:1.6 }
 }
+
+/* ── BQ-9 · 연결(Bridge) — 레일 «연결» 절 · 편지 스레드 (목업 2026-10-09 ①A) ──
+   ⚠ 봇 줄 `.brow` 를 다시 쓰지 않는다(검사·끌어 놓기·정렬이 그것을 센다) — 꼴만 맞춘 `.brg-row`. 클래스는 모두 `brg-` 로 시작한다 */
+.dot.hold { background:var(--hold) }
+.brg-row { display:flex; align-items:center; gap:9px; padding:5px 12px; border-radius:6px; font-size:13px; color:var(--t); width:100%; min-height:calc(var(--fbi, 24px) + 12px); text-align:left }
+.brg-row:hover { background:var(--hover) } .brg-row.on { background:var(--sel); color:var(--w) }
+.brg-row .n { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .brg-row .n b { font-weight:600; color:var(--w) } .brg-row .n .sub { font-size:11px; color:var(--t3); margin-left:4px }
+.brg-row.m { padding:8px 16px; min-height:62px; font-size:15px; gap:12px } .brg-row.m .n .sub { font-size:12.5px }
+.brg-ico { position:relative; flex:none; display:grid; place-items:center; border-radius:5px; line-height:1 }
+.brg-ico .dot { position:absolute; right:-3px; bottom:-3px; width:8px; height:8px; border:2px solid var(--sb) }
+.brg-row .pill, .brg-letter .pill, .brg-prow .pill { font-size:10px; padding:1px 6px; border-radius:9px; background:var(--box); color:var(--t2); flex:none; white-space:nowrap }
+.brg-row .pill.u, .brg-letter .pill.u { background:color-mix(in srgb, var(--wait) 22%, transparent); color:var(--wait) }
+.brg-row .pill.e, .brg-letter .pill.e, .brg-prow .pill.e { background:color-mix(in srgb, var(--err) 22%, transparent); color:var(--err) }
+.brg-thread { display:flex; flex-direction:column; min-width:0; flex:1 }
+.brg-head { gap:8px } .brg-head .brg-meta { font-size:12px; color:var(--t3); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:0 1 auto }
+.brg-letters { flex:1; overflow:auto; padding:14px 16px; display:flex; flex-direction:column; gap:10px }
+.brg-none { color:var(--t3); font-size:13px; padding:30px 0; text-align:center }
+.brg-letter { border:1px solid var(--line2); border-radius:10px; padding:9px 12px; max-width:78%; background:var(--box); align-self:flex-start }
+.brg-letter.out { align-self:flex-end; background:color-mix(in srgb, var(--done) 7%, var(--box)); border-color:color-mix(in srgb, var(--done) 18%, var(--line2)) }
+.brg-letter .lh { display:flex; gap:6px; align-items:center; font-size:11px; color:var(--t3); margin-bottom:3px; flex-wrap:wrap } .brg-letter .lh b { color:var(--t); font-size:12px }
+.brg-letter .k { font-size:10px; padding:0 6px; border-radius:8px; background:var(--sel); color:var(--t2) } .brg-letter .k.req { color:#9fb7ff } .brg-letter .k.inc { color:var(--err) } .brg-letter .k.rep { color:var(--done) }
+.brg-letter .lbody { color:var(--t); font-size:13px; white-space:pre-wrap; word-break:break-word } .brg-letter .lbody .lt { display:block; color:var(--w) } .brg-letter .lbody .cut { color:var(--t3); font-size:11.5px }
+.brg-letter .lfoot { font-size:11px; color:var(--t3); margin-top:4px; word-break:break-all }
+.brg-letter .brg-re { margin-left:auto; font-size:11px; color:var(--t3); padding:0 4px; border-radius:5px } .brg-letter .brg-re:hover { color:var(--w); background:var(--hover) }
+.brg-comp { margin:4px 14px 14px; border:1px solid var(--line2); border-radius:12px; background:var(--box); padding:8px 10px; flex:none }
+.brg-comp textarea { width:100%; resize:none; background:transparent; border:0; outline:none; color:var(--w); font:inherit; font-size:13.5px; line-height:1.5 }
+.brg-comp .row { display:flex; gap:6px; align-items:center; margin-top:6px; flex-wrap:wrap } .brg-comp .row .sp { flex:1 }
+.brg-comp .chip { cursor:pointer; height:24px } .brg-comp .chip.on { color:var(--w); border-color:var(--t3) }
+.brg-comp .btn.on { background:var(--w); color:var(--bg); font-weight:600 }
+.brg-reline { display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--t2); margin-bottom:4px } .brg-reline b { color:var(--w); font-weight:500; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+/* 설정 › 연결 · 새 연결 마법사 (목업 ②A) */
+.brg-prow { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line) } .brg-prow .n { flex:1; min-width:0; display:flex; flex-direction:column } .brg-prow .n b { color:var(--w); font-weight:600; font-size:13px } .brg-prow .n small { color:var(--t3); font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.brg-wiz { display:flex; flex-direction:column; gap:10px; padding:12px 0 }
+.brg-step { display:flex; gap:8px; font-size:11.5px; color:var(--t3) } .brg-step .on { color:var(--w); font-weight:600 }
+.brg-card { display:flex; flex-direction:column; gap:3px; text-align:left; border:1px solid var(--line2); border-radius:10px; padding:10px 12px; background:var(--bg2) } .brg-card b { color:var(--w); font-size:13px } .brg-card .s { font-size:12px; color:var(--t2) }
+.brg-card.on { border-color:var(--t3); background:var(--sel) } .brg-card:hover { border-color:var(--t3) }
+.brg-fields { display:flex; gap:8px; flex-wrap:wrap } .brg-fields label { flex:1 1 160px } .brg-fields label.sm { flex:0 1 110px }
+.brg-wiz label, .brg-f { display:flex; flex-direction:column; gap:4px; font-size:11.5px; color:var(--t3) } .brg-wiz label small, .brg-f small { color:var(--t3); font-size:11px }
+.brg-wiz input:not([type]), .brg-wiz input[type="text"], .brg-wiz select { border:1px solid var(--line2); border-radius:7px; padding:6px 9px; color:var(--t); background:var(--bg2); font-size:12.5px; min-width:0 }
+.brg-wiz .brg-chk { flex-direction:row; align-items:center; gap:7px; font-size:12.5px; color:var(--t) }
+.brg-note { font-size:12px; color:var(--t2); line-height:1.5 } .brg-err { font-size:12px; color:var(--err) }
+.brg-copy { font-size:12px; line-height:1.5; background:var(--bg); border:1px solid var(--line2); border-radius:8px; padding:8px 10px; color:var(--t); user-select:all; word-break:break-all }
+.brg-btns { display:flex; gap:8px; justify-content:flex-end }
+/* BX · 버전 칩 팝업의 «새벽 4시에 적용» (목업 ③A) */
+.updask .dawn-on { display:flex; align-items:center; gap:6px; font-size:12px; color:color-mix(in srgb, var(--hold) 70%, var(--w)) } .updask .dawn-on small { color:var(--t3) }
+.updask .btns { flex-wrap:wrap }

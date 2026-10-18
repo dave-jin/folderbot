@@ -719,6 +719,103 @@ try {
     ok('연결 R3 — 들어오는 웹훅 401·404·201 → 편지 파일 → 채널 세션 · 호스트 로그 날짜별 파일')
   }
   /**
+   * 🔴 연결 화면 (BQ-9 · BQ-10 · BX · 2026-10-19 Dave «A·A·A» — 목업 03_디자인/2026-10-09_연결-목업)
+   *    API — 새 연결 마법사가 우편함 폴더 넷·README·bridges.yml 한 줄을 만든다 · 스레드(들어온·나간 편지 · 읽음) · 사람이 쓴 편지(from human) ·
+   *          셸 없는 호스트의 /api/update 는 200 { shell:false }(원격 화면 콘솔에 404 가 안 찍히게)
+   *    화면 — 레일 «관제» 아래 «연결» 절(상대 줄 · 안 읽음 알약) → 누르면 가운데 편지 스레드 → 아래에서 편지 쓰기 · 설정 › 연결 마법사 세 단계
+   */
+  {
+    const d0 = new Date(), month = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}`
+    const bf = join(root, '.claude/bridges.yml')
+    if ((await api('/update')).shell !== false) fail('BX: 셸 없는 호스트의 /api/update 가 { shell:false } 가 아니다')
+    const g0 = await api('/bridges')
+    if (!Array.isArray(g0.peers) || g0.peers.length) fail('BQ-9: 연결이 없을 때 /api/bridges 가 빈 목록이 아니다 · ' + JSON.stringify(g0).slice(0, 200))
+    // ── 마법사(API) — 웹훅 종류 · 추천 우편함은 Area 칸 아래 «이름/싱크»
+    const made = await api('/bridges', { preset: 'webhook', id: 'auto', name: '자동화', icon: '🔗', mailbox: '3. Area/자동화/싱크', deliverBot: 'orch', trust: 'propose', inbound: true })
+    if (made.line !== '3. Area/자동화/싱크/README.md 를 읽고 그대로 따라 해 줘.') fail('BQ-10: 상대에게 줄 한 줄이 다르다 · ' + made.line)
+    for (const d of ['', '/to-folderbot', '/from-folderbot', '/cursors']) if (!existsSync(join(root, '3. Area/자동화/싱크' + d))) fail('🔴 BQ-10: 우편함 폴더가 없다 · ' + d)
+    const rd = readFileSync(join(root, '3. Area/자동화/싱크/README.md'), 'utf8')
+    if (!/FBMF v1/.test(rd) || !/api\/bridges\/auto\/messages/.test(rd)) fail('BQ-10: README 에 규약·웹훅 예시가 없다')
+    const yml = readFileSync(bf, 'utf8')
+    if (!/id: auto/.test(yml) || !/inbound: true/.test(yml) || !/since: /.test(yml) || !/host: /.test(yml)) fail('BQ-10: bridges.yml 한 줄이 이상하다 · ' + yml)
+    let opened = false
+    for (let i = 0; i < 60 && !opened; i++) { await wait(100); opened = existsSync(join(root, '3. Area/자동화/싱크/cursors/folderbot.json')) }
+    if (!opened) fail('🔴 BQ-10: 만든 연결이 열리지 않았다(다시 읽기)')
+    const dup = await fetch(base + '/api/bridges', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ preset: 'webhook', id: 'auto', name: 'x', mailbox: '3. Area/자동화/싱크', deliverBot: 'orch', trust: 'read' }) })
+    if (dup.status !== 400) fail('BQ-10: 같은 id·우편함을 두 번 만들었다')
+    const bad = await fetch(base + '/api/bridges', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ preset: 'webhook', id: 'out', name: 'x', mailbox: '../밖', deliverBot: 'orch', trust: 'read' }) })
+    if (bad.status !== 400 || existsSync(join(root, '../밖'))) fail('🔴 BQ-10: 볼트 밖 우편함을 만들었다')
+    // ── 스레드 — 상대 편지(만든 뒤에 쓴 것이라 since 덕에 들어간다) · 사람이 쓴 편지 · 상대 커서로 읽음
+    const inM = join(root, '3. Area/자동화/싱크/to-folderbot', month); mkdirSync(inM, { recursive: true })
+    const ts = (() => { const d = new Date(); const p2 = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}` })()
+    const inId = `${ts}-auto-1a2b`
+    writeFileSync(join(inM, `${inId}.md`), `---\nfbmf: 1\nfrom: auto\nkind: request\ntitle: 주문 확인 부탁\nurgent: true\n---\n주문 #7 확인해 주세요\n`)
+    const hs = await api('/bridges/auto/letters', { kind: 'report', text: '사람이 직접 — 주문은 내일 처리해요' })
+    if (!/^\d{8}-\d{6}-human-[0-9a-f]{4}$/.test(hs.id) || !readFileSync(join(root, hs.rel), 'utf8').includes('from: human')) fail('🔴 BQ-9: 사람이 쓴 편지가 FBMF(from human)로 안 남았다 · ' + JSON.stringify(hs))
+    writeFileSync(join(root, '3. Area/자동화/싱크/cursors/auto.json'), JSON.stringify({ last: hs.id, at: new Date().toISOString() }))
+    let th = null
+    for (let i = 0; i < 100; i++) { await wait(100); th = await api('/bridges/auto/letters'); if (th.letters.some((l) => l.id === inId && l.delivered)) break }
+    const lin = th.letters.find((l) => l.id === inId), lout = th.letters.find((l) => l.id === hs.id)
+    if (!lin || !lin.delivered || lin.title !== '주문 확인 부탁' || !lin.urgent) fail('🔴 BQ-9: 스레드에 들어온 편지가 «채널 세션에 들어감» 으로 안 보인다 · ' + JSON.stringify(lin))
+    if (!lout || lout.from !== 'human' || !lout.readAt) fail('🔴 BQ-9: 스레드의 나간 편지에 상대 읽음(커서)이 없다 · ' + JSON.stringify(lout))
+    if (!th.peer.channelSid) fail('BQ-9: 스레드 머리에 채널 세션이 없다(«채널 세션 열기»)')
+    const vs = (await api('/bridges')).peers.find((x) => x.id === 'auto')
+    if (!vs || vs.letters < 2 || typeof vs.unread !== 'number') fail('BQ-9: 레일 줄 값이 이상하다 · ' + JSON.stringify(vs))
+    // ── 화면 — 데스크톱 레일 «연결» 절 → 스레드 → 쓰기 · 설정 › 연결 마법사
+    try {
+      const { chromium } = await import('playwright-core')
+      const br = await chromium.launch({ executablePath: PW_CHROMIUM, args: ['--no-sandbox'] })
+      try {
+        const pg = await br.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
+        await pg.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
+        const perrs = []; pg.on('pageerror', (e) => perrs.push(e.message))
+        await pg.goto(base + '/#bot=orch')
+        await pg.waitForSelector('.sb-list .brg-row[data-peer="auto"]', { timeout: 10000 }).catch(() => fail('🔴 BQ-9: 레일에 «연결» 절의 상대 줄이 없다'))
+        const order = await pg.evaluate(() => [...document.querySelectorAll('.sb-list .secl')].map((x) => x.textContent))
+        if (order[0] !== '관제' || order[1] !== '연결') fail('🔴 BQ-9: «연결» 절이 관제 바로 아래가 아니다 · ' + JSON.stringify(order))
+        if (await pg.$('.sb-list .brow[data-peer]')) fail('BQ-9: 상대 줄이 봇 줄(.brow)로 그려졌다 — 끌어 놓기·정렬 검사가 센다')
+        await pg.click('.brg-row[data-peer="auto"]')
+        await pg.waitForSelector('.brg-thread[data-peer="auto"] .brg-letter', { timeout: 8000 }).catch(() => fail('🔴 BQ-9: 상대를 눌렀는데 가운데에 편지 스레드가 안 열렸다'))
+        if (!/bot=orch/.test(await pg.evaluate(() => location.hash)) || !/peer=auto/.test(await pg.evaluate(() => location.hash))) fail('BQ-9: 스레드 주소가 받는 봇·상대를 안 가리킨다')
+        const heads = await pg.$$eval('.brg-letter', (els) => els.map((e) => e.className + ' | ' + e.textContent))
+        if (!heads.some((h) => /in/.test(h) && /주문 확인 부탁/.test(h) && /채널 세션에 들어감/.test(h))) fail('BQ-9: 스레드에 들어온 편지·배달 표시가 없다 · ' + heads.join(' // '))
+        if (!heads.some((h) => /out/.test(h) && /읽음/.test(h) && /^.*나/.test(h))) fail('BQ-9: 스레드에 나간 편지·읽음 표시가 없다')
+        await pg.fill('.brg-comp textarea', '화면에서 쓴 편지')
+        await pg.click('.brg-comp .chip:has-text("request")')
+        await pg.click('.brg-comp .btn.on')
+        let sentF = null
+        for (let i = 0; i < 40 && !sentF; i++) { await wait(100); const dir = join(root, '3. Area/자동화/싱크/from-folderbot', month); sentF = readdirSync(dir).map((n) => readFileSync(join(dir, n), 'utf8')).find((t) => t.includes('화면에서 쓴 편지')) ?? null }
+        if (!sentF || !/kind: request/.test(sentF) || !/from: human/.test(sentF)) fail('🔴 BQ-9: 스레드에서 쓴 편지가 우편함에 FBMF 로 안 남았다 · ' + sentF)
+        await pg.waitForFunction(() => [...document.querySelectorAll('.brg-letter.out')].some((e) => e.textContent.includes('화면에서 쓴 편지')), null, { timeout: 5000 }).catch(() => fail('BQ-9: 보낸 편지가 스레드에 안 나타났다'))
+        await pg.screenshot({ path: 'test/tmp/bridge-thread.png' }).catch(() => {})
+        // 봇을 누르면 스레드에서 나온다
+        await pg.click('.sb-list .brow[data-id="orch"]')
+        await pg.waitForSelector('.brg-thread', { state: 'detached', timeout: 3000 }).catch(() => fail('BQ-9: 봇을 눌렀는데 스레드가 안 닫혔다'))
+        // 설정 › 연결 — 마법사 세 단계
+        await pg.click('.nav:has-text("설정")')
+        await pg.click('.snav .nv:has-text("연결")')
+        if (!(await pg.$('.setr[data-t="지금 연결"]')) || !(await pg.$('.brg-prow[data-peer="auto"]'))) fail('BQ-10: 설정 › 연결 에 지금 연결 목록이 없다')
+        await pg.click('.setr[data-t="새 연결 만들기"] .btn')
+        await pg.click('.brg-card[data-preset="generic-file"]')
+        await pg.click('.brg-wiz .btn.on:has-text("다음")')
+        await pg.waitForSelector('.brg-wiz[data-step="2"]')
+        const mbv = await pg.inputValue('.brg-wiz .brg-f input.mono')
+        if (mbv !== '3. Area/파일 상대/싱크') fail('🔴 BQ-10: 추천 우편함이 Area 칸 아래 «이름/싱크» 가 아니다 · ' + mbv)
+        await pg.click('.brg-wiz .btn.on:has-text("만들기")')
+        await pg.waitForSelector('.brg-wiz[data-step="3"] .brg-copy', { timeout: 5000 }).catch(() => fail('🔴 BQ-10: 만들기 뒤 «상대에게 줄 한 줄» 이 안 나왔다'))
+        const line = await pg.textContent('.brg-copy')
+        if (line !== '3. Area/파일 상대/싱크/README.md 를 읽고 그대로 따라 해 줘.') fail('BQ-10: 한 줄이 목업 문구와 다르다 · ' + line)
+        if (!existsSync(join(root, '3. Area/파일 상대/싱크/README.md'))) fail('🔴 BQ-10: 화면 마법사가 README 를 안 만들었다')
+        if (perrs.length) fail('연결 화면 페이지 오류 · ' + perrs.join(' | '))
+        await pg.screenshot({ path: 'test/tmp/bridge-wizard.png' }).catch(() => {})
+      } finally { await br.close() }
+    } catch (e) { if (/executablePath|Executable doesn't exist|Cannot find (module|package) 'playwright/.test(String(e.message))) console.log('(연결 화면 검사 건너뜀 — 브라우저 없음)'); else throw e }
+    // 치우기 — 채널 세션 · 설정 · 우편함(뒤 화면 검사는 레일에 «연결» 절이 없는 판을 잰다)
+    for (const x of await api('/bots/orch/sessions')) if (x.channel) await api(`/sessions/${x.id}`, undefined, 'DELETE')
+    rmSync(bf); rmSync(join(root, '3. Area/자동화'), { recursive: true, force: true }); rmSync(join(root, '3. Area/파일 상대'), { recursive: true, force: true }); await wait(700)
+    ok('연결 화면 — 마법사가 우편함 넷·README·bridges.yml 한 줄 · 스레드(배달·읽음) · 사람 편지 from human · 레일 «관제» 아래 «연결» 절 → 가운데 스레드 → 쓰기 · 설정 › 연결 세 단계 · /api/update 셸 없음 200')
+  }
+  /**
    * 🔴 BZ · 호스트 운영 감시 (2026-10-09 Dave 결정) — `.claude/ops.yml` 의 명령을 주기마다 LLM 없이 돌린다.
    *    완료 기준: 현황판 파일의 갱신 시각이 주기마다 바뀐다 · 실패가 runs.jsonl 에 남는다 · 연속 3회 실패면 오케스트레이터에게
    */
