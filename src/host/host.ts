@@ -366,10 +366,11 @@ export class Host {
     saveConfig(this.cfg)
   }
   /** 조용한 시간 — `HH:MM` 둘. 종전엔 설정에 있으면서 화면이 고칠 길이 없었다(2026-09-17) */
-  setQuiet(from: string, to: string): void {
+  setQuiet(from: string, to: string, off?: boolean): void {
     const ok = (t: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t)
     if (!ok(from) || !ok(to)) throw new Error('시간은 HH:MM 이어야 해요')
-    this.cfg.quiet = { from, to }
+    const wasOff = this.cfg.quiet?.off ?? false
+    this.cfg.quiet = { from, to, ...((off ?? wasOff) ? { off: true } : {}) }   // off 를 안 보내면 켬/끔은 그대로
     saveConfig(this.cfg)
   }
   /** Codex 설정 — 샌드박스(= 권한 정책)와 API 키 */

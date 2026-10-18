@@ -29,7 +29,7 @@ export interface StateShape {
   /** ⚠ Codex 기본값은 **따로** 온다 — 이름 체계가 달라 섞으면 Codex 세션이 그 자리에서 죽는다 */
   defaults: { model: string; effort: string; permissionMode?: PermissionMode; idleMinutes?: number; codex?: { model: string; effort: string; sandbox: string; auth: { ok: boolean; how: 'login' | 'key' | null; where?: string } } }
   /** 조용한 시간 — 이 사이에는 «확인해 주세요» 만 통과한다 (설정 › 알림) */
-  quiet?: { from: string; to: string }
+  quiet?: { from: string; to: string; off?: boolean }
   /** 메인(호스트) 이름 · 이 화면이 어디서 보고 있는지 */
   hostName: string
   device: { id: string; name: string; main: boolean }

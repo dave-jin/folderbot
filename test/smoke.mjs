@@ -6444,7 +6444,14 @@ try {
     let rejected = false
     try { await api('/quiet', { from: '25:00', to: '08:00' }) } catch { rejected = true }
     if (!rejected) fail('조용한 시간: 틀린 시각(25:00)을 받았다')
-    await api('/quiet', { from: '23:00', to: '07:00' })
+    // 켬/끔 — 끄면 시각은 남고 off 만 선다. off 를 안 보내면 그대로(2026-10-19)
+    await api('/quiet', { from: '22:30', to: '08:00', off: true })
+    const q2 = (await api('/state')).quiet
+    if (!q2.off || q2.from !== '22:30') fail('조용한 시간: 끄기가 상태에 안 실린다 ' + JSON.stringify(q2))
+    await api('/quiet', { from: '22:00', to: '08:00' })
+    if (!(await api('/state')).quiet.off) fail('조용한 시간: 시각만 고쳤는데 꺼짐이 풀렸다')
+    await api('/quiet', { from: '23:00', to: '07:00', off: false })
+    if ((await api('/state')).quiet.off) fail('조용한 시간: 다시 켜기가 안 된다')
     ok(`Claude 새 채팅 기본 권한 — 저장 · 상태 · 새 세션에 적용 · 명시값 우선 · 모르는 값 거절${bad ? '' : '(조용히)'} · 조용한 시간 저장·검증`)
   }
   }

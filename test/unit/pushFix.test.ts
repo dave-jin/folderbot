@@ -70,6 +70,17 @@ describe('CF-④ 푸시 결과는 로그로 남고 403 은 구독을 지우지 �
   })
 })
 
+describe('조용한 시간 끄기 (2026-10-19)', () => {
+  it('꺼 두면 하루 종일 걸러도 맥 배너·푸시를 막지 않는다', async () => {
+    const { Notifier } = await import('../../src/host/notify')
+    const cfg = { port: 0, quiet: { from: '00:00', to: '23:59', off: true }, pushSubs: [{ endpoint: 'https://web.push.apple.com/qqq', keys: { p256dh: 'p', auth: 'a' }, device: 'iPhone' }] }
+    const n = new Notifier(cfg as never)
+    expect(n.quiet()).toBe(false)
+    cfg.quiet.off = false
+    expect(n.quiet()).toBe(true)
+  })
+})
+
 describe('폰 푸시는 «확인해 주세요» 만 (2026-10-19)', () => {
   it('끝남·오류·할 일·루틴은 안 보내고 awaiting 만 보낸다', async () => {
     const { Notifier } = await import('../../src/host/notify')

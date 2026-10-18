@@ -21,6 +21,7 @@ export class Notifier {
   }
   quiet(): boolean {
     const q = this.cfg.quiet ?? { from: '23:00', to: '07:00' }
+    if (q.off) return false   // 끔 — 시각은 남겨 두고 거르기만 멈춘다(2026-10-19 Dave «켜고 끌 수 있으면»)
     const [fh, fm] = q.from.split(':').map(Number), [th, tm] = q.to.split(':').map(Number)
     const d = new Date(); const cur = d.getHours() * 60 + d.getMinutes(); const f = fh * 60 + fm, t = th * 60 + tm
     return f > t ? cur >= f || cur < t : cur >= f && cur < t
