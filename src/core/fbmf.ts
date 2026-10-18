@@ -118,7 +118,7 @@ export function formatLetter(l: Letter): string {
   if (l.to) lines.push(`to: ${l.to}`)
   lines.push(`kind: ${l.kind}`)
   if (l.title) lines.push(`title: ${yamlScalar(l.title)}`)
-  if (l.re) lines.push(`re: ${l.re}`)
+  if (l.re) lines.push(`re: ${yamlScalar(l.re)}`)   // 바깥에서 온 값일 수 있다 — 줄바꿈으로 머리말 줄을 지어내지 못하게
   lines.push(`urgent: ${l.urgent}`, `needs_human: ${l.needsHuman}`)
   if (l.created) lines.push(`created: ${l.created}`)
   if (l.attempt && l.attempt > 1) lines.push(`attempt: ${l.attempt}`)

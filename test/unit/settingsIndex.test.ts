@@ -7,7 +7,8 @@ import { readFileSync } from 'node:fs'
  *    종전 판이 그랬다: 절전·진단·다시 연결·Codex 키가 검색에 없었다. 이 검사가 그 어긋남을 잡는다.
  * ⚠ 안내용 빈 줄(«…이 없어요»)은 설정이 아니라 인덱스에 안 넣는다 — 여기 목록으로 뺀다.
  */
-const src = readFileSync(new URL('../../src/client/Settings.tsx', import.meta.url), 'utf8')
+// BQ-10 · 설정 › 연결 칸의 줄은 `client/Bridges.tsx` 에 산다 — 그 파일의 `<Row t=…>` 도 화면에 있는 줄이다
+const src = readFileSync(new URL('../../src/client/Settings.tsx', import.meta.url), 'utf8') + readFileSync(new URL('../../src/client/Bridges.tsx', import.meta.url), 'utf8')
 const rows = [...src.matchAll(/<Row(?:\s+key=\{[^}]*\})?\s+t="([^"]+)"/g)].map((m) => m[1])
 /** 할 일 칸의 네 자리는 배열에서 `t={l}` 로 그려진다 — 그 제목도 화면에 있는 줄이다 */
 for (const m of src.matchAll(/\['(?:rightShort|rightLong|leftShort|leftLong)', '([^']+)'/g)) rows.push(m[1])
@@ -26,7 +27,7 @@ describe('설정 검색 인덱스', () => {
     expect(ghosts.map((g) => g.t), '화면에 없는 인덱스').toEqual([])
   })
   it('칸 id 는 SecId 에 있는 것만', () => {
-    const secs = new Set(['general', 'host', 'devices', 'claude', 'codex', 'sessions', 'notify', 'todo', 'akiflow', 'ref'])
+    const secs = new Set(['general', 'host', 'devices', 'claude', 'codex', 'sessions', 'notify', 'todo', 'akiflow', 'bridges', 'ref'])
     expect(index.filter((i) => !secs.has(i.sec)).map((i) => i.sec)).toEqual([])
   })
   it('Claude 새 채팅 기본 권한이 줄로도 인덱스로도 있다 (2026-09-17 Dave)', () => {

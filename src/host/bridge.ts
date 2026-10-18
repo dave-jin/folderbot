@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { appendFileSync, existsSync, linkSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, watch, writeFileSync, renameSync, type FSWatcher } from 'node:fs'
-import { basename, isAbsolute, join, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { parseBridges, ownsPeer, type BridgesConfig, type PeerDef } from '../core/bridges'
 import { formatLetter, frontMatterClosed, ignoredLetterName, isoLocal, letterId, monthOf, normId, parseLetter, FBMF_KINDS, type Letter, type LetterKind } from '../core/fbmf'
+import { addBridgeYaml, letterAt, mailboxReadme, markRead, newBridgeProblems, orderThread, unreadOf, type LetterView, type NewBridge, type PeerView } from '../core/bridgeView'
 
 /**
  * 🔴 **연결(Bridge) — 바깥 상대와 편지 파일로 대화한다** (R1 · 2026-10-09 Dave 승인).
@@ -38,8 +39,14 @@ export interface BridgeDeps {
   /** BQ-8 · 상대가 `expect_every` 넘게 조용하다 / 다시 살아났다 */
   onStale?: (peer: PeerDef, lastSignal: number) => void
   onAlive?: (peer: PeerDef, lastSignal: number) => void
+  /** BQ-9 · 화면이 다시 읽을 일이 생겼다(편지 들어옴·보냄·끊김·설정) — 호스트가 `bridges` 프레임으로 알린다 */
+  onChange?: () => void
   now?: () => number
 }
+/** BQ-9 · 스레드에 싣는 본문 길이 — 넘으면 앞만(파일 경로는 함께 간다) */
+export const THREAD_BODY_MAX = 2000
+/** 사람이 화면에서 직접 쓴 편지의 보낸쪽 이름 — README 에 «human» 으로 적어 둔다 */
+export const HUMAN_FROM = 'human'
 
 interface Seen { size: number; mtime: number; at: number }
 interface Box {
@@ -85,7 +92,9 @@ export class BridgeHub {
     for (const [id, b] of this.boxes) if (!want.has(id) || JSON.stringify(want.get(id)) !== JSON.stringify(b.peer)) this.close(id)
     for (const [id, p] of want) if (!this.boxes.has(id)) this.open(p)
     for (const p of this.cfg.peers) if (p.enabled && !want.has(p.id)) this.d.log(`연결 «${p.name}» 은 ${p.host} 호스트가 가져가요 — 이 호스트는 읽기만`)
+    this.changed()
   }
+  private changed(): void { try { this.d.onChange?.() } catch { /* 화면 알림은 덤이다 */ } }
 
   private open(peer: PeerDef): void {
     const mb = this.abs(peer.mailbox)
@@ -127,23 +136,7 @@ export class BridgeHub {
   }
 
   /** 편지 후보 파일 — `to-folderbot/` 바로 아래와 그 아래 폴더 한 단계(월 폴더). `full` 이 아니면 이번 달·지난달 폴더만 */
-  private list(box: Box, full: boolean): string[] {
-    const out: string[] = []
-    let names: string[] = []
-    try { names = readdirSync(box.inDir) } catch { return out }
-    const now = new Date(this.now()), cur = monthOf('', now), prev = monthOf('', new Date(now.getFullYear(), now.getMonth() - 1, 15))
-    for (const n of names) {
-      const p = join(box.inDir, n)
-      let st; try { st = statSync(p) } catch { continue }
-      if (st.isDirectory()) {
-        if (n.startsWith('.')) continue
-        if (!full && /^\d{4}-\d{2}$/.test(n) && n !== cur && n !== prev) continue
-        let sub: string[] = []; try { sub = readdirSync(p) } catch { continue }
-        for (const m of sub) if (!ignoredLetterName(m)) out.push(join(p, m))
-      } else if (!ignoredLetterName(n)) out.push(p)
-    }
-    return out
-  }
+  private list(box: Box, full: boolean): string[] { return letterFiles(box.inDir, full, new Date(this.now())) }
 
   /** 감시 신호 — 곧 한 번 훑는다(여러 신호는 한 번으로) */
   private kick(box: Box): void {
@@ -194,8 +187,8 @@ export class BridgeHub {
   private checkAlive(box: Box): void {
     const every = box.peer.expectEveryMs; if (!every) return
     const last = this.lastSignal(box), quiet = this.now() - last > every
-    if (quiet && !box.stale) { box.stale = true; this.d.onStale?.(box.peer, last) }
-    else if (!quiet && box.stale) { box.stale = false; this.d.onAlive?.(box.peer, last) }
+    if (quiet && !box.stale) { box.stale = true; this.d.onStale?.(box.peer, last); this.changed() }
+    else if (!quiet && box.stale) { box.stale = false; this.d.onAlive?.(box.peer, last); this.changed() }
   }
 
   /** 세션에 넘기고, 넘겼으면 기록 · 커서 */
@@ -210,6 +203,7 @@ export class BridgeHub {
     box.lastLetterAt = this.now()
     this.writeCursor(box, items.map((x) => x.letter.id).sort().pop())
     this.d.log(`연결 «${box.peer.name}» 편지 ${items.length}통 → 세션 ${sid}`)
+    this.changed()
   }
 
   /** `cursors/folderbot.json` — 어디까지 읽었나 + 하트비트. 읽는 쪽(Folder Bot)만 쓴다 */
@@ -236,6 +230,7 @@ export class BridgeHub {
     const kind = (FBMF_KINDS.includes(String(o.kind ?? 'request') as LetterKind) ? String(o.kind ?? 'request') : 'request') as LetterKind
     const out = this.writeLetter(peer, 'to-folderbot', peer.id, peer.id, peer.deliver.bot, { ...o, kind })
     const b = this.boxes.get(peer.id); if (b) this.kick(b)
+    this.changed()
     return out
   }
   /** 숨김 임시 파일 → link(이미 있으면 실패 → 새 난수) — 덮지 않고, 상대가 반쯤 쓴 파일을 못 본다 */
@@ -267,12 +262,173 @@ export class BridgeHub {
     if (!FBMF_KINDS.includes(kind) || kind === 'heartbeat') throw new Error(`kind 는 ${FBMF_KINDS.filter((k) => k !== 'heartbeat').join(' · ')} 중 하나예요`)
     if (!String(o.text ?? '').trim()) throw new Error('본문(text)이 비었어요')
     const out = this.writeLetter(peer, 'from-folderbot', fromBot === 'orch' ? 'orch' : fromBot, fromBot === 'orch' ? 'orch' : `folderbot:${fromBot}`, peer.id, { ...o, kind })
-    if (o.urgent && peer.wake) { try { this.d.wake?.(peer, { id: out.id, kind, path: out.rel, urgent: true, needs_human: !!o.needsHuman }) } catch (e) { this.d.log(`연결 «${peer.name}» 깨우기 실패 · ${(e as Error).message}`) } }
+    this.afterSend(peer, out, kind, o)
     return out
+  }
+  private afterSend(peer: PeerDef, out: { id: string; rel: string }, kind: string, o: { urgent?: boolean; needsHuman?: boolean }): void {
+    if (o.urgent && peer.wake) { try { this.d.wake?.(peer, { id: out.id, kind, path: out.rel, urgent: true, needs_human: !!o.needsHuman }) } catch (e) { this.d.log(`연결 «${peer.name}» 깨우기 실패 · ${(e as Error).message}`) } }
+    this.changed()
+  }
+
+  /**
+   * BQ-9 · 사람이 스레드 아래에서 직접 쓴 편지 — `bridge_send` 를 사람이 누르는 것(목업 공통 화면).
+   * `may_send` 는 봇을 거르는 울타리라 사람에게는 걸지 않는다. 보낸쪽은 `human`. 급하면 봇이 쓴 편지처럼 상대를 깨운다.
+   */
+  sendHuman(peerId: string, o: { kind: string; text: string; title?: string; re?: string; urgent?: boolean; needsHuman?: boolean }): { id: string; rel: string } {
+    const peer = this.peer(peerId)
+    if (!peer || !peer.enabled) throw new Error('그런 연결이 없어요')
+    const kind = String(o.kind) as LetterKind
+    if (!FBMF_KINDS.includes(kind) || kind === 'heartbeat' || kind === 'briefing') throw new Error('kind 는 report · request · reply · done · incident 중 하나예요')
+    if (kind === 'reply' && !o.re) throw new Error('reply 는 re(답할 편지 id)가 있어야 해요')
+    if (o.re && /[\r\n:#]/.test(o.re)) throw new Error('re 는 편지 id 한 줄이어야 해요')
+    if (!String(o.text ?? '').trim()) throw new Error('본문이 비었어요')
+    const out = this.writeLetter(peer, 'from-folderbot', HUMAN_FROM, HUMAN_FROM, peer.id, { ...o, kind })
+    this.afterSend(peer, out, kind, o)
+    return out
+  }
+
+  /** BQ-8 결과를 스레드에 — 웹훅 응답 코드(이번 실행에서만 안다 · 키 값은 남기지 않는다) */
+  private wakes = new Map<string, { ok: boolean; status?: number }>()
+  noteWake(id: string, r: { ok: boolean; status?: number }): void { this.wakes.set(id, { ok: r.ok, ...(r.status ? { status: r.status } : {}) }); if (this.wakes.size > 500) this.wakes.delete(this.wakes.keys().next().value as string); this.changed() }
+
+  /* ── BQ-9 · 화면 — 레일 «연결» 절과 편지 스레드 ─────────────────────────── */
+
+  /** 파일 하나 → 스레드 편지. (크기, mtime) 가 같으면 다시 파싱하지 않는다 */
+  private parsed = new Map<string, { size: number; mtime: number; v: LetterView }>()
+  private viewOf(abs: string, dir: 'in' | 'out', peer: PeerDef): LetterView | null {
+    let st; try { st = statSync(abs) } catch { return null }
+    const hit = this.parsed.get(abs)
+    if (hit && hit.size === st.size && hit.mtime === st.mtimeMs) return hit.v
+    let text: string; try { text = readFileSync(abs, 'utf8') } catch { return null }
+    if (!frontMatterClosed(text)) return null
+    const id = normId(basename(abs).replace(/\.(md|txt)$/i, ''))
+    const l = parseLetter(text, { id, from: dir === 'in' ? peer.id : 'folderbot' })
+    const rel = relative(this.d.root, abs)
+    const v: LetterView = { id: l.id, dir, from: l.from, ...(l.to ? { to: l.to } : {}), kind: l.kind, ...(l.title ? { title: l.title } : {}), ...(l.re ? { re: l.re } : {}), urgent: l.urgent, needsHuman: l.needsHuman, at: letterAt(l.created, l.id, st.mtimeMs), body: l.body.slice(0, THREAD_BODY_MAX), ...(l.body.length > THREAD_BODY_MAX ? { cut: true } : {}), rel: rel.startsWith('..') ? abs : rel, ...(l.malformed ? { malformed: true } : {}) }
+    this.parsed.set(abs, { size: st.size, mtime: st.mtimeMs, v })
+    if (this.parsed.size > 4000) this.parsed.delete(this.parsed.keys().next().value as string)
+    return v
+  }
+  /** 한쪽 폴더(to-folderbot · from-folderbot)의 이번 달·지난달 편지 */
+  private side(peer: PeerDef, side: 'to-folderbot' | 'from-folderbot'): LetterView[] {
+    const dir = join(this.abs(peer.mailbox), side)
+    return letterFiles(dir, false, new Date(this.now())).map((f) => this.viewOf(f, side === 'to-folderbot' ? 'in' : 'out', peer)).filter((x): x is LetterView => !!x)
+  }
+  /** 배달 기록 — 주인 호스트에만 있다(다른 맥이면 비어 있다) */
+  private ledgerOf(peerId: string): Map<string, { state: string; at: number }> {
+    const m = new Map<string, { state: string; at: number }>()
+    try { for (const line of readFileSync(join(this.d.dataDir, 'bridges', peerId, 'delivered.jsonl'), 'utf8').split('\n')) { try { const j = JSON.parse(line) as { id?: string; state?: string; at?: string }; if (j.id) m.set(normId(j.id), { state: String(j.state ?? ''), at: Date.parse(String(j.at ?? '')) || 0 }) } catch { /* */ } } } catch { /* 기록 없음 */ }
+    return m
+  }
+  /** 상대 커서 — `cursors/<상대>.json` 과 `cursors/<상대>/*.json` 중 가장 늦게 쓴 것 */
+  peerCursor(peer: PeerDef): { last?: string; at?: number } | null {
+    const cdir = join(this.abs(peer.mailbox), 'cursors')
+    const cands: string[] = [join(cdir, `${peer.id}.json`)]
+    // 덮어쓰기를 못 하는 상대는 매번 새 커서 파일을 만든다(README) — 쌓여도 가장 늦게 쓴 하나만 읽는다(2026-10-19 검토)
+    try {
+      let newest = '', nm = 0
+      for (const n of readdirSync(join(cdir, peer.id))) if (n.endsWith('.json') && !n.startsWith('.')) { let m = 0; try { m = statSync(join(cdir, peer.id, n)).mtimeMs } catch { continue } if (m > nm || (m === nm && n > newest)) { nm = m; newest = n } }
+      if (newest) cands.push(join(cdir, peer.id, newest))
+    } catch { /* */ }
+    let best: { last?: string; at?: number; m: number } | null = null
+    for (const f of cands) {
+      let m = 0; try { m = statSync(f).mtimeMs } catch { continue }
+      try { const j = JSON.parse(readFileSync(f, 'utf8')) as { last?: string; at?: string }; const at = Date.parse(String(j.at ?? '')) || m; if (!best || at > (best.at ?? 0)) best = { ...(j.last ? { last: normId(j.last) } : {}), at, m } } catch { /* 반쯤 쓴 커서 */ }
+    }
+    return best ? { ...(best.last ? { last: best.last } : {}), at: best.at } : null
+  }
+  /** 사람이 스레드를 마지막으로 연 시각 — 앱 데이터에(기기가 여럿이어도 하나). 처음이면 지금으로 적는다(옛 편지를 «안 읽음» 으로 쏟지 않게) */
+  private seenAt(peerId: string): number {
+    const f = join(this.d.dataDir, 'bridges', peerId, 'seen.json')
+    try { const n = Number((JSON.parse(readFileSync(f, 'utf8')) as { at?: number }).at); if (Number.isFinite(n)) return n } catch { /* */ }
+    this.markSeen(peerId); return this.now()
+  }
+  markSeen(peerId: string): void {
+    const dir = join(this.d.dataDir, 'bridges', peerId)
+    try { mkdirSync(dir, { recursive: true }); const tmp = join(dir, `.seen.${process.pid}.tmp`); writeFileSync(tmp, JSON.stringify({ at: this.now() })); renameSync(tmp, join(dir, 'seen.json')) } catch (e) { this.d.log(`연결 읽음 표시를 못 썼어요 · ${(e as Error).message}`) }
+  }
+  private viewPeer(p: PeerDef, all: LetterView[]): PeerView {
+    const box = this.boxes.get(p.id)
+    const cur = this.peerCursor(p)
+    // 화면에 보이는 «마지막 신호» 는 상대가 실제로 남긴 것(커서·편지)만 — 끊김 판정의 «연 시각» 기준선은 보이지 않는다
+    const sig = Math.max(cur?.at ?? 0, box?.lastLetterAt ?? 0, ...all.filter((l) => l.dir === 'in').map((l) => l.at), 0)
+    const last = orderThread(all, 1)[0]
+    return { id: p.id, name: p.name, icon: p.icon, trust: p.trust, mailbox: p.mailbox, ...(p.host ? { host: p.host } : {}), owner: !!box, deliverBot: p.deliver.bot, deliverSession: p.deliver.session, maySend: p.maySend, ...(p.expectEveryMs ? { expectEveryMs: p.expectEveryMs } : {}), stale: box ? box.stale : !!(p.expectEveryMs && sig && this.now() - sig > p.expectEveryMs), lastSignal: sig || null, unread: unreadOf(all, this.seenAt(p.id), (id) => this.firstSeen.get(id)), letters: all.length, ...(last ? { last: { ...(last.title ? { title: last.title } : {}), at: last.at, dir: last.dir } } : {}), inbound: !!p.inbound, wake: !!p.wake }
+  }
+  /**
+   * 들어온 편지에 배달 표시를 붙인다. 안 읽음은 «쓴 시각» 이 아니라 «도착한 시각» 으로 센다 — Dropbox 가 늦게 내려 준 편지가
+   * 사람이 스레드를 연 뒤에 왔으면 안 읽음이다(2026-10-19 검토). 도착 = 배달 기록 시각, 기록이 없으면 이 호스트가 처음 본 시각.
+   */
+  private firstSeen = new Map<string, number>()
+  /** 이 실행에서 한 번 훑은 상대 — 처음 훑을 때 이미 있던 편지는 «쓴 시각» 에 본 것으로 적는다(다시 켤 때마다 옛 편지가 안 읽음으로 쏟아지지 않게) */
+  private primed = new Set<string>()
+  private inbound(p: PeerDef): LetterView[] {
+    const led = this.ledgerOf(p.id), t = this.now(), warm = this.primed.has(p.id)
+    const out = this.side(p, 'to-folderbot').map((l) => {
+      if (!this.firstSeen.has(l.id)) { this.firstSeen.set(l.id, warm ? t : l.at); if (this.firstSeen.size > 5000) this.firstSeen.delete(this.firstSeen.keys().next().value as string) }
+      const e = led.get(l.id); return e ? { ...l, ...(e.state === 'baseline' ? { baseline: true } : { delivered: e.at }) } : l
+    })
+    this.primed.add(p.id)
+    return out
+  }
+  /** 레일 «연결» 절 — 켜진 연결마다 한 줄 */
+  views(): PeerView[] { return this.cfg.peers.filter((p) => p.enabled).map((p) => this.viewPeer(p, [...this.inbound(p), ...this.side(p, 'from-folderbot')])) }
+  /** 편지 스레드 — 오간 편지만 시간순(채널 세션의 생각·도구 줄과 따로). 배달·읽음 표시를 붙인다 */
+  thread(peerId: string, limit = 150): { peer: PeerView; letters: LetterView[] } | null {
+    const p = this.peer(peerId); if (!p || !p.enabled) return null
+    const ins = this.inbound(p)
+    const outs = markRead(this.side(p, 'from-folderbot'), this.peerCursor(p)).map((l) => { const w = this.wakes.get(l.id); return w ? { ...l, wake: w } : l })
+    const all = [...ins, ...outs]
+    return { peer: this.viewPeer(p, all), letters: orderThread(all, limit) }
+  }
+
+  /**
+   * BQ-10 · 새 연결 — 설정 › 연결 마법사(목업 ②A). **사람이 누른 일**이라 폴더를 만든다(편지·루틴 턴은 여기 못 온다 — 화면 API 뿐).
+   * ① 우편함 폴더 넷(우편함 · to-folderbot · from-folderbot · cursors) ② README(이미 있으면 그대로 둔다 — 사람이 고친 규약이 정본)
+   * ③ `.claude/bridges.yml` 에 한 줄(주석·다른 키 보존 · 임시 파일 → 이름 바꾸기) ④ 다시 읽기.
+   * ⛔ 키·토큰 파일은 만들지 않는다 — 자리만 알려 준다(평문 키를 앱이 만들지 않는다).
+   */
+  create(b: NewBridge, o: { deliverName: string; port?: number }): { mailbox: string; created: string[]; readme: string; readmeKept: boolean; configFile: string } {
+    const problems = newBridgeProblems(b, { ids: this.cfg.peers.map((p) => p.id), mailboxes: this.cfg.peers.map((p) => p.mailbox) })
+    if (problems.length) throw new Error(problems.join(' · '))
+    const f = this.configFile()
+    const before = existsSync(f) ? readFileSync(f, 'utf8') : null
+    if (before !== null && parseBridges(before).errors.some((e) => /못 읽었어요/.test(e))) throw new Error('지금 .claude/bridges.yml 을 못 읽어요 — 파일을 먼저 고쳐 주세요(덮어쓰지 않았어요)')
+    const next = addBridgeYaml(before, b)
+    const mb = this.abs(b.mailbox.trim().replace(/\/+$/, ''))
+    const created: string[] = []
+    for (const d of [mb, join(mb, 'to-folderbot'), join(mb, 'from-folderbot'), join(mb, 'cursors')]) if (!existsSync(d)) { mkdirSync(d, { recursive: true }); created.push(relative(this.d.root, d)) }
+    const readme = join(mb, 'README.md')
+    const readmeKept = existsSync(readme)
+    if (!readmeKept) { const tmp = join(mb, `.README.md.${process.pid}.tmp`); writeFileSync(tmp, mailboxReadme(b, { deliverName: o.deliverName, port: o.port, now: new Date(this.now()) })); renameSync(tmp, readme) }
+    mkdirSync(dirname(f), { recursive: true })
+    const tmp = join(dirname(f), `.bridges.yml.${process.pid}.tmp`); writeFileSync(tmp, next); renameSync(tmp, f)
+    this.d.log(`연결 «${b.name}» 을 만들었어요 · 우편함 ${b.mailbox}${readmeKept ? ' · README 는 있던 것을 그대로' : ''}`)
+    this.reload()
+    return { mailbox: relative(this.d.root, mb), created, readme: relative(this.d.root, readme), readmeKept, configFile: relative(this.d.root, f) }
   }
 
   /** 화면·도구용 — 연결마다 주인인지, 배달 기록 수 */
   status(): { id: string; name: string; icon: string; owner: boolean; delivered: number; mailbox: string; trust: string }[] {
     return this.cfg.peers.map((p) => ({ id: p.id, name: p.name, icon: p.icon, owner: this.boxes.has(p.id), delivered: this.boxes.get(p.id)?.delivered.size ?? 0, mailbox: p.mailbox, trust: p.trust }))
   }
+}
+
+/** 편지 후보 파일 — 폴더 바로 아래와 그 아래 폴더 한 단계(월 폴더). `full` 이 아니면 이번 달·지난달 폴더만 */
+export function letterFiles(dir: string, full: boolean, now: Date): string[] {
+  const out: string[] = []
+  let names: string[] = []
+  try { names = readdirSync(dir) } catch { return out }
+  const cur = monthOf('', now), prev = monthOf('', new Date(now.getFullYear(), now.getMonth() - 1, 15))
+  for (const n of names) {
+    const p = join(dir, n)
+    let st; try { st = statSync(p) } catch { continue }
+    if (st.isDirectory()) {
+      if (n.startsWith('.')) continue
+      if (!full && /^\d{4}-\d{2}$/.test(n) && n !== cur && n !== prev) continue
+      let sub: string[] = []; try { sub = readdirSync(p) } catch { continue }
+      for (const m of sub) if (!ignoredLetterName(m)) out.push(join(p, m))
+    } else if (!ignoredLetterName(n)) out.push(p)
+  }
+  return out
 }

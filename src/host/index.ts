@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { Host } from './host'
+import { Host, type ShellUpdate } from './host'
 import { Gateway } from './gateway'
 import { loadConfig, saveConfig, dataDir } from './paths'
 import { DailyLog } from './logfile'
@@ -13,7 +13,7 @@ const pkgPath = [join(here, '..', 'package.json'), join(here, '..', '..', 'packa
 const VERSION = pkgPath ? (JSON.parse(readFileSync(pkgPath, 'utf8')) as { version: string }).version : '0.0.0'
 const webRoot = [join(here, '..', 'client'), join(here, '..', '..', 'dist', 'client')].find((p) => existsSync(join(p, 'index.html'))) ?? join(here, '..', 'client')
 
-export interface StartOpts { root?: string; port?: number; webRoot?: string; log?: (s: string) => void; onRoot?: (root: string) => void | Promise<void> }
+export interface StartOpts { root?: string; port?: number; webRoot?: string; log?: (s: string) => void; onRoot?: (root: string) => void | Promise<void>; /** BX · 셸의 업데이트 손잡이 — 원격 화면의 «새벽 적용» */ update?: ShellUpdate }
 export interface Started { host: Host; gateway: Gateway; cfg: ReturnType<typeof loadConfig>; urls: string[]; stop: () => void }
 /** 프로그램에서 호스트 띄우기 (Electron 호스트 모드가 쓴다) */
 export async function startHost(opts: StartOpts = {}): Promise<Started> {
@@ -29,6 +29,7 @@ export async function startHost(opts: StartOpts = {}): Promise<Started> {
   const sink = opts.log ?? host.log
   host.log = (s) => { daily.write(s); sink(s) }
   if (opts.onRoot) host.onRoot = opts.onRoot
+  if (opts.update) host.update = opts.update
   const gw = new Gateway(host, opts.webRoot ?? webRoot)
   gw.start()
   const urls = gw.addrs.map((a) => `http://${a}:${cfg.port}`)

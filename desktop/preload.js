@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('folderbotDesktop', {
     state: () => ipcRenderer.invoke('fb:update-state'),
     check: () => ipcRenderer.invoke('fb:update-check'),
     apply: () => ipcRenderer.send('fb:update-apply'),
+    dawn: (on) => ipcRenderer.invoke('fb:update-dawn', !!on),   // BX · 새벽 4시에 적용 걸기/풀기
     onChange: (cb) => { const f = (_e, st) => cb(st); ipcRenderer.on('fb:update', f); return () => ipcRenderer.removeListener('fb:update', f) }
   }
 })

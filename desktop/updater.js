@@ -14,6 +14,7 @@ const { createHash } = require('node:crypto')
 
 const { pickLatest } = require('./update-pick')
 const { applyScript } = require('./apply-script')
+const { nextDawn, dawnStep } = require('./dawn')
 const REPO = 'dave-jin/folderbot'
 const CHECK_EVERY = 30 * 60 * 1000
 const FOCUS_EVERY = 10 * 60 * 1000
@@ -21,7 +22,13 @@ const dir = () => join(app.getPath('userData'), 'updates')
 
 let staged = null      // { version, zip, notes }
 let checking = false, downloading = null, timer = null, deferTimer = null
-let hooks = { isBusy: () => false, busyCount: () => 0, isHost: () => false, port: () => 7373, onChange: () => {}, log: (m) => console.log('[update]', m) }
+let hooks = { isBusy: () => false, busyCount: () => 0, isHost: () => false, port: () => 7373, routineSoon: () => false, onChange: () => {}, log: (m) => console.log('[update]', m) }
+/**
+ * BX · «새벽 4시에 적용» 예약 (2026-10-19 Dave «A»). 사람이 팝업에서 누른 것만 건다 — 자동 적용은 여전히 없다(9/15).
+ * `{ at, setAt, note }` — 파일(`updates/dawn.json`)에 남겨 앱이 다시 떠도 예약이 산다. 30초마다 시각을 본다
+ * (setTimeout 하나로 걸면 맥이 잠든 동안 시계가 멈춰 늦게 깬다).
+ */
+let dawn = null, dawnTick = null
 let lastCheck = 0, lastError = '', deferred = false, lastFocusCheck = 0
 /** userData/updates/log.txt — 왜 안 됐는지 나중에 볼 수 있게 */
 function flog(m) { try { mkdirSync(dir(), { recursive: true }); require('node:fs').appendFileSync(join(dir(), 'log.txt'), `${new Date().toISOString()} ${m}\n`) } catch {} }
@@ -61,6 +68,16 @@ async function check(manual = false) {
     lastCheck = Date.now()
     if (!l || !l.newer) { if (manual) new Notification({ title: 'Folder Bot', body: `최신 버전이에요 (v${app.getVersion()})` }).show(); hooks.onChange(); return null }
     if (staged?.version === l.version) { if (manual) offer(); return staged }
+    // BX · 새벽 예약이 걸린 판이 있으면 그 판을 지킨다 — 사람이 고른 것은 그 판이다. 더 새 판은 적용한 뒤(다시 뜬 앱이) 받는다.
+    //    다시 뜬 직후(staged 없음)에는 받아 둔 그 zip 을 다시 세운다 — 새 판을 받으면 옛 zip 이 지워져 예약이 엉뚱한 판으로 넘어간다
+    if (dawn?.version && (!staged || staged.version === dawn.version)) {
+      const z = zipOf(dawn.version)
+      if (existsSync(z)) {
+        if (!staged) { staged = { version: dawn.version, zip: z, notes: dawn.notes || '', progress: 1 }; hooks.onChange() }
+        hooks.log(`새벽 적용 예약(v${dawn.version}) 중 — v${l.version} 은 적용 뒤에 받아요`)
+        return staged
+      }
+    }
     await download(l)
     offer()
     return staged
@@ -74,7 +91,7 @@ async function check(manual = false) {
 async function download(l) {
   if (downloading) return downloading
   mkdirSync(dir(), { recursive: true })
-  const zip = join(dir(), `FolderBot-${l.version}-arm64.zip`)
+  const zip = zipOf(l.version)
   downloading = (async () => {
     if (!(existsSync(zip) && statSync(zip).size === l.size)) {
       hooks.log(`v${l.version} 받는 중 (${(l.size / 1048576).toFixed(0)}MB)`)
@@ -84,7 +101,8 @@ async function download(l) {
       if (l.shaUrl) { const s = await get(l.shaUrl); const want = String(s.body || '').trim().split(/\s+/)[0]; const have = await sha256(tmp); if (want && want !== have) { unlinkSync(tmp); throw new Error('체크섬 불일치') } }
       require('node:fs').renameSync(tmp, zip)
     }
-    for (const f of readdirSync(dir())) if (f !== basename(zip) && f !== 'apply.sh') { try { unlinkSync(join(dir(), f)) } catch {} }
+    // ⚠ 예약(dawn.json)·기록(log.txt)은 남긴다 — 다시 뜬 앱이 같은 zip 을 «다시 받은» 순간 예약이 지워졌다(2026-10-19 검토)
+    for (const f of readdirSync(dir())) if (f !== basename(zip) && !['apply.sh', 'dawn.json', 'log.txt'].includes(f)) { try { unlinkSync(join(dir(), f)) } catch {} }
     staged = { version: l.version, zip, notes: l.notes, progress: 1 }
     hooks.onChange(); hooks.log(`v${l.version} 준비됨 → ${zip}`)
   })()
@@ -104,12 +122,37 @@ function offer() {
   try { new Notification({ title: 'Folder Bot 업데이트', body: `v${staged.version} 을 받아 두었어요 — 왼쪽 아래 버전 칩에서 적용할지 정하세요` }).show() } catch {}
 }
 
+const dawnFile = () => join(dir(), 'dawn.json')
+const zipOf = (v) => join(dir(), `FolderBot-${v}-arm64.zip`)
+function saveDawn() { try { if (dawn) { mkdirSync(dir(), { recursive: true }); writeFileSync(dawnFile(), JSON.stringify(dawn)) } else if (existsSync(dawnFile())) unlinkSync(dawnFile()) } catch (e) { hooks.log(`새벽 예약을 못 적었어요: ${e.message}`) } }
+/** 걸기(on) · 풀기(off). 받아 둔 판이 없으면 걸 것이 없다 */
+function setDawn(on) {
+  if (!on) { if (dawn) hooks.log('새벽 적용 예약 취소'); dawn = null; saveDawn(); hooks.onChange(); return state() }
+  if (!staged?.zip) return state()
+  dawn = { at: nextDawn(Date.now()), setAt: Date.now(), note: '', version: staged.version, notes: staged.notes || '' }
+  saveDawn(); hooks.log(`새벽 적용 예약 → ${new Date(dawn.at).toLocaleString()} · v${staged.version}`); hooks.onChange()
+  return state()
+}
+/** 예약 시각이 됐나 — 세션이 돌거나 30분 안 루틴이 있으면 30분씩 미룬다(5시 넘으면 다음 날 · desktop/dawn.js) */
+function dawnCheck() {
+  if (!dawn || Date.now() < dawn.at) return
+  // 막 켜져 아직 받은 판을 다시 못 찾았다(check 전) — 다음 번에 본다. 확인을 마쳤는데도 없으면 접는다
+  if (!staged?.zip) { if (!lastCheck || checking || downloading) return; hooks.log('새벽 적용: 받아 둔 판이 없어 예약을 접었어요'); dawn = null; saveDawn(); hooks.onChange(); return }
+  // 사람이 고른 판이 아니면 적용하지 않는다 — 예약을 풀고 다시 묻는다(9/15 · 결정은 사람이)
+  if (dawn.version && staged.version !== dawn.version) { hooks.log(`새벽 적용: 예약한 v${dawn.version} 이 아니라 v${staged.version} 이 있어 예약을 풀고 다시 물어요`); dawn = null; saveDawn(); offer(); return }
+  const step = dawnStep(Date.now(), { busy: hooks.busyCount(), routineSoon: hooks.routineSoon(), at: dawn.at })
+  if (step.act === 'wait') { dawn = { ...dawn, at: step.at, note: step.why }; saveDawn(); hooks.log(`새벽 적용 미룸 · ${step.why} → ${new Date(step.at).toLocaleString()}`); hooks.onChange(); return }
+  hooks.log(`새벽 적용 → v${staged.version}`)
+  apply()
+}
+
 /** 앱 번들 경로 — /Applications/Folder Bot.app */
 function bundlePath() { const p = process.execPath; const i = p.indexOf('.app/Contents/MacOS/'); return i > 0 ? p.slice(0, i + 4) : null }
 
 /** 종료 → 분리된 스크립트가 zip 을 풀어 번들을 교체하고 다시 연다 */
 function apply() {
   if (!staged?.zip) return false
+  if (dawn) { dawn = null; saveDawn() }   // 지금 적용했으면(사람이든 새벽이든) 예약은 끝났다
   const target = bundlePath()
   if (!target || target.startsWith('/Volumes/') || process.platform !== 'darwin') {
     new Notification({ title: 'Folder Bot', body: '앱이 /Applications 에 설치돼 있지 않아 자동 교체를 못 해요 — 받아 둔 zip 을 열어 드릴게요' }).show()
@@ -136,9 +179,12 @@ function start(h) {
   try { const f = join(dir(), 'applied.txt'); if (existsSync(f)) { const t = require('node:fs').readFileSync(f, 'utf8').trim(); if (/^rolled back|^failed/.test(t)) { lastError = `지난 업데이트가 켜지지 않아 옛 판으로 되돌렸어요 · ${t}`; hooks.log(lastError) } unlinkSync(f) } } catch {}
   setTimeout(() => void check(), 15 * 1000)
   timer = setInterval(() => void check(), CHECK_EVERY)
+  // BX · 지난 실행에 건 새벽 예약 — 받은 판은 check 가 다시 찾는다(같은 zip 이면 내려받지 않는다)
+  try { if (existsSync(dawnFile())) { const j = JSON.parse(require('node:fs').readFileSync(dawnFile(), 'utf8')); if (Number.isFinite(j.at)) { dawn = { at: j.at, setAt: j.setAt || 0, note: j.note || '', version: j.version || '', notes: j.notes || '' }; hooks.log(`새벽 적용 예약 이어 받음 → ${new Date(dawn.at).toLocaleString()}`) } } } catch {}
+  dawnTick = setInterval(dawnCheck, 30 * 1000)
 }
 /** 창을 띄우거나 트레이를 누를 때 — 10분에 한 번만 */
 function checkOnFocus() { if (Date.now() - lastFocusCheck < FOCUS_EVERY) return; lastFocusCheck = Date.now(); void check() }
-function state() { return { current: app.getVersion(), staged: staged ? { version: staged.version, ready: !!staged.zip, progress: staged.progress ?? 0, notes: staged.notes || '' } : null, downloading: !!downloading, checking, lastCheck, lastError, deferred: deferred && !!staged?.zip, busy: hooks.busyCount(), host: hooks.isHost() } }
+function state() { return { current: app.getVersion(), staged: staged ? { version: staged.version, ready: !!staged.zip, progress: staged.progress ?? 0, notes: staged.notes || '' } : null, downloading: !!downloading, checking, lastCheck, lastError, deferred: deferred && !!staged?.zip, busy: hooks.busyCount(), host: hooks.isHost(), dawn: dawn ? { at: dawn.at, note: dawn.note || '', version: dawn.version || '' } : null } }
 
-module.exports = { start, check, apply, state, offer, checkOnFocus }
+module.exports = { start, check, apply, state, offer, checkOnFocus, dawn: setDawn }
