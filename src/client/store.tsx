@@ -35,15 +35,20 @@ export interface StateShape {
   device: { id: string; name: string; main: boolean }
   online: 'on' | 'off'
   loaded: boolean
+  /**
+   * CF ⑤ · 다시 붙어 «본 것» 을 맞추는 중 — 줄이 끊긴 순간(첫 화면 뒤) 켜지고 `resync` 의 첫 묶음(상태·할 일·보는 대화)이 끝나면 꺼진다.
+   * 머리줄 «맞추는 중» 점이 읽는다(0.4초 안에 끝나면 안 띄움). 옛 내용은 그대로 둔다.
+   */
+  syncing: boolean
   filesTick: Record<string, number>
   /** A · 오케스트레이터가 레일 순서를 바꾼 횟수 — 오를 때마다 이 기기의 정렬을 «직접» 으로 */
   railReorder: number
   /** BO · 화면이 먼저 띄운 새 세션 — 호스트 목록에 그 id 가 나타날 때까지 목록 맨 위에 붙들어 둔다(`newSession.ts`) */
   ghosts: Record<string, SessionInfo>
 }
-const init: StateShape = { version: '', root: '', rules: null, rulesInstalled: false, bots: [], candidates: [], sessionsByBot: {}, chats: {}, pending: {}, todos: {}, auth: { verdict: 'unknown', checkedAt: 0 }, inbox: 0, notifications: [], vapidPublic: '', tailnet: null, addrs: [], port: 7373, devices: [], defaults: { model: 'claude-fable-5-1', effort: 'high' }, hostName: '', device: { id: '', name: '', main: false }, online: 'off', loaded: false, filesTick: {}, railReorder: 0, ghosts: {} }
+const init: StateShape = { version: '', root: '', rules: null, rulesInstalled: false, bots: [], candidates: [], sessionsByBot: {}, chats: {}, pending: {}, todos: {}, auth: { verdict: 'unknown', checkedAt: 0 }, inbox: 0, notifications: [], vapidPublic: '', tailnet: null, addrs: [], port: 7373, devices: [], defaults: { model: 'claude-fable-5-1', effort: 'high' }, hostName: '', device: { id: '', name: '', main: false }, online: 'off', loaded: false, syncing: false, filesTick: {}, railReorder: 0, ghosts: {} }
 
-type Action = { type: 'state'; s: Partial<StateShape> } | { type: 'hydrate'; chats: Record<string, ChatItem[]> } | { type: 'frame'; f: Frame } | { type: 'chat'; sessionId: string; items: ChatItem[]; pending: PermissionRequest[] } | { type: 'online'; v: 'on' | 'off' } | { type: 'todos'; botId: string; items: TodoItem[] } | { type: 'refiles' } | { type: 'ghost'; info: SessionInfo } | { type: 'unghost'; id: string }
+type Action = { type: 'state'; s: Partial<StateShape> } | { type: 'hydrate'; chats: Record<string, ChatItem[]> } | { type: 'frame'; f: Frame } | { type: 'chat'; sessionId: string; items: ChatItem[]; pending: PermissionRequest[] } | { type: 'synced' } | { type: 'online'; v: 'on' | 'off' } | { type: 'todos'; botId: string; items: TodoItem[] } | { type: 'refiles' } | { type: 'ghost'; info: SessionInfo } | { type: 'unghost'; id: string }
 
 /**
  * BO · 호스트 목록에 임시 세션을 덧댄다. 호스트 목록에 이미 있는 id 는 임시 표시를 걷는다(호스트 것이 정답).
@@ -71,7 +76,8 @@ function reducer(s: StateShape, a: Action): StateShape {
       const { [a.id]: _c, ...chats } = s.chats
       return { ...s, ghosts, chats, sessionsByBot: { ...s.sessionsByBot, [g.botId]: list } }
     }
-    case 'online': return { ...s, online: a.v }
+    case 'online': return { ...s, online: a.v, syncing: a.v === 'off' && s.loaded ? true : s.syncing }
+    case 'synced': return s.syncing ? { ...s, syncing: false } : s
     case 'chat': return { ...s, chats: { ...s.chats, [a.sessionId]: a.items }, pending: { ...s.pending, [a.sessionId]: a.pending } }
     // DA · 디스크 캐시에서 꺼낸 대화 — **이미 받은 것은 덮지 않는다**(호스트에서 막 온 것이 더 새것이다)
     case 'hydrate': { const add = Object.fromEntries(Object.entries(a.chats).filter(([k]) => !s.chats[k])); return Object.keys(add).length ? { ...s, chats: { ...s.chats, ...add } } : s }
@@ -170,17 +176,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const seen = useRef<{ todos: Set<string>; chats: Set<string> }>({ todos: new Set(), chats: new Set() })
   seen.current.todos = new Set(Object.keys(s.todos))
   seen.current.chats = new Set(Object.keys(s.chats))
+  /** CF ⑤ · 맞추기 차례 — 맞추는 도중 또 끊겨 새 맞추기가 시작되면, 앞 차례가 끝나도 점을 끄지 않는다 */
+  const syncGen = useRef(0)
   const resync = async () => {
+    const gen = ++syncGen.current
     // CF-1 · 상태·할 일·대화를 **한꺼번에** — 종전엔 상태를 받은 뒤에야 나머지를 쏴서 1 RTT 를 더 썼다
     // DA · 전부 미리 받는 기기는 대화가 수십 개다 — 지금 보는 대화를 먼저, 나머지는 넷씩(안 바뀐 것은 «그대로» 한 줄)
     const chats = [...seen.current.chats]; const cur = hashSid(); if (cur && chats.includes(cur)) chats.splice(chats.indexOf(cur), 1)
     const rest = pool(chats, 4, (sid) => loadChat(sid, true))
+    // CF ②③ · 보는 대화·봇의 할 일을 아직 못 받았으면(끊긴 동안 받다가 실패) 여기서 다시 받는다 — 안 그러면 회색 줄이 그대로 남는다
+    const curBot = (() => { try { return new URLSearchParams(location.hash.slice(1)).get('bot') } catch { return null } })()
+    const todoBots = new Set(seen.current.todos); if (curBot) todoBots.add(curBot)
     await Promise.allSettled([
       refresh(),
-      ...[...seen.current.todos].map((b) => loadTodo(b)),
-      ...(cur && seen.current.chats.has(cur) ? [loadChat(cur, true)] : [])
+      ...[...todoBots].map((b) => loadTodo(b)),
+      ...(cur ? [loadChat(cur, seen.current.chats.has(cur))] : [])
     ])
     dispatch({ type: 'refiles' })   // 트리·문서는 나머지 대화(수십 개)를 기다리지 않는다
+    if (gen === syncGen.current) dispatch({ type: 'synced' })    // CF ⑤ · 보는 것은 다 맞췄다 — «맞추는 중» 점을 끈다(나머지 대화는 뒤에서)
     await rest
   }
   /**
@@ -250,7 +263,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           /* 🔴 BJ · 호스트가 새 화면 판을 내보내면 **다시 읽는다** — 옛 코드가 계속 돌면 고친 저장 규칙이 안 먹는다(9/27 실측). 채팅 초안은 localStorage 에 있어 남는다 */
           const b = (f as { build?: string }).build
           if (b) { const w = window as unknown as { __fbBuild?: string }; if (w.__fbBuild && w.__fbBuild !== b) { location.reload(); return } w.__fbBuild = b }
-          if (first) { first = false; helloSeen = true; if (stateDone) void refresh() } else void resync()
+          // CF ⑤ · 첫 hello 전에 줄이 한 번 끊겼어도(첫 상태 뒤) 점이 남지 않게 — 첫 hello 갈래도 맞춘 뒤 끈다
+          if (first) { first = false; helloSeen = true; const gen = ++syncGen.current; const done = () => { if (gen === syncGen.current) dispatch({ type: 'synced' }) }; if (stateDone) void refresh().then(done, done); else done() } else void resync()
         } }, (v) => dispatch({ type: 'online', v }))
     return () => stopRef.current?.()
   }, [])

@@ -34,6 +34,7 @@ import { canStartSwipe, dragProgress, fromLeftEdge, lockOf, scrollableEats, stag
 import { curOf, dismiss, goTo, navInit, type Nav, type Page } from '../core/navstack'
 import { botUnread, openAnchor, shouldMarkRead, MOOD_RANK, recentDone, type BotMood } from '../core/unread'
 import { autoKind, openSessionOf, sessArea, takeoverMode } from '../core/autoArea'
+import { chatPhase, nextPhaseIn, SYNC_DOT_AFTER_MS, type ChatPhase } from '../core/loadPhase'
 import { clampDockOffset, isDockDrag, readDockOffset } from '../core/dock'
 import { tabActive } from '../core/tabbar'
 import { SwipeRow } from './SwipeRow'
@@ -397,7 +398,8 @@ function Main() {
   }, [])
   const docs = useDocs(bot?.id ?? '', !phone)   // DA · 데스크톱은 누를 때마다 새 탭 · 폰은 한 장(탭 줄이 없다)
   // DA · 디스크에서 꺼내기만 한 대화는 먼저 보이고, 판을 내밀어 맞춘다(`ensureChat`)
-  useEffect(() => { if (sessionId) void ensureChat(sessionId).catch(() => {}) }, [sessionId])
+  // CF ② · 받기가 실패하면 간격을 늘려 다시 받는다 — 회색 줄은 «곧 온다» 는 약속이라 실패한 채로 남기지 않는다. 세션을 떠나면 멈춘다
+  useEffect(() => { if (!sessionId) return; let alive = true; keepTrying(() => ensureChat(sessionId), () => alive); return () => { alive = false } }, [sessionId])
   /**
    * CF-1 · 대화 미리 받기 (2026-10-12 퍼포먼스 실측 A4). 처음 여는 봇은 원격에서 0.3초(나쁜 망 0.8초) 빈 칸이었다 — 다시 열 때는 0.04초.
    *   ① 레일·목록 줄에 손(포인터·터치)이 닿으면 그 봇이 열 세션을 받는다 ② 첫 화면이 선 뒤 한가할 때 최근 봇 3개를 받는다.
@@ -424,7 +426,7 @@ function Main() {
       if (!matchMedia('(max-width: 760px)').matches) { preloadEditor(); preloadDirIndex() }
     }, { timeout: 2500 })
   }, [s.loaded, s.bots.length])
-  useEffect(() => { if (bot) void loadTodo(bot.id) }, [bot?.id, s.filesTick[bot?.id ?? '']])
+  useEffect(() => { if (!bot) return; let alive = true; keepTrying(() => loadTodo(bot.id), () => alive); return () => { alive = false } }, [bot?.id, s.filesTick[bot?.id ?? '']])   // CF ③ · 실패하면 다시
   /** 내가 놓은 해시인가 — 밖(셸의 알림 배너)에서 온 해시와 가르는 표식 (S-2). 내 걸음은 화면(칸)을 이미 스스로 챙긴다 */
   const navSelf = useRef(false)
   const setHashSelf = (p: Record<string, string>) => { navSelf.current = true; setHash(p) }
@@ -662,6 +664,18 @@ function Main() {
     }
     return secs
   }, [s.bots, s.sessionsByBot, s.notifications, railSort, minute])
+  /**
+   * 🔴 **CF ②·④ · 대화를 받는 동안** (2026-10-19 Dave «전부 A» · 목업 `03_디자인/2026-10-12_로딩-전환-목업`).
+   *    종전에는 대화가 오기 전에 칸이 한 번 비었다가(16~44 프레임) 새 대화가 떴다. 이제 머리줄은 곧바로 새 봇·세션이고,
+   *    아래는 **옛 대화를 흐리게 남겼다가** 새 대화로 바꾼다(④ A). 0.4초를 넘기면 말풍선 모양 회색 줄(② A),
+   *    옛 대화가 없으면(처음 여는 대화) 0.15초 안에는 아무것도 안 띄우고 그 뒤에 회색 줄. 문턱은 `core/loadPhase` 하나.
+   * ⚠ 흐린 옛 대화는 **그리기만** 한다 — 눌러도 안 되고(`inert`), 마지막 질문·다시 시도 같은 것은 지금 세션의 대화로만 센다.
+   */
+  const chatLoading = !!sessionId && !s.chats[sessionId]
+  const shownRef = useRef<{ sid: string; items: ChatItem[]; bot: Bot } | null>(null)
+  if (sessionId && s.chats[sessionId] && bot) shownRef.current = { sid: sessionId, items: s.chats[sessionId], bot }
+  const ghost = chatLoading && shownRef.current && shownRef.current.sid !== sessionId && shownRef.current.items.length ? shownRef.current : null
+  const phase = useChatPhase(chatLoading ? sessionId! : '', !!ghost)
   if (!bot) return <div className="app"><div className="empty">봇이 없어요</div></div>
   const items = sessionId ? (s.chats[sessionId] ?? []) : []
   const pending = sessionId ? (s.pending[sessionId] ?? []) : []
@@ -991,7 +1005,7 @@ function Main() {
       {stage === 'wide' ? <div className="divx" onPointerDown={sbOpen ? dragX('sb', 1) : undefined} onDoubleClick={() => setLay({ ...lay, sb: DEF.sb, sbOpen: true, sbPin: true })} /> : null}
 
       {/* ── 채팅 ── */}
-      <Chat bot={bot} sessions={sessions} cur={cur} items={items} loaded={!!sessionId && !!s.chats[sessionId]} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} sendReq={sendReq} onSendReq={() => setSendReq(null)} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openInDocPane(rel, { pin })} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={toList} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} queue={queueFor(sessionId)} onQueue={(f) => { if (sessionId) onQueue(sessionId, f) }} onReveal={reveal} />
+      <Chat bot={bot} sessions={sessions} cur={cur} items={items} loaded={!!sessionId && !!s.chats[sessionId]} phase={phase} ghost={phase === 'fade' ? ghost ?? undefined : undefined} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} sendReq={sendReq} onSendReq={() => setSendReq(null)} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openInDocPane(rel, { pin })} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={toList} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} queue={queueFor(sessionId)} onQueue={(f) => { if (sessionId) onQueue(sessionId, f) }} onReveal={reveal} />
 
       {/* ── 문서 열 (넓음만 흐름 안 · 중간·좁음은 오른쪽 서랍) ── */}
       {stage === 'wide' && showDoc ? <><div className="divx" onPointerDown={dragX('doc', -1)} onDoubleClick={() => setLay({ ...lay, doc: DEF.doc })} />{docwrapEl}</> : null}
@@ -1308,12 +1322,51 @@ function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, 
 }
 
 /* ── 대화 ───────────────────────────────────────────────────────────────── */
+/**
+ * CF ②·④ · 받기 시작한 뒤 지난 시간으로 대화 칸 단계를 정한다(`core/loadPhase`). 단계가 바뀔 때만 다시 그린다.
+ * ⚠ «옛 대화가 있나» 는 받기 시작한 순간 값으로 굳힌다 — 도중에 바뀌면 흐림 → 빈칸 → 회색 줄로 출렁인다.
+ */
+function useChatPhase(sid: string, hasPrev: boolean): ChatPhase {
+  const t0 = useRef({ sid: '', at: 0, prev: false })
+  if (sid && t0.current.sid !== sid) t0.current = { sid, at: Date.now(), prev: hasPrev }
+  if (!sid) t0.current = { sid: '', at: 0, prev: false }
+  const [, bump] = useState(0)
+  const ms = sid ? Date.now() - t0.current.at : 0
+  const wait = nextPhaseIn(!!sid, t0.current.prev, ms)
+  useEffect(() => { if (wait === null) return; const t = window.setTimeout(() => bump((n) => n + 1), wait + 5); return () => window.clearTimeout(t) }, [sid, wait === null])
+  return chatPhase(!!sid, t0.current.prev, ms)
+}
+/** CF ②③ · 받기가 실패하면 1·2·4·8·15초 간격으로 다시 — `alive()` 가 거짓이 되면(화면이 그 대상을 떠나면) 멈춘다 */
+function keepTrying(f: () => Promise<void>, alive: () => boolean, wait = 1000): void {
+  f().catch(() => { if (alive()) window.setTimeout(() => { if (alive()) keepTrying(f, alive, Math.min(wait * 2, 15_000)) }, wait) })
+}
+/** CF ④ A · 받는 동안 남겨 둔 옛 대화 — 흐리게 · 눌리지 않게(`inert`). 평소에는 감싸지 않는다(`.chat-body > …` 선택자가 그대로 맞게) */
+function Ghost({ on, children }: { on: boolean; children: ReactNode }) {
+  return on ? <div className="cghost" inert aria-hidden="true">{children}</div> : <>{children}</>
+}
+/** CF ② A · 말풍선 모양 회색 줄 — 내 말(오른쪽 둥근 칸) · 봇 말(줄 셋) · 내 말 · 봇 말(목업 그대로) */
+function ChatSkel() {
+  return <div className="cskel" aria-label="대화를 받는 중" role="status">
+    <div className="skel me" style={{ width: '58%' }} /><div className="skel" style={{ width: '88%' }} /><div className="skel" style={{ width: '80%' }} /><div className="skel" style={{ width: '46%' }} />
+    <div className="skel me" style={{ width: '52%', marginTop: 8 }} /><div className="skel" style={{ width: '84%' }} />
+  </div>
+}
+/**
+ * CF ⑤ · 다시 붙는 중 — 머리줄 작은 점 «맞추는 중». 0.4초 안에 끝나면 안 띄운다(`SYNC_DOT_AFTER_MS`). 옛 내용은 지우지 않는다.
+ */
+function SyncDot() {
+  const { s } = useStore()
+  const [show, setShow] = useState(false)
+  useEffect(() => { if (!s.syncing) { setShow(false); return } const t = window.setTimeout(() => setShow(true), SYNC_DOT_AFTER_MS); return () => window.clearTimeout(t) }, [s.syncing])
+  // 끊겨 있는 동안은 «다시 연결하는 중…» 띠가 말한다 — 점은 다시 붙은 뒤 맞추는 동안만
+  return show && s.syncing && s.online === 'on' ? <span className="syncdot" role="status"><i />맞추는 중</span> : null
+}
 const BUILTIN_SLASH: SlashCmd[] = [{ name: 'compact', desc: '대화 압축 — 컨텍스트 줄이기', kind: 'cli', scope: 'cli' }, { name: 'context', desc: '컨텍스트 사용 내역', kind: 'cli', scope: 'cli' }, { name: 'clear', desc: '새 대화로 (새 세션)', kind: 'cli', scope: 'cli' }]
 interface FileNode { rel: string; dir: boolean; mtime: number }
 // ⚠ 맥 파일 이름은 NFD 로 저장된다 — 비교 전에 양쪽을 NFC 로 맞추지 않으면 한글이 «아예» 안 걸린다(core/search 머리말)
 const fuzzy = (q: string, s: string): number => { if (!q) return 1; const t = norm(s); const nq = norm(q); if (t.includes(nq)) return t.startsWith(nq) ? 3 : 2; let i = 0; for (const c of t) if (c === nq[i]) i++; return i === nq.length ? 1 : 0 }
 
-function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled, sendReq, onSendReq, attachReq, onAttached, mentionReq, onMentioned, focusReq, onSession, onFile, docBadge, docTabs, docOn, onDocToggle, say, refreshAll, collapsed, onUncollapse, phone, onBack, onPanel, newSession, filesTick, queue, onQueue, onReveal }: { bot: Bot; sessions: SessionInfo[]; cur?: SessionInfo; items: ChatItem[]; loaded: boolean; pending: PermissionRequest[]; prefill: string; onPrefilled: () => void; sendReq: { botId: string; text: string; n: number } | null; onSendReq: () => void; attachReq: Att[]; onAttached: () => void; mentionReq: string[]; onMentioned: () => void; focusReq: number; onSession: (sid: string) => void; onFile: (rel: string, pin?: boolean) => void; docBadge: number; docTabs: string[]; docOn: boolean; onDocToggle: () => void; say: (m: string) => void; refreshAll: () => Promise<void>; collapsed: boolean; onUncollapse: () => void; phone: boolean; onBack: () => void; onPanel: () => void; newSession: () => Promise<void>; filesTick?: number; queue: string[]; onQueue: (f: (q: string[]) => string[]) => void; onReveal: (rel: string) => void }) {
+function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pending, prefill, onPrefilled, sendReq, onSendReq, attachReq, onAttached, mentionReq, onMentioned, focusReq, onSession, onFile, docBadge, docTabs, docOn, onDocToggle, say, refreshAll, collapsed, onUncollapse, phone, onBack, onPanel, newSession, filesTick, queue, onQueue, onReveal }: { bot: Bot; sessions: SessionInfo[]; cur?: SessionInfo; items: ChatItem[]; loaded: boolean; /** CF · 대화 칸 단계(`core/loadPhase`) */ phase?: ChatPhase; /** CF ④ · 받는 동안 흐리게 남기는 옛 대화 — 그리기만(그 대화의 봇·세션으로 그린다 · 파일 칩이 새 폴더 기준으로 풀리지 않게) */ ghost?: { sid: string; items: ChatItem[]; bot: Bot }; pending: PermissionRequest[]; prefill: string; onPrefilled: () => void; sendReq: { botId: string; text: string; n: number } | null; onSendReq: () => void; attachReq: Att[]; onAttached: () => void; mentionReq: string[]; onMentioned: () => void; focusReq: number; onSession: (sid: string) => void; onFile: (rel: string, pin?: boolean) => void; docBadge: number; docTabs: string[]; docOn: boolean; onDocToggle: () => void; say: (m: string) => void; refreshAll: () => Promise<void>; collapsed: boolean; onUncollapse: () => void; phone: boolean; onBack: () => void; onPanel: () => void; newSession: () => Promise<void>; filesTick?: number; queue: string[]; onQueue: (f: (q: string[]) => string[]) => void; onReveal: (rel: string) => void }) {
   const { s } = useStore()
   const [text, setText] = useState(''); const [caret, setCaret] = useState(0); const [sessMenu, setSessMenu] = useState(false); const [busy, setBusy] = useState(false)
   const [attach, setAttach] = useState<Att[]>([]); const [pop, setPop] = useState<'' | 'plus' | 'mode' | 'model' | 'effort' | 'ctx'>(''); const [pickOpen, setPickOpen] = useState(false); const [uploading, setUploading] = useState(false)
@@ -1660,7 +1713,9 @@ function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled
   }, [text]) // eslint-disable-line react-hooks/exhaustive-deps
   const chipsByName = useMemo(() => Object.fromEntries(attach.map((a) => { const abs = a.abs || `${bot.abs}/첨부/${a.name ?? ''}`; return [attName(a), { abs, dir: a.dir, folder: chipParts(abs, bot.abs, !!a.dir).folder, busy: a.uploading, icon: <Icon n={a.dir ? 'folder' : 'doc'} size={11} color="var(--t3)" /> }] })), [attach, bot.abs])
   const relOf = (p: string) => (p.startsWith(bot.abs + '/') ? p.slice(bot.abs.length + 1) : null)
-  const rows = useMemo(() => buildRows(items, drill), [items, drill])
+  const shown = ghost && !drill ? ghost.items : items
+  const rowBot = ghost && !drill ? ghost.bot : bot   // CF ④ · 흐린 옛 대화는 줄로만 그린다 — 마지막 질문·고정 질문은 지금 세션 것(`items`)으로 센다
+  const rows = useMemo(() => buildRows(shown, drill), [shown, drill])
   /**
    * 🔴 **CO · 안 읽은 답은 처음부터** (2026-10-16 Dave). 세션을 **열 때 한 번** «여기부터 새 답» 줄을 정하고(`core/unread.openAnchor`) 그 줄을 화면 위에 맞춘다.
    *    판정 기준은 볼트의 읽은 자리(`readAt` · 폰·맥 공유)라 새로 셀 것이 없다. 연 것만으로는 읽음이 아니다 — 맨 아래까지 내려가야 읽음(9/21).
@@ -1936,30 +1991,32 @@ function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled
       {phone ? <><button className="rb glassb hb-menu" onClick={drillSub ? () => setDrill(null) : onBack} title={drillSub ? '메인 대화로' : '봇 목록'}><Icon n={drillSub ? 'back' : 'list'} size={20} /></button>
         {/* 감싸는 span 은 헤더의 flex 아이템 — 폭이 내용에 의존하는데 알약이 그 100% − 118px 을 최대폭으로 삼아 스스로를 눌러 이름이 «2026-…» 로 잘렸다(2026-09-13 Dave). 알약 최대폭은 감싸는 칸의 100%, 칸이 남는 공간을 받는다 */}
         <span className="hname" style={{ position: 'relative' }}><button className="hnb" onClick={() => setSessMenu(!sessMenu)} title={cur?.name ?? '세션'}>{drillSub ? <b className="dn">{drillSub.name}</b> : <BotName b={bot} chip={false} />}{chatHolder === 'other' ? <span className="dot hold" title="남을 기다리는 중" /> : running ? <span className="dot run" title="작업 중" /> : state === 'awaiting_input' ? <span className="dot wait" /> : null}</button>{sessMenuEl}</span>
-        <span className="sp" /></>
+        <span className="sp" /><SyncDot /></>
         : drillSub ? <><button className="ib" onClick={() => setDrill(null)} title="메인 대화로"><Icon n="back" size={14} /></button><span style={{ color: 'var(--t3)' }}>/</span><span className="ttl">{drillSub.name}</span>{drillSub.status === 'run' ? <span className="spin run" /> : <Icon n={drillSub.status === 'error' ? 'x' : 'check'} size={11} color={drillSub.status === 'error' ? 'var(--err)' : 'var(--done)'} />}<span style={{ color: 'var(--t3)', fontSize: 12, whiteSpace: 'nowrap' }}>도구 {drillSub.tools}</span><span className="sp" /></>
           : <><FolderBot color={bot.color} size={16} mood={moodOf(state, !!cur?.hibernated, chatHolder)} mono /><span className="ttl" title={bot.name}><Mid s={bot.displayName} /></span><VendorMark vendor={cur?.vendor} size={12} />
             {/* AB · 헤더 한 줄 — 레일·대기 줄과 **같은 값**에서 나온다 */}
             {chatHolder === 'other' ? <span className="hstate"><i />{holdHeader(chatHolder, cur?.inflight, cur?.bg ?? 0)}</span> : null}
             <span style={{ position: 'relative', flex: 'none' }}><button onClick={() => setSessMenu(!sessMenu)} style={{ color: 'var(--t3)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}>{cur?.name ?? '새 대화'} <Icon n="chevd" size={10} /></button>{sessMenuEl}</span>
-            <span className={`dot ${stateDot(state)}`} /><span className="sp" />
+            <span className={`dot ${stateDot(state)}`} /><span className="sp" /><SyncDot />
             <div className="acts"><button className={`ib ${docOn ? 'on' : ''}`} onClick={onDocToggle} title="문서 열 (⌘⇧D)"><Icon n="doc" size={14} />{!docOn && docBadge ? <span className="bd">{docBadge}</span> : null}</button></div></>}
     </div>
     {routineDraft ? <RoutineSheet bot={bot} draft={routineDraft} onClose={() => setRoutineDraft(null)} /> : null}
     {/* Q-2 (2026-09-19 Dave: «이전처럼 라운드 칩이 더 좋았다 · 바로 위 질문이 항상 상단 고정 · 더 올리면 그 이전 질문») — N-2 의 흐름 안 헤더(.qhdr)는 폐기. 폰·데스크톱 모두 유리 알약 하나, 탭하면 그 질문으로 */}
-    {pinnedItem && !drill ? <button className="pinq glassb" onClick={() => { const sc = scRef.current; const el = sc?.querySelector<HTMLElement>(`.umsg[data-id="${CSS.escape(pinnedItem.id)}"]`); if (!sc || !el) return; /* 알약 바로 아래에 질문이 오게 — 맨 위에 붙이면 알약(그 앞 질문)이 첫 줄을 가린다 */ sc.scrollTo({ top: sc.scrollTop + (el.getBoundingClientRect().top - sc.getBoundingClientRect().top) - (phone ? 56 : 48), behavior: 'smooth' }) }} title="이 질문으로">{pinnedItem.text}</button> : null}
+    {pinnedItem && !drill && !ghost ? <button className="pinq glassb" onClick={() => { const sc = scRef.current; const el = sc?.querySelector<HTMLElement>(`.umsg[data-id="${CSS.escape(pinnedItem.id)}"]`); if (!sc || !el) return; /* 알약 바로 아래에 질문이 오게 — 맨 위에 붙이면 알약(그 앞 질문)이 첫 줄을 가린다 */ sc.scrollTo({ top: sc.scrollTop + (el.getBoundingClientRect().top - sc.getBoundingClientRect().top) - (phone ? 56 : 48), behavior: 'smooth' }) }} title="이 질문으로">{pinnedItem.text}</button> : null}
     <div className="chat-scroll" ref={scRef} data-autoscroll="1">
       <div className="chat-body">
         {!cur && !drill ? <div className="empty" style={{ flex: 1 }}><FolderBot color={bot.color} size={40} mood="idle" /><div><b>{bot.name}</b>{bot.orchestrator ? ' — 볼트 전체를 보는 관제 봇이에요. "지금 뭐 돌고 있어?", "Inbox 정리해 줘", "X 폴더에서 시작해".' : ' 봇이에요. 이 폴더의 지침·기억·자료를 들고 일해요.'}</div></div> : null}
         {drillSub ? <div className="drill-p"><div className="meta" style={{ cursor: 'default' }}>무엇을 시켰나</div><div className="tx">{drillSub.prompt || drillSub.name}</div><hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '4px 0', width: '100%' }} /></div> : null}
-        <SidCtx.Provider value={{ sid: cur?.id ?? '', botId: bot.id }}>{rows.map((r) => { const rid = r.k === 'group' ? r.items[0].id : r.k === 'prior' ? r.id : r.it.id; return <Fragment key={rid}>
+        {/* CF ② A · 받는 중 0.15초(옛 대화가 흐려져 있었으면 0.4초)를 넘기면 회색 줄 · ④ A · 그 전에는 옛 대화를 흐리게(눌리지 않게) */}
+        {phase === 'skel' && !drill ? <ChatSkel /> : null}
+        <Ghost on={!!ghost && !drill}><SidCtx.Provider value={{ sid: ghost && !drill ? ghost.sid : cur?.id ?? '', botId: (ghost && !drill ? ghost.bot : bot).id }}>{rows.map((r) => { const rid = r.k === 'group' ? r.items[0].id : r.k === 'prior' ? r.id : r.it.id; return <Fragment key={rid}>
           {/* CO · 이 세션을 열 때 정한 «여기부터 새 답» — 세션을 바꾸기 전까지 그 자리에 둔다 */}
           {newMark.id === rid && newMark.sid === cur?.id && !drill ? <div className="newmark" role="separator"><span>여기부터 새 답</span></div> : null}
           {r.k === 'prior'
-          ? <PriorTry items={r.items} files={r.files} bot={bot} onFile={(p) => onFile(p)} />
+          ? <PriorTry items={r.items} files={r.files} bot={rowBot} onFile={(p) => onFile(p)} />
           : r.k === 'group'
-          ? <ToolGroup items={r.items} endT={r.endT} base={bot.abs} onFile={(p) => { const rel = relOf(p); if (rel) onFile(rel) }} />
-          : <Item it={r.it} bot={bot} items={items} onFile={(p) => onFile(p)} onReveal={onReveal} onDrill={(id) => setDrill(id)} state={state} say={say} isLastAssistant={r.it.id === lastAssistant} isLastUser={r.it.id === lastUser?.id} userRef={lastUserRef} onRetry={lastUser ? () => void sendText(lastUser.text) : undefined} />}</Fragment> })}</SidCtx.Provider>
+          ? <ToolGroup items={r.items} endT={r.endT} base={rowBot.abs} onFile={(p) => { const rel = relOf(p); if (rel) onFile(rel) }} />
+          : <Item it={r.it} bot={rowBot} items={shown} onFile={(p) => onFile(p)} onReveal={onReveal} onDrill={(id) => setDrill(id)} state={state} say={say} isLastAssistant={r.it.id === lastAssistant} isLastUser={r.it.id === lastUser?.id} userRef={lastUserRef} onRetry={lastUser ? () => void sendText(lastUser.text) : undefined} />}</Fragment> })}</SidCtx.Provider></Ghost>
         {cur && !drill ? pending.map((p) => <PermCard key={p.requestId} p={p} sid={cur.id} />) : null}
         {/* 🔴 CL-1 · 멈춘 자리 — Claude 웹처럼 «응답을 멈췄어요» 줄에서 바로 고치거나 다시 보낸다(멈춘 턴에는 답이 없어 ↶ 단추가 안 떴다) */}
         {cur?.stopped && !running && state !== 'awaiting_input' && !drill ? <div className="stopln" role="status"><Icon n="stop" size={10} /><span>응답을 멈췄어요</span>{lastUser ? <><button onClick={fixPrompt}>프롬프트 고치기</button><button onClick={() => void retryStopped()}>다시 시도</button></> : null}{stoppedFiles.length ? <div className="files sfiles"><span className="fl">멈추기 전에 고친 파일 — 되돌리지 않았어요</span>{stoppedFiles.map((p) => <span key={p} className="fpair"><FileChip abs={p} botAbs={bot.abs} botId={bot.id} onClick={() => onFile(p)} /><DiffBtn abs={p} onOpen={() => onFile(p)} /></span>)}</div> : null}</div> : null}

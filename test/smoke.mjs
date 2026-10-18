@@ -2358,7 +2358,8 @@ try {
             const isAuto = (x) => !x.adopted && !!(x.comm || x.exComm || x.channel || x.exChannel || x.routine || x.delegated)
             const hashCc = await pg.evaluate(() => location.hash)
             let tgt = null
-            for (const b of await api('/bots')) { const xs = await api(`/bots/${b.id}/sessions`); if (xs.some(isAuto)) { tgt = { b, xs }; break } }
+            // 채팅과 자동화가 둘 다 있는 봇을 먼저 고른다 — 채팅이 없으면 CM 이 자동화 세션을 열어 «자동화» 줄이 펼쳐진 채로 선다
+            for (const b of await api('/bots')) { const xs = await api(`/bots/${b.id}/sessions`); if (xs.some(isAuto) && (!tgt || (!tgt.xs.some((x) => !isAuto(x)) && xs.some((x) => !isAuto(x))))) tgt = { b, xs } }
             if (!tgt) fail('CC: 자동화 세션이 있는 봇이 없어 화면을 잴 수 없다 — 검사가 헛돈다')
             else {
               const chatN = tgt.xs.filter((x) => !isAuto(x)).length, autoN = tgt.xs.filter(isAuto).length
@@ -2367,7 +2368,8 @@ try {
               const v = await pg.evaluate(() => { const sec = document.querySelector('.rpwrap .secb'); const h = [...document.querySelectorAll('.rpwrap .sech')].find((x) => /세션/.test(x.textContent ?? '')); return { count: h?.querySelector('.c')?.textContent, autoh: sec?.querySelector('.srow.autoh')?.textContent ?? null, autoRows: sec?.querySelectorAll('.srow.auto').length ?? -1, hash: location.hash } })
               if (v.count !== String(chatN)) fail('🔴 CC: 세션 절 숫자가 채팅 세션 수가 아니다 ' + JSON.stringify({ v, chatN }))
               if (!v.autoh || !v.autoh.includes(String(autoN))) fail('🔴 CC: «자동화 N» 줄이 없다 ' + JSON.stringify(v))
-              if (v.autoRows !== 0) fail('🔴 CC: 자동화 세션이 접히지 않고 채팅 목록에 섞여 보인다 ' + JSON.stringify(v))
+              // 채팅이 있으면 접힌 채로 · 채팅이 없어 자동화 세션이 열렸으면(CM) 보고 있는 세션이 자동화라 펼쳐 보인다
+              if (v.autoRows !== (firstChat ? 0 : autoN)) fail('🔴 CC: «자동화» 줄 접힘이 맞지 않다(채팅이 있으면 접힘 · 자동화 세션을 보고 있으면 펼침) ' + JSON.stringify({ v, firstChat: !!firstChat }))
               // CM(2026-10-16) 뒤로 «처음 열 세션» 은 `openSessionOf` 가 정한다 — 채팅이 하나라도 있으면 자동화 세션으로 들어가지 않는다
               if (firstChat && tgt.xs.some((x) => isAuto(x) && v.hash.includes(x.id))) fail('🔴 CC: 채팅 세션이 있는데 처음 연 세션이 자동화 세션이다 ' + JSON.stringify({ hash: v.hash, firstChat: firstChat?.id }))
               await pg.click('.rpwrap .secb .srow.autoh'); await wait(400)
@@ -6236,6 +6238,89 @@ try {
       if (cerr.length) fail('DA 캐시 page errors: ' + cerr.join(' | '))
       await cp.close()
       ok(`DA 디스크 캐시 — 세션 ${allIds.length}개 전부 미리 받음 · 다시 켜면 ${took}ms 에 대화(/chat 3초 지연 중)`)
+    }
+    /**
+     * 🔴 **CF · 로딩·전환 화면** (2026-10-19 Dave «전부 A» · 목업 03_디자인/2026-10-12_로딩-전환-목업).
+     *    ① 첫 그림 — HTML 안에 «호스트에 연결하는 중…» 이 들어 있다(앱 JS 를 막아도 보인다 · 테마 따라 · 앱이 서면 걷힌다)
+     *    ②·④ 봇 전환 — 받는 동안 0.4초 안에는 옛 대화가 흐리게(눌리지 않게) 남고, 넘기면 말풍선 회색 줄, 받으면 둘 다 걷힌다 · 머리줄은 곧바로 새 봇
+     *    ③ 할 일 — 받는 중에는 회색 줄 둘, «할 일이 없어요» 라고 하지 않는다
+     *    ⑤ 다시 붙는 중 — 상태 받기를 붙잡아 두면 머리줄에 «맞추는 중» 점, 풀면 사라진다
+     *    옛 판에서는 ① 첫 그림이 없고 ②·④ 칸이 비며 ③ «할 일이 없어요» 가 뜨고 ⑤ 점이 없어 모두 빨개진다.
+     */
+    {
+      const html = await (await fetch(base + '/')).text()
+      if (!/<div id="root"><div id="fb-splash"[^>]*>[\s\S]*?호스트에 연결하는 중…<\/div><\/div>/.test(html)) fail('🔴 CF ①: index.html 의 #root 안에 «연결하는 중» 첫 그림이 없다(검은 빈 판)')
+      const sp = await br.newPage({ viewport: { width: 390, height: 844 } })
+      await sp.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); if (!localStorage.getItem('fb:theme')) localStorage.setItem('fb:theme', 'dark') })
+      await sp.route('**/*.js', (rt) => rt.abort())
+      await sp.goto(base + '/'); await wait(200)
+      const sv = await sp.evaluate(() => { const e = document.querySelector('#fb-splash'); const r = e?.getBoundingClientRect(); return e ? { t: e.textContent, w: Math.round(r.width), h: Math.round(r.height), bg: getComputedStyle(e).backgroundColor, svg: !!e.querySelector('svg') } : null })
+      if (!sv || !/호스트에 연결하는 중/.test(sv.t) || sv.w !== 390 || sv.h !== 844 || !sv.svg || sv.bg !== 'rgb(20, 20, 20)') fail('🔴 CF ①: 앱 JS 가 안 왔을 때 첫 그림이 화면을 채우지 않는다 ' + JSON.stringify(sv))
+      await sp.screenshot({ path: 'test/tmp/cf-splash.png' })
+      await sp.evaluate(() => localStorage.setItem('fb:theme', 'light')); await sp.reload(); await wait(200)
+      const lbg = await sp.evaluate(() => getComputedStyle(document.querySelector('#fb-splash')).backgroundColor)
+      if (lbg !== 'rgb(255, 255, 255)') fail('CF ①: 라이트 테마인데 첫 그림이 검다 · ' + lbg)
+      await sp.evaluate(() => localStorage.setItem('fb:theme', 'dark'))
+      await sp.unroute('**/*.js'); await sp.reload(); await sp.waitForSelector('.app', { timeout: 8000 }).catch(() => {}); await wait(300)
+      if (await sp.$('#fb-splash')) fail('CF ①: 앱이 섰는데 첫 그림이 남았다')
+      await sp.close()
+      ok('CF ① 첫 그림 — HTML 안 «연결하는 중» · 앱 JS 없이도 화면을 채움 · 라이트면 흰 판 · 앱이 서면 걷힘')
+
+      // ②·③·④ — 말이 있는 세션을 보다가, 처음 여는 세션으로 옮긴다. 대화와 할 일 받기는 풀어 줄 때까지 붙잡는다(미리 받기가 먼저 쏴도 붙잡힌다)
+      const byBot = (await api('/state')).sessionsByBot
+      let from = null
+      for (const [bid, xs] of Object.entries(byBot)) { if (bid === cfo.id) continue; for (const x of xs) { const c = await api(`/sessions/${x.id}/chat`); if ((c.items ?? []).some((i) => i.kind === 'user')) { from = { bid, sid: x.id }; break } } if (from) break }
+      if (!from) fail('CF: 전제 — 말이 있는 세션이 없다')
+      else {
+        const nb = await api(`/bots/${cfo.id}/sessions`, { name: 'CF 받는 중' })
+        let release; const held = new Promise((r) => { release = r })
+        const lp = await br.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
+        const lerr = []; lp.on('pageerror', (e) => lerr.push(e.message))
+        await lp.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
+        await lp.route(`**/api/sessions/${nb.id}/chat*`, async (rt) => { await held; await rt.continue().catch(() => {}) })
+        await lp.route(`**/api/bots/${cfo.id}/todo*`, async (rt) => { await held; await rt.continue().catch(() => {}) })
+        await lp.goto(base + `/#bot=${from.bid}&s=${from.sid}`)
+        await lp.waitForSelector('.chat-body .umsg', { timeout: 8000 }).catch(() => {}); await wait(900)
+        const look = () => lp.evaluate(() => ({ ghost: document.querySelectorAll('.chat-body .cghost .umsg').length, inert: !!document.querySelector('.chat-body .cghost[inert]'), skel: !!document.querySelector('.chat-body .cskel'), umsg: document.querySelectorAll('.chat-body .umsg').length, hdr: document.querySelector('.chat-hdr')?.textContent ?? '', tskel: !!document.querySelector('.rpwrap .tskel'), tnone: /할 일이 없어요/.test(document.querySelector('.rpwrap')?.textContent ?? '') }))
+        await lp.evaluate((h) => { location.hash = h }, `bot=${cfo.id}&s=${nb.id}`); await wait(150)
+        const a = await look()
+        if (!a.ghost || !a.inert || a.skel) fail('🔴 CF ④: 봇을 바꾼 직후(0.4초 안) 옛 대화가 흐리게 남지 않았다(칸이 비었다) ' + JSON.stringify(a))
+        if (!/CF 받는 중/.test(a.hdr)) fail('CF ④: 머리줄이 곧바로 새 세션으로 안 바뀌었다 ' + JSON.stringify(a.hdr))
+        if (!a.tskel || a.tnone) fail('🔴 CF ③: 할 일을 받는 중인데 회색 줄이 없거나 «할 일이 없어요» 라고 한다 ' + JSON.stringify(a))
+        await wait(500)
+        const b = await look()
+        if (b.ghost || !b.skel) fail('🔴 CF ②: 0.4초를 넘겼는데 말풍선 회색 줄로 안 바뀌었다 ' + JSON.stringify(b))
+        await lp.screenshot({ path: 'test/tmp/cf-chat-skel.png' })
+        release(); await wait(900)
+        const c = await look()
+        if (c.ghost || c.skel || c.tskel) fail('CF ②③: 받았는데 회색 줄이 남았다 ' + JSON.stringify(c))
+        // ② 받기가 한 번 실패해도 회색 줄로 남지 않는다 — 간격을 두고 다시 받는다(실패한 채 «받는 중» 이면 거짓말이다)
+        const nb2 = await api(`/bots/${cfo.id}/sessions`, { name: 'CF 다시 받기' })
+        let aborted = 0
+        await lp.route(`**/api/sessions/${nb2.id}/chat*`, async (rt) => { if (!aborted++) await rt.abort(); else await rt.continue().catch(() => {}) })
+        await lp.evaluate((h) => { location.hash = h }, `bot=${cfo.id}&s=${nb2.id}`)
+        let retried = false; for (let i = 0; i < 40 && !retried; i++) { await wait(100); retried = aborted >= 2 && !(await lp.$('.chat-body .cskel')) && /CF 다시 받기/.test((await lp.textContent('.chat-hdr')) ?? '') }
+        if (!retried) fail('🔴 CF ②: 대화 받기가 한 번 실패하자 다시 받지 않고 회색 줄이 남았다 · ' + JSON.stringify({ aborted, skel: !!(await lp.$('.chat-body .cskel')) }))
+        await lp.unroute(`**/api/sessions/${nb2.id}/chat*`)
+        // ⑤ — 상태 받기를 붙잡고 줄을 다시 붙이면(«online» = 즉시 재접속) 0.4초 뒤 «맞추는 중» · 풀면 사라진다
+        await lp.evaluate((h) => { location.hash = h }, `bot=${from.bid}&s=${from.sid}`); await wait(700)
+        const before5 = await lp.evaluate(() => document.querySelectorAll('.chat-body .umsg').length)
+        let release2; const held2 = new Promise((r) => { release2 = r })
+        await lp.route('**/api/state', async (rt) => { await held2; await rt.continue().catch(() => {}) })
+        await lp.evaluate(() => window.dispatchEvent(new Event('online'))); await wait(1200)
+        const d = await lp.evaluate(() => document.querySelector('.chat-hdr .syncdot')?.textContent ?? '')
+        if (!/맞추는 중/.test(d)) fail('🔴 CF ⑤: 다시 붙어 맞추는 동안 머리줄에 «맞추는 중» 점이 없다 · ' + JSON.stringify(d))
+        const during5 = await lp.evaluate(() => document.querySelectorAll('.chat-body .umsg').length)
+        if (!before5 || during5 !== before5) fail('CF ⑤: 맞추는 동안 옛 내용이 지워졌다 ' + JSON.stringify({ before5, during5 }))
+        await lp.screenshot({ path: 'test/tmp/cf-syncdot.png' })
+        release2(); await wait(900)
+        if (await lp.$('.chat-hdr .syncdot')) fail('CF ⑤: 다 맞췄는데 «맞추는 중» 이 남았다')
+        await lp.unroute('**/api/state')
+        if (lerr.length) fail('CF page errors: ' + lerr.join(' | '))
+        await lp.close()
+        await api(`/sessions/${nb.id}`, undefined, 'DELETE'); await api(`/sessions/${nb2.id}`, undefined, 'DELETE')
+        ok('CF ②③④⑤ — 바꾼 직후 옛 대화 흐리게(inert) · 머리줄은 곧바로 새 세션 · 0.4초 넘으면 말풍선 회색 줄 · 할 일 회색 줄(«없어요» 안 함) · 받으면 걷힘 · 받기 실패는 다시 받음 · 다시 붙는 중 «맞추는 중» 점')
+      }
     }
     await br.close(); ok('ui renders (desktop · phone) → test/tmp/*.png')
   } catch (e) { try { await globalThis.__br?.close() } catch {} if (/executablePath|Executable doesn't exist|Cannot find (module|package) 'playwright/.test(String(e.message))) console.log('(화면 검사 건너뜀 — 브라우저 없음:', e.message.split('\n')[0], ')'); else fail('ui: ' + e.stack.split('\n').slice(0, 4).join(' | ')) }

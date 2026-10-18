@@ -138,7 +138,7 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
     {only === 'files' ? null : <div className="divy" onPointerDown={dragY('sessions')} onDoubleClick={() => onSecH({ ...secH, sessions: 112 })} />}
     {/* 할 일 / Inbox — `only='todo'` 면 이 절 하나가 화면을 다 쓴다 */}
     {only === 'files' ? null : <div className={only === 'todo' ? 'sec grow' : 'sec fix'} style={!only && open.todo ? { height: secH.todo } : undefined}>
-      {bot.orchestrator ? <InboxSec open={secOn('todo')} tog={() => tog('todo')} onSend={onTalk} /> : <TodoSec bot={bot} items={todos} open={secOn('todo')} tog={() => tog('todo')} onDelegate={(t) => onTalk(`${t.title}${t.desc ? ` — ${t.desc}` : ''}`)} onOpenFile={onOpenFile} reload={() => loadTodo(bot.id)} phone={phone} />}
+      {bot.orchestrator ? <InboxSec open={secOn('todo')} tog={() => tog('todo')} onSend={onTalk} /> : <TodoSec bot={bot} items={todos} loading={!s.todos[bot.id]} open={secOn('todo')} tog={() => tog('todo')} onDelegate={(t) => onTalk(`${t.title}${t.desc ? ` — ${t.desc}` : ''}`)} onOpenFile={onOpenFile} reload={() => loadTodo(bot.id)} phone={phone} />}
     </div>}
     {only ? null : <div className="divy" onPointerDown={dragY('todo')} onDoubleClick={() => onSecH({ ...secH, todo: 84 })} />}
     {/* 파일 — `only='files'` 면 이 절 하나가 화면을 다 쓴다 */}
@@ -229,7 +229,7 @@ export function Elapsed({ from }: { from?: number }) {
  * · 체크하면 «완료» 절 끝으로 내려가고(파일에서도), 끌면 그 줄이 파일에서 옮겨진다.
  * · 「todo.md」 버튼으로 원문을 열어 자유롭게 고칠 수 있다 — 저장하면 이 패널이 따라온다(파일 감시).
  */
-function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone }: { bot: Bot; items: TodoItem[]; open: boolean; tog: () => void; onDelegate: (t: TodoItem) => void; onOpenFile: (rel: string) => void; reload: () => Promise<void>; phone?: boolean }) {
+function TodoSec({ bot, items, loading = false, open, tog, onDelegate, onOpenFile, reload, phone }: { bot: Bot; items: TodoItem[]; /** CF ③ · 아직 못 받았다 — «없다» 와 «아직 모른다» 를 가른다 */ loading?: boolean; open: boolean; tog: () => void; onDelegate: (t: TodoItem) => void; onOpenFile: (rel: string) => void; reload: () => Promise<void>; phone?: boolean }) {
   const [adding, setAdding] = useState<string | null>(null); const [line, setLine] = useState('')
   const [edit, setEdit] = useState<number | null>(null); const [draft, setDraft] = useState('')
   const [openRows, setOpenRows] = useState<Set<number>>(() => new Set())
@@ -487,14 +487,15 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
   }
 
   return <>
-    <button className="sech" onClick={tog}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>할 일</span><span className="c">{left}{doneN ? ` · 완료 ${doneN}` : ''}</span>
+    <button className="sech" onClick={tog}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>할 일</span><span className="c">{loading ? '' : left}{doneN ? ` · 완료 ${doneN}` : ''}</span>
       <span className="tools">
         <span className="ib" title="새 할 일" onClick={(e) => { e.stopPropagation(); const sec0 = secs.find(([n2]) => !isDoneSection(n2))?.[0] ?? secs[0]?.[0] ?? ''; if (phone) setESheet({ line: -1, title: '', desc: '', section: sec0 }); else setAdding(sec0) }}><Icon n="plus" size={12} /></span>
         <span className="ib mdb" title="todo.md 를 열어 원문 고치기" onClick={(e) => { e.stopPropagation(); onOpenFile('todo.md') }}><Icon n="doc" size={11} /><span>todo.md</span></span>
       </span>
     </button>
     {open ? <div className="secb" style={{ padding: '0 0 6px' }} onDragOver={(e) => { if (drag !== null) e.preventDefault() }} onDrop={(e) => { e.preventDefault(); void drop(null) }}>
-      {!items.length ? <div className="kv" style={{ color: 'var(--t3)' }}>할 일이 없어요 — + 로 적거나 todo.md 를 여세요</div> : null}
+      {/* 🔴 CF ③ (2026-10-19 Dave · 목업 «할 일 칸») — 받는 중에 «할 일이 없어요» 는 틀린 말이다. 받는 중이면 회색 줄 둘, 받았는데 비었을 때만 «없어요» */}
+      {!items.length ? (loading ? <div className="tskel" role="status" aria-label="할 일을 읽는 중"><div className="skel" style={{ width: '80%' }} /><div className="skel" style={{ width: '64%' }} /></div> : <div className="kv" style={{ color: 'var(--t3)' }}>할 일이 없어요 — + 로 적거나 todo.md 를 여세요</div>) : null}
       {/* 🔴 CK-3 · 봇의 제안 — [넣기] 한 것만 정식 할 일이 되고 Akiflow 로 간다. [버리기] 는 그 줄을 지운다 */}
       {props.length ? <div className="tprops">
         <div className="tsec ph"><Icon n="sub" size={10} /><span>제안</span><span className="c">{props.length}</span><span className="sp" /><span className="why">봇이 올림 · 넣어야 할 일이 돼요</span></div>
