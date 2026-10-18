@@ -33,7 +33,12 @@ export function moodOf(state?: SessionState | null, hibernated = false, holder?:
  * ⛔ 깜빡이지 않는다 — 맥동은 이미 «일하는 중»(주황)의 언어라, 안 읽음까지 깜빡이면 색만 다른 같은 움직임이 둘이 된다.
  *    안 읽음은 **행 강조(굵은 제목 · 밝은 미리보기)** 와 이 링으로 말한다.
  */
-export function FolderBot({ color, size = 36, mood = 'idle', mono = false, work, unread = false, recent = false }: { color: string; size?: number; mood?: Mood; mono?: boolean; work?: 'think' | 'file' | 'type'; unread?: boolean; /** BH · 방금 끝난 최신 3(2시간 안) — 읽었어도 초록 원닷 */ recent?: boolean }) {
+/**
+ * `shape="bubble"` — **«연결» 상대**(볼트 밖 에이전트)의 몸. 얼굴·배지·움직임은 폴더봇과 같고 몸만 말풍선이다
+ * (2026-10-19 Dave «B 말풍선» · 목업 `03_디자인/2026-10-19_연결-스레드-목업/연결-통일성-목업.html`). 폴더가 아니라는 것만 몸이 말한다.
+ * 말풍선은 몸통이 위로 6 올라가 있어 얼굴도 6 올린다. 꼬리는 왼쪽 아래 — 배지(오른쪽 아래)와 안 겹친다.
+ */
+export function FolderBot({ color, size = 36, mood = 'idle', mono = false, work, unread = false, recent = false, shape = 'folder' }: { color: string; size?: number; mood?: Mood; mono?: boolean; work?: 'think' | 'file' | 'type'; unread?: boolean; /** BH · 방금 끝난 최신 3(2시간 안) — 읽었어도 초록 원닷 */ recent?: boolean; shape?: 'folder' | 'bubble' }) {
   const d = mono ? '#000' : 'rgba(0,0,0,.6)'
   const eyes: Record<Mood, React.ReactNode> = {
     idle: <g className="eyes"><rect x="20" y="30" width="6" height="10" rx="3" fill={d} /><rect x="38" y="30" width="6" height="10" rx="3" fill={d} /></g>,
@@ -48,14 +53,16 @@ export function FolderBot({ color, size = 36, mood = 'idle', mono = false, work,
   // 🔴 색은 「누가 공을 들고 있나」 하나로 읽힌다 — 주황=내가 · 청록=남이 · 노랑=네가 · 초록=아무도 (AB)
   const badge: Partial<Record<Mood, string>> = { work: 'var(--run)', hold: 'var(--hold)', wait: 'var(--wait)', done: 'var(--done)', error: 'var(--err)' }
   return (
-    <svg viewBox="0 0 64 64" width={size} height={size} style={{ flex: 'none', display: 'block', overflow: 'visible' }} className={`fb fb-${mood} ${work ? `fbw fbw-${work}` : ''} ${size <= 20 ? 'sm' : ''} ${unread ? 'unread' : ''}`}>
+    <svg viewBox="0 0 64 64" width={size} height={size} style={{ flex: 'none', display: 'block', overflow: 'visible' }} className={`fb fb-${mood} ${shape === 'bubble' ? 'fb-bubble' : ''} ${work ? `fbw fbw-${work}` : ''} ${size <= 20 ? 'sm' : ''} ${unread ? 'unread' : ''}`}>
       {/* 서류 — `file` 일 때만 보인다(그 외에는 CSS 가 감춘다). 탭 위로 올라와 사라진다 */}
       <rect className="pg p1" x="24" y="6" width="16" height="12" rx="2" fill={mono ? '#ededed' : 'var(--w)'} opacity="0" />
       <rect className="pg p2" x="28" y="6" width="13" height="10" rx="2" fill={mono ? '#9a9a9a' : 'var(--t2)'} opacity="0" />
       <g className="body">
-        <path className="leaf" d="M6 14a4 4 0 0 1 4-4h14l5 5h29a4 4 0 0 1 4 4v33a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill={color} opacity=".55" />
-        <path d="M6 24a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill={color} />
-        {eyes[mood]}
+        {shape === 'bubble'
+          ? <><path d="M6 18a8 8 0 0 1 8-8h36a8 8 0 0 1 8 8v26a8 8 0 0 1-8 8H24l-11 9v-9h-1a6 6 0 0 1-6-6z" fill={color} /><g transform="translate(0 -6)">{eyes[mood]}</g></>
+          : <><path className="leaf" d="M6 14a4 4 0 0 1 4-4h14l5 5h29a4 4 0 0 1 4 4v33a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill={color} opacity=".55" />
+            <path d="M6 24a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill={color} />
+            {eyes[mood]}</>}
       </g>
       {/* AN · 링은 «네가 볼 차례» 일 때만 — 도는 중(주황·청록)에는 원닷 하나. 규칙은 `core/unread` 의 `unreadRing` */}
       {unread && unreadRing(mood) ? <circle className="uring" cx="56" cy="56" r="11.5" fill="none" stroke={badge[mood] ?? 'var(--done)'} strokeWidth="3" opacity=".75" /> : null}

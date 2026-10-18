@@ -1460,8 +1460,8 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .modal.clean .ktag { font-size:11px; padding:1px 7px; border-radius:5px; background:var(--line2); color:var(--t2) }
 .modal.clean .ktag.k-bot { background:rgba(224,136,80,.14); color:var(--run) } .modal.clean .ktag.k-rt { background:rgba(127,176,255,.14); color:#7fb0ff }
 .modal.clean .ktag.k-comm { background:rgba(74,168,199,.14); color:var(--hold) } .modal.clean .ktag.k-me { background:rgba(79,191,135,.12); color:var(--done) }
-.modal.clean .cfoot { display:flex; align-items:center; gap:8px; padding:12px 18px; border-top:1px solid var(--line) }
-.modal.clean .cfoot .hint { font-size:12px; color:var(--t3) }
+.modal.clean .clfoot { display:flex; align-items:center; gap:8px; padding:12px 18px; border-top:1px solid var(--line) }
+.modal.clean .clfoot .hint { font-size:12px; color:var(--t3) }
 .modal.clean .btn.danger:not(:disabled) { background:var(--err); color:#fff; border-color:var(--err) }
 .modal.clean .cundo { position:absolute; right:18px; bottom:64px; display:flex; align-items:center; gap:12px; background:var(--box); border:1px solid var(--line2); border-radius:10px; padding:8px 12px; color:var(--w); font-size:13px; box-shadow:0 10px 28px rgba(0,0,0,.4) }
 .modal.clean .cundo button { color:var(--run); font-weight:600 }
@@ -1584,6 +1584,32 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .modal.fsheet .ffoot { padding:10px 18px 14px; border-top:1px solid var(--line) } .modal.fsheet .ffoot .btn .k { color:var(--t3); margin-left:4px }
 .modal.clean .pill.pickc { background:transparent; border:1px solid var(--line2); color:var(--w) } .modal.clean .pill.pickc:disabled { color:var(--t3); cursor:default }
 .modal.clean.manage tbody td.ck { cursor:pointer }
+.modal.clean th.allk { display:none }
+/* 🔴 좁은 화면(폰·좁은 창) — 여섯 칸 표는 옆으로 넘쳐 «상태·마지막 활동» 이 잘렸다(2026-10-19 Dave 스크린샷_230).
+   줄 하나를 카드로 접는다: 체크 · 폴더 · 종류 · 시각 / 세션 이름 / 상태. 창은 화면을 다 쓰고, 거름 알약은 옆으로 밀어 본다 */
+@media (max-width: 640px) {
+  .modal.clean { width:100%; height:100%; max-height:none; transform:none; left:0; top:0; border:0; border-radius:0; padding-top:var(--sat, 0px); padding-bottom:var(--sab, 0px) }
+  .modal.clean .modal-h .t { min-width:0 }
+  .modal.clean .cbar { flex-wrap:nowrap; overflow-x:auto; padding:0 14px 10px; scrollbar-width:none; -webkit-overflow-scrolling:touch } .modal.clean .cbar::-webkit-scrollbar { display:none }
+  .modal.clean .cbar .pill { flex:none; white-space:nowrap; font-size:13px; padding:5px 12px } .modal.clean .cbar .pill.dpill { padding:0 } .modal.clean .cbar .pill.dpill > button { padding:5px 12px 5px 3px }
+  .modal.clean .cbar > span[style] { display:none } .modal.clean .cfold { flex:none; max-width:150px; font-size:13px; padding:5px 6px }
+  .modal.clean .ctab { padding:0 8px }
+  .modal.clean table, .modal.clean tbody { display:block; width:100% }
+  .modal.clean thead { display:block; position:sticky; top:0; z-index:1; background:var(--sb) }
+  .modal.clean thead tr { display:flex; align-items:center; border-bottom:1px solid var(--line) }
+  .modal.clean thead th { display:none; position:static; border:0 } .modal.clean thead th.ck { display:block; width:36px !important; padding:8px 6px 8px 8px } .modal.clean thead th.allk { display:block; flex:1; padding:8px 4px; font-size:12.5px; color:var(--t2); cursor:pointer }
+  .modal.clean tbody tr { display:grid; grid-template-columns:36px minmax(0,1fr) auto auto; grid-template-areas:"ck fd kd tm" "ck sn sn sn" "ck st st st"; column-gap:8px; row-gap:2px; padding:10px 4px 10px 0; border-bottom:1px solid var(--line); align-items:center }
+  .modal.clean tbody td { border:0; padding:0; white-space:nowrap; min-width:0 }
+  .modal.clean td.ck { grid-area:ck; align-self:start; padding:2px 0 0 8px } .modal.clean td.ck input { width:18px; height:18px }
+  .modal.clean td.fd { grid-area:fd; overflow:hidden; text-overflow:ellipsis; font-size:12.5px; color:var(--t2) }
+  .modal.clean td.kd { grid-area:kd } .modal.clean td.tm { grid-area:tm; font-size:12px; color:var(--t3); text-align:right }
+  .modal.clean td.sn { grid-area:sn; max-width:none; white-space:normal; font-size:14.5px; line-height:1.45 }
+  .modal.clean td.st { grid-area:st; font-size:12px; color:var(--t3) } .modal.clean td.st.lk { color:var(--wait) }
+  .modal.clean tbody tr.none { display:block } .modal.clean tbody tr.none td { display:block; white-space:normal }
+  .modal.clean .clfoot { flex-wrap:wrap; padding:10px 14px calc(10px + var(--sab, 0px)); gap:8px } .modal.clean .clfoot .hint { flex:1 1 100%; font-size:11.5px } .modal.clean .clfoot > span[style] { display:none }
+  .modal.clean .clfoot .btn { flex:1; height:40px; font-size:14px }
+  .modal.clean .cundo { left:14px; right:14px; bottom:calc(120px + var(--sab, 0px)); justify-content:space-between }
+}
 @media (max-width: 767px) {
   .modal > .grip { display:block; width:36px; height:4px; border-radius:2px; background:var(--line2); margin:8px auto 0; flex:none }
   .modal.board, .modal.fsheet { width:auto; height:auto }
@@ -1611,29 +1637,50 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .brg-row:hover { background:var(--hover) } .brg-row.on { background:var(--sel); color:var(--w) }
 .brg-row .n { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .brg-row .n b { font-weight:600; color:var(--w) } .brg-row .n .sub { font-size:11px; color:var(--t3); margin-left:4px }
 .brg-row.m { padding:8px 16px; min-height:62px; font-size:15px; gap:12px } .brg-row.m .n .sub { font-size:12.5px }
-.brg-ico { position:relative; flex:none; display:grid; place-items:center; border-radius:5px; line-height:1 }
-.brg-ico .dot { position:absolute; right:-3px; bottom:-3px; width:8px; height:8px; border:2px solid var(--sb) }
+.brg-row time { font-size:11px; color:var(--t3); white-space:nowrap; flex:none } .brg-row.unread .n b { font-weight:700 } .brg-row.unread time { color:var(--t2) }
+.brg-row .fb { transition:scale .14s cubic-bezier(.34,1.3,.64,1) } .brg-row:hover .fb { scale:1.45 } .brg-row.m:hover .fb { scale:1 }
+@media (prefers-reduced-motion: reduce) { .brg-row .fb { transition:none } .brg-row:hover .fb { scale:1.2 } }
+.brg-card b { display:flex; align-items:center; gap:7px }
 .brg-row .pill, .brg-letter .pill, .brg-prow .pill { font-size:10px; padding:1px 6px; border-radius:9px; background:var(--box); color:var(--t2); flex:none; white-space:nowrap }
 .brg-row .pill.u, .brg-letter .pill.u { background:color-mix(in srgb, var(--wait) 22%, transparent); color:var(--wait) }
 .brg-row .pill.e, .brg-letter .pill.e, .brg-prow .pill.e { background:color-mix(in srgb, var(--err) 22%, transparent); color:var(--err) }
 .brg-thread { display:flex; flex-direction:column; min-width:0; flex:1 }
-.brg-head { gap:8px } .brg-head .brg-meta { font-size:12px; color:var(--t3); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:0 1 auto }
-.brg-letters { flex:1; overflow:auto; padding:14px 16px; display:flex; flex-direction:column; gap:10px }
+.brg-head { gap:8px } .brg-head .ttl { flex:none } .brg-head .brg-meta { font-size:12px; color:var(--t3); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:0 1 auto }
+.brg-letters { flex:1; overflow:auto; padding:16px 20px 8px }
+/* A · 대화처럼 — 메인 대화창과 같은 폭·말투. 카드 테두리 없이 흐린 메타 · 굵은 제목 · 마크다운 본문 */
+.brg-col { max-width:760px; margin:0 auto; display:flex; flex-direction:column; gap:14px }
 .brg-none { color:var(--t3); font-size:13px; padding:30px 0; text-align:center }
-.brg-letter { border:1px solid var(--line2); border-radius:10px; padding:9px 12px; max-width:78%; background:var(--box); align-self:flex-start }
-.brg-letter.out { align-self:flex-end; background:color-mix(in srgb, var(--done) 7%, var(--box)); border-color:color-mix(in srgb, var(--done) 18%, var(--line2)) }
-.brg-letter .lh { display:flex; gap:6px; align-items:center; font-size:11px; color:var(--t3); margin-bottom:3px; flex-wrap:wrap } .brg-letter .lh b { color:var(--t); font-size:12px }
-.brg-letter .k { font-size:10px; padding:0 6px; border-radius:8px; background:var(--sel); color:var(--t2) } .brg-letter .k.req { color:#9fb7ff } .brg-letter .k.inc { color:var(--err) } .brg-letter .k.rep { color:var(--done) }
-.brg-letter .lbody { color:var(--t); font-size:13px; white-space:pre-wrap; word-break:break-word } .brg-letter .lbody .lt { display:block; color:var(--w) } .brg-letter .lbody .cut { color:var(--t3); font-size:11.5px }
-.brg-letter .lfoot { font-size:11px; color:var(--t3); margin-top:4px; word-break:break-all }
-.brg-letter .brg-re { margin-left:auto; font-size:11px; color:var(--t3); padding:0 4px; border-radius:5px } .brg-letter .brg-re:hover { color:var(--w); background:var(--hover) }
-.brg-comp { margin:4px 14px 14px; border:1px solid var(--line2); border-radius:12px; background:var(--box); padding:8px 10px; flex:none }
-.brg-comp textarea { width:100%; resize:none; background:transparent; border:0; outline:none; color:var(--w); font:inherit; font-size:13.5px; line-height:1.5 }
-.brg-comp .row { display:flex; gap:6px; align-items:center; margin-top:6px; flex-wrap:wrap } .brg-comp .row .sp { flex:1 }
-.brg-comp .chip { cursor:pointer; height:24px } .brg-comp .chip.on { color:var(--w); border-color:var(--t3) }
-.brg-comp .btn.on { background:var(--w); color:var(--bg); font-weight:600 }
+.brg-day { display:flex; align-items:center; gap:10px; color:var(--t3); font-size:11.5px; margin:2px 0 -4px } .brg-day::before, .brg-day::after { content:''; flex:1; height:1px; background:var(--line) }
+.brg-letter { display:flex; flex-direction:column; gap:2px; min-width:0 }
+.brg-letter .meta { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--t3); min-width:0; flex-wrap:wrap }
+.brg-letter .meta .dt { width:7px; height:7px; border-radius:50%; flex:none } .brg-letter .meta .who { color:var(--t2) }
+.brg-letter .meta .tg { font-size:11px; border-radius:8px; padding:0 6px; line-height:17px } .brg-letter .meta .tg.u { color:var(--err); background:color-mix(in srgb, var(--err) 12%, transparent) } .brg-letter .meta .tg.e { color:var(--wait); background:color-mix(in srgb, var(--wait) 12%, transparent) }
+.brg-letter .ttl2 { color:var(--w); font-weight:600; font-size:14px; margin-top:1px; overflow-wrap:anywhere }
+.brg-letter .lbody { color:var(--t); font-size:13.5px; min-width:0; overflow-wrap:anywhere } .brg-letter .lbody .md > :first-child { margin-top:2px } .brg-letter .lbody .md > :last-child { margin-bottom:0 }
+.brg-letter .lbody .cut { font-size:12px; color:var(--t3); margin-top:4px }
+.brg-letter.need .lbody { border-left:2px solid var(--wait); background:color-mix(in srgb, var(--wait) 6%, transparent); padding:6px 11px; border-radius:0 6px 6px 0; margin-top:4px }
+.brg-letter .src { font-size:11.5px; color:var(--t3); margin-top:2px; overflow-wrap:anywhere }
+.brg-letter .brg-re { margin-left:auto; font-size:11.5px; color:var(--t3); padding:0 6px; border-radius:5px; opacity:0 } .brg-letter:hover .brg-re, .brg-letter .brg-re:focus-visible { opacity:1 } .brg-letter .brg-re:hover { color:var(--w); background:var(--hover) }
+@media (hover:none) { .brg-letter .brg-re { opacity:1 } }
+.brg-letter.me { align-items:flex-end } .brg-letter.me .umsg { max-width:min(560px, 88%); white-space:normal } .brg-letter.me .umeta { font-size:11.5px; color:var(--t3); margin-top:3px; text-align:right }
+.brg-letter.dim .ttl2 { font-size:13px; color:var(--t2) } .brg-letter.dim .lbody { color:var(--t2); font-size:12.5px }
+.brg-fold { display:flex; flex-direction:column; gap:10px } .brg-fold .fh { display:flex; align-items:center; gap:7px; color:var(--t3); font-size:12.5px; padding:2px 0; text-align:left } .brg-fold .fh .c { color:var(--t2) } .brg-fold .fh:hover, .brg-fold .fh:hover .c { color:var(--w) }
+.brg-fold .fb-in { display:flex; flex-direction:column; gap:12px; padding-left:16px; border-left:1px solid var(--line) }
+.brg-head .brg-fpill { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:var(--wait); border:1px solid color-mix(in srgb, var(--wait) 40%, transparent); border-radius:9px; padding:1px 8px; flex:none; white-space:nowrap }
+/* 쓰기 — 메인 대화 입력창과 같은 상자 · 둥근 보내기 */
+.brg-comp { width:calc(100% - 40px); max-width:760px; margin:6px auto 14px; border:1px solid var(--hair, var(--line2)); border-radius:12px; background:var(--bg); padding:10px 12px 8px; flex:none; box-shadow:0 10px 30px rgba(0,0,0,.35) } .brg-comp:focus-within { border-color:rgba(255,255,255,.14) }
+.brg-comp textarea { width:100%; resize:none; background:transparent; border:0; outline:none; color:var(--w); font:inherit; font-size:13.5px; line-height:1.6; display:block }
+.brg-comp .row { display:flex; gap:10px; align-items:center; margin-top:4px; font-size:12px; color:var(--t3) } .brg-comp .row .sp { flex:1 }
+.brg-comp .brg-kind { appearance:auto; background:transparent; border:0; color:var(--t2); font:inherit; font-size:12px; padding:2px 0; cursor:pointer } .brg-comp .brg-kind option { color:var(--t); background:var(--bg) } .brg-comp .brg-kind.fixed { cursor:default }
+.brg-comp .tg { color:var(--t3); font-size:12px; padding:2px 4px; border-radius:5px; white-space:nowrap } .brg-comp .tg:hover { color:var(--t2); background:var(--hover) } .brg-comp .tg.on { color:var(--wait) }
 .brg-reline { display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--t2); margin-bottom:4px } .brg-reline b { color:var(--w); font-weight:500; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-/* 설정 › 연결 · 새 연결 마법사 (목업 ②A) */
+.app.phone .brg-letters { padding:12px 14px 8px } .app.phone .brg-comp { width:calc(100% - 20px); margin:6px auto calc(10px + env(safe-area-inset-bottom)) } .app.phone .brg-comp textarea { font-size:16px }
+/* 오른쪽 칸 — 채널 세션 · 편지 · 연결 (패널 절 머리 `.sech` 와 줄 `.srow` 를 그대로 쓴다) */
+.brg-side .brg-hint { font-size:11.5px; color:var(--t3); padding:4px 16px 2px 30px; line-height:1.5 }
+.brg-side .brg-frow .m { color:var(--t3) } .brg-side .brg-frow.on .n { color:var(--w) }
+.brg-side .brg-kv { display:flex; gap:10px; align-items:baseline; padding:3px 16px 3px 30px; font-size:12px; color:var(--t3) } .brg-side .brg-kv b { margin-left:auto; font-weight:400; color:var(--t2); text-align:right; min-width:0; overflow-wrap:anywhere } .brg-side .brg-kv b.bad { color:var(--err) }
+.brg-side .brg-kv.col { flex-direction:column; gap:2px } .brg-side .brg-kv.col b { margin-left:0; text-align:left; font-size:11.5px }
+.brg-side .brg-kv:first-of-type { margin-top:4px }
 .brg-prow { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line) } .brg-prow .n { flex:1; min-width:0; display:flex; flex-direction:column } .brg-prow .n b { color:var(--w); font-weight:600; font-size:13px } .brg-prow .n small { color:var(--t3); font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .brg-wiz { display:flex; flex-direction:column; gap:10px; padding:12px 0 }
 .brg-step { display:flex; gap:8px; font-size:11.5px; color:var(--t3) } .brg-step .on { color:var(--w); font-weight:600 }

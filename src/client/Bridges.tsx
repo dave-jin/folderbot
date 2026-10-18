@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react'
 import type { LetterView, PeerView, PresetId } from '../core/bridgeView'
-import { PRESETS, agoText, defaultMailbox, freeId, newBridgeProblems, peerTint, presetOf } from '../core/bridgeView'
+import { PRESETS, agoText, defaultMailbox, freeId, newBridgeProblems, peerColor, peerMood, presetOf } from '../core/bridgeView'
 import type { Trust } from '../core/bridges'
+
+/** 사람이 직접 쓴 편지의 from — `host/bridge.ts` 의 HUMAN_FROM */
+const HUMAN = 'human'
 import { api } from './api'
 import { copySay } from './clip'
-import { Icon } from './FolderBot'
-import { useStore } from './store'
+import { FolderBot, Icon } from './FolderBot'
+import { ICON_PX, useIconSize } from './theme'
+import { fmtTime, useStore } from './store'
+import { Md } from './Sheets'
 
 /**
  * 연결(Bridge) 화면 (BQ-9 · BQ-10 · 2026-10-19 Dave «A·A» — 목업 `03_디자인/2026-10-09_연결-목업` ①A · ②A).
@@ -40,61 +45,121 @@ export function useBridges(): BridgesResp | null {
 }
 export const reloadBridges = loadBridges
 
-/** 상대 아이콘 — 어두운 칸에 이모지. 상태 점은 오른쪽 아래(상태 배지 자리 · 리포 금기) */
-function PeerIcon({ p, size = 24 }: { p: PeerView; size?: number }) {
-  return <span className="brg-ico" style={{ background: peerTint(p.id), width: size, height: Math.round(size * 0.84), fontSize: Math.round(size * 0.55) }}>{p.icon}<span className={`dot ${p.stale ? 'err' : p.owner ? 'done' : 'none'}`} /></span>
+/**
+ * 상대 아이콘 — 봇과 같은 얼굴·배지에 몸만 말풍선(2026-10-19 Dave «B 말풍선»). 상태는 얼굴과 배지가 말한다(`peerMood`).
+ * 안 읽은 편지는 봇처럼 배지 링 — 숫자 알약은 버렸다. 레일·머리줄은 봇처럼 흑백 얼굴(mono)
+ */
+function PeerIcon({ p, size = 24, mono = true }: { p: PeerView; size?: number; mono?: boolean }) {
+  return <FolderBot shape="bubble" color={p.color} size={size} mood={peerMood(p)} unread={p.unread > 0} mono={mono} />
 }
+/** 머리줄 보조 글 — 개발자 말(trust · 커서 · 우편함 경로) 대신 사람 말. 자세한 값은 이름에 마우스를 올리면 */
+const peerLine = (p: PeerView) => p.stale ? `신호가 끊겼어요${p.lastSignal ? ` · ${agoText(p.lastSignal)} 전에 마지막으로 다녀갔어요` : ''}`
+  : p.lastSignal ? (agoText(p.lastSignal) === '방금' ? '방금 다녀갔어요' : `${agoText(p.lastSignal)} 전에 다녀갔어요`) : '아직 다녀가지 않았어요'
+const peerTitle = (p: PeerView) => `${p.name} · 우편함 ${p.mailbox} · 권한 ${p.trust}${p.host ? ` · ${p.host} 가 받음` : ''}${p.lastSignal ? ` · 마지막 신호 ${new Date(p.lastSignal).toLocaleString('ko-KR')}` : ''}`
 
 /** 레일 «연결» 절 — 상대가 없으면 절 자체를 안 그린다 */
 export function BridgeRail({ active, onOpen, phone }: { active?: string; onOpen: (p: PeerView) => void; phone?: boolean }) {
   const b = useBridges()
+  const [iconSz] = useIconSize() // 봇 줄과 같은 크기(설정 › 레일 아이콘)
   if (!b?.peers.length) return null
   return <div className="brg-sec" data-sec="연결">
     <div className="secl">연결</div>
     {b.peers.map((p) => {
-      const sub = p.stale ? `끊김 ${p.lastSignal ? agoText(p.lastSignal) : ''}`.trim() : p.unread ? `편지 ${p.unread}` : !p.owner && p.host ? `${p.host} 가 받음` : ''
-      return <button key={p.id} data-peer={p.id} className={`brg-row ${phone ? 'm' : ''} ${active === p.id ? 'on' : ''} ${p.unread ? 'unread' : ''}`} onClick={() => onOpen(p)}
-        title={`${p.name} · 우편함 ${p.mailbox} · trust ${p.trust}${p.lastSignal ? ` · 마지막 신호 ${agoText(p.lastSignal)} 전` : ''}`}>
-        <PeerIcon p={p} size={phone ? 40 : 24} />
+      // 봇 줄과 같은 꼴 — 이름 · 오른쪽에 마지막 편지 시각. 끊김·다른 맥만 이름 뒤 흐린 글로(상태는 얼굴이 이미 말한다)
+      const sub = p.stale ? '끊김' : !p.owner && p.host ? `${p.host} 가 받음` : ''
+      return <button key={p.id} data-peer={p.id} className={`brg-row ${phone ? 'm' : ''} ${active === p.id ? 'on' : ''} ${p.unread ? 'unread' : ''}`} onClick={() => onOpen(p)} title={peerTitle(p)}>
+        <PeerIcon p={p} size={phone ? 46 : ICON_PX[iconSz]} />
         <span className="n"><b>{p.name}</b>{sub ? <span className="sub">· {sub}</span> : null}</span>
-        {p.stale ? <span className="pill e" title="상대 신호가 끊겼어요">!</span> : p.unread ? <span className="pill u">{p.unread}</span> : null}
+        {p.last ? <time>{fmtTime(p.last.at)}</time> : null}
       </button>
     })}
   </div>
 }
 
-const KIND_T: Record<string, string> = { request: 'request', reply: 'reply', report: 'report', done: 'done', incident: 'incident', briefing: 'briefing', heartbeat: 'heartbeat' }
-const hhmm = (t: number) => { const d = new Date(t), now = new Date(); const tm = d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }); return d.toDateString() === now.toDateString() ? tm : `${d.getMonth() + 1}/${d.getDate()} ${tm}` }
+/* ── 편지 창 (2026-10-19 Dave «A 대화처럼» · 목업 `03_디자인/2026-10-19_연결-스레드-목업` A) ──────────────
+ * 메인 대화창과 같은 말투다 — 카드 테두리 없이 흐린 메타 한 줄 · 굵은 제목 · 마크다운 본문.
+ *  - 감시기(ops-watch) 자동 보고는 이어진 것끼리 한 줄로 접는다(이번 달 397통 중 240통이 그것이었다). 누르면 펼친다.
+ *  - «사람 결정» 편지는 본문에 노란 줄 — 무엇을 정해야 하는지 본문 안에서 바로 보인다.
+ *  - 내가 쓴 편지는 메인 대화의 내 말처럼 오른쪽 상자.
+ *  - 편지 파일 이름·커서·trust 같은 개발자 말은 화면에서 뺐다(마우스를 올리면 보인다).
+ * 오른쪽 칸(`BridgeSide`)은 이 상대에 맞춘 것만 — 채널 세션 · 편지함(보기 거름·수) · 연결 정보. 문서·파일 트리는 없다(Dave «필요없는 문서나 폴더 섹션»).
+ * 스레드와 오른쪽 칸은 같은 편지 목록(`useThread`)을 본다 — 요청도 하나.
+ */
+type Thread = { peer: PeerView; letters: LetterView[] }
+export type ThreadFilter = 'all' | 'talk' | 'need'
+const threads = new Map<string, Thread>()
+const tErr = new Map<string, string>()
+const tFlight = new Map<string, Promise<void>>()
+const tSubs = new Set<() => void>()
+let tFilter: ThreadFilter = 'all'
+const tPing = () => tSubs.forEach((f) => f())
+function loadThread(id: string): Promise<void> {
+  const f = tFlight.get(id)
+  if (f) return f
+  const p = api<Thread>(`/bridges/${id}/letters`).then((r) => {
+    if (r.peer.id !== id) return   // 늦게 온 다른 상대의 답은 버린다(A 의 편지 위에서 B 에게 쓰는 일이 없게)
+    threads.set(id, r); tErr.delete(id); tPing()
+    if (r.peer.unread && document.visibilityState === 'visible') void api(`/bridges/${id}/seen`, { body: {} }).then(() => loadBridges()).catch(() => {})
+  }).catch((e) => { tErr.set(id, (e as Error).message); tPing() }).finally(() => tFlight.delete(id))
+  tFlight.set(id, p)
+  return p
+}
+const setThreadFilter = (f: ThreadFilter) => { tFilter = f; tPing() }
+function useThread(peerId: string) {
+  const [, force] = useReducer((x: number) => x + 1, 0)
+  useEffect(() => { tSubs.add(force); return () => { tSubs.delete(force) } }, [])
+  return { t: threads.get(peerId) ?? null, err: tErr.get(peerId) ?? '', filter: tFilter }
+}
 
-/** 편지 스레드 — 가운데 칸. 사람이 스레드를 열면 «안 읽음» 을 걷는다 */
-export function BridgeThread({ peerId, go, say, phone, onBack }: { peerId: string; go: (botId: string, sid?: string) => void; say: (m: string) => void; phone?: boolean; onBack?: () => void }) {
-  const { s } = useStore()
-  const [t, setT] = useState<{ peer: PeerView; letters: LetterView[] } | null>(null)
-  const [err, setErr] = useState('')
-  const scRef = useRef<HTMLDivElement>(null)
-  /** 지금 보고 있는 상대 — 늦게 온 다른 상대의 답을 버린다(A 의 편지 위에서 B 에게 쓰는 일이 없게 · 2026-10-19 검토) */
-  const cur = useRef(peerId); cur.current = peerId
-  const load = async () => {
-    const want = peerId
-    try {
-      const r = await api<{ peer: PeerView; letters: LetterView[] }>(`/bridges/${want}/letters`)
-      if (cur.current !== want || r.peer.id !== want) return
-      setT(r); setErr('')
-      if (r.peer.unread && document.visibilityState === 'visible') void api(`/bridges/${want}/seen`, { body: {} }).then(() => loadBridges()).catch(() => {})
-    } catch (e) { if (cur.current === want) setErr((e as Error).message) }
+/** 사람 말 — report·request 같은 낱말을 화면에 두지 않는다 */
+const KIND_KO: Record<string, string> = { request: '확인 요청', reply: '답장', report: '보고', done: '끝남', incident: '장애', briefing: '브리핑', heartbeat: '신호' }
+const TRUST_KO: Record<Trust, string> = { read: '읽고 답장만', propose: '읽고 답하고 봇에게 나눠 주기', act: '제한 없음' }
+/** 감시기 자동 보고 — 접어서 한 줄로 */
+export const isMachine = (l: Pick<LetterView, 'from' | 'kind'>) => l.from === 'ops-watch' || l.kind === 'heartbeat'
+const hhmm = (t: number) => { const d = new Date(t), now = new Date(); const tm = d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }); return d.toDateString() === now.toDateString() ? tm : `${d.getMonth() + 1}/${d.getDate()} ${tm}` }
+const tmOnly = (t: number) => new Date(t).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+const dayLabel = (t: number) => new Date(t).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })
+const dayKey = (t: number) => new Date(t).toDateString()
+/** 접은 줄 글 — 감시기 편지 제목 «📤 폴더 봇 보고 N건» 의 N 을 더한다. 다른 꼴이 섞이면 통 수로 */
+const foldText = (ls: LetterView[]) => {
+  const ns = ls.map((l) => Number(/보고\s*(\d+)\s*건/.exec(l.title ?? '')?.[1] ?? NaN))
+  return ns.every((n) => n > 0) ? `감시기가 폴더 봇 보고 ${ns.reduce((a, b) => a + b, 0)}건을 넘겼어요` : `감시기 편지 ${ls.length}통`
+}
+type Entry = { k: 'day'; key: string; at: number } | { k: 'l'; l: LetterView } | { k: 'fold'; key: string; ls: LetterView[] }
+/** 날 줄 · 편지 · 접은 감시기 줄 — 거름(`filter`)을 먼저 걸고 이어진 감시기 편지끼리 묶는다(날을 넘으면 끊는다) */
+export function threadEntries(letters: LetterView[], filter: ThreadFilter): Entry[] {
+  const ls = [...letters].sort((a, b) => a.at - b.at || a.id.localeCompare(b.id))
+    .filter((l) => (filter === 'need' ? l.needsHuman : filter === 'talk' ? !isMachine(l) : true))
+  const out: Entry[] = []
+  let day = ''
+  for (const l of ls) {
+    const dk = dayKey(l.at)
+    if (dk !== day) { day = dk; out.push({ k: 'day', key: dk, at: l.at }) }
+    const last = out[out.length - 1]
+    if (isMachine(l)) { if (last?.k === 'fold') last.ls.push(l); else out.push({ k: 'fold', key: l.id, ls: [l] }); continue }
+    out.push({ k: 'l', l })
   }
+  return out
+}
+
+/** 편지 창 — 가운데 칸. 사람이 창을 열면 «안 읽음» 을 걷는다 */
+export function BridgeThread({ peerId, go, say, phone, onBack, onSide }: { peerId: string; go: (botId: string, sid?: string) => void; say: (m: string) => void; phone?: boolean; onBack?: () => void; onSide?: () => void }) {
+  const { s } = useStore()
+  const { t, err, filter } = useThread(peerId)
+  const scRef = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState<Set<string>>(new Set())
   useEffect(() => {
-    setT(null); void load()
+    setOpen(new Set()); setThreadFilter('all'); void loadThread(peerId)
     void api(`/bridges/${peerId}/seen`, { body: {} }).then(() => loadBridges()).catch(() => {})
-    const f = () => void load()
+    const f = () => void loadThread(peerId)
     window.addEventListener('fb:bridges', f)
-    const iv = window.setInterval(() => { if (document.visibilityState === 'visible') void load() }, 30_000)
+    const iv = window.setInterval(() => { if (document.visibilityState === 'visible') void loadThread(peerId) }, 30_000)
     return () => { window.removeEventListener('fb:bridges', f); window.clearInterval(iv) }
   }, [peerId])
   const n = t?.letters.length ?? 0
-  useEffect(() => { const el = scRef.current; if (el) el.scrollTop = el.scrollHeight }, [n, peerId])
-  const botName = (id: string) => { const b = s.bots.find((x) => x.id === id || x.name === id); return b ? (b.displayName || b.name) : id }
-  const fromName = (l: LetterView, p: PeerView) => (l.dir === 'in' ? p.name : l.from === 'human' ? '나' : botName(l.from.replace(/^folderbot:/, '')))
+  useEffect(() => { const el = scRef.current; if (el) el.scrollTop = el.scrollHeight }, [n, peerId, filter])
+  const bot = (id: string) => s.bots.find((x) => x.id === id || x.name === id)
+  const botName = (id: string) => { const b = bot(id); return b ? (b.displayName || b.name) : id }
   // ── 쓰기 ──
   const [text, setText] = useState('')
   const [kind, setKind] = useState('report')
@@ -102,48 +167,138 @@ export function BridgeThread({ peerId, go, say, phone, onBack }: { peerId: strin
   const [human, setHuman] = useState(false)
   const [re, setRe] = useState<LetterView | null>(null)
   const [busy, setBusy] = useState(false)
+  const taRef = useRef<HTMLTextAreaElement>(null)
   useEffect(() => { setText(''); setKind('report'); setUrgent(false); setHuman(false); setRe(null) }, [peerId])
   const send = async () => {
     if (!text.trim() || busy) return
     setBusy(true)
     try {
-      const r = await api<{ id: string }>(`/bridges/${peerId}/letters`, { body: { kind: re ? 'reply' : kind, text, ...(re ? { re: re.id } : {}), urgent, needsHuman: human } })
-      setText(''); setRe(null); setUrgent(false); setHuman(false); say(`편지를 보냈어요 · ${r.id}`); await load(); void loadBridges()
+      await api<{ id: string }>(`/bridges/${peerId}/letters`, { body: { kind: re ? 'reply' : kind, text, ...(re ? { re: re.id } : {}), urgent, needsHuman: human } })
+      setText(''); setRe(null); setUrgent(false); setHuman(false); say(`${t?.peer.name ?? '상대'}에게 편지를 보냈어요`); await loadThread(peerId); void loadBridges()
     } catch (e) { say(`못 보냈어요 — ${(e as Error).message}`) } finally { setBusy(false) }
   }
-  if (!t || t.peer.id !== peerId) return <div className="col chat brg-thread"><div className="hdr">{phone && onBack ? <button className="rb glassb" onClick={onBack}><Icon n="list" size={20} /></button> : null}<span className="ttl">연결</span></div><div className="empty" style={{ flex: 1 }}>{err ? `스레드를 못 읽었어요 — ${err}` : '편지를 읽는 중…'}</div></div>
+  const entries = useMemo(() => threadEntries(t?.letters ?? [], filter), [t, filter])
+  const byId = useMemo(() => new Map((t?.letters ?? []).map((l) => [l.id, l])), [t])
+  const back = phone && onBack ? <button className="rb glassb" onClick={onBack} title="목록"><Icon n="list" size={20} /></button> : null
+  if (!t) return <div className="col chat brg-thread"><div className="hdr">{back}<span className="ttl">연결</span></div><div className="empty" style={{ flex: 1 }}>{err ? `편지를 못 읽었어요 — ${err}` : '편지를 읽는 중…'}</div></div>
   const p = t.peer
+  const status = (l: LetterView) => l.dir === 'in'
+    ? (l.delivered ? `채널 세션에 들어감 ${tmOnly(l.delivered)}` : l.baseline ? '처음 켤 때 있던 편지라 세션에 넣지 않았어요' : p.owner ? '세션에 넣는 중…' : p.host ? `${p.host} 가 받아요` : '아직 안 들어감')
+    : `${l.wake ? (l.wake.ok ? '깨우기 보냄 · ' : '깨우기 실패 · ') : ''}${l.readAt ? `${p.name} 읽음 ${tmOnly(l.readAt)}` : '아직 안 읽음'}`
+  const reLine = (l: LetterView) => { if (!l.re) return ''; const r = byId.get(l.re); return r?.title ? `«${r.title}»에 대한 답` : '앞 편지에 대한 답' }
+  const tip = (l: LetterView) => `${l.rel}${l.re ? `\n↩ ${l.re}` : ''}`
+  const letter = (l: LetterView, dim?: boolean) => {
+    // 내가 쓴 편지 — 메인 대화의 내 말처럼 오른쪽 상자
+    if (l.dir === 'out' && l.from === HUMAN) return <div key={`${l.dir}-${l.id}`} className="brg-letter out me" data-id={l.id} title={tip(l)}>
+      <div className="umsg"><Md text={l.title ? `**${l.title}**\n\n${l.body}` : l.body} user /></div>
+      <div className="umeta">나 → {p.name} · {KIND_KO[l.kind] ?? l.kind}{l.urgent ? ' · 급함' : ''}{l.needsHuman ? ' · 결정 필요' : ''} · {hhmm(l.at)} · {status(l)}</div>
+    </div>
+    const b = l.dir === 'in' ? null : bot(l.from.replace(/^folderbot:/, ''))
+    const who = l.dir === 'in' ? p.name : isMachine(l) ? '감시기' : b ? (b.displayName || b.name) : l.from
+    const to = l.dir === 'in' ? botName(l.to || p.deliverBot) : p.name
+    const dot = l.dir === 'in' ? p.color : b?.color ?? 'var(--t3)'
+    const foot = [reLine(l), status(l)].filter(Boolean).join(' · ')
+    return <div key={`${l.dir}-${l.id}`} className={`brg-letter ${l.dir} ${l.needsHuman ? 'need' : ''} ${dim ? 'dim' : ''}`} data-id={l.id}>
+      <div className="meta"><span className="dt" style={{ background: dot }} /><span className="who">{who}</span><span className="to">→ {to}</span><span>· {KIND_KO[l.kind] ?? l.kind} · {hhmm(l.at)}</span>
+        {l.urgent ? <span className="tg u">급함</span> : null}{l.needsHuman ? <span className="tg e">정할 것</span> : null}
+        {l.dir === 'in' ? <button className="brg-re" onClick={() => { setRe(l); taRef.current?.focus() }} title="이 편지에 답장">답장</button> : null}</div>
+      {l.title ? <div className="ttl2">{l.title}</div> : null}
+      <div className="lbody"><Md text={l.body} user />{l.cut ? <div className="cut">…앞부분만 실었어요</div> : null}</div>
+      <div className="src" title={tip(l)}>{foot}</div>
+    </div>
+  }
   return <div className="col chat brg-thread" data-peer={p.id}>
     <div className="hdr brg-head">
-      {phone && onBack ? <button className="rb glassb" onClick={onBack} title="목록"><Icon n="list" size={20} /></button> : null}
-      <PeerIcon p={p} size={22} />
-      <b className="ttl">{p.name}</b>
-      <span className="brg-meta">· trust {p.trust}{p.lastSignal ? ` · 마지막 신호 ${agoText(p.lastSignal)}${agoText(p.lastSignal) === '방금' ? '' : ' 전'}(커서)` : ' · 아직 신호 없음'}{p.stale ? ' · 끊김' : ''} · 우편함 {p.mailbox}</span>
+      {back}
+      {/* 메인 대화 머리줄(`chat-hdr`)과 같은 줄 — 작은 흑백 얼굴 · 이름 · 흐린 보조 글 */}
+      <PeerIcon p={p} size={16} />
+      <span className="ttl" title={peerTitle(p)}>{p.name}</span>
+      <span className="brg-meta" title={peerTitle(p)}>{peerLine(p)}</span>
       <span className="sp" />
-      {p.channelSid ? <button className="btn ghost" onClick={() => go(p.deliverBot, p.channelSid)}>채널 세션 열기</button> : null}
+      {filter !== 'all' ? <button className="brg-fpill" onClick={() => setThreadFilter('all')} title="모두 보기로">{filter === 'need' ? '정할 것만' : '주고받은 말만'} <Icon n="x" size={10} /></button> : null}
+      {p.channelSid && !onSide ? <button className="btn ghost" onClick={() => go(p.deliverBot, p.channelSid)}>채널 세션</button> : null}
+      {onSide ? <button className="ib" onClick={onSide} title="세션 · 편지함"><Icon n="panelr" size={phone ? 18 : 14} /></button> : null}
     </div>
     <div className="brg-letters" ref={scRef}>
-      {!t.letters.length ? <div className="brg-none">이번 달과 지난달에 오간 편지가 없어요. 상대가 <span className="mono">to-folderbot/</span> 에 쓰면 여기 보여요.</div> : null}
-      {t.letters.map((l) => <div key={`${l.dir}-${l.id}`} className={`brg-letter ${l.dir}`} data-id={l.id}>
-        <div className="lh"><b>{fromName(l, p)}</b><span className={`k ${l.kind === 'incident' ? 'inc' : l.kind === 'request' ? 'req' : l.kind === 'reply' || l.kind === 'done' ? 'rep' : ''}`}>{KIND_T[l.kind] ?? l.kind}</span><span>{hhmm(l.at)}</span>{l.urgent ? <span className="pill u">급함</span> : null}{l.needsHuman ? <span className="pill e">사람 결정</span> : null}
-          {l.dir === 'in' ? <button className="brg-re" onClick={() => setRe(l)} title="이 편지에 답장">답장</button> : null}</div>
-        <div className="lbody">{l.title ? <b className="lt">{l.title}</b> : null}{l.body}{l.cut ? <span className="cut"> …(앞만 실었어요 — {l.rel})</span> : null}</div>
-        <div className="lfoot">{l.dir === 'in'
-          ? <>{l.delivered ? `✓ 채널 세션에 들어감 ${hhmm(l.delivered)}` : l.baseline ? '처음 켤 때 있던 편지 — 넣지 않음' : p.owner ? '들어가는 중…' : p.host ? `${p.host} 호스트가 받아요` : '아직 안 들어감'} · {l.id}</>
-          : <>{l.re ? `↩ re ${l.re} · ` : ''}{l.wake ? `깨우기 웹훅 ${l.wake.status ?? (l.wake.ok ? 'ok' : '실패')} · ` : ''}{l.readAt ? `${p.name} 읽음 ${hhmm(l.readAt)}(커서)` : '아직 안 읽음'}</>}</div>
-      </div>)}
+      <div className="brg-col">
+        {!entries.length ? <div className="brg-none">{filter === 'need' ? '정할 것이 붙은 편지가 없어요.' : filter === 'talk' ? '감시기 보고 말고는 오간 편지가 없어요.' : `이번 달과 지난달에 오간 편지가 없어요. ${p.name}가 편지를 쓰면 여기 보여요.`}</div> : null}
+        {entries.map((e) => e.k === 'day' ? <div key={`d-${e.key}`} className="brg-day">{dayLabel(e.at)}</div>
+          : e.k === 'l' ? letter(e.l)
+          : <div key={`f-${e.key}`} className={`brg-fold ${open.has(e.key) ? 'open' : ''}`}>
+            <button className="fh" onClick={() => setOpen((o) => { const x = new Set(o); if (x.has(e.key)) x.delete(e.key); else x.add(e.key); return x })} aria-expanded={open.has(e.key)}>
+              <Icon n={open.has(e.key) ? 'chevd' : 'chev'} size={9} /><span className="c">{foldText(e.ls)}</span><span>· {e.ls.length > 1 ? `${e.ls.length}통 · ${tmOnly(e.ls[0].at)}–${tmOnly(e.ls[e.ls.length - 1].at)}` : tmOnly(e.ls[0].at)}</span>
+            </button>
+            {open.has(e.key) ? <div className="fb-in">{e.ls.map((l) => letter(l, true))}</div> : null}
+          </div>)}
+      </div>
     </div>
     <div className="brg-comp">
-      {re ? <div className="brg-reline">↩ <b>{re.title || re.id}</b> 에 답장<button className="ib" onClick={() => setRe(null)} title="답장 풀기"><Icon n="x" size={11} /></button></div> : null}
-      <textarea value={text} rows={2} placeholder={`${p.name}에게 편지 쓰기…`} onChange={(e) => setText(e.target.value)}
+      {re ? <div className="brg-reline">↩ <b>{re.title || '이 편지'}</b>에 답장<button className="ib" onClick={() => setRe(null)} title="답장 풀기"><Icon n="x" size={11} /></button></div> : null}
+      <textarea ref={taRef} value={text} rows={2} placeholder={`${p.name}에게 편지…`} onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) { e.preventDefault(); void send() } }} />
       <div className="row">
-        {re ? <span className="chip on">reply</span> : (['report', 'request', 'done', 'incident'] as const).map((k) => <button key={k} className={`chip ${kind === k ? 'on' : ''}`} onClick={() => setKind(k)}>{k}</button>)}
+        {re ? <span className="brg-kind fixed">답장</span>
+          : <select className="brg-kind" value={kind} onChange={(e) => setKind(e.target.value)} aria-label="편지 종류" title="편지 종류">{(['report', 'request', 'done', 'incident'] as const).map((k) => <option key={k} value={k}>{KIND_KO[k]}</option>)}</select>}
+        <button className={`tg ${urgent ? 'on' : ''}`} aria-pressed={urgent} onClick={() => setUrgent(!urgent)} title={p.wake ? '급함 — 상대 웹훅도 불러 바로 깨운다' : '급함'}>⚡ 급함</button>
+        <button className={`tg ${human ? 'on' : ''}`} aria-pressed={human} onClick={() => setHuman(!human)} title="상대가 사람에게 물어봐야 하는 편지">✋ 결정 필요</button>
         <span className="sp" />
-        <button className={`chip ${urgent ? 'on' : ''}`} onClick={() => setUrgent(!urgent)} title={p.wake ? '급함 — 상대 웹훅도 부른다' : '급함'}>급함</button>
-        <button className={`chip ${human ? 'on' : ''}`} onClick={() => setHuman(!human)}>사람 결정</button>
-        <button className="btn on" disabled={!text.trim() || busy} onClick={() => void send()} title="보내기 (⌘↵)">보내기</button>
+        <button className={`sendb brg-send ${text.trim() && !busy ? '' : 'off'}`} disabled={!text.trim() || busy} onClick={() => void send()} title="보내기 (⌘↵)" aria-label="보내기"><Icon n="up" size={phone ? 16 : 12} /></button>
       </div>
+    </div>
+  </div>
+}
+
+/** 편지 창의 오른쪽 칸 — 세션 · 편지함 · 연결. 넓은 화면은 패널 자리, 좁은 화면은 오른쪽 서랍 */
+export function BridgeSide({ peerId, go, phone, onBack, onCollapse }: { peerId: string; go: (botId: string, sid?: string) => void; phone?: boolean; onBack?: () => void; onCollapse?: () => void }) {
+  const { s } = useStore()
+  const { t, filter } = useThread(peerId)
+  const b = useBridges()
+  const p = t?.peer ?? b?.peers.find((x) => x.id === peerId)
+  const [sec, setSec] = useState({ sess: true, box: true, info: true })
+  const tog = (k: keyof typeof sec) => setSec((o) => ({ ...o, [k]: !o[k] }))
+  if (!p) return <div className="col side panel brg-side"><div className="hdr"><span className="ttl">편지함</span></div></div>
+  const ls = t?.letters ?? []
+  const inN = ls.filter((l) => l.dir === 'in').length, outN = ls.length - inN
+  const machineN = ls.filter(isMachine).length, needN = ls.filter((l) => l.needsHuman).length
+  const unreadOut = ls.filter((l) => l.dir === 'out' && !l.readAt).length
+  const lastRead = ls.filter((l) => l.readAt).reduce((m, l) => Math.max(m, l.readAt ?? 0), 0)
+  const deliver = s.bots.find((x) => x.id === p.deliverBot)
+  const sess = (s.sessionsByBot[p.deliverBot] ?? []).filter((x) => x.channel === p.id).sort((a, b2) => b2.lastActivity - a.lastActivity)
+  const fRow = (f: ThreadFilter, label: string, n: number, hint: string) => <button key={f} className={`srow brg-frow ${filter === f ? 'on' : ''}`} onClick={() => setThreadFilter(f)} title={hint} aria-pressed={filter === f}>
+    <span className={`dot ${f === 'need' && n ? 'wait' : 'none'}`} /><span className="n">{label}</span><span className="m">{n}</span></button>
+  return <div className="col side panel brg-side" data-peer={p.id}>
+    <div className="hdr">{phone && onBack ? <button className="rb glassb" onClick={onBack} title="편지로"><Icon n="back" size={20} /></button> : null}<span className="ttl">편지함</span><span className="sp" />{!phone && onCollapse ? <div className="acts"><button className="ib on" onClick={onCollapse} title="패널 접기 (⌘⇧B)"><Icon n="panelr" size={14} /></button></div> : null}</div>
+    <div className="sec fix">
+      <button className="sech" onClick={() => tog('sess')}><Icon n={sec.sess ? 'chevd' : 'chev'} size={9} /><span>채널 세션</span><span className="c">{sess.length}</span></button>
+      {sec.sess ? <div className="secb" style={{ padding: '0 0 6px' }}>
+        {sess.map((x) => <button key={x.id} className="srow" onClick={() => go(p.deliverBot, x.id)} title="이 세션으로 — 편지를 받아 처리한 생각·도구 줄이 여기 있어요">
+          <span className={`dot ${x.state === 'running' ? 'run' : x.state === 'awaiting_input' ? 'wait' : x.state === 'error' ? 'err' : 'none'}`} /><span className="n">{x.name}</span><span className="m">{fmtTime(x.lastActivity)}</span></button>)}
+        <div className="brg-hint">{sess.length ? `${p.name}의 편지는 ${deliver ? (deliver.displayName || deliver.name) : p.deliverBot}의 이 세션에 들어가요.` : `${p.name}가 편지를 쓰면 ${deliver ? (deliver.displayName || deliver.name) : p.deliverBot}에 채널 세션이 생겨요.`}</div>
+      </div> : null}
+    </div>
+    <div className="divy" style={{ cursor: 'default' }} />
+    <div className="sec fix">
+      <button className="sech" onClick={() => tog('box')}><Icon n={sec.box ? 'chevd' : 'chev'} size={9} /><span>편지</span><span className="c">{ls.length}</span></button>
+      {sec.box ? <div className="secb" style={{ padding: '0 0 6px' }}>
+        {fRow('all', '모두', ls.length, '감시기 보고는 한 줄로 접어서')}
+        {fRow('talk', '주고받은 말만', ls.length - machineN, '감시기 자동 보고를 빼고')}
+        {fRow('need', '정할 것', needN, '«사람 결정» 이 붙은 편지만')}
+        <div className="brg-kv"><span>받은 편지</span><b>{inN}통</b></div>
+        <div className="brg-kv"><span>보낸 편지</span><b>{outN}통{unreadOut ? ` · 안 읽음 ${unreadOut}` : ''}</b></div>
+        <div className="brg-kv"><span>{p.name}가 읽은 때</span><b>{lastRead ? hhmm(lastRead) : '아직'}</b></div>
+      </div> : null}
+    </div>
+    <div className="divy" style={{ cursor: 'default' }} />
+    <div className="sec grow">
+      <button className="sech" onClick={() => tog('info')}><Icon n={sec.info ? 'chevd' : 'chev'} size={9} /><span>연결</span></button>
+      {sec.info ? <div className="secb" style={{ padding: '0 0 6px' }}>
+        <div className="brg-kv"><span>상태</span><b className={p.stale ? 'bad' : ''}>{peerLine(p)}</b></div>
+        <div className="brg-kv"><span>할 수 있는 일</span><b>{TRUST_KO[p.trust]}</b></div>
+        <div className="brg-kv"><span>받는 맥</span><b>{p.host ? (p.owner ? `${p.host} (이 맥)` : p.host) : '이 맥'}</b></div>
+        <div className="brg-kv"><span>급할 때 깨우기</span><b>{p.wake ? '켬' : '없음'}</b></div>
+        <div className="brg-kv col"><span>우편함</span><b className="mono" title={p.mailbox}>{p.mailbox}</b></div>
+        <button className="srow sadd" onClick={() => window.dispatchEvent(new CustomEvent('fb:settings', { detail: 'bridges' }))}><Icon n="gear" size={11} color="var(--t3)" /><span className="n">설정 › 연결에서 바꾸기</span></button>
+      </div> : null}
     </div>
   </div>
 }
@@ -205,7 +360,7 @@ function BridgeWizard({ onDone }: { onDone: () => void }) {
   return <div className="brg-wiz" data-step={step}>
     {head}
     {step === 1 ? <>
-      {PRESETS.map((p) => <button key={p.id} data-preset={p.id} className={`brg-card ${preset === p.id ? 'on' : ''}`} onClick={() => pick(p.id)}><b>{p.icon} {p.title}</b><span className="s">{p.sub}</span></button>)}
+      {PRESETS.map((p) => <button key={p.id} data-preset={p.id} className={`brg-card ${preset === p.id ? 'on' : ''}`} onClick={() => pick(p.id)}><b><FolderBot shape="bubble" color={peerColor(p.peerId)} size={18} />{p.title}</b><span className="s">{p.sub}</span></button>)}
       <div className="brg-btns"><button className="btn ghost" onClick={onDone}>취소</button><button className="btn on" onClick={() => { if (!id) setId(freeId(ps.peerId, taken.ids)); setStep(2) }}>다음</button></div>
     </> : null}
     {step === 2 ? <>

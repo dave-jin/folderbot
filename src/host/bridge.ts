@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, linkSync, mkdirSync, readdirSync, readFileS
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { parseBridges, ownsPeer, type BridgesConfig, type PeerDef } from '../core/bridges'
 import { formatLetter, frontMatterClosed, ignoredLetterName, isoLocal, letterId, monthOf, normId, parseLetter, FBMF_KINDS, type Letter, type LetterKind } from '../core/fbmf'
-import { addBridgeYaml, letterAt, mailboxReadme, markRead, newBridgeProblems, orderThread, unreadOf, type LetterView, type NewBridge, type PeerView } from '../core/bridgeView'
+import { addBridgeYaml, letterAt, mailboxReadme, markRead, newBridgeProblems, orderThread, peerColor, unreadOf, type LetterView, type NewBridge, type PeerView } from '../core/bridgeView'
 
 /**
  * 🔴 **연결(Bridge) — 바깥 상대와 편지 파일로 대화한다** (R1 · 2026-10-09 Dave 승인).
@@ -353,7 +353,8 @@ export class BridgeHub {
     // 화면에 보이는 «마지막 신호» 는 상대가 실제로 남긴 것(커서·편지)만 — 끊김 판정의 «연 시각» 기준선은 보이지 않는다
     const sig = Math.max(cur?.at ?? 0, box?.lastLetterAt ?? 0, ...all.filter((l) => l.dir === 'in').map((l) => l.at), 0)
     const last = orderThread(all, 1)[0]
-    return { id: p.id, name: p.name, icon: p.icon, trust: p.trust, mailbox: p.mailbox, ...(p.host ? { host: p.host } : {}), owner: !!box, deliverBot: p.deliver.bot, deliverSession: p.deliver.session, maySend: p.maySend, ...(p.expectEveryMs ? { expectEveryMs: p.expectEveryMs } : {}), stale: box ? box.stale : !!(p.expectEveryMs && sig && this.now() - sig > p.expectEveryMs), lastSignal: sig || null, unread: unreadOf(all, this.seenAt(p.id), (id) => this.firstSeen.get(id)), letters: all.length, ...(last ? { last: { ...(last.title ? { title: last.title } : {}), at: last.at, dir: last.dir } } : {}), inbound: !!p.inbound, wake: !!p.wake }
+    const seenAt = this.seenAt(p.id), seen = (id: string) => this.firstSeen.get(id)
+    return { id: p.id, name: p.name, icon: p.icon, trust: p.trust, mailbox: p.mailbox, ...(p.host ? { host: p.host } : {}), owner: !!box, deliverBot: p.deliver.bot, deliverSession: p.deliver.session, maySend: p.maySend, ...(p.expectEveryMs ? { expectEveryMs: p.expectEveryMs } : {}), stale: box ? box.stale : !!(p.expectEveryMs && sig && this.now() - sig > p.expectEveryMs), lastSignal: sig || null, unread: unreadOf(all, seenAt, seen), needs: unreadOf(all.filter((l) => l.needsHuman), seenAt, seen), pending: all.some((l) => l.dir === 'out' && l.from === HUMAN_FROM && (!cur?.last || l.id > cur.last)), color: peerColor(p.id, p.color), letters: all.length, ...(last ? { last: { ...(last.title ? { title: last.title } : {}), at: last.at, dir: last.dir } } : {}), inbound: !!p.inbound, wake: !!p.wake }
   }
   /**
    * 들어온 편지에 배달 표시를 붙인다. 안 읽음은 «쓴 시각» 이 아니라 «도착한 시각» 으로 센다 — Dropbox 가 늦게 내려 준 편지가

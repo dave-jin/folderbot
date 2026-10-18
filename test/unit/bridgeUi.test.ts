@@ -2,11 +2,12 @@ import { describe, it, expect } from 'vitest'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { addBridgeYaml, defaultMailbox, freeId, handoffLine, letterAt, mailboxProblem, mailboxReadme, markRead, newBridgeProblems, orderThread, stampMs, unreadOf, PRESETS, type LetterView, type NewBridge } from '../../src/core/bridgeView'
+import { addBridgeYaml, defaultMailbox, freeId, handoffLine, letterAt, mailboxProblem, mailboxReadme, markRead, newBridgeProblems, orderThread, peerColor, peerMood, stampMs, unreadOf, PRESETS, type LetterView, type NewBridge } from '../../src/core/bridgeView'
 import { parseBridges } from '../../src/core/bridges'
 import { parseLetter } from '../../src/core/fbmf'
 import { PARA_PRESET, JD_PRESET } from '../../src/core/rules'
 import { BridgeHub, HUMAN_FROM } from '../../src/host/bridge'
+import { PALETTE_HEX } from '../../src/core/botColor'
 
 /**
  * 연결(Bridge) 화면 — BQ-9 레일 «연결» 절·편지 스레드 · BQ-10 새 연결 마법사 (2026-10-19 Dave «A·A»).
@@ -100,6 +101,25 @@ describe('새 연결 마법사 (core/bridgeView)', () => {
   })
 })
 
+describe('상대 얼굴 — 말풍선 캐릭터 (2026-10-19 Dave «B 말풍선» · 통일성 목업)', () => {
+  it('몸 색 — bridges.yml 의 color(봇 색 판 안) → 없으면 id 로 판에서 · 기기마다 같다', () => {
+    expect(peerColor('halili', '#F0A8C0')).toBe('#f0a8c0')
+    expect(PALETTE_HEX).toContain(peerColor('halili'))
+    expect(peerColor('halili')).toBe(peerColor('halili'))
+    expect(PALETTE_HEX).toContain(peerColor('halili', '#e08850'))   // 오케스트레이터 주황은 판 밖 — id 색으로
+    const { peers, errors } = parseBridges('bridges:\n  - id: a\n    mailbox: m\n    color: "#5fd3b5"\n  - id: b\n    mailbox: n\n    color: "#e08850"\n')
+    expect(peers[0].color).toBe('#5fd3b5'); expect(peers[1].color).toBeUndefined(); expect(errors.join(' ')).toMatch(/color/)
+  })
+  it('🔴 얼굴 — 끊김 > 사람 결정 > 안 읽음 > 상대가 내 편지 안 읽음 > 쉼 · 쉬면 배지 없음(옛 «늘 초록 점» 폐기)', () => {
+    const b = { stale: false, needs: 0, unread: 0, pending: false }
+    expect(peerMood(b)).toBe('idle')
+    expect(peerMood({ ...b, pending: true })).toBe('hold')
+    expect(peerMood({ ...b, pending: true, unread: 2 })).toBe('done')
+    expect(peerMood({ ...b, unread: 2, needs: 1 })).toBe('wait')
+    expect(peerMood({ ...b, unread: 2, needs: 1, stale: true })).toBe('error')
+  })
+})
+
 /** 지금 달 폴더 — 스레드는 이번 달·지난달만 본다 */
 const NOW = new Date(2026, 9, 19, 12, 0, 0).getTime()
 function fixture(yml?: string, host = 'mac-mini') {
@@ -142,6 +162,17 @@ describe('BridgeHub — 화면 (host/bridge)', () => {
       expect(f.hub.views()[0].unread).toBe(0)
       writeFileSync(join(inDir, '20261019-130000-halili-0002.md'), '---\nfbmf: 1\nkind: report\n---\n새 편지\n')   // NOW(12:00) 뒤에 쓴 편지
       expect(f.hub.views()[0].unread).toBe(1)
+      expect(f.hub.views()[0]).toMatchObject({ needs: 0, pending: false })
+      writeFileSync(join(inDir, '20261019-131000-halili-0003.md'), '---\nfbmf: 1\nkind: request\nneeds_human: true\n---\n정해 주세요\n')
+      expect(f.hub.views()[0]).toMatchObject({ unread: 2, needs: 1 })
+      expect(PALETTE_HEX).toContain(f.hub.views()[0].color)
+      const outDir = join(f.root, '싱크/from-folderbot/2026-10'); mkdirSync(outDir, { recursive: true })
+      writeFileSync(join(outDir, '20261019-120500-orch-0004.md'), '---\nfbmf: 1\nfrom: orch\nkind: report\n---\n봇 보고\n')
+      expect(f.hub.views()[0].pending).toBe(false)   // 봇·감시기 편지는 «기다림» 이 아니다 — 사람이 쓴 것만
+      writeFileSync(join(outDir, '20261019-121000-human-0005.md'), `---\nfbmf: 1\nfrom: ${HUMAN_FROM}\nkind: report\n---\n이건 뭐야?\n`)
+      expect(f.hub.views()[0].pending).toBe(true)
+      mkdirSync(join(f.root, '싱크/cursors'), { recursive: true }); writeFileSync(join(f.root, '싱크/cursors/halili.json'), JSON.stringify({ last: '20261019-121000-human-0005', at: '2026-10-19T12:20:00+09:00' }))
+      expect(f.hub.views()[0].pending).toBe(false)
       f.hub.markSeen('halili')
       expect(existsSync(join(f.data, 'bridges/halili/seen.json'))).toBe(true)
     } finally { f.done() }

@@ -1,3 +1,4 @@
+import { colorAllowed } from './botColor'
 import { parse as parseYaml } from 'yaml'
 import { idSlug } from './fbmf'
 
@@ -11,7 +12,8 @@ import { idSlug } from './fbmf'
  * bridges:
  *   - id: halili                 # ASCII · 편지 id 의 보낸쪽 이름과 같게
  *     name: 할일이
- *     icon: ✅
+ *     icon: ✅                   # 채널 세션 이름 앞에 붙는 표지(화면의 상대 아이콘은 말풍선 캐릭터)
+ *     color: "#f0a8c0"           # 선택 — 말풍선 캐릭터 몸 색 · 봇 색 판 12색 중 하나(없으면 id 로 정한다)
  *     mailbox: "2. Area/개인_비서실/할일이/싱크"   # 볼트 기준(또는 절대 경로)
  *     deliver_to: { bot: orch, session: "✅ 할일이 채널" }
  *     may_send: [orch]
@@ -27,6 +29,8 @@ export interface PeerDef {
   id: string
   name: string
   icon: string
+  /** 말풍선 캐릭터 몸 색 — 봇 색 판(`botColor.PALETTE`) 안의 색만 · 없으면 화면이 id 로 정한다 */
+  color?: string
   mailbox: string
   deliver: { bot: string; session: string }
   maySend: string[]
@@ -63,6 +67,8 @@ export function parseBridges(text: string): BridgesConfig {
     seen.add(id)
     const name = String(r.name ?? id).trim() || id
     const icon = String(r.icon ?? '✉️').trim() || '✉️'
+    const color = r.color === undefined ? '' : String(r.color).trim().toLowerCase()
+    if (color && !colorAllowed(color)) errors.push(`연결 «${id}»: color 는 봇 색 판 12색 중 하나예요 — 색은 id 로 정합니다`)
     const d = (r.deliver_to && typeof r.deliver_to === 'object' ? r.deliver_to : {}) as Record<string, unknown>
     const trust = TRUSTS.includes(String(r.trust) as Trust) ? (String(r.trust) as Trust) : 'propose'
     if (r.trust !== undefined && trust !== r.trust) errors.push(`연결 «${id}»: trust 는 read · propose · act 중 하나예요 — propose 로 둡니다`)
@@ -80,6 +86,7 @@ export function parseBridges(text: string): BridgesConfig {
     const fb = r.fallback_notify && typeof r.fallback_notify === 'object' ? String((r.fallback_notify as Record<string, unknown>).command ?? '').trim() : ''
     peers.push({
       id, name, icon, mailbox,
+      ...(color && colorAllowed(color) ? { color } : {}),
       ...(wake ? { wake } : {}),
       ...(inbound ? { inbound } : {}),
       ...(every ? { expectEveryMs: every } : {}),

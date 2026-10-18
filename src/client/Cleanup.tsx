@@ -93,22 +93,22 @@ export function Cleanup({ onClose, say, manage = false, go }: { onClose: () => v
     <div className="ctab">
       <table>
         <thead><tr>
-          <th style={{ width: 30 }}><input type="checkbox" checked={allOn} disabled={!free.length} onChange={() => setPick(allOn ? new Set() : new Set(free.map((x) => x.id)))} aria-label="보이는 것 모두" /></th>
-          <th>폴더</th><th>세션</th><th>종류</th><th>상태</th><th>마지막 활동</th>
+          <th className="ck" style={{ width: 30 }}><input type="checkbox" checked={allOn} disabled={!free.length} onChange={() => setPick(allOn ? new Set() : new Set(free.map((x) => x.id)))} aria-label="보이는 것 모두" /></th>
+          <th>폴더</th><th>세션</th><th>종류</th><th>상태</th><th>마지막 활동</th><th className="allk" onClick={() => { if (free.length) setPick(allOn ? new Set() : new Set(free.map((x) => x.id))) }}>보이는 것 모두 고르기 · {shown.length}개</th>
         </tr></thead>
         <tbody>
           {shown.map((x) => { const lock = sessLocked(x); return <tr key={x.id} data-id={x.id} className={lock ? 'lock' : ''} title={manage ? '누르면 이 세션으로' : lock ? `지울 수 없어요 — ${lock}` : undefined} onClick={() => { if (manage && go) { onClose(); go(x.botId, x.id); return } if (lock) return; toggleRow(x.id) }}>
             <td className="ck" onClick={(e) => { if (!manage) return; e.stopPropagation(); if (!lock) toggleRow(x.id) }} title={lock ? `지울 수 없어요 — ${lock}` : undefined}><input type="checkbox" checked={pick.has(x.id)} disabled={!!lock} readOnly /></td>
-            <td>{botName(x.botId)}</td><td className="sn">{x.name}</td>
-            <td><span className={`ktag ${kindCls(x)}`}>{sessKind(x)}</span></td>
-            <td className={lock ? 'lk' : ''}>{lock ?? STATE_LABEL[x.state]}</td>
-            <td>{ago(x.lastActivity)}</td>
+            <td className="fd">{botName(x.botId)}</td><td className="sn">{x.name}</td>
+            <td className="kd"><span className={`ktag ${kindCls(x)}`}>{sessKind(x)}</span></td>
+            <td className={`st ${lock ? 'lk' : ''}`}>{lock ?? STATE_LABEL[x.state]}</td>
+            <td className="tm">{ago(x.lastActivity)}</td>
           </tr> })}
-          {!shown.length ? <tr><td colSpan={6} style={{ color: 'var(--t3)', textAlign: 'center', padding: 24 }}>이 거름에 걸리는 세션이 없어요</td></tr> : null}
+          {!shown.length ? <tr className="none"><td colSpan={6} style={{ color: 'var(--t3)', textAlign: 'center', padding: 24 }}>이 거름에 걸리는 세션이 없어요</td></tr> : null}
         </tbody>
       </table>
     </div>
-    <div className="cfoot">
+    <div className="clfoot">
       <span className="hint">잠긴 줄 — 일하는 중·답 기다림·안 읽음은 지울 수 없어요</span><span style={{ flex: 1 }} />
       <button className="btn ghost" onClick={onClose}>닫기</button>
       <button className="btn danger" disabled={!pick.size || busy} onClick={() => void del()}>선택한 {pick.size}개 지우기</button>

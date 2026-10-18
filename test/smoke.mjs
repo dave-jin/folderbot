@@ -774,6 +774,9 @@ try {
     if (!th.peer.channelSid) fail('BQ-9: 스레드 머리에 채널 세션이 없다(«채널 세션 열기»)')
     const vs = (await api('/bridges')).peers.find((x) => x.id === 'auto')
     if (!vs || vs.letters < 2 || typeof vs.unread !== 'number') fail('BQ-9: 레일 줄 값이 이상하다 · ' + JSON.stringify(vs))
+    // 감시기 자동 보고 두 통 — 편지 창은 이어진 감시기 편지를 한 줄로 접는다(A 대화처럼 · 2026-10-19)
+    { const outM = join(root, '3. Area/자동화/싱크/from-folderbot', month); mkdirSync(outM, { recursive: true })
+      for (const [i, n] of [[1, 2], [2, 3]]) writeFileSync(join(outM, `${ts.slice(0, -2)}0${i}-ops-watch-00${i}a.md`), `---\nfbmf: 1\nfrom: ops-watch\nto: auto\nkind: report\ntitle: 📤 폴더 봇 보고 ${n}건\n---\n- 감시기 줄 ${i}\n`) }
     // ── 화면 — 데스크톱 레일 «연결» 절 → 스레드 → 쓰기 · 설정 › 연결 마법사
     try {
       const { chromium } = await import('playwright-core')
@@ -792,10 +795,22 @@ try {
         if (!/bot=orch/.test(await pg.evaluate(() => location.hash)) || !/peer=auto/.test(await pg.evaluate(() => location.hash))) fail('BQ-9: 스레드 주소가 받는 봇·상대를 안 가리킨다')
         const heads = await pg.$$eval('.brg-letter', (els) => els.map((e) => e.className + ' | ' + e.textContent))
         if (!heads.some((h) => /in/.test(h) && /주문 확인 부탁/.test(h) && /채널 세션에 들어감/.test(h))) fail('BQ-9: 스레드에 들어온 편지·배달 표시가 없다 · ' + heads.join(' // '))
-        if (!heads.some((h) => /out/.test(h) && /읽음/.test(h) && /^.*나/.test(h))) fail('BQ-9: 스레드에 나간 편지·읽음 표시가 없다')
+        if (!heads.some((h) => /out/.test(h) && /읽음/.test(h) && /나 →/.test(h)))   // 본문이 마크다운이라 줄바꿈이 낀다 — ^.* 로 첫 줄만 보지 않는다
+        fail('BQ-9: 스레드에 나간 편지·읽음 표시가 없다 · ' + heads.join(' // '))
+        // A 대화처럼 — 감시기 편지는 접힌 한 줄(보고 수를 더한다) · 누르면 펼친다 · 오른쪽 칸은 채널 세션·편지함(파일 트리 없음)
+        const fold = await pg.$eval('.brg-thread .brg-fold', (e) => ({ t: e.textContent, open: e.querySelectorAll('.brg-letter').length })).catch(() => null)
+        if (!fold || !/폴더 봇 보고 5건/.test(fold.t) || !/2통/.test(fold.t) || fold.open) fail('🔴 편지 창: 감시기 편지 두 통이 «보고 5건 · 2통» 한 줄로 안 접혔다 · ' + JSON.stringify(fold))
+        await pg.click('.brg-fold .fh'); await wait(150)
+        if ((await pg.$$('.brg-fold .brg-letter')).length !== 2) fail('편지 창: 접은 감시기 줄을 눌렀는데 안 펼쳐졌다')
+        if (/request|report|trust|커서/.test(await pg.$eval('.brg-thread', (e) => e.innerText))) fail('🔴 편지 창: report·request·trust·커서 같은 개발자 말이 화면에 남았다')
+        const side = await pg.evaluate(() => ({ side: !!document.querySelector('.rpwrap .brg-side[data-peer="auto"]'), tree: !!document.querySelector('.rpwrap .tree, .rpwrap .panel:not(.brg-side)'), chan: [...document.querySelectorAll('.brg-side .srow')].some((r) => /채널/.test(r.textContent ?? '')), doc: !!document.querySelector('.docwrap') }))
+        if (!side.side || side.tree || !side.chan || side.doc) fail('🔴 편지 창: 오른쪽 칸이 «채널 세션 · 편지함» 이 아니다(파일·문서 칸이 남음) · ' + JSON.stringify(side))
+        await pg.click('.brg-side .brg-frow:has-text("주고받은 말만")'); await wait(150)
+        if (await pg.$('.brg-thread .brg-fold')) fail('편지 창: «주고받은 말만» 인데 감시기 줄이 남았다')
+        await pg.click('.brg-side .brg-frow:has-text("모두")'); await wait(150)
         await pg.fill('.brg-comp textarea', '화면에서 쓴 편지')
-        await pg.click('.brg-comp .chip:has-text("request")')
-        await pg.click('.brg-comp .btn.on')
+        await pg.selectOption('.brg-comp select.brg-kind', 'request')
+        await pg.click('.brg-comp .brg-send')
         let sentF = null
         for (let i = 0; i < 40 && !sentF; i++) { await wait(100); const dir = join(root, '3. Area/자동화/싱크/from-folderbot', month); sentF = readdirSync(dir).map((n) => readFileSync(join(dir, n), 'utf8')).find((t) => t.includes('화면에서 쓴 편지')) ?? null }
         if (!sentF || !/kind: request/.test(sentF) || !/from: human/.test(sentF)) fail('🔴 BQ-9: 스레드에서 쓴 편지가 우편함에 FBMF 로 안 남았다 · ' + sentF)
@@ -2873,11 +2888,11 @@ try {
           if (await pg.$$eval('.modal.clean tbody input:checked', (r) => r.length)) fail('세션 정리: 머리 칸으로 다 풀리지 않는다')
           // ⚠ 이름이 아니라 id 로 고른다 — 앞서 실패한 검사가 같은 이름의 세션을 남겨 둘 수 있다(실제로 그 옛 것을 지웠다)
           await pg.click(`.modal.clean tbody tr[data-id="${tmp.id}"] td.ck`); await wait(150)
-          const n = await pg.$eval('.modal.clean .cfoot .btn.danger', (e) => e.textContent)
+          const n = await pg.$eval('.modal.clean .clfoot .btn.danger', (e) => e.textContent)
           if (!/선택한 1개/.test(n ?? '')) fail('세션 정리: 하나만 골랐는데 ' + n)
           const before = await pg.$$eval('.modal.clean tbody tr', (r) => r.map((x) => `${x.dataset.id}:${x.querySelector('td.sn')?.textContent}:${x.querySelector('input')?.checked ? 'Y' : '-'}${x.classList.contains('lock') ? 'L' : ''}`))
           const resP = pg.waitForResponse((r) => r.url().includes('/api/sessions/bulk-delete'), { timeout: 4000 }).then((r) => r.json()).catch((e) => ({ err: String(e) }))
-          await pg.click('.modal.clean .cfoot .btn.danger'); const res = await resP; await wait(300)
+          await pg.click('.modal.clean .clfoot .btn.danger'); const res = await resP; await wait(300)
           if ((await api(`/bots/${cfo.id}/sessions`)).some((x) => x.id === tmp.id)) fail('🔴 세션 정리: 지우기가 안 됐다 · ' + JSON.stringify({ tmp: tmp.id, res, before }))
           if (!(await pg.$('.modal.clean .cundo'))) fail('세션 정리: 되돌리기 띠가 없다')
           await pg.click('.modal.clean .cundo button'); await wait(700)
@@ -2889,6 +2904,33 @@ try {
           await pg.evaluate((x) => { location.hash = x }, backC); await wait(400)
           await api(`/sessions/${tmp.id}`, undefined, 'DELETE')
           ok('세션 창 — 홈 «세션» 칸으로 연다 · 처음엔 안 고름 · «고르기» · 모든 폴더 한 표 · 잠긴 줄 못 고름 · 지우고 10초 되돌리기 · 줄을 누르면 그 세션')
+          /**
+           * 🔴 **좁은 화면에서 잘리지 않는다** (2026-10-19 Dave 스크린샷_230 «세션 정리화면은 모바일에서 일부가 짤려»).
+           *    여섯 칸 표가 옆으로 넘쳐 «상태·마지막 활동» 과 지우기 단추가 화면 밖으로 나갔다 — 폰 폭은 줄마다 카드로 접는다.
+           */
+          for (const vp of [{ width: 390, height: 844 }, { width: 600, height: 800 }, { width: 1440, height: 900 }]) {
+            const sp2 = await br.newPage({ viewport: vp, deviceScaleFactor: 1, hasTouch: true, isMobile: vp.width < 500 })
+            await sp2.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
+            await sp2.goto(base + '/'); await sp2.waitForSelector('.t-sess', { timeout: 8000 }).catch(() => fail('세션 창(폰): 홈 «세션» 칸이 없다'))
+            await sp2.click('.t-sess'); await sp2.waitForSelector('.modal.clean.manage tbody tr', { timeout: 3000 })
+            const m = await sp2.evaluate(() => {
+              const W = innerWidth, H = innerHeight, q = (x) => document.querySelector(x)?.getBoundingClientRect()
+              const out = (r) => !r || r.left < -1 || r.right > W + 1
+              const tab = document.querySelector('.modal.clean .ctab')
+              const rows = [...document.querySelectorAll('.modal.clean tbody tr[data-id]')].slice(0, 6)
+              return { W, modal: q('.modal.clean'), hscroll: tab ? tab.scrollWidth - tab.clientWidth : -1,
+                cut: rows.flatMap((r) => [...r.querySelectorAll('td')].filter((td) => out(td.getBoundingClientRect())).map((td) => td.className || td.textContent)),
+                del: q('.modal.clean .clfoot .btn.danger'), close: q('.modal.clean .modal-h .ib'), all: q('.modal.clean thead th.allk'), H }
+            })
+            if (m.hscroll > 1 || m.cut.length) fail(`🔴 세션 창(${vp.width}px): 표가 옆으로 넘쳐 잘린다 · ` + JSON.stringify(m))
+            if (!m.del || m.del.right > m.W + 1 || m.del.bottom > m.H + 1 || !m.close || m.close.right > m.W + 1) fail(`🔴 세션 창(${vp.width}px): 닫기·지우기 단추가 화면 밖이다 · ` + JSON.stringify(m))
+            // ⚠ 아랫줄 클래스가 입력창 아랫줄(`.cfoot`)과 같아 폰에선 통째로 숨고(display:none) 데스크톱에선 712px 에서 끊겼다 — 지우기 단추는 창 오른쪽 끝에 붙는다
+            if (m.del.right < m.modal.right - 30) fail(`🔴 세션 창(${vp.width}px): 지우기 단추가 창 오른쪽 끝에 안 붙는다(아랫줄이 끊김) · ` + JSON.stringify([m.del, m.modal]))
+            if (vp.width < 640 && (!m.all || m.all.width < 40)) fail(`세션 창(${vp.width}px): 카드 보기에서 «모두 고르기» 가 없다 · ` + JSON.stringify(m.all))
+            await sp2.screenshot({ path: `test/tmp/sessions-${vp.width}.png` }).catch(() => {})
+            await sp2.close()
+          }
+          ok('세션 창 좁은 화면 — 390·600·1440px 에서 옆 넘침 0 · 폰은 줄마다 카드(폴더·종류·시각 / 이름 / 상태) · 닫기·지우기 화면 안·오른쪽 끝 · 모두 고르기')
         }
         // 폴더 선택 = 트리: 1단계 폴더가 뜨고 활성 폴더는 펼쳐져 있다 · Resources 를 펼치면 하위가 보인다
         await pg.click('.col.side.left .nav:has-text("폴더 선택")'); await pg.waitForSelector('.pk [data-rel]', { timeout: 5000 }); await wait(500)

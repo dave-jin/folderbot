@@ -40,7 +40,7 @@ import { tabActive } from '../core/tabbar'
 import { SwipeRow } from './SwipeRow'
 import { botDueChip, byDue } from '../core/botName'
 import { LocalOpenHost, localBridge, openOnThisDevice, useLocalSettings } from './localOpen'
-import { BridgeRail, BridgeThread } from './Bridges'
+import { BridgeRail, BridgeSide, BridgeThread } from './Bridges'
 import type { PeerView } from '../core/bridgeView'
 import { botRelOf } from '../core/paths'
 import { ICON_PX, useIconSize, useTheme } from './theme'
@@ -773,7 +773,7 @@ function Main() {
    *    키보드도 안 올라왔는데(`--kbh: 0px`) 앱은 «입력 중» 으로 읽어 **문서 화면의 탭이 통째로 사라졌다.**
    *    탭이 숨을 이유는 하나뿐이다 — **키보드가 입력칸을 가리는 채팅 화면**. 문서·폴더에는 입력칸이 없으므로 숨을 이유가 없다.
    */
-  const tabsHere = phone && view !== 'list' && !(kb && view === 'chat')
+  const tabsHere = phone && view !== 'list' && !(kb && view === 'chat') && !peerId   // 편지 창은 제 머리줄에 목록·편지함 단추가 있다
   const dockRef = useRef<HTMLDivElement>(null)
   const [dockY, setDockY] = useState(() => { try { return readDockOffset(localStorage.getItem('fb:docky')) } catch { return 0 } })
   const [dockDrag, setDockDrag] = useState(false)
@@ -1024,8 +1024,8 @@ function Main() {
         <button className="btn" onClick={() => { setPanelTab('files'); setView('panel') }}>폴더 열기</button></div>
     </div>
   </div>
-  const rpwrapEl = <div className="rpwrap" style={{ width: narrow ? '100%' : fit.rp, flex: 'none', display: 'flex', minWidth: 0 }}><Panel bot={bot} sessions={sessions} sessionId={sessionId} go={go} onOpenFile={(rel, pin) => openInDocPane(rel, { pin })} onTalk={(t) => { setPrefill(t); if (phone) setView('chat') }} onAttach={(rel, dir) => addAttach({ rel, abs: `${bot.abs}/${rel}`, dir })} onMention={(rel) => { setMentionReq((m) => [...m, rel]); if (phone) setView('chat') }} onStartAt={startAt} onNewFolderAt={newFolderAt} touched={touched} filesTick={s.filesTick[bot.id]} secH={lay.secH} onSecH={(h) => setLay({ ...lay, secH: h })} onCollapse={closeRp} focusSec={focusSec} say={say} refresh={refresh} activeDoc={showDoc ? docs.active : null} onDragY={(on) => setDrag(on ? 'y' : '')} phone={phone} onBack={toList} only={phone ? panelTab : undefined} /></div>
-  const stripRightEl = <div className="strip right"><button className="ib" onClick={() => openRp()} title="패널 펼치기 (⌘⇧B)"><Icon n="panelr" size={14} /></button>
+  const rpwrapEl = <div className="rpwrap" style={{ width: narrow ? '100%' : fit.rp, flex: 'none', display: 'flex', minWidth: 0 }}>{peerId ? <BridgeSide peerId={peerId} go={go} phone={phone} onBack={() => setView('chat')} onCollapse={closeRp} /> : <Panel bot={bot} sessions={sessions} sessionId={sessionId} go={go} onOpenFile={(rel, pin) => openInDocPane(rel, { pin })} onTalk={(t) => { setPrefill(t); if (phone) setView('chat') }} onAttach={(rel, dir) => addAttach({ rel, abs: `${bot.abs}/${rel}`, dir })} onMention={(rel) => { setMentionReq((m) => [...m, rel]); if (phone) setView('chat') }} onStartAt={startAt} onNewFolderAt={newFolderAt} touched={touched} filesTick={s.filesTick[bot.id]} secH={lay.secH} onSecH={(h) => setLay({ ...lay, secH: h })} onCollapse={closeRp} focusSec={focusSec} say={say} refresh={refresh} activeDoc={showDoc ? docs.active : null} onDragY={(on) => setDrag(on ? 'y' : '')} phone={phone} onBack={toList} only={phone ? panelTab : undefined} />}</div>
+  const stripRightEl = peerId ? <div className="strip right"><button className="ib" onClick={() => openRp()} title="세션 · 편지함 펼치기 (⌘⇧B)"><Icon n="panelr" size={14} /></button></div> : <div className="strip right"><button className="ib" onClick={() => openRp()} title="패널 펼치기 (⌘⇧B)"><Icon n="panelr" size={14} /></button>
     {/* S-3 · 패널을 접어 둬도 **새 세션 +** 는 우측 상단에 남는다 (2026-09-21 Dave: «상시 노출») — 펼친 패널 「세션」 줄의 + 와 같은 일 */}
     <button className="ib nsb" onClick={() => { void newSession(); openRp('sessions') }} title="새 세션 (⌘N)"><Icon n="plus" size={14} /><span className="fly"><b>새 세션</b><span>이 폴더에서</span></span></button><div className="gap" />
         <button className="ib" onClick={() => openRp('sessions')}><Icon n="clock" size={14} />{sessions.some((x) => x.state === 'running') ? <span className="dot run" style={{ position: 'absolute', right: 2, top: 2 }} /> : null}<span className="fly"><b>세션</b><span>{sessions.length}개</span></span></button>
@@ -1043,10 +1043,10 @@ function Main() {
       {stage === 'wide' ? <div className="divx" onPointerDown={sbOpen ? dragX('sb', 1) : undefined} onDoubleClick={() => setLay({ ...lay, sb: DEF.sb, sbOpen: true, sbPin: true })} /> : null}
 
       {/* ── 채팅 ── */}
-      {peerId ? <BridgeThread peerId={peerId} go={go} say={say} phone={phone} onBack={toList} /> : <Chat bot={bot} sessions={sessions} cur={cur} items={items} loaded={!!sessionId && !!s.chats[sessionId]} phase={phase} ghost={phase === 'fade' ? ghost ?? undefined : undefined} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} sendReq={sendReq} onSendReq={() => setSendReq(null)} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openInDocPane(rel, { pin })} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={toList} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} queue={queueFor(sessionId)} onQueue={(f) => { if (sessionId) onQueue(sessionId, f) }} onReveal={reveal} />}
+      {peerId ? <BridgeThread peerId={peerId} go={go} say={say} phone={phone} onBack={toList} onSide={narrow || !rpOpen ? () => openRp() : undefined} /> : <Chat bot={bot} sessions={sessions} cur={cur} items={items} loaded={!!sessionId && !!s.chats[sessionId]} phase={phase} ghost={phase === 'fade' ? ghost ?? undefined : undefined} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} sendReq={sendReq} onSendReq={() => setSendReq(null)} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openInDocPane(rel, { pin })} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={toList} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} queue={queueFor(sessionId)} onQueue={(f) => { if (sessionId) onQueue(sessionId, f) }} onReveal={reveal} />}
 
       {/* ── 문서 열 (넓음만 흐름 안 · 중간·좁음은 오른쪽 서랍) ── */}
-      {stage === 'wide' && showDoc ? <><div className="divx" onPointerDown={dragX('doc', -1)} onDoubleClick={() => setLay({ ...lay, doc: DEF.doc })} />{docwrapEl}</> : null}
+      {stage === 'wide' && showDoc && !peerId ? <><div className="divx" onPointerDown={dragX('doc', -1)} onDoubleClick={() => setLay({ ...lay, doc: DEF.doc })} />{docwrapEl}</> : null}
 
       {/* ── 오른쪽 (넓음만 흐름 안) ── */}
       {stage === 'wide' ? <div className="divx" onPointerDown={rpOpen ? dragX('rp', -1) : undefined} onDoubleClick={() => setLay({ ...lay, rp: DEF.rp, rpOpen: true, rpPin: true })} /> : null}
@@ -1057,7 +1057,7 @@ function Main() {
       {narrow && (view === 'list' || dragSide === 'left') ? <div className={`drawer left ${view === 'list' ? 'open' : ''}`} ref={leftRef}>{phone ? homeEl : sidebarEl}</div> : null}
       {narrow && (under === 'panel' || under === 'doc' || dragSide === 'right') ? <div className={`drawer right ${under === 'panel' || under === 'doc' ? 'open' : ''}`} ref={rightRef}>{under === 'doc' ? (showDoc ? docwrapEl : docEmptyEl) : rpwrapEl}</div> : null}
       {/* H-4 · 알약 독 — 채팅 오른쪽 가장자리에 세로로. 📄 문서(없으면 흐리게) · ☑ 할 일 · 📁 파일 · ↗ 외부에서 열기(문서가 열려 있을 때). 이모지 대신 앱 아이콘 */}
-      {mid && view === 'chat' && !kb ? <div className={`dock ${dockDrag ? 'dragging' : ''}`} ref={dockRef} style={{ translate: `0 ${dockY}px` }}
+      {mid && view === 'chat' && !kb && !peerId ? <div className={`dock ${dockDrag ? 'dragging' : ''}`} ref={dockRef} style={{ translate: `0 ${dockY}px` }}
         onPointerDown={dockDown}>
         <span className="grip" title="잡아서 위아래로 옮기기"><i /></span>
         <button className={`db ${docs.tabs.length ? '' : 'dim'}`} title="문서" disabled={!docs.tabs.length} onClick={() => setView('doc')}><Icon n="doc" size={16} />{docs.tabs.length ? <span className="bd">{docs.tabs.length}</span> : null}</button>

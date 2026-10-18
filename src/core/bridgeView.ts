@@ -2,6 +2,7 @@ import { parseDocument, isSeq, YAMLSeq } from 'yaml'
 import { idSlug, isoLocal, type LetterKind } from './fbmf'
 import { TRUSTS, parseDuration, type Trust } from './bridges'
 import type { FolderRules } from './types'
+import { PALETTE_HEX, colorAllowed } from './botColor'
 
 /**
  * 연결(Bridge) 화면 — 레일 «연결» 절 · 편지 스레드 · 새 연결 마법사가 읽는 순수 함수 (BQ-9 · BQ-10 · 2026-10-19 Dave «A·A»).
@@ -58,6 +59,12 @@ export interface PeerView {
   lastSignal: number | null
   /** 사람이 스레드를 마지막으로 연 뒤 들어온 편지 수 */
   unread: number
+  /** 그 안 읽은 편지 중 «사람 결정» 이 붙은 것 — 얼굴이 «확인» 이 된다 */
+  needs: number
+  /** 사람이 직접 쓴 편지를 상대가 아직 안 읽었다(상대 커서가 못 지났다) — 얼굴이 «기다림» 이 된다 */
+  pending: boolean
+  /** 말풍선 캐릭터 몸 색 — `peerColor` */
+  color: string
   /** 이번 달·지난달 편지 수(들어온 것 + 나간 것) */
   letters: number
   last?: { title?: string; at: number; dir: 'in' | 'out' }
@@ -104,11 +111,30 @@ export function unreadOf(list: Pick<LetterView, 'id' | 'dir' | 'at' | 'delivered
   return list.filter((l) => l.dir === 'in' && !l.baseline && Math.max(l.delivered ?? 0, seen?.(l.id) ?? 0, l.at) > seenAt).length
 }
 
-/** 상대 아이콘 바탕 — 폴더 봇(밝은 색 판)과 갈리게 어두운 칸에 이모지. id 에서 색조를 정해 기기마다 같다 */
-export function peerTint(id: string): string {
+/**
+ * 상대 아이콘 — 폴더 봇과 같은 얼굴·배지에 **몸만 말풍선**(2026-10-19 Dave «B 말풍선» · 목업 `03_디자인/2026-10-19_연결-스레드-목업/연결-통일성-목업.html`).
+ * 몸 색은 봇과 같은 12색 판에서 — `bridges.yml` 의 `color:` 가 있으면 그것, 없으면 id 로 정해 기기마다 같다.
+ * ⛔ 옛 «어두운 칸에 이모지» 는 버렸다 — 레일에서 혼자 다른 앱처럼 보였다(Dave «통일성이 없잖아»).
+ */
+export function peerColor(id: string, color?: string): string {
+  if (color && colorAllowed(color)) return color.toLowerCase()
   let h = 0
   for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0
-  return `hsl(${h % 360} 32% 20%)`
+  return PALETTE_HEX[h % PALETTE_HEX.length]
+}
+
+/**
+ * 상대 얼굴 — 봇 얼굴과 같은 말(`FolderBot` 의 Mood). 무거운 것부터:
+ * 끊김 → 오류 · 사람 결정이 붙은 안 읽은 편지 → 확인 · 안 읽은 편지 → 끝남(+링) · 내 편지를 상대가 아직 안 읽음 → 기다림 · 그 밖 → 쉼.
+ * 쉬는 상대에는 배지가 없다 — 옛 화면의 «늘 붙은 초록 점» 은 뜻이 없었다.
+ */
+export type PeerMood = 'idle' | 'hold' | 'wait' | 'done' | 'error'
+export function peerMood(p: Pick<PeerView, 'stale' | 'needs' | 'unread' | 'pending'>): PeerMood {
+  if (p.stale) return 'error'
+  if (p.needs > 0) return 'wait'
+  if (p.unread > 0) return 'done'
+  if (p.pending) return 'hold'
+  return 'idle'
 }
 
 /** «3분 전» · «2시간 전» · «3일 전» — 끊김·마지막 신호 표시용 */
