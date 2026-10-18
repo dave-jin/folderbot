@@ -195,7 +195,8 @@ export function routineRun(r: Pick<RoutineDef, 'name' | 'prompt' | 'approve'>): 
 }
 
 /**
- * AI · 루틴 세션은 둘까지(2026-09-24) → CC · **루틴마다** 둘까지 + 사람이 이어받은 세션·백그라운드·30분 안 활동은 안 걷는다(2026-10-12).
+ * AI · 루틴 세션은 둘까지(2026-09-24) → CC · **루틴마다** 둘까지 + 사람이 이어받은 세션·백그라운드·30분 안 활동은 안 걷는다(2026-10-12)
+ * → **루틴마다 하나** · 안 읽은 답은 지키지 않는다(2026-10-19 Dave).
  * 판정은 `core/autoArea` 한 곳에 있다 — 여기서는 옛 이름으로 다시 내보내기만 한다.
  */
 export { routinesToDrop, AUTO_KEEP_PER_ROUTINE as ROUTINE_KEEP } from '../core/autoArea'

@@ -57,8 +57,8 @@ describe('CC · 자동 정리 규칙 (autoToDrop)', () => {
     const wbNew = S('wb-1200', { routine: '워커빌', state: 'running', lastActivity: NOW })
     const drop = autoToDrop([sns, trend, wbOld, wbOld2, wbNew], NOW)
     expect(drop).not.toContain('sns-0800')
-    expect(drop).not.toContain('trend-0600')    // 다른 루틴의 세션은 그 루틴 몫 2개 안
-    expect(drop).toEqual(['wb-0000'])          // 워커빌만 2개를 넘었다(도는 새 회차 + 직전 회차)
+    expect(drop).not.toContain('trend-0600')    // 다른 루틴의 세션은 그 루틴 몫 하나 안
+    expect(drop.sort()).toEqual(['wb-0000', 'wb-0600'])   // 워커빌은 도는 새 회차 하나만 남는다(2026-10-19 루틴마다 하나)
   })
   it('🔴 이어받지 않았어도 — 백그라운드 작업·대기 말·30분 안 활동이 있으면 안 지운다', () => {
     const mk = (id: string, o: Record<string, unknown>) => S(id, { routine: 'r', ...o })
@@ -67,9 +67,9 @@ describe('CC · 자동 정리 규칙 (autoToDrop)', () => {
     // 잡힌 셋이 «2개» 자리를 먼저 채우므로 쉬는 것은 다 걷힌다 — 잡힌 것은 하나도 안 걷힌다(잠시 2개를 넘는 편이 낫다)
     expect(autoToDrop(list, NOW).sort()).toEqual(['n1', 'n2', 'old'])
   })
-  it('루틴은 루틴마다 2개 — 봇 전체가 아니라', () => {
+  it('루틴은 루틴마다 1개 — 봇 전체가 아니라(2026-10-19)', () => {
     const list = ['a', 'b'].flatMap((r) => [1, 2, 3].map((k) => S(`${r}${k}`, { routine: r, lastActivity: NOW - k * H })))
-    expect(autoToDrop(list, NOW).sort()).toEqual(['a3', 'b3'])
+    expect(autoToDrop(list, NOW).sort()).toEqual(['a2', 'a3', 'b2', 'b3'])
   })
   it('7일 넘게 안 쓴 자동 세션은 정리 — 안 읽은 답이 있어도 · 살아 있는 소통·채널과 채팅은 안 건드린다', () => {
     const old = NOW - AUTO_MAX_IDLE_MS - H
@@ -86,9 +86,18 @@ describe('CC · 자동 정리 규칙 (autoToDrop)', () => {
     ]
     expect(autoToDrop(list, NOW).sort()).toEqual(['bot', 'exch', 'excomm', 'rt'])
   })
-  it('루틴마다 2개 규칙에서는 안 읽은 답을 지키고 자리에 먼저 센다(2026-10-02 결정 유지)', () => {
+  it('🔴 안 읽은 답은 루틴 세션을 지키지 않는다 — 쌓이던 원인(2026-10-19 Dave «추천대로»)', () => {
     const list = [S('u', { routine: 'r', lastActivity: NOW - 5 * H, lastReplyAt: NOW - 5 * H, readAt: 0 }), S('a', { routine: 'r', lastActivity: NOW - H }), S('b', { routine: 'r', lastActivity: NOW - 2 * H })]
-    expect(routinesToDrop(list, 2, NOW)).toEqual(['b'])
+    expect(routinesToDrop(list, 1, NOW).sort()).toEqual(['b', 'u'])
+    // 최신이 안 읽은 것이어도 하나는 남는다 — 가장 최근 회차
+    const latestUnread = [S('u', { routine: 'r', lastActivity: NOW - H, lastReplyAt: NOW - H, readAt: 0 }), S('o', { routine: 'r', lastActivity: NOW - 3 * H })]
+    expect(routinesToDrop(latestUnread, 1, NOW)).toEqual(['o'])
+  })
+  it('🔴 확인을 기다리는 루틴 세션은 안 걷고 남길 자리에 먼저 센다', () => {
+    const list = [S('ask', { routine: 'r', state: 'awaiting_input', lastActivity: NOW - 9 * H }), S('new', { routine: 'r', lastActivity: NOW - H }), S('old', { routine: 'r', lastActivity: NOW - 2 * H })]
+    expect(routinesToDrop(list, 1, NOW).sort()).toEqual(['new', 'old'])
+    // 사람이 답한 세션(adopted)은 채팅이라 루틴 정리에 안 잡힌다
+    expect(routinesToDrop([S('mine', { routine: 'r', adopted: true, lastActivity: NOW - 9 * H }), S('new', { routine: 'r', lastActivity: NOW - H })], 1, NOW)).toEqual([])
   })
 })
 

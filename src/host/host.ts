@@ -131,7 +131,7 @@ export class Host {
     // BW · 지운 지 7일 지난 세션 파일 → 앱 데이터 trash(6시간마다)
     const sweepS = () => { try { const n = this.sessions.sweepDeleted(); if (n.length) this.log(`지운 세션 ${n.length}개를 휴지통(앱 데이터 trash/sessions)으로 옮겼어요`) } catch (e) { this.log(`지운 세션 정리 실패: ${(e as Error).message}`) } }
     setTimeout(sweepS, 60_000).unref(); setInterval(sweepS, 6 * 3600_000).unref()
-    // CC · 자동화 영역 정리(매시간) — 루틴마다 2개 · 7일 지난 자동 세션
+    // CC · 자동화 영역 정리(매시간) — 루틴마다 1개(2026-10-19) · 7일 지난 자동 세션
     setInterval(() => { try { this.sweepAuto() } catch (e) { this.log(`자동화 세션 정리 실패: ${(e as Error).message}`) } }, 3600_000).unref()
   }
 
@@ -253,7 +253,7 @@ export class Host {
     this.runs.start(s.id, bot.id, bot.name, r.name, why)
     this.routineRuns.set(s.id, { botId: bot.id, attempt: why.attempt ?? 1 })
     /**
-     * AI · 루틴 세션은 둘까지 → CC · **루틴마다** 둘까지 + 7일 지난 자동 세션 (2026-10-12). 새로 만든 뒤 걷는다 —
+     * AI · 루틴 세션은 둘까지 → CC · **루틴마다** 둘까지 + 7일 지난 자동 세션 (2026-10-12) → **루틴마다 하나** (2026-10-19). 새로 만든 뒤 걷는다 —
      * 🔴 채팅(사람이 이어받은 세션 포함)·도는 중·확인 대기·백그라운드·대기 말·30분 안 활동은 걷지 않는다(`core/autoArea`).
      */
     this.sweepAuto(bot.id)
