@@ -604,7 +604,7 @@ function NotifyPane() {
   useEffect(() => { setFrom(q.from); setTo(q.to) }, [q.from, q.to])
   const saveQ = async (f: string, t: string) => { if (f === q.from && t === q.to) return; try { await api('/quiet', { body: { from: f, to: t } }); await refresh(); setMsg('저장했어요') } catch (e) { setMsg((e as Error).message) } }
   return <>
-    <Row t="이 기기 푸시" d="폰 푸시는 Tailscale serve 로 HTTPS 를 붙이고 홈 화면에 설치해야 동작해요." at="dev">
+    <Row t="이 기기 푸시" d="폰에는 «확인해 주세요» 만 울려요 — 끝남·오류·할 일은 알림 목록에만 남아요. 폰 푸시는 Tailscale serve 로 HTTPS 를 붙이고 홈 화면에 설치해야 동작해요." at="dev">
       <button className="btn" onClick={async () => setPushOn(await subscribePush(s.vapidPublic, navigator.userAgent.slice(0, 30)))}>{pushOn ? pushWhyText[pushOn] : '켜기'}</button>
     </Row>
     <Row t="조용한 시간" d={<>이 사이에는 «확인해 주세요» 만 통과합니다. 모든 기기에 같이 적용돼요.{msg ? ` · ${msg}` : ''}</>} at="main">
