@@ -39,7 +39,7 @@ export function sessArea(x: AreaFacts): Area { return autoKind(x) ? 'auto' : 'ch
  *    ① 주소에 세션이 있으면 그 세션 ② 채팅 중 **안 읽은 답이 있는 세션**(CO · 열자마자 새 답을 보게) ③ 가장 최근 채팅
  *    ④ 채팅이 없으면 가장 최근 자동화 세션 ⑤ 세션이 아예 없을 때만 없음(빈 창).
  * ⚠ 첫 세션 고르기(`App` 의 `sessionId`)와 미리 받기(CF-1 `prefetch`)가 **이 함수 하나**를 쓴다 — 두 곳에 식이 따로 있으면 또 어긋난다.
- * ⚠ 목록 순서를 믿지 않는다 — 화면은 🤝 소통을 맨 위로 올려 둔다. 최근은 `lastActivity` 로 직접 잰다.
+ * ⚠ 목록 순서를 믿지 않는다 — 화면은 채팅을 앞에, 자동화를 뒤에 세운다(CC A안). 최근은 `lastActivity` 로 직접 잰다.
  */
 export function openSessionOf<T extends AreaFacts & { id: string; lastActivity: number; lastReplyAt?: number; readAt?: number }>(list: T[], want?: string): string | undefined {
   if (want && list.some((x) => x.id === want)) return want

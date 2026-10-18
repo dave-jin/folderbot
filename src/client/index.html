@@ -18,9 +18,22 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
   <title>Folder Bot</title>
+  <!-- 🔴 CF ① A · 첫 그림 (2026-10-19 Dave «전부 A» · 목업 03_디자인/2026-10-12_로딩-전환-목업 ①).
+       JS 가 다 올 때까지 검은 빈 판이었다(폰 원격 1.0초 · 나쁜 망 3.0초). 앱의 «호스트에 연결하는 중…» 화면(App.tsx `!s.loaded`)과
+       **같은 모양**을 HTML 에 그대로 넣는다 — 스타일도 여기 인라인이라 CSS 파일을 기다리지 않는다. React 가 #root 를 처음 그리는 순간 이 그림을 걷는다.
+       ⚠ 테마는 앱(`theme.ts` applyTheme)과 같은 값을 먼저 정한다 — 라이트 테마에서 검은 판이 한 번 번쩍이지 않게. -->
+  <script>try{var t=localStorage.getItem('fb:theme')||'auto';var d=t==='dark'||(t==='auto'&&!matchMedia('(prefers-color-scheme: light)').matches);document.documentElement.dataset.theme=d?'dark':'light';var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',d?'#141414':'#ffffff')}catch(e){}</script>
+  <style>
+    html,body{height:100%;margin:0;background:#141414}
+    :root[data-theme="light"],:root[data-theme="light"] body{background:#fff}
+    #fb-splash{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;background:#141414;color:#666;font:13px/1.65 'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',system-ui,sans-serif;text-align:center;-webkit-font-smoothing:antialiased}
+    :root[data-theme="light"] #fb-splash{background:#fff;color:#8a8a8a}
+    #fb-splash .bd{fill:#e08850;stroke:#141414}
+    :root[data-theme="light"] #fb-splash .bd{fill:#c2662f;stroke:#fff}
+  </style>
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root"><div id="fb-splash" role="status"><svg viewBox="0 0 64 64" width="40" height="40" style="display:block;overflow:visible" aria-hidden="true"><path d="M6 14a4 4 0 0 1 4-4h14l5 5h29a4 4 0 0 1 4 4v33a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill="#e08850" opacity=".55"/><path d="M6 24a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill="#e08850"/><rect x="20" y="33" width="6" height="8" rx="3" fill="rgba(0,0,0,.6)"/><rect x="38" y="33" width="6" height="8" rx="3" fill="rgba(0,0,0,.6)"/><path d="M27 46h10" stroke="rgba(0,0,0,.6)" stroke-width="3" stroke-linecap="round"/><circle class="bd" cx="56" cy="56" r="7" stroke-width="3"/></svg>호스트에 연결하는 중…</div></div>
   <script type="module" src="/main.tsx"></script>
 </body>
 </html>

@@ -8,6 +8,7 @@ import { api } from './api'
 import { isDoneSection, orderItems, orderSections, peekDone, staleProposal } from '../core/todo'
 import { dueChipOf, dueText, quickDues, splitDue, bareDayAsk } from '../core/due'
 import { sessionUnread } from '../core/unread'
+import { autoKind, sessArea } from '../core/autoArea'
 import { ACT_COLOR, ACT_ICON, ACT_LABEL, LONG, actOf, buzz, slotOf, useSwipeCfg, type SwipeAct } from './swipe'
 import { HOLD_MS, decide, dropIndex } from './gesture'
 import { FolderBot, Icon, Mid } from './FolderBot'
@@ -60,7 +61,7 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
     setPick(null)
     // BO · 누르는 순간 그 세션으로 간다 — 만들기는 뒤에서, 실패하면 되돌리고 알린다(`newSession.ts`)
     // ⚠ 새 세션마다 모델 상태를 다시 본다 (2026-09-15 Dave) — 만들기가 끝난 뒤에
-    startSession({ bot, name: `세션 ${sessions.length + 1}`, vendor: vendor ?? provs[0]?.id, defaults: s.defaults, dispatch, go, prev: sessionId, say, after: () => void refreshModels() })
+    startSession({ bot, name: `세션 ${sessions.filter((x) => sessArea(x) === 'chat').length + 1}`, vendor: vendor ?? provs[0]?.id, defaults: s.defaults, dispatch, go, prev: sessionId, say, after: () => void refreshModels() })
   }
   /**
    * 🔴 **제목은 그 자리에서 고친다** (2026-09-15 Dave: «채팅 제목이 수정되게도 해줘»).
@@ -79,6 +80,24 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
   }
   const todos = (s.todos[bot.id] ?? [])
   /**
+   * CC · **채팅과 자동화를 나눈다** (2026-10-12 Dave: *«기존 채널 소통과 분리해서 표시해줘. 내가 가급적 사용하지 않도록»*).
+   * 위에는 사람이 쓰는 채팅 세션만, 그 아래 접힌 «자동화» 줄에 소통·채널·루틴·봇끼리 세션을 둔다(기본 접힘 · 봇마다 기억).
+   * 접혀 있어도 도는 중·답 기다림이면 점이 켜지고, 지금 보고 있는 세션이 자동화 쪽이면 펼쳐 보인다. 판정은 `core/autoArea`.
+   */
+  const chat = sessions.filter((x) => sessArea(x) === 'chat')
+  const auto = sessions.filter((x) => sessArea(x) === 'auto')
+  // 지금 보는 세션이 자동화면 펼쳐 보인다 — 그래도 머리 줄을 누르면 접힌다(`shut` · 그 세션을 보는 동안만). 종전엔 눌러도 안 접히고 저장값만 몰래 뒤집혔다
+  const viewingAuto = auto.some((x) => x.id === sessionId)
+  const [shut, setShut] = useState<string | null>(null)
+  const autoOpen = !!open.auto || (viewingAuto && shut !== sessionId)
+  const togAuto = () => { if (autoOpen) { setOpen((o) => ({ ...o, auto: false })); if (viewingAuto) setShut(sessionId ?? null) } else { setOpen((o) => ({ ...o, auto: true })); setShut(null) } }
+  const autoDot = auto.some((x) => x.state === 'awaiting_input') ? 'wait' : auto.some((x) => x.state === 'running') ? 'run' : ''
+  const row = (x: SessionInfo) => ren?.id === x.id
+          ? <div key={x.id} className="srow edit"><span className="dot none" /><input autoFocus className="rin" value={ren.v} onChange={(e) => setRen({ id: x.id, v: e.target.value })}
+              onFocus={(e) => e.currentTarget.select()} onBlur={() => void saveRen()}
+              onKeyDown={(e) => { if (e.nativeEvent.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); void saveRen() } else if (e.key === 'Escape') { e.preventDefault(); setRen(null) } }} /></div>
+          : <button key={x.id} className={`srow ${x.id === sessionId ? 'on' : ''} ${sessionUnread(x.lastReplyAt, x.readAt) ? 'unread' : ''} ${autoKind(x) ? 'auto' : ''}`} onClick={() => go(bot.id, x.id)} onDoubleClick={(e) => { e.stopPropagation(); setRen({ id: x.id, v: x.name }) }}>{/* AV · 봇 줄의 더블링이 «어느 세션 때문인지» 여기서 보인다 — 종전엔 아무 표시가 없어 다 읽은 줄 알았다 */}<span className={`dot ${x.state === 'running' ? 'run' : x.state === 'awaiting_input' ? 'wait' : x.state === 'error' ? 'err' : sessionUnread(x.lastReplyAt, x.readAt) ? 'unread' : 'none'}`} /><span className="n">{x.name}</span>{autoKind(x) ? <span className="ak">{autoKind(x)}</span> : null}<VendorMark vendor={x.vendor} size={11} /><span className="m">{x.state === 'running' ? <Elapsed from={x.turnStartedAt} /> : x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span><span className="ib ren" title="이름 바꾸기 (두 번 누르기)" onClick={(e) => { e.stopPropagation(); setRen({ id: x.id, v: x.name }) }}><Icon n="edit" size={11} /></span><span className="ib del" title="세션 삭제" onClick={(e) => { e.stopPropagation(); void delSession(x) }}><Icon n="x" size={11} /></span></button>
+  /**
    * 세션 삭제 — 워커를 내리고 기록을 지운다. 되돌릴 수 없으니 한 번 묻는다.
    * 지운 게 지금 보고 있는 세션이면 남은 첫 세션으로 옮긴다(없으면 세션 없는 상태로).
    * ⚠ 호스트는 파일에 «지웠다» 표식을 남긴다 — 부팅 때 그 표식을 건너뛰지 않으면 되살아난다(session.ts 생성자).
@@ -88,7 +107,7 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
     if (!confirm(`«${x.name}» 세션을 지울까요?${warn}\n\n대화 기록이 사라지고 되돌릴 수 없어요.`)) return
     try {
       await api(`/sessions/${x.id}`, { method: 'DELETE' })
-      const left = sessions.filter((y) => y.id !== x.id)
+      const left = sessions.filter((y) => y.id !== x.id && sessArea(y) === 'chat')
       if (x.id === sessionId) go(bot.id, left[0]?.id)
       say(`«${x.name}» 세션을 지웠어요`)
     } catch (e) { say((e as Error).message) }
@@ -102,26 +121,24 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
       * 「폴더」 탭에는 여전히 없다(거기는 파일만 본다).
       */}
     {only === 'files' ? null : <div className="sec fix" style={{ height: secH.sessions }}>
-      <button className="sech" onClick={() => tog('sessions')}><Icon n={secOn('sessions') ? 'chevd' : 'chev'} size={9} /><span>세션</span><span className="c">{sessions.length}</span><span className="tools on"><span className="ib nsb" title="새 세션" onClick={(e) => { e.stopPropagation(); if (provs.length > 1) { setPick(anchorOf(e.currentTarget as HTMLElement)); setOpen((o) => ({ ...o, sessions: true })) } else void newSession() }}><Icon n="plus" size={12} /></span></span></button>
-      {secOn('sessions') ? <div className="secb" style={{ padding: '0 0 6px' }}>{sessions.map((x) => ren?.id === x.id
-          ? <div key={x.id} className="srow edit"><span className="dot none" /><input autoFocus className="rin" value={ren.v} onChange={(e) => setRen({ id: x.id, v: e.target.value })}
-              onFocus={(e) => e.currentTarget.select()} onBlur={() => void saveRen()}
-              onKeyDown={(e) => { if (e.nativeEvent.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); void saveRen() } else if (e.key === 'Escape') { e.preventDefault(); setRen(null) } }} /></div>
-          : <button key={x.id} className={`srow ${x.id === sessionId ? 'on' : ''} ${sessionUnread(x.lastReplyAt, x.readAt) ? 'unread' : ''}`} onClick={() => go(bot.id, x.id)} onDoubleClick={(e) => { e.stopPropagation(); setRen({ id: x.id, v: x.name }) }}>{/* AV · 봇 줄의 더블링이 «어느 세션 때문인지» 여기서 보인다 — 종전엔 아무 표시가 없어 다 읽은 줄 알았다 */}<span className={`dot ${x.state === 'running' ? 'run' : x.state === 'awaiting_input' ? 'wait' : x.state === 'error' ? 'err' : sessionUnread(x.lastReplyAt, x.readAt) ? 'unread' : 'none'}`} /><span className="n">{x.name}</span><VendorMark vendor={x.vendor} size={11} /><span className="m">{x.state === 'running' ? <Elapsed from={x.turnStartedAt} /> : x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span><span className="ib ren" title="이름 바꾸기 (두 번 누르기)" onClick={(e) => { e.stopPropagation(); setRen({ id: x.id, v: x.name }) }}><Icon n="edit" size={11} /></span><span className="ib del" title="세션 삭제" onClick={(e) => { e.stopPropagation(); void delSession(x) }}><Icon n="x" size={11} /></span></button>)}
+      <button className="sech" onClick={() => tog('sessions')}><Icon n={secOn('sessions') ? 'chevd' : 'chev'} size={9} /><span>세션</span><span className="c">{chat.length}</span><span className="tools on"><span className="ib nsb" title="새 세션" onClick={(e) => { e.stopPropagation(); if (provs.length > 1) { setPick(anchorOf(e.currentTarget as HTMLElement)); setOpen((o) => ({ ...o, sessions: true })) } else void newSession() }}><Icon n="plus" size={12} /></span></span></button>
+      {secOn('sessions') ? <div className="secb" style={{ padding: '0 0 6px' }}>{chat.map(row)}
         {/* 🔴 **세션이 없을 때도 여기서 시작한다** (2026-09-13 Dave). 종전 「메시지를 보내면 생겨요」 는
             **막다른 안내**였다 — 누가 이 폴더를 맡을지(Claude / ChatGPT) 고를 자리가 어디에도 없었다.
             ⚠ 깔린 에이전트가 하나면 묻지 않는다 — 고를 게 없는데 묻는 건 문턱만 하나 더 만드는 것이다. */}
         {/* BG · **목록 끝에도 ＋** (2026-09-27 Dave · 스크린샷_1721: «플러스 버튼이 세션 한단에도 + 로 나와 있으면 어떨까»).
             머리의 ＋ 는 절 머리를 훑어야 보이고 폭이 좁으면 작다 — 방금 본 세션 줄 바로 아래에서 이어 누르게 한다.
             파일 트리 끝 «참조 폴더 더하기»(BC) 와 같은 말투·모양이다(흐린 글 · 새 색 없음). 머리 ＋ 와 똑같이 움직인다 */}
-        {sessions.length ? <button className="srow sadd" onClick={(e) => { if (provs.length > 1) setPick(anchorOf(e.currentTarget as HTMLElement)); else void newSession() }}><Icon n="plus" size={11} color="var(--t3)" /><span className="n">새 세션</span></button> : null}
-        {!sessions.length ? <button className="kv sempty" onClick={(e) => { if (provs.length > 1) setPick(anchorOf(e.currentTarget as HTMLElement)); else void newSession() }}><Icon n="plus" size={11} /><span>{provs.length > 1 ? 'Claude 나 ChatGPT 로 시작' : '세션 시작'}</span></button> : null}
+        {chat.length ? <button className="srow sadd" onClick={(e) => { if (provs.length > 1) setPick(anchorOf(e.currentTarget as HTMLElement)); else void newSession() }}><Icon n="plus" size={11} color="var(--t3)" /><span className="n">새 세션</span></button> : null}
+        {!chat.length ? <button className="kv sempty" onClick={(e) => { if (provs.length > 1) setPick(anchorOf(e.currentTarget as HTMLElement)); else void newSession() }}><Icon n="plus" size={11} /><span>{provs.length > 1 ? 'Claude 나 ChatGPT 로 시작' : '세션 시작'}</span></button> : null}
+        {auto.length ? <button className="srow autoh" onClick={togAuto} title="소통·연결 채널·루틴처럼 봇이 스스로 쓰는 세션 — 오래된 것은 저절로 정리돼요"><Icon n={autoOpen ? 'chevd' : 'chev'} size={9} color="var(--t3)" /><span className="n">자동화</span>{autoDot ? <span className={`dot ${autoDot}`} /> : null}<span className="m">{auto.length}</span></button> : null}
+        {auto.length && autoOpen ? auto.map(row) : null}
         {pick ? <Float at={pick} onClose={() => setPick(null)}>{provs.map((pv) => <button key={pv.id} onClick={() => void newSession(pv.id)}><Mark id={pv.id} size={14} /><span>{PROVIDER_LABEL[pv.id]}</span></button>)}<hr /><button onClick={() => setPick(null)}><span>취소</span></button></Float> : null}</div> : null}
     </div>}
     {only === 'files' ? null : <div className="divy" onPointerDown={dragY('sessions')} onDoubleClick={() => onSecH({ ...secH, sessions: 112 })} />}
     {/* 할 일 / Inbox — `only='todo'` 면 이 절 하나가 화면을 다 쓴다 */}
     {only === 'files' ? null : <div className={only === 'todo' ? 'sec grow' : 'sec fix'} style={!only && open.todo ? { height: secH.todo } : undefined}>
-      {bot.orchestrator ? <InboxSec open={secOn('todo')} tog={() => tog('todo')} onSend={onTalk} /> : <TodoSec bot={bot} items={todos} open={secOn('todo')} tog={() => tog('todo')} onDelegate={(t) => onTalk(`${t.title}${t.desc ? ` — ${t.desc}` : ''}`)} onOpenFile={onOpenFile} reload={() => loadTodo(bot.id)} phone={phone} />}
+      {bot.orchestrator ? <InboxSec open={secOn('todo')} tog={() => tog('todo')} onSend={onTalk} /> : <TodoSec bot={bot} items={todos} loading={!s.todos[bot.id]} open={secOn('todo')} tog={() => tog('todo')} onDelegate={(t) => onTalk(`${t.title}${t.desc ? ` — ${t.desc}` : ''}`)} onOpenFile={onOpenFile} reload={() => loadTodo(bot.id)} phone={phone} />}
     </div>}
     {only ? null : <div className="divy" onPointerDown={dragY('todo')} onDoubleClick={() => onSecH({ ...secH, todo: 84 })} />}
     {/* 파일 — `only='files'` 면 이 절 하나가 화면을 다 쓴다 */}
@@ -212,7 +229,7 @@ export function Elapsed({ from }: { from?: number }) {
  * · 체크하면 «완료» 절 끝으로 내려가고(파일에서도), 끌면 그 줄이 파일에서 옮겨진다.
  * · 「todo.md」 버튼으로 원문을 열어 자유롭게 고칠 수 있다 — 저장하면 이 패널이 따라온다(파일 감시).
  */
-function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone }: { bot: Bot; items: TodoItem[]; open: boolean; tog: () => void; onDelegate: (t: TodoItem) => void; onOpenFile: (rel: string) => void; reload: () => Promise<void>; phone?: boolean }) {
+function TodoSec({ bot, items, loading = false, open, tog, onDelegate, onOpenFile, reload, phone }: { bot: Bot; items: TodoItem[]; /** CF ③ · 아직 못 받았다 — «없다» 와 «아직 모른다» 를 가른다 */ loading?: boolean; open: boolean; tog: () => void; onDelegate: (t: TodoItem) => void; onOpenFile: (rel: string) => void; reload: () => Promise<void>; phone?: boolean }) {
   const [adding, setAdding] = useState<string | null>(null); const [line, setLine] = useState('')
   const [edit, setEdit] = useState<number | null>(null); const [draft, setDraft] = useState('')
   const [openRows, setOpenRows] = useState<Set<number>>(() => new Set())
@@ -470,14 +487,15 @@ function TodoSec({ bot, items, open, tog, onDelegate, onOpenFile, reload, phone 
   }
 
   return <>
-    <button className="sech" onClick={tog}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>할 일</span><span className="c">{left}{doneN ? ` · 완료 ${doneN}` : ''}</span>
+    <button className="sech" onClick={tog}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>할 일</span><span className="c">{loading ? '' : left}{doneN ? ` · 완료 ${doneN}` : ''}</span>
       <span className="tools">
         <span className="ib" title="새 할 일" onClick={(e) => { e.stopPropagation(); const sec0 = secs.find(([n2]) => !isDoneSection(n2))?.[0] ?? secs[0]?.[0] ?? ''; if (phone) setESheet({ line: -1, title: '', desc: '', section: sec0 }); else setAdding(sec0) }}><Icon n="plus" size={12} /></span>
         <span className="ib mdb" title="todo.md 를 열어 원문 고치기" onClick={(e) => { e.stopPropagation(); onOpenFile('todo.md') }}><Icon n="doc" size={11} /><span>todo.md</span></span>
       </span>
     </button>
     {open ? <div className="secb" style={{ padding: '0 0 6px' }} onDragOver={(e) => { if (drag !== null) e.preventDefault() }} onDrop={(e) => { e.preventDefault(); void drop(null) }}>
-      {!items.length ? <div className="kv" style={{ color: 'var(--t3)' }}>할 일이 없어요 — + 로 적거나 todo.md 를 여세요</div> : null}
+      {/* 🔴 CF ③ (2026-10-19 Dave · 목업 «할 일 칸») — 받는 중에 «할 일이 없어요» 는 틀린 말이다. 받는 중이면 회색 줄 둘, 받았는데 비었을 때만 «없어요» */}
+      {!items.length ? (loading ? <div className="tskel" role="status" aria-label="할 일을 읽는 중"><div className="skel" style={{ width: '80%' }} /><div className="skel" style={{ width: '64%' }} /></div> : <div className="kv" style={{ color: 'var(--t3)' }}>할 일이 없어요 — + 로 적거나 todo.md 를 여세요</div>) : null}
       {/* 🔴 CK-3 · 봇의 제안 — [넣기] 한 것만 정식 할 일이 되고 Akiflow 로 간다. [버리기] 는 그 줄을 지운다 */}
       {props.length ? <div className="tprops">
         <div className="tsec ph"><Icon n="sub" size={10} /><span>제안</span><span className="c">{props.length}</span><span className="sp" /><span className="why">봇이 올림 · 넣어야 할 일이 돼요</span></div>
