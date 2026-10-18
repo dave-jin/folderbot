@@ -2562,9 +2562,12 @@ try {
           await api(`/sessions/${sidS}/send`, { text: '느린일 길게 CL 첫째' })
           await until(async () => (await info())?.state === 'running')
           await pg.click('.composer .cin'); await pg.keyboard.type('되읊어: 대기 말 CL'); await wait(200)
-          const btns = await pg.evaluate(() => ({ stop: !!document.querySelector('.composer .stopb'), send: !!document.querySelector('.composer .sendb'), now: !!document.querySelector('.nowchip') }))
-          if (!btns.stop || !btns.send) fail('🔴 CL-1: 일하는 중에 글을 쓰면 ⏹ 가 사라진다 ' + JSON.stringify(btns))
-          if (!btns.now) fail('🔴 CL-2: 일하는 중에 글을 쓰면 «⚡ 멈추고 보내기» 가 떠야 한다')
+          // 🔴 2026-10-19 Dave «하나로 통일 · 스탑은 상태 줄 옆» — 입력줄 단추는 보내기(대기 +N) 하나, 멈추기는 진행 줄 바로 뒤
+          const btns = await pg.evaluate(() => ({ composerStop: !!document.querySelector('.composer .stopb'), sends: document.querySelectorAll('.composer .sendb').length, liveStop: !!document.querySelector('.live .stop'), now: !!document.querySelector('.nowchip'), badge: document.querySelector('.composer .sendb .bd')?.textContent ?? '' }))
+          if (btns.composerStop || btns.sends !== 1) fail('🔴 입력줄 단추는 하나(보내기)여야 한다 ' + JSON.stringify(btns))
+          if (!btns.liveStop) fail('🔴 일하는 중 진행 줄 옆에 [멈추기] 가 없다 ' + JSON.stringify(btns))
+          if (btns.now) fail('🔴 «⚡ 멈추고 보내기» 칩이 되살아났다 ' + JSON.stringify(btns))
+          if (!/\+1/.test(btns.badge)) fail('대기 보내기 단추에 +1 표시가 없다 ' + JSON.stringify(btns))
           await pg.click('.composer .sendb'); await wait(300)
           // 🔴 ⎋ 차례(기획안 §12) — 열린 것(입력칸의 / 목록 · 팝업)이 있으면 그것부터 닫고 턴은 안 멈춘다. 아무것도 없을 때만 멈춘다
           await pg.click('.composer .cin'); await pg.keyboard.type('/'); await wait(300)
@@ -2617,7 +2620,7 @@ try {
           // ⚠ 화면을 먼저 옮기고 지운다 — 보던 세션을 지우면 화면이 그 세션을 다시 부르다 404 를 받아 «page errors» 에 걸린다
           await pg.evaluate((h) => { location.hash = h }, backHash); await wait(900)
           await fetch(base + `/api/sessions/${sidS}`, { method: 'DELETE' })
-          ok('CL ⎋ 멈추기 — 글이 있어도 ⏹ · 대기 붙잡기 · 멈춘 자리 줄 · [이어 보내기] · 고쳐 다시 = 되감기(B · 이전 시도) · ⌥⏎ 멈추고 바로 보내기')
+          ok('CL ⎋ 멈추기 — 입력줄 단추 하나(대기 +1) · 진행 줄 옆 [멈추기] · 대기 붙잡기 · 멈춘 자리 줄 · [이어 보내기] · 고쳐 다시 = 되감기(B · 이전 시도) · ⌥⏎ 멈추고 바로 보내기')
         }
         // 레일 행 호버 → 상세 카드(경로 · 상태 · 세션) · 떠나면 사라진다
         await pg.hover('.brow'); await wait(600); const hc = await pg.textContent('.hcard'); if (!hc || !/세션|메시지를 보내면|🤝 소통/.test(hc) || !/할 일/.test(hc)) fail('ui hover card: ' + hc)   // ⚠ 2026-10-02 · 오케스트레이터는 세션이 «🤝 소통» 하나뿐일 수 있다(«세션 N» 줄이 안 선다)
@@ -4536,10 +4539,10 @@ try {
             await pg.fill('.composer .cin', ''); await wait(200)
           }
           /**
-           * ⛔ **생각 줄에는 중단 단추가 없다** (2026-09-14 Dave) — 입력줄의 것과 겹친다.
+           * ⛔ **멈추기 단추는 진행 줄의 것 하나** (2026-10-19 Dave · 2026-09-14 의 «입력줄 하나» 를 뒤집음) — 입력줄에 ⏹ 가 다시 서면 둘이 된다.
            *    같은 일을 하는 단추가 한 화면에 둘이면 둘 다 «진짜 그건가» 를 한 번씩 생각하게 만든다.
            */
-          if (await pg.$('.live .stop')) fail('🔴 생각 줄에 중단 단추가 되살아났다')
+          if (await pg.$('.composer .stopb')) fail('🔴 입력줄에 ⏹ 가 되살아났다 — 멈추기는 진행 줄 옆 하나다')
           ok('맥 기본 단축키 — ⌘, 설정 · ⌘/ 표 · 글 칠 때는 안 돈다')
           /**
            * 🔴 **⌘[ ⌘] 는 방문 히스토리** (루프 2/10). 종전에는 레일의 이전·다음 폴더였다 — 알림·칩으로 뛴 뒤

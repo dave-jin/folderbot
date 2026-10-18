@@ -1815,20 +1815,22 @@ function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled
   const effortBtn = <button className={`cbtn ${pop === 'effort' ? 'on' : ''}`} onClick={() => setPop(pop === 'effort' ? '' : 'effort')} title="노력">{effortLabel(cfg.effort, vend)}{phone ? <span className="chev">▾</span> : null}</button>
   const ringBtn = <button className={`ring ${pct >= 80 ? 'hot' : ''}`} onClick={() => setPop(pop === 'ctx' ? '' : 'ctx')} title={ctx ? `컨텍스트 ${pct}%` : '컨텍스트'}><Ring pct={pct} size={phone ? 20 : 18} />{pct >= 80 && !phone ? <span style={{ fontSize: 11.5, marginLeft: 4 }}>압축</span> : null}</button>
   const plusBtn = <button className={phone ? 'plusb' : `cbtn ${pop === 'plus' ? 'on' : ''}`} style={phone ? undefined : { padding: '3px 6px' }} title="첨부" onClick={() => setPop(pop === 'plus' ? '' : 'plus')} disabled={uploading}><Icon n="plus" size={phone ? 20 : 14} /></button>
-  // CL-1 · 일하는 동안엔 글이 있어도 ⏹ 가 남는다 — [⏹] [↑ 대기] 를 나란히(폰도 같다)
-  const stopBtn = <button className="stopb" onMouseDown={(e) => e.preventDefault()} onClick={stopNow} title="멈추기 (⎋)" aria-label="멈추기"><Icon n="stop" size={phone ? 14 : 11} /></button>
-  const sendBtn = mode === 'stop' ? stopBtn
-    : mode === 'off' && phone ? <span className="sendb mic"><Icon n="mic" size={20} /></span>
+  /**
+   * 🔴 **입력줄 단추는 하나다 — 보내기(일하는 중이면 대기 +N)** (2026-10-19 Dave 스크린샷_101·059: *«예전처럼 하나로 통일해줘.
+   *    스탑버튼은 (상태 줄) 옆에 보이면 충분해 · 항상 클로드 코드 디자인을 레퍼런스로 해»*). CL-1 의 [⏹][↑] 나란히와
+   *    CL-2 의 «⚡ 멈추고 보내기» 칩·단축키 안내 줄을 뺐다. 멈추기는 진행 줄(`Live`)의 [■ 멈추기] 와 ⎋, 바로 보내기는 ⌥⏎ 와
+   *    대기 줄의 «지금» 이 맡는다. ⛔ 입력줄에 ⏹ 를 다시 세우지 마라 — 같은 일을 하는 단추가 둘이 된다.
+   */
+  const idle = mode === 'off' || mode === 'stop'
+  const sendBtn = idle && phone ? <span className="sendb mic"><Icon n="mic" size={20} /></span>
       /**
        * 🔴 **보내기 단추는 초점을 뺏지 않는다** (2026-09-22 실측). 누르는 순간 입력칸에서 초점이 빠지면 키보드가 닫히고,
        *    그 바람에 입력칸이 제자리를 다시 잡느라 **mousedown 과 mouseup 사이에 단추가 움직여 click 이 아예 안 난다** —
        *    폰에서 보내기가 «눌리지도 않고 아무 일도 안 일어나는» 정체가 이것이었다(Z 의 하단 탭이 들어오며 드러났다).
        *    보낸 뒤에도 키보드가 남아 있는 것이 사람이 바라는 동작이기도 하다.
        */
-      : <button className={`sendb ${mode === 'off' ? 'off' : ''}`} onMouseDown={(e) => e.preventDefault()} onClick={send} disabled={mode === 'off' || busy || uploading} title={mode === 'queue' ? `대기열에 넣기 (${sendKey})` : `보내기 (${sendKey})`}><Icon n="up" size={phone ? 16 : 12} />{mode === 'queue' ? <span className="bd">+{queue.length + 1}</span> : null}</button>
-  const sendEl = mode === 'queue' && (running || state === 'awaiting_input') ? <>{stopBtn}{sendBtn}</> : sendBtn
-  /** CL-2 · 일하는 중에 글을 쓰면 «⚡ 멈추고 보내기» — 보내기 단추는 그대로 «대기» 다 */
-  const nowChip = mode === 'queue' && (running || state === 'awaiting_input') && !drill ? <button className="nowchip" onMouseDown={(e) => e.preventDefault()} onClick={() => void sendNow()} title={enterSends ? '지금 하던 단계를 멈추고 이 말을 바로 보내요 (⌥⏎)' : '지금 하던 단계를 멈추고 이 말을 바로 보내요'}>⚡ 멈추고 보내기{enterSends ? <span className="k">⌥⏎</span> : null}</button> : null
+      : <button className={`sendb ${idle ? 'off' : ''}`} onMouseDown={(e) => e.preventDefault()} onClick={send} disabled={idle || busy || uploading} title={mode === 'queue' ? `대기열에 넣기 (${sendKey})` : `보내기 (${sendKey})`}><Icon n="up" size={phone ? 16 : 12} />{mode === 'queue' ? <span className="bd">+{queue.length + 1}</span> : null}</button>
+  const sendEl = sendBtn
   const popEl = pop === 'mode' ? <div className="cpop"><div className="h">모드 · 이 세션</div>{MODES.map((m, i) => <button key={m.v} className={`prow2 ${cfg.mode === m.v ? 'on' : ''}`} onClick={() => void applyCfg({ permissionMode: m.v })}><div className="t"><b>{m.t}</b><small>{m.d}</small></div>{cfg.mode === m.v ? <Icon n="check" size={13} /> : <span className="k">{i + 1}</span>}</button>)}<div className="hint"><span>1~4</span><span className="sp" /><span>새 세션은 설정의 기본값으로</span></div>{cur?.restartPending ? <div className="hint pend">{modePendTitle}</div> : null}</div>
     /**
      * 🔴 **종류별 최신 하나씩만 보인다** (2026-09-14 Dave: «다른 모델은 안쓰고 최신 버전만 종류별로만
@@ -1961,7 +1963,7 @@ function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled
         {cur?.stopped && !running && state !== 'awaiting_input' && !drill ? <div className="stopln" role="status"><Icon n="stop" size={10} /><span>응답을 멈췄어요</span>{lastUser ? <><button onClick={fixPrompt}>프롬프트 고치기</button><button onClick={() => void retryStopped()}>다시 시도</button></> : null}{stoppedFiles.length ? <div className="files sfiles"><span className="fl">멈추기 전에 고친 파일 — 되돌리지 않았어요</span>{stoppedFiles.map((p) => <span key={p} className="fpair"><FileChip abs={p} botAbs={bot.abs} botId={bot.id} onClick={() => onFile(p)} /><DiffBtn abs={p} onOpen={() => onFile(p)} /></span>)}</div> : null}</div> : null}
         {/* O · 본문과 상태 줄 사이는 8px 고정 — 남는 공간은 상태 줄 **뒤**로 보낸다(종전엔 스페이서가 앞에 있어 큰 빈 공간이 생겼다) */}
         {/* AB · 🔴 턴이 끝나도 `bg` 가 남아 있으면 대기 줄은 남는다 — 사라지는 순간이 「끝났나?」의 정체였다 */}
-        {cur && (running || state === 'awaiting_input' || (cur.bg ?? 0) > 0) ? <Live cur={cur} state={state} color={bot.color} /> : null}
+        {cur && (running || state === 'awaiting_input' || (cur.bg ?? 0) > 0) ? <Live cur={cur} state={state} color={bot.color} onStop={running || state === 'awaiting_input' ? stopNow : undefined} hint={!touch} /> : null}
         {/* AJ · CLI 가 낡았을 때만 뜬다 — 누르면 호스트에서 바로 올린다 */}
         {cliOld ? <div className="live cliold">
           <Icon n="warn" size={14} color="var(--wait)" />
@@ -2001,7 +2003,6 @@ function Chat({ bot, sessions, cur, items, loaded, pending, prefill, onPrefilled
           onSave={(v) => onQueue((l) => (v.trim() ? l.map((x, k) => (k === i ? v : x)) : l.filter((_, k) => k !== i)))}
           onDrop={() => onQueue((l) => l.filter((_, k) => k !== i))} />)}
       </div> : null}
-      {nowChip ? <div className="nowrow">{nowChip}{!phone ? <span className="khint">⎋ 멈추기 · {sendKey} 대기{enterSends ? ' · ⌥⏎ 지금' : ''}</span> : null}</div> : null}
       {fixing ? <div className="fixrow">멈춘 요청을 고쳐 보내요 — 그 요청 직전으로 대화를 되감아 새로 보내요(파일은 그대로) · <button onClick={() => { setFixing(false); setText('') }}>취소 (⎋)</button></div> : null}
       {/* 🔴 **입력창의 링크도 아이콘을 갖는다** (2026-09-13 Dave). ⚠ `textarea` 안에는 그림을 못 넣는다 —
           글자만 담는 칸이다. 그래서 쓰는 중인 주소를 **입력칸 위 칩**으로 올린다: 같은 캐시, 같은 아이콘,
@@ -2112,14 +2113,20 @@ function QueueRow({ n, text, who, onSave, onDrop, onNow }: { n: number; text: st
  * 🔴 **턴이 끝나도 남이 일하면 남아 있는다**(`bg`) — 종전에는 그 순간 이 줄이 통째로 사라져 「끝났나?」가 됐다.
  * 🔴 **2분이 넘으면 화면이 먼저 «가도 된다» 고 말한다** — 기다림에서 가장 필요한 한 마디다.
  */
-function Live({ cur, state, color, onOpenBg }: { cur: SessionInfo; state: string; color: string; onOpenBg?: () => void }) {
+function Live({ cur, state, color, onOpenBg, onStop, hint }: { cur: SessionInfo; state: string; color: string; onOpenBg?: () => void; onStop?: () => void; hint?: boolean }) {
+  /**
+   * 🔴 **멈추기는 진행 줄 바로 옆** (2026-10-19 Dave · CleanShot 01:00:16 — *«스탑버튼은 이거 옆에 보이면 충분해»*).
+   *    Claude Code 의 «esc to interrupt» 처럼 무엇이 돌고 있는지 읽는 그 자리에서 멈춘다. 2026-09-14 의 «중단은 입력줄 하나» 를 뒤집었다 —
+   *    이제 입력줄에는 ⏹ 가 없다(단추 하나 · 보내기). 오른쪽 끝이 아니라 글 바로 뒤라 눈을 옮기지 않는다.
+   */
+  const stopEl = onStop ? <button className="stop" onMouseDown={(e) => e.preventDefault()} onClick={onStop} title="멈추기 (⎋)" aria-label="멈추기"><Icon n="stop" size={8} /><span className="w">멈추기</span>{hint ? <span className="k">esc</span> : null}</button> : null
   const [, tick] = useState(0)
   const from = cur.turnStartedAt ?? cur.inflight?.since ?? cur.lastActivity ?? Date.now()
   const holder = holderOf(state as SessionState, cur.inflight, Date.now(), cur.bg ?? 0)
   // 1초마다 다시 그린다 — 경과와 «30초 · 2분» 단계가 시간으로 바뀐다
   useEffect(() => { if (holder === 'none') return; const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t) }, [holder])
   if (holder === 'none') return null
-  if (holder === 'you') return <div className="live"><span className="glow" /><span className="tx">확인 대기 — 위 요청에 응답해 주세요</span><span className="el"><Elapsed from={cur.turnStartedAt} /></span></div>
+  if (holder === 'you') return <div className="live"><span className="glow" /><span className="tx">확인 대기 — 위 요청에 응답해 주세요</span><span className="el"><Elapsed from={cur.turnStartedAt} /></span>{stopEl}</div>
   const ms = Math.max(0, Date.now() - from)
   const a = cur.activity ?? ''
   if (holder === 'me') return <div className="live run work">
@@ -2127,8 +2134,8 @@ function Live({ cur, state, color, onOpenBg }: { cur: SessionInfo; state: string
     <span className="el mono"><Elapsed from={cur.turnStartedAt} /></span>
     <span className="sl">·</span>
     <span className="tx">{workLabel(a)}</span>
+    {stopEl}
     <span className="sp" />
-    {/* ⛔ **여기에 중단 단추를 다시 두지 마라** (2026-09-14 Dave). 중단은 입력줄의 것 하나다. */}
   </div>
   const L = holdLine(holder, cur.inflight, ms, cur.bg ?? 0)
   return <div className="live hold">
@@ -2136,6 +2143,7 @@ function Live({ cur, state, color, onOpenBg }: { cur: SessionInfo; state: string
     <span className="bounce"><i /><i /><i /></span>
     <span className="tx">{L.text}</span>
     {L.elapsed ? <span className="el mono">{L.elapsed}</span> : null}
+    {stopEl}
     <span className="sp" />
     {L.action === 'open' && onOpenBg ? <button className="hact" onClick={onOpenBg}>{L.actionLabel}</button> : null}
     {/* 「알림 켜기」 — 끝났을 때 폰으로 알리도록 설정의 알림 칸을 연다(자리를 떠도 되게 하는 것이 이 단추의 일이다) */}
