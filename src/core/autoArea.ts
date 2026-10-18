@@ -60,7 +60,7 @@ export function takeoverMode(x: AreaFacts): 'adopt' | 'fork' | 'none' {
 }
 
 /** 루틴마다 남기는 수 · 자동 세션 수명 · 최근 활동 유예 */
-export const AUTO_KEEP_PER_ROUTINE = 2
+export const AUTO_KEEP_PER_ROUTINE = 1
 export const AUTO_MAX_IDLE_MS = 7 * 24 * 3600_000
 export const AUTO_GRACE_MS = 30 * 60_000
 
@@ -82,7 +82,7 @@ export function autoHeld(x: DropFacts, now = Date.now()): boolean {
 /**
  * 정리할 자동 세션 id. 루틴이 돌 때와 매시간 부른다.
  * ① 채팅 영역·살아 있는 소통·살아 있는 채널은 손대지 않는다(소통은 자동 압축, 채널은 갈아타기가 맡는다)
- * ② 루틴은 **루틴마다** 최근 2개 — 넘친 것 중 잡혀 있지 않고 안 읽은 답이 없는 것
+ * ② 루틴은 **루틴마다** 최근 1개 — 넘친 것 중 잡혀 있지 않은 것(안 읽은 답이 있어도 · 2026-10-19 Dave)
  * ③ 마지막 활동 뒤 7일 지난 자동 세션 — 안 읽은 답이 있어도(자동화 영역은 사람이 안 보는 곳이라 안 읽음이 영영 안 풀린다)
  */
 export function autoToDrop(sessions: DropFacts[], now = Date.now()): string[] {
@@ -94,15 +94,17 @@ export function autoToDrop(sessions: DropFacts[], now = Date.now()): string[] {
 }
 
 /**
- * ② 만 — 루틴마다 최근 `keep` 개를 남긴다(AI · 2026-09-24 «루틴 세션은 둘까지» 를 루틴 단위로 고침).
- * 🔴 잡힌 것(도는 중·확인 대기·백그라운드·대기 말·30분 안)과 안 읽은 답은 걷지 않고, 남길 자리에 먼저 센다.
+ * ② 만 — 루틴마다 최근 `keep` 개를 남긴다(AI · 2026-09-24 «루틴 세션은 둘까지» 를 루틴 단위로 고침 → 2026-10-19 하나로).
+ * 🔴 잡힌 것(도는 중·확인 대기·백그라운드·대기 말·30분 안)은 걷지 않고, 남길 자리에 먼저 센다.
+ * 🔴 안 읽은 답은 루틴 세션을 지키지 않는다(2026-10-19 Dave «추천대로») — 루틴 답은 아무도 안 읽어 «안 읽음» 이 영영 안 풀렸고,
+ *    그 보호 때문에 루틴 세션이 7일 내내 쌓였다. 결과는 실행 기록과 `state.md` 보고에 남는다. 사람이 답한 세션은 이미 채팅이라(`adopted`) 여기 안 온다.
  */
 export function routinesToDrop(sessions: DropFacts[], keep = AUTO_KEEP_PER_ROUTINE, now = Date.now()): string[] {
   const by = new Map<string, DropFacts[]>()
   for (const x of sessions) if (autoKind(x) === '루틴') by.set(x.routine!, [...(by.get(x.routine!) ?? []), x])
   const out: string[] = []
   for (const mine of by.values()) {
-    const busy = (s: DropFacts) => autoHeld(s, now) || sessionUnread(s.lastReplyAt, s.readAt)
+    const busy = (s: DropFacts) => autoHeld(s, now)
     const idle = mine.filter((s) => !busy(s)).sort((a, b) => b.lastActivity - a.lastActivity)
     const room = Math.max(0, keep - mine.filter(busy).length)
     out.push(...idle.slice(room).map((s) => s.id))
