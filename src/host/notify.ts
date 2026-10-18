@@ -21,6 +21,7 @@ export class Notifier {
   }
   quiet(): boolean {
     const q = this.cfg.quiet ?? { from: '23:00', to: '07:00' }
+    if (q.off) return false   // 끔 — 시각은 남겨 두고 거르기만 멈춘다(2026-10-19 Dave «켜고 끌 수 있으면»)
     const [fh, fm] = q.from.split(':').map(Number), [th, tm] = q.to.split(':').map(Number)
     const d = new Date(); const cur = d.getHours() * 60 + d.getMinutes(); const f = fh * 60 + fm, t = th * 60 + tm
     return f > t ? cur >= f || cur < t : cur >= f && cur < t
@@ -33,7 +34,9 @@ export class Notifier {
     const suppressed = this.quiet() && kind !== 'awaiting' && !opts.force   // force — «푸시 테스트» 는 밤에도 간다
     if (!suppressed) {
       if (opts.mac !== false) this.mac(title, body, n)
-      if (opts.push !== false) void this.push(n)
+      // 폰 푸시는 «확인해 주세요»(awaiting)만 — 끝남·오류·할 일·루틴까지 다 보내면 하루 수백 번 울려 진짜 부름이 묻힌다(2026-10-19 Dave «계획대로» · iOS 기획안 ⑩-②).
+      // 나머지는 앱 알림 목록과 맥 배너에만 남는다. «푸시 테스트»(force)는 종류와 상관없이 간다.
+      if (opts.push !== false && (kind === 'awaiting' || opts.force)) void this.push(n)
     }
     return n
   }

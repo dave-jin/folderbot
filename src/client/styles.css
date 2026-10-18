@@ -844,7 +844,8 @@ b,strong { color:var(--w); font-weight:600 }
 .snav .nv.ref { color:var(--t3); margin-top:6px; position:relative }
 .snav .nv.ref::before { content:''; position:absolute; left:11px; right:11px; top:-4px; border-top:1px solid var(--line) }
 .sec-row.ref .nm { color:var(--t2) }
-.sin.tm { width:96px; padding:0 8px }
+.sin.tm { width:132px; padding:0 8px }   /* 96px 는 «오전 01:00» 과 시계 그림이 안 들어가 «오전 01:(» 로 잘렸다(2026-10-19 Dave 스크린샷) */
+.seg.qseg { margin-left:8px }
 .scp.builtin { background:var(--box); color:var(--t3) }
 /* 하네스 표 — 보기 전용 */
 .hfilter { display:flex; align-items:center; gap:9px; margin-bottom:10px } .hfilter .sfind { flex:1; margin:0 }

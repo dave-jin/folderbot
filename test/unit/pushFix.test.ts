@@ -70,6 +70,33 @@ describe('CF-④ 푸시 결과는 로그로 남고 403 은 구독을 지우지 �
   })
 })
 
+describe('조용한 시간 끄기 (2026-10-19)', () => {
+  it('꺼 두면 하루 종일 걸러도 맥 배너·푸시를 막지 않는다', async () => {
+    const { Notifier } = await import('../../src/host/notify')
+    const cfg = { port: 0, quiet: { from: '00:00', to: '23:59', off: true }, pushSubs: [{ endpoint: 'https://web.push.apple.com/qqq', keys: { p256dh: 'p', auth: 'a' }, device: 'iPhone' }] }
+    const n = new Notifier(cfg as never)
+    expect(n.quiet()).toBe(false)
+    cfg.quiet.off = false
+    expect(n.quiet()).toBe(true)
+  })
+})
+
+describe('폰 푸시는 «확인해 주세요» 만 (2026-10-19)', () => {
+  it('끝남·오류·할 일·루틴은 안 보내고 awaiting 만 보낸다', async () => {
+    const { Notifier } = await import('../../src/host/notify')
+    const cfg = { port: 0, quiet: { from: '00:00', to: '00:00' }, pushSubs: [{ endpoint: 'https://web.push.apple.com/yyy', keys: { p256dh: 'p', auth: 'a' }, device: 'iPhone' }] }
+    const n = new Notifier(cfg as never); reply = async () => ({ statusCode: 201 })
+    sent.length = 0
+    for (const k of ['done', 'error', 'todo', 'routine'] as const) n.emit(k, 'orch', 't', 'b', undefined, { mac: false })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(sent.length).toBe(0)
+    expect(n.events.slice(0, 4).map((e) => e.kind)).toEqual(['routine', 'todo', 'error', 'done'])   // 알림 목록에는 남는다
+    n.emit('awaiting', 'orch', '확인해 주세요', 'b', undefined, { mac: false })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(sent.length).toBe(1)
+  })
+})
+
 describe('CF-④ tailscale serve 를 거친 요청은 loopback 이 아니다', () => {
   it('프록시 머리가 있으면 바깥', async () => {
     const { isLoopbackReq } = await import('../../src/host/gateway')

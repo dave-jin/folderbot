@@ -191,7 +191,7 @@ function summary(id: SecId, s: ReturnType<typeof useStore>['s']): string {
   if (id === 'claude') return s.auth.verdict === 'loggedin' ? '로그인됨' : VERDICT_T[s.auth.verdict] ?? ''
   if (id === 'codex') return s.defaults.codex?.auth?.ok ? '로그인됨' : ''
   if (id === 'sessions') return s.defaults.idleMinutes === 0 ? '안 재움' : `절전 ${s.defaults.idleMinutes ?? 60}분`
-  if (id === 'notify') return s.quiet ? `조용 ${s.quiet.from}–${s.quiet.to}` : ''
+  if (id === 'notify') return s.quiet ? (s.quiet.off ? '조용한 시간 끔' : `조용 ${s.quiet.from}–${s.quiet.to}`) : ''
   return ''
 }
 
@@ -602,15 +602,19 @@ function NotifyPane() {
   const q = s.quiet ?? { from: '23:00', to: '07:00' }
   const [from, setFrom] = useState(q.from); const [to, setTo] = useState(q.to); const [msg, setMsg] = useState('')
   useEffect(() => { setFrom(q.from); setTo(q.to) }, [q.from, q.to])
-  const saveQ = async (f: string, t: string) => { if (f === q.from && t === q.to) return; try { await api('/quiet', { body: { from: f, to: t } }); await refresh(); setMsg('저장했어요') } catch (e) { setMsg((e as Error).message) } }
+  const saveQ = async (f: string, t: string, off = !!q.off) => { if (f === q.from && t === q.to && off === !!q.off) return; try { await api('/quiet', { body: { from: f, to: t, off } }); await refresh(); setMsg('저장했어요') } catch (e) { setMsg((e as Error).message) } }
   return <>
-    <Row t="이 기기 푸시" d="폰 푸시는 Tailscale serve 로 HTTPS 를 붙이고 홈 화면에 설치해야 동작해요." at="dev">
+    <Row t="이 기기 푸시" d="폰에는 «확인해 주세요» 만 울려요 — 끝남·오류·할 일은 알림 목록에만 남아요. 폰 푸시는 Tailscale serve 로 HTTPS 를 붙이고 홈 화면에 설치해야 동작해요." at="dev">
       <button className="btn" onClick={async () => setPushOn(await subscribePush(s.vapidPublic, navigator.userAgent.slice(0, 30)))}>{pushOn ? pushWhyText[pushOn] : '켜기'}</button>
     </Row>
-    <Row t="조용한 시간" d={<>이 사이에는 «확인해 주세요» 만 통과합니다. 모든 기기에 같이 적용돼요.{msg ? ` · ${msg}` : ''}</>} at="main">
-      <input className="sin tm" type="time" value={from} onChange={(e) => setFrom(e.target.value)} onBlur={() => void saveQ(from, to)} />
-      <span className="unit">–</span>
-      <input className="sin tm" type="time" value={to} onChange={(e) => setTo(e.target.value)} onBlur={() => void saveQ(from, to)} />
+    {/* 켬/끔 — 끄면 시각 칸을 숨기고 밤에도 맥 배너가 뜬다. 시각은 남겨 둬서 다시 켜면 그대로(2026-10-19 Dave) */}
+    <Row t="조용한 시간" d={<>{q.off ? '꺼져 있어요 — 밤에도 맥 배너가 떠요.' : '이 사이에는 «확인해 주세요» 만 통과합니다.'} 모든 기기에 같이 적용돼요.{msg ? ` · ${msg}` : ''}</>} at="main">
+      {q.off ? null : <>
+        <input className="sin tm" type="time" value={from} onChange={(e) => setFrom(e.target.value)} onBlur={() => void saveQ(from, to)} />
+        <span className="unit">–</span>
+        <input className="sin tm" type="time" value={to} onChange={(e) => setTo(e.target.value)} onBlur={() => void saveQ(from, to)} />
+      </>}
+      <span className="seg qseg">{([[false, '켬'], [true, '끔']] as const).map(([v, l]) => <button key={l} className={!!q.off === v ? 'on' : ''} onClick={() => void saveQ(from, to, v)}>{l}</button>)}</span>
     </Row>
     <Row t="푸시 테스트" d="이 기기로 한 번 보내 봅니다." at="dev"><button className="btn ghost" onClick={() => api('/push/test', { body: {} })}>보내기</button></Row>
   </>

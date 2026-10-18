@@ -10,7 +10,7 @@ export interface HostConfig {
   devices: { id: string; name: string; token: string; createdAt: number; lastSeen: number }[]
   vapid?: { publicKey: string; privateKey: string }
   pushSubs?: { endpoint: string; keys: { p256dh: string; auth: string }; device: string }[]
-  quiet?: { from: string; to: string }
+  quiet?: { from: string; to: string; off?: boolean }
   claudeBin?: string
   /** claude setup-token 으로 만든 1년짜리 토큰 — 키체인을 못 읽는 문맥(헤드리스)의 대안 */
   claudeOauthToken?: string
