@@ -2677,6 +2677,50 @@ try {
           ok('검색 ⌘K — 메뉴 맨 위 · 봇 아래 세션 · ⏎ 로 그 세션 · 폴더 고르기는 ⌘⇧N')
         }
         /**
+         * 🔴 **DE · 폴더봇 찾기 A안** (2026-10-19 Dave · 목업 03_디자인/2026-10-18_폴더찾기-PARA-목업) — 검색어가 없으면
+         *    오케스트레이터 → «최근 N»(최대 5 · 사람이 세션을 마지막으로 읽은 시각) → PARA 칸(색 네모 · 실제 칸 폴더명 · 수).
+         *    최근에 든 폴더는 아래 칸에 다시 안 나온다. 검색어를 치면 칸 머리가 걷히고 줄마다 칸 표식(P·A·R)이 남는다.
+         *    재무_CFO 의 세션 하나를 방금 읽은 것으로 적고 연다 — 그 봇이 «최근» 칸 첫 줄이어야 한다(옛 판은 레일 순서라 여기서 빨개진다).
+         */
+        {
+          const backDe = await pg.evaluate(() => location.hash)
+          // 채팅 세션 하나를 새로 열고 화면처럼 «읽음» 을 적는다(at 없이 — 호스트가 마지막 답 시각 · 없으면 지금으로 적는다). 자동화 세션의 읽음은 안 센다
+          const sidDe = (await api(`/bots/${cfo.id}/sessions`, { name: 'DE 검사' })).id
+          await api(`/sessions/${sidDe}/read`, {}); await wait(600)
+          await pg.keyboard.press('Meta+k'); await pg.waitForSelector('.modal.srch', { timeout: 3000 }).catch(() => {})
+          const v = await pg.evaluate(() => {
+            const out = []
+            for (const el of document.querySelectorAll('.modal.srch .plist > *')) {
+              const h = el.querySelector('.sgrp.fhd'); if (h) out.push({ h: h.dataset.head, label: h.querySelector('span')?.textContent, n: Number(h.querySelector('.n')?.textContent), sq: !!h.querySelector('.fsq') })
+              const r = el.querySelector('.prow.bot'); if (r) out.push({ bot: r.dataset.bot, para: r.querySelector('.fpara')?.textContent ?? null, tm: r.querySelector('.ftm')?.textContent ?? '' })
+            }
+            return out
+          })
+          const bots = v.filter((x) => x.bot), heads = v.filter((x) => x.h)
+          if (bots[0]?.bot !== 'orch') fail('🔴 DE: 첫 줄이 오케스트레이터가 아니다 ' + JSON.stringify(v.slice(0, 4)))
+          const ri = v.findIndex((x) => x.h === 'recent')
+          if (ri < 0 || v[ri + 1]?.bot !== cfo.id) fail('🔴 DE: 방금 읽은 재무_CFO 가 «최근» 칸 첫 줄이 아니다 ' + JSON.stringify(v))
+          if (v[ri + 1]?.para !== 'A' || v[ri + 1]?.tm !== '방금') fail('DE: 최근 줄에 칸 표식 A · «방금» 이 없다 ' + JSON.stringify(v[ri + 1]))
+          const rec = heads.find((x) => x.h === 'recent'); if (!rec || rec.n > 5) fail('DE: 최근 칸 수가 다섯을 넘는다 ' + JSON.stringify(rec))
+          if (new Set(bots.map((x) => x.bot)).size !== bots.length) fail('🔴 DE: 같은 폴더가 두 번 나온다(최근 칸 + PARA 칸) ' + JSON.stringify(bots))
+          const pa = heads.filter((x) => x.h === 'P' || x.h === 'A')
+          if (!pa.length || pa.some((x) => !x.sq || !/Projects|Area/.test(x.label ?? ''))) fail('DE: PARA 칸 머리(색 네모 · 칸 폴더명)가 없다 ' + JSON.stringify(heads))
+          // PARA 칸 안의 줄은 칸 표식 대신 폴더 아이콘이다(칸 머리가 이미 말한다)
+          const firstPara = v.findIndex((x) => x.h === 'P' || x.h === 'A' || x.h === 'R')
+          if (v.slice(firstPara).some((x) => x.bot && x.para)) fail('DE: PARA 칸 안 줄에 칸 표식이 붙었다 ' + JSON.stringify(v.slice(firstPara)))
+          // 같은 봇이 칸 순서를 지킨다 — 최근 > P > A > R
+          const order = heads.map((x) => x.h); const want = ['recent', 'P', 'A', 'R', 'X', 'other'].filter((k) => order.includes(k))
+          if (order.join() !== want.join()) fail('DE: 칸 차례가 최근 → P → A → R 이 아니다 ' + JSON.stringify(order))
+          await (await pg.$('.modal.srch'))?.screenshot({ path: 'test/tmp/de-finder.png' })
+          await pg.keyboard.type('재무'); await wait(400)
+          const q = await pg.evaluate(() => ({ heads: document.querySelectorAll('.modal.srch .sgrp.fhd').length, first: document.querySelector('.modal.srch .prow.bot')?.querySelector('.fpara')?.textContent ?? null }))
+          if (q.heads || q.first !== 'A') fail('🔴 DE: 검색어를 쳤는데 칸 머리가 남았거나 줄에 칸 표식이 없다 ' + JSON.stringify(q))
+          await pg.keyboard.press('Escape'); await wait(200)
+          await pg.evaluate((x) => { location.hash = x }, backDe); await wait(400)
+          await api(`/sessions/${sidDe}`, undefined, 'DELETE')
+          ok(`DE 폴더봇 찾기 A안 — 오케스트레이터 · 최근 ${rec?.n} (방금 읽은 재무_CFO 가 첫 줄 · A · 방금) · 칸 ${order.join('→')} · 중복 없음 · 검색어엔 칸 표식만`)
+        }
+        /**
          * 🔴 **세션 정리** (2026-10-02 Dave · 시안 B) — 모든 폴더의 세션 한 표 · 잠긴 줄은 못 고른다 · 지우고 10초 되돌리기.
          * 🔴 CJ (2026-10-16) — 레일 메뉴 대신 **홈 «세션» 칸**이 연다(세션 창). 처음엔 아무것도 안 골라져 있고 «정리할 만한 것 N 고르기» 로 고른다 ·
          *    고르기는 왼쪽 체크 칸 · **줄을 누르면 그 세션으로 간다**.

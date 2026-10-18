@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { rank, scoreName } from '../core/search'
+import { agoShort, dueShort, finderGroups, lastReadOf, paraOf, PARA_WORD, type Para } from '../core/folderFind'
+import { sessArea } from '../core/autoArea'
 import { STATE_LABEL, type Bot, type SessionInfo } from '../core/types'
 import { api } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
@@ -14,8 +16,13 @@ import { useStore } from './store'
  * ⚠ 순위는 `core/search` 하나(초성·가운데 일치) — 명령 팔레트·폴더 고르기와 같은 판정이다.
  * ⚠ 세션 이름만 맞은 봇도 목록에 선다(«부가세» 를 치면 그 세션이 있는 재무_CFO 가 나온다).
  * ⚠ 「지난 대화」(말 내용까지 · `/api/search`)는 두 글자부터 맨 아래에.
+ *
+ * 🔴 **DE · A안** (2026-10-19 Dave · 목업 `03_디자인/2026-10-18_폴더찾기-PARA-목업`) — 검색어가 없으면 오케스트레이터 → «최근 N»(최대 5)
+ *    → PARA 칸(1. Projects · 2. Area · …). 최근 = 그 봇 세션을 사람이 마지막으로 연 시각. 칸 나누기는 `core/folderFind` 하나가 정한다.
+ *    칸 머리는 고르는 줄이 아니다 — ↑↓ 는 봇·세션 줄만 밟는다. 검색어를 치면 칸 머리를 걷고 맞는 순서로, 줄 왼쪽 칸 표식(P·A·R)을 남긴다.
  */
-type Row = { key: string; kind: 'bot' | 'sess' | 'hit' | 'more'; botId: string; sid?: string; label: string; sub?: string; color?: string }
+type Head = { label: string; n: number; para: Para | null }
+type Row = { key: string; kind: 'bot' | 'sess' | 'hit' | 'more'; botId: string; sid?: string; label: string; sub?: string; color?: string; para?: Para | null; tm?: string; head?: Head }
 const SHOW = 3
 
 export function Search({ go, onClose }: { go: (botId: string, sid?: string) => void; onClose: () => void }) {
@@ -28,14 +35,26 @@ export function Search({ go, onClose }: { go: (botId: string, sid?: string) => v
   const nameOf = (b: Bot) => b.displayName || b.name
   const qq = q.trim()
 
-  /** 봇 순위 — 이름·경로가 맞은 봇 먼저, 세션 이름만 맞은 봇은 그 뒤 */
-  const bots = useMemo(() => {
-    if (!qq) return s.bots
+  // ⚠ 채팅 세션만 센다 — 알림 «모두 읽음» 은 루틴·소통 세션의 읽음까지 올려, 새벽 루틴이 돈 폴더가 위로 올라온다(리뷰 10/19)
+  const readOf = (id: string) => lastReadOf((s.sessionsByBot[id] ?? []).filter((x) => sessArea(x) === 'chat'))
+  /**
+   * 봇 차례와 칸 머리. 검색어가 없으면 A안 칸(`finderGroups`), 있으면 이름·경로가 맞은 봇 먼저, 세션 이름만 맞은 봇은 그 뒤.
+   * `heads` 는 «그 칸의 첫 봇 id → 칸 머리» — 머리는 줄이 아니라 줄 앞에 붙는 표시다.
+   */
+  const { bots, heads, recent } = useMemo(() => {
+    if (!qq) {
+      const g = finderGroups(s.bots, readOf)
+      const heads = new Map<string, Head>()
+      for (const x of g) if (x.key !== 'orch') heads.set(x.bots[0].id, { label: x.label, n: x.bots.length, para: x.para })
+      return { bots: g.flatMap((x) => x.bots), heads, recent: new Set(g.find((x) => x.key === 'recent')?.bots.map((b) => b.id) ?? []) }
+    }
     const byName = rank(qq, s.bots, (b) => ({ name: nameOf(b), path: `${b.name} ${b.rel}` }))
     const seen = new Set(byName.map((b) => b.id))
     const bySess = s.bots.filter((b) => !seen.has(b.id) && sessOf(b.id).some((x) => scoreName(qq, x.name, x.name) > 0))
-    return [...byName, ...bySess]
+    return { bots: [...byName, ...bySess], heads: new Map<string, Head>(), recent: new Set<string>() }
   }, [qq, s.bots, s.sessionsByBot])
+  /** 칸 이름 — 봇이 든 실제 칸 폴더명(«2. Area») · 칸 밖이면 rel */
+  const secOf = (b: Bot) => b.section || PARA_WORD[paraOf(b.rel) ?? 'P']
 
   const [hits, setHits] = useState<{ q: string; rows: Row[] }>({ q: '', rows: [] })
   useEffect(() => {
@@ -58,9 +77,16 @@ export function Search({ go, onClose }: { go: (botId: string, sid?: string) => v
     const out: Row[] = []
     for (const b of bots) {
       const ss = sessOf(b.id)
-      out.push({ key: `b-${b.id}`, kind: 'bot', botId: b.id, label: nameOf(b), sub: `${b.rel || '관제'} · 세션 ${ss.length}`, color: b.color })
+      const para = b.orchestrator ? null : paraOf(b.rel)
+      // 줄 모양 — 관제는 «관제 · 세션 N» · 최근 칸과 검색 결과는 칸 표식(P·A·R) + «칸 · 날짜» · PARA 칸 안은 폴더 아이콘 + «날짜 마감»
+      const marked = !b.orchestrator && (!!qq || recent.has(b.id))
+      const due = dueShort(b.due)
+      const sub = b.orchestrator ? `관제 · 세션 ${ss.length}`
+        : marked ? (para ? `${secOf(b)}${para === 'P' && due ? ` · ${due}` : ''}` : b.rel)
+        : para === 'P' && due ? `${due} 마감` : para ? '' : b.rel
+      out.push({ key: `b-${b.id}`, kind: 'bot', botId: b.id, label: nameOf(b), sub: sub || undefined, color: b.color, para: marked ? para : null, tm: b.orchestrator ? undefined : agoShort(readOf(b.id)), head: heads.get(b.id) })
       if (b.id !== openBot) continue
-      // 검색어에 맞은 세션 먼저, 그다음 최근(소통 세션은 맨 위에 고정된 그대로)
+      // 검색어에 맞은 세션 먼저, 그다음 화면 목록 차례(CC A안 — 채팅이 앞, 자동화가 뒤)
       const hit = qq ? ss.filter((x) => scoreName(qq, x.name, x.name) > 0) : []
       const rest = ss.filter((x) => !hit.includes(x))
       const list = [...hit, ...rest]
@@ -70,7 +96,7 @@ export function Search({ go, onClose }: { go: (botId: string, sid?: string) => v
     }
     if (hits.q === qq) out.push(...hits.rows)
     return out
-  }, [bots, openBot, qq, more, hits, s.sessionsByBot])
+  }, [bots, heads, recent, openBot, qq, more, hits, s.sessionsByBot])
 
   useEffect(() => { setSelKey(''); setMore(null) }, [qq])
   const i = Math.max(0, rows.findIndex((r) => r.key === selKey))
@@ -102,10 +128,12 @@ export function Search({ go, onClose }: { go: (botId: string, sid?: string) => v
         const firstHit = r.kind === 'hit' && rows[n - 1]?.kind !== 'hit'
         return <div key={r.key} style={{ display: 'contents' }}>
           {firstHit ? <div className="sgrp">지난 대화</div> : null}
-          <button className={`prow ${r.kind} ${n === i ? 'on' : ''}`} onMouseEnter={() => setSelKey(r.key)} onClick={() => pick(r)}>
-            {r.kind === 'bot' ? <FolderBot color={r.color ?? '#888'} size={14} mono /> : r.kind === 'hit' ? <Icon n="sub" size={13} color="var(--t3)" /> : null}
+          {r.head ? <div className="sgrp fhd" data-head={r.head.para ?? (r.head.label === '최근' ? 'recent' : 'other')}>{r.head.para ? <i className={`fsq p-${r.head.para}`} /> : null}<span>{r.head.label}</span><span className="n">{r.head.n}</span></div> : null}
+          <button className={`prow ${r.kind} ${n === i ? 'on' : ''}`} data-bot={r.kind === 'bot' ? r.botId : undefined} onMouseEnter={() => setSelKey(r.key)} onClick={() => pick(r)}>
+            {r.kind === 'bot' ? (r.para ? <span className={`fpara p-${r.para}`}>{r.para}</span> : <FolderBot color={r.color ?? '#888'} size={14} mono />) : r.kind === 'hit' ? <Icon n="sub" size={13} color="var(--t3)" /> : null}
             <span className="n"><Mid s={r.label} /></span>
-            {r.sub ? <span className={`sb ${r.kind === 'hit' ? 'snip' : ''}`}><Mid s={r.sub} /></span> : null}
+            {r.sub ? <span className={`sb ${r.kind === 'hit' ? 'snip' : ''}`}><Mid s={r.sub} /></span> : r.kind === 'bot' ? <span className="sb" /> : null}
+            {r.tm ? <span className="ftm">{r.tm}</span> : null}
           </button>
         </div>
       })}

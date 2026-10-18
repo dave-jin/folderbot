@@ -1423,6 +1423,14 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .modal.pal.srch .prow.sess .sb { text-align:right }
 .modal.pal.srch .prow.more { padding-left:33px; font-size:12px; color:var(--t3) }
 .modal.pal.srch .sgrp { font-size:11px; color:var(--t3); padding:10px 9px 4px }
+/* DE · 폴더봇 찾기 A안 (목업 03_디자인/2026-10-18_폴더찾기-PARA-목업) — 칸 머리(색 네모 · 이름 · 수) · 칸 표식 P·A·R · 오른쪽 «최근» 시각 */
+.modal.pal.srch .sgrp.fhd { display:flex; align-items:center; gap:7px; margin:0; padding:10px 9px 4px; letter-spacing:.02em }
+.modal.pal.srch .sgrp.fhd > span:first-of-type { flex:none } .modal.pal.srch .sgrp.fhd .n { margin-left:auto; font-variant-numeric:tabular-nums }
+.modal.pal.srch .fsq { width:7px; height:7px; border-radius:2px; display:inline-block; flex:none }
+.modal.pal.srch .fpara { width:16px; height:16px; border-radius:4px; flex:none; display:inline-flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; color:#111; line-height:1 }
+.modal.pal.srch .p-P { background:#e06a5a } .modal.pal.srch .p-A { background:#e2b13b } .modal.pal.srch .p-R { background:#4fbf87 } .modal.pal.srch .p-X { background:#6f86b8 }
+.modal.pal.srch .prow .ftm { flex:none; margin-left:auto; font-size:11.5px; color:var(--t3); font-variant-numeric:tabular-nums }
+.modal.pal.srch .sgrp.fhd + .prow { scroll-margin-top:30px }   /* ↑ 로 칸 첫 줄에 오면 칸 머리까지 보이게 */
 .modal.pal.srch .sfoot { display:flex; gap:14px; padding:7px 14px; border-top:1px solid var(--line); font-size:11px; color:var(--t3) }
 .nav .bd.kb { font-family:var(--mono); font-size:11px }
 
