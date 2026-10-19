@@ -106,7 +106,8 @@ export async function handleMcp(host: Host, botId: string, req: IncomingMessage,
     const name = String(msg.params?.name ?? ''); const args = (msg.params?.arguments ?? {}) as Record<string, unknown>
     if (!mcpTools(botId, canBridge(host, botId)).some((t) => t.name === name)) return error(-32601, `이 봇은 ${name} 을 쓸 수 없어요`)
     // BS · 루틴·다른 봇·편지가 시작한 턴에서는 되돌리기 어려운 도구를 거절한다(core/turnGuard)
-    const blocked = turnBlock(name, sid ? host.sessions.get(sid)?.turnFrom : undefined)
+    const rec0 = sid ? host.sessions.get(sid) : undefined
+    const blocked = turnBlock(name, rec0?.turnFrom, rec0?.turnGrant)
     if (blocked) return reply({ content: [{ type: 'text', text: `오류: ${blocked}` }], isError: true })
     try {
       const out = await callTool(host, botId, name, args, sid)

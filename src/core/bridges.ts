@@ -24,6 +24,12 @@ import { idSlug } from './fbmf'
  */
 export type Trust = 'read' | 'propose' | 'act'
 export const TRUSTS: readonly Trust[] = ['read', 'propose', 'act']
+/**
+ * 🔴 CN · «Dave 말» 편지가 열 수 있는 도구 (2026-10-19 Dave «만들기는 바로·옮기기는 폰 승인»).
+ * Dave 는 할일이와 말한다. 할일이가 «Dave 말» 로 옮긴 편지면 **되돌리기 쉬운 두 가지**(새 폴더 만들기·봇 켜기)는 그 턴에서 바로 한다.
+ * 옮기기·이름 바꾸기·은퇴는 여기 넣을 수 없다 — 편지 한 통이 Dave 말인지는 상대의 말뿐이라, 되돌리기 어려운 일은 사람 승인을 거친다.
+ */
+export const DAVE_MAY: readonly string[] = ['folder_create', 'bot_start']
 
 export interface PeerDef {
   id: string
@@ -35,6 +41,8 @@ export interface PeerDef {
   deliver: { bot: string; session: string }
   maySend: string[]
   trust: Trust
+  /** CN · «Dave 말» 편지의 턴에서만 여는 도구(`DAVE_MAY` 안) — yml `dave_may: [folder_create, bot_start]` · 없으면 아무것도 안 연다 */
+  daveMay: string[]
   host?: string
   since?: number
   enabled: boolean
@@ -72,6 +80,10 @@ export function parseBridges(text: string): BridgesConfig {
     const d = (r.deliver_to && typeof r.deliver_to === 'object' ? r.deliver_to : {}) as Record<string, unknown>
     const trust = TRUSTS.includes(String(r.trust) as Trust) ? (String(r.trust) as Trust) : 'propose'
     if (r.trust !== undefined && trust !== r.trust) errors.push(`연결 «${id}»: trust 는 read · propose · act 중 하나예요 — propose 로 둡니다`)
+    const mayRaw = Array.isArray(r.dave_may) ? (r.dave_may as unknown[]).map((x) => String(x).trim()) : r.dave_may === undefined ? [] : null
+    if (mayRaw === null) errors.push(`연결 «${id}»: dave_may 는 목록이에요(예: [folder_create, bot_start])`)
+    const daveMay = (mayRaw ?? []).filter((x, k, a) => DAVE_MAY.includes(x) && a.indexOf(x) === k)
+    for (const x of mayRaw ?? []) if (!DAVE_MAY.includes(x)) errors.push(`연결 «${id}»: dave_may 에 «${x}» 는 못 넣어요 — ${DAVE_MAY.join(' · ')} 만 됩니다(옮기기·은퇴는 사람 승인)`)
     const since = r.since === undefined ? undefined : Date.parse(String(r.since))
     if (r.since !== undefined && !Number.isFinite(since)) errors.push(`연결 «${id}»: since 를 시각으로 못 읽었어요`)
     let wake: { env: string } | undefined
@@ -94,6 +106,7 @@ export function parseBridges(text: string): BridgesConfig {
       deliver: { bot: String(d.bot ?? 'orch').trim() || 'orch', session: String(d.session ?? `${icon} ${name} 채널`).trim() },
       maySend: Array.isArray(r.may_send) ? (r.may_send as unknown[]).map(String) : ['orch'],
       trust,
+      daveMay,
       ...(r.host ? { host: String(r.host).trim() } : {}),
       ...(Number.isFinite(since) ? { since } : {}),
       enabled: r.enabled !== false,
@@ -136,11 +149,13 @@ const WRITE_BUILTINS = ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'W
  * act     — 제한 없음(`bypassPermissions`). 사람 승인이 필요한 세 도구는 그래도 턴 출처로 막힌다(core/turnGuard)
  * ⚠ 세션 단위다 — 채널 세션에 사람이 직접 쳐도 같은 울타리다. 넓게 하려면 다른 세션을 쓴다.
  */
-export function channelSpawn(trust: Trust): { permissionMode: 'default' | 'bypassPermissions'; strictMcp: boolean; disallowed: string[]; allowed: string[] } {
+export function channelSpawn(trust: Trust, daveMay: readonly string[] = []): { permissionMode: 'default' | 'bypassPermissions'; strictMcp: boolean; disallowed: string[]; allowed: string[] } {
   if (trust === 'act') return { permissionMode: 'bypassPermissions', strictMcp: false, disallowed: [], allowed: [] }
-  const always = fb(['folder_move', 'folder_create', 'bot_retire', 'routine_add', 'routine_update', 'routine_remove', 'routine_run', 'orch_ask'])
-  if (trust === 'propose') return { permissionMode: 'default', strictMcp: true, disallowed: [...WRITE_BUILTINS, ...always], allowed: [...CHANNEL_ALLOW.propose] }
-  return { permissionMode: 'default', strictMcp: true, disallowed: [...WRITE_BUILTINS, ...always, ...fb(['bot_send', 'todo_add', 'todo_propose', 'bot_start', 'bot_stop', 'bots_reorder'])], allowed: [...CHANNEL_ALLOW.read] }
+  // CN · dave_may 는 목록에 남겨 두고(세션은 하나라 턴마다 못 바꾼다) 턴 출처로 MCP 가 거른다(core/turnGuard · «Dave 말» 턴만)
+  const open = fb(daveMay.filter((x) => DAVE_MAY.includes(x)))
+  const always = fb(['folder_move', 'folder_create', 'bot_retire', 'routine_add', 'routine_update', 'routine_remove', 'routine_run', 'orch_ask']).filter((x) => !open.includes(x))
+  if (trust === 'propose') return { permissionMode: 'default', strictMcp: true, disallowed: [...WRITE_BUILTINS, ...always], allowed: [...CHANNEL_ALLOW.propose, ...open] }
+  return { permissionMode: 'default', strictMcp: true, disallowed: [...WRITE_BUILTINS, ...always, ...fb(['bot_send', 'todo_add', 'todo_propose', 'bot_start', 'bot_stop', 'bots_reorder']).filter((x) => !open.includes(x))], allowed: [...CHANNEL_ALLOW.read, ...open] }
 }
 
 /**
@@ -160,8 +175,8 @@ export const CHANNEL_ALLOW: Record<'read' | 'propose', readonly string[]> = {
   read: [...READ_BUILTINS, ...FB_READ],
   propose: [...READ_BUILTINS, ...FB_READ, ...fb(['bot_send', 'todo_add', 'todo_propose'])],   // CK-3 · 바깥 상대의 턴에서 todo_add 는 제안으로 내려간다
 }
-export function channelVerdict(trust: Trust, toolName: string): { allow: true } | { allow: false; message: string } {
+export function channelVerdict(trust: Trust, toolName: string, daveMay: readonly string[] = []): { allow: true } | { allow: false; message: string } {
   if (toolName === 'AskUserQuestion') return { allow: false, message: '이 세션은 연결(Bridge) 채널이라 물어볼 사람이 없습니다. 묻지 말고, 정할 것이 있으면 답장(bridge_send)에 needs_human 으로 적어 넘기세요.' }
-  if (trust === 'act' || CHANNEL_ALLOW[trust].includes(toolName)) return { allow: true }
+  if (trust === 'act' || CHANNEL_ALLOW[trust].includes(toolName) || fb(daveMay.filter((x) => DAVE_MAY.includes(x))).includes(toolName)) return { allow: true }
   return { allow: false, message: `이 연결 채널(trust ${trust})에서는 ${toolName} 을 쓸 수 없고, 승인할 사람도 없습니다. 하려던 일은 답장(bridge_send)에 «제안» 으로 적어 남기고 다음으로 넘어가세요.` }
 }

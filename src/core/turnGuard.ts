@@ -13,8 +13,18 @@ export const HUMAN_ONLY_TOOLS: readonly string[] = ['folder_move', 'folder_creat
 
 const WHO: Record<Exclude<TurnFrom, 'human'>, string> = { bot: '다른 봇이 보낸 말', routine: '예약된 루틴', peer: '바깥 상대의 편지' }
 
-/** 막아야 하면 거절 이유, 아니면 null. 출처를 모르면(옛 세션) 사람으로 본다 — 종전 동작 그대로 */
-export function turnBlock(tool: string, from: TurnFrom | undefined): string | null {
+/** CN · «Dave 말» 편지가 열 수 있는 도구 — 바깥 상대의 턴에서는 그 턴의 `grant` 에 있을 때만 된다(core/bridges.DAVE_MAY 와 같은 목록) */
+const GRANTABLE: readonly string[] = ['folder_create', 'bot_start']
+
+/**
+ * 막아야 하면 거절 이유, 아니면 null. 출처를 모르면(옛 세션) 사람으로 본다 — 종전 동작 그대로.
+ * `grant` — 이 턴을 연 «Dave 말» 편지가 연 도구(바깥 상대의 턴에서만 뜻이 있다).
+ */
+export function turnBlock(tool: string, from: TurnFrom | undefined, grant?: readonly string[]): string | null {
+  if (from === 'peer' && GRANTABLE.includes(tool)) {
+    if (grant?.includes(tool)) return null
+    return `${tool} 은 사람이 시킨 턴이나 «Dave 말» 편지로 시작된 턴에서만 쓸 수 있어요 — 이 편지는 Dave 말이 아니에요. 무엇을 어디에, 왜 할지 답장에 제안으로 남기세요.`
+  }
   if (!from || from === 'human' || !HUMAN_ONLY_TOOLS.includes(tool)) return null
   return `${tool} 은 사람이 시킨 턴에서만 쓸 수 있어요 — 이 턴은 ${WHO[from]}로 시작됐어요. 무엇을 어디로, 왜 할지 제안으로 남기면 사람이 승인합니다.`
 }

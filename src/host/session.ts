@@ -278,6 +278,10 @@ export interface SessionRec {
   handover?: string
   /** BS · 지금(마지막) 턴을 누가 시작했나 — 사람만 시킬 수 있는 도구를 MCP 가 이것으로 거른다(core/turnGuard) */
   turnFrom?: TurnFrom
+  /** CN · 지금 턴을 연 «Dave 말» 편지가 연 도구 — MCP 가 turnFrom 과 함께 본다 */
+  turnGrant?: string[]
+  /** CN · 이 채널의 상대가 «Dave 말» 에 여는 도구(bridges.yml `dave_may`) — 워커 인자와 자동 허용에 쓴다 */
+  daveMay?: string[]
   /**
    * 🔴 CL-1 · 사람이 멈췄다 — 대기 말(화면·호스트 둘 다)을 붙잡아 둔다. 사람이 [이어 보내기] 하거나 새 말을 보내면 풀린다(2026-10-16 Dave «추천대로»).
    *    종전에는 멈추자마자 대기열 첫 말이 나가서 «멈추고 생각하려던» 순간에 다음 말이 나갔다.
@@ -624,7 +628,7 @@ export class SessionManager extends EventEmitter {
   private channelAnswer(r: SessionRec, w: Worker, p: PermissionRequest): boolean {
     if (!w.pending.has(p.requestId)) return false
     const trust = r.trust ?? 'propose'
-    const v = channelVerdict(trust, p.toolName)
+    const v = channelVerdict(trust, p.toolName, r.daveMay)
     if (v.allow) {
       w.respondPermission(p.requestId, true)
       this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `자동 허용 · ${p.displayName} (연결 채널 · ${trust})` })
@@ -743,7 +747,7 @@ export class SessionManager extends EventEmitter {
     if (this.mustWait(r) || r.queue?.length || r.held) { this.enqueue(r, msg); return 'queued' }   // CL-1 · 사람이 멈춰 둔 세션에는 봇 말도 줄을 선다
     const why = r.comm || r.channel ? compactReason({ ...r, comm: true }, 'before') : null
     if (why) { this.enqueue(r, msg); this.compact(r, bot, why); return 'queued' }
-    this.send(r, bot, msg.text, undefined, msg.origin ?? 'bot')
+    this.send(r, bot, msg.text, undefined, msg.origin ?? 'bot', msg.grant)
     return 'sent'
   }
   /** 큐에 넣는다 — 급한 편지(`urgent`)는 앞서 온 급한 것들 바로 뒤로(끼어들기가 아니라 큐 맨 앞 · 검토 §2-⑨) */
@@ -757,11 +761,12 @@ export class SessionManager extends EventEmitter {
    * BQ-4 · 상대의 채널 세션 — 봇마다 상대마다 하나(가장 최근 것). 없으면 이름 고정으로 만든다.
    * trust 가 바뀌었으면 기록을 고치고, 쉬는 워커는 내려서 다음 턴에 새 울타리로 뜨게 한다.
    */
-  channelOf(bot: Bot, peer: string, name: string, trust: Trust): SessionRec {
+  channelOf(bot: Bot, peer: string, name: string, trust: Trust, daveMay: string[] = []): SessionRec {
     const have = [...this.recs.values()].filter((r) => r.botId === bot.id && r.channel === peer).sort((a, b) => b.createdAt - a.createdAt)[0]
-    if (!have) return this.create(bot, name, { channel: peer, trust, vendor: 'claude', permissionMode: channelSpawn(trust).permissionMode })
-    if (have.trust !== trust) {
-      have.trust = trust; have.permissionMode = channelSpawn(trust).permissionMode
+    if (!have) { const r = this.create(bot, name, { channel: peer, trust, vendor: 'claude', permissionMode: channelSpawn(trust).permissionMode }); if (daveMay.length) { r.daveMay = daveMay; this.persist(r) } return r }
+    const sameMay = (have.daveMay ?? []).join() === daveMay.join()
+    if (have.trust !== trust || !sameMay) {
+      have.trust = trust; have.permissionMode = channelSpawn(trust).permissionMode; have.daveMay = daveMay.length ? daveMay : undefined
       const w = this.workers.get(have.id)
       if (w && have.state !== 'running' && have.state !== 'awaiting_input') { w.kill(); this.workers.delete(have.id) }
       this.persist(have); this.emit('sessions', have.botId)
@@ -791,7 +796,7 @@ export class SessionManager extends EventEmitter {
     if (r.state === 'awaiting_input') {
       const bot = this.botOf(r.botId); const head = r.queue?.[0]; if (!bot || !head) return
       r.queue = r.queue!.length > 1 ? r.queue!.slice(1) : undefined; this.persist(r)
-      this.send(r, bot, head.text, undefined, head.origin ?? 'bot'); return
+      this.send(r, bot, head.text, undefined, head.origin ?? 'bot', head.grant); return
     }
     this.afterTurn(r)
   }
@@ -806,11 +811,13 @@ export class SessionManager extends EventEmitter {
     if (r.queue?.length) {
       // BQ-4 · 편지는 묶어서 한 턴에 — 큐에 쌓인 편지 묶음을 모두 모아 한 번에 보낸다(봇 말은 종전대로 하나씩)
       const head = r.queue[0]
-      const take = head.letters ? r.queue.filter((x) => x.letters) : head.reports ? r.queue.filter((x) => x.reports) : [head]
+      // CN · «Dave 말» 묶음(grant)은 다른 편지와 섞지 않는다 — 섞이면 남의 편지까지 그 턴의 권한을 얻는다
+      const g = (x: QueuedMsg) => (x.grant ?? []).join()
+      const take = head.letters ? r.queue.filter((x) => x.letters && g(x) === g(head)) : head.reports ? r.queue.filter((x) => x.reports) : [head]
       const rest = r.queue.filter((x) => !take.includes(x))
       r.queue = rest.length ? rest : undefined
       this.persist(r)
-      this.send(r, bot, take.map((x) => x.text).join('\n\n'), undefined, head.origin ?? 'bot')
+      this.send(r, bot, take.map((x) => x.text).join('\n\n'), undefined, head.origin ?? 'bot', head.grant)
       return
     }
     // BV-2 · 채널 세션은 압축 대신 갈아탄다(요약의 요약이 되지 않게) — 살아 있는 워커가 막 턴을 끝냈을 때만
@@ -872,7 +879,7 @@ export class SessionManager extends EventEmitter {
       // ⚠ 모델 이름은 CLI 마다 다르다 — Claude 이름(claude-opus-5)을 Codex 에 넘기면 그 자리에서 죽는다.
       //    Codex 것처럼 보이는 이름만 넘기고 아니면 CLI 의 기본값에 맡긴다.
       ? new CodexWorker({ cwd: r.cwd, resume: r.cliSessionId, model: fitsProvider('codex', r.model) ? r.model : undefined, effort: r.effort, sandbox: this.codexSandbox, apiKey: this.openaiApiKey, addDirs: extraDirs(bot) })
-      : new ClaudeWorker({ cwd: r.cwd, resume: r.cliSessionId, ...(r.rewindAt ? { resumeAt: r.rewindAt } : {}), permissionMode: r.permissionMode, addDirs: extraDirs(bot), mcpConfig: this.mcpUrl(r.id, bot.id), model: r.model, effort: r.effort, name: `${bot.name}-${r.name}`, appendSystemPrompt: this.systemPromptFor(bot) || undefined, bin: this.bin, ...(r.channel ? channelWorkerSpec(r.trust ?? 'propose') : {}) })
+      : new ClaudeWorker({ cwd: r.cwd, resume: r.cliSessionId, ...(r.rewindAt ? { resumeAt: r.rewindAt } : {}), permissionMode: r.permissionMode, addDirs: extraDirs(bot), mcpConfig: this.mcpUrl(r.id, bot.id), model: r.model, effort: r.effort, name: `${bot.name}-${r.name}`, appendSystemPrompt: this.systemPromptFor(bot) || undefined, bin: this.bin, ...(r.channel ? channelWorkerSpec(r.trust ?? 'propose', r.daveMay) : {}) })
     this.workers.set(r.id, w)
     /**
      * 🔴 CL-1 B · 갈아 끼운 옛 워커(되감기가 죽인 것)의 줄·종료는 버린다 — 늦게 온 `exit` 가 새 워커를 띄운 뒤
@@ -924,8 +931,8 @@ export class SessionManager extends EventEmitter {
           this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `${was} 는 이 계정에서 못 써요 — 기본 모델로 다시 보냅니다` })
           this.persist(r)
           const bot2 = bot
-          const again = r.turnFrom
-          setTimeout(() => { try { this.send(r, bot2, lastUser.text, undefined, again) } catch { /* 두 번은 안 한다 */ } }, 50)
+          const again = r.turnFrom; const grantAgain = r.turnGrant
+          setTimeout(() => { try { this.send(r, bot2, lastUser.text, undefined, again, grantAgain) } catch { /* 두 번은 안 한다 */ } }, 50)
           this.emit('sessions', r.botId)
           return
         }
@@ -1128,8 +1135,9 @@ export class SessionManager extends EventEmitter {
     }
   }
 
-  send(r: SessionRec, bot: Bot, text: string, client?: ClientCtx, origin: TurnFrom = 'human'): void {
+  send(r: SessionRec, bot: Bot, text: string, client?: ClientCtx, origin: TurnFrom = 'human', grant?: string[]): void {
     r.turnFrom = origin
+    r.turnGrant = origin === 'peer' && grant?.length ? grant : undefined
     // CL-1 · 사람이 새 말을 보내면 멈춤이 풀린다 — 붙잡아 둔 대기 말은 이 턴 뒤에 차례로 나간다
     if (origin === 'human' && (r.held || r.stopped)) { r.held = undefined; r.stopped = undefined }
     r.stopping = undefined   // 멈춘 턴의 끝이 안 왔어도 새 턴의 진짜 오류를 숨기지 않게
@@ -1337,8 +1345,8 @@ export function statBotDir(abs: string): boolean { try { return statSync(abs).is
 export { mkdirSync }
 
 /** BQ-5 · 채널 세션 워커 인자 — trust 하나에서 모드·MCP·막을 도구가 나온다(core/bridges.channelSpawn) */
-function channelWorkerSpec(trust: Trust): Pick<SpawnSpec, 'permissionMode' | 'explicitMode' | 'strictMcp' | 'disallowed' | 'allowed'> {
-  const sp = channelSpawn(trust)
+function channelWorkerSpec(trust: Trust, daveMay?: string[]): Pick<SpawnSpec, 'permissionMode' | 'explicitMode' | 'strictMcp' | 'disallowed' | 'allowed'> {
+  const sp = channelSpawn(trust, daveMay)
   return { permissionMode: sp.permissionMode, explicitMode: true, strictMcp: sp.strictMcp, disallowed: sp.disallowed, allowed: sp.allowed }
 }
 

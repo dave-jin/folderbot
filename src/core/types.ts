@@ -204,6 +204,8 @@ export interface QueuedMsg {
   reports?: boolean
   /** 급한 편지 — 큐 맨 앞(앞선 급한 것들 뒤) */
   urgent?: boolean
+  /** CN · «Dave 말» 편지 묶음이 이 턴에서 연 도구 — 다른 편지와 한 턴에 섞지 않는다 */
+  grant?: string[]
 }
 
 export interface PermissionRequest {

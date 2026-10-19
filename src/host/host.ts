@@ -21,7 +21,7 @@ import { BridgeHub, type Incoming } from './bridge'
 import { INTERRUPTED_REASON, RunLog } from './runs'
 import { readWakeEnv, wakePeer } from './wake'
 import { OpsWatch } from './opsWatch'
-import { letterBatch } from '../core/fbmf'
+import { isDaveSaid, letterBatch } from '../core/fbmf'
 import type { PeerDef } from '../core/bridges'
 import type { QueuedMsg } from '../core/types'
 /** BX · 셸이 주는 업데이트 상태(`desktop/updater.js state()`) · 새벽 적용 걸기/풀기 */
@@ -607,14 +607,20 @@ export class Host {
   deliverLetters(peer: PeerDef, items: Incoming[]): string | null {
     const bot = this.registry.bots().find((b) => this.isDeliverTarget(peer, b))
     if (!bot) { this.log(`⚠ 연결 «${peer.name}» 편지를 넣을 봇 «${peer.deliver.bot}» 이 없어요 — 편지는 그대로 두고 다음에 다시`); return null }
-    const r = this.sessions.channelOf(bot, peer.id, peer.deliver.session, peer.trust)
+    const r = this.sessions.channelOf(bot, peer.id, peer.deliver.session, peer.trust, peer.daveMay)
     const queued = new Set((r.queue ?? []).flatMap((q) => q.letters ?? []))
     const recent = r.items.slice(-400).filter((i) => i.kind === 'user').map((i) => (i as { text: string }).text)
     const fresh = items.filter((x) => !queued.has(x.letter.id) && !recent.some((t) => t.includes(`id="${x.letter.id}"`)))
     if (!fresh.length) return r.id
-    const msg: QueuedMsg = { text: letterBatch(peer.name, fresh.map((x) => ({ letter: x.letter, rel: x.rel }))), from: `peer:${peer.id}`, fromName: `${peer.icon} ${peer.name}`, t: Date.now(), origin: 'peer', letters: fresh.map((x) => x.letter.id), ...(fresh.some((x) => x.letter.urgent) ? { urgent: true } : {}) }
-    if (this.auth.verdict === 'unreadable' || this.auth.verdict === 'loggedout') this.sessions.enqueue(r, msg)
-    else this.sessions.sendFromBot(r, bot, msg)
+    // CN · «Dave 말» 편지는 따로 한 턴 — 그 턴에서만 dave_may 도구가 열린다(다른 편지와 섞으면 남의 편지도 권한을 얻는다)
+    const said = peer.daveMay.length ? fresh.filter((x) => isDaveSaid(x.letter)) : []
+    const rest = fresh.filter((x) => !said.includes(x))
+    for (const [group, grant] of [[rest, []], [said, peer.daveMay]] as const) {
+      if (!group.length) continue
+      const msg: QueuedMsg = { text: letterBatch(peer.name, group.map((x) => ({ letter: x.letter, rel: x.rel })), grant), from: `peer:${peer.id}`, fromName: `${peer.icon} ${peer.name}`, t: Date.now(), origin: 'peer', letters: group.map((x) => x.letter.id), ...(group.some((x) => x.letter.urgent) ? { urgent: true } : {}), ...(grant.length ? { grant: [...grant] } : {}) }
+      if (this.auth.verdict === 'unreadable' || this.auth.verdict === 'loggedout') this.sessions.enqueue(r, msg)
+      else this.sessions.sendFromBot(r, bot, msg)
+    }
     return r.id
   }
 }
