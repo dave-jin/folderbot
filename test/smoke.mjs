@@ -1400,6 +1400,8 @@ try {
           await chip.click(); await wait(600)
           if (!(await pg.$('.docwrap'))) fail('C: 창이 닫힌 상태에서 칩을 눌렀는데 창이 안 열렸다')
           if ((await pg.textContent('.docwrap .dtb .nm')) !== '메모.md') fail('C: 열린 문서가 메모.md 가 아니다 · ' + (await pg.textContent('.docwrap .dtb .nm')))
+          // 2026-10-19 Dave «문서 상단에도 클립보드 복사» — 글 문서는 «내용 복사» 가 ⋯ 밖 상단에도 있다
+          if ((await pg.getAttribute('.docwrap .dtb .copyb', 'title').catch(() => null)) !== '내용 복사') fail('상단 복사: 글 문서 상단에 «내용 복사» 버튼이 없다')
           // 🔴 시안 C (2026-10-02 Dave «채팅이나 문서에서 선택하면 폴더에서도 박싱») — 트리가 files 를 펴고 메모.md 에 상자를 남긴다
           if (await pg.$('.panel .trow')) {
             let bx = null
@@ -1513,6 +1515,7 @@ try {
           // pdf → iframe 뷰어
           await pg.click('.amsg code.code-path[data-rel="files/설명서.pdf"]'); await wait(900)
           if (!(await pg.$('.docwrap iframe'))) fail('G: PDF 칩을 눌렀는데 뷰어(iframe)가 없다'); if ((await pg.textContent('.docwrap .dtb .nm')) !== '설명서.pdf') fail('G: PDF 탭 이름')
+          if (!/파일 복사/.test((await pg.getAttribute('.docwrap .dtb .copyb', 'title').catch(() => '')) ?? '')) fail('상단 복사: PDF 는 파일째 복사(카톡·Finder ⌘V)여야 한다')
           // png → img
           await pg.click('.amsg code.code-path[data-rel="files/그림.png"]'); await wait(900)
           if (!(await pg.$('.docwrap .dbody img'))) fail('G: 이미지 칩을 눌렀는데 img 가 없다')
@@ -5564,7 +5567,7 @@ try {
             const foot = document.querySelector('.docwrap .dfoot')
             return {
               btns: [...(r?.querySelectorAll('button') ?? [])].filter(vis).length,
-              more: !!r?.querySelector('.ib:not(.tocb):not(.openb)'),
+              more: !!r?.querySelector('.ib:not(.tocb):not(.openb):not(.copyb)'),
               footRb: [...(foot?.querySelectorAll('.rb') ?? [])].map((e) => Math.round(e.getBoundingClientRect().height)),
               pos: foot?.querySelector('.pos')?.textContent ?? '',
               talkH: Math.round(foot?.querySelector('.talk')?.getBoundingClientRect().height ?? 0)

@@ -1356,7 +1356,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
   /* V-5 ─ 문서 화면은 **경로 한 줄 + ⋯** 만 남긴다.
      앞뒤로 넘기기는 이미 아래 줄(.dfoot)에 있고, 목차·외부에서 열기는 ⋯ 안으로 들어갔다
      (Doc.tsx 의 메뉴). 같은 조작을 위아래에 두 벌 두지 않는다. */
-  .dtb .r .nb, .dtb .r .pos, .dtb .r .tocb, .dtb .r .openb { display:none }
+  .dtb .r .nb, .dtb .r .pos, .dtb .r .tocb, .dtb .r .openb, .dtb .r .copyb { display:none }   /* 복사(2026-10-19)도 폰은 ⋯ 안의 «내용 복사» 로 */
   .dtb { min-height:40px }
   .dfoot .rb { width:46px; height:46px }
   .dfoot .pos { font-size:13px; color:var(--t3); font-variant-numeric:tabular-nums }

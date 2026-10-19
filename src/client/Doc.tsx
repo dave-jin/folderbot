@@ -14,6 +14,7 @@ export function preloadEditor(): void { void loadMdEditor().catch(() => {}) }
 const Canvas = lazy(() => import('./Canvas'))
 import type { Bot } from '../core/types'
 import { copySay, copyText } from './clip'
+import { copyFiles } from './fileCopy'
 import { api, ApiError, uploadFile } from './api'
 import { normalizeDepth, outline } from '../core/outline'
 import { Icon, Mid } from './FolderBot'
@@ -322,6 +323,14 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
   const isMd = /\.(md|markdown|txt)$/i.test(rel ?? '')
   const outside = !!rel && rel.startsWith('../')
   const vaultRel = rel ? vaultRelOf(bot.rel, rel) : ''
+  /** 이 문서를 클립보드로 — 화면에 보이는 것을 준다(글은 고치던 `draft`, 잘렸으면 그렇다고 말한다) */
+  const copyDoc = () => {
+    if (!rel || !doc) return
+    if (doc.kind === 'text') { const t = draft || doc.text || ''; void copyText(t).then((ok) => say(ok ? (doc.truncated ? '보이는 데까지 복사했어요 (문서가 잘려 있어요)' : `문서를 복사했어요 · ${t.length.toLocaleString()}자`) : '복사를 못 했어요')); return }
+    if (doc.kind === 'image') { void copyImageWhy(raw(rel), main ? `${bot.abs}/${rel}` : undefined).then((r) => say(r.ok ? '이미지를 복사했어요 — 메모·슬랙에 ⌘V' : r.why ?? '이 환경에서는 이미지 복사를 못 해요 — «이 기기에서 열기» 로 여세요')); return }
+    void copyFiles(bot, [rel], { main, hostName, phone: !!phone, say })
+  }
+  const copyTitle = doc?.kind === 'text' ? '내용 복사' : doc?.kind === 'image' ? '그림 복사' : phone ? '공유…' : '파일 복사 — 카톡·Finder 에 ⌘V'
   return <div className="col doc" style={{ flex: wide ? 3 : 1.15 }}>
     <div className="hdr" style={phone ? undefined : { paddingLeft: 10 }}>
       {/* AG · **좌상단은 네 화면이 같다** (2026-09-24 Dave: «왼쪽 위 폴더봇으로 가는 버튼이 문서와 다르다 · 통일») */}
@@ -339,6 +348,9 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
             원격이면 이름이 「메인 맥에서」 로 바뀐다. */}
         {/* 목차 (B4) — 제목이 둘 이상일 때만 나온다. 하나짜리 문서에 목차는 자리만 먹는다 */}
         {heads.length > 1 ? <button className={`ib tocb ${toc ? 'on' : ''}`} title="목차" onClick={() => setToc(!toc)}><Icon n="list" size={13} /></button> : null}
+        {/* 🔴 **복사는 메뉴 밖에도 둔다** (2026-10-19 Dave: «문서 상단에도 클립보드 복사가 있으면 좋겠어»).
+            글 문서는 글 전체, 그림은 그림, 나머지(PDF 등)는 파일째 — 파일 목록의 ⌘C 와 같은 길(`copyFiles`)이라 카톡·Finder 에 ⌘V 로 붙는다 */}
+        {doc ? <button className="ib copyb" title={copyTitle} onClick={copyDoc}><Icon n="copy" size={13} /></button> : null}
         <button className="ib openb" title={main ? '기본 앱으로 열기' : '이 기기에서 열기'} onClick={openHere}><Icon n="open" size={13} /></button>
         <span style={{ position: 'relative' }}><button className="ib" title="더 보기" onClick={(e) => setMenu(menu ? null : anchorOf(e.currentTarget, { right: true }))}><Icon n="more" size={13} /></button>
             {menu ? <Float at={menu} onClose={() => setMenu(null)}><div style={{ display: 'contents' }} onClick={() => setMenu(null)}>{heads.length > 1 ? <button onClick={() => setToc(!toc)}><Icon n="list" size={13} /><span>목차</span></button> : null}<button onClick={() => onTalk(rel)}><Icon n="sub" size={13} /><span>봇에게 이 파일 말하기</span></button><button onClick={() => onAttach(rel)}><Icon n="plus" size={13} /><span>첨부로 보내기</span></button><button onClick={() => { void copySay(`${bot.abs}/${rel}`, say, '경로를 복사했어요') }}><Icon n="file" size={13} /><span>경로 복사</span></button><button onClick={openHere}><Icon n="open" size={13} /><span>{main ? '기본 앱으로 열기' : '이 기기에서 열기'}</span></button>
@@ -351,7 +363,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
                 * ⚠ 화면에 보이는 것을 준다 — 고치는 중이면 **고치던 글(`draft`)**, 아니면 저장된 글.
                 * ⚠ 잘린 문서(`truncated`)면 그렇다고 말한다 — 다 복사한 것처럼 보이면 안 된다.
                 */}
-              {doc?.kind === 'text' ? <button onClick={() => { const t = draft || doc.text || ''; void copyText(t).then((ok) => say(ok ? (doc.truncated ? '보이는 데까지 복사했어요 (문서가 잘려 있어요)' : `문서를 복사했어요 · ${t.length.toLocaleString()}자`) : '복사를 못 했어요')) }}><Icon n="copy" size={13} /><span>내용 복사</span></button> : null}
+              {doc?.kind === 'text' ? <button onClick={copyDoc}><Icon n="copy" size={13} /><span>내용 복사</span></button> : null}
               {doc?.kind === 'text' ? <button onClick={() => setPrintHtml(renderMarkdown(draft || doc.text || ''))}><Icon n="file" size={13} /><span>PDF 로 저장</span></button> : null}
               {/* 🔴 **읽기 편한 크기는 사람의 성질이다** (B9) — 문서마다 따로 두지 않고 이 기기에 남긴다.
                   ⚠ 폭은 «넓게»(문서 열을 키우는 것)와 다른 일이다 — 이건 **글줄 길이**다. */}
