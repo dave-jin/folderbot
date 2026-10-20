@@ -2797,8 +2797,11 @@ try {
           await pg.keyboard.type('재무'); await wait(500)   // ⚠ 초성 «ㅈㅁ» 은 «예시고객 자문» 에도 맞는다 — 순위 판정은 core/search 유닛이 잰다
           const r1 = await pg.$$eval('.modal.srch .prow', (r) => r.map((x) => ({ c: x.className, t: x.querySelector('.n')?.textContent })))
           if (!r1[0] || !/bot/.test(r1[0].c) || !/재무_CFO/.test(r1[0].t ?? '')) fail('검색: 봇이 맨 위에 안 왔다 ' + JSON.stringify(r1.slice(0, 4)))
-          if (!r1[1] || !/sess/.test(r1[1].c)) fail('🔴 검색: 고른 봇 아래에 세션이 안 펼쳐졌다 ' + JSON.stringify(r1.slice(0, 4)))
-          await pg.keyboard.press('ArrowDown'); await wait(120)
+          // DF · 폴더는 닫힌 상자 — ↑↓ 는 폴더만 밟고, → 로 펴야 세션이 선다(2026-10-20 Dave «세션별로 위아래로 이동되니 불편해»)
+          if (r1.some((x) => /sess/.test(x.c) && !/재무/.test(x.t ?? ''))) fail('🔴 DF 검색: → 를 안 눌렀는데 세션이 펼쳐졌다 ' + JSON.stringify(r1.slice(0, 4)))
+          await pg.keyboard.press('ArrowRight'); await wait(150)
+          const r1b = await pg.$$eval('.modal.srch .prow', (r) => r.map((x) => ({ c: x.className, t: x.querySelector('.n')?.textContent })))
+          if (!r1b[1] || !/sess/.test(r1b[1].c) || !/\bon\b/.test(r1b[1].c)) fail('🔴 DF 검색: → 로 고른 봇 아래에 세션이 안 펼쳐졌거나 첫 세션에 안 섰다 ' + JSON.stringify(r1b.slice(0, 4)))
           const want = await pg.$eval('.modal.srch .prow.on .n', (e) => e.textContent)
           await pg.keyboard.press('Enter'); await wait(500)
           const h = await pg.evaluate(() => Object.fromEntries(new URLSearchParams(location.hash.slice(1))))
@@ -2852,6 +2855,55 @@ try {
           await pg.evaluate((x) => { location.hash = x }, backDe); await wait(400)
           await api(`/sessions/${sidDe}`, undefined, 'DELETE')
           ok(`DE 폴더봇 찾기 A안 — 오케스트레이터 · 최근 ${rec?.n} (방금 읽은 재무_CFO 가 첫 줄 · A · 방금) · 칸 ${order.join('→')} · 중복 없음 · 검색어엔 칸 표식만`)
+        }
+        /**
+         * 🔴 **DF · 움직이는 세션 낱줄** (2026-10-20 Dave · 목업 03_디자인/2026-10-20_찾기-실시간-목업 v2 «낱줄») — «최근» 맨 위에
+         *    움직이는 세션이 두 줄로(이름 · 폴더 · 경과 / 지금 하는 일) 서고, 경과는 초마다 오르며, 연 동안 끝나면 «방금 끝났어요» 로 자리를 지킨다.
+         *    움직이는 폴더는 «최근에 연 폴더» 에 다시 안 나온다. 폴더는 닫힌 상자 — ↑↓ 로 밟고 → 로 펴고 ← 로 접는다.
+         *    옛 판은 움직이는 세션 줄이 없어 여기서 빨개진다.
+         */
+        {
+          const backDf = await pg.evaluate(() => location.hash)
+          const sidDf = (await api(`/bots/${cfo.id}/sessions`, { name: 'DF 검사' })).id
+          await api(`/sessions/${sidDf}/send`, { text: '느린일 DF' })
+          for (let i = 0; i < 40; i++) { if ((await api(`/bots/${cfo.id}/sessions`)).find((x) => x.id === sidDf)?.state === 'running') break; await wait(100) }
+          await pg.keyboard.press('Meta+k'); await pg.waitForSelector('.modal.srch', { timeout: 3000 }).catch(() => {})
+          await pg.waitForSelector(`.modal.srch .prow.lrow[data-sid="${sidDf}"]`, { timeout: 3000 }).catch(() => {})
+          const look = () => pg.evaluate((sid) => {
+            const r = document.querySelector(`.modal.srch .prow.lrow[data-sid="${sid}"]`)
+            return r && { cls: r.dataset.cls, on: r.classList.contains('on'), name: r.querySelector('.l1 .n')?.textContent, folder: r.querySelector('.fc')?.textContent, tm: r.querySelector('.ftm')?.textContent, l2: r.querySelector('.l2')?.textContent, l2h: r.querySelector('.l2')?.getBoundingClientRect().height ?? 0,
+              head: document.querySelector('.modal.srch .sgrp.fhd[data-head="recent"] .lv')?.textContent ?? '', sub: document.querySelector('.modal.srch .sgrp.fsub[data-sub="live"]')?.textContent ?? '',
+              recentBots: [...document.querySelectorAll('.modal.srch .prow.bot')].map((x) => x.dataset.bot), sess: document.querySelectorAll('.modal.srch .prow.sess').length }
+          }, sidDf)
+          const a = await look()
+          if (!a) fail('🔴 DF: 움직이는 세션이 «최근» 맨 위에 안 섰다')
+          else {
+            if (a.cls !== 'me' || !a.on || a.name !== 'DF 검사' || !/재무_CFO/.test(a.folder ?? '') || !a.l2) fail('DF: 움직이는 세션 줄 모양(주황 · 처음 고른 줄 · 이름 · 폴더 · 하는 일) ' + JSON.stringify(a))
+            if (a.l2h < 10) fail('🔴 DF: 둘째 줄(지금 하는 일)이 화면에서 눌려 안 보인다 — 채팅 진행 줄의 전역 .live(높이 24px)가 걸렸나 ' + a.l2h)
+            if (!/움직이는 세션 \d/.test(a.head) || !a.sub) fail('DF: «최근» 머리에 움직이는 세션 수 · «지금 움직이는 세션» 머리가 없다 ' + JSON.stringify(a))
+            if (a.recentBots.includes(cfo.id)) fail('🔴 DF: 움직이는 폴더가 아래 폴더 줄에 또 나온다 ' + JSON.stringify(a.recentBots))
+            if (a.sess) fail('🔴 DF: 폴더를 안 폈는데 세션 줄이 섰다 ' + a.sess)
+            await wait(1300); const b = await look()
+            if (!b || b.tm === a.tm) fail('🔴 DF: 경과가 초마다 안 오른다 ' + JSON.stringify([a.tm, b?.tm]))
+            // ↓ 로 폴더 줄에 내려가 → 로 펴고 ← 로 접는다
+            for (let k = 0; k < 8; k++) { if (await pg.$('.modal.srch .prow.bot.on')) break; await pg.keyboard.press('ArrowDown'); await wait(80) }
+            const onBot = await pg.$eval('.modal.srch .prow.on', (e) => e.dataset.bot ?? '').catch(() => '')
+            await pg.keyboard.press('ArrowRight'); await wait(150)
+            const opened = await pg.evaluate(() => ({ sess: document.querySelectorAll('.modal.srch .prow.sess').length, on: document.querySelector('.modal.srch .prow.on')?.className ?? '', open: !!document.querySelector('.modal.srch .prow.bot.open') }))
+            const nOn = onBot ? (await api(`/bots/${onBot}/sessions`)).length : 0
+            if (onBot && nOn > 0 && (!opened.sess || !/sess/.test(opened.on) || !opened.open)) fail('🔴 DF: 폴더 줄에서 → 가 세션을 안 폈다 ' + JSON.stringify({ onBot, nOn, opened }))
+            await pg.keyboard.press('ArrowLeft'); await wait(150)
+            if (await pg.$('.modal.srch .prow.sess')) fail('DF: ← 가 펼친 폴더를 안 접었다')
+            // 연 동안 끝나면 자리를 지키고 «방금 끝났어요»
+            for (let i = 0; i < 40; i++) { const x = await look(); if (x?.cls === 'done') break; await wait(150) }
+            const c = await look()
+            if (!c || c.cls !== 'done' || !/방금 끝났어요 · .+ 걸림/.test(c.l2 ?? '')) fail('🔴 DF: 연 동안 끝난 세션이 «방금 끝났어요» 로 자리를 안 지켰다 ' + JSON.stringify(c))
+            await (await pg.$('.modal.srch'))?.screenshot({ path: 'test/tmp/df-live.png' })
+          }
+          await pg.keyboard.press('Escape'); await wait(150); if (await pg.$('.modal.srch')) { await pg.keyboard.press('Escape'); await wait(150) }
+          await pg.evaluate((x) => { location.hash = x }, backDf); await wait(400)
+          await api(`/sessions/${sidDf}`, undefined, 'DELETE')
+          ok('DF 움직이는 세션 낱줄 — 맨 위 두 줄 · 폴더 표식 · 경과가 초마다 · 움직이는 폴더는 아래에 안 겹침 · → 펴고 ← 접고 · 끝나면 «방금 끝났어요»')
         }
         /**
          * 🔴 **세션 정리** (2026-10-02 Dave · 시안 B) — 모든 폴더의 세션 한 표 · 잠긴 줄은 못 고른다 · 지우고 10초 되돌리기.

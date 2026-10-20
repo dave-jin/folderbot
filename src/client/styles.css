@@ -1436,6 +1436,33 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .modal.pal.srch .prow .ftm { flex:none; margin-left:auto; font-size:11.5px; color:var(--t3); font-variant-numeric:tabular-nums }
 .modal.pal.srch .sgrp.fhd + .prow { scroll-margin-top:30px }   /* ↑ 로 칸 첫 줄에 오면 칸 머리까지 보이게 */
 .modal.pal.srch .sfoot { display:flex; gap:14px; padding:7px 14px; border-top:1px solid var(--line); font-size:11px; color:var(--t3) }
+/* DF · 움직이는 세션 낱줄 (목업 03_디자인/2026-10-20_찾기-실시간-목업 v2 «낱줄») — 폴더는 닫힌 상자(›), 세션은 그 안의 줄(들여쓰기 + 세로선),
+   움직이는 세션은 두 줄(이름 · 폴더 · 경과 / 지금 하는 일). 색은 레일·채팅 대기 줄과 같다 — 주황=봇이 · 청록=남이 · 노랑=내가 · 초록=끝남 */
+.modal.pal.srch .prow .chev { width:10px; flex:none; text-align:center; color:var(--t3); font-size:15px; line-height:1; transition:transform .12s }
+.modal.pal.srch .prow.bot.open .chev { transform:rotate(90deg); color:var(--t) }
+.modal.pal.srch .prow.sess, .modal.pal.srch .prow.idle, .modal.pal.srch .prow.more { position:relative; padding-left:33px }
+.modal.pal.srch .prow.sess::before, .modal.pal.srch .prow.idle::before, .modal.pal.srch .prow.more::before { content:''; position:absolute; left:17px; top:0; bottom:0; width:1px; background:var(--line2) }
+.modal.pal.srch .prow.idle { font-size:13px; color:var(--t3) } .modal.pal.srch .prow.idle.on { color:var(--t2) }
+.modal.pal.srch .prow .sb.c-me, .modal.pal.srch .prow .sb.c-other, .modal.pal.srch .prow .sb.c-you { white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.modal.pal.srch .prow .rt { flex:none; font-size:10px; color:var(--t3); border:1px solid var(--line2); border-radius:4px; padding:0 4px; line-height:1.5 }
+.modal.pal.srch .prow.lrow { display:flex; flex-direction:column; align-items:stretch; gap:1px; padding:6px 9px 7px }
+.modal.pal.srch .prow.lrow .l1 { display:flex; align-items:center; gap:8px; min-width:0 }
+.modal.pal.srch .prow.lrow .l1 .n { flex:0 1 auto; max-width:none; font-weight:500; color:var(--w); min-width:0 }
+.modal.pal.srch .prow.lrow .fc { display:inline-flex; align-items:center; gap:5px; flex:0 1 auto; min-width:0; max-width:40%; color:var(--t3); font-size:11.5px }
+.modal.pal.srch .prow.lrow .fc .fpara { width:14px; height:14px; font-size:9px }
+.modal.pal.srch .prow.lrow .l2 { padding-left:16px; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.modal.pal.srch .sgrp.fhd .lv { color:var(--run); margin-left:auto } .modal.pal.srch .sgrp.fhd .lv + .n { margin-left:0 } .modal.pal.srch .sgrp.fhd .lv + .n::before { content:'· 폴더 ' }
+.modal.pal.srch .sgrp.fsub { margin:0; padding:7px 9px 2px; font-size:10.5px; color:var(--t3); opacity:.8; letter-spacing:.05em }
+.modal.pal.srch .ldot { width:8px; height:8px; border-radius:50%; flex:none; display:inline-block; box-shadow:inset 0 0 0 1px var(--line2) }
+.modal.pal.srch .ldot.me { background:var(--run); box-shadow:none; animation:fpulse .9s ease-in-out infinite }
+.modal.pal.srch .ldot.other { background:var(--hold); box-shadow:none; animation:fpulse 2.4s ease-in-out infinite }
+.modal.pal.srch .ldot.you { background:var(--wait); box-shadow:none } .modal.pal.srch .ldot.done { background:var(--done); box-shadow:none } .modal.pal.srch .ldot.err { background:var(--err); box-shadow:none }
+.modal.pal.srch .c-me { color:color-mix(in srgb, var(--run) 75%, var(--w)) } .modal.pal.srch .c-other { color:color-mix(in srgb, var(--hold) 70%, var(--w)) }
+.modal.pal.srch .c-you { color:color-mix(in srgb, var(--wait) 80%, var(--w)) } .modal.pal.srch .c-done { color:color-mix(in srgb, var(--done) 80%, var(--w)) } .modal.pal.srch .c-err { color:color-mix(in srgb, var(--err) 80%, var(--w)) }
+.modal.pal.srch .prow.flash { animation:fflash 1.6s ease-out }
+@keyframes fpulse { 0%,100% { opacity:1 } 50% { opacity:.3 } }
+@keyframes fflash { 0% { background:color-mix(in srgb, var(--wait) 22%, transparent) } 100% { background:transparent } }
+@media (prefers-reduced-motion: reduce) { .modal.pal.srch .ldot, .modal.pal.srch .prow.flash { animation:none } }
 .nav .bd.kb { font-family:var(--mono); font-size:11px }
 
 /* ── 세션 정리 (2026-10-02 · 시안 B) — 넓은 창 · 거름 알약 · 표 · 잠긴 줄은 흐리게 · 되돌리기 띠 ── */
