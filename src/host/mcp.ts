@@ -9,6 +9,7 @@ import { stripRuntime, type RoutineDef } from '../core/types'
 import { WHEN_EXAMPLES, confirmLine, describeCron, formatNext, isOnce, onceDone, parseWhen, sameOnce } from '../core/when'
 import { turnBlock } from '../core/turnGuard'
 import { asksTodo, lastHumanText } from '../core/todo'
+import type { DocReq } from '../core/docReq'
 
 interface Rpc { jsonrpc: '2.0'; id?: number | string; method?: string; params?: Record<string, unknown> }
 type Tool = { name: string; description: string; inputSchema: Record<string, unknown> }
@@ -196,8 +197,11 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       if (relUnder(reg.root, abs) === null && !(b.repo && relUnder(b.repo, abs) !== null)) throw new Error('볼트 밖 경로예요 — 문서 창은 볼트 안 파일만 열어요')
       if (!existsSync(abs)) throw new Error(`없는 파일: ${raw}`)
       const rel = relative(b.abs, abs)
-      const turn = host.sessions.get(sid)?.turnStartedAt ?? 0
-      host.broadcast({ ev: 'doc', botId: b.id, sid, rel, action: name === 'rondo_open' ? 'open' : 'reveal', turn, device: host.sessions.get(sid)?.lastClient?.device })   // J-3 · 요청이 온 기기만 연다
+      const rec = host.sessions.get(sid)
+      // J-3 · 요청이 온 기기만 연다 · J-4 · 세션에 남긴다 — 화면이 그 순간 다른 봇을 보고 있었거나 끊겼어도 돌아오면 연다
+      const req: DocReq = { at: Date.now(), rel, action: name === 'rondo_open' ? 'open' : 'reveal', turn: rec?.turnStartedAt ?? 0, device: rec?.lastClient?.device }
+      if (rec) rec.docReq = req
+      host.broadcast({ ev: 'doc', botId: b.id, sid, ...req })
       return name === 'rondo_open' ? `문서 창에 열었어요: ${rel}` : `기기의 Finder 로 보여 드렸어요: ${rel}`
     }
     /* ── AA-5 · 루틴 (2026-09-22) ─────────────────────────────────────────

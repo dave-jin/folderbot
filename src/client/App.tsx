@@ -4,6 +4,7 @@ import { api, setToken, token, uploadFile } from './api'
 import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
 import { holdHeader, holdLine, holderOf, type Holder } from '../core/waiting'
 import { cliNeedsUpdate, cliVersionShort, cliUpdateLine } from '../core/cliUpdate'
+import { docKey, pendingDoc } from '../core/docReq'
 import { notePlain } from '../core/mdPlain'
 import { AskHost, ConfirmHost, DiffHost, FolderPicker, Md, NotifyCenter, chipMark, Onboarding, Pairing, RoutineSheet, Settings, preloadDirIndex, askConfirm, askName, showDiff, useToast } from './Sheets'
 import { AgentPickHost, pickAgent } from './AgentPick'
@@ -613,14 +614,30 @@ function Main() {
   // 파일명만 적힌 칩이 여러 곳에 있을 때 — 고르기 (G)
   const [pickFile, setPickFile] = useState<{ name: string; rels: string[] } | null>(null)
   useEffect(() => { const f = (e: Event) => setPickFile((e as CustomEvent).detail as { name: string; rels: string[] }); window.addEventListener('fb:pickfile', f); return () => window.removeEventListener('fb:pickfile', f) }, [])
-  // 에이전트의 rondo_open / rondo_reveal — 지금 보고 있는 봇의 것만 (J 에서 «보낸 기기» 로 좁힌다)
+  // 에이전트의 rondo_reveal — 지금 보고 있는 봇의 것만 · J-3 · 요청이 온 기기만(호스트는 'host', 원격은 그 기기 이름)
+  const meDevice = s.device.main ? 'host' : s.device.name
   useEffect(() => {
-    const r = s.docReq; if (!r || !bot || r.botId !== bot.id) return
-    // J-3 · 요청이 온 기기만 연다 — 호스트(main)는 'host', 원격은 그 기기 이름. 내 것이 아니면 아무것도 안 뜬다
-    if (r.device && r.device !== (s.device.main ? 'host' : s.device.name)) return
-    if (r.action === 'open') openInDocPane(r.rel, { source: 'agent', turnKey: `${r.sid}:${r.turn}` })
-    else void openOnThisDevice(bot, r.rel, 'reveal', { main: s.device.main, hostName: s.hostName, phone, say })
+    const r = s.docReq; if (!r || r.action !== 'reveal' || !bot || r.botId !== bot.id) return
+    if (r.device && r.device !== meDevice) return
+    void openOnThisDevice(bot, r.rel, 'reveal', { main: s.device.main, hostName: s.hostName, phone, say })
   }, [s.docReq?.n])
+  /**
+   * 🔴 J-4 · 에이전트의 rondo_open — 세션에 남은 요청을 이 기기가 아직 안 열었으면 연다 (2026-10-21 Dave: «띄웠다는데 안 떠 있어»).
+   * 신호가 온 순간 다른 봇을 보고 있었거나 연결이 끊겼어도, 그 봇으로 돌아오면 연다. 한 기기에서 한 번만(`fb:docseen`).
+   */
+  const docSeen = useRef<string[] | null>(null)
+  const botSess = bot ? s.sessionsByBot[bot.id] : undefined
+  const docSig = `${bot?.id ?? ''}|${meDevice}|${(botSess ?? []).map((x) => x.docReq?.at ?? 0).join(',')}`
+  useEffect(() => {
+    if (!bot || !botSess || !s.loaded) return
+    if (!docSeen.current) { try { docSeen.current = JSON.parse(localStorage.getItem('fb:docseen') ?? '[]') } catch { docSeen.current = [] } }
+    const seen = docSeen.current ?? []
+    const p = pendingDoc(botSess, meDevice, (k) => seen.includes(k))
+    if (!p) return
+    docSeen.current = [...seen, docKey(p.sid, p.req)].slice(-50)
+    try { localStorage.setItem('fb:docseen', JSON.stringify(docSeen.current)) } catch { /* 저장 못 해도 이번엔 연다 */ }
+    openInDocPane(p.req.rel, { source: 'agent', turnKey: `${p.sid}:${p.req.turn}` })
+  }, [docSig, s.loaded])
   const addAttach = (a: Att) => { setAttachReq((q) => [...q, { ...a, abs: a.abs || `${bot?.abs}/${a.rel}` }]); if (narrow) setView('chat') }
   // 열 드래그 — 선이 핸들. 더블클릭은 기본값
   const dragX = (k: 'sb' | 'rp' | 'doc', dir: 1 | -1) => (e: React.PointerEvent) => {

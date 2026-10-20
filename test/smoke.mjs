@@ -2050,6 +2050,20 @@ try {
           const onRemote = !!(await rj.$('.docwrap .dtb .nm:has-text("CLAUDE.md")')); const onHost = !!(await pg.$('.docwrap'))
           if (!onRemote || onHost) fail('J-3: 원격 문서 창에만 열려야 한다 ' + JSON.stringify({ onRemote, onHost }))
           await rj.screenshot({ path: 'test/tmp/j-remote.png' }); await closeDocP(rj)
+          // 🔴 J-4 (2026-10-21 Dave «문서 창에 띄웠다는데 안 떠 있어») · 원격이 다른 봇을 보던 사이에 온 rondo_open — 그 봇으로 돌아오면 연다 · 한 번만
+          const otherJ = (await api('/bots')).find((b) => b.id !== bot.id)
+          if (otherJ) {
+            await rj.click('.composer .cin'); await rj.keyboard.type('덱 만들어 줘'); await rj.keyboard.press('Enter'); await wait(1200)   // 새 턴(한 턴에 한 번 규칙과 섞이지 않게)
+            await rj.evaluate((h) => { location.hash = h }, `#bot=${otherJ.id}`); await wait(700)
+            const mcpJ4 = await (await mcpFetch(base + `/mcp/${bot.id}?sid=${sidJ}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'rondo_open', arguments: { path: 'todo.md' } } }) })).json()
+            if (mcpJ4.result?.isError) fail('J-4 rondo_open: ' + mcpJ4.result.content[0].text)
+            await wait(700); if (await rj.$('.docwrap .dtb .nm:has-text("todo.md")')) fail('J-4: 다른 봇 화면에 남의 봇 문서가 열렸다')
+            await rj.evaluate((h) => { location.hash = h }, `#bot=${bot.id}&s=${sidJ}`); await wait(1000)
+            if (!(await rj.$('.docwrap .dtb .nm:has-text("todo.md")'))) fail('🔴 J-4: 다른 봇을 보던 사이 온 rondo_open 이 그 봇으로 돌아와도 안 열렸다')
+            if (await pg.$('.docwrap')) fail('J-4: 요청한 기기가 아닌 호스트에 열렸다')
+            await closeDocP(rj); await rj.evaluate((h) => { location.hash = h }, `#bot=${otherJ.id}`); await wait(500); await rj.evaluate((h) => { location.hash = h }, `#bot=${bot.id}&s=${sidJ}`); await wait(800)
+            if (await rj.$('.docwrap')) fail('J-4: 닫은 문서가 그 봇에 다시 오자 또 열렸다(한 번만 열어야 한다)')
+          }
           // 폰 — tier=phone · canOpenOnDevice=false · rondo_reveal 은 그 폰에 안내만(호스트에는 아무것도)
           const pj = await br.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
           await pj.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); const of = window.fetch.bind(window); window.fetch = (u, o = {}) => { const h = new Headers(o.headers || {}); h.set('x-fb-as', 'iphone'); return of(u, { ...o, headers: h }) } })
@@ -2067,7 +2081,7 @@ try {
           // J-2 · 규칙 — 볼트 CLAUDE.md 생성부(새 볼트) + 시스템 프롬프트
           // (새 볼트의 CLAUDE.md 생성부에 규칙이 드는 것은 유닛 test/unit/registry.test.ts 가 잰다 — 이 픽스처 볼트는 이미 CLAUDE.md 가 있어 머리말을 다시 만들지 않는다)
           await fetch(base + `/api/sessions/${sidJ}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(500)
-          ok('J 발신 기기 — 호스트/원격/폰 블록 값 · 채팅 글 그대로 · 원격 메시지 표식 · rondo_open 은 요청 기기에만 · 폰 reveal 은 안내만 · CLAUDE.md 규칙')
+          ok('J 발신 기기 — 호스트/원격/폰 블록 값 · 채팅 글 그대로 · 원격 메시지 표식 · rondo_open 은 요청 기기에만(다른 봇을 보던 사이 온 것은 돌아오면 한 번) · 폰 reveal 은 안내만 · CLAUDE.md 규칙')
         }
         /**
          * 🔴 **H · 반응형 3단계 + 쓸기 내비게이션** (2026-09-19 Dave 시안 확정 · `test/tmp/responsive-mock.png`).

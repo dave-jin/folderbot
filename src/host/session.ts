@@ -18,6 +18,7 @@ import { isModelRejected } from '../core/codexMap'
 import { autoAllows, fallbackRules, rulesLabel } from '../core/permPolicy'
 import type { Bot, ChatItem, PermissionMode, PermissionRequest, QueuedMsg, SessionInfo, SessionState } from '../core/types'
 import type { TurnFrom } from '../core/turnGuard'
+import type { DocReq } from '../core/docReq'
 import { channelSpawn, channelVerdict, type Trust } from '../core/bridges'
 import { compactReason, rotateReason } from '../core/compact'
 import { extraComms, forkHandover, migrateArea, takeoverMode } from '../core/autoArea'
@@ -255,6 +256,8 @@ export interface SessionRec {
   delegatedFrom?: string
   /** J · 마지막 메시지가 온 기기 — rondo_open/reveal 이 그 기기에만 간다 */
   lastClient?: ClientCtx
+  /** J-4 · 마지막 rondo_open/reveal — 신호를 놓친 화면이 돌아와서 연다(`core/docReq`) */
+  docReq?: DocReq
   /** 봇의 «🤝 소통» 세션(봇마다 하나) — 봇끼리 오가는 말을 모두 받는다. 이 세션도 `orch_ask` 를 못 쓴다(고리 막기) */
   comm?: boolean
   /** 호스트 대기열 — 다른 봇이 보낸 말이 일하는 중에 오면 여기서 기다렸다가 턴이 끝나면 차례로 나간다 */
@@ -429,7 +432,7 @@ export class SessionManager extends EventEmitter {
   }
   info(r: SessionRec): SessionInfo {
     const w = this.workers.get(r.id)
-    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, inflight: r.inflight, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, ...(r.comm ? { comm: true } : {}), ...(r.channel ? { channel: r.channel } : {}), ...(r.delegatedFrom && !r.comm ? { delegated: true } : {}), ...(r.adopted ? { adopted: true } : {}), ...(r.exChannel ? { exChannel: true } : {}), ...(r.exComm ? { exComm: true } : {}), ...(r.queue?.length ? { queue: r.queue } : {}), ...(r.held ? { held: true } : {}), ...(r.stopped ? { stopped: r.stopped } : {}), activity: r.activity, turnStartedAt: r.turnStartedAt, model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending, ...(r.slash?.length ? { slashN: r.slash.length } : {}) }
+    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, inflight: r.inflight, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, ...(r.comm ? { comm: true } : {}), ...(r.channel ? { channel: r.channel } : {}), ...(r.delegatedFrom && !r.comm ? { delegated: true } : {}), ...(r.adopted ? { adopted: true } : {}), ...(r.exChannel ? { exChannel: true } : {}), ...(r.exComm ? { exComm: true } : {}), ...(r.queue?.length ? { queue: r.queue } : {}), ...(r.held ? { held: true } : {}), ...(r.stopped ? { stopped: r.stopped } : {}), activity: r.activity, turnStartedAt: r.turnStartedAt, ...(r.docReq ? { docReq: r.docReq } : {}), model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending, ...(r.slash?.length ? { slashN: r.slash.length } : {}) }
   }
   get(id: string): SessionRec | undefined { return this.recs.get(id) }
   /** 볼트 전체의 세션 기록 — 「지난 대화 찾기」 가 훑는다(읽기만) */

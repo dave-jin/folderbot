@@ -104,7 +104,12 @@ function reducer(s: StateShape, a: Action): StateShape {
         case 'todo': return { ...s, todos: { ...s.todos, [f.botId]: f.items } }
         case 'files': return { ...s, filesTick: { ...s.filesTick, [f.botId]: Date.now() } }
         case 'inbox': return { ...s, inbox: f.count }
-        case 'doc': return { ...s, docReq: { botId: f.botId, sid: f.sid, rel: f.rel, action: f.action, turn: f.turn, device: f.device, n: Date.now() } }
+        // J-4 · 세션 줄에도 남긴다 — 지금 다른 봇을 보고 있어도 그 봇으로 가면 연다(`core/docReq`)
+        case 'doc': {
+          const list = s.sessionsByBot[f.botId]
+          const docReq = { at: f.at, rel: f.rel, action: f.action, turn: f.turn, device: f.device }
+          return { ...s, docReq: { botId: f.botId, sid: f.sid, rel: f.rel, action: f.action, turn: f.turn, device: f.device, n: Date.now() }, ...(list ? { sessionsByBot: { ...s.sessionsByBot, [f.botId]: list.map((x) => (x.id === f.sid ? { ...x, docReq } : x)) } } : {}) }
+        }
         default: return s
       }
     }

@@ -1,4 +1,5 @@
 /** Folder Bot — 호스트·클라이언트가 공유하는 순수 타입 (Electron/DOM 의존 없음) */
+import type { DocReq } from './docReq'
 
 export type SessionState = 'idle' | 'running' | 'awaiting_input' | 'done' | 'error'
 
@@ -158,6 +159,8 @@ export interface SessionInfo {
   bg?: number
   /** 이번 턴 시작 시각 — 경과 시간은 이걸로 잰다 */
   turnStartedAt?: number
+  /** J-4 · 마지막 rondo_open/reveal — 그 순간 화면이 다른 봇을 보고 있었거나 끊겼어도 돌아오면 연다(`core/docReq`) */
+  docReq?: DocReq
   model?: string
   effort?: string
   permissionMode?: PermissionMode
@@ -302,7 +305,7 @@ export type Frame =
   | { ev: 'todo'; botId: string; items: TodoItem[] }
   | { ev: 'files'; botId: string }
   /** 에이전트가 문서 창을 열거나(rondo_open) 그 기기의 Finder 로 보여 달라(rondo_reveal) — turn 은 그 세션의 턴 시각(한 턴에 한 번) */
-  | { ev: 'doc'; botId: string; sid: string; rel: string; action: 'open' | 'reveal'; turn: number; /** J-3 · 요청이 온 기기 — 그 기기만 연다 */ device?: string }
+  | { ev: 'doc'; botId: string; sid: string; rel: string; action: 'open' | 'reveal'; turn: number; /** J-3 · 요청이 온 기기 — 그 기기만 연다 */ device?: string; /** J-4 · 요청 시각 — 세션의 `docReq` 와 같은 열쇠 */ at: number }
   | { ev: 'inbox'; count: number }
   /** BQ-9 · 연결(Bridge) 화면을 다시 읽어라 — 편지 들어옴·보냄·끊김·설정. 내용은 싣지 않는다(`GET /api/bridges`) */
   | { ev: 'bridges' }
