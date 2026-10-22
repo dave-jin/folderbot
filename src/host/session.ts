@@ -1140,7 +1140,7 @@ export class SessionManager extends EventEmitter {
 
   send(r: SessionRec, bot: Bot, text: string, client?: ClientCtx, origin: TurnFrom = 'human', grant?: string[]): void {
     r.turnFrom = origin
-    r.turnGrant = origin === 'peer' && grant?.length ? grant : undefined
+    r.turnGrant = (origin === 'peer' || origin === 'bot') && grant?.length ? grant : undefined   // CS · 봇의 턴은 Dave 원문이 붙은 orch_ask 만 grant 를 싣는다
     // CL-1 · 사람이 새 말을 보내면 멈춤이 풀린다 — 붙잡아 둔 대기 말은 이 턴 뒤에 차례로 나간다
     if (origin === 'human' && (r.held || r.stopped)) { r.held = undefined; r.stopped = undefined }
     r.stopping = undefined   // 멈춘 턴의 끝이 안 왔어도 새 턴의 진짜 오류를 숨기지 않게

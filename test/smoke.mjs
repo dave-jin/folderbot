@@ -1010,7 +1010,12 @@ try {
     const os = (await api('/bots/orch/sessions')).find((x) => x.comm)
     if (!os) fail('BH orch_ask: 오케스트레이터에 «🤝 소통» 세션이 안 생겼다 ' + JSON.stringify((await api('/bots/orch/sessions')).map((x) => x.name)))
     const first = (await api(`/sessions/${os.id}/chat`)).items.find((x) => x.kind === 'user')
-    if (!first?.text?.startsWith(`[요청 ← ${bot.name} · ${bot.id} · ${mine.sessionId}]\n재무_CFO 에게`)) fail('BH orch_ask: 본문 앞 요청 줄이 없다 ' + JSON.stringify(first?.text))
+    if (!first?.text?.startsWith(`[요청 ← ${bot.name} · ${bot.id} · ${mine.sessionId}]\n[Dave 가 직접 한 말 · `)) fail('BH orch_ask: 본문 앞 요청 줄이 없다 ' + JSON.stringify(first?.text))
+    // 🔴 CS · 사람이 시킨 턴의 요청 — 호스트가 그 세션에서 사람이 친 말을 붙이고, 그 턴에서만 옮기기·만들기가 열린다
+    if (!/「되읊어: 요청을 보낼 세션」\n재무_CFO 에게/.test(first.text)) fail('CS orch_ask: 사람이 친 말이 원문 그대로 안 붙었다 ' + JSON.stringify(first.text))
+    const orchMove = async () => (await (await mcpFetch(base + `/mcp/orch?sid=${os.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'folder_move', arguments: { from: '없는-폴더-CS', to: '없는-폴더-CS-2' } } }) })).json()).result?.content?.[0]?.text ?? ''
+    const opened = await orchMove()
+    if (/사람이 시킨 턴/.test(opened)) fail('CS orch_ask: Dave 원문이 붙은 요청 턴인데 folder_move 가 막혔다 ' + opened)
     // 오케스트레이터가 요청 줄의 봇 id·세션 id 로 답을 돌려보낸다 → 원래 세션에 쌓인다
     const back = await mcp('tools/call', { name: 'bot_send', arguments: { bot: bot.id, text: '되읊어: 오케스트레이터의 답 — 숫자는 12', session: mine.sessionId } })
     if (!/보냈어요/.test(back.result.content[0].text)) fail('BH orch_ask: 오케스트레이터 답 보내기 실패 ' + JSON.stringify(back))
@@ -1027,13 +1032,19 @@ try {
     if (!ro.result?.isError || !/오케스트레이터는 orch_ask 를 쓸 수 없어요/.test(ro.result.content[0].text)) fail('BH orch_ask: 오케스트레이터 자신은 거절돼야 한다 ' + JSON.stringify(ro))
     // 가드 — 한 세션 한 시간 3건
     await orchAsk(bot.id, mine.sessionId, '둘째'); await orchAsk(bot.id, mine.sessionId, '셋째')
+    // CS · 원래 세션의 마지막 턴은 오케스트레이터의 답(봇의 말)이라 원문이 없다 — «없음» 줄이 붙고 그 요청 턴에서는 다시 막힌다
+    await wait(1500)
+    const later = (await api(`/sessions/${os.id}/chat`)).items.filter((x) => x.kind === 'user').at(-1)?.text ?? ''
+    if (!/\[Dave 가 직접 한 말 없음/.test(later)) fail('CS orch_ask: 봇의 턴에서 보낸 요청에 «없음» 줄이 없다 ' + JSON.stringify(later.slice(0, 200)))
+    const closed = await orchMove()
+    if (!/사람이 시킨 턴/.test(closed)) fail('🔴 CS orch_ask: 원문 없는 요청 턴에서 folder_move 가 열렸다 ' + closed)
     const r4 = await orchAsk(bot.id, mine.sessionId, '넷째')
     if (!r4.result?.isError || !/3건까지/.test(r4.result.content[0].text)) fail('BH orch_ask: 한 시간 4번째는 거절돼야 한다 ' + JSON.stringify(r4))
     if ((await api('/bots/orch/sessions')).filter((x) => x.comm || /^요청 ← /.test(x.name)).length !== 1) fail('🔴 BH orch_ask: 요청 셋이 오케스트레이터 세션 하나로 안 모였다 ' + JSON.stringify((await api('/bots/orch/sessions')).map((x) => x.name)))
     await wait(1500)
     // 치우기 — 이 봇의 «가장 최근 세션» 이 뒤 화면 검사의 전제다(스텁 답이 보여야 한다). 오케스트레이터의 «요청 ←» 세션은 화면 검사에 쓰려고 남긴다
     await api(`/sessions/${mine.sessionId}`, undefined, 'DELETE')
-    ok('BH orch_ask — 폴더 봇 → 오케스트레이터 «🤝 소통» 세션 하나 · 요청 줄 · 답은 원래 세션으로 · 위임 세션·오케스트레이터·4번째는 거절')
+    ok('BH orch_ask — 폴더 봇 → 오케스트레이터 «🤝 소통» 세션 하나 · 요청 줄 · 답은 원래 세션으로 · 위임 세션·오케스트레이터·4번째는 거절 · CS 사람 턴이면 Dave 원문이 붙고 그 턴에서만 옮기기가 열림')
   }
   const ib = await mcp('tools/call', { name: 'inbox_list', arguments: {} }); if (!/예시랩/.test(ib.result.content[0].text)) fail('inbox')
   await mcp('tools/call', { name: 'folder_move', arguments: { from: '1. Inbox/예시랩_자문자료.txt', to: '3. Area/재무_CFO/자료/예시랩_자문자료.txt' } })

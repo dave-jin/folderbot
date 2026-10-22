@@ -26,7 +26,7 @@ import type { PeerDef } from '../core/bridges'
 import type { QueuedMsg } from '../core/types'
 /** BX · 셸이 주는 업데이트 상태(`desktop/updater.js state()`) · 새벽 적용 걸기/풀기 */
 export interface ShellUpdate { state: () => unknown; dawn: (on: boolean) => unknown }
-import { ORCH_ID, Registry, canon, ORCH_REQUEST_RULES_MD, ORCH_ASK_HINT, ORCH_REPORT_HINT, LETTER_RULES_MD } from './registry'
+import { ORCH_ID, Registry, canon, ORCH_REQUEST_RULES_MD, DAVE_SAID_RULES_MD, ORCH_ASK_HINT, ORCH_REPORT_HINT, LETTER_RULES_MD } from './registry'
 import { CATCHUP_WINDOW_MS, Routines, routineRun, RETRY_DELAY_MS } from './routines'
 import { autoToDrop, sessArea } from '../core/autoArea'
 import { mark } from './slow'
@@ -202,7 +202,7 @@ export class Host {
   systemPrompt(bot: Bot): string {
     const parts: string[] = []
     // BH · orch_ask — 볼트의 orchestrator.md·폴더 CLAUDE.md 가 옛 판이어도 규칙이 닿게 시스템 프롬프트로도 준다(DEVICE_RULES_MD 와 같은 이유)
-    if (bot.orchestrator) { const op = this.registry.orchestratorPrompt(); parts.push(op); if (!op.includes('봇이 보낸 요청')) parts.push(ORCH_REQUEST_RULES_MD) }
+    if (bot.orchestrator) { const op = this.registry.orchestratorPrompt(); parts.push(op); if (!op.includes('봇이 보낸 요청')) parts.push(ORCH_REQUEST_RULES_MD); else if (!op.includes('Dave 가 직접 한 말')) parts.push(`## 봇이 보낸 요청에 붙은 Dave 원문 (orch_ask)\n${DAVE_SAID_RULES_MD}`) }   // CS · 옛 orchestrator.md 에도 닿게
     else parts.push(`너는 Folder Bot 의 봇이다. 폴더 "${bot.rel}" 안에서 일한다. 산출물은 이 폴더에 둔다.\n${ORCH_ASK_HINT}\n${ORCH_REPORT_HINT}`)
     // BQ · 연결 편지를 받거나 보낼 수 있는 봇에게만 편지 규칙을 준다
     if (this.bridges?.cfg.peers.some((p) => p.enabled && (this.isDeliverTarget(p, bot) || p.maySend.includes(bot.id)))) parts.push(LETTER_RULES_MD)
@@ -221,7 +221,7 @@ export class Host {
   }
 
   /** 세션에 지시 — 없으면 만든다 */
-  sendToBot(bot: Bot, text: string, sessionId?: string, name?: string, from?: string, opts: { model?: string; effort?: string; permissionMode?: PermissionMode; vendor?: 'claude' | 'codex'; client?: ClientCtx } = {}): string {
+  sendToBot(bot: Bot, text: string, sessionId?: string, name?: string, from?: string, opts: { model?: string; effort?: string; permissionMode?: PermissionMode; vendor?: 'claude' | 'codex'; client?: ClientCtx; grant?: string[] } = {}): string {
     let r = sessionId ? this.sessions.get(sessionId) : undefined
     // 🔴 봇끼리 오가는 말은 받는 봇의 «🤝 소통» 세션 하나로 (2026-10-02 Dave) — 세션을 집어 보냈으면 그 세션으로(답 돌려주기)
     if (!r && from && !name) r = this.sessions.commOf(bot, from)
@@ -245,7 +245,7 @@ export class Host {
       return r.id
     }
     // 다른 봇이 보낸 말은 받는 세션이 일하는 중이면 큐에서 기다린다(SessionManager.sendFromBot)
-    if (from) this.sessions.sendFromBot(r, bot, { text, from, fromName: this.registry.bot(from)?.name, t: Date.now() })
+    if (from) this.sessions.sendFromBot(r, bot, { text, from, fromName: this.registry.bot(from)?.name, t: Date.now(), ...(opts.grant?.length ? { grant: opts.grant } : {}) })
     else this.sessions.send(r, bot, text, opts.client)
     return r.id
   }

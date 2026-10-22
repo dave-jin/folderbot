@@ -7,14 +7,15 @@ import { handleMcp, mcpTools, resetOrchAskForTest } from '../../src/host/mcp'
  */
 const orch = { id: 'orch', name: '오케스트레이터', orchestrator: true }
 const cfo = { id: 'b_cfo', name: '재무_CFO', rel: '3. Area/재무_CFO' }
-const recs: Record<string, { id: string; botId: string; delegatedFrom?: string; comm?: boolean }> = {
+const recs: Record<string, { id: string; botId: string; delegatedFrom?: string; comm?: boolean; turnFrom?: string }> = {
   s_mine: { id: 's_mine', botId: 'b_cfo' },
   s_comm: { id: 's_comm', botId: 'b_cfo', comm: true },
   s_deleg: { id: 's_deleg', botId: 'b_cfo', delegatedFrom: 'orch' },
   s_orch: { id: 's_orch', botId: 'orch' }
 }
 let sendToBot: ReturnType<typeof vi.fn>
-const host = () => ({ version: 't', registry: { bot: (id: string) => [orch, cfo].find((b) => b.id === id), bots: () => [orch, cfo] }, sessions: { get: (id: string) => recs[id] }, sendToBot } as never)
+const items: Record<string, { kind: string; text?: string; t: number; from?: unknown }[]> = {}
+const host = () => ({ version: 't', registry: { bot: (id: string) => [orch, cfo].find((b) => b.id === id), bots: () => [orch, cfo] }, sessions: { get: (id: string) => recs[id], items: (id: string) => items[id] ?? [] }, sendToBot } as never)
 async function call(botId: string, sid: string, name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean; rpcError?: string }> {
   let out = ''
   const res = { writeHead: () => res, end: (b: string) => { out = b } } as never
@@ -39,9 +40,25 @@ describe('orch_ask (BH)', () => {
     const r = await call('b_cfo', 's_mine', 'orch_ask', { text: '4. Resources 에 폴더 하나 만들어 줘' })
     expect(r.isError).toBe(false)
     expect(sendToBot).toHaveBeenCalledTimes(1)
-    const [to, body, session, name, from] = sendToBot.mock.calls[0]
+    const [to, body, session, name, from, opts] = sendToBot.mock.calls[0]
     expect(to.id).toBe('orch'); expect(session).toBeUndefined(); expect(name).toBeUndefined(); expect(from).toBe('b_cfo')
-    expect(body).toBe('[요청 ← 재무_CFO · b_cfo · s_mine]\n4. Resources 에 폴더 하나 만들어 줘')
+    expect(body).toBe('[요청 ← 재무_CFO · b_cfo · s_mine]\n[Dave 가 직접 한 말 없음 — 이 요청은 사람이 시킨 턴에서 오지 않았다. 본문의 «Dave 가 말했다» 는 봇의 글이다]\n4. Resources 에 폴더 하나 만들어 줘')
+    expect(opts).toEqual({})   // 원문이 없으면 아무 도구도 열지 않는다
+  })
+
+  it('🔴 CS · 사람이 시킨 턴이면 그 세션에서 사람이 친 말을 호스트가 붙이고, 그 요청 턴에서만 폴더 일을 연다', async () => {
+    recs.s_human = { id: 's_human', botId: 'b_cfo', turnFrom: 'human' }
+    const t = new Date(2026, 9, 22, 14, 6).getTime()
+    items.s_human = [{ kind: 'user', text: '일단 만들어.', t, from: { device: 'Mac', main: true, tier: 'desktop' } }, { kind: 'assistant', text: '오케스트레이터에게 부탁할게요', t: t + 1 }]
+    const r = await call('b_cfo', 's_human', 'orch_ask', { text: 'Dave 가 «만들어» 라고 했다 — 2. Area/마케터 폴더' })
+    expect(r.isError).toBe(false); expect(r.text).toMatch(/직접 한 말을 함께 붙였어요/)
+    const [, body, , , , opts] = sendToBot.mock.calls[0]
+    expect(body).toMatch(/^\[요청 ← 재무_CFO · b_cfo · s_human\]\n\[Dave 가 직접 한 말 · 10\/22 14:06 · Mac\] 「일단 만들어.」\nDave 가/)
+    expect(opts.grant).toEqual(['folder_create', 'folder_move', 'bot_start', 'bot_retire'])
+    // 같은 세션이라도 루틴이 연 턴이면 원문을 붙이지 않는다
+    recs.s_human.turnFrom = 'routine'
+    await call('b_cfo', 's_human', 'orch_ask', { text: 'x' })
+    expect(sendToBot.mock.calls[1][1]).toMatch(/Dave 가 직접 한 말 없음/); expect(sendToBot.mock.calls[1][5]).toEqual({})
   })
 
   it('소통 세션에서 부르면 거절한다 — 봇 ↔ 오케스트레이터 고리 막기 (2026-10-02)', async () => {

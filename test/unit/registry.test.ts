@@ -94,7 +94,7 @@ describe('scaffold · 볼트 공통 지침(new-folder 블록)', () => {
     mkdirSync(join(root, '2. Projects'), { recursive: true })
     const reg = new Registry(root)
     const a = readFileSync(join(root, reg.createFolder('2. Projects', 'a'), 'CLAUDE.md'), 'utf8')
-    expect(a.trimEnd().endsWith('답은 이 세션으로 돌아온다.')).toBe(true)
+    expect(a.trimEnd().endsWith('다시 묻지 않고 처리된다.')).toBe(true)
     writeFileSync(join(root, 'CLAUDE.md'), '# 볼트\n\n````markdown new-folder\n## 예\n\n```\ntg-report\n```\n````\n')
     const b = readFileSync(join(root, reg.createFolder('2. Projects', 'b'), 'CLAUDE.md'), 'utf8')
     expect(b).toContain('## 예\n\n```\ntg-report\n```')

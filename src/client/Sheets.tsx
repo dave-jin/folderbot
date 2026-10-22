@@ -303,7 +303,7 @@ export function FolderPicker({ onClose, onStarted, pick }: { onClose: () => void
     setBusy(true); setErr('')
     try { const provider = await pickAgent(`${newIn}/${newName.trim()}`); if (!provider) return; const r = await api<{ rel: string; bot: Bot }>('/folders', { body: { section: newIn, name: newName.trim(), start: true, provider } }); await refresh(); onStarted(r.bot) } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
-  const preview = (section: string, name: string) => { const tpl = s.rules?.naming.project; if (!tpl || section !== activeParents[0] || !name) return name; const d = new Date(); return tpl.replace('{YYYY}', String(d.getFullYear())).replace('{MM}', String(d.getMonth() + 1).padStart(2, '0')).replace('{이름}', name).replace('{name}', name) }
+  const preview = (section: string, name: string) => { const tpl = s.rules?.naming.project; if (!tpl || section !== activeParents[0] || !name) return name; if (/^\{YYYY\}/.test(tpl) && /^\d{4}(?:-\d{2}){0,2}_/.test(name)) return name; const d = new Date(); return tpl.replace('{YYYY}', String(d.getFullYear())).replace('{MM}', String(d.getMonth() + 1).padStart(2, '0')).replace('{이름}', name).replace('{name}', name) }   // CS-3 · 호스트 applyNaming 과 같게 — 이미 날짜로 시작하면 그대로(core/rules 는 yaml 을 끌고 와서 안 가져온다)
   const onKey = (e: React.KeyboardEvent) => {
     const t = e.target as HTMLElement; if (t.tagName === 'INPUT' && t.classList.contains('nm')) return
     const vis = rows.filter((r) => r.kind === 'dir'); const i = vis.findIndex((r) => r.n.rel === sel)

@@ -147,9 +147,14 @@ export function roleOf(rules: FolderRules, rel: string): 'inbox' | 'active' | 'r
   return null
 }
 
-/** naming 템플릿 적용: `{YYYY}-{MM}_{이름}` */
+/**
+ * naming 템플릿 적용: `{YYYY}-{MM}_{이름}`
+ * CS-3 · 템플릿이 날짜로 시작하는데 이름이 이미 날짜로 시작하면(«2026-11_강의-…» · «2026-11-07_…» · «2026_…») 그대로 둔다 —
+ * 볼트 규칙상 날짜는 마감이라 봇·사람이 이미 넣어 준 날짜가 맞다(10/22 «2026-10_2026-11_강의-…» 이중 접두).
+ */
 export function applyNaming(tpl: string | undefined, name: string, d = new Date()): string {
   if (!tpl) return name
+  if (/^\{YYYY\}/.test(tpl) && /^\d{4}(?:-\d{2}){0,2}_/.test(name)) return name
   const YYYY = String(d.getFullYear())
   const MM = String(d.getMonth() + 1).padStart(2, '0')
   const DD = String(d.getDate()).padStart(2, '0')

@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs'
 import { relUnder } from '../core/paths'
 import { stripRuntime, type RoutineDef } from '../core/types'
 import { WHEN_EXAMPLES, confirmLine, describeCron, formatNext, isOnce, onceDone, parseWhen, sameOnce } from '../core/when'
-import { turnBlock } from '../core/turnGuard'
+import { turnBlock, daveSaidOf, daveSaidLine, ORCH_GRANTABLE } from '../core/turnGuard'
 import { asksTodo, lastHumanText } from '../core/todo'
 import type { DocReq } from '../core/docReq'
 
@@ -63,7 +63,7 @@ const COMMON: Tool[] = [
    *    ⛔ 모든 봇에 `bot_send` 를 열지 않는다 — 봇끼리 일을 떠넘기는 고리가 생기고 «제 폴더만 본다» 는 경계가 무너진다.
    *    봇이 여는 길은 **오케스트레이터 한 곳**이고, 다른 봇에 나눠 주는 일은 여전히 오케스트레이터만 한다. 받는 쪽은 고정이라 인자가 없다.
    */
-  { name: 'orch_ask', description: '다른 폴더 봇의 도움이 필요하거나 내 권한 밖의 일(폴더 이동·생성 등)이 필요할 때 오케스트레이터에게 요청한다. 받는 쪽은 오케스트레이터로 고정이다. 답은 이 세션으로 돌아온다 — 기다리는 동안 다른 일을 해도 된다. 한 세션에서 한 시간에 3건까지. 위임받은 세션·소통 세션에서는 못 쓴다.', inputSchema: obj({ text: { type: 'string', description: '무엇이 필요한지 · 왜 · 어떤 답을 원하는지' } }, ['text']) },
+  { name: 'orch_ask', description: '다른 폴더 봇의 도움이 필요하거나 내 권한 밖의 일(폴더 이동·생성 등)이 필요할 때 오케스트레이터에게 요청한다. 받는 쪽은 오케스트레이터로 고정이다. 답은 이 세션으로 돌아온다 — 기다리는 동안 다른 일을 해도 된다. 사람이 시킨 턴이면 호스트가 사람이 마지막으로 친 말을 요청에 붙여 주고, 오케스트레이터는 그 원문이 시킨 폴더 일(만들기·옮기기·켜기·은퇴)을 다시 묻지 않고 한다 — 원문을 text 에 옮겨 적을 필요 없다. 한 세션에서 한 시간에 3건까지. 위임받은 세션·소통 세션에서는 못 쓴다.', inputSchema: obj({ text: { type: 'string', description: '무엇이 필요한지 · 왜 · 어떤 답을 원하는지' } }, ['text']) },
   /**
    * 🔴 CK-3 · 봇은 할 일을 **제안**하고 사람이 정한다 (2026-10-16 Dave «추천대로» · 볼트 `todo-rules`).
    *   `todo_add` 는 사람이 대화에서 «할 일로 적어 줘» 라고 한 턴에서만 정식 줄이 된다 — 그 밖의 턴(봇·루틴·바깥 상대)이 부르면 제안으로 내려간다.
@@ -79,11 +79,11 @@ const ORCH: Tool[] = [
   { name: 'bot_start', description: '폴더에서 봇을 시작한다. 하네스가 없으면 깔아 준다. rel 은 루트 기준 상대 경로.', inputSchema: obj({ rel: { type: 'string' } }, ['rel']) },
   { name: 'bot_stop', description: '봇을 정지(휴면)한다. 기록은 남는다.', inputSchema: obj({ bot: { type: 'string' } }, ['bot']) },
   { name: 'bots_reorder', description: '레일(폴더 목록)의 봇 순서를 정한다. order 는 위에서부터 놓을 rel 목록 — 안 준 봇은 기존 차례로 뒤에 붙는다. 모르는 rel 이 하나라도 있으면 실패하고 순서는 그대로다. 사람이 끌어 놓은 봇(bots_list 의 orderedBy=user)은 자리를 지킨다. restore:true 는 처음 순서로 되돌린다.', inputSchema: obj({ order: { type: 'array', items: { type: 'string' }, description: '루트 기준 상대 경로(rel) 목록, 위에서부터' }, restore: { type: 'boolean', description: '처음 순서로 되돌리기' } }) },
-  { name: 'bot_retire', description: '봇 폴더를 archive 로 옮기고 은퇴시킨다. ⚠ 사람의 승인 뒤에만.', inputSchema: obj({ bot: { type: 'string' } }, ['bot']) },
-  { name: 'folder_create', description: '활성 범주(section)에 새 폴더를 만들고 하네스를 깐다. naming 규칙 적용. ⚠ 사람의 승인 뒤에만.', inputSchema: obj({ section: { type: 'string', description: '예: "2. Projects"' }, name: { type: 'string' }, start: { type: 'boolean', description: '만든 뒤 봇도 시작' } }, ['section', 'name']) },
+  { name: 'bot_retire', description: '봇 폴더를 archive 로 옮기고 은퇴시킨다. ⚠ 사람이 시킨 턴, 또는 «Dave 가 직접 한 말» 이 붙은 요청(그 원문이 이 일을 시켰을 때)에서만.', inputSchema: obj({ bot: { type: 'string' } }, ['bot']) },
+  { name: 'folder_create', description: '활성 범주(section)에 새 폴더를 만들고 하네스를 깐다. naming 규칙 적용(이름이 이미 날짜로 시작하면 그대로). ⚠ 사람이 시킨 턴, 또는 «Dave 가 직접 한 말» 이 붙은 요청(그 원문이 이 일을 시켰을 때)에서만.', inputSchema: obj({ section: { type: 'string', description: '예: "2. Projects"' }, name: { type: 'string' }, start: { type: 'boolean', description: '만든 뒤 봇도 시작' } }, ['section', 'name']) },
   { name: 'bot_send', description: '봇에게 지시를 보낸다. session 을 생략하면 그 봇의 «🤝 소통» 세션(봇마다 하나)으로 간다 — 그 세션이 일하는 중이면 큐에서 기다렸다가 차례로 나간다. orch_ask 에 답할 때는 요청 줄 머리의 세션 id 를 session 에 넣어 물어본 세션으로 돌려준다. name 을 주면 그 이름으로 새 세션을 연다(드물게). 결과는 bot_sessions 로 본다.', inputSchema: obj({ bot: { type: 'string' }, text: { type: 'string' }, session: { type: 'string' }, name: { type: 'string', description: '따로 새 세션을 열 때만 — 보통은 비운다' } }, ['bot', 'text']) },
   { name: 'inbox_list', description: 'inbox 역할 폴더의 항목(폴더·파일)을 나열한다.', inputSchema: obj({}) },
-  { name: 'folder_move', description: '루트 안에서 폴더·파일을 옮긴다(되돌리기 스냅샷 남김). ⚠ 사람의 승인 뒤에만.', inputSchema: obj({ from: { type: 'string' }, to: { type: 'string' } }, ['from', 'to']) }
+  { name: 'folder_move', description: '루트 안에서 폴더·파일을 옮긴다(되돌리기 스냅샷 남김). ⚠ 사람이 시킨 턴, 또는 «Dave 가 직접 한 말» 이 붙은 요청(그 원문이 이 일을 시켰을 때)에서만.', inputSchema: obj({ from: { type: 'string' }, to: { type: 'string' } }, ['from', 'to']) }
 ]
 
 /**
@@ -163,9 +163,11 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       const now = Date.now(); const log = (orchAsks.get(sid) ?? []).filter((t) => now - t < ORCH_ASK_WINDOW)
       if (log.length >= ORCH_ASK_MAX) throw new Error(`이 세션은 한 시간에 orch_ask 를 ${ORCH_ASK_MAX}건까지 보낼 수 있어요 — 가장 오래된 요청이 ${Math.ceil((ORCH_ASK_WINDOW - (now - log[0])) / 60000)}분 뒤에 풀려요. 급하면 사람에게 알리세요.`)
       const orch = reg.bot(ORCH_ID); if (!orch) throw new Error('오케스트레이터가 없어요')
-      const osid = host.sendToBot(orch, `${orchAskHead(me.name, me.id, sid)}\n${text}`, undefined, undefined, botId)   // 오케스트레이터의 «🤝 소통» 세션 하나로(2026-10-02)
+      // CS · 사람이 시킨 턴이면 그 세션에서 사람이 마지막으로 친 말을 호스트가 붙인다 — 봇이 원문을 지어 넣을 수 없다 · 그 턴에서만 만들기·옮기기·켜기·은퇴가 열린다
+      const said = daveSaidOf(host.sessions.items(sid), rec.turnFrom)
+      const osid = host.sendToBot(orch, `${orchAskHead(me.name, me.id, sid)}\n${daveSaidLine(said)}\n${text}`, undefined, undefined, botId, said ? { grant: [...ORCH_GRANTABLE] } : {})   // 오케스트레이터의 «🤝 소통» 세션 하나로(2026-10-02)
       log.push(now); orchAsks.set(sid, log)
-      return `오케스트레이터에게 보냈어요 · 오케스트레이터 세션 ${osid}. 답은 이 세션으로 돌아와요 — 기다리는 동안 다른 일을 해도 돼요.`
+      return `오케스트레이터에게 보냈어요 · 오케스트레이터 세션 ${osid}${said ? ' · Dave 가 이 턴에 직접 한 말을 함께 붙였어요' : ''}. 답은 이 세션으로 돌아와요 — 기다리는 동안 다른 일을 해도 돼요.`
     }
     case 'orch_report': {
       if (botId === ORCH_ID) throw new Error('오케스트레이터는 orch_report 를 쓸 수 없어요 — 연결 상대에게는 bridge_send 를 쓰세요')
