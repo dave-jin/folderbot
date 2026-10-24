@@ -19,10 +19,11 @@ import { type HostConfig, absRoot, atomicWrite, dataDir, saveConfig } from './pa
 import { McpAuth } from './mcpAuth'
 import { BridgeHub, type Incoming } from './bridge'
 import { INTERRUPTED_REASON, RunLog } from './runs'
-import { readWakeEnv, wakePeer } from './wake'
+import { mailWake, readWakeEnv, wakePeer } from './wake'
+import { AskDesk, answerAfter } from './ask'
 import { OpsWatch } from './opsWatch'
 import { isDaveSaid, letterBatch } from '../core/fbmf'
-import type { PeerDef } from '../core/bridges'
+import { askPatternHits, askTarget, wakeMail, type AskBot, type PeerDef } from '../core/bridges'
 import type { QueuedMsg } from '../core/types'
 /** BX · 셸이 주는 업데이트 상태(`desktop/updater.js state()`) · 새벽 적용 걸기/풀기 */
 export interface ShellUpdate { state: () => unknown; dawn: (on: boolean) => unknown }
@@ -50,6 +51,8 @@ export class Host {
   readonly mcpAuth = new McpAuth(dataDir())
   /** 연결(Bridge) — 바깥 상대와 편지 파일로 대화한다(host/bridge.ts) */
   readonly bridges: BridgeHub
+  /** DA · `folderbot ask` 대기 창구 — 묻는 편지 id 마다 화면 앞에서 기다리는 쪽(host/ask.ts) */
+  readonly askDesk = new AskDesk()
   /** BR-1 · 루틴 실행 기록 */
   readonly runs: RunLog
   /** CK-2 · Akiflow 동기화(짝 장부 · 계획 · 결과) */
@@ -104,6 +107,8 @@ export class Host {
     this.akiflow.routineOn = () => !!this.registry.bot('orch')?.routines.some((x) => x.name === AK_ROUTINE && x.enabled !== false)
     this.bridges = new BridgeHub({ root: this.registry.root, dataDir: dataDir(), hostNames: () => [hostname(), this.hostName(), this.cfg.hostName ?? ''], log: (m) => this.log(m), deliver: (peer, items) => this.deliverLetters(peer, items),
       wake: (peer, payload) => { void this.wakePeer(peer, payload) },
+      askState: (peerId, re) => this.askDesk.state(peerId, re),
+      askAnswered: (peerId, re, a) => this.askDesk.answered(peerId, re, a),
       onStale: (peer, last) => this.peerSignal(peer, last, false),
       onAlive: (peer, last) => this.peerSignal(peer, last, true),
       onChange: () => this.bridgesChanged() })
@@ -187,6 +192,8 @@ export class Host {
           }
         }
       }
+      // DA · ask 로 온 편지가 든 턴이 끝났다 — bridge_send 로 답하지 않았으면 마지막 답으로 답 편지를 쓴다(기다리는 쪽에 돌려준다)
+      if (r.channel && prev === 'running' && r.state !== 'running' && r.state !== 'awaiting_input') this.askTurnEnded(r)
       // L · 턴이 끝나면 사용량 캐시를 비운다 — 다음 /api/usage 가 새 기록을 훑어 60초 안에 원격 패널이 바뀐다
       if (prev === 'running' && r.state !== 'running') { invalidateUsage(); planNow(this.sessions.bin, true) }   // BD · 턴을 썼으니 실제 한도도 다시(60초 문턱 안에서)
       this.broadcast({ ev: 'sessions', botId: r.botId, sessions: this.sessions.list(r.botId) })
@@ -205,7 +212,7 @@ export class Host {
     if (bot.orchestrator) { const op = this.registry.orchestratorPrompt(); parts.push(op); if (!op.includes('봇이 보낸 요청')) parts.push(ORCH_REQUEST_RULES_MD); else if (!op.includes('Dave 가 직접 한 말')) parts.push(`## 봇이 보낸 요청에 붙은 Dave 원문 (orch_ask)\n${DAVE_SAID_RULES_MD}`) }   // CS · 옛 orchestrator.md 에도 닿게
     else parts.push(`너는 Folder Bot 의 봇이다. 폴더 "${bot.rel}" 안에서 일한다. 산출물은 이 폴더에 둔다.\n${ORCH_ASK_HINT}\n${ORCH_REPORT_HINT}`)
     // BQ · 연결 편지를 받거나 보낼 수 있는 봇에게만 편지 규칙을 준다
-    if (this.bridges?.cfg.peers.some((p) => p.enabled && (this.isDeliverTarget(p, bot) || p.maySend.includes(bot.id)))) parts.push(LETTER_RULES_MD)
+    if (this.bridges?.cfg.peers.some((p) => p.enabled && (this.isDeliverTarget(p, bot) || p.maySend.includes(bot.id) || p.mayAsk.some((x) => askPatternHits(x, askBotOf(bot)))))) parts.push(LETTER_RULES_MD)
     parts.push(this.registry.todoRules() ?? TODO_RULES_PROMPT)   // CK-3 · 볼트 `todo-rules` 블록이 이긴다
     parts.push(DEVICE_RULES_MD)   // J-2 · 볼트 CLAUDE.md 에도 같은 글이 있지만, 옛 볼트에는 없으므로 시스템 프롬프트로도 준다
     const ctx = todoContext(bot.abs)
@@ -555,9 +562,11 @@ export class Host {
   /** BQ-8 · 급한 편지 → 상대 웹훅. 결과는 실행 기록에 남긴다(키 값은 남기지 않는다) */
   async wakePeer(peer: PeerDef, payload: Record<string, unknown>): Promise<void> {
     if (!peer.wake) return
-    let res: { ok: boolean; status?: number; error?: string }
-    try { res = await wakePeer(readWakeEnv(peer.wake.env), payload) } catch (e) { res = { ok: false, error: (e as Error).message } }
-    this.runs.note({ event: 'wake', peer: peer.id, id: String(payload.id), ok: res.ok, ...(res.status ? { status: res.status } : {}), ...(res.error ? { error: res.error } : {}) })
+    let res: { ok: boolean; status?: number; error?: string; skipped?: boolean }
+    // DA · 메일 깨우기 — 받는 주소는 설정에 박힌 하나뿐 · 상대마다 10분에 한 통(host/wake.ts mailWake)
+    if (peer.wake.mail && peer.wake.from) res = await mailWake(peer.id, peer.wake.mail, peer.wake.from, wakeMail(peer, payload as { id: string; kind: string; path: string; title?: string; needs_human?: boolean }))
+    else try { res = await wakePeer(readWakeEnv(peer.wake.env ?? ''), payload) } catch (e) { res = { ok: false, error: (e as Error).message } }
+    this.runs.note({ event: 'wake', peer: peer.id, id: String(payload.id), ok: res.ok, ...(peer.wake.mail ? { via: 'mail' } : {}), ...(res.skipped ? { skipped: true } : {}), ...(res.status ? { status: res.status } : {}), ...(res.error ? { error: res.error } : {}) })
     this.bridges.noteWake(String(payload.id), res)
     if (!res.ok) this.log(`⚠ 연결 «${peer.name}» 깨우기 실패 · ${res.error ?? res.status}`)
   }
@@ -604,24 +613,66 @@ export class Host {
    * 🔴 로그인이 막혀 있으면 보내지 않고 큐에만 둔다(파일로 저장된다) — 복구되면 `drainAll` 이 내보낸다.
    * @returns 세션 id · 넣을 봇이 없으면 null(기록하지 않고 다음 폴링에 다시)
    */
-  deliverLetters(peer: PeerDef, items: Incoming[]): string | null {
-    const bot = this.registry.bots().find((b) => this.isDeliverTarget(peer, b))
-    if (!bot) { this.log(`⚠ 연결 «${peer.name}» 편지를 넣을 봇 «${peer.deliver.bot}» 이 없어요 — 편지는 그대로 두고 다음에 다시`); return null }
-    const r = this.sessions.channelOf(bot, peer.id, peer.deliver.session, peer.trust, peer.daveMay)
-    const queued = new Set((r.queue ?? []).flatMap((q) => q.letters ?? []))
-    const recent = r.items.slice(-400).filter((i) => i.kind === 'user').map((i) => (i as { text: string }).text)
-    const fresh = items.filter((x) => !queued.has(x.letter.id) && !recent.some((t) => t.includes(`id="${x.letter.id}"`)))
-    if (!fresh.length) return r.id
-    // CN · «Dave 말» 편지는 따로 한 턴 — 그 턴에서만 dave_may 도구가 열린다(다른 편지와 섞으면 남의 편지도 권한을 얻는다)
-    const said = peer.daveMay.length ? fresh.filter((x) => isDaveSaid(x.letter)) : []
-    const rest = fresh.filter((x) => !said.includes(x))
-    for (const [group, grant] of [[rest, []], [said, peer.daveMay]] as const) {
-      if (!group.length) continue
-      const msg: QueuedMsg = { text: letterBatch(peer.name, group.map((x) => ({ letter: x.letter, rel: x.rel })), grant), from: `peer:${peer.id}`, fromName: `${peer.icon} ${peer.name}`, t: Date.now(), origin: 'peer', letters: group.map((x) => x.letter.id), ...(group.some((x) => x.letter.urgent) ? { urgent: true } : {}), ...(grant.length ? { grant: [...grant] } : {}) }
-      if (this.auth.verdict === 'unreadable' || this.auth.verdict === 'loggedout') this.sessions.enqueue(r, msg)
-      else this.sessions.sendFromBot(r, bot, msg)
+  deliverLetters(peer: PeerDef, items: Incoming[]): Record<string, string> | null {
+    const bots = this.registry.bots()
+    const home = bots.find((b) => this.isDeliverTarget(peer, b))
+    // DA · 편지마다 받는 봇 — `to:` 가 받는 봇이 아닌 다른 봇이고 `may_ask` 안이면 그 봇의 채널로(파일로 온 편지도 같은 길). 밖이면 받는 봇으로
+    const groups = new Map<Bot, Incoming[]>()
+    for (const x of items) {
+      let bot = home
+      const to = x.letter.to
+      if (to && to !== 'orch' && to !== peer.deliver.bot) { const t = askTarget(peer, bots.map(askBotOf), to); if ('bot' in t) bot = bots.find((b) => b.id === t.bot.id) ?? home }
+      if (!bot) continue
+      groups.set(bot, [...(groups.get(bot) ?? []), x])
     }
-    return r.id
+    if (!groups.size) { this.log(`⚠ 연결 «${peer.name}» 편지를 넣을 봇 «${peer.deliver.bot}» 이 없어요 — 편지는 그대로 두고 다음에 다시`); return null }
+    const out: Record<string, string> = {}
+    for (const [bot, list] of groups) {
+      const direct = bot !== home
+      const r = this.sessions.channelOf(bot, peer.id, peer.deliver.session, peer.trust, direct ? [] : peer.daveMay)
+      for (const x of list) out[x.letter.id] = r.id
+      const queued = new Set((r.queue ?? []).flatMap((q) => q.letters ?? []))
+      const recent = r.items.slice(-400).filter((i) => i.kind === 'user').map((i) => (i as { text: string }).text)
+      const fresh = list.filter((x) => !queued.has(x.letter.id) && !recent.some((t) => t.includes(`id="${x.letter.id}"`)))
+      if (!fresh.length) continue
+      // DA · 폴더 봇에 바로 간 편지 — 오케스트레이터가 모르는 일이 없게 소통 기록에 한 줄(턴을 쓰지 않는다)
+      if (direct) { const orch = this.registry.bot(ORCH_ID); if (orch) { const c = this.sessions.commOf(orch, `peer:${peer.id}`); for (const x of fresh) this.sessions.systemNote(c.id, `직접 ask · ${peer.name} → ${bot.name} · ${x.letter.id}${x.letter.title ? ` · ${x.letter.title}` : ''}`) } }
+      // CN · «Dave 말» 편지는 따로 한 턴 — 그 턴에서만 dave_may 도구가 열린다(다른 편지와 섞으면 남의 편지도 권한을 얻는다). 폴더 봇 채널에는 dave_may 가 없다
+      const said = !direct && peer.daveMay.length ? fresh.filter((x) => isDaveSaid(x.letter)) : []
+      const rest = fresh.filter((x) => !said.includes(x))
+      for (const [group, grant] of [[rest, []], [said, peer.daveMay]] as const) {
+        if (!group.length) continue
+        const msg: QueuedMsg = { text: letterBatch(peer.name, group.map((x) => ({ letter: x.letter, rel: x.rel })), grant, direct ? bot.name : undefined), from: `peer:${peer.id}`, fromName: `${peer.icon} ${peer.name}`, t: Date.now(), origin: 'peer', letters: group.map((x) => x.letter.id), ...(group.some((x) => x.letter.urgent) ? { urgent: true } : {}), ...(grant.length ? { grant: [...grant] } : {}) }
+        if (this.auth.verdict === 'unreadable' || this.auth.verdict === 'loggedout') this.sessions.enqueue(r, msg)
+        else this.sessions.sendFromBot(r, bot, msg)
+      }
+    }
+    return Object.keys(out).length ? out : null
+  }
+
+  /**
+   * 🔴 DA · `folderbot ask` 한 통 — 받는 봇 판정(`may_ask`) → 편지 파일 → 그 봇의 채널에 바로. 기다릴 거면 대기 창구에 건다.
+   * 인증·주소·상한은 gateway 가 먼저 본다. 거절은 `code` 를 단 오류로 던진다 — 'refused'(may_ask 밖 · 없는 봇) · 'not-owner'(다른 맥이 주인).
+   */
+  askIn(peerId: string, o: { text: string; title?: string; to?: string; re?: string; kind?: string; urgent?: boolean }, wait: boolean): { id: string; rel: string; bot: { id: string; name: string }; sid: string | null } {
+    const peer = this.bridges.peer(peerId); if (!peer?.enabled) throw Object.assign(new Error('그런 연결이 없어요'), { code: 'refused' })
+    const bots = this.registry.bots()
+    const t = askTarget(peer, bots.map(askBotOf), o.to)
+    if ('error' in t) throw Object.assign(new Error(t.error), { code: 'refused' })
+    const bot = bots.find((b) => b.id === t.bot.id)!
+    const out = this.bridges.askNow(peerId, { ...o, to: bot.orchestrator ? 'orch' : bot.rel })
+    // 기다리면 대기 창구에 · 기다리지 않아도 급하면 건다 — 답이 날 때 긴급 메일로 알리려고(설계 2판 §2)
+    if ((wait || o.urgent) && out.sid) this.askDesk.track(out.id, { peerId, botId: bot.id, sid: out.sid, urgent: !!o.urgent })
+    return { ...out, bot: { id: bot.id, name: bot.name } }
+  }
+  /** DA · ask 편지가 든 턴이 끝났다 — 그 턴에서 bridge_send(re) 로 답하지 않은 편지는 마지막 답으로 답 편지를 쓴다 */
+  private askTurnEnded(r: SessionRec): void {
+    for (const p of this.askDesk.pendingIn(r.id)) {
+      const ans = answerAfter(r.items as { kind: string; text?: string }[], p.id)
+      if (ans === null) continue   // 아직 큐에 있다 — 그 편지의 턴이 끝날 때
+      if (r.state === 'error') this.askDesk.fail(p.id, r.lastError ?? '턴이 오류로 끝났어요')
+      try { this.bridges.send(p.peerId, r.botId, { kind: 'reply', re: p.id, title: '답', text: ans || (r.state === 'error' ? `(턴이 오류로 끝났어요 — ${(r.lastError ?? '').split('\n').pop()?.slice(0, 200) ?? ''})` : '(답 없이 턴이 끝났어요)') }, { channel: true }) } catch (e) { this.log(`⚠ ask 답 편지를 못 썼어요 · ${p.id} · ${(e as Error).message}`) }
+    }
   }
 }
 
@@ -630,3 +681,6 @@ function summarize(req: PermissionRequest): string {
   const s = (k: string) => (typeof i[k] === 'string' ? (i[k] as string) : '')
   return (s('command') || s('file_path') || s('path') || s('url') || s('description') || JSON.stringify(i)).slice(0, 120)
 }
+
+/** DA · 봇 → `may_ask` 판정용 최소 꼴 */
+function askBotOf(b: Bot): AskBot { return { id: b.id, name: b.name, rel: b.rel, orchestrator: b.orchestrator } }

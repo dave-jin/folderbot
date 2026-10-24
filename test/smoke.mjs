@@ -35,7 +35,8 @@ writeFileSync(join(fbHome, '.folderbot/usage.jsonl'),
 // ⚠ 메인 호스트는 «Claude 만 깔린 기기» 여야 한다 — 실제 codex 가 깔린 맥(2026-09-22 맥미니)에서는 제공자가 둘이 되어 세션 + 가 고르기를 띄우고
 //   «세션 삭제 UI» 같은 검사가 어긋난다. 없는 경로를 주면 codex 는 숨는다(providers.ts 의 ENV_OVERRIDE). 둘인 경우는 아래 V24 블록이 두 번째 호스트로 잰다
 // 🔴 `FOLDERBOT_QA` — 검사는 **실 CLI·실 앱을 건드리지 않는다**(실제로 `claude update` 를 돌려 버린 적이 있다)
-const env = { ...process.env, FOLDERBOT_QA: '1', FOLDERBOT_HOME: fbHome, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_CODEX_BIN: '/nonexistent/codex', FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg, FOLDERBOT_RETRY_MS: '1500', FOLDERBOT_REPORT_HOLD_MS: '1500', FOLDERBOT_OPS_FIRST_MS: '300' }   // R2 · 재시도 10분·보고 묶음 5분을 검사용으로 줄인다
+const env = { ...process.env, FOLDERBOT_QA: '1', FOLDERBOT_HOME: fbHome, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_CODEX_BIN: '/nonexistent/codex', FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg, FOLDERBOT_RETRY_MS: '1500', FOLDERBOT_REPORT_HOLD_MS: '1500', FOLDERBOT_OPS_FIRST_MS: '300', FOLDERBOT_GOG_BIN: join(data, 'gog-stub.sh') }   // R2 · 재시도 10분·보고 묶음 5분을 검사용으로 줄인다 · DA 긴급 메일은 스텁 gog(진짜 메일을 보내지 않는다)
+writeFileSync(join(data, 'gog-stub.sh'), `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(join(data, 'gog-calls.log'))}\n`, { mode: 0o755 })
 /**
  * 🔴 **포트가 이미 잡혀 있으면 그 자리에서 멈춘다** (2026-09-13 실사고).
  *    앞선 실패로 남은 호스트가 같은 포트를 잡고 있으면, 우리는 «건강한 응답» 을 받고 **옛 코드를**
@@ -730,6 +731,124 @@ try {
     const lf = join(data, 'logs', `host-${day}.log`)
     if (!existsSync(lf) || !/연결 «자동화» 열림/.test(readFileSync(lf, 'utf8'))) fail('🔴 BY: 호스트 로그가 날짜별 파일에 안 남았다 · ' + lf)
     ok('연결 R3 — 들어오는 웹훅 401·404·201 → 편지 파일 → 채널 세션 · 호스트 로그 날짜별 파일')
+  }
+  /**
+   * 🔴 DA · `folderbot ask` (2026-10-24 Dave «claude -p 처럼 · 폴더 봇 직접 · 시키기까지 · 긴급 메일은 자동»).
+   *    설계 PARA/2. Area/제품_FolderBot/01_기획/2026-10-24_기획_folderbot-ask-바깥-에이전트-실시간-대화.md(2판) §11 완료 기준.
+   *    S0 오케스트레이터에 묻고 그 자리에서 답(exit 0) · 묻는 편지(via: ask)와 답 편지(delivered: live) · 폴링이 다시 안 넣음 ·
+   *    S1 폴더 봇에 바로 — 그 봇의 «✅ 할일이 채널» · 오케스트레이터 기록 한 줄 · 채널의 bot_send 는 자기 봇에게만 · folder_move 막힘 ·
+   *    S2 기본 50초에 exit 2(편지 id 는 첫 줄 · 기다리기 전) → id 없이 --wait · --wait <id> · --timeout 0 은 한 번 보고 바로 2 · 900 은 720 으로 ·
+   *    S3 급한 편지 → 메일 한 통(10분에 한 통) · --urgent 로 물은 ask 가 늦으면 답이 날 때 메일 · 없는 봇 exit 3 · 꺼져 있으면 편지만 남기고 exit 4
+   *    (10/24 12:40 설계 2판 — 할일이 셸은 기본 30초 · 최대 780초 · 안전 60초라 기본 50초 · 최대 720초)
+   */
+  {
+    const d0 = new Date(), month = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}`
+    const tokF = join(data, 'halili-in.env'); writeFileSync(tokF, 'TOKEN=qa-ask-token-0123456789abcdef\n', { mode: 0o600 })
+    const tok2 = join(data, 'grok2-in.env'); writeFileSync(tok2, 'TOKEN=qa-ask-token-grok2-0123456789\n', { mode: 0o600 })
+    const bf = join(root, '.claude/bridges.yml')
+    // grok2 — 급한 ask 의 늦은 답 메일을 halili 의 10분 한 통 규칙과 따로 재려고 둔 두 번째 상대
+    writeFileSync(bf, `bridges:\n  - id: halili\n    name: 할일이\n    icon: ✅\n    mailbox: 싱크-ask\n    trust: propose\n    may_ask: [orch, "3. Area/*"]\n    inbound: { env: ${JSON.stringify(tokF)} }\n    wake: { mail: dave-cos@mail.grokbot.com, from: cbsjin@gmail.com }\n  - id: grok2\n    name: 둘째\n    mailbox: 싱크-ask2\n    inbound: { env: ${JSON.stringify(tok2)} }\n    wake: { mail: qa-grok2@example.com, from: cbsjin@gmail.com }\n`)
+    const mbx = join(root, '싱크-ask')
+    for (let i = 0; i < 60 && !(existsSync(join(mbx, 'cursors/folderbot.json')) && existsSync(join(root, '싱크-ask2/cursors/folderbot.json'))); i++) await wait(100)
+    if (!existsSync(join(mbx, 'cursors/folderbot.json'))) fail('DA: 연결이 안 열렸다')
+    // 첫 줄이 언제 찍혔나까지 잰다 — 편지 id 는 기다리기 전에 나와야 한다(할일이 셸이 먼저 끊겨도 남게)
+    const ask = (args, extraEnv = {}) => new Promise((res) => { const t0 = Date.now(); let tFirst = 0; const p = spawn('node', ['bin/folderbot.mjs', 'ask', ...args], { env: { ...env, ...extraEnv } }); let out = '', err = ''; p.stdout.on('data', (d) => { if (!tFirst) tFirst = Date.now(); out += d }); p.stderr.on('data', (d) => (err += d)); p.on('exit', (code) => res({ code, out: out.trim(), err: err.trim(), first: out.trim().split('\n')[0] ?? '', firstMs: tFirst ? tFirst - t0 : -1, ms: Date.now() - t0 })) })
+    const ID = /^\d{8}-\d{6}-halili-[0-9a-f]{4}$/
+    const letterOf = (side, re) => { const dir = join(mbx, side, month); if (!existsSync(dir)) return null; for (const n of readdirSync(dir)) { const t = readFileSync(join(dir, n), 'utf8'); if (re.test(t)) return { name: n, t } } return null }
+    // S0 · 오케스트레이터 — 스텁은 편지 규칙 줄의 «승인» 에 Bash 를 묻고, 채널이 바로 거절하면 «거부돼서 멈췄어요.» 로 끝난다 → 그 마지막 답이 답 편지가 된다
+    const t0 = Date.now()
+    const s0 = await ask(['--as', 'halili', '--json', '시험 S0 · 핑 — 한 줄로 답해 줘'])
+    const l0 = (() => { try { return s0.out.split('\n').map((l) => JSON.parse(l)) } catch { return [] } })()
+    const j0 = { ...(l0[l0.length - 1] ?? {}), id: l0[0]?.id }
+    if (l0.length < 2 || l0[0].state !== 'queued' || !ID.test(l0[0].id ?? '')) fail('🔴 DA S0: --json 첫 줄이 편지 id(state queued)가 아니다 · ' + s0.out)
+    if (s0.code !== 0 || j0.state !== 'answered' || !/거부돼서 멈췄어요/.test(j0.answer ?? '') || s0.ms > 50_000) fail('🔴 DA S0: 오케스트레이터에 물었는데 50초 안에 그 자리에서 답을 못 받았다 · ' + JSON.stringify(s0))
+    const q0 = letterOf('to-folderbot', new RegExp(`id: ${j0.id}\\n`))
+    if (!q0 || !/\nvia: ask\n/.test(q0.t) || !/\nto: orch\n/.test(q0.t)) fail('🔴 DA S0: 묻는 편지가 우편함에 via: ask 로 안 남았다 · ' + JSON.stringify(q0))
+    const a0 = letterOf('from-folderbot', new RegExp(`re: ${j0.id}\\n`))
+    if (!a0 || !/\nvia: ask\ndelivered: live\n/.test(a0.t) || a0.name !== `${j0.reply}.md`) fail('🔴 DA S0: 답 편지가 delivered: live 로 안 남았다 · ' + JSON.stringify(a0))
+    const orchChan = (await api('/bots/orch/sessions')).find((x) => x.channel === 'halili')
+    await wait(4000)   // 감시·폴링이 같은 편지를 다시 넣지 않는가(안정 확인 3초 + 여유)
+    const n0 = (await api(`/sessions/${orchChan.id}/chat`)).items.filter((it) => it.kind === 'user' && it.text.includes(`id="${j0.id}"`)).length
+    if (n0 !== 1) fail(`🔴 DA S0: 같은 ask 편지가 ${n0}번 들어갔다(폴링이 다시 넣었다)`)
+    const took0 = Date.now() - t0
+    // S1 · 폴더 봇에 바로
+    const sessWas = new Set((await api(`/bots/${bot.id}/sessions`)).map((x) => x.id))
+    const s1 = await ask(['--as', 'halili', '--to', '제품_Rondo', '--timeout', '30', '시험 S1 · state.md 다음 작업 첫 줄'])
+    if (s1.code !== 0 || !s1.out) fail('🔴 DA S1: 폴더 봇에 바로 물었는데 답이 없다 · ' + JSON.stringify(s1))
+    const fbChan = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.channel === 'halili')
+    if (!fbChan || fbChan.name !== '✅ 할일이 채널' || fbChan.permissionMode !== 'default') fail('🔴 DA S1: 폴더 봇에 «✅ 할일이 채널»(propose 울타리)이 안 생겼다 · ' + JSON.stringify(fbChan))
+    const fbText = (await api(`/sessions/${fbChan.id}/chat`)).items.filter((it) => it.kind === 'user').map((it) => it.text).join('\n')
+    if (!/제품_Rondo 봇에 바로 왔다/.test(fbText) || !/via="ask"/.test(fbText)) fail('DA S1: 폴더 봇 채널 묶음에 «바로 왔다»·via 규칙이 없다 · ' + fbText.slice(0, 300))
+    const comm = (await api('/bots/orch/sessions')).find((x) => x.comm)
+    const note = comm ? (await api(`/sessions/${comm.id}/chat`)).items.find((it) => it.kind === 'system' && /^직접 ask · 할일이 → 제품_Rondo · \d{8}-/.test(it.text)) : null
+    if (!note) fail('🔴 DA S1: 폴더 봇에 바로 간 ask 가 오케스트레이터 소통 기록에 안 남았다')
+    const callFb = async (name, args) => (await (await mcpFetch(base + `/mcp/${bot.id}?sid=${fbChan.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name, arguments: args } }) })).json()).result.content[0].text
+    const tlFb = (await (await mcpFetch(base + `/mcp/${bot.id}?sid=${fbChan.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/list' }) })).json()).result.tools.map((t) => t.name)
+    if (!tlFb.includes('bot_send') || !tlFb.includes('bridge_send')) fail('DA S1: 폴더 봇 채널에 bot_send·bridge_send 가 없다 · ' + tlFb.join(','))
+    const tlMain = (await (await mcpFetch(base + `/mcp/${bot.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/list' }) })).json()).result.tools.map((t) => t.name)
+    if (tlMain.includes('bot_send')) fail('🔴 DA S1: 채널 밖 폴더 봇 세션에 bot_send 가 열렸다')
+    if (!/다른 봇에게 일을 넘길 수 없어요/.test(await callFb('bot_send', { bot: 'orch', text: '대신 해 줘' }))) fail('🔴 DA S1: 폴더 봇 채널이 다른 봇에게 일을 넘겼다(규칙 ①)')
+    if (!/소통 세션에 넘겼어요/.test(await callFb('bot_send', { bot: bot.id, text: 'readme 에 한 줄' }))) fail('DA S1: 폴더 봇 채널이 자기 봇에게 일을 못 넘겼다')
+    if (tlFb.includes('folder_move')) fail('🔴 DA S1: 폴더 봇 채널에 folder_move 가 보인다')
+    // ask 로 시작한 오케스트레이터 채널 턴에서도 folder_move 는 막힌다(턴 출처 peer)
+    const mvO = (await (await mcpFetch(base + `/mcp/orch?sid=${orchChan.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'folder_move', arguments: { from: '1. Inbox/예시랩_자문자료.txt', to: '4. Resources/x.txt' } } }) })).json()).result.content[0].text
+    if (!/바깥 상대의 편지/.test(mvO)) fail('🔴 DA S1: ask 턴에서 folder_move 가 안 막혔다 · ' + mvO)
+    if (!existsSync(join(root, '1. Inbox/예시랩_자문자료.txt'))) fail('🔴 DA S1: 막혔다면서 옮겨졌다')
+    // 없는 봇 · 시간당 상한과 같은 통 → 거절 3
+    const sx = await ask(['--as', 'halili', '--to', '없는폴더', '되나?'])
+    if (sx.code !== 3 || !/못 찾았어요/.test(sx.err)) fail('DA: 없는 봇에 물었는데 exit 3 이 아니다 · ' + JSON.stringify(sx))
+    // S2 · 기본값(50초)으로 55초짜리 일 — 50초에 exit 2. 그 50초 동안 S3(메일 · 우편함 to-folderbot 에 편지를 안 만든다)를 함께 잰다
+    const s2p = ask(['--as', 'halili', '시험 S2 · 느린일 55초'])
+    // S3 · 급한 편지 → 긴급 메일 한 통 · 10분 안 두 번째는 안 보낸다
+    const gl = join(data, 'gog-calls.log')
+    const mails = (to) => (existsSync(gl) ? readFileSync(gl, 'utf8') : '').split('gmail send ').slice(1).filter((c) => c.includes(`--to ${to} `))   // 본문에 줄바꿈이 있어 한 통이 여러 줄이다
+    for (const k of [1, 2]) await mcp('tools/call', { name: 'bridge_send', arguments: { peer: 'halili', kind: 'report', title: `새 규칙 · folderbot ask ${k}`, text: '기억해 주세요', urgent: true } })
+    for (let i = 0; i < 30 && !mails('dave-cos@mail.grokbot.com').length; i++) await wait(100)
+    await wait(500)
+    const calls = mails('dave-cos@mail.grokbot.com')
+    if (calls.length !== 1 || !/^-a cbsjin@gmail\.com --to dave-cos@mail\.grokbot\.com --subject \[긴급\] 새 규칙 · folderbot ask 1 --body /.test(calls[0]) || /기억해 주세요/.test(calls.join('')) || !/--re \d{8}-\d{6}-orch-[0-9a-f]{4}/.test(calls[0])) fail('🔴 DA S3: 긴급 메일이 한 통이 아니거나 모양이 다르다(본문에 편지 내용이 실리면 안 된다) · ' + JSON.stringify(calls))
+    const runsF = join(root, `.folderbot/ops/runs-${month}.jsonl`)
+    const wakesOf = (peer) => (existsSync(runsF) ? readFileSync(runsF, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.event === 'wake' && e.peer === peer) : [])
+    const wakes = wakesOf('halili')
+    if (wakes.length !== 2 || wakes.filter((e) => e.ok && e.via === 'mail').length !== 1 || wakes.filter((e) => e.skipped).length !== 1) fail('DA S3: 실행 기록에 메일 깨우기 둘(보냄·건너뜀)이 없다 · ' + JSON.stringify(wakes))
+    // S2 결과 — 50초 ±3초에 2 · 편지 id 는 첫 줄이고 기다리기 전에 나왔다
+    const s2 = await s2p
+    if (s2.code !== 2 || !ID.test(s2.first)) fail('🔴 DA S2: 기본값으로 50초를 넘긴 일인데 exit 2 와 첫 줄 편지 id 가 아니다 · ' + JSON.stringify(s2))
+    if (s2.ms < 47_000 || s2.ms > 53_000) fail(`🔴 DA S2: 기본 기다림이 50초가 아니다 · ${s2.ms}ms`)
+    if (s2.firstMs < 0 || s2.firstMs > 5_000) fail(`🔴 DA S2: 편지 id 가 기다리기 전에 안 찍혔다 · 첫 줄 ${s2.firstMs}ms`)
+    // id 를 놓쳤으면 --wait 만 — 이 상대의 마지막 ask(= S2) · 그다음 --wait <id>
+    const w2 = await ask(['--as', 'halili', '--wait'])
+    if (w2.code !== 0 || w2.first !== s2.first || !/느린 일 끝/.test(w2.out)) fail('🔴 DA S2: id 없이 --wait 로 마지막 ask 의 답을 못 받았다 · ' + JSON.stringify(w2) + ' · S2 ' + s2.first + ' · DBG ' + JSON.stringify(['to-folderbot', 'from-folderbot'].map((sd) => { const d = join(mbx, sd, month); return existsSync(d) ? readdirSync(d).map((n) => n + ' ' + readFileSync(join(d, n), 'utf8').replace(/\n/g, '|').slice(0, 260)) : [] })))
+    const w2b = await ask(['--wait', s2.first])
+    if (w2b.code !== 0 || !/느린 일 끝/.test(w2b.out)) fail('🔴 DA S2: --wait <id> 로 답을 못 받았다 · ' + JSON.stringify(w2b))
+    const a2 = letterOf('from-folderbot', new RegExp(`re: ${s2.first}\\n`))
+    if (!a2 || /delivered: live/.test(a2.t) || !/\nvia: ask\n/.test(a2.t)) fail('🔴 DA S2: 아무도 안 기다린 답에 delivered: live 가 붙었다(할일이가 슬롯에서 건너뛴다) · ' + a2?.t)
+    // --timeout 0 — 한 번 보고 바로 2 · 900 — 720 으로 줄였다고 찍는다
+    const tz = await ask(['--as', 'halili', '--timeout', '0', '시험 S2 · 한 번만 보기 · 느린일'])
+    if (tz.code !== 2 || !ID.test(tz.first) || tz.ms > 5_000) fail('🔴 DA S2: --timeout 0 이 한 번 보고 바로 2 로 끝나지 않았다 · ' + JSON.stringify(tz))
+    const t9 = await ask(['--as', 'halili', '--timeout', '900', '--no-wait', '시험 S2 · 900'])
+    if (t9.code !== 0 || !ID.test(t9.first) || !/720 초로 줄였어요/.test(t9.err)) fail('🔴 DA S2: --timeout 900 이 720 으로 줄었다고 안 찍었다 · ' + JSON.stringify(t9))
+    // --urgent 로 물었는데 기다리는 쪽이 떠났다 — 답 편지가 생길 때 긴급 메일(다른 상대 grok2 · 자기 10분 한 통 규칙)
+    const su = await ask(['--as', 'grok2', '--urgent', '--timeout', '0', '시험 · 급한데 늦은 답 · 느린일'])
+    if (su.code !== 2) fail('DA: 급한 ask 를 --timeout 0 으로 물었는데 2 가 아니다 · ' + JSON.stringify(su))
+    for (let i = 0; i < 100 && !mails('qa-grok2@example.com').length; i++) await wait(100)
+    const late = mails('qa-grok2@example.com')
+    if (late.length !== 1 || !/--subject \[긴급\] 답 /.test(late[0]) || !wakesOf('grok2').some((e) => e.ok && e.via === 'mail')) fail('🔴 DA: --urgent 로 물은 ask 가 늦게 끝났는데 답이 날 때 긴급 메일이 안 갔다 · ' + JSON.stringify(late))
+    // 꺼져 있을 때 — 없는 포트를 가리키는 안내로 부르면 편지만 우편함에 남기고 4 · 떠 있는 호스트가 그 편지를 줍는다
+    const offData = mkdtempSync(join(tmpdir(), 'fb-off-')); writeFileSync(join(offData, 'host-info.json'), JSON.stringify({ root, port: 1, at: '9999' }))
+    const s4 = await ask(['--as', 'halili', '--no-wait', '시험 S4 · 꺼져 있을 때'], { FOLDERBOT_DATA: offData })
+    if (s4.code !== 4 || !ID.test(s4.first)) fail('🔴 DA S4: 꺼져 있는데 exit 4 와 편지 id 가 아니다 · ' + JSON.stringify(s4))
+    const q4 = letterOf('to-folderbot', new RegExp(`id: ${s4.first}\\n`))
+    if (!q4 || !/\nvia: ask\n/.test(q4.t) || !/\nkind: report\n/.test(q4.t)) fail('🔴 DA S4: 꺼져 있을 때 편지가 우편함에 안 남았다')
+    let got4 = false
+    for (let i = 0; i < 100 && !got4; i++) { await wait(100); got4 = (await api(`/sessions/${orchChan.id}/chat`)).items.some((it) => it.kind === 'user' && it.text.includes(`id="${s4.first}"`)) || ((await api('/bots/orch/sessions')).find((x) => x.id === orchChan.id)?.queue ?? []).some((q) => q.text.includes(s4.first)) }
+    if (!got4) fail('DA S4: 꺼져 있을 때 남긴 편지를 호스트가 줍지 않았다')
+    // 치우기
+    await wait(1500)
+    for (const x of await api(`/bots/${bot.id}/sessions`)) if (!sessWas.has(x.id)) await api(`/sessions/${x.id}`, undefined, 'DELETE').catch(() => {})
+    for (const x of await api('/bots/orch/sessions')) if (x.channel === 'halili' || x.channel === 'grok2' || x.comm) await api(`/sessions/${x.id}`, undefined, 'DELETE').catch(() => {})
+    rmSync(bf); rmSync(offData, { recursive: true, force: true }); await wait(700)
+    ok(`folderbot ask — S0 ${took0}ms 만에 답(exit 0 · via: ask · delivered: live · 다시 안 넣음) · S1 폴더 봇 «✅ 할일이 채널» · 오케스트레이터 기록 · bot_send 자기 봇만 · folder_move 막힘 · 없는 봇 3 · S2 기본 ${s2.ms}ms 에 2(id 첫 줄 ${s2.firstMs}ms) → id 없이 --wait · --wait <id> · --timeout 0 바로 2 · 900 → 720 · S3 긴급 메일 한 통(10분 한 통) · 급한 ask 늦은 답 메일 · S4 꺼짐 4 → 편지 남김 → 줍기`)
   }
   /**
    * 🔴 연결 화면 (BQ-9 · BQ-10 · BX · 2026-10-19 Dave «A·A·A» — 목업 03_디자인/2026-10-09_연결-목업)

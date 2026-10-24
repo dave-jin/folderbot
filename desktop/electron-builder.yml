@@ -32,6 +32,9 @@ files:
 extraResources:
   - from: build/icon.png
     to: icon.png
+  # DA · `folderbot ask` CLI — ~/.local/bin/folderbot 이 이것을 가리킨다(전환일에 링크)
+  - from: folderbot-cli.sh
+    to: folderbot
 asar: true
 # ⚠ identity: null 은 서명 생략이다 — 알림 센터 등록에 필요한 ad-hoc 서명은 afterPack 이 한다
 afterPack: ./afterPack.js

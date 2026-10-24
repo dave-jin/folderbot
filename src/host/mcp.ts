@@ -92,8 +92,19 @@ const ORCH: Tool[] = [
  */
 const BRIDGE_SEND: Tool = { name: 'bridge_send', description: '연결(Bridge) 상대에게 편지를 쓴다 — 우편함 from-folderbot/ 에 FBMF 파일을 호스트가 만든다. kind: request(부탁) · reply(답 · re 필수) · report(알릴 사실) · done(끝난 일 · 앞 편지가 있으면 re) · incident(장애) · briefing(정기 브리핑). 본문은 짧게, 긴 자료는 볼트 경로로. 사람 결정이 필요하면 needs_human, 바로 봐야 하면 urgent.', inputSchema: obj({ peer: { type: 'string', description: '상대 id (예: halili)' }, kind: { type: 'string', enum: ['request', 'reply', 'report', 'done', 'incident', 'briefing'] }, title: { type: 'string', description: '한 줄 제목(한글 가능)' }, text: { type: 'string' }, re: { type: 'string', description: '회신이면 받은 편지 id' }, urgent: { type: 'boolean' }, needs_human: { type: 'boolean' } }, ['peer', 'kind', 'text']) }
 
-export function mcpTools(botId: string, bridge = false): Tool[] { const base = botId === ORCH_ID ? [...COMMON, ...ORCH] : COMMON; return bridge ? [...base, BRIDGE_SEND] : base }
+/**
+ * 🔴 DA · 폴더 봇의 연결 채널(바깥 상대가 `folderbot ask --to <폴더>` 로 바로 부른 곳)에서만 여는 `bot_send` — **자기 봇에게만**.
+ * 파일을 고쳐야 하는 일을 그 봇의 «🤝 소통» 세션에 넘기는 길이다(채널은 trust 울타리 안이라 직접 못 고친다).
+ * 다른 봇으로 넘기면 볼트 규칙 ①(폴더 봇끼리 직접 말하지 않는다)이 무너지므로 호스트가 막는다(callTool 'bot_send').
+ */
+const BOT_SEND_SELF: Tool = { name: 'bot_send', description: '파일을 고쳐야 하는 일을 이 봇 자신의 «🤝 소통» 세션에 넘긴다(bot 에는 이 봇 이름). 이 채널은 다른 봇에게는 넘길 수 없다 — 다른 폴더가 필요하면 상대에게 오케스트레이터로 다시 물어 달라고 답한다.', inputSchema: obj({ bot: { type: 'string', description: '이 봇 자신(이름·경로·id)' }, text: { type: 'string' } }, ['bot', 'text']) }
+export function mcpTools(botId: string, bridge = false, directChannel = false): Tool[] {
+  const base = botId === ORCH_ID ? [...COMMON, ...ORCH] : directChannel ? [...COMMON, BOT_SEND_SELF] : COMMON
+  return bridge || directChannel ? [...base, BRIDGE_SEND] : base
+}
 const canBridge = (host: Host, botId: string): boolean => !!host.bridges?.peersFor(botId).length
+/** DA · 이 세션이 폴더 봇의 연결 채널인가(오케스트레이터 채널은 아니다) */
+const directChannelOf = (host: Host, botId: string, sid: string): string | null => { const r = sid ? host.sessions.get(sid) : undefined; return r?.channel && r.botId === botId && botId !== ORCH_ID ? r.channel : null }
 
 export async function handleMcp(host: Host, botId: string, req: IncomingMessage, res: ServerResponse, body: string, sid = ''): Promise<void> {
   let msg: Rpc
@@ -102,10 +113,10 @@ export async function handleMcp(host: Host, botId: string, req: IncomingMessage,
   const error = (code: number, message: string) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, error: { code, message } })) }
   if (msg.method === 'initialize') return reply({ protocolVersion: '2025-03-26', capabilities: { tools: {} }, serverInfo: { name: 'folderbot', version: host.version } })
   if (msg.method === 'notifications/initialized' || msg.method === 'ping') { res.writeHead(msg.id === undefined ? 202 : 200, { 'content-type': 'application/json' }); res.end(msg.id === undefined ? '' : JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: {} })); return }
-  if (msg.method === 'tools/list') return reply({ tools: mcpTools(botId, canBridge(host, botId)) })
+  if (msg.method === 'tools/list') return reply({ tools: mcpTools(botId, canBridge(host, botId), !!directChannelOf(host, botId, sid)) })
   if (msg.method === 'tools/call') {
     const name = String(msg.params?.name ?? ''); const args = (msg.params?.arguments ?? {}) as Record<string, unknown>
-    if (!mcpTools(botId, canBridge(host, botId)).some((t) => t.name === name)) return error(-32601, `이 봇은 ${name} 을 쓸 수 없어요`)
+    if (!mcpTools(botId, canBridge(host, botId), !!directChannelOf(host, botId, sid)).some((t) => t.name === name)) return error(-32601, `이 봇은 ${name} 을 쓸 수 없어요`)
     // BS · 루틴·다른 봇·편지가 시작한 턴에서는 되돌리기 어려운 도구를 거절한다(core/turnGuard)
     const rec0 = sid ? host.sessions.get(sid) : undefined
     const blocked = turnBlock(name, rec0?.turnFrom, rec0?.turnGrant)
@@ -186,7 +197,17 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       const rs = host.runRoutine(b, def)
       return `돌렸어요 · 루틴 세션 ${rs}`
     }
-    case 'bot_send': { const b = findBot(s('bot')); if (!b) throw new Error('그런 봇이 없어요'); const sid = host.sendToBot(b, s('text'), s('session') || undefined, s('name') || undefined, botId); const q = host.sessions.get(sid)?.queue?.length ?? 0; return q ? `큐에 넣었어요 — 그 세션이 하던 일을 끝내면 차례로 보내요(대기 ${q}개) · 세션 ${sid}` : `보냈어요 · 세션 ${sid}` }
+    case 'bot_send': {
+      const b = findBot(s('bot')); if (!b) throw new Error('그런 봇이 없어요')
+      // DA · 폴더 봇 채널은 자기 봇의 소통 세션에만 넘긴다 — 세션·이름은 고를 수 없다
+      if (botId !== ORCH_ID) {
+        if (!directChannelOf(host, botId, sid)) throw new Error('이 세션은 bot_send 를 쓸 수 없어요')
+        if (b.id !== botId) throw new Error('이 채널은 다른 봇에게 일을 넘길 수 없어요 — 상대에게 «오케스트레이터로 다시 물어 달라» 고 답하세요')
+        const to = host.sendToBot(b, `[연결 채널에서 넘긴 일 · 세션 ${sid}]\n${s('text')}`, undefined, undefined, botId)
+        return `이 봇의 소통 세션에 넘겼어요 · 세션 ${to}`
+      }
+      const sid2 = host.sendToBot(b, s('text'), s('session') || undefined, s('name') || undefined, botId); const q = host.sessions.get(sid2)?.queue?.length ?? 0; return q ? `큐에 넣었어요 — 그 세션이 하던 일을 끝내면 차례로 보내요(대기 ${q}개) · 세션 ${sid2}` : `보냈어요 · 세션 ${sid2}`
+    }
     case 'inbox_list': return reg.inboxItems().map((i) => ({ rel: i.rel, dir: i.dir, modified: new Date(i.mtime).toISOString() }))
     case 'folder_move': { reg.move(s('from'), s('to')); host.afterBotsChanged(); return `옮겼어요: ${s('from')} → ${s('to')} (되돌리기 가능)` }
     case 'vault_tree': return host.tree(s('dir'), Number(a.depth) || 2)
@@ -260,7 +281,10 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       return { ok: true, removed: name, before, undo: '잘못 지웠으면 before 의 값으로 routine_add 하면 돌아와요' }
     }
     case 'bridge_send': {
-      const out = host.bridges.send(s('peer'), botId, { kind: s('kind'), text: s('text'), title: s('title') || undefined, re: s('re') || undefined, urgent: a.urgent === true, needsHuman: a.needs_human === true })
+      // DA · 채널 세션은 자기 상대에게만(폴더 봇 채널은 may_send 밖이어도 자기 상대에게 답한다)
+      const ch = directChannelOf(host, botId, sid)
+      if (ch && s('peer') !== ch) throw new Error(`이 채널은 «${ch}» 에게만 편지를 쓸 수 있어요`)
+      const out = host.bridges.send(s('peer'), botId, { kind: s('kind'), text: s('text'), title: s('title') || undefined, re: s('re') || undefined, urgent: a.urgent === true, needsHuman: a.needs_human === true }, { channel: !!ch || host.sessions.get(sid)?.channel === s('peer') })
       return `편지를 썼어요 · ${out.id} · ${out.rel}`
     }
     case 'akiflow_sync_plan': case 'akiflow_sync_ack': {

@@ -23,6 +23,8 @@ import { saveConfig } from './paths'
 import { handleMcp } from './mcp'
 import { bearer, mcpGate } from './mcpAuth'
 import { readTokenEnv } from './wake'
+import { ASK_MAX_OPEN } from './ask'
+import { askTimeoutSec } from '../core/askCli'
 import { isoLocal } from '../core/fbmf'
 import { handoffLine, presetOf } from '../core/bridgeView'
 import { providers, forgetProviders } from './providers'
@@ -201,6 +203,9 @@ export class Gateway {
     // BQ-11 · 연결 상대의 들어오는 웹훅 — 기기 토큰이 아니라 그 상대만의 토큰. 이 맥·같은 tailnet 에서만(공개 주소로 열지 않는다)
     const mIn = /^\/api\/bridges\/([a-z0-9-]+)\/messages$/.exec(p)
     if (mIn && req.method === 'POST') return this.bridgeInbound(mIn[1], req, json, body)
+    // DA · `folderbot ask` — 같은 토큰·같은 망·같은 상한. 답이 날 때까지 연결을 붙잡는다
+    const mAsk = /^\/api\/bridges\/([a-z0-9-]+)\/ask$/.exec(p)
+    if (mAsk && req.method === 'POST') return this.bridgeAsk(mAsk[1], req, res, json, body)
     // ③ 승인을 기다리는 연결 채널 세션 수와 가장 오래 선 시간 — 이름은 안 낸다(인증 없는 창구다). 감시기가 이것을 본다
     if (p === '/api/health') return json(200, { ok: true, name: 'folderbot', version: this.host.version, stallMs: this.stall.maxMs, channelWaits: this.host.sessions.channelWaits(), pushSubs: this.host.notifier.subsView().length, lastPush: this.host.notifier.lastPush })
     if (p === '/api/pair' && req.method === 'POST') {
@@ -224,25 +229,61 @@ export class Gateway {
 
   /** BQ-11 · 상대별 토큰 확인 → 편지 파일 → 평소처럼 배달. 상한: 상대마다 시간당 60통 */
   private inboundLog = new Map<string, number[]>()
-  private async bridgeInbound(peerId: string, req: IncomingMessage, json: (c: number, b: unknown) => void, body: () => Promise<Record<string, unknown>>): Promise<void> {
+  /** BQ-11 · DA · 들어오는 길의 울타리 셋 — 이 맥·tailnet · 그 상대만의 토큰 · 시간당 60통(웹훅·ask 가 한 통을 같이 쓴다). 통과 못 하면 답을 쓰고 false */
+  private async peerGate(peerId: string, req: IncomingMessage, json: (c: number, b: unknown) => void): Promise<boolean> {
     const a = req.socket.remoteAddress ?? ''
     const local = this.isLoopback(req) || /^(::ffff:)?100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(a)
-    if (!local) return json(403, { error: 'tailnet only' })
+    if (!local) { json(403, { error: 'tailnet only' }); return false }
     const peer = this.host.bridges.peer(peerId)
-    if (!peer?.enabled || !peer.inbound) return json(404, { error: 'no such inbound bridge' })
+    if (!peer?.enabled || !peer.inbound) { json(404, { error: 'no such inbound bridge' }); return false }
     let token = ''
-    try { token = readTokenEnv(peer.inbound.env) } catch (e) { this.host.log(`⚠ 연결 «${peer.name}» 들어오는 웹훅 토큰을 못 읽었어요 · ${(e as Error).message}`); return json(503, { error: 'inbound token not configured' }) }
+    try { token = readTokenEnv(peer.inbound.env) } catch (e) { this.host.log(`⚠ 연결 «${peer.name}» 들어오는 웹훅 토큰을 못 읽었어요 · ${(e as Error).message}`); json(503, { error: 'inbound token not configured' }); return false }
     const got = Buffer.from(bearer(req.headers)), want = Buffer.from(token)
-    if (!(got.length === want.length && timingSafeEqual(got, want))) { await new Promise((r) => setTimeout(r, 500)); return json(401, { error: 'unauthorized' }) }
+    if (!(got.length === want.length && timingSafeEqual(got, want))) { await new Promise((r) => setTimeout(r, 500)); json(401, { error: 'unauthorized' }); return false }
     const now = Date.now(); const log = (this.inboundLog.get(peerId) ?? []).filter((t) => now - t < 3600_000)
-    if (log.length >= 60) return json(429, { error: 'too many letters — 60 per hour' })
+    if (log.length >= 60) { json(429, { error: 'too many letters — 60 per hour' }); return false }
     log.push(now); this.inboundLog.set(peerId, log)
+    return true
+  }
+  private async bridgeInbound(peerId: string, req: IncomingMessage, json: (c: number, b: unknown) => void, body: () => Promise<Record<string, unknown>>): Promise<void> {
+    if (!(await this.peerGate(peerId, req, json))) return
     let b: Record<string, unknown>
     try { b = await body() } catch { return json(400, { error: 'json body required' }) }
     try {
       const out = this.host.bridges.receive(peerId, { kind: typeof b.kind === 'string' ? b.kind : undefined, text: String(b.text ?? ''), title: typeof b.title === 'string' ? b.title : undefined, re: typeof b.re === 'string' ? b.re : undefined, urgent: b.urgent === true, needsHuman: b.needs_human === true })
       return json(201, out)
     } catch (e) { return json(400, { error: (e as Error).message }) }
+  }
+
+  /**
+   * 🔴 DA · `folderbot ask` 창구 — 편지를 쓰고 그 봇의 채널에 바로 넣은 뒤, 답 편지가 생길 때까지(또는 timeout) 연결을 붙잡는다.
+   * 받아들였으면 200 · NDJSON 두 줄이다 — **첫 줄은 편지 id(받자마자 · `state: queued`)**, 마지막 줄이 결과다(10/24 12:40 설계 2판 §7 ①).
+   * 할일이 셸이 먼저 끊겨도 id 는 이미 받았다. 결과 `state`: sent(--no-wait) · answered · needs_human · error · pending(시간 초과 · 아직 못 넣음).
+   * 받기 전 거절은 평범한 JSON 이다 — 403 may_ask 밖 · 없는 봇 · 409 다른 맥이 주인 · 429 상한(시간당 60통 · 동시 3개).
+   */
+  private async bridgeAsk(peerId: string, req: IncomingMessage, res: ServerResponse, json: (c: number, b: unknown) => void, body: () => Promise<Record<string, unknown>>): Promise<void> {
+    if (!(await this.peerGate(peerId, req, json))) return
+    let b: Record<string, unknown>
+    try { b = await body() } catch { return json(400, { error: 'json body required' }) }
+    const wait = b.wait !== false
+    if (wait && this.host.askDesk.openFor(peerId) >= ASK_MAX_OPEN) return json(429, { error: `이미 ${ASK_MAX_OPEN}개를 기다리는 중이에요 — 하나 끝나면 다시 물어 주세요` })
+    let out: ReturnType<Host['askIn']>
+    try {
+      out = this.host.askIn(peerId, { text: String(b.text ?? ''), title: typeof b.title === 'string' ? b.title : undefined, to: typeof b.to === 'string' ? b.to : undefined, re: typeof b.re === 'string' ? b.re : undefined, kind: typeof b.kind === 'string' ? b.kind : undefined, urgent: b.urgent === true }, wait)
+    } catch (e) { const code = (e as { code?: string }).code; return json(code === 'refused' ? 403 : code === 'not-owner' ? 409 : 400, { error: (e as Error).message }) }
+    const head = { id: out.id, rel: out.rel, bot: out.bot.name }
+    res.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store' })
+    const line = (o: unknown) => { if (!res.writableEnded && !res.destroyed) res.write(JSON.stringify(o) + '\n') }
+    const end = (o: unknown) => { line(o); if (!res.writableEnded) res.end() }
+    line({ ...head, state: 'queued' })
+    if (!wait) return end({ ...head, state: 'sent' })
+    if (!out.sid) return end({ ...head, state: 'pending', why: '아직 세션에 못 넣었어요 — 편지는 우편함에 있고 다음 폴링이 넣어요' })
+    const ms = askTimeoutSec(b.timeout) * 1000
+    res.on('close', () => { if (!res.writableEnded) this.host.askDesk.cancel(out.id) })   // ⚠ req 의 close 는 본문을 다 읽으면 난다 — 끊김은 res 로 본다
+    const a = await this.host.askDesk.wait(out.id, ms)
+    if (res.writableEnded || res.destroyed) return
+    if (!a) return end({ ...head, state: 'pending' })
+    end({ ...head, reply: a.reply, replyRel: a.rel, answer: a.answer, state: a.error ? 'error' : a.needsHuman ? 'needs_human' : 'answered', ...(a.error ? { error: a.error } : {}) })
   }
 
   private async api(p: string, url: URL, req: IncomingMessage, res: ServerResponse, json: (c: number, b: unknown) => void, body: () => Promise<Record<string, unknown>>, device: string, who: Who): Promise<void> {

@@ -46,8 +46,16 @@ export interface PeerDef {
   host?: string
   since?: number
   enabled: boolean
-  /** BQ-8 · 급한 편지를 쓰면 상대를 깨우는 웹훅 — 주소·키는 0600 env 파일(키체인 아님 · 2026-10-09 Dave) */
-  wake?: { env: string }
+  /**
+   * BQ-8 · 급한 편지를 쓰면 상대를 깨운다 — 웹훅(`env`: 주소·키는 0600 env 파일 · 키체인 아님 · 2026-10-09 Dave) 또는
+   * DA · 메일(`mail`·`from`: 상대 자동화의 «메일이 오면» 트리거 · 2026-10-24 Dave «긴급 메일은 Folder Bot 이 자동으로»)
+   */
+  wake?: { env?: string; mail?: string; from?: string }
+  /**
+   * DA · `folderbot ask` 로 이 상대가 바로 부를 수 있는 봇 — `orch` · 봇 id · 폴더 이름 · 볼트 경로 · 경로 글롭(`2. Area/*`).
+   * 비면 받는 봇(`deliver_to`) 하나만. 폴더 봇마다 «<icon> <name> 채널» 이 따로 생긴다(2026-10-24 Dave «폴더 봇 직접 · 시키기까지»)
+   */
+  mayAsk: string[]
   /** BQ-8 · 이 시간 안에 상대의 신호(커서 갱신·편지)가 없으면 «상대 끊김» */
   expectEveryMs?: number
   /** 끊겼을 때 따로 울릴 명령 — 메시지가 마지막 인자로 붙는다 */
@@ -86,10 +94,17 @@ export function parseBridges(text: string): BridgesConfig {
     for (const x of mayRaw ?? []) if (!DAVE_MAY.includes(x)) errors.push(`연결 «${id}»: dave_may 에 «${x}» 는 못 넣어요 — ${DAVE_MAY.join(' · ')} 만 됩니다(옮기기·은퇴는 사람 승인)`)
     const since = r.since === undefined ? undefined : Date.parse(String(r.since))
     if (r.since !== undefined && !Number.isFinite(since)) errors.push(`연결 «${id}»: since 를 시각으로 못 읽었어요`)
-    let wake: { env: string } | undefined
+    let wake: PeerDef['wake']
+    const wk = (r.wake && typeof r.wake === 'object' ? r.wake : {}) as Record<string, unknown>
     if (r.wake === true) wake = { env: `~/.config/secrets/folderbot-bridge-${id}.env` }
-    else if (r.wake && typeof r.wake === 'object' && (r.wake as Record<string, unknown>).env) wake = { env: String((r.wake as Record<string, unknown>).env) }
-    else if (r.wake !== undefined && r.wake !== false) errors.push(`연결 «${id}»: wake 는 true 또는 { env: 파일 } 이에요`)
+    else if (wk.env) wake = { env: String(wk.env) }
+    else if (wk.mail) {
+      const mail = String(wk.mail).trim(), from = String(wk.from ?? '').trim()
+      if (!EMAIL.test(mail) || !EMAIL.test(from)) errors.push(`연결 «${id}»: 메일 깨우기는 { mail: 받는 주소, from: 보내는 계정 } 둘 다 메일 주소여야 해요`)
+      else wake = { mail, from }
+    } else if (r.wake !== undefined && r.wake !== false) errors.push(`연결 «${id}»: wake 는 true · { env: 파일 } · { mail, from } 중 하나예요`)
+    const askRaw = Array.isArray(r.may_ask) ? (r.may_ask as unknown[]).map((x) => String(x).normalize('NFC').trim()).filter(Boolean) : r.may_ask === undefined ? [] : null
+    if (askRaw === null) errors.push(`연결 «${id}»: may_ask 는 목록이에요(예: [orch, "2. Area/*"])`)
     let inbound: { env: string } | undefined
     if (r.inbound === true) inbound = { env: `~/.config/secrets/folderbot-bridge-${id}-in.env` }
     else if (r.inbound && typeof r.inbound === 'object' && (r.inbound as Record<string, unknown>).env) inbound = { env: String((r.inbound as Record<string, unknown>).env) }
@@ -105,6 +120,7 @@ export function parseBridges(text: string): BridgesConfig {
       ...(fb ? { fallbackNotify: fb } : {}),
       deliver: { bot: String(d.bot ?? 'orch').trim() || 'orch', session: String(d.session ?? `${icon} ${name} 채널`).trim() },
       maySend: Array.isArray(r.may_send) ? (r.may_send as unknown[]).map(String) : ['orch'],
+      mayAsk: askRaw ?? [],
       trust,
       daveMay,
       ...(r.host ? { host: String(r.host).trim() } : {}),
@@ -113,6 +129,48 @@ export function parseBridges(text: string): BridgesConfig {
     })
   })
   return { peers, ...(doc.runs_copy ? { runsCopy: String(doc.runs_copy) } : {}), errors }
+}
+
+const EMAIL = /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/
+
+/* ── DA · `folderbot ask` — 바깥 상대가 봇을 바로 부른다 (2026-10-24 Dave «범용 CLI · 폴더 봇 직접 · 시키기까지») ── */
+
+export interface AskBot { id: string; name: string; rel: string; orchestrator?: boolean }
+/** `may_ask` 한 칸이 이 봇을 가리키나 — `orch` · id · 이름 · 경로 · 경로 글롭(`*` 는 한 마디 · `**` 는 여러 마디) */
+export function askPatternHits(pat: string, b: AskBot): boolean {
+  const p = pat.normalize('NFC').trim().replace(/\/+$/, ''), rel = b.rel.normalize('NFC')
+  if (!p) return false
+  if (p === 'orch') return !!b.orchestrator || b.id === 'orch'
+  if (p === b.id || p === b.name.normalize('NFC') || p === rel) return true
+  if (!p.includes('*')) return false
+  const re = new RegExp(`^${p.split(/(\*\*|\*)/).map((x) => x === '**' ? '.*' : x === '*' ? '[^/]*' : x.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('')}$`)
+  return re.test(rel)
+}
+/** `--to` 값 → 봇. 비었거나 `orch` 면 받는 봇(`deliver_to`). 폴더 이름(경로 끝)·id·경로로 찾는다 */
+export function findAskBot(to: string | undefined, bots: AskBot[], deliverBot: string): AskBot | undefined {
+  const t = String(to ?? '').normalize('NFC').trim().replace(/\/+$/, '')
+  const want = !t || t === 'orch' ? (deliverBot === 'orch' ? 'orch' : deliverBot) : t
+  if (want === 'orch') return bots.find((b) => b.orchestrator || b.id === 'orch')
+  return bots.find((b) => b.id === want) ?? bots.find((b) => b.rel.normalize('NFC') === want) ?? bots.find((b) => b.name.normalize('NFC') === want) ?? bots.find((b) => b.rel.normalize('NFC').split('/').pop() === want)
+}
+/**
+ * 🔴 DA · 이 상대가 이 봇을 부를 수 있나 — 받는 봇(`deliver_to`)은 늘 된다. 나머지는 `may_ask` 에 들어야 한다.
+ * @returns 봇 또는 거절 이유(사람 말 · CLI 가 그대로 찍는다)
+ */
+export function askTarget(peer: Pick<PeerDef, 'name' | 'deliver' | 'mayAsk'>, bots: AskBot[], to?: string): { bot: AskBot } | { error: string } {
+  const b = findAskBot(to, bots, peer.deliver.bot)
+  if (!b) return { error: `«${to}» 라는 봇을 못 찾았어요 — 폴더 이름이나 볼트 경로로 주세요` }
+  const isDeliver = (x: AskBot) => peer.deliver.bot === x.id || peer.deliver.bot === x.name || peer.deliver.bot === x.rel || (peer.deliver.bot === 'orch' && (!!x.orchestrator || x.id === 'orch'))
+  if (isDeliver(b) || peer.mayAsk.some((p) => askPatternHits(p, b))) return { bot: b }
+  return { error: `«${peer.name}» 은 ${b.name} 봇을 바로 부를 수 없어요(may_ask 밖) — 오케스트레이터에게 물어 주세요` }
+}
+/** DA · 긴급 메일 한 통 — 제목은 `[긴급] <제목>`, 본문은 제목·편지 id·경로·답하는 법만(편지 내용은 싣지 않는다) */
+export function wakeMail(peer: Pick<PeerDef, 'id' | 'name'>, p: { id: string; kind: string; path: string; title?: string; needs_human?: boolean }): { subject: string; body: string } {
+  const t = (p.title ?? '').replace(/\s+/g, ' ').trim() || `${p.kind} 편지`
+  return {
+    subject: `[긴급] ${t}`.slice(0, 120),
+    body: [`${peer.name}, Folder Bot 이 급한 편지를 썼어요${p.needs_human ? ' (Dave 결정 필요)' : ''}.`, `편지: ${p.id}`, `경로: ${p.path}`, `답: folderbot ask --as ${peer.id} --re ${p.id} "…"`].join('\n'),
+  }
 }
 
 /** `150m` · `2h` · `60s` · `90` (분) → ms. 못 읽으면 null */

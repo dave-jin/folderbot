@@ -242,7 +242,7 @@ rl.on('line', (raw) => {
     slowTimer = setTimeout(() => { slowTimer = null
       say({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '느린 일 끝' }], stop_reason: 'end_turn' } })
       say({ type: 'result', subtype: 'success', duration_ms: 1500, total_cost_usd: 0.001 })
-    }, /느린일 길게/.test(text) ? 8000 : 2500)
+    }, /느린일 (\d+)초/.test(text) ? Number(/느린일 (\d+)초/.exec(text)[1]) * 1000 : /느린일 길게/.test(text) ? 8000 : 2500)   // DA · «느린일 55초» — ask 기본 50초를 넘기는 턴
     return
   }
   // 「mermaid · KaTeX」 검사용 — 그림 펜스와 수식

@@ -149,6 +149,52 @@ HEADER=X-Api-Key   # 다른 헤더 이름을 쓸 때
 
 `POST /api/bridges/<상대>/messages` 에 `Authorization: Bearer <토큰>` 과 JSON(`kind · title · text · re · urgent · needs_human`)을 보낸다. 토큰은 `~/.config/secrets/folderbot-bridge-<상대>-in.env` 의 `TOKEN=`(16자 이상, 0600)이다. 호스트는 받은 내용을 `to-folderbot/` 에 편지 파일로 만들고, 그 뒤는 파일로 온 편지와 똑같이 처리한다. 이 맥과 같은 tailnet 에서 온 요청만 받는다. 상대마다 시간당 60통까지다.
 
+## 묻고 답하기 — `folderbot ask`
+
+편지는 빨리 들어가지만, 상대가 답을 읽는 것은 자기 다음 차례다. 그래서 질문 하나가 몇 시간짜리 왕복이 된다. `folderbot ask` 는 `claude -p` 처럼 «보내고, 끝날 때까지 기다렸다가, 답을 찍는» 명령이다. 상대가 셸만 있으면 자기 턴 안에서 답을 받는다.
+
+```
+folderbot ask --as halili "이번 주 막힌 것 알려 줘"                      # 받는 봇(deliver_to)에게
+folderbot ask --as halili --to 제품_FolderBot "v201 맥미니에 적용됐어?"  # 폴더 봇에게 바로(may_ask 안)
+folderbot ask --as halili --to 제품_FolderBot --no-wait "Dave 말 · …"   # 알림만
+folderbot ask --as halili --re <편지 id> "확인함"                       # 급한 편지에 답하기
+folderbot ask --wait <편지 id>                                           # 50초에 끊긴 답 받기(같은 슬롯 끝에 한 번만)
+folderbot ask --as halili --wait                                         # id 를 놓쳤으면 그 상대의 마지막 ask
+folderbot ask --help                                                     # 상대가 외울 카드
+```
+
+- **ask 는 새 우편함이 아니다.** 묻는 말은 `to-folderbot/` 편지(`via: ask`), 답은 `from-folderbot/` 편지 그대로다. 다른 점은 «폴링을 기다리지 않고 바로 넣고, 답이 날 때까지 연결을 붙잡는다» 하나다. 배달 기록도 같아서 폴링이 다시 넣지 않는다.
+- **답** = 그 편지 id 를 `re` 로 단 첫 `bridge_send`. 그것 없이 턴이 끝나면 호스트가 마지막 답으로 답 편지를 쓴다. 묻는 쪽이 아직 기다리고 있을 때 쓴 답 편지에는 `delivered: live` 가 붙는다 — 상대는 그 편지를 자기 차례에 다시 처리하지 않는다. 시간이 다 된 뒤에 생긴 답에는 붙지 않는다.
+- **편지 id 는 맨 첫 줄이다** — 기다리기 전에 찍는다. 상대 셸이 먼저 끊겨도 id 는 남고, 놓쳤으면 `--as <상대> --wait` 이 그 상대의 마지막 ask 를 찾는다. `--json` 이면 줄마다 JSON 한 줄이다(첫 줄 `{id, state: queued}` · 마지막 줄 `{id, reply, bot, state, answer}`).
+- **기다림** — 기본 50초 · `--timeout 0` 은 한 번 보고 바로 끝낸다(답이 이미 있으면 찍고, 없으면 2) · 최대 720초(넘치면 720 으로 줄이고 그렇다고 찍는다). 할일이 셸은 기본 30초 · 최대 780초이고 한 슬롯의 예산상 한 번에 60초가 안전해서다(10/24 할일이 답). 50초에 끊겨도 일은 계속 돌고, 답은 `reply` 편지로 남는다. 긴 일은 `--no-wait` 로 보내고 같은 슬롯 끝에 `--wait` 를 **한 번** 부른다 — 되풀이해 부르지 않는다.
+- **`--urgent`** — 큐 맨 앞에 선다(끼어들기는 아니다). 기다리는 쪽이 떠난 뒤(50초 초과 · `--timeout 0` · `--no-wait`)에 답이 나면, 그 답 편지를 쓸 때 긴급 메일로 깨운다(아래 «긴급 메일» 의 10분에 한 통 규칙 그대로). 그 자리에서 받은 답에는 메일을 보내지 않는다.
+- **끝 상태**: `0` 답 받음 · `2` 시간 초과(편지 id 를 찍는다 → `--wait`) · `3` 거절(이유를 찍는다) · `4` Folder Bot 이 꺼져 있음(편지는 우편함에 직접 썼고, 켜지면 들어가고 답은 우편함으로 온다) · `5` 답이 Dave 확인을 기다림(`needs_human`).
+- **누가 쓰나**: `inbound` 를 켠 상대만. 토큰은 들어오는 웹훅과 같은 파일(`~/.config/secrets/folderbot-bridge-<상대>-in.env` · 0600)에서만 읽는다 — 인자나 환경변수로 받지 않는다. 기기 토큰과 `config.json` 은 읽지 않는다. 볼트 경로와 포트는 호스트가 켜질 때 쓰는 비밀 없는 `host-info.json` 에서 읽는다.
+- **울타리**: 이 맥(loopback)과 같은 tailnet 에서만 · 상대마다 시간당 60통(웹훅과 같은 통) · 동시에 기다리는 ask 3개 · `host:` 가 맞는 맥만(다른 맥은 409).
+- **폴더 봇에 바로** — `may_ask: [orch, "2. Area/*"]` 처럼 상대가 부를 수 있는 봇을 적는다(`orch` · 봇 id · 폴더 이름 · 볼트 경로 · 글롭 `*` 한 마디 · `**` 여러 마디). 비면 받는 봇 하나만. 파일로 온 편지도 머리말 `to:` 가 그 봇이면 같은 길로 간다.
+  - 그 봇에 «<icon> <name> 채널» 이 따로 생긴다. trust 울타리는 받는 봇 채널과 같다.
+  - 그 채널은 **자기 봇에게만** 일을 넘긴다(`bot_send` · 그 봇의 «🤝 소통» 세션). 다른 봇으로는 호스트가 막는다 — 폴더 봇끼리는 오케스트레이터를 거친다는 볼트 규칙이 그대로 산다. 답은 그 상대에게만 쓴다(`bridge_send`).
+  - 오케스트레이터 소통 기록에 `직접 ask · <상대> → <봇> · <편지 id>` 한 줄이 남는다(턴을 쓰지 않는다).
+  - «Dave 말» 편지의 `dave_may` 는 받는 봇(오케스트레이터) 채널에서만 열린다.
+- **앱에서 쓰기** — 앱 안에 CLI 가 들어 있다. 맥에 node 가 없어도 된다: `ln -s "/Applications/Folder Bot.app/Contents/Resources/folderbot" ~/.local/bin/folderbot`.
+
+| 창구 | 하는 일 |
+|---|---|
+| `POST /api/bridges/<상대>/ask` | `{ text, to?, re?, kind?, title?, urgent?, wait?, timeout? }` (timeout 초 · 기본 50 · 0~720). 받았으면 200 · NDJSON — 첫 줄 `{id, rel, bot, state: queued}` 는 받자마자, 마지막 줄 `state` 는 sent(`wait: false`) · answered · needs_human · error · pending(시간 초과 · 아직 못 넣음). 받기 전 거절은 JSON — 403 거절 · 409 다른 맥 · 429 상한 |
+
+## 긴급 메일 — `wake: { mail, from }`
+
+상대가 «메일이 오면 깨는» 자동화를 갖고 있으면(예: Grok Bot «긴급 메일 수신») 웹훅 대신 메일로 깨운다.
+
+```yaml
+    wake: { mail: dave-cos@mail.grokbot.com, from: cbsjin@gmail.com }
+```
+
+- 급한 편지(`urgent`) 한 통에 메일 한 통 — 상대마다 10분에 한 통까지(넘치면 실행 기록에 «건너뜀»). `--urgent` 로 물은 ask 의 답이 늦게 나도 같은 길로 한 통 간다(제목 `[긴급] 답`).
+- 보내는 길은 `gog gmail send -a <from>`. 받는 사람은 설정에 적힌 한 주소뿐이다.
+- 제목은 `[긴급] <편지 제목>`, 본문은 편지 id · 경로 · 답하는 법(`folderbot ask --re <id>`)만이다. 편지 내용은 싣지 않는다 — 상대는 우편함에서 읽는다.
+- 결과는 실행 기록(`event: wake · via: mail`)과 편지 스레드의 «깨움» 에 남는다.
+
 ## 오래 쓰는 채널 — 갈아타기
 
 채널 세션이 15만 토큰을 넘거나 7일이 지나면 압축하지 않고 갈아탄다. 인수인계를 한 턴 쓰고, 같은 이름의 새 세션을 연 뒤, 새 세션에 처음 보내는 말 앞에 인수인계를 붙인다. 옛 세션은 이름 끝에 날짜를 달고 남는다.

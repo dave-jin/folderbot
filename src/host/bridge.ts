@@ -32,10 +32,17 @@ export interface BridgeDeps {
   dataDir: string
   hostNames: () => string[]
   log: (s: string) => void
-  /** 편지 묶음을 세션에 넣는다. 넣었으면 세션 id, 넣을 곳이 없으면 null(기록하지 않고 다음에 다시) */
-  deliver: (peer: PeerDef, items: Incoming[]) => string | null
-  /** BQ-8 · 급한 편지를 썼다 — 상대를 깨운다(웹훅). 본문은 안 보낸다 */
-  wake?: (peer: PeerDef, payload: { id: string; kind: string; path: string; urgent: boolean; needs_human: boolean }) => void
+  /**
+   * 편지 묶음을 세션에 넣는다. 넣었으면 세션 id, 넣을 곳이 없으면 null(기록하지 않고 다음에 다시).
+   * DA · 편지마다 받는 봇이 다를 수 있다(`to:` · `may_ask`) — 그때는 편지 id → 세션 id. 빠진 편지는 다음에 다시
+   */
+  deliver: (peer: PeerDef, items: Incoming[]) => string | null | Record<string, string>
+  /** BQ-8 · 급한 편지를 썼다 — 상대를 깨운다(웹훅 · DA 메일). 본문은 안 보낸다 */
+  wake?: (peer: PeerDef, payload: { id: string; kind: string; path: string; urgent: boolean; needs_human: boolean; title?: string }) => void
+  /** DA · ask 답 편지를 쓰기 직전 — live 면 `delivered: live`, 아니면 `via: ask` 만 · wake 면 긴급 메일도(host/ask.ts) */
+  askState?: (peerId: string, re: string) => { live: boolean; wake: boolean } | null
+  /** DA · ask 답 편지를 쓴 직후 — 기다리는 쪽에 돌려준다 */
+  askAnswered?: (peerId: string, re: string, a: { reply: string; rel: string; answer: string; needsHuman: boolean }) => void
   /** BQ-8 · 상대가 `expect_every` 넘게 조용하다 / 다시 살아났다 */
   onStale?: (peer: PeerDef, lastSignal: number) => void
   onAlive?: (peer: PeerDef, lastSignal: number) => void
@@ -191,19 +198,55 @@ export class BridgeHub {
     else if (!quiet && box.stale) { box.stale = false; this.d.onAlive?.(box.peer, last); this.changed() }
   }
 
-  /** 세션에 넘기고, 넘겼으면 기록 · 커서 */
-  private hand(box: Box, items: Incoming[]): void {
+  /** 세션에 넘기고, 넘겼으면 기록 · 커서. @returns 편지 id → 세션 id(넘긴 것만) · 하나도 못 넘겼으면 null */
+  private hand(box: Box, items: Incoming[]): Record<string, string> | null {
     items.sort((a, b) => Number(b.letter.urgent) - Number(a.letter.urgent) || (a.letter.id < b.letter.id ? -1 : 1))
-    let sid: string | null = null
-    try { sid = this.d.deliver(box.peer, items) } catch (e) { this.d.log(`연결 «${box.peer.name}» 배달 실패(다음에 다시) · ${(e as Error).message}`); return }
-    if (!sid) return
+    let got: string | null | Record<string, string> = null
+    try { got = this.d.deliver(box.peer, items) } catch (e) { this.d.log(`연결 «${box.peer.name}» 배달 실패(다음에 다시) · ${(e as Error).message}`); return null }
+    if (!got) return null
+    const sidOf = (x: Incoming): string | undefined => (typeof got === 'string' ? got : (got as Record<string, string>)[x.letter.id])
+    const done = items.filter((x) => sidOf(x))
+    if (!done.length) return null
     const at = new Date(this.now()).toISOString()
-    appendFileSync(box.ledger, items.map((x) => JSON.stringify({ id: x.letter.id, state: 'delivered', rel: x.rel, sha: x.sha, session: sid, urgent: x.letter.urgent || undefined, at })).join('\n') + '\n')
-    for (const x of items) { box.delivered.add(x.letter.id); box.seen.delete(x.abs) }
+    appendFileSync(box.ledger, done.map((x) => JSON.stringify({ id: x.letter.id, state: 'delivered', rel: x.rel, sha: x.sha, session: sidOf(x), urgent: x.letter.urgent || undefined, ...(x.letter.via ? { via: x.letter.via } : {}), at })).join('\n') + '\n')
+    for (const x of done) { box.delivered.add(x.letter.id); box.seen.delete(x.abs) }
     box.lastLetterAt = this.now()
-    this.writeCursor(box, items.map((x) => x.letter.id).sort().pop())
-    this.d.log(`연결 «${box.peer.name}» 편지 ${items.length}통 → 세션 ${sid}`)
+    this.writeCursor(box, done.map((x) => x.letter.id).sort().pop())
+    this.d.log(`연결 «${box.peer.name}» 편지 ${done.length}통 → 세션 ${[...new Set(done.map(sidOf))].join(' · ')}`)
     this.changed()
+    return Object.fromEntries(done.map((x) => [x.letter.id, sidOf(x)!]))
+  }
+
+  /**
+   * 🔴 DA · `folderbot ask` — 편지 파일을 `to-folderbot/<달>/` 에 쓰고 **폴링을 기다리지 않고** 바로 넘긴다.
+   * 배달 기록·커서는 파일로 온 편지와 같은 길(`hand`)이라, 뒤이어 도는 폴링이 같은 편지를 다시 넣지 않는다.
+   * 인증·주소·받는 봇 판정(`may_ask`)은 부르는 쪽(gateway)이 한다. 이 호스트가 그 연결의 주인이 아니면 던진다(`host:`).
+   * @returns 편지 id · 경로 · 넣은 세션(못 넣었으면 null — 편지는 남고 다음 폴링이 다시 넣는다)
+   */
+  askNow(peerId: string, o: { kind?: string; text: string; title?: string; re?: string; urgent?: boolean; to: string }): { id: string; rel: string; sid: string | null } {
+    const peer = this.peer(peerId); if (!peer || !peer.enabled) throw new Error('그런 연결이 없어요')
+    const box = this.boxes.get(peer.id)
+    if (!box) throw Object.assign(new Error(`이 호스트는 «${peer.name}» 연결의 주인이 아니에요${peer.host ? ` — ${peer.host} 에서 부르세요` : ''}`), { code: 'not-owner' })
+    const kind = (FBMF_KINDS.includes(String(o.kind ?? 'request') as LetterKind) && o.kind !== 'heartbeat' ? String(o.kind ?? 'request') : 'request') as LetterKind
+    const out = this.writeLetter(peer, 'to-folderbot', peer.id, peer.id, o.to, { ...o, kind, via: 'ask' })
+    const abs = this.abs(out.rel)
+    const text = readFileSync(abs, 'utf8')
+    const item: Incoming = { letter: parseLetter(text, { id: out.id, from: peer.id }), rel: out.rel, abs, sha: createHash('sha256').update(text).digest('hex') }
+    const got = this.hand(box, [item])
+    return { ...out, sid: got?.[out.id] ?? null }
+  }
+  /** DA · `--wait` — 그 편지 id 를 `re` 로 단 첫 답 편지(이번 달·지난달). 없으면 null */
+  findReply(peerId: string, id: string): { letter: Letter; rel: string } | null {
+    const peer = this.peer(peerId); if (!peer) return null
+    const want = normId(id)
+    let best: { letter: Letter; rel: string } | null = null
+    for (const f of letterFiles(join(this.abs(peer.mailbox), 'from-folderbot'), false, new Date(this.now()))) {
+      let t: string; try { t = readFileSync(f, 'utf8') } catch { continue }
+      if (!frontMatterClosed(t)) continue
+      const l = parseLetter(t, { id: normId(basename(f).replace(/\.(md|txt)$/i, '')), from: 'folderbot' })
+      if (l.re === want && (!best || l.id < best.letter.id)) best = { letter: l, rel: relative(this.d.root, f) }
+    }
+    return best
   }
 
   /** `cursors/folderbot.json` — 어디까지 읽었나 + 하트비트. 읽는 쪽(Folder Bot)만 쓴다 */
@@ -234,7 +277,7 @@ export class BridgeHub {
     return out
   }
   /** 숨김 임시 파일 → link(이미 있으면 실패 → 새 난수) — 덮지 않고, 상대가 반쯤 쓴 파일을 못 본다 */
-  private writeLetter(peer: PeerDef, side: 'to-folderbot' | 'from-folderbot', slug: string, from: string, to: string, o: { kind: LetterKind; text: string; title?: string; re?: string; urgent?: boolean; needsHuman?: boolean }): { id: string; rel: string } {
+  private writeLetter(peer: PeerDef, side: 'to-folderbot' | 'from-folderbot', slug: string, from: string, to: string, o: { kind: LetterKind; text: string; title?: string; re?: string; urgent?: boolean; needsHuman?: boolean; via?: 'ask'; delivered?: 'live' }): { id: string; rel: string } {
     const body = String(o.text ?? '').trim(); if (!body) throw new Error('본문(text)이 비었어요')
     const d = new Date(this.now())
     for (let i = 0; i < 5; i++) {
@@ -242,7 +285,7 @@ export class BridgeHub {
       const dir = join(this.abs(peer.mailbox), side, monthOf(id, d))
       mkdirSync(dir, { recursive: true })
       const final = join(dir, `${id}.md`), tmp = join(dir, `.${id}.md.${process.pid}.tmp`)
-      writeFileSync(tmp, formatLetter({ id, from, to, kind: o.kind, title: o.title?.trim() || undefined, re: o.re ? normId(o.re) : undefined, urgent: !!o.urgent, needsHuman: !!o.needsHuman, created: isoLocal(d), body }))
+      writeFileSync(tmp, formatLetter({ id, from, to, kind: o.kind, title: o.title?.trim() || undefined, re: o.re ? normId(o.re) : undefined, urgent: !!o.urgent, needsHuman: !!o.needsHuman, ...(o.via ? { via: o.via } : {}), ...(o.delivered ? { delivered: o.delivered } : {}), created: isoLocal(d), body }))
       try { linkSync(tmp, final) } catch (e) { unlinkSync(tmp); if ((e as NodeJS.ErrnoException).code === 'EEXIST') continue; throw e }
       unlinkSync(tmp)
       return { id, rel: relative(this.d.root, final).startsWith('..') ? final : relative(this.d.root, final) }
@@ -254,19 +297,24 @@ export class BridgeHub {
    * 나가는 편지 — `bridge_send`. 이 호스트가 주인이 아니어도 쓴다(편지 파일은 Dropbox 로 건너간다 · 한 파일은 한 쪽만).
    * @returns 만든 편지 id 와 볼트 기준 경로
    */
-  send(peerId: string, fromBot: string, o: { kind: string; text: string; title?: string; re?: string; urgent?: boolean; needsHuman?: boolean }): { id: string; rel: string } {
+  send(peerId: string, fromBot: string, o: { kind: string; text: string; title?: string; re?: string; urgent?: boolean; needsHuman?: boolean }, via: { channel?: boolean } = {}): { id: string; rel: string } {
     const peer = this.peer(peerId)
     if (!peer || !peer.enabled) throw new Error(`그런 연결이 없어요: ${peerId}${this.cfg.peers.length ? ` (있는 것: ${this.cfg.peers.map((p) => p.id).join(', ')})` : ' — .claude/bridges.yml 에 연결이 없어요'}`)
-    if (!peer.maySend.includes(fromBot)) throw new Error(`이 봇은 «${peer.name}» 에게 편지를 보낼 수 없어요 — may_send 에 없어요(${peer.maySend.join(', ') || '없음'}). 오케스트레이터를 거치세요`)
+    // DA · 그 상대의 채널 세션(폴더 봇에 바로 온 ask 포함)은 자기 상대에게 답할 수 있다 — 채널은 상대가 부른 봇에만 생긴다(may_ask)
+    if (!peer.maySend.includes(fromBot) && !via.channel) throw new Error(`이 봇은 «${peer.name}» 에게 편지를 보낼 수 없어요 — may_send 에 없어요(${peer.maySend.join(', ') || '없음'}). 오케스트레이터를 거치세요`)
     const kind = String(o.kind) as LetterKind
     if (!FBMF_KINDS.includes(kind) || kind === 'heartbeat') throw new Error(`kind 는 ${FBMF_KINDS.filter((k) => k !== 'heartbeat').join(' · ')} 중 하나예요`)
     if (!String(o.text ?? '').trim()) throw new Error('본문(text)이 비었어요')
-    const out = this.writeLetter(peer, 'from-folderbot', fromBot === 'orch' ? 'orch' : fromBot, fromBot === 'orch' ? 'orch' : `folderbot:${fromBot}`, peer.id, { ...o, kind })
-    this.afterSend(peer, out, kind, o)
+    // DA · ask 의 답이면 — 기다리는 쪽이 살아 있을 때만 `delivered: live`. 묻기와 돌려주기 사이에 비동기 틈이 없다(host/ask.ts)
+    const ask = o.re ? this.d.askState?.(peer.id, normId(o.re)) ?? null : null
+    const out = this.writeLetter(peer, 'from-folderbot', fromBot === 'orch' ? 'orch' : fromBot, fromBot === 'orch' ? 'orch' : `folderbot:${fromBot}`, peer.id, { ...o, kind, ...(ask ? { via: 'ask' as const } : {}), ...(ask?.live ? { delivered: 'live' as const } : {}) })
+    if (ask && o.re) { try { this.d.askAnswered?.(peer.id, normId(o.re), { reply: out.id, rel: out.rel, answer: String(o.text).trim(), needsHuman: !!o.needsHuman }) } catch (e) { this.d.log(`연결 «${peer.name}» ask 답 돌려주기 실패 · ${(e as Error).message}`) } }
+    // DA · `--urgent` 로 물었는데 기다리는 쪽이 이미 떠났다 — 이 답 편지로 상대를 깨운다(같은 길이라 10분에 한 통 규칙도 같다)
+    this.afterSend(peer, out, kind, ask?.wake ? { ...o, urgent: true } : o)
     return out
   }
-  private afterSend(peer: PeerDef, out: { id: string; rel: string }, kind: string, o: { urgent?: boolean; needsHuman?: boolean }): void {
-    if (o.urgent && peer.wake) { try { this.d.wake?.(peer, { id: out.id, kind, path: out.rel, urgent: true, needs_human: !!o.needsHuman }) } catch (e) { this.d.log(`연결 «${peer.name}» 깨우기 실패 · ${(e as Error).message}`) } }
+  private afterSend(peer: PeerDef, out: { id: string; rel: string }, kind: string, o: { urgent?: boolean; needsHuman?: boolean; title?: string }): void {
+    if (o.urgent && peer.wake) { try { this.d.wake?.(peer, { id: out.id, kind, path: out.rel, urgent: true, needs_human: !!o.needsHuman, ...(o.title ? { title: o.title } : {}) }) } catch (e) { this.d.log(`연결 «${peer.name}» 깨우기 실패 · ${(e as Error).message}`) } }
     this.changed()
   }
 
