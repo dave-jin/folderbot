@@ -22,6 +22,7 @@ import type { DocReq } from '../core/docReq'
 import { channelSpawn, channelVerdict, type Trust } from '../core/bridges'
 import { compactReason, rotateReason } from '../core/compact'
 import { extraComms, forkHandover, migrateArea, takeoverMode } from '../core/autoArea'
+import { askAdd, askClose, askSeen, type AskMark } from '../core/askMark'
 import { atomicWrite, dataDir, ensureDir } from './paths'
 import { rewindPoint } from '../core/rewind'
 import { slashCommands } from './slash'
@@ -298,6 +299,8 @@ export interface SessionRec {
   rewindAt?: string
   /** CI-2 · 호스트가 내려가며 끊은 턴 — 다음에 뜰 때 «끊겼어요» 로 닫는다(`core/cutTurn`) */
   cut?: { at: number }
+  /** DB · `folderbot ask` 로 온 편지 — 묻는 중·답함을 화면 맨 위에 올린다(`core/askMark`) */
+  asks?: AskMark[]
   id: string
   botId: string
   name: string
@@ -432,7 +435,7 @@ export class SessionManager extends EventEmitter {
   }
   info(r: SessionRec): SessionInfo {
     const w = this.workers.get(r.id)
-    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, inflight: r.inflight, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, ...(r.comm ? { comm: true } : {}), ...(r.channel ? { channel: r.channel } : {}), ...(r.delegatedFrom && !r.comm ? { delegated: true } : {}), ...(r.adopted ? { adopted: true } : {}), ...(r.exChannel ? { exChannel: true } : {}), ...(r.exComm ? { exComm: true } : {}), ...(r.queue?.length ? { queue: r.queue } : {}), ...(r.held ? { held: true } : {}), ...(r.stopped ? { stopped: r.stopped } : {}), activity: r.activity, turnStartedAt: r.turnStartedAt, ...(r.docReq ? { docReq: r.docReq } : {}), model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending, ...(r.slash?.length ? { slashN: r.slash.length } : {}) }
+    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, inflight: r.inflight, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, ...(r.comm ? { comm: true } : {}), ...(r.channel ? { channel: r.channel } : {}), ...(r.delegatedFrom && !r.comm ? { delegated: true } : {}), ...(r.adopted ? { adopted: true } : {}), ...(r.exChannel ? { exChannel: true } : {}), ...(r.exComm ? { exComm: true } : {}), ...(r.queue?.length ? { queue: r.queue } : {}), ...(r.held ? { held: true } : {}), ...(r.stopped ? { stopped: r.stopped } : {}), activity: r.activity, turnStartedAt: r.turnStartedAt, ...(r.docReq ? { docReq: r.docReq } : {}), model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending, ...(r.slash?.length ? { slashN: r.slash.length } : {}), ...(r.asks?.length ? { asks: r.asks } : {}) }
   }
   get(id: string): SessionRec | undefined { return this.recs.get(id) }
   /** 볼트 전체의 세션 기록 — 「지난 대화 찾기」 가 훑는다(읽기만) */
@@ -537,6 +540,22 @@ export class SessionManager extends EventEmitter {
     if ((r.readAt ?? 0) >= next) return r
     r.readAt = next; this.persist(r); this.emit('sessions', r.botId)
     return r
+  }
+  /** DB · ask 편지가 이 세션에 들어갔다 — 화면 맨 위 «묻는 중» */
+  markAsk(id: string, m: { id: string; by: string; at: number }): void {
+    const r = this.recs.get(id); if (!r) return
+    const next = askAdd(r.asks, m); if (next === r.asks) return
+    r.asks = next; this.persist(r); this.emit('sessions', r.botId)
+  }
+  /** DB · 턴이 끝났다 — 이미 들어간 편지(`entered`)의 «묻는 중» 을 «답함» 으로 */
+  closeAsks(r: SessionRec, entered: (letterId: string) => boolean): void {
+    if (!r.asks?.length) return
+    if (askClose(r.asks, entered, { now: Date.now(), err: r.state === 'error' })) this.persist(r)   // 목록 알림은 부르는 쪽(턴 끝 broadcast)이 한다
+  }
+  /** DB · Dave 가 그 세션을 열었다 — «답함» 을 내리고 원래 자리로 */
+  seenAsks(id: string): void {
+    const r = this.recs.get(id); if (!r) return
+    if (askSeen(r.asks)) { this.persist(r); this.emit('sessions', r.botId) }
   }
   /**
    * 🔴 **AV · 이 봇의 모든 세션을 읽음으로** (2026-09-25 Dave 승인: 「모두 읽음」 단추).

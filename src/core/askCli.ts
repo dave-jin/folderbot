@@ -106,9 +106,16 @@ export function askKind(o: Pick<AskArgs, 're' | 'noWait'>): 'reply' | 'report' |
 /** 편지 id 의 보낸쪽 — `--wait <id>` 에 `--as` 가 없을 때 상대를 id 에서 읽는다(`20261024-101700-halili-a3f9` → halili) */
 export function peerOfId(id: string): string | undefined { return /^\d{8}-\d{6}-([a-z0-9-]+)-[0-9a-f]{4}$/.exec(id)?.[1] }
 
-/** 이 상대의 마지막 ask — 편지 id 는 시각순이라 가장 큰 것 */
-export function lastAskId(letters: readonly { id: string; from: string; via?: string }[], peerId: string): string | undefined {
-  return letters.filter((l) => l.via === 'ask' && l.from === peerId && peerOfId(l.id) === peerId).map((l) => l.id).sort().pop()
+/**
+ * 이 상대의 마지막 ask — 편지 id 는 초까지의 시각순이라 가장 큰 것.
+ * ⚠ 같은 초에 둘을 보내면 id 뒤 네 자리(난수)가 순서를 정해 버린다 — 그때만 파일을 쓴 시각(`at` · ms)으로 가른다
+ *   (2026-10-25 스모크에서 같은 초의 앞 편지를 «마지막» 으로 집었다).
+ */
+export function lastAskId(letters: readonly { id: string; from: string; via?: string; at?: number }[], peerId: string): string | undefined {
+  const sec = (id: string) => id.slice(0, 15)
+  return letters.filter((l) => l.via === 'ask' && l.from === peerId && peerOfId(l.id) === peerId)
+    .sort((a, b) => (sec(a.id) < sec(b.id) ? -1 : sec(a.id) > sec(b.id) ? 1 : (a.at ?? 0) - (b.at ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)))
+    .pop()?.id
 }
 
 /** 창구 응답(받기 전 거절이면 그 상태 코드 · 받았으면 마지막 줄의 state) → 끝 상태 */

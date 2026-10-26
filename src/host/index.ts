@@ -1,4 +1,4 @@
-import { existsSync, linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { ASK_CARD, ASK_EXIT, ASK_TIMEOUT_MAX, askKind, exitOf, firstLine, lastAskId, parseAskArgs, peerOfId } from '../core/askCli'
@@ -69,7 +69,8 @@ const mailboxOf = (root: string, p: PeerDef) => (isAbsolute(p.mailbox) ? p.mailb
 
 /** 우편함 한쪽의 편지(이번 달·지난달) — 머리말이 닫힌 것만 */
 function readSide(root: string, peer: PeerDef, side: 'to-folderbot' | 'from-folderbot') {
-  return letterFiles(join(mailboxOf(root, peer), side), false, new Date()).map((f) => { try { const t = readFileSync(f, 'utf8'); return frontMatterClosed(t) ? parseLetter(t, { id: normId(f.split('/').pop()!.replace(/\.(md|txt)$/i, '')), from: side === 'to-folderbot' ? peer.id : 'folderbot' }) : null } catch { return null } }).filter((l): l is NonNullable<typeof l> => !!l)
+  // `at` — 파일을 쓴 시각(ms). 같은 초에 쓴 편지끼리 «마지막» 을 가를 때만 쓴다(`lastAskId`)
+  return letterFiles(join(mailboxOf(root, peer), side), false, new Date()).map((f) => { try { const t = readFileSync(f, 'utf8'); return frontMatterClosed(t) ? { ...parseLetter(t, { id: normId(f.split('/').pop()!.replace(/\.(md|txt)$/i, '')), from: side === 'to-folderbot' ? peer.id : 'folderbot' }), at: statSync(f).mtimeMs } : null } catch { return null } }).filter((l): l is NonNullable<typeof l> => !!l)
 }
 
 /**

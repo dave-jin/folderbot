@@ -587,6 +587,8 @@ try {
     if (!/예약된 루틴/.test(JSON.stringify(mv))) fail('🔴 BS: 루틴 턴에서 folder_move 가 막히지 않았다 · ' + JSON.stringify(mv))
     if (!existsSync(join(root, '1. Inbox/예시랩_자문자료.txt'))) fail('🔴 BS: 막혔다면서 파일이 옮겨졌다')
     if (rfWas === null) rmSync(rf); else writeFileSync(rf, rfWas)
+    // 회차가 끝난 뒤 지운다 — remove() 는 state 를 안 내서, 도는 중에 지우면 아래 BR-1 의 end 줄이 안 남는다(바쁜 맥미니에서 3번 중 2번 · 10/26)
+    for (let i = 0; i < 100 && (await api('/bots/orch/sessions')).find((x) => x.id === rsid)?.state === 'running'; i++) await wait(100)
     await api(`/sessions/${rsid}`, undefined, 'DELETE').catch(() => {})
     await wait(700)
     ok('BK · 오케스트레이터 routine_add 세 번 = routines.yml 셋 · 루트 .bot.yml 없음 · 손으로 고치면 따라옴 · BS 루틴 턴의 folder_move 거절')
@@ -771,11 +773,17 @@ try {
     const n0 = (await api(`/sessions/${orchChan.id}/chat`)).items.filter((it) => it.kind === 'user' && it.text.includes(`id="${j0.id}"`)).length
     if (n0 !== 1) fail(`🔴 DA S0: 같은 ask 편지가 ${n0}번 들어갔다(폴링이 다시 넣었다)`)
     const took0 = Date.now() - t0
+    // DB · 화면 맨 위 «묻는 중 → 답함» — 세션 기록의 ask 표시가 답과 함께 닫혔다
+    { const m = ((await api('/bots/orch/sessions')).find((x) => x.channel === 'halili')?.asks ?? []).find((a) => a.id === j0.id)
+      if (!m || m.by !== '할일이' || !m.doneAt) fail('🔴 DB: S0 ask 가 오케스트레이터 채널 세션에 «답함» 으로 안 남았다 · ' + JSON.stringify(m)) }
     // S1 · 폴더 봇에 바로
     const sessWas = new Set((await api(`/bots/${bot.id}/sessions`)).map((x) => x.id))
     const s1 = await ask(['--as', 'halili', '--to', '제품_Rondo', '--timeout', '30', '시험 S1 · state.md 다음 작업 첫 줄'])
     if (s1.code !== 0 || !s1.out) fail('🔴 DA S1: 폴더 봇에 바로 물었는데 답이 없다 · ' + JSON.stringify(s1))
     const fbChan = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.channel === 'halili')
+    if (!(fbChan?.asks ?? []).some((a) => a.doneAt)) fail('🔴 DB: S1 폴더 봇에 바로 온 ask 가 그 채널 세션에 «답함» 표시로 안 남았다 · ' + JSON.stringify(fbChan?.asks))
+    { const r = await api(`/sessions/${fbChan.id}/ask-seen`, {}); const after = (await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === fbChan.id)
+      if (!r.ok || !(after.asks ?? []).every((a) => !a.doneAt || a.seen)) fail('DB: ask-seen 이 답한 표시를 안 내렸다 · ' + JSON.stringify(after.asks)) }
     if (!fbChan || fbChan.name !== '✅ 할일이 채널' || fbChan.permissionMode !== 'default') fail('🔴 DA S1: 폴더 봇에 «✅ 할일이 채널»(propose 울타리)이 안 생겼다 · ' + JSON.stringify(fbChan))
     const fbText = (await api(`/sessions/${fbChan.id}/chat`)).items.filter((it) => it.kind === 'user').map((it) => it.text).join('\n')
     if (!/제품_Rondo 봇에 바로 왔다/.test(fbText) || !/via="ask"/.test(fbText)) fail('DA S1: 폴더 봇 채널 묶음에 «바로 왔다»·via 규칙이 없다 · ' + fbText.slice(0, 300))
@@ -799,6 +807,10 @@ try {
     if (sx.code !== 3 || !/못 찾았어요/.test(sx.err)) fail('DA: 없는 봇에 물었는데 exit 3 이 아니다 · ' + JSON.stringify(sx))
     // S2 · 기본값(50초)으로 55초짜리 일 — 50초에 exit 2. 그 50초 동안 S3(메일 · 우편함 to-folderbot 에 편지를 안 만든다)를 함께 잰다
     const s2p = ask(['--as', 'halili', '시험 S2 · 느린일 55초'])
+    // DB 완료 기준 1 · 3초 안에 «묻는 중» 이 목록(세션 기록)에 뜬다
+    { const t = Date.now(); let open = null
+      while (!open && Date.now() - t < 3000) { open = ((await api('/bots/orch/sessions')).find((x) => x.channel === 'halili')?.asks ?? []).find((a) => !a.doneAt); if (!open) await wait(100) }
+      if (!open) fail('🔴 DB: ask 를 보내고 3초 안에 «묻는 중» 표시가 안 떴다') }
     // S3 · 급한 편지 → 긴급 메일 한 통 · 10분 안 두 번째는 안 보낸다
     const gl = join(data, 'gog-calls.log')
     const mails = (to) => (existsSync(gl) ? readFileSync(gl, 'utf8') : '').split('gmail send ').slice(1).filter((c) => c.includes(`--to ${to} `))   // 본문에 줄바꿈이 있어 한 통이 여러 줄이다
@@ -828,6 +840,7 @@ try {
     if (tz.code !== 2 || !ID.test(tz.first) || tz.ms > 5_000) fail('🔴 DA S2: --timeout 0 이 한 번 보고 바로 2 로 끝나지 않았다 · ' + JSON.stringify(tz))
     const t9 = await ask(['--as', 'halili', '--timeout', '900', '--no-wait', '시험 S2 · 900'])
     if (t9.code !== 0 || !ID.test(t9.first) || !/720 초로 줄였어요/.test(t9.err)) fail('🔴 DA S2: --timeout 900 이 720 으로 줄었다고 안 찍었다 · ' + JSON.stringify(t9))
+    if (!((await api('/bots/orch/sessions')).find((x) => x.channel === 'halili')?.asks ?? []).some((a) => a.id === t9.first)) fail('🔴 DB: --no-wait 로 보낸 ask 가 «묻는 중» 표시로 안 남았다 · ' + t9.first)
     // --urgent 로 물었는데 기다리는 쪽이 떠났다 — 답 편지가 생길 때 긴급 메일(다른 상대 grok2 · 자기 10분 한 통 규칙)
     const su = await ask(['--as', 'grok2', '--urgent', '--timeout', '0', '시험 · 급한데 늦은 답 · 느린일'])
     if (su.code !== 2) fail('DA: 급한 ask 를 --timeout 0 으로 물었는데 2 가 아니다 · ' + JSON.stringify(su))
@@ -895,7 +908,8 @@ try {
     if (!vs || vs.letters < 2 || typeof vs.unread !== 'number') fail('BQ-9: 레일 줄 값이 이상하다 · ' + JSON.stringify(vs))
     // 감시기 자동 보고 두 통 — 편지 창은 이어진 감시기 편지를 한 줄로 접는다(A 대화처럼 · 2026-10-19)
     { const outM = join(root, '3. Area/자동화/싱크/from-folderbot', month); mkdirSync(outM, { recursive: true })
-      for (const [i, n] of [[1, 2], [2, 3]]) writeFileSync(join(outM, `${ts.slice(0, -2)}0${i}-ops-watch-00${i}a.md`), `---\nfbmf: 1\nfrom: ops-watch\nto: auto\nkind: report\ntitle: 📤 폴더 봇 보고 ${n}건\n---\n- 감시기 줄 ${i}\n`) }
+      // 시각은 그날 00:00:0i — 지금 분의 01·02초로 찍으면 분이 막 바뀐 때 실제 시각 편지가 둘 사이에 끼어 접기가 갈린다(10/26 18:07:00 에 실제로)
+      for (const [i, n] of [[1, 2], [2, 3]]) writeFileSync(join(outM, `${ts.slice(0, 9)}00000${i}-ops-watch-00${i}a.md`), `---\nfbmf: 1\nfrom: ops-watch\nto: auto\nkind: report\ntitle: 📤 폴더 봇 보고 ${n}건\n---\n- 감시기 줄 ${i}\n`) }
     // ── 화면 — 데스크톱 레일 «연결» 절 → 스레드 → 쓰기 · 설정 › 연결 마법사
     try {
       const { chromium } = await import('playwright-core')
@@ -1729,6 +1743,37 @@ try {
           await ph.screenshot({ path: 'test/tmp/i2-after.png' }); await ph.close()
           await fetch(base + `/api/sessions/${sidI}`, { method: 'DELETE' }); await pg.evaluate((h) => { location.hash = h }, hashBefore); await wait(600)
           ok('I 줄내림 — ⇧⏎ 한 번에 · 빈 줄 유지 · 조합 중 확정+줄 · ⏎ 보내기 불변 · 폰 줄 5번에도 마지막 메시지·캐럿 보임')
+        }
+        /**
+         * 🔴 DK · 폰 푸시를 누르면 그 세션으로 (2026-10-26 Dave «알림을 클릭했을 때 해당 섹션으로 바로 이동하지 않는 버그»).
+         *    iOS 는 워커의 navigate 가 실패하고 openWindow 가 해시를 버린다 — 워커가 캐시 칸(`fb-open`)에 적은 자리를 화면이 꺼내 간다.
+         *    여기서는 워커 대신 화면에서 칸을 적고 ① 떠 있던 앱(포커스) ② 닫혀 있던 앱(해시 없는 첫 로드) ③ 메시지 ④ 낡은 칸을 잰다.
+         *    되돌리면(App 의 watchPushOpen 을 빼면) ①②③ 이 빨개진다.
+         */
+        {
+          const sidA = (await api(`/bots/${bot.id}/sessions`, { name: 'dk-a' })).id, sidB = (await api(`/bots/${bot.id}/sessions`, { name: 'dk-b' })).id
+          const ph = await br.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }); await ph.addInitScript(() => { localStorage.setItem('folderbot:token', 'x') })
+          const put = (sid, ago = 0) => ph.evaluate(async ([b, s, a]) => { const c = await caches.open('fb-open'); await c.put('/__fb-open', new Response(JSON.stringify({ botId: b, sessionId: s, at: Date.now() - a }))) }, [bot.id, sid, ago])
+          const sOf = async () => { for (let i = 0; i < 20; i++) { const s = await ph.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('s')); if (s) return s; await wait(150) } return null }
+          const left = () => ph.evaluate(async () => !!(await (await caches.open('fb-open')).match('/__fb-open')))
+          await ph.goto(base + `/#bot=${bot.id}&s=${sidA}`); await ph.waitForSelector('.composer .cin'); await wait(600)
+          // ① 떠 있던 앱 — 다시 앞으로 나오면(포커스) 칸의 세션으로
+          await put(sidB); await ph.evaluate(() => window.dispatchEvent(new Event('focus'))); await wait(500)
+          if ((await sOf()) !== sidB || (await left())) fail('DK-1: 떠 있던 앱이 앞으로 나와도 알림 세션으로 안 갔다(또는 칸이 남았다) ' + (await ph.evaluate(() => location.hash)))
+          // ② 닫혀 있던 앱 — iOS 처럼 해시 없이 첫 화면으로 떠도 칸의 세션으로
+          await put(sidA); await ph.goto(base + '/'); await wait(2200)
+          if ((await sOf()) !== sidA) fail('DK-2: 닫혀 있던 앱이 해시 없이 떴을 때 알림 세션으로 안 갔다 ' + (await ph.evaluate(() => location.hash)))
+          const chatShown = await ph.evaluate(() => { const c = document.querySelector('.composer'); if (!c) return false; const r = c.getBoundingClientRect(); return r.width > 0 && r.bottom > 0 && r.top < innerHeight })
+          if (!chatShown) fail('DK-2: 세션으로는 갔는데 폰 화면이 대화 칸이 아니다')
+          // ③ 메시지 — 워커가 떠 있는 화면에 바로 보낸 것
+          await ph.evaluate(([b, s]) => navigator.serviceWorker.dispatchEvent(new MessageEvent('message', { data: { type: 'fb:open', botId: b, sessionId: s, at: Date.now() } })), [bot.id, sidB]); await wait(400)
+          if ((await sOf()) !== sidB) fail('DK-3: 워커 메시지로 알림 세션에 안 갔다')
+          // ④ 5분 넘은 칸은 버린다 — 옛 알림 자리로 끌려가지 않는다
+          await put(sidA, 6 * 60_000); await ph.evaluate(() => window.dispatchEvent(new Event('focus'))); await wait(500)
+          if ((await sOf()) !== sidB) fail('DK-4: 5분 넘은 칸으로 끌려갔다')
+          await ph.close()
+          for (const x of [sidA, sidB]) await fetch(base + `/api/sessions/${x}`, { method: 'DELETE' })
+          ok('DK 폰 푸시 → 그 세션 — 떠 있던 앱(포커스) · 닫혀 있던 앱(해시 없는 첫 로드, 대화 칸) · 워커 메시지 · 5분 넘은 칸은 버림')
         }
         /**
          * 🔴 **K · 채팅 렌더링** (2026-09-19) — `![[그림]]` 은 그림으로, `[[노트]]` 는 눌러서 문서 창으로(공유 렌더러 core/wikilinks ·

@@ -35,6 +35,9 @@ import { canStartSwipe, dragProgress, fromLeftEdge, lockOf, scrollableEats, stag
 import { curOf, dismiss, goTo, navInit, type Nav, type Page } from '../core/navstack'
 import { botUnread, openAnchor, shouldMarkRead, MOOD_RANK, recentDone, type BotMood } from '../core/unread'
 import { autoKind, openSessionOf, sessArea, takeoverMode } from '../core/autoArea'
+import { askBadge } from '../core/askMark'
+import { AskChip, AskStrip, askOpened } from './askUi'
+import { watchPushOpen } from './pushOpen'
 import { chatPhase, nextPhaseIn, SYNC_DOT_AFTER_MS, type ChatPhase } from '../core/loadPhase'
 import { clampDockOffset, isDockDrag, readDockOffset } from '../core/dock'
 import { tabActive } from '../core/tabbar'
@@ -352,6 +355,18 @@ function Main() {
     return sid
   })()
   /**
+   * DB · 다른 길(세션 줄·알림·검색)로 «답함» ask 세션에 들어와도 맨 위 줄을 내린다 — **사람이 그 세션을 골라 들어온 순간**에만.
+   * ⚠ 폴더를 열 때 앱이 스스로 고른 세션(`openSessionOf` · 주소에 세션 없음)은 연 것으로 치지 않는다 —
+   *   오케스트레이터에 채팅이 없으면 채널 세션이 저절로 서서, 아무도 안 연 «답함» 이 사라졌다(2026-10-25 캡처).
+   */
+  const askSeenFor = useRef('')
+  useEffect(() => {
+    if (!sessionId || hash.s !== sessionId || askSeenFor.current === sessionId) return
+    askSeenFor.current = sessionId
+    const cur = sessions.find((x) => x.id === sessionId)
+    if (cur && askBadge(cur)?.state === 'answered') askOpened(sessionId)
+  }, [sessionId, hash.s])
+  /**
    * 🔴 **BH · 알림이 가리키는 세션이 화면 목록에 없으면 목록을 곧바로 새로 받는다** (2026-09-27 Dave · 스크린샷_1759:
    *    *«알림을 클릭하면 해당 폴더봇으로는 가는데, 세션이 여러 개 있을 때 특정 세션으로는 이동을 못해»* — 맥 배너).
    *    배너는 **셸**(메인 프로세스)의 이벤트 줄로 뜨는데, 화면(렌더러)의 줄은 맥이 자고 깨거나 창이 오래 숨어 있으면 늦는다.
@@ -465,6 +480,9 @@ function Main() {
   const navSelf = useRef(false)
   const setHashSelf = (p: Record<string, string>) => { navSelf.current = true; setHash(p) }
   const go = (b: string, sid?: string) => { picked.current = { bot: '' }; setHashSelf(sid ? { bot: b, s: sid } : { bot: b }); setView('chat') }
+  /** DK · 폰 푸시를 누르면 그 세션으로 — 워커가 적어 둔 칸을 앞에 나올 때마다 꺼낸다(`pushOpen.ts` 머리말) */
+  const goRef = useRef(go); goRef.current = go
+  useEffect(() => watchPushOpen(() => goRef.current), [])
   /** BQ-9 · 연결 상대의 편지 스레드 — 가운데 칸에 연다. 받는 봇(보통 오케스트레이터)으로 옮겨 오른쪽 패널에 그 채널 세션이 보이게 */
   const peerId = hash.peer ?? ''
   const openPeer = (p: PeerView) => { picked.current = { bot: '' }; setHashSelf({ bot: p.deliverBot, peer: p.id }); setView('chat') }
@@ -973,7 +991,7 @@ function Main() {
   // H · 같은 부품을 세 단계가 나눠 쓴다 — 넓음은 흐름 안, 중간·좁음은 서랍 안. 데이터(순서·표시 이름·확인 대기 점)는 한 곳(rows)
   const homeEl = <Home onPeer={openPeer} rows={rows} bot={bot} go={go} setModal={setModal} waiting={waiting} onAsk={(text) => { go('orch'); if (text) setSendReq({ botId: 'orch', text, n: Date.now() }); else setFocusReq(Date.now()) }} say={say} railSort={railSort} setRailSort={setRailSort} prefetch={prefetch} />
   const sidebarEl = <div className="col side left" style={{ width: stage === 'wide' ? fit.sb : undefined }}>
-        <div className="hdr"><FolderBot color="#e08850" size={16} mood={waiting ? 'wait' : 'idle'} mono /><span className="ttl">Folder Bot</span><span className="sp" /><div className="acts"><button className="ib" onClick={closeSb} title="목록 접기 (⌘B)"><Icon n="panel" size={14} /></button></div></div>
+        <div className="hdr"><FolderBot color="#e08850" size={16} mood={waiting ? 'wait' : 'idle'} mono /><span className="ttl">Folder Bot</span><span className="sp" /><AskChip go={go} /><div className="acts"><button className="ib" onClick={closeSb} title="목록 접기 (⌘B)"><Icon n="panel" size={14} /></button></div></div>
         <div style={{ padding: '10px 8px 0' }}>
           {/* 🔴 검색은 맨 위 (2026-10-02 Dave · 시안 A). CJ (2026-10-16) — «알림»·«세션 정리» 줄은 네 칸(알림 · 세션)이 흡수했다.
               같은 숫자가 두 번 보이지 않게 뺐다. ⌘⇧U · 명령 팔레트 · 접힌 레일 띠의 종은 남는다(기획안 §2-5) */}
@@ -987,6 +1005,8 @@ function Main() {
         {/* 정렬 갈래 — 마감일(2026-10-01 «이름» 대체) · 사용자(끌어 놓기, 구 «직접») · 상태. ⚠ 끌어 놓으면 «사용자» 로 알아서 넘어간다 */}
         <SortBar k={railSort} set={setRailSort} />
         <div className="sb-list">
+          {/* DB · 바깥 상대(할일이)가 묻는 중·방금 답한 세션 — 봇 섹션보다 위에 한 번만 보면 찾게 */}
+          <AskStrip go={go} />
           {rows.map(([sec, list]) => <div key={sec}>
             <div className="secl">{sec === '관제' ? '관제' : sec}</div>
             {list.map(({ b, sum }) => <button key={b.id} data-id={b.id} className={`brow ${b.id === bot.id && view !== 'list' && !peerId ? 'on' : ''} ${sum.unread ? 'unread' : ''} ${overBot === b.id ? 'dover' : ''} ${dragBot === b.id ? 'dsrc' : ''}`}
@@ -1343,13 +1363,14 @@ function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, 
           {hits.length ? orchLine(false) : null}
         </> : <div className="mfhint">폴더 이름이나 경로를 쳐 보세요 — 엔터는 맨 위 폴더로, 맞는 폴더가 없으면 오케스트레이터에게 보내요</div>}
       </div> : <>
-      <div className="mtitle">Folder Bot</div>
+      <div className="mtitle">Folder Bot<AskChip go={go} /></div>
       {/* CJ · 봇·후보 수는 폴더봇 칸이 말한다 — 같은 숫자를 두 번 안 쓴다 */}
       <div className="msub"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} style={{ width: 7, height: 7 }} />{s.hostName}<MrBadge /></div>
       {usage && usage.tools.length ? <div style={{ padding: '0 16px 12px' }}><UsageStrip u={usage} onOpen={() => setUSheet(true)} /></div> : null}
       <ActionTiles go={go} setModal={setModal} say={say} />
       {/* AZ (2026-09-25 Dave: «모바일에서도 데스크톱처럼 정렬 버튼») — 레일과 **같은 값**(`fb:railsort`)을 쓴다. 폰에서 고르면 맥 레일도 그 차례다(이 기기 기준) */}
       <SortBar k={railSort} set={setRailSort} />
+      <AskStrip go={go} phone />
       {rows.map(([sec, list]) => <div key={sec}>
         <div className="secl">{sec}</div>
         {list.map(({ b, sum }) => {

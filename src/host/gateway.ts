@@ -1010,6 +1010,7 @@ export class Gateway {
         if (allow && pend.ask) return json(400, { error: '질문은 허용이 아니라 답으로 보내 주세요' })
         h.sessions.respondPermission(r, String(b.requestId), allow, b.always === true); return json(200, { ok: true })
       }
+      if (sub === 'ask-seen' && m === 'POST') { h.sessions.seenAsks(r.id); return json(200, { ok: true }) }   // DB · Dave 가 연 ask 세션 — 맨 위에서 내린다
       /**
        * S · 여기까지 읽었다 (2026-09-21 Dave) — 화면이 맨 아래에 닿고 턴이 끝나면 한 번 부른다.
        * ⚠ 같이 그 세션의 **알림도 읽음**으로 넘긴다 — 대화를 다 읽었는데 🔔 에 같은 건이 남아 있으면 배지가 거짓말을 한다(실제로 50 이 쌓였다).

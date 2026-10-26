@@ -6,6 +6,7 @@ import { api, pushWhyText, setToken, subscribePush, type PushWhy } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { Mark } from './Brand'
 import { ICON_LABEL, ICON_PX, useIconSize, useTheme, type IconSize, type Theme } from './theme'
+import { useAskPrefs } from './askUi'
 import { ACT_ICON, ACT_LABEL, SWIPE_DEFAULT, useSwipeCfg, type SwipeAct, type SwipeSlot } from './swipe'
 import { CacheRow } from './fileCopy'
 import { fmtTime, useStore } from './store'
@@ -137,6 +138,9 @@ export const INDEX: { sec: SecId; t: string; d: string }[] = [
   { sec: 'general', t: '메인(호스트) 이름', d: '모든 기기에 같이 보이는 이름' },
   { sec: 'general', t: '테마', d: '시스템 라이트 다크 화면' },
   { sec: 'general', t: '폴더봇 크기', d: '레일 아이콘 크게 작게 화면' },
+  { sec: 'general', t: 'ask 세션 맨 위로', d: '할일이 folderbot ask 묻는 중 답함 자동화 묶음 숨음 목록 위' },
+  { sec: 'general', t: 'ask 대기 칩', d: '할일이 folderbot ask 기다리는 세션 수 칩' },
+  { sec: 'general', t: 'ask 동안 자동화 펼치기', d: '할일이 folderbot ask 자동화 묶음 펼침 강조' },
   { sec: 'host', t: '볼트 루트', d: '봇이 사는 폴더 PARA' },
   { sec: 'host', t: '주소', d: '포트 접속 같은 망' },
   { sec: 'host', t: 'Tailscale', d: '밖에서 원격 접속 tailnet' },
@@ -220,6 +224,7 @@ function GeneralPane() {
   const { s, refresh } = useStore()
   const [host, setHost] = useState(s.hostName); const [msg, setMsg] = useState('')
   const [theme, setTheme] = useTheme(); const [sz, setSz] = useIconSize()
+  const [ap, setAp] = useAskPrefs()
   useEffect(() => { setHost(s.hostName) }, [s.hostName])
   const save = async (body: { hostName?: string }) => { try { await api('/names', { body }); await refresh(); setMsg('저장했어요') } catch (e) { setMsg((e as Error).message) } }
   return <>
@@ -233,6 +238,17 @@ function GeneralPane() {
     </Row>
     <Row t="폴더봇 크기" d="목록의 폴더봇 크기예요. 마우스를 올리면 한 번 더 커져서 표정이 보여요." at="dev">
       <span className="seg">{(['s', 'm', 'l'] as IconSize[]).map((v) => <button key={v} className={sz === v ? 'on' : ''} onClick={() => setSz(v)} title={`${ICON_PX[v]}px`}>{ICON_LABEL[v]}</button>)}</span>
+    </Row>
+    {/* DB · `folderbot ask` 로 바깥 상대가 묻는 세션 — 종전엔 접힌 «자동화» 묶음에 숨어 찾지 못했다 */}
+    <Group t="바깥에서 묻는 세션" />
+    <Row t="ask 세션 맨 위로" d="할일이가 folderbot ask 로 물으면 그 세션을 왼쪽 목록과 세션 목록 맨 위에 올려요. 답하고 10분이 지나거나 열면 원래 자리로 돌아가요." at="dev">
+      <span className="seg">{([[true, '켬'], [false, '끔']] as const).map(([v, l]) => <button key={l} className={ap.lift === v ? 'on' : ''} onClick={() => setAp({ lift: v })}>{l}</button>)}</span>
+    </Row>
+    <Row t="ask 대기 칩" d="목록 머리에 «ask 대기 N건» 을 띄워요. 누르면 기다리는 세션 목록이 열려요." at="dev">
+      <span className="seg">{([[true, '켬'], [false, '끔']] as const).map(([v, l]) => <button key={l} className={ap.chip === v ? 'on' : ''} onClick={() => setAp({ chip: v })}>{l}</button>)}</span>
+    </Row>
+    <Row t="ask 동안 자동화 펼치기" d="ask 가 도는 동안 세션 목록의 «자동화» 묶음을 저절로 펼치고 그 세션에 줄을 그어요." at="dev">
+      <span className="seg">{([[true, '켬'], [false, '끔']] as const).map(([v, l]) => <button key={l} className={ap.expand === v ? 'on' : ''} onClick={() => setAp({ expand: v })}>{l}</button>)}</span>
     </Row>
   </>
 }

@@ -1745,3 +1745,23 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .syncdot i { width:7px; height:7px; border-radius:50%; background:var(--run); animation:syncpu 1s ease-in-out infinite }
 @keyframes syncpu { 50% { opacity:.25 } }
 @media (prefers-reduced-motion: reduce) { .cghost > * { animation:none; opacity:.45 } .syncdot i { animation:none } }
+
+/* DB · ask 세션 보이기 (2026-10-25 Dave «계획대로 두 자리») — 왼쪽 목록·폰 첫 화면 맨 위 줄 · 세션 목록 맨 위 · 2안 칩.
+   ⚠ 줄은 말줄임 대신 접어 내린다 — 좁은 창에서도 «누가 묻는지 · 어느 폴더인지» 가 끝까지 읽혀야 찾는다. 색은 기존 변수만(다크·라이트 같이) */
+.askstrip { padding:0 0 6px } .askstrip .secl { color:var(--run) }
+.askrow { display:flex; align-items:center; gap:9px; width:100%; padding:6px 12px; border-radius:6px; text-align:left; color:var(--t); font-size:13px; background:color-mix(in srgb, var(--run) 10%, transparent) }
+.askrow + .askrow { margin-top:3px }
+.askrow:hover { background:color-mix(in srgb, var(--run) 18%, transparent) }
+.askrow.answered { background:color-mix(in srgb, var(--done) 12%, transparent) } .askrow.answered:hover { background:color-mix(in srgb, var(--done) 20%, transparent) }
+.askrow.err { background:color-mix(in srgb, var(--err) 12%, transparent) }
+.askrow .t { flex:1; min-width:0; display:flex; flex-wrap:wrap; column-gap:6px; row-gap:1px; line-height:1.35 }
+.askrow .t b { font-weight:600; color:var(--w); overflow-wrap:anywhere } .askrow .t .f { color:var(--t2); overflow-wrap:anywhere }
+.askrow .t .f::before { content:'· '; color:var(--t3) }
+.askrow .dot { flex:none }
+.askstrip.m { padding:0 12px 8px } .askstrip.m .askrow { padding:10px 12px; font-size:15px; border-radius:10px }
+.srow.asklift { height:auto; min-height:26px; align-items:flex-start; padding-top:4px; padding-bottom:4px; background:color-mix(in srgb, var(--run) 10%, transparent) }
+.srow.asklift.answered { background:color-mix(in srgb, var(--done) 12%, transparent) }
+.srow.asklift .n { white-space:normal; overflow-wrap:anywhere; color:var(--w) } .srow.asklift .n small { display:block; color:var(--t3); font-size:11px }
+.srow.askhl { box-shadow:inset 2px 0 0 var(--run) } .srow.askhl .n { color:var(--w) }
+.askchip { font-size:11px; line-height:18px; padding:0 7px; border-radius:9px; color:var(--run); border:1px solid color-mix(in srgb, var(--run) 45%, transparent); white-space:nowrap; flex:none }
+.askchip:hover { background:color-mix(in srgb, var(--run) 14%, transparent) }

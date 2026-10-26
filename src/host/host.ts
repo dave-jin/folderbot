@@ -193,7 +193,10 @@ export class Host {
         }
       }
       // DA · ask 로 온 편지가 든 턴이 끝났다 — bridge_send 로 답하지 않았으면 마지막 답으로 답 편지를 쓴다(기다리는 쪽에 돌려준다)
-      if (r.channel && prev === 'running' && r.state !== 'running' && r.state !== 'awaiting_input') this.askTurnEnded(r)
+      if (r.channel && prev === 'running' && r.state !== 'running' && r.state !== 'awaiting_input') {
+        this.askTurnEnded(r)
+        this.sessions.closeAsks(r, (id) => answerAfter(r.items as { kind: string; text?: string }[], id) !== null)   // DB · 화면 «묻는 중» → «답함»
+      }
       // L · 턴이 끝나면 사용량 캐시를 비운다 — 다음 /api/usage 가 새 기록을 훑어 60초 안에 원격 패널이 바뀐다
       if (prev === 'running' && r.state !== 'running') { invalidateUsage(); planNow(this.sessions.bin, true) }   // BD · 턴을 썼으니 실제 한도도 다시(60초 문턱 안에서)
       this.broadcast({ ev: 'sessions', botId: r.botId, sessions: this.sessions.list(r.botId) })
@@ -663,6 +666,8 @@ export class Host {
     const out = this.bridges.askNow(peerId, { ...o, to: bot.orchestrator ? 'orch' : bot.rel })
     // 기다리면 대기 창구에 · 기다리지 않아도 급하면 건다 — 답이 날 때 긴급 메일로 알리려고(설계 2판 §2)
     if ((wait || o.urgent) && out.sid) this.askDesk.track(out.id, { peerId, botId: bot.id, sid: out.sid, urgent: !!o.urgent })
+    // DB · 기다리든 안 기다리든(--no-wait 포함) 화면 맨 위에 «묻는 중» — 대기 창구와 따로 세션 기록에 단다
+    if (out.sid) this.sessions.markAsk(out.sid, { id: out.id, by: peer.name, at: Date.now() })
     return { ...out, bot: { id: bot.id, name: bot.name } }
   }
   /** DA · ask 편지가 든 턴이 끝났다 — 그 턴에서 bridge_send(re) 로 답하지 않은 편지는 마지막 답으로 답 편지를 쓴다 */

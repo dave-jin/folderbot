@@ -149,6 +149,10 @@ describe('CLI 인자 · 끝 상태 (core/askCli)', () => {
     const ls = [{ id: '20261024-101700-halili-a3f9', from: 'halili', via: 'ask' }, { id: '20261024-111700-halili-0001', from: 'halili' }, { id: '20261024-121700-n8n-0002', from: 'n8n', via: 'ask' }, { id: '20261024-091700-halili-0003', from: 'halili', via: 'ask' }]
     expect(lastAskId(ls, 'halili')).toBe('20261024-101700-halili-a3f9')
     expect(lastAskId(ls, 'nobody')).toBeUndefined()
+    // 같은 초에 둘 — 뒤 네 자리(난수)가 아니라 파일을 쓴 시각으로 가른다(2026-10-25 스모크)
+    const same = [{ id: '20261025-085931-halili-372c', from: 'halili', via: 'ask', at: 100 }, { id: '20261025-085931-halili-083c', from: 'halili', via: 'ask', at: 200 }]
+    expect(lastAskId(same, 'halili')).toBe('20261025-085931-halili-083c')
+    expect(lastAskId([{ ...same[0], id: '20261025-085932-halili-0000', at: 50 }, same[1]], 'halili')).toBe('20261025-085932-halili-0000')   // 초가 다르면 초가 먼저
     expect(firstLine('X', false)).toBe('X')
     expect(JSON.parse(firstLine('X', true, { bot: 'b' }))).toEqual({ id: 'X', state: 'queued', bot: 'b' })
   })

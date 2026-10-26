@@ -1,4 +1,5 @@
 /** Folder Bot — 호스트·클라이언트가 공유하는 순수 타입 (Electron/DOM 의존 없음) */
+import type { AskMark } from './askMark'
 import type { DocReq } from './docReq'
 
 export type SessionState = 'idle' | 'running' | 'awaiting_input' | 'done' | 'error'
@@ -133,6 +134,8 @@ export interface SessionInfo {
   delegated?: boolean
   /** BQ-4 · 연결(Bridge) 채널 세션이면 상대 id */
   channel?: string
+  /** DB · `folderbot ask` 로 온 편지 표시 — 묻는 중·답함이면 화면이 맨 위로 올린다(`core/askMark`) */
+  asks?: AskMark[]
   /** CC · 사람이 이어받아 채팅으로 옮긴 자동 세션 — 자동 정리에서 빠진다(`core/autoArea`) */
   adopted?: boolean
   /** CC · 갈아탄 옛 채널 · 봇마다 하나만 남긴 소통의 나머지 — 자동화 영역에 남고 7일 뒤 정리 */
