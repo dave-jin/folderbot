@@ -87,6 +87,7 @@ import { readTodo, todoDelete, todoDue, todoEdit, todoMeta, todoMove, todoToggle
 import { globParents, roleOf } from '../core/rules'
 import { createCommand, listCommandFiles, slashCommands } from './slash'
 import { globalHarness, harnessDetail, harnessRow } from './harness'
+import { cleanAnnotations } from '../core/askPreview'
 
 interface Client { res: ServerResponse; device: string }
 interface Who { ok: boolean; device: string; id: string; main: boolean }
@@ -1022,7 +1023,8 @@ export class Gateway {
         const pend = h.sessions.pendingOf(r.id).find((x) => x.requestId === String(b.requestId))
         if (!pend) return json(400, { error: '이미 끝난 질문이에요 — 새로 온 카드에 답해 주세요' })   // CQ
         if (!pend.ask) return json(400, { error: '기다리는 질문이 아니에요' })
-        h.sessions.respondAsk(r, String(b.requestId), (b.answers ?? {}) as Record<string, string>); return json(200, { ok: true })
+        const answers = (b.answers ?? {}) as Record<string, string>
+        h.sessions.respondAsk(r, String(b.requestId), answers, cleanAnnotations(b.annotations, answers)); return json(200, { ok: true })
       }
       if (sub === 'interrupt' && m === 'POST') { const b = await body(); h.sessions.interrupt(r, b.by === 'human'); return json(200, { ok: true }) }
       // CL-1 · 멈춰 둔 대기 말 다시 내보내기

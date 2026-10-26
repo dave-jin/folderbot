@@ -1,4 +1,4 @@
-import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Bot, ChatItem, NotifyEvent, PermissionMode, PermissionRequest, RoutineDef, SessionInfo, SessionState, SlashCmd } from '../core/types'
 import { api, setToken, token, uploadFile } from './api'
 import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
@@ -41,6 +41,7 @@ import { watchPushOpen } from './pushOpen'
 import { chatPhase, nextPhaseIn, SYNC_DOT_AFTER_MS, type ChatPhase } from '../core/loadPhase'
 import { clampDockOffset, isDockDrag, readDockOffset } from '../core/dock'
 import { tabActive } from '../core/tabbar'
+import { activePreview, askReply, monoText, sameText, type AskQuestion, type PreviewBlock } from '../core/askPreview'
 import { SwipeRow } from './SwipeRow'
 import { botDueChip, byDue } from '../core/botName'
 import { LocalOpenHost, localBridge, openOnThisDevice, useLocalSettings } from './localOpen'
@@ -2444,6 +2445,22 @@ function FilePickModal({ bot, onClose, onPick }: { bot: Bot; onClose: () => void
   </>
 }
 
+/**
+ * DL · 질문 카드 안의 «보낼 글» 블록 — 줄바꿈을 지키고 접지 않는다(긴 글도 다 보인다). [고치기] 를 누르면 그 자리에서 여러 줄 편집 칸이 된다.
+ * ⚠ 편집 칸의 ⎋ 는 편집만 닫는다 — 대화 열의 ⎋(턴 멈추기)로 새면 답을 기다리던 세션이 멈춘다. ⏎ 도 줄바꿈이지 보내기가 아니다.
+ */
+function PreviewBox({ block, text, editing, onEditing, onText }: { block: PreviewBlock; text: string | undefined; editing: boolean; onEditing: (v: boolean) => void; onText: (t: string | undefined) => void }) {
+  const cur = text ?? block.text; const fixed = text != null && !sameText(text, block.text); const mono = monoText(block.text)
+  const ta = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => { const t = ta.current; if (!t) return; t.style.height = 'auto'; t.style.height = `${t.scrollHeight + 2}px` }, [editing, cur])
+  return <div className={`pvw ${fixed ? 'ed' : ''}`}>
+    <div className="pvh"><span className="pvl">{block.owner ? `보낼 글 · ${block.owner}` : '보낼 글'}</span>{fixed ? <span className="pvtag">고친 글</span> : null}<span style={{ flex: 1 }} />
+      {editing ? <>{fixed ? <button className="pvb" onClick={() => onText(undefined)}>되돌리기</button> : null}<button className="pvb on" onClick={() => onEditing(false)}>다 고침</button></> : <button className="pvb" onClick={() => onEditing(true)}><Icon n="edit" size={11} />고치기</button>}</div>
+    {editing ? <textarea ref={ta} className={`pvt ${mono ? 'mono' : ''}`} value={cur} autoFocus spellCheck={false} onChange={(e) => onText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onEditing(false) } }} />
+      : <div className={`pvx ${mono ? 'mono' : ''}`}>{cur}</div>}
+  </div>
+}
+
 function PermCard({ p, sid }: { p: PermissionRequest; sid: string }) {
   const [busy, setBusy] = useState(false); const [sent, setSent] = useState(false)
   /**
@@ -2459,21 +2476,37 @@ function PermCard({ p, sid }: { p: PermissionRequest; sid: string }) {
    *    ⚠ 「기타」 도 갈린다 — 여럿이면 고른 것들 **뒤에 덧붙고**, 하나면 종전처럼 고른 것을 **대신한다**.
    */
   const [pick, setPick] = useState<Record<string, string[]>>({}); const [other, setOther] = useState<Record<string, string>>({})
+  /**
+   * DL · 미리보기 블록 (2026-10-26 Dave: *«미리 확인하는 내용이 블록에 들어가 예쁘게 보였으면 · 내가 수정도 가능했으면 · 수정한 게 바로 반영돼서»*).
+   *    `edits` = 블록마다(질문 + 그 글이 붙은 선택지) 고친 글 · `shown` = 질문마다 마지막으로 보인 블록의 주인 — 글 없는 선택지(«고쳐서 실행»)를
+   *    골라도 고치던 블록이 그대로 남는다 · 고쳤으면 답에 « (고친 글로)» 와 `annotations[질문] = { preview, notes }` 가 같이 간다(`core/askPreview`).
+   */
+  const [edits, setEdits] = useState<Record<string, string>>({}); const [editing, setEditing] = useState<Record<string, boolean>>({}); const [shown, setShown] = useState<Record<string, string>>({})
   /* ⚠ 실패는 카드 안에서 말한다 — 워커가 다시 떠 기다리던 질문이 사라지면 호스트가 400 을 준다. 종전에는 catch 가 없어 카드만 말없이 남았다 (리뷰) */
   const [err, setErr] = useState('')
   const act = async (body: Record<string, unknown>, path: 'permission' | 'ask') => { setBusy(true); setErr(''); try { await api(`/sessions/${sid}/${path}`, { body: { requestId: p.requestId, ...body } }); setSent(true) } catch (e) { setErr((e as Error).message || '보내지 못했어요') } finally { setBusy(false) } }
   if (sent) return <div className="meta"><Icon n="check" size={11} color="var(--done)" /><span>보냈어요</span></div>
   if (p.ask) {
-    const qs = (p.input.questions as { question?: string; header?: string; options?: { label?: string; description?: string }[]; multiSelect?: boolean }[] | undefined) ?? []
+    const qs = (p.input.questions as AskQuestion[] | undefined) ?? []
     const keyOf = (q: { question?: string }, i: number) => q.question ?? String(i)
     const picksOf = (key: string) => pick[key] ?? []
     const toggle = (key: string, label: string, multi: boolean) => setPick((prev) => { const cur = prev[key] ?? []; if (!multi) return { ...prev, [key]: cur[0] === label ? [] : [label] }; return { ...prev, [key]: cur.includes(label) ? cur.filter((x) => x !== label) : [...cur, label] } })
     const answerOf = (q: { question?: string; multiSelect?: boolean }, i: number) => { const key = keyOf(q, i); const free = (other[key] ?? '').trim(); const ps = picksOf(key); return q.multiSelect ? [...ps, ...(free ? [free] : [])].join(', ') : free || ps[0] || '' }
-    const answers = () => Object.fromEntries(qs.map((q, i) => [keyOf(q, i), answerOf(q, i)]).filter(([, v]) => v))
+    // DL · 질문마다 지금 보이는 미리보기 블록과, 그 블록에서 고친 글
+    const blockOf = (q: AskQuestion, i: number) => activePreview(q, picksOf(keyOf(q, i)), shown[keyOf(q, i)])
+    const editKey = (key: string, owner: string) => `${key}\u0000${owner}`
+    const reply = () => {
+      const base = Object.fromEntries(qs.map((q, i) => [keyOf(q, i), answerOf(q, i)]).filter(([, v]) => v))
+      const ed = Object.fromEntries(qs.map((q, i) => { const bl = blockOf(q, i); const t = bl ? edits[editKey(keyOf(q, i), bl.owner)] : undefined; return [keyOf(q, i), bl && t != null ? { block: bl, text: t } : undefined] }))
+      return askReply(base, ed)
+    }
     const ready = qs.every((q, i) => !!answerOf(q, i))
+    const send = () => { const r = reply(); void act({ answers: r.answers, ...(r.annotations ? { annotations: r.annotations } : {}) }, 'ask') }
     return <div className="card"><div className="lab">에이전트의 질문{qs[0]?.header ? ` · ${qs[0].header}` : ''}</div>
-      {qs.map((q, i) => { const key = keyOf(q, i); const multi = !!q.multiSelect; const on = (label: string) => picksOf(key).includes(label); return <div key={i} style={{ display: 'flex', flexDirection: 'column' }}><div className="q">{q.question}{multi ? <span className="mhint">여러 개 고를 수 있어요</span> : null}</div>{(q.options ?? []).map((o) => <button key={o.label} className={`opt ${on(o.label ?? '') ? 'on' : ''}`} onClick={() => toggle(key, o.label ?? '', multi)}><span className={`r ${multi ? 'sq' : ''}`}>{multi && on(o.label ?? '') ? <Icon n="check" size={9} color="var(--bg)" /> : null}</span><div><div>{o.label}</div>{o.description ? <div className="d">{o.description}</div> : null}</div></button>)}<div className={`opt ${(other[key] ?? '').trim() ? 'on' : ''}`}><span className={`r ${multi ? 'sq' : ''}`} style={{ marginTop: 7 }}>{multi && (other[key] ?? '').trim() ? <Icon n="check" size={9} color="var(--bg)" /> : null}</span><input placeholder={multi ? '기타 — 직접 입력해 덧붙이기…' : '기타 — 직접 입력…'} value={other[key] ?? ''} onChange={(e) => setOther({ ...other, [key]: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && !busy && ready) void act({ answers: answers() }, 'ask') }} /></div></div> })}
-      {err ? <div className="meta perr" role="alert">{err}</div> : null}<div className="btns"><button className="btn ghost" disabled={busy} onClick={() => act({ allow: false }, 'permission')}>취소 ⎋</button><span style={{ flex: 1 }} /><button className="btn primary" disabled={busy || !ready} onClick={() => act({ answers: answers() }, 'ask')}>보내기</button></div></div>
+      {qs.map((q, i) => { const key = keyOf(q, i); const multi = !!q.multiSelect; const on = (label: string) => picksOf(key).includes(label); const bl = blockOf(q, i); return <div key={i} style={{ display: 'flex', flexDirection: 'column' }}><div className="q">{q.question}{multi ? <span className="mhint">여러 개 고를 수 있어요</span> : null}</div>
+        {bl ? <PreviewBox block={bl} text={edits[editKey(key, bl.owner)]} editing={!!editing[key]} onEditing={(v) => { setEditing((m) => ({ ...m, [key]: v })); setShown((m) => ({ ...m, [key]: bl.owner })) }} onText={(t) => setEdits((m) => { const k = editKey(key, bl.owner); if (t == null) { const { [k]: _, ...rest } = m; return rest } return { ...m, [k]: t } })} /> : null}
+        {(q.options ?? []).map((o) => <button key={o.label} className={`opt ${on(o.label ?? '') ? 'on' : ''}`} onClick={() => { toggle(key, o.label ?? '', multi); if (o.preview?.trim() && !editing[key]) setShown((m) => ({ ...m, [key]: o.label ?? '' })) }}><span className={`r ${multi ? 'sq' : ''}`}>{multi && on(o.label ?? '') ? <Icon n="check" size={9} color="var(--bg)" /> : null}</span><div><div>{o.label}{o.preview?.trim() && bl && bl.owner !== (o.label ?? '') ? <span className="pvhas">미리보기 있음</span> : null}</div>{o.description ? <div className="d">{o.description}</div> : null}</div></button>)}<div className={`opt ${(other[key] ?? '').trim() ? 'on' : ''}`}><span className={`r ${multi ? 'sq' : ''}`} style={{ marginTop: 7 }}>{multi && (other[key] ?? '').trim() ? <Icon n="check" size={9} color="var(--bg)" /> : null}</span><input placeholder={multi ? '기타 — 직접 입력해 덧붙이기…' : '기타 — 직접 입력…'} value={other[key] ?? ''} onChange={(e) => setOther({ ...other, [key]: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && !busy && ready) send() }} /></div></div> })}
+      {err ? <div className="meta perr" role="alert">{err}</div> : null}<div className="btns"><button className="btn ghost" disabled={busy} onClick={() => act({ allow: false }, 'permission')}>취소 ⎋</button><span style={{ flex: 1 }} /><button className="btn primary" disabled={busy || !ready} onClick={send}>보내기</button></div></div>
   }
   const i = p.input; const cmd = typeof i.command === 'string' ? i.command : typeof i.file_path === 'string' ? i.file_path : typeof i.url === 'string' ? i.url : JSON.stringify(i).slice(0, 400)
   const human = p.description || (typeof i.command === 'string' ? `명령을 실행합니다` : typeof i.file_path === 'string' ? `파일을 ${/Write|Edit/.test(p.toolName) ? '고칩니다' : '읽습니다'} — ${String(i.file_path).split('/').pop()}` : `${p.displayName} 를 씁니다`)

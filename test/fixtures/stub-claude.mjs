@@ -90,7 +90,9 @@ rl.on('line', (raw) => {
   if (msg.type === 'control_response' && pendingAsk) {
     pendingAsk = null
     const answers = msg.response?.response?.updatedInput?.answers ?? {}
-    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: `답변 받음: ${JSON.stringify(answers)}` }], stop_reason: 'end_turn' } })
+    // DL · 고친 미리보기 글(annotations)도 되읊는다 — 화면에서 고친 글이 CLI 입력까지 오는지 재려고
+    const ann = msg.response?.response?.updatedInput?.annotations
+    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: `답변 받음: ${JSON.stringify(answers)}${ann ? ` 주석: ${JSON.stringify(ann)}` : ''}` }], stop_reason: 'end_turn' } })
     say({ type: 'result', subtype: 'success', duration_ms: 90, total_cost_usd: 0.001 })
     return
   }
@@ -308,6 +310,23 @@ rl.on('line', (raw) => {
       say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'tool_use', id: b, name: 'AskUserQuestion', input: qb }] } })
       say({ type: 'result', subtype: 'success', stop_reason: 'tool_deferred', deferred_tool_use: { id: b, name: 'AskUserQuestion', input: qb }, duration_ms: 40, total_cost_usd: 0.001 })
     }, 1200)
+    return
+  }
+  /**
+   * DL · 미리보기 질문 (2026-10-26 Dave: «미리 확인하는 내용이 블록에 들어가 예쁘게 · 내가 수정도 · 수정한 게 바로 반영») — 실행 선택지에 보낼 글 전문.
+   *    «미룬미리보기» 는 같은 질문을 미뤄진 질문(tool_deferred)으로 낸다.
+   */
+  const PV_MAIL = '받는 사람: 박찬수 대표\n제목: 11/3 워크숍 확정 안내\n\n대표님, 안녕하세요.\n11/3(월) 오후 2시 워크숍을 확정했습니다.\n\n장소: 성수 A 홀\n준비물: 노트북\n\n진대연 드림'
+  const pvInput = { questions: [{ question: '박찬수 대표에게 확정 메일을 보낼까요?', header: '메일', options: [{ label: '실행', description: '아래 글 그대로 보냅니다', preview: PV_MAIL }, { label: '고쳐서 실행' }, { label: '하지 않음' }] }] }
+  if (/미룬미리보기/.test(text)) {
+    const id = `stub-ask-${u}`; pendingDeferred = id
+    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input: pvInput }] } })
+    say({ type: 'result', subtype: 'success', stop_reason: 'tool_deferred', deferred_tool_use: { id, name: 'AskUserQuestion', input: pvInput }, duration_ms: 40, total_cost_usd: 0.001 })
+    return
+  }
+  if (/미리보기질문/.test(text)) {
+    pendingAsk = true
+    process.stdout.write(JSON.stringify({ type: 'control_request', request_id: `req-${randomUUID()}`, request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', display_name: 'AskUserQuestion', description: '', input: pvInput, permission_suggestions: [] } }) + '\n')
     return
   }
   if (/미룬질문/.test(text)) {

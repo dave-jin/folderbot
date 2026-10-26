@@ -28,6 +28,7 @@ import { rewindPoint } from '../core/rewind'
 import { slashCommands } from './slash'
 import { CUT_TURN_NOTE, cutTurnAtLoad } from '../core/cutTurn'
 import { mark } from './slow'
+import { askEcho, askResultText, type AskAnnotation } from '../core/askPreview'
 
 /**
  * 워커 env — 중첩 마커를 지우고, **필요할 때만** 장기 토큰을 넣는다.
@@ -234,13 +235,14 @@ export class ClaudeWorker extends EventEmitter {
     return false
   }
   /** @returns 미뤄진 질문에 우리가 직접 답을 넣었으면 true(AX) */
-  respondAsk(requestId: string, answers: Record<string, string>): boolean {
+  /** DL · `annotations` = 사람이 미리보기 블록에서 고친 글 — 보통 질문은 CLI 가 «selected preview» 로, 미뤄진 질문은 우리가 같은 모양으로 넘긴다 */
+  respondAsk(requestId: string, answers: Record<string, string>, annotations?: Record<string, AskAnnotation>): boolean {
     const p = this.pending.get(requestId); this.pending.delete(requestId)
     if (this.deferredAsks.delete(requestId)) {
-      this.write({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: requestId, content: JSON.stringify(answers) }] } })
+      this.write({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: requestId, content: askResultText(answers, annotations) }] } })
       return true
     }
-    this.write({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response: { behavior: 'allow', updatedInput: { ...(p?.input ?? {}), answers } } } })
+    this.write({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response: { behavior: 'allow', updatedInput: { ...(p?.input ?? {}), answers, ...(annotations ? { annotations } : {}) } } } })
     return false
   }
   interrupt(): void { this.write({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } }) }
@@ -1233,10 +1235,10 @@ export class SessionManager extends EventEmitter {
     this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: allow ? (always ? `이 세션에서 항상 허용${label ? ` · ${label}` : ''}` : '허용') : '거부' })
     this.setState(r, { kind: 'input_provided' })
   }
-  respondAsk(r: SessionRec, requestId: string, answers: Record<string, string>): void {
+  respondAsk(r: SessionRec, requestId: string, answers: Record<string, string>, annotations?: Record<string, AskAnnotation>): void {
     const w = this.workers.get(r.id); if (!w) return
-    if (w.respondAsk(requestId, answers)) this.closeTool(r, requestId, JSON.stringify(answers))
-    this.push(r, { id: itemId('s'), t: Date.now(), kind: 'user', text: Object.values(answers).join(' · ') })
+    if (w.respondAsk(requestId, answers, annotations)) this.closeTool(r, requestId, askResultText(answers, annotations))
+    this.push(r, { id: itemId('s'), t: Date.now(), kind: 'user', text: askEcho(answers, annotations) })
     this.setState(r, { kind: 'input_provided' })
   }
   /** 멈추기 — `human` 이면 대기 말을 붙잡고(CL-1) 멈춘 자리를 적는다. 쉬는 세션에는 아무 일도 안 한다 */

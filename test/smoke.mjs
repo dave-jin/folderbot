@@ -4521,6 +4521,74 @@ try {
             ok('미룬 질문 — 답하면 AskUserQuestion 도구 줄이 멈춘다(호스트가 닫는다)')
           }
           /**
+           * 🔴 **DL · 질문 카드의 미리보기 블록 — 보낼 글이 블록으로 보이고, 고친 글이 에이전트에게 그대로 간다** (2026-10-26 Dave:
+           *    *«미리 확인하는 내용이 블록에 들어가 예쁘게 보였으면 · 내가 수정도 가능했으면 · 수정한 게 바로 반영돼서»*). 박찬수 대표
+           *    확정 메일 카드가 «보낼까요?» 만 보였다(스크린샷_1706) — 카드가 선택지의 `preview` 를 아예 안 읽었다.
+           * ⚠ 잰다: ① 블록이 줄바꿈을 지킨다 ② [고치기] → 편집 칸의 ⎋ 는 편집만 닫고 턴을 멈추지 않는다 ③ 글 없는 «고쳐서 실행» 을 골라도
+           *   고친 블록이 남는다 ④ 폰 폭에서 블록이 화면 밖으로 안 나간다 ⑤ 보내면 CLI 입력에 answers « (고친 글로)» + annotations 전문
+           *   ⑥ 미뤄진 질문도 tool_result 글에 고친 전문이 실린다.
+           */
+          {
+            const PVQ = '박찬수 대표에게 확정 메일을 보낼까요?'
+            const editIn = async (from, to) => {
+              await pg.click('.card .pvw .pvb'); await pg.waitForSelector('.card .pvw textarea', { timeout: 3000 })
+              const cur = await pg.inputValue('.card .pvw textarea'); await pg.fill('.card .pvw textarea', cur.replace(from, to))
+            }
+            await pg.fill('.composer .cin', '미리보기질문 해 줘'); await pg.click('.composer .sendb')
+            await pg.waitForSelector('.card .pvw .pvx', { timeout: 8000 })
+            const box = await pg.evaluate(() => { const x = document.querySelector('.card .pvw .pvx'); return { text: x?.innerText ?? '', ws: x ? getComputedStyle(x).whiteSpace : '' } })
+            if (box.ws !== 'pre-wrap' || !/워크숍을 확정했습니다\.\n\n장소: 성수 A 홀/.test(box.text)) fail('🔴 DL 미리보기: 블록이 없거나 줄바꿈·문단이 뭉개졌다 · ' + JSON.stringify(box).slice(0, 200))
+            // ④ 폰 폭 — 같은 대화를 390 폭 창으로 연다
+            {
+              let sidP = ''; for (const x of await api(`/bots/${bot.id}/sessions`)) if ((x.pending ?? []).some((p) => p.toolName === 'AskUserQuestion')) sidP = x.id
+              const mp = await br.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }); await mp.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
+              await mp.goto(base + `/#bot=${bot.id}&s=${sidP}`)
+              try {
+                await mp.waitForSelector('.card .pvw .pvx', { timeout: 8000 })
+                const fit = await mp.evaluate(() => { const b = document.querySelector('.card .pvw')?.getBoundingClientRect(); return b ? { l: b.left, r: b.right, w: innerWidth } : null })
+                if (!fit || fit.l < 0 || fit.r > fit.w + 0.5) fail('🔴 DL 미리보기: 폰 폭에서 블록이 화면 밖으로 나간다 · ' + JSON.stringify(fit))
+                await mp.evaluate(() => document.querySelector('.card .pvw')?.scrollIntoView({ block: 'start' })); await wait(300)
+                await mp.screenshot({ path: 'test/tmp/ask-preview-phone.png' })
+              } catch (e) { fail('DL 미리보기: 폰 폭 창에 질문 카드가 안 뜬다 · ' + (e?.message ?? e)) }
+              await mp.close()
+            }
+            await editIn('오후 2시', '오후 3시')
+            await pg.press('.card .pvw textarea', 'Escape'); await wait(400)
+            if (await pg.$('.card .pvw textarea')) fail('DL 미리보기: 편집 칸에서 ⎋ 를 눌러도 편집이 안 닫힌다')
+            if (!(await pg.$('.card .pvw .pvtag'))) fail('DL 미리보기: 고친 블록에 «고친 글» 표시가 없다')
+            const stillAsk = (await api(`/bots/${bot.id}/sessions`)).flatMap((x) => x.pending ?? []).some((p) => p.toolName === 'AskUserQuestion')
+            if (!stillAsk) fail('🔴 DL 미리보기: 편집 칸의 ⎋ 가 대화 열로 새서 질문(턴)을 멈췄다')
+            await pg.evaluate(() => { [...document.querySelectorAll('.card .opt')].find((x) => x.textContent?.includes('고쳐서 실행'))?.click() }); await wait(200)
+            const kept = await pg.evaluate(() => document.querySelector('.card .pvw .pvx')?.textContent ?? '')
+            if (!/오후 3시/.test(kept)) fail('🔴 DL 미리보기: 글 없는 «고쳐서 실행» 을 고르자 고친 블록이 사라졌다 · ' + kept.slice(0, 80))
+            await pg.evaluate(() => { [...document.querySelectorAll('.card .opt')].find((x) => x.textContent?.trim().startsWith('실행'))?.click() }); await wait(200)
+            await pg.screenshot({ path: 'test/tmp/ask-preview.png' })
+            await pg.click('.card .btns .btn.primary')
+            let echo = ''
+            for (let i = 0; i < 60; i++) { echo = (await pg.textContent('.chat-body')) ?? ''; if (/답변 받음: .*주석/.test(echo)) break; await wait(250) }
+            const m = /답변 받음: (\{.*?\}) 주석: (\{.*\}\})/.exec(echo)
+            if (!m) fail('🔴 DL 미리보기: 고친 글(annotations)이 CLI 입력까지 안 갔다 · ' + echo.slice(-200))
+            else {
+              const ans = JSON.parse(m[1]), ann = JSON.parse(m[2])
+              if (ans[PVQ] !== '실행 (고친 글로)') fail('DL 미리보기: 답 문자열에 « (고친 글로)» 표시가 없다 · ' + m[1])
+              if (!/오후 3시/.test(ann[PVQ]?.preview ?? '') || /오후 2시/.test(ann[PVQ]?.preview ?? '') || !/그대로 쓸 것/.test(ann[PVQ]?.notes ?? '')) fail('🔴 DL 미리보기: annotations 에 고친 전문·notes 가 없다 · ' + m[2].slice(0, 200))
+            }
+            await wait(300)
+            // ⑥ 미뤄진 질문
+            await pg.fill('.composer .cin', '미룬미리보기 해 줘'); await pg.click('.composer .sendb')
+            await pg.waitForSelector('.card .pvw .pvx', { timeout: 8000 })
+            await editIn('준비물: 노트북', '준비물: 노트북, 충전기')
+            await pg.click('.card .pvw .pvb.on')   // 다 고침
+            await pg.evaluate(() => { [...document.querySelectorAll('.card .opt')].find((x) => x.textContent?.trim().startsWith('실행'))?.click() }); await wait(150)
+            await pg.click('.card .btns .btn.primary')
+            let body = ''
+            for (let i = 0; i < 60; i++) { body = (await pg.textContent('.chat-body')) ?? ''; if (/미룬 답 받음[^]*충전기/.test(body.split('미룬미리보기').at(-1) ?? '')) break; await wait(250) }
+            const tail = body.split('미룬미리보기').at(-1) ?? ''
+            if (!/미룬 답 받음[^]*selected preview:[^]*노트북, 충전기/.test(tail)) fail('🔴 DL 미리보기: 미뤄진 질문의 답에 고친 전문이 안 실렸다 · ' + tail.slice(0, 300))
+            await wait(3500)   // 스텁의 턴이 끝날 때까지
+            ok('DL 미리보기 — 보낼 글이 블록(줄바꿈 그대로 · 폰 폭 안)으로 보이고, [고치기]로 고친 글이 answers « (고친 글로)» + annotations 전문으로 간다 · ⎋ 는 편집만 닫음 · 미뤄진 질문도')
+          }
+          /**
            * 🔴 **채팅으로 답하면 미룬 질문 카드가 닫힌다 — 같은 질문 카드가 둘 서지 않는다** (2026-10-02 Dave: *«AskUserQuestion 을
            *    두번씩 동일한 내용을 보낼때가 있어»*). 카드는 카드에서 답할 때만 닫혔다 — 채팅으로 답하면 남고, 모델이 같은 질문을
            *    새 id 로 다시 해서 카드가 둘 섰다. 스텁은 답 없는 채팅을 받으면 실 모델처럼 다시 묻는다.
