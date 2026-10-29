@@ -30,6 +30,7 @@ export interface ShellUpdate { state: () => unknown; dawn: (on: boolean) => unkn
 import { ORCH_ID, Registry, canon, ORCH_REQUEST_RULES_MD, DAVE_SAID_RULES_MD, ORCH_ASK_HINT, ORCH_REPORT_HINT, LETTER_RULES_MD } from './registry'
 import { CATCHUP_WINDOW_MS, Routines, routineRun, RETRY_DELAY_MS, StartQueue } from './routines'
 import { latestStarts } from '../core/routineBoard'
+import { RoutineNotes } from './routineNotes'
 import { parseOps } from '../core/ops'
 import { RUN_TIMEOUT_MS } from '../core/runs'
 import { autoToDrop, sessArea } from '../core/autoArea'
@@ -107,6 +108,7 @@ export class Host {
     this.sessions.botOf = (id) => this.registry.bot(id)
     this.routines = new Routines({ run: (b, r, why) => { if (why?.catchup) this.queueRun(why.catchup, b, r, why); else this.runRoutine(b, r, why ?? {}) }, log: this.log })   // RB-2 · 보충은 시작 줄(동시 2개)로
     this.routines.owner = () => this.ownsRoutines()
+    this.routineNotes = new RoutineNotes({ root: this.registry.root, log: (m) => this.log(m) })
     this.akiflow = new AkiflowSync(this.registry.root, () => this.registry.bots(), (botId) => { const b = this.registry.bot(botId); if (b) this.broadcast({ ev: 'todo', botId, items: readTodo(b.abs) }) }, (botId, title) => { if (title) this.noteTodoTitle(botId, title) })
     this.akiflow.routineOn = () => !!this.registry.bot('orch')?.routines.some((x) => x.name === AK_ROUTINE && x.enabled !== false)
     this.bridges = new BridgeHub({ root: this.registry.root, dataDir: dataDir(), hostNames: () => [hostname(), this.hostName(), this.cfg.hostName ?? ''], log: (m) => this.log(m), deliver: (peer, items) => this.deliverLetters(peer, items),
@@ -125,6 +127,7 @@ export class Host {
     this.wire()
     this.sessions.drainAll()   // 호스트가 다시 떴다 — 기다리던 봇 말을 내보낸다
     this.routines.reschedule(this.registry.bots())
+    this.routineNotes.sync(this.registry.bots())   // RB-3 · 폴더 CLAUDE.md 루틴 구역
     // CI · 지난 프로세스가 끝을 못 적은 회차(재시작·업데이트로 끊김)를 바로 닫는다 — 감시기가 «실행 중» 으로 오래 보지 않게
     const cut = this.recoverInterrupted()
     // BR-2 · 꺼져 있던 사이 놓친 회차를 한 번 보충한다 — 세션·인증이 자리 잡은 뒤에. 끊긴 회차의 재시도가 먼저(그게 markRun 을 적어 보충이 같은 루틴을 또 돌리지 않는다)
@@ -163,7 +166,7 @@ export class Host {
   private wire(): void {
     // 🔴 **다시 짜고 나서 보낸다** (AA-1) — `reschedule` 이 각 루틴에 `lastError`·`nextRun` 을 적어 넣으므로,
     //    먼저 보내면 화면은 늘 «오류도 없고 다음 실행도 모르는» 낡은 판을 받는다.
-    this.registry.on('bots', (bots: Bot[], meta?: { reorderedBy?: 'orchestrator' }) => { this.routines.reschedule(bots); this.broadcast({ ev: 'bots', bots, ...(meta ?? {}) }); this.watcher.sync(bots) })
+    this.registry.on('bots', (bots: Bot[], meta?: { reorderedBy?: 'orchestrator' }) => { this.routines.reschedule(bots); this.routineNotes.sync(bots); this.broadcast({ ev: 'bots', bots, ...(meta ?? {}) }); this.watcher.sync(bots) })
     this.sessions.on('sessions', (botId: string) => this.broadcast({ ev: 'sessions', botId, sessions: this.sessions.list(botId) }))
     this.sessions.on('chat', (sessionId: string, item, replace: boolean) => this.broadcast({ ev: 'chat', sessionId, item, replace }))
     this.sessions.on('files', (botId: string) => this.broadcast({ ev: 'files', botId }))
@@ -265,6 +268,8 @@ export class Host {
     return r.id
   }
 
+  /** RB-3 · 루틴 변경 기록 · 폴더 CLAUDE.md 루틴 구역 */
+  routineNotes!: RoutineNotes
   /** RB-2 · 켜질 때 몰리는 실행(끊긴 회차 재시도 · 놓친 회차 보충)의 줄 — 동시 2개 · 예정 시각 이른 것부터 */
   private startQueue = new StartQueue(2)
   /** RB-2 · 줄에서 시작한 회차가 끝나면 부를 것(세션 id → 자리 비우기) */
