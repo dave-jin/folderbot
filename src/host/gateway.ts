@@ -11,6 +11,7 @@ import { spawn } from 'node:child_process'
 function spawnZip(cwd: string, name: string) { return spawn('zip', ['-r', '-q', '-', name, '-x', '*/.*', '.*'], { cwd }) }
 import type { Frame, RoutineDef } from '../core/types'
 import { stripRuntime } from '../core/types'
+import { diffRoutines } from '../core/routineBoard'
 import { WHEN_EXAMPLES, confirmLine, cronOk, describeCron, parseWhen, sameOnce } from '../core/when'
 import type { Host } from './host'
 import { bindAddresses, tailnetInfo, tailnetInfoCached } from './tailnet'
@@ -376,6 +377,8 @@ export class Gateway {
         return json(200, { ok: true, before, after, changed: !!after && after !== before, out: out.slice(-1200) })
       } catch (e) { return json(500, { error: (e as Error).message, before }) }
     }
+    // RB-5 · 루틴 관리 페이지 — 모든 봇 루틴의 보드 한 장(오케스트레이터 routines_overview 와 같은 계산)
+    if (p === '/api/routines/overview' && m === 'GET') return json(200, h.routineBoard())
     if (p === '/api/usage' && m === 'GET') {
       // 봇별 내역 — 세션의 CLI 세션 id 가 곧 기록 파일 이름이다 (L)
       const bySid = new Map<string, { botId: string; name: string }>()
@@ -964,7 +967,11 @@ export class Gateway {
           return stripRuntime({ ...r, name, cron: v.cron })
         })
         if (bad.length) return json(400, { error: '주기를 못 읽었어요', bad, examples: WHEN_EXAMPLES })
+        const prevR = bot.routines.map(stripRuntime)
         reg.saveRoutines(bot, clean.filter(Boolean) as RoutineDef[]); h.afterBotsChanged()   // BK · 오케스트레이터는 .claude/routines.yml · 다시 읽어 확인
+        // RB-5 · 화면에서 바꾼 것도 변경 기록과 그 폴더 CLAUDE.md 루틴 구역에 남긴다(폴더 봇이 알게)
+        for (const c of diffRoutines(prevR, (reg.bot(bot.id)?.routines ?? []).map(stripRuntime))) h.routineNotes.record({ at: Date.now(), botId: bot.id, routine: c.routine, actor: '화면', what: c.what, ...(c.before ? { before: c.before } : {}), ...(c.after ? { after: c.after } : {}) })
+        h.routineNotes.sync(reg.bots())
         const saved = reg.bot(bot.id)?.routines ?? []
         return json(200, { ok: true, routines: h.routines.decorate(bot.id, saved).map((r) => ({ ...r, when: describeCron(r.cron), confirm: confirmLine(r.cron) })) })
       }

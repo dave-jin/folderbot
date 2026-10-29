@@ -29,7 +29,8 @@ import type { QueuedMsg } from '../core/types'
 export interface ShellUpdate { state: () => unknown; dawn: (on: boolean) => unknown }
 import { ORCH_ID, Registry, canon, ORCH_REQUEST_RULES_MD, DAVE_SAID_RULES_MD, ORCH_ASK_HINT, ORCH_REPORT_HINT, LETTER_RULES_MD } from './registry'
 import { CATCHUP_WINDOW_MS, Routines, routineRun, RETRY_DELAY_MS, StartQueue } from './routines'
-import { latestStarts } from '../core/routineBoard'
+import { boardSummary, latestStarts, pairRuns } from '../core/routineBoard'
+import { buildBoard, type Board } from './routineBoard'
 import { RoutineNotes } from './routineNotes'
 import { parseOps } from '../core/ops'
 import { RUN_TIMEOUT_MS } from '../core/runs'
@@ -295,6 +296,22 @@ export class Host {
     let m = new Map<string, number>()
     try { m = latestStarts(this.runs.events()) } catch (e) { this.log(`실행 기록을 못 읽었어요: ${(e as Error).message}`) }
     return (botId, name, t) => (m.get(`${botId}::${name}`) ?? 0) >= t
+  }
+  /** RB-5 · 루틴 보드 한 장 — 페이지·도구·정기보고 공용 */
+  routineBoard(now = Date.now()): Board {
+    let events: ReturnType<RunLog['events']> = []
+    try { events = this.runs.events() } catch (e) { this.log(`실행 기록을 못 읽었어요: ${(e as Error).message}`) }
+    return buildBoard(this.registry.bots(), (id, r) => this.routines.decorate(id, r), events, this.routineNotes.all(), now, (b) => !!this.routineNotes.noteFile(b))
+  }
+  /** RB-4 · 정기보고 «⏰ 루틴» 덩이 — 요약 한 줄 · 문제 · 그동안 바뀐 루틴 */
+  routineOverview(since: number, problemsOnly = false): { summary: string; problems: unknown[]; changes: unknown[]; counts?: Board['counts'] } {
+    const now = Date.now(), board = this.routineBoard(now)
+    let rows: ReturnType<typeof pairRuns> = []
+    try { rows = pairRuns(this.runs.events()) } catch { /* 위에서 이미 알렸다 */ }
+    const problems = board.routines.filter((r) => r.state === 'fail' || r.state === 'missed' || r.state === 'unknown')
+      .map((r) => ({ bot: r.bot, routine: r.name, state: r.state, when: r.when, why: r.last?.reason ?? r.error ?? null, daveTodo: r.daveTodo, last: r.last ? new Date(r.last.start).toISOString() : null }))
+    const changes = this.routineNotes.all().filter((c) => c.at >= since).map((c) => ({ at: new Date(c.at).toISOString(), bot: this.registry.bot(c.botId)?.name ?? c.botId, routine: c.routine, actor: c.actor, what: c.what, why: c.why ?? null }))
+    return { summary: boardSummary(rows, since, now, board.today.slots), problems, changes, ...(problemsOnly ? {} : { counts: board.counts }) }
   }
   /** RB-2 · 맥이 잠들었다 깼다 — 그 사이 놓친 회차를 같은 규칙으로 보충한다(desktop powerMonitor `resume`) */
   onWake(): void {

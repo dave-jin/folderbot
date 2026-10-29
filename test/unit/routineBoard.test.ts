@@ -127,3 +127,14 @@ describe('suggestShift', () => {
     expect(suggestShift(p2, day)).toBeNull()
   })
 })
+
+describe('RB-5 · diffRoutines — 화면 저장의 전후 비교', () => {
+  it('새로 걸림 · 지움 · 시각·켜짐·문구 바뀜 · 안 바뀐 것은 빼기', async () => {
+    const { diffRoutines } = await import('../../src/core/routineBoard')
+    const before = [{ name: 'a', cron: '0 9 * * *', prompt: 'p' }, { name: 'b', cron: '0 10 * * *', prompt: 'p' }, { name: 'same', cron: '0 1 * * *', prompt: 'p' }]
+    const after = [{ name: 'a', cron: '7 9 * * *', prompt: 'q', enabled: false }, { name: 'c', cron: '0 11 * * *', prompt: 'p' }, { name: 'same', cron: '0 1 * * *', prompt: 'p' }]
+    const d = diffRoutines(before, after)
+    expect(d.map((x) => [x.routine, x.what.split(' · ')[0]])).toEqual([['a', expect.stringMatching(/^시각 .+ → .+/)], ['b', '지움'], ['c', '새로 걸림']])
+    expect(d[0].what).toContain('껐음'); expect(d[0].what).toContain('문구 바뀜')
+  })
+})

@@ -1,6 +1,6 @@
 import { Cron } from 'croner'
 import type { RoutineDef } from './types'
-import { onceAt } from './when'
+import { describeCron, onceAt } from './when'
 
 /**
  * 🔴 **RB · 루틴 관리 페이지의 판정·집계·시간표 — 한 곳** (2026-10-30 Dave: *«시간표를 보면서 리소스가 너무 몰리는건 아닌지 확인하고,
@@ -19,6 +19,8 @@ export interface RunRow { run: string; botId: string; routine: string; start: nu
 export type BoardState = 'fail' | 'missed' | 'unknown' | 'finished' | 'off' | 'ok'
 /** 페이지 묶음 순서 — 문제 먼저 */
 export const STATE_ORDER: BoardState[] = ['fail', 'missed', 'unknown', 'finished', 'off', 'ok']
+export interface BoardRoutine { botId: string; bot: string; name: string; cron: string; when: string; enabled: boolean; once: boolean; next?: number; error?: string
+  state: BoardState; firstWait: boolean; last?: RunRow; recent: RunRow[]; avgMs?: number; daveTodo: boolean; changes: ChangeRow[] }
 export interface ChangeRow { at: number; botId: string; routine: string; actor: '오케스트레이터' | '이 폴더 봇' | '화면'; what: string; why?: string; before?: Partial<RoutineDef>; after?: Partial<RoutineDef> }
 
 /** 몰림 색 — 3 이상 노랑 · 5 이상 빨강 (설계 §4 · 맥미니가 hermes·크론으로 이미 바쁘다는 전제) */
@@ -143,4 +145,43 @@ export function suggestShift(plan: { botId: string; name: string; cron: string; 
     }
   }
   return null
+}
+
+/**
+ * RB-4 · 정기보고 «⏰ 루틴» 덩이의 첫 줄 (2026-10-30 Dave «전체 요약 + 문제») — 오케스트레이터 `routines_overview` 가 돌려준다.
+ *    `since` 이후 시작해 끝난 회차를 센다 · 가장 몰린 때는 그 회차들이 같은 순간 겹친 최대 · 오늘 예정 겹침은 `LOAD_WARN` 이상인 시(時) 수.
+ */
+export function boardSummary(rows: RunRow[], since: number, now: number, todaySlots: number[]): string {
+  const done = rows.filter((r) => r.start >= since && r.start <= now && r.end !== undefined)
+  const n = (f: (r: RunRow) => boolean) => done.filter(f).length
+  const parts = [`지난 보고 뒤 ${done.length}회`]
+  if (done.length) {
+    parts.push(`성공 ${n((r) => r.result === 'ok')}`, `건너뜀 ${n((r) => r.result === 'skip')}`, `실패 ${n((r) => r.result === 'fail' || r.result === 'timeout')}`, `결과 없음 ${n((r) => r.result === 'unknown')}`)
+    const pts: [number, number][] = done.flatMap((r) => [[r.start, 1], [Math.max(r.end!, r.start + MIN_MS), -1]] as [number, number][]).sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    let c = 0, mx = 0, when = 0
+    for (const [t, d] of pts) { c += d; if (c > mx) { mx = c; when = t } }
+    const d = new Date(when)
+    parts.push(`가장 몰린 때 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} (${mx}개)`)
+  }
+  const hours = [...new Set(todaySlots.map((v, i) => (v >= LOAD_WARN ? Math.floor(i / 6) : -1)).filter((h) => h >= 0))]
+  if (hours.length) parts.push(`오늘 예정 겹침 ${LOAD_WARN}개 이상 ${hours.length}번 (${hours.map((h) => String(h).padStart(2, '0')).join('·')}시)`)
+  return parts.join(' · ')
+}
+
+/** RB-4·5 · 루틴 하나가 무엇이 바뀌었나 — 사람 말 한 줄(변경 기록 · CLAUDE.md 구역) */
+export function changeWhat(before: RoutineDef, after: RoutineDef): string {
+  const w: string[] = []
+  if (before.cron !== after.cron) w.push(`시각 ${describeCron(before.cron)} → ${describeCron(after.cron)}`)
+  if ((before.enabled !== false) !== (after.enabled !== false)) w.push(after.enabled === false ? '껐음' : '켰음')
+  if (before.prompt !== after.prompt) w.push('문구 바뀜')
+  if (!!before.push !== !!after.push) w.push(after.push ? '알림 켬' : '알림 끔')
+  return w.join(' · ')
+}
+/** RB-5 · 화면이 루틴 목록을 통째로 저장했을 때의 전후 비교 — 안 바뀐 루틴은 빠진다 · 바뀐 것 → 지운 것 → 새로 건 것 순 */
+export function diffRoutines(before: RoutineDef[], after: RoutineDef[]): { routine: string; what: string; before?: RoutineDef; after?: RoutineDef }[] {
+  const out: { routine: string; what: string; before?: RoutineDef; after?: RoutineDef }[] = []
+  for (const a of after) { const b = before.find((x) => x.name === a.name); if (b) { const w = changeWhat(b, a); if (w) out.push({ routine: a.name, what: w, before: b, after: a }) } }
+  for (const b of before) if (!after.some((x) => x.name === b.name)) out.push({ routine: b.name, what: '지움', before: b })
+  for (const a of after) if (!before.some((x) => x.name === a.name)) out.push({ routine: a.name, what: '새로 걸림', after: a })
+  return out
 }

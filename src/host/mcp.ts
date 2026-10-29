@@ -5,11 +5,12 @@ import type { Host } from './host'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 import { relUnder } from '../core/paths'
-import { stripRuntime, type RoutineDef } from '../core/types'
+import { stripRuntime, type Bot, type RoutineDef } from '../core/types'
 import { WHEN_EXAMPLES, confirmLine, describeCron, formatNext, isOnce, onceDone, parseWhen, sameOnce } from '../core/when'
 import { turnBlock, daveSaidOf, daveSaidLine, ORCH_GRANTABLE } from '../core/turnGuard'
 import { asksTodo, lastHumanText } from '../core/todo'
 import type { DocReq } from '../core/docReq'
+import { changeWhat } from '../core/routineBoard'
 
 interface Rpc { jsonrpc: '2.0'; id?: number | string; method?: string; params?: Record<string, unknown> }
 type Tool = { name: string; description: string; inputSchema: Record<string, unknown> }
@@ -47,16 +48,16 @@ const COMMON: Tool[] = [
    * 🔴 **approve 는 일부러 없다.** `approve: always` 는 `approveToMode()` 를 거쳐 `bypassPermissions` 가 된다 —
    *    봇이 스스로 권한을 올리는 길을 열지 않는다. 승인 수준은 사람이 UI 에서만 바꾼다.
    */
-  { name: 'routine_list', description: '이 폴더에 걸린 루틴 목록 — 주기(사람 말)·다음 실행·켜짐·마지막 오류. 루틴이 안 도는 것 같으면 여기부터 본다.', inputSchema: obj({}) },
-  { name: 'routine_add', description: `이 폴더에 루틴을 새로 건다. when 은 ${WHEN_DESC} prompt 에는 «무엇을 확인하고, 변화가 없으면 어떻게 하라» 까지 적는다. 승인 수준(approve)은 여기서 못 바꾼다 — 사람이 화면에서 정한다.`, inputSchema: obj({ name: { type: 'string', description: '루틴 이름(이 폴더 안에서 유일)' }, when: { type: 'string', description: '사람 말로 적은 주기' }, prompt: { type: 'string', description: '루틴이 돌 때 보낼 말' }, push: { type: 'boolean', description: '끝나면 폰으로 알릴지' } }, ['name', 'when', 'prompt']) },
-  { name: 'routine_update', description: `루틴을 고친다. 준 값만 바뀐다. when 은 ${WHEN_DESC} 되돌릴 수 있게 **직전 값**을 결과에 담아 준다. 승인 수준(approve)은 여기서 못 바꾼다.`, inputSchema: obj({ name: { type: 'string' }, when: { type: 'string' }, prompt: { type: 'string' }, push: { type: 'boolean' }, enabled: { type: 'boolean', description: '끄면 지우지 않고 잠시 멈춘다' } }, ['name']) },
-  { name: 'routine_run', description: '이 폴더의 루틴 하나를 지금 한 번 돌린다(새 루틴 세션). 루틴이 안 도는지 확인하거나 실패한 회차를 사람이 다시 돌려 달라고 할 때. 결과는 그 세션에 남는다.', inputSchema: obj({ name: { type: 'string' } }, ['name']) },
+  { name: 'routine_list', description: '이 폴더에 걸린 루틴 목록 — 주기(사람 말)·다음 실행·켜짐·마지막 오류. 루틴이 안 도는 것 같으면 여기부터 본다. 오케스트레이터는 bot 으로 다른 폴더 것도 본다.', inputSchema: obj({ bot: { type: 'string', description: '오케스트레이터만 — 다른 폴더 이름(또는 봇 id)' } }) },
+  { name: 'routine_add', description: `이 폴더에 루틴을 새로 건다. when 은 ${WHEN_DESC} prompt 에는 «무엇을 확인하고, 변화가 없으면 어떻게 하라» 까지 적는다. 승인 수준(approve)은 여기서 못 바꾼다 — 사람이 화면에서 정한다.`, inputSchema: obj({ name: { type: 'string', description: '루틴 이름(이 폴더 안에서 유일)' }, when: { type: 'string', description: '사람 말로 적은 주기' }, prompt: { type: 'string', description: '루틴이 돌 때 보낼 말' }, push: { type: 'boolean', description: '끝나면 폰으로 알릴지' }, bot: { type: 'string', description: '오케스트레이터만 — 다른 폴더의 루틴을 다룰 때 그 폴더 이름(또는 봇 id)' }, why: { type: 'string', description: '오케스트레이터가 다른 봇 루틴을 바꿀 때 필수 — 이유 한 줄(그 폴더 CLAUDE.md 루틴 구역에 남는다)' } }, ['name', 'when', 'prompt']) },
+  { name: 'routine_update', description: `루틴을 고친다. 준 값만 바뀐다. when 은 ${WHEN_DESC} 되돌릴 수 있게 **직전 값**을 결과에 담아 준다. 승인 수준(approve)은 여기서 못 바꾼다.`, inputSchema: obj({ name: { type: 'string' }, when: { type: 'string' }, prompt: { type: 'string' }, push: { type: 'boolean' }, enabled: { type: 'boolean', description: '끄면 지우지 않고 잠시 멈춘다' }, bot: { type: 'string', description: '오케스트레이터만 — 다른 폴더의 루틴을 다룰 때 그 폴더 이름(또는 봇 id)' }, why: { type: 'string', description: '오케스트레이터가 다른 봇 루틴을 바꿀 때 필수 — 이유 한 줄(그 폴더 CLAUDE.md 루틴 구역에 남는다)' } }, ['name']) },
+  { name: 'routine_run', description: '이 폴더의 루틴 하나를 지금 한 번 돌린다(새 루틴 세션). 루틴이 안 도는지 확인하거나 실패한 회차를 사람이 다시 돌려 달라고 할 때. 결과는 그 세션에 남는다. 오케스트레이터는 bot 으로 다른 폴더 것도 돌린다.', inputSchema: obj({ name: { type: 'string' }, bot: { type: 'string', description: '오케스트레이터만 — 다른 폴더 이름(또는 봇 id)' } }, ['name']) },
   /**
    * 🔴 **BU · orch_report — 답을 기다리지 않는 보고** (2026-10-09 소통 재설계). 폴더 봇이 루트 state.md 에 직접 쓰던 일을 대신한다.
    *    호스트가 5분 동안 모아 오케스트레이터의 소통 세션에 **한 턴으로** 넘긴다(장애·급함은 바로). 세션마다 시간당 20건.
    */
   { name: 'orch_report', description: '오케스트레이터에게 답이 필요 없는 보고를 남긴다 — 끝난 일(done) · 알릴 사실(report) · 장애(incident). 루틴 결과 보고도 이것으로. 호스트가 모아서 넘기므로 바로 답이 오지 않는다. 답이 필요하면 orch_ask 를 쓴다. 한 세션에서 한 시간에 20건까지.', inputSchema: obj({ kind: { type: 'string', enum: ['report', 'done', 'incident'] }, text: { type: 'string', description: '한두 문장 — 무엇이 · 영향 · 제안 행동. 근거 파일 경로를 붙인다' }, urgent: { type: 'boolean', description: '바로 넘겨야 하면' } }, ['kind', 'text']) },
-  { name: 'routine_remove', description: '루틴을 지운다. 되돌릴 수 없으므로 **직전 값**을 결과에 담아 준다 — 잘못 지웠으면 그 값으로 routine_add 하면 된다.', inputSchema: obj({ name: { type: 'string' } }, ['name']) },
+  { name: 'routine_remove', description: '루틴을 지운다. 되돌릴 수 없으므로 **직전 값**을 결과에 담아 준다 — 잘못 지웠으면 그 값으로 routine_add 하면 된다. 오케스트레이터는 bot·why 로 다른 폴더 것도 지운다.', inputSchema: obj({ name: { type: 'string' }, bot: { type: 'string', description: '오케스트레이터만 — 다른 폴더의 루틴을 다룰 때 그 폴더 이름(또는 봇 id)' }, why: { type: 'string', description: '오케스트레이터가 다른 봇 루틴을 바꿀 때 필수 — 이유 한 줄(그 폴더 CLAUDE.md 루틴 구역에 남는다)' } }, ['name']) },
   /**
    * 🔴 **BH · orch_ask — 폴더 봇이 오케스트레이터에게 직접 요청한다** (2026-09-27 Dave).
    *    종전엔 `bot_send` 가 오케스트레이터 전용이라, 봇이 다른 봇의 도움이 필요하면 **사람이** 요청을 오케스트레이터로 옮기고 답을 되옮겼다.
@@ -72,6 +73,8 @@ const COMMON: Tool[] = [
   { name: 'todo_propose', description: '할 일을 제안한다 — todo.md 에 «제안» 줄로 들어가고 화면 «제안» 칸에 뜬다. 사람이 [넣기] 해야 정식 할 일이 되고 Akiflow 로 간다. 같은 일이 이미 있으면 새로 제안하지 말고 그 줄 설명에 덧붙이자고 대화에서 말한다. 봇 자신이 다음 세션에 할 일은 여기가 아니라 state.md «다음 작업» 에 쓴다.', inputSchema: obj({ title: { type: 'string', description: '한글 15자 이내' }, desc: { type: 'string', description: '설명 — 약 N분 · 첫 행동: …' }, due: { type: 'string', description: '마감 YYYY-MM-DD — 바깥에서 정해진 날만' } }, ['title']) }
 ]
 const ORCH: Tool[] = [
+  // RB-4 · 루틴 관리 페이지와 같은 계산 — 정기보고 «⏰ 루틴» 덩이(전체 요약 + 문제 + 고친 것)를 여기서 만든다
+  { name: 'routines_overview', description: '모든 봇 루틴의 상태 — 요약 한 줄(지난 보고 뒤 회수·성공·건너뜀·실패·결과 없음·가장 몰린 때·오늘 예정 겹침) · 문제(실패·놓침·결과 줄 없음 · Dave 할 일 표시) · 그동안 바뀐 루틴. 정기보고 브리핑에 «⏰ 루틴» 덩이로 넣는다. since 를 안 주면 지난번 이 도구를 부른 뒤(처음이면 12시간).', inputSchema: obj({ since: { type: 'string', description: 'ISO 시각 — 이 뒤로' }, problemsOnly: { type: 'boolean' } }) },
   // CK-2 · Akiflow 동기화 루틴 전용 — 무엇을 할지는 호스트가 정하고 루틴은 Akiflow MCP 로 손만 쓴다
   { name: 'akiflow_sync_plan', description: 'Akiflow 동기화 루틴 전용 · 두 번 부른다. ① remote 없이(projects 에 list_projects 결과) → 읽을 태스크 id(check)·훑을 프로젝트(watchProjects)·scanOnly. ② 읽어 온 태스크를 remote 로 주면 → 그 변화를 todo.md 로 내린 뒤 이번 회차의 runId 와 ops(create·update·complete·delete). mode 가 live 가 아니면 아무것도 하지 않는다.', inputSchema: obj({ projects: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' } } } }, remote: { type: 'array', items: { type: 'object' } } }) },
   { name: 'akiflow_sync_ack', description: 'Akiflow 동기화 루틴 전용. akiflow_sync_plan(②)의 ops 를 실행한 결과(results: {key, ok, akId?, error?})를 runId 와 함께 돌려준다. 호스트가 만든 태스크 id 를 todo.md 줄에 단다.', inputSchema: obj({ runId: { type: 'string' }, results: { type: 'array', items: { type: 'object' } }, remote: { type: 'array', items: { type: 'object' } } }, ['runId']) },
@@ -141,6 +144,27 @@ export function resetOrchAskForTest(): void { orchAsks.clear(); orchReports.clea
 /** 요청 머리 한 줄 — 오케스트레이터는 이 줄로 «누가 · 어느 세션에서» 를 읽고 `bot_send(bot, text, session)` 으로 답을 돌려보낸다 */
 export const orchAskHead = (name: string, botId: string, sid: string): string => `[요청 ← ${name} · ${botId} · ${sid}]`
 
+/** RB-4 · 오케스트레이터가 지난번 routines_overview 를 부른 때 — 정기보고는 «지난 보고 뒤» 를 센다(호스트가 켜져 있는 동안만) */
+let lastOverview: number | null = null
+/**
+ * 🔴 RB-4 · 루틴 도구의 대상 봇 (2026-10-30 Dave: «바로 고치되 고친것을 각 폴더봇이 알도록 claude.md 에 적어두어야 함»).
+ *    `bot` 인자는 오케스트레이터만 · 다른 봇 루틴을 **바꿀** 때는 `why` 필수(그 폴더 CLAUDE.md 루틴 구역에 남는다).
+ *    `approve`(승인 수준)는 어느 쪽이든 여전히 못 바꾼다 — 스키마에 없다.
+ */
+export function routineTarget(reg: Registry, callerId: string, a: Record<string, unknown>, mutate: boolean): { bot: Bot; foreign: boolean } {
+  const q = typeof a.bot === 'string' ? a.bot.trim() : ''
+  if (!q) { const b = reg.bot(callerId); if (!b) throw new Error('봇을 못 찾았어요'); return { bot: b, foreign: false } }
+  if (callerId !== ORCH_ID) throw new Error('다른 폴더의 루틴은 오케스트레이터만 고칠 수 있어요 — 필요하면 orch_ask 로 부탁하세요')
+  const b = reg.bots().find((x) => x.id === q || x.name === q || x.rel === q || x.name.toLowerCase() === q.toLowerCase())
+  if (!b) throw new Error(`«${q}» 이라는 봇이 없어요 — bots_list 로 이름을 보세요`)
+  const foreign = b.id !== callerId
+  if (foreign && mutate && !(typeof a.why === 'string' && a.why.trim())) throw new Error('다른 봇 루틴을 고칠 때는 why(이유 한 줄)가 필요해요 — 그 폴더 CLAUDE.md 에 남습니다')
+  return { bot: b, foreign }
+}
+function noteChange(host: Host, callerId: string, botId: string, foreign: boolean, routine: string, what: string, why: string, before?: RoutineDef, after?: RoutineDef): void {
+  host.routineNotes?.record({ at: Date.now(), botId, routine, actor: foreign || callerId === ORCH_ID ? '오케스트레이터' : '이 폴더 봇', what, ...(why.trim() ? { why: why.trim() } : {}), ...(before ? { before } : {}), ...(after ? { after: stripRuntime(after) } : {}) })
+}
+
 async function callTool(host: Host, botId: string, name: string, a: Record<string, unknown>, sid = ''): Promise<unknown> {
   const reg: Registry = host.registry
   const s = (k: string) => (typeof a[k] === 'string' ? (a[k] as string) : '')
@@ -192,7 +216,7 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       return when === 'now' ? '오케스트레이터에게 바로 넘겼어요(급함·장애).' : '보고를 남겼어요 — 5분 안에 다른 보고와 묶여 오케스트레이터에게 갑니다. 답은 오지 않아요.'
     }
     case 'routine_run': {
-      const b = reg.bot(botId); if (!b) throw new Error('봇을 못 찾았어요')
+      const { bot: b } = routineTarget(reg, botId, a, false)
       const def = b.routines.find((r) => r.name === s('name').trim()); if (!def) throw new Error(`「${s('name')}」 이라는 루틴이 없어요 — routine_list 로 이름을 보세요`)
       const rs = host.runRoutine(b, def)
       return `돌렸어요 · 루틴 세션 ${rs}`
@@ -230,8 +254,14 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
     /* ── AA-5 · 루틴 (2026-09-22) ─────────────────────────────────────────
        🔴 저장 경로는 **기존 그대로** `.bot.yml` 이고, 저장 뒤 `afterBotsChanged()` 로 스케줄을 다시 건다.
           새 저장 포맷을 만들지 않는다 — 두 벌이 되는 순간 한쪽은 반드시 낡는다. */
+    case 'routines_overview': {
+      const now = Date.now(), since = s('since') ? Date.parse(s('since')) : (lastOverview ?? now - 12 * 3600_000)
+      if (!Number.isFinite(since)) throw new Error('since 는 ISO 시각이에요(예: 2026-10-30T03:50)')
+      lastOverview = now
+      return host.routineOverview(since, a.problemsOnly === true)
+    }
     case 'routine_list': {
-      const b = reg.bot(botId); if (!b) throw new Error('봇을 못 찾았어요')
+      const { bot: b } = routineTarget(reg, botId, a, false)
       return host.routines.decorate(b.id, b.routines).map((r) => ({
         name: r.name, when: describeCron(r.cron), cron: r.cron, prompt: r.prompt,
         enabled: r.enabled !== false, push: !!r.push, approve: r.approve ?? 'always',
@@ -241,7 +271,7 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       }))
     }
     case 'routine_add': {
-      const b = reg.bot(botId); if (!b) throw new Error('봇을 못 찾았어요')
+      const { bot: b, foreign } = routineTarget(reg, botId, a, true)
       const name = s('name').trim(); if (!name) throw new Error('루틴 이름을 적어 주세요')
       if (b.routines.some((r) => r.name === name)) throw new Error(`「${name}」 은 이미 있어요 — 고치려면 routine_update 를 쓰세요`)
       const w = parseWhen(s('when'))
@@ -249,10 +279,11 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       if (w.past) return whenProblem({ ok: false, error: `${w.text.replace(/ 한 번$/, '')} — 이미 지난 시각이에요`, examples: WHEN_EXAMPLES })   // CR · 저장된 값이 아니면 지난 시각은 막는다
       const def: RoutineDef = { name, cron: w.cron, prompt: s('prompt'), ...(a.push === undefined ? {} : { push: !!a.push }) }
       saveRoutines(reg, host, b, [...b.routines, def])
+      noteChange(host, botId, b.id, foreign, name, `새로 걸림 · ${describeCron(def.cron)}`, s('why'), undefined, def)
       return { ok: true, name, when: w.text, confirm: confirmLine(w.cron), note: '승인 수준(approve)은 사람이 화면에서 정해요 — 기본은 «묻지 않고 바로 한다» 입니다(루틴은 사람이 없을 때 도니까)' }
     }
     case 'routine_update': {
-      const b = reg.bot(botId); if (!b) throw new Error('봇을 못 찾았어요')
+      const { bot: b, foreign } = routineTarget(reg, botId, a, true)
       const name = s('name').trim()
       const cur = b.routines.find((r) => r.name === name); if (!cur) throw new Error(`「${name}」 이라는 루틴이 없어요`)
       const before = stripRuntime(cur)
@@ -268,15 +299,17 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       if (!Object.keys(patch).length) throw new Error('바꿀 값을 하나는 주세요 (when · prompt · push · enabled)')
       const next = { ...before, ...patch }
       saveRoutines(reg, host, b, b.routines.map((r) => (r.name === name ? next : r)))
+      noteChange(host, botId, b.id, foreign, name, changeWhat(before, next) || '바뀐 것 없음', s('why'), before, next)
       // 🔴 prompt 교체는 되돌릴 수 없다 — 직전 값을 담아 준다
       return { ok: true, name, when: describeCron(next.cron), confirm: confirmLine(next.cron), before }
     }
     case 'routine_remove': {
-      const b = reg.bot(botId); if (!b) throw new Error('봇을 못 찾았어요')
+      const { bot: b, foreign } = routineTarget(reg, botId, a, true)
       const name = s('name').trim()
       const cur = b.routines.find((r) => r.name === name); if (!cur) throw new Error(`「${name}」 이라는 루틴이 없어요`)
       const before = stripRuntime(cur)
       saveRoutines(reg, host, b, b.routines.filter((r) => r.name !== name))
+      noteChange(host, botId, b.id, foreign, name, '지움', s('why'), before, undefined)
       // 🔴 되돌릴 수 없으므로 직전 값을 그대로 돌려준다 — 이 값으로 routine_add 하면 복구된다
       return { ok: true, removed: name, before, undo: '잘못 지웠으면 before 의 값으로 routine_add 하면 돌아와요' }
     }
