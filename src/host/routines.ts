@@ -20,6 +20,12 @@ export class Routines {
   /** `${botId}::${name}` → 마지막 스케줄 결과. 화면으로 나가는 값이라 파일에는 안 쓴다 */
   private state = new Map<string, { error?: string; next?: number; job?: Cron; once?: number; catchup?: boolean }>()
   constructor(private runner: RoutineRunner) {}
+  /**
+   * 🔴 RB-2 · 이 호스트가 루틴 주인인가 (2026-10-30 · 설계 §5). `.claude/ops.yml` 의 `host:` 가 정한다 — 운영 감시와 같은 판정.
+   *    보충 창을 «다음 회차 전까지» 로 넓히면, 며칠 닫혀 있던 맥이 호스트로 뜰 때 다른 맥이 이미 돌린 회차를 또 돌린다.
+   *    주인이 아니면 다음 실행 시각만 계산하고(화면용) 타이머는 걸지 않는다 · 보충도 안 한다.
+   */
+  owner: () => boolean = () => true
 
   private key(botId: string, name: string): string { return `${botId}::${name}` }
 
@@ -39,7 +45,7 @@ export class Routines {
         const t = onceAt(r.cron)!.getTime(), k = this.key(b.id, r.name)
         this.state.set(k, { once: t, catchup: r.catchup !== false })
         // 다시 짜는 틈(타이머를 지운 순간 그 시각이 지나감)에 놓친 것은 켜진 뒤라면 바로 보충한다 — 보충은 켜질 때 한 번뿐이라 여기서 안 하면 사라진다
-        if (this.started && r.catchup !== false && !this.ran(k, t) && Date.now() - t <= CATCHUP_WINDOW_MS) {
+        if (this.started && this.owner() && r.catchup !== false && !this.ran(k, t) && Date.now() - t <= CATCHUP_WINDOW_MS) {
           this.runner.log(`놓친 한 번짜리 보충: ${b.name} · ${r.name} · 예정 ${new Date(t).toLocaleString('ko-KR')}`)
           this.runner.run(b, r, { catchup: t })
         }
@@ -55,7 +61,7 @@ export class Routines {
         continue
       }
       try {
-        const job = new Cron(r.cron, { timezone: undefined }, () => this.runner.run(b, r))
+        const job = this.owner() ? new Cron(r.cron, { timezone: undefined }, () => this.runner.run(b, r)) : new Cron(r.cron, { paused: true })
         this.jobs.push(job)
         const next = job.nextRun()?.getTime()
         if (next) r.nextRun = next
@@ -117,8 +123,9 @@ export class Routines {
    * ⚠ `catchup: false` 면 안 한다(정해진 시각에만 의미가 있는 루틴).
    * @returns 보충한 루틴 이름들
    */
-  catchUp(bots: Bot[], now = Date.now()): string[] {
+  catchUp(bots: Bot[], now = Date.now(), ranShared?: (botId: string, name: string, t: number) => boolean): string[] {
     const last = this.loadLast(), done: string[] = []
+    if (!this.owner()) { this.started = true; return done }
     for (const b of bots) for (const r of b.routines) {
       if (r.enabled === false || r.catchup === false || !cronOk(r.cron).ok) continue
       const k = this.key(b.id, r.name)
@@ -129,7 +136,7 @@ export class Routines {
       const once = onceAt(r.cron)
       if (once) {
         const t = once.getTime()
-        if (t <= now && now - t <= CATCHUP_WINDOW_MS && !((last[k] ?? 0) >= t)) {
+        if (t <= now && now - t <= CATCHUP_WINDOW_MS && !((last[k] ?? 0) >= t) && !ranShared?.(b.id, r.name, t)) {
           this.runner.log(`놓친 한 번짜리 보충: ${b.name} · ${r.name} · 예정 ${once.toLocaleString('ko-KR')}`)
           this.runner.run(b, r, { catchup: t })
           done.push(k)
@@ -138,7 +145,7 @@ export class Routines {
       }
       if (!last[k]) { last[k] = now; continue }
       const prev = missedSince(r.cron, last[k], now)
-      if (prev === null) continue
+      if (prev === null || ranShared?.(b.id, r.name, prev)) continue
       this.runner.log(`놓친 회차 보충: ${b.name} · ${r.name} · 예정 ${new Date(prev).toLocaleString('ko-KR')}`)
       this.runner.run(b, r, { catchup: prev })
       done.push(`${b.id}::${r.name}`)
@@ -152,17 +159,20 @@ export class Routines {
 /** CR · 지난 한 번짜리가 돈 기록이 없다 */
 export const MISSED_ONCE = '그 시각에 돌지 못했어요(앱이 꺼져 있었거나 보충 시간 6시간이 지났어요) — 다시 돌리려면 새 시각을 적거나 [지금 한 번 돌려보기]를 누르세요'
 
-/** BR-2 · 이만큼 지난 회차까지만 보충한다 */
+/** BR-2 · **한 번짜리**는 이만큼 지난 회차까지만 보충한다 — 지난 안내가 이틀 뒤에 나가지 않게(RB-2 · 반복 루틴은 다음 회차 전까지) */
 export const CATCHUP_WINDOW_MS = 6 * 3600_000
 /** BR-2 · 실패한 루틴을 다시 돌리기까지 */
 export const RETRY_DELAY_MS = 10 * 60_000
-/** 마지막으로 돌린 뒤 지나간 예정 시각(가장 최근) — 보충 창 안이면 그 시각, 아니면 null (순수 · 유닛) */
-export function missedSince(cron: string, lastRunAt: number, now: number, windowMs = CATCHUP_WINDOW_MS): number | null {
+/**
+ * 마지막으로 돌린 뒤 지나간 예정 시각(가장 최근) — 있으면 그 시각, 없으면 null (순수 · 유닛).
+ * 🔴 RB-2 · **다음 회차 전까지** 보충한다 (2026-10-30 Dave 결정 — 종전 6시간 창 폐지). 가장 최근 예정 시각은 늘 다음 회차보다 앞이므로 창이 필요 없다.
+ */
+export function missedSince(cron: string, lastRunAt: number, now: number): number | null {
   let prev: Date | undefined
   try { prev = new Cron(cron, { paused: true }).previousRuns(1, new Date(now))[0] } catch { return null }
   if (!prev) return null
   const t = prev.getTime()
-  return t > lastRunAt && now - t <= windowMs ? t : null
+  return t > lastRunAt ? t : null
 }
 
 /**
@@ -200,3 +210,29 @@ export function routineRun(r: Pick<RoutineDef, 'name' | 'prompt' | 'approve'>): 
  * 판정은 `core/autoArea` 한 곳에 있다 — 여기서는 옛 이름으로 다시 내보내기만 한다.
  */
 export { routinesToDrop, AUTO_KEEP_PER_ROUTINE as ROUTINE_KEEP } from '../core/autoArea'
+
+/**
+ * 🔴 RB-2 · 켜질 때 몰리는 실행을 줄 세운다 — 동시 `max`(기본 2)개 · 예정 시각 이른 것부터 (설계 §5).
+ *    12시간 꺼졌다 켜지면 끊긴 회차 재시도 + 놓친 회차 보충이 한꺼번에 뜬다. 맥미니는 이미 hermes·크론으로 바쁘다.
+ *    같은 틱에 넣은 것들은 다 넣은 뒤 정렬해서 시작한다(마이크로태스크). 제시각 루틴은 이 줄을 안 거친다.
+ */
+export class StartQueue {
+  private q: { at: number; job: () => Promise<void> }[] = []
+  private live = 0
+  private armed = false
+  constructor(private max = 2) {}
+  push(at: number, job: () => Promise<void>): void {
+    this.q.push({ at, job })
+    if (!this.armed) { this.armed = true; queueMicrotask(() => { this.armed = false; this.pump() }) }
+  }
+  private pump(): void {
+    this.q.sort((a, b) => a.at - b.at)
+    while (this.live < this.max && this.q.length) {
+      const { job } = this.q.shift()!
+      this.live++
+      let p: Promise<void>
+      try { p = job() } catch (e) { p = Promise.reject(e) }
+      p.catch(() => {}).finally(() => { this.live--; this.pump() })
+    }
+  }
+}

@@ -23,12 +23,15 @@ import { mailWake, readWakeEnv, wakePeer } from './wake'
 import { AskDesk, answerAfter } from './ask'
 import { OpsWatch } from './opsWatch'
 import { isDaveSaid, letterBatch } from '../core/fbmf'
-import { askPatternHits, askTarget, wakeMail, type AskBot, type PeerDef } from '../core/bridges'
+import { askPatternHits, askTarget, ownsPeer, wakeMail, type AskBot, type PeerDef } from '../core/bridges'
 import type { QueuedMsg } from '../core/types'
 /** BX · 셸이 주는 업데이트 상태(`desktop/updater.js state()`) · 새벽 적용 걸기/풀기 */
 export interface ShellUpdate { state: () => unknown; dawn: (on: boolean) => unknown }
 import { ORCH_ID, Registry, canon, ORCH_REQUEST_RULES_MD, DAVE_SAID_RULES_MD, ORCH_ASK_HINT, ORCH_REPORT_HINT, LETTER_RULES_MD } from './registry'
-import { CATCHUP_WINDOW_MS, Routines, routineRun, RETRY_DELAY_MS } from './routines'
+import { CATCHUP_WINDOW_MS, Routines, routineRun, RETRY_DELAY_MS, StartQueue } from './routines'
+import { latestStarts } from '../core/routineBoard'
+import { parseOps } from '../core/ops'
+import { RUN_TIMEOUT_MS } from '../core/runs'
 import { autoToDrop, sessArea } from '../core/autoArea'
 import { mark } from './slow'
 import { SessionManager, setOauthToken, setKeychainLogin, AUTH_ERROR, type SessionRec } from './session'
@@ -102,7 +105,8 @@ export class Host {
     this.sessions.mcpUrl = (sid, botId) => this.mcpAuth.configFile(botId, sid, cfg.port)
     this.sessions.systemPromptFor = (bot) => this.systemPrompt(bot)
     this.sessions.botOf = (id) => this.registry.bot(id)
-    this.routines = new Routines({ run: (b, r, why) => { this.runRoutine(b, r, why ?? {}) }, log: this.log })
+    this.routines = new Routines({ run: (b, r, why) => { if (why?.catchup) this.queueRun(why.catchup, b, r, why); else this.runRoutine(b, r, why ?? {}) }, log: this.log })   // RB-2 · 보충은 시작 줄(동시 2개)로
+    this.routines.owner = () => this.ownsRoutines()
     this.akiflow = new AkiflowSync(this.registry.root, () => this.registry.bots(), (botId) => { const b = this.registry.bot(botId); if (b) this.broadcast({ ev: 'todo', botId, items: readTodo(b.abs) }) }, (botId, title) => { if (title) this.noteTodoTitle(botId, title) })
     this.akiflow.routineOn = () => !!this.registry.bot('orch')?.routines.some((x) => x.name === AK_ROUTINE && x.enabled !== false)
     this.bridges = new BridgeHub({ root: this.registry.root, dataDir: dataDir(), hostNames: () => [hostname(), this.hostName(), this.cfg.hostName ?? ''], log: (m) => this.log(m), deliver: (peer, items) => this.deliverLetters(peer, items),
@@ -127,7 +131,7 @@ export class Host {
     setTimeout(() => {
       try { this.afterInterrupted(cut) } catch (e) { this.log(`끊긴 회차 처리 실패: ${(e as Error).message}`) }
       try { this.afterCutTurns(this.sessions.cutTurns) } catch (e) { this.log(`끊긴 턴 알림 실패: ${(e as Error).message}`) }
-      try { this.routines.catchUp(this.registry.bots()) } catch (e) { this.log(`놓친 회차 보충 실패: ${(e as Error).message}`) }
+      try { this.routines.catchUp(this.registry.bots(), Date.now(), this.sharedRan()) } catch (e) { this.log(`놓친 회차 보충 실패: ${(e as Error).message}`) }
     }, Number(process.env.FOLDERBOT_CATCHUP_MS) || 20_000).unref()   // 검사 시임 — 스모크가 줄인다
     // 봇 폴더 감시 — 세션을 거치지 않은 쓰기(Bash·Codex·Dropbox·Finder)도 트리에 온다 (host/watch.ts 머리말)
     this.watcher.log = (m) => this.log(m)
@@ -182,6 +186,7 @@ export class Host {
       if (r.routine && prev === 'running' && (r.state === 'done' || r.state === 'error')) {
         const lastA = [...r.items].reverse().find((i) => i.kind === 'assistant') as { text: string } | undefined
         const res = this.runs.end(r.id, r.state === 'done', lastA?.text, r.state === 'error' ? r.lastError : undefined)
+        const w = this.waitEnd.get(r.id); if (w) { this.waitEnd.delete(r.id); w() }   // RB-2 · 시작 줄의 자리를 비운다
         // BR-2 · 실패한 회차는 `retry: true` 인 루틴만 10분 뒤 한 번 다시(기본 끔 — 외부 발송이 두 번 나가지 않게)
         const info = this.routineRuns.get(r.id); this.routineRuns.delete(r.id)
         if (res && !res.ok && info && info.attempt === 1) {
@@ -260,6 +265,38 @@ export class Host {
     return r.id
   }
 
+  /** RB-2 · 켜질 때 몰리는 실행(끊긴 회차 재시도 · 놓친 회차 보충)의 줄 — 동시 2개 · 예정 시각 이른 것부터 */
+  private startQueue = new StartQueue(2)
+  /** RB-2 · 줄에서 시작한 회차가 끝나면 부를 것(세션 id → 자리 비우기) */
+  private waitEnd = new Map<string, () => void>()
+  /** RB-2 · 줄에 세워 돌린다 — 회차가 끝나거나 60분(`RUN_TIMEOUT_MS`)이 지나면 다음 것이 뜬다 */
+  queueRun(at: number, b: Bot, r: RoutineDef, why: { attempt?: number; catchup?: number } = {}): void {
+    this.startQueue.push(at, () => new Promise<void>((res) => {
+      const cur = this.registry.bot(b.id), d = cur?.routines.find((x) => x.name === r.name)
+      if (!cur || !d || d.enabled === false) { res(); return }   // 줄에서 기다리는 사이 지워졌거나 꺼졌다
+      const sid = this.runRoutine(cur, d, why)
+      this.waitEnd.set(sid, res)
+      setTimeout(() => { if (this.waitEnd.delete(sid)) res() }, RUN_TIMEOUT_MS).unref()
+    }))
+  }
+  /** RB-2 · 이 호스트가 루틴 주인인가 — `.claude/ops.yml` 의 `host:`(운영 감시와 같은 판정 · 없으면 어디서나) */
+  ownsRoutines(): boolean {
+    let host: string | undefined
+    try { const f = join(this.registry.root, '.claude', 'ops.yml'); if (existsSync(f)) host = parseOps(readFileSync(f, 'utf8')).host } catch { /* 못 읽으면 지금처럼 어디서나 */ }
+    return ownsPeer({ host }, [hostname(), this.hostName(), this.cfg.hostName ?? ''])
+  }
+  /** RB-2 · 공유 실행 기록에 그 시각 이후 시작이 있나 — 다른 호스트가 이미 돌린 회차 */
+  sharedRan(): (botId: string, name: string, t: number) => boolean {
+    let m = new Map<string, number>()
+    try { m = latestStarts(this.runs.events()) } catch (e) { this.log(`실행 기록을 못 읽었어요: ${(e as Error).message}`) }
+    return (botId, name, t) => (m.get(`${botId}::${name}`) ?? 0) >= t
+  }
+  /** RB-2 · 맥이 잠들었다 깼다 — 그 사이 놓친 회차를 같은 규칙으로 보충한다(desktop powerMonitor `resume`) */
+  onWake(): void {
+    this.log('깨어남 — 놓친 루틴 회차를 확인해요')
+    try { this.routines.catchUp(this.registry.bots(), Date.now(), this.sharedRan()) } catch (e) { this.log(`놓친 회차 보충 실패: ${(e as Error).message}`) }
+  }
+
   /** BR-2 · 이 호스트가 돌린 루틴 회차(세션 id → 몇 번째 시도) — 재시도 판단 */
   private routineRuns = new Map<string, { botId: string; attempt: number }>()
   /** @returns 루틴 세션 id */
@@ -302,7 +339,7 @@ export class Host {
       const hm = new Date(c.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
       if (b && d && d.retry === true && d.enabled !== false && c.attempt === 1 && now - c.at <= CATCHUP_WINDOW_MS) {
         this.runs.note({ event: 'retry', botId: c.botId, routine: c.routine, run: c.run, reason: INTERRUPTED_REASON })
-        this.runRoutine(b, d, { attempt: 2 })
+        this.queueRun(c.at, b, d, { attempt: 2 })   // RB-2 · 보충과 한 줄에 — 시작 시각이 이르니 자연히 먼저
         continue
       }
       const why = !b || !d ? '루틴이 이제 없어요' : d.enabled === false ? '루틴이 꺼져 있어요' : c.attempt > 1 ? '이미 두 번째 시도였어요' : d.retry !== true ? '재시도가 꺼져 있어요(retry)' : '보충 창(6시간)이 지났어요'

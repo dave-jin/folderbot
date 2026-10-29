@@ -48,6 +48,13 @@ export function pairRuns(events: RunEventLike[]): RunRow[] {
   return [...by.values()].sort((a, b) => a.start - b.start)
 }
 
+/** RB-2 · `botId::루틴` 마다 가장 늦은 시작 시각 — 다른 호스트가 이미 돌린 회차를 또 보충하지 않게(공유 기록) */
+export function latestStarts(events: RunEventLike[]): Map<string, number> {
+  const m = new Map<string, number>()
+  for (const e of events) { if (e.event !== 'start' || !e.botId || !e.routine) continue; const k = `${e.botId}::${e.routine}`, t = Date.parse(e.ts); if (t > (m.get(k) ?? 0)) m.set(k, t) }
+  return m
+}
+
 /** `botId::루틴` 마다 최신 먼저 — 폴더 이름이 바뀐 옛 기록도 botId 가 같으면 한 루틴이다 */
 export function groupRuns(rows: RunRow[]): Map<string, RunRow[]> {
   const m = new Map<string, RunRow[]>()

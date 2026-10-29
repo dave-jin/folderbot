@@ -44,6 +44,22 @@ export class RunLog {
     return out
   }
   /**
+   * RB · 지난달·이번 달 실행 기록을 통째로 읽는다(모든 호스트 것 · 시각 순) — 루틴 보드·공유 «이미 돌았나» 판단이 쓴다.
+   *    깨진 줄은 건너뛴다. 파일이 없으면 빈 목록.
+   */
+  events(): (RunEvent & { ts: string; host?: string })[] {
+    const now = new Date(this.now())
+    const months = [isoLocal(new Date(now.getFullYear(), now.getMonth() - 1, 1)).slice(0, 7), isoLocal(now).slice(0, 7)]
+    const out: (RunEvent & { ts: string; host?: string })[] = []
+    for (const m of months) {
+      const f = join(this.root, '.folderbot', 'ops', `runs-${m}.jsonl`)
+      if (!existsSync(f)) continue
+      let text = ''; try { text = readFileSync(f, 'utf8') } catch (e) { this.log(`실행 기록을 못 읽었어요 · ${f} · ${(e as Error).message}`); continue }
+      for (const line of text.split('\n')) { if (!line.trim()) continue; try { const e = JSON.parse(line); if (e && typeof e.ts === 'string' && e.event) out.push(e) } catch { /* 깨진 줄 */ } }
+    }
+    return out
+  }
+  /**
    * 🔴 **CI · 켜질 때 한 번 — 시작만 적히고 끝이 없는 회차를 닫는다** (2026-10-13 오케스트레이터 제보).
    *    10/13 12:00 SNS 게시 루틴이 2분 뒤 업데이트 적용(앱 재시작)으로 끊겼다. 세션은 «쉬는 중» 으로 돌아왔고(session.ts 생성자 —
    *    다시 뜬 호스트에는 워커가 없다) 기록에는 start 만 남아, 감시기는 7시간 넘게 «실행 중» 으로만 봤다. Dave 가 승인한 게시가 조용히 빠졌다.

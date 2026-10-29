@@ -20,7 +20,7 @@ describe('BR-2 · 놓친 회차 (missedSince · Routines.catchUp)', () => {
   const at = (s: string) => new Date(s).getTime()
   it('마지막 실행 뒤 예정 시각이 지났고 6시간 안이면 그 시각, 아니면 null', () => {
     expect(missedSince('0 9 * * *', at('2026-10-08T09:00:05'), at('2026-10-09T10:00:00'))).toBe(at('2026-10-09T09:00:00'))
-    expect(missedSince('0 9 * * *', at('2026-10-08T09:00:05'), at('2026-10-09T16:00:00'))).toBe(null)      // 7시간 지났다 — 창 밖
+    expect(missedSince('0 9 * * *', at('2026-10-08T09:00:05'), at('2026-10-09T16:00:00'))).toBe(at('2026-10-09T09:00:00'))   // RB-2 · 7시간 지나도 다음 회차(10/10 09:00) 전이면 보충
     expect(missedSince('0 9 * * *', at('2026-10-09T09:00:03'), at('2026-10-09T10:00:00'))).toBe(null)      // 이미 돌았다
     expect(missedSince('없는 식', 0, Date.now())).toBe(null)
     expect(CATCHUP_WINDOW_MS).toBe(6 * H)

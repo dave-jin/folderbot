@@ -615,6 +615,8 @@ function notify(n) {
 }
 
 app.whenReady().then(async () => {
+  // RB-2 · 맥이 잠들었다 깨면 그 사이 놓친 루틴 회차를 보충한다(호스트 모드일 때만 · 규칙은 host.onWake → routines.catchUp)
+  require('electron').powerMonitor.on('resume', () => { try { hostRun?.host?.onWake?.() } catch (e) { console.error(e) } })
   process.env.FOLDERBOT_DESKTOP_VERSION = app.getVersion()
   session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => cb(perm === 'notifications' || perm === 'clipboard-read' || perm === 'clipboard-sanitized-write'))
   createTray()
