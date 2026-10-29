@@ -26,7 +26,7 @@ export interface PaletteProps {
   onClose: () => void
   go: (botId: string, sessionId?: string) => void
   openDoc: (rel: string, pin?: boolean) => void
-  setModal: (m: 'picker' | 'notify' | 'settings' | 'keys') => void
+  setModal: (m: 'picker' | 'notify' | 'settings' | 'keys' | 'routines') => void
   newSession: () => Promise<void>
   toggle: (what: 'sb' | 'rp' | 'doc') => void
 }
@@ -50,6 +50,7 @@ export function Palette(p: PaletteProps) {
     cmd('c-picker', 'folder', '폴더 고르기 · 시작', '⌘⇧N', () => p.setModal('picker'))
     cmd('c-new', 'plus', '새 세션', '⌘N', () => void p.newSession())
     cmd('c-notify', 'bell', '알림 센터', '⌘⇧U', () => p.setModal('notify'))
+    cmd('c-routines', 'eye', '루틴 관리', '', () => p.setModal('routines'))   // RB-6
     cmd('c-set', 'gear', '설정', '⌘,', () => p.setModal('settings'))
     cmd('c-keys', 'search', '단축키 보기', '⌘/', () => p.setModal('keys'))
     cmd('c-sb', 'eye', '폴더 목록 접기 · 펴기', '⌘B', () => p.toggle('sb'))

@@ -15,6 +15,7 @@ import { Float } from './Float'
 import { DocPane, preloadEditor, useDocs } from './Doc'
 import { Search } from './Search'
 import { Cleanup, savedCleanDays } from './Cleanup'
+import { Routines, RoutineLine } from './Routines'
 import { cleanableCount } from '../core/cleanup'
 import { findFolders, pillEnter, weekTodo } from '../core/home'
 import { FolderSheet, TodoBoard } from './Manage'
@@ -980,6 +981,7 @@ function Main() {
       else if (c === 'picker') setModal('picker')
       else if (c === 'search') setModal('search')
       else if (c === 'cleanup') setModal('cleanup')
+      else if (c === 'routines') setModal('routines')
       else if (c === 'notify') setModal('notify')
       else if (c === 'new-session') void newSession()
       // ⚠ 보내기는 **입력칸이 쥐고 있다** — 메뉴는 그 자리에 신호만 보낸다(같은 길을 두 벌 만들지 않는다)
@@ -1002,7 +1004,7 @@ function Main() {
         </div>
         {/* 🔴 **폰과 같은 네 칸을 레일 맨 위에** (2026-09-15 Dave: «이 메뉴가 데스크탑 화면에서도 좌측
             상단에 있으면 좋겠어»). 같은 컴포넌트를 `compact` 로 쓴다 — 두 화면이 갈리지 않게. */}
-        <div className="sbtiles"><ActionTiles go={go} setModal={setModal} say={say} modal={modal} compact /></div>
+        <div className="sbtiles"><ActionTiles go={go} setModal={setModal} say={say} modal={modal} compact /><RoutineLine onOpen={() => setModal('routines')} /></div>
         {/* 정렬 갈래 — 마감일(2026-10-01 «이름» 대체) · 사용자(끌어 놓기, 구 «직접») · 상태. ⚠ 끌어 놓으면 «사용자» 로 알아서 넘어간다 */}
         <SortBar k={railSort} set={setRailSort} />
         <div className="sb-list">
@@ -1122,6 +1124,8 @@ function Main() {
     {modal === 'keys' ? <KeysSheet onClose={() => setModal(null)} /> : null}
     {modal === 'search' ? <Search go={(b, sid) => go(b, sid)} onClose={() => setModal(null)} /> : null}
     {modal === 'cleanup' ? <Cleanup onClose={() => setModal(null)} say={say} /> : null}
+    {/* RB-6 · 루틴 관리 페이지 — 네 칸 아래 «⏰ 루틴» 줄 · 팔레트 · 셸 메뉴 «routines» */}
+    {modal === 'routines' ? <Routines onClose={() => setModal(null)} go={(b, sid) => { setModal(null); go(b, sid) }} openSheet={(id) => { setModal(null); go(id); openRp('routines') }} say={say} phone={narrow} /> : null}
     {modal === 'sessions' ? <Cleanup manage onClose={() => setModal(null)} say={say} go={go} /> : null}
     {modal === 'board' ? <TodoBoard onClose={() => setModal(null)} onTodo={goTodo} say={say} /> : null}
     {modal === 'folders' ? <FolderSheet rows={rows.flatMap(([, l]) => l)} onClose={() => setModal(null)} go={go} onPick={() => setModal('picker')} /> : null}
@@ -1225,7 +1229,7 @@ function botSummary(bot: Bot, sessions: SessionInfo[], notif: NotifyEvent[]) {
  * ⚠ 폰·맥이 **같은 컴포넌트**를 쓴다(맥은 레일 맨 위 `compact`). 둘이 갈리면 설명이 두 벌이 된다. 판정은 `core/home`.
  */
 /** 창 — CJ 로 «sessions»(세션 창) · «board»(할 일 보드) · «folders»(폴더 현황) 가 늘었다. «cleanup» 은 셸 메뉴의 옛 «세션 정리» 길 */
-type ModalKey = 'picker' | 'notify' | 'settings' | 'keys' | 'palette' | 'search' | 'cleanup' | 'sessions' | 'board' | 'folders'
+type ModalKey = 'picker' | 'notify' | 'settings' | 'keys' | 'palette' | 'search' | 'cleanup' | 'sessions' | 'board' | 'folders' | 'routines'
 interface TodoAgg { open: number; rows: { botId: string; name: string; open: number; proposed?: number; next: { line: number; title: string } | null }[] }
 function ActionTiles({ go, setModal, say, compact, modal }: { go: (b: string, sid?: string) => void; setModal: (m: ModalKey) => void; say: (m: string) => void; compact?: boolean; modal?: ModalKey | null }) {
   const { s } = useStore()
@@ -1369,6 +1373,7 @@ function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, 
       <div className="msub"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} style={{ width: 7, height: 7 }} />{s.hostName}<MrBadge /></div>
       {usage && usage.tools.length ? <div style={{ padding: '0 16px 12px' }}><UsageStrip u={usage} onOpen={() => setUSheet(true)} /></div> : null}
       <ActionTiles go={go} setModal={setModal} say={say} />
+      <RoutineLine onOpen={() => setModal('routines')} />
       {/* AZ (2026-09-25 Dave: «모바일에서도 데스크톱처럼 정렬 버튼») — 레일과 **같은 값**(`fb:railsort`)을 쓴다. 폰에서 고르면 맥 레일도 그 차례다(이 기기 기준) */}
       <SortBar k={railSort} set={setRailSort} />
       <AskStrip go={go} phone />

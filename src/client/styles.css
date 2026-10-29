@@ -1776,3 +1776,56 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .srow.askhl { box-shadow:inset 2px 0 0 var(--run) } .srow.askhl .n { color:var(--w) }
 .askchip { font-size:11px; line-height:18px; padding:0 7px; border-radius:9px; color:var(--run); border:1px solid color-mix(in srgb, var(--run) 45%, transparent); white-space:nowrap; flex:none }
 .askchip:hover { background:color-mix(in srgb, var(--run) 14%, transparent) }
+
+/* ── RB-6 · 루틴 관리 페이지 (2026-10-30 · 목업 03_디자인/2026-10-30_루틴-관리-목업) ── */
+.rtline { display:flex; align-items:center; gap:8px; width:calc(100% - 24px); margin:6px 12px 10px; padding:8px 12px; border-radius:10px; background:var(--box); border:1px solid var(--line2); color:var(--t); font-size:13px; text-align:left }
+.rtline:hover { background:var(--hover) } .rtline .sp { flex:1 } .rtline .t { color:var(--w) }
+.rtline .bad { font-size:11.5px; padding:1px 8px; border-radius:9px; background:color-mix(in srgb, var(--err) 22%, transparent); color:var(--err) } .rtline .all { font-size:12px; color:var(--t3) }
+.sbtiles .rtline { width:auto; margin:6px 0 0 }
+.modal.board.rt { width:min(1080px, calc(100% - 24px)); height:min(820px, calc(100% - 24px)) }
+.modal.rt .rtbox { border:1px solid var(--line2); border-radius:12px; background:var(--box); padding:10px 12px; margin:0 8px 10px }
+.modal.rt .rth { display:flex; align-items:center; gap:10px; margin-bottom:6px; font-size:13px } .modal.rt .rth b { color:var(--w) }
+.modal.rt .seg { display:inline-flex; border:1px solid var(--line2); border-radius:8px; overflow:hidden } .modal.rt .seg button { padding:2px 10px; font-size:12px; color:var(--t2) } .modal.rt .seg button.on { background:var(--sel); color:var(--w) }
+.modal.rt .legend { margin-left:auto; display:flex; align-items:center; gap:4px; font-size:11px; color:var(--t3) } .modal.rt .legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-left:8px }
+.modal.rt .l1 { background:color-mix(in srgb, var(--accent) 30%, transparent) } .modal.rt .l3 { background:var(--wait) } .modal.rt .l5 { background:var(--err) }
+.modal.rt .rtrow { display:flex; align-items:center; height:22px; border-top:1px solid var(--line) } .modal.rt .rtrow.axis { border-top:0; height:18px }
+.modal.rt .rtrow .lab { width:170px; flex:none; font-size:11.5px; color:var(--t2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:8px }
+.modal.rt .rtrow .tr { position:relative; flex:1; min-width:0; height:100% }
+.modal.rt .rtrow.axis .tr span { position:absolute; top:2px; font-size:10.5px; color:var(--t3); font-family:var(--mono) }
+.modal.rt .rtrow .tr i { position:absolute; top:6px; height:10px; border-radius:2px; min-width:2px } .modal.rt .rtrow.load .tr i { top:3px; height:15px }
+.modal.rt .blk.plan { border:1px dashed var(--t3); background:transparent } .modal.rt .blk.r-ok { background:var(--done) } .modal.rt .blk.r-skip { background:var(--t3) }
+.modal.rt .blk.r-fail, .modal.rt .blk.r-timeout { background:var(--err) } .modal.rt .blk.r-unknown { background:var(--wait) }
+.modal.rt .now { position:absolute; top:0; bottom:0; width:1px; background:var(--w); opacity:.5 }
+.modal.rt .rtweek .wr { display:flex; align-items:center; gap:2px; margin-bottom:2px } .modal.rt .rtweek .lab { width:70px; flex:none; font-size:11.5px; color:var(--t2) }
+.modal.rt .rtweek i { flex:1; min-width:0; height:18px; border-radius:3px; background:var(--line); font-style:normal; font-size:10px; text-align:center; line-height:18px; color:var(--w) } .modal.rt .rtweek .hh { flex:1; min-width:0; font-size:10px; color:var(--t3); font-family:var(--mono) }
+.modal.rt .rtsum { margin-top:8px; font-size:12.5px; color:var(--t2) } .modal.rt .rtsum b { color:var(--w) }
+.modal.rt .rthint { margin-top:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; border:1px solid color-mix(in srgb, var(--wait) 45%, var(--line2)); background:color-mix(in srgb, var(--wait) 6%, transparent); border-radius:9px; padding:7px 10px; font-size:12.5px }
+.modal.rt .rthint .k { color:var(--wait); font-weight:600 } .modal.rt .rthint .sp { flex:1 }
+.modal.rt .rtbar { align-items:center; flex-wrap:wrap; padding:0 8px 8px } .modal.rt .rtq { flex:1; min-width:120px; height:28px; padding:0 10px; border-radius:8px; background:var(--bg); border:1px solid var(--line2); color:var(--w); font:inherit; font-size:12.5px }
+.modal.rt .cfold { background:var(--bg); color:var(--t); border:1px solid var(--line2); border-radius:7px; padding:3px 6px; font:inherit; font-size:12px; max-width:200px }
+.modal.rt .gh b, .modal.rt .gh .c { white-space:nowrap }
+.modal.rt .rtnote { margin:0 8px 8px; font-size:12px; color:var(--wait) }
+.modal.rt .rtgrp { margin:6px 0 4px } .modal.rt .gh { display:flex; align-items:center; gap:6px; padding:4px 8px; font-size:12.5px; color:var(--t2) } .modal.rt .gh b { color:var(--w) } .modal.rt .gh .c { color:var(--t3) } .modal.rt .gh .h { color:var(--t3); font-size:12px } .modal.rt .gh .sp { flex:1 }
+.modal.rt .rtr { border-top:1px solid var(--line) }
+.modal.rt .rtr .row { display:grid; grid-template-columns:minmax(150px,1.1fr) minmax(0,2fr) 110px 110px 150px auto; gap:10px; align-items:center; padding:7px 8px; cursor:pointer; font-size:12.5px }
+.modal.rt .rtr .row:hover { background:var(--hover) }
+.modal.rt .rtr .nm { min-width:0 } .modal.rt .rtr .nm b { display:block; color:var(--w); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap } .modal.rt .rtr .nm .f { display:block; font-size:11px; color:var(--t3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.modal.rt .rtr .why { min-width:0; color:var(--t2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap } .modal.rt .rtr .dave { color:var(--wait); font-style:normal; font-weight:600 }
+.modal.rt .rtr .wh, .modal.rt .rtr .nx { color:var(--t2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.modal.rt .dots { display:flex; align-items:center; gap:3px; min-width:0 } .modal.rt .dots i { width:8px; height:8px; border-radius:50%; flex:none; background:var(--done) }
+.modal.rt .d-skip { background:var(--t3) !important } .modal.rt .d-fail, .modal.rt .d-timeout { background:var(--err) !important } .modal.rt .d-unknown { background:var(--wait) !important } .modal.rt .dots i.c { box-shadow:0 0 0 1.5px var(--accent) }
+.modal.rt .dots .avg { margin-left:4px; font-size:11px; color:var(--t3); white-space:nowrap }
+.modal.rt .acts { display:flex; gap:5px; justify-content:flex-end; flex-wrap:wrap } .modal.rt .acts .btn { height:26px; padding:0 9px; font-size:12px }
+.modal.rt .exp { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:0 8px 8px 16px; padding:8px 10px; border:1px solid var(--line2); border-radius:9px; background:var(--bg); font-size:12px }
+.modal.rt .exp h4 { margin:0 0 4px; font-size:11.5px; color:var(--t3); font-weight:600 } .modal.rt .exp table { border-collapse:collapse; width:100% } .modal.rt .exp td { padding:2px 8px 2px 0; white-space:nowrap; vertical-align:top } .modal.rt .exp td.r { white-space:normal; color:var(--t2) }
+.modal.rt .exp td.res.d-ok { color:var(--done); background:none !important } .modal.rt .exp td.res.d-fail, .modal.rt .exp td.res.d-timeout { color:var(--err); background:none !important } .modal.rt .exp td.res.d-skip { color:var(--t3); background:none !important } .modal.rt .exp td.res.d-unknown { color:var(--wait); background:none !important }
+.modal.rt .exp .none { color:var(--t3) }
+@media (max-width: 767px) {
+  .modal.board.rt { width:auto; height:auto }
+  .modal.rt .rtrow .lab { width:44px }
+  .modal.rt .rtr .row { grid-template-columns:minmax(0,1fr); gap:3px; padding:10px 8px }
+  .modal.rt .rtr .why { white-space:normal } .modal.rt .acts { justify-content:flex-start; margin-top:4px } .modal.rt .acts .btn { height:34px; font-size:13.5px }
+  .modal.rt .exp { grid-template-columns:minmax(0,1fr); margin:0 4px 8px } .modal.rt .exp td { white-space:normal }
+  .modal.rt .rtq { font-size:16px; height:36px } .modal.rt .legend { display:none }
+  .modal.rt .gh { flex-wrap:wrap } .modal.rt .gh .h { flex-basis:100%; padding-left:22px; font-size:11.5px } .modal.rt .cfold { max-width:150px; font-size:13px; padding:5px 6px }
+}

@@ -2,7 +2,7 @@
 import { deflateSync as zlibDeflate } from 'node:zlib'
 import { execSync, spawn } from 'node:child_process'
 import { createServer } from 'node:net'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, chmodSync, readdirSync, realpathSync, statSync, appendFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createHmac } from 'node:crypto'
 import { join } from 'node:path'
@@ -413,6 +413,17 @@ try {
     if (list1[0].when !== '매일 저녁 8시') fail('AA-4: 목록이 사람 말이어야 한다 · ' + JSON.stringify(list1[0]))
     if (!list1[0].nextRun) fail('AA-1: 「다음 실행」이 없다 · ' + JSON.stringify(list1[0]))
     if (list1[0].lastError) fail('AA-1: 멀쩡한 루틴에 오류가 붙었다 · ' + list1[0].lastError)
+
+    // 🔴 RB-5 · 루틴 보드 — 모든 봇 루틴 한 장 · 화면에서 건 루틴은 그 폴더 CLAUDE.md 루틴 구역에 «화면» 으로 남는다 (2026-10-30 Dave)
+    {
+      const board = await api('/routines/overview')
+      const mine = board.routines?.find((r) => r.botId === bot.id && r.name === '저녁 정리')
+      if (!mine || mine.when !== '매일 저녁 8시' || !mine.next) fail('RB-5: 보드에 방금 건 루틴이 없다 · ' + JSON.stringify(board).slice(0, 300))
+      if (board.today?.slots?.length !== 144 || board.week?.grid?.length !== 7 || typeof board.counts?.ok !== 'number') fail('RB-5: 보드 모양 · ' + JSON.stringify({ today: board.today?.slots?.length, week: board.week?.grid?.length, counts: board.counts }))
+      const cm = readFileSync(join(root, '3. Area/제품_Rondo/CLAUDE.md'), 'utf8')
+      if (!cm.startsWith('# 제품_Rondo\n') || !/<!-- folderbot:routines/.test(cm) || !/· 화면 · 저녁 정리 · 새로 걸림/.test(cm)) fail('🔴 RB-3/5: CLAUDE.md 루틴 구역에 화면 변경이 안 남았다 · ' + cm)
+      ok('RB-5 · /api/routines/overview 보드 · 화면에서 건 루틴이 그 폴더 CLAUDE.md 구역에 «화면» 으로')
+    }
 
     // 🔴 ③ `.bot.yml` 을 에디터로 고치면 몇 초 안에 화면과 스케줄이 따라온다
     writeFileSync(yml, saved.replace('0 20 * * *', '0 21 * * *'))
@@ -3093,6 +3104,46 @@ try {
           await pg.evaluate((x) => { location.hash = x }, backDf); await wait(400)
           await api(`/sessions/${sidDf}`, undefined, 'DELETE')
           ok('DF 움직이는 세션 낱줄 — 맨 위 두 줄 · 폴더 표식 · 경과가 초마다 · 움직이는 폴더는 아래에 안 겹침 · → 펴고 ← 접고 · 끝나면 «방금 끝났어요»')
+        }
+        /**
+         * 🔴 **RB-6 · 루틴 관리 페이지** (2026-10-30 Dave «이대로 만들기») — 네 칸 아래 «⏰ 루틴» 줄로 연다 · 문제(실패)가 맨 위 묶음 ·
+         *    [지금 돌리기] 가 그 봇에 루틴 세션을 만든다 · [문제만]↔[전체] · 폰 폭에서 옆으로 안 넘친다.
+         */
+        {
+          const was = (await api(`/bots/${cfo.id}/routines`)).map(({ when: _w, lastError: _e, nextRun: _n, ...r }) => r)
+          const putRt = (routines) => fetch(base + `/api/bots/${cfo.id}/routines`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ routines }) })
+          await putRt([...was, { name: 'RB 실패 검사', cron: '0 9 * * *', prompt: '검사' }, { name: 'RB 정상 검사', cron: '0 10 * * *', prompt: '검사' }])
+          const mon = new Date(); const ym = `${mon.getFullYear()}-${String(mon.getMonth() + 1).padStart(2, '0')}`
+          const rf = join(root, '.folderbot', 'ops', `runs-${ym}.jsonl`); mkdirSync(join(root, '.folderbot', 'ops'), { recursive: true })
+          const t0 = new Date(Date.now() - 3600_000)
+          appendFileSync(rf, JSON.stringify({ ts: t0.toISOString(), host: 'smoke', event: 'start', botId: cfo.id, routine: 'RB 실패 검사', run: 'rb-smoke-1' }) + '\n' + JSON.stringify({ ts: new Date(t0.getTime() + 60_000).toISOString(), host: 'smoke', event: 'end', botId: cfo.id, routine: 'RB 실패 검사', run: 'rb-smoke-1', ok: false, result: 'fail', reason: '검사용 로그인 필요', ms: 60_000 }) + '\n')
+          await wait(400)
+          await pg.waitForSelector('.rtline', { timeout: 4000 }).catch(() => fail('🔴 RB-6: 네 칸 아래 «⏰ 루틴» 줄이 없다'))
+          await pg.click('.rtline'); await pg.waitForSelector('.modal.rt .rtgrp', { timeout: 6000 }).catch(() => fail('🔴 RB-6: «루틴» 줄을 눌렀는데 루틴 페이지가 안 열린다'))
+          const first = await pg.$eval('.modal.rt .rtgrp', (g) => ({ st: g.getAttribute('data-state'), names: [...g.querySelectorAll('.rtr')].map((x) => x.getAttribute('data-routine')), dave: !!g.querySelector('.dave') }))
+          if (first.st !== 'fail' || !first.names.includes('RB 실패 검사') || !first.dave) fail('🔴 RB-6: 실패 묶음이 맨 위에 안 왔다 · ' + JSON.stringify(first))
+          const nBad = await pg.$$eval('.modal.rt .rtr', (r) => r.length)
+          await pg.click('.modal.rt .rtbar .pill:nth-child(2)'); await wait(200)
+          const nAll = await pg.$$eval('.modal.rt .rtr', (r) => r.length)
+          if (!(nAll > nBad)) fail(`RB-6: [전체] 가 [문제만] 보다 많아야 한다 · ${nBad} → ${nAll}`)
+          const before = new Set((await api(`/bots/${cfo.id}/sessions`)).map((x) => x.id))
+          await pg.click('.modal.rt .rtr[data-routine="RB 실패 검사"] .acts .btn'); await wait(900)
+          const made = (await api(`/bots/${cfo.id}/sessions`)).filter((x) => !before.has(x.id) && x.name === '루틴 · RB 실패 검사')
+          if (!made.length) fail('🔴 RB-6: [지금 돌리기] 가 루틴 세션을 안 만들었다')
+          await pg.keyboard.press('Escape'); await wait(200); if (await pg.$('.modal.rt')) fail('🔴 RB-6: 루틴 창이 Esc 로 안 닫힌다(뒤 화면을 가린다)')
+          for (const vp of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
+            const sp3 = await br.newPage({ viewport: vp, deviceScaleFactor: 1, hasTouch: vp.width < 500, isMobile: vp.width < 500 })
+            await sp3.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
+            await sp3.goto(base + '/'); await sp3.waitForSelector('.rtline', { timeout: 8000 }).catch(() => fail(`RB-6(${vp.width}): «⏰ 루틴» 줄이 없다`))
+            await sp3.click('.rtline'); await sp3.waitForSelector('.modal.rt .rtgrp', { timeout: 6000 })
+            const m = await sp3.evaluate(() => { const r = document.querySelector('.modal.rt').getBoundingClientRect(); return { W: innerWidth, sw: document.scrollingElement.scrollWidth, l: r.left, r: r.right, over: [...document.querySelectorAll('.modal.rt .btn')].filter((b) => { const q = b.getBoundingClientRect(); return q.width && (q.right > innerWidth + 1 || q.left < -1) }).length } })
+            if (m.sw > m.W + 1 || m.l < -1 || m.r > m.W + 1 || m.over) fail(`🔴 RB-6(${vp.width}): 루틴 페이지가 화면 밖으로 넘친다 · ` + JSON.stringify(m))
+            await sp3.screenshot({ path: `test/tmp/rb6-${vp.width}.png` })
+            await sp3.close()
+          }
+          await putRt(was)
+          for (const x of made) await api(`/sessions/${x.id}`, undefined, 'DELETE').catch(() => {})
+          ok('RB-6 루틴 페이지 — «⏰ 루틴» 줄로 연다 · 실패 묶음이 맨 위(Dave 할 일) · [전체] > [문제만] · [지금 돌리기] 가 루틴 세션 · 폰·맥 폭에서 안 넘침')
         }
         /**
          * 🔴 **세션 정리** (2026-10-02 Dave · 시안 B) — 모든 폴더의 세션 한 표 · 잠긴 줄은 못 고른다 · 지우고 10초 되돌리기.
