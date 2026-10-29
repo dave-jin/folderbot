@@ -163,6 +163,8 @@ export function routineTarget(reg: Registry, callerId: string, a: Record<string,
 }
 function noteChange(host: Host, callerId: string, botId: string, foreign: boolean, routine: string, what: string, why: string, before?: RoutineDef, after?: RoutineDef): void {
   host.routineNotes?.record({ at: Date.now(), botId, routine, actor: foreign || callerId === ORCH_ID ? '오케스트레이터' : '이 폴더 봇', what, ...(why.trim() ? { why: why.trim() } : {}), ...(before ? { before } : {}), ...(after ? { after: stripRuntime(after) } : {}) })
+  // 🔴 최종 리뷰 · 기록 뒤에 그 폴더 CLAUDE.md 구역을 바로 다시 쓴다 — 저장(afterBotsChanged)은 기록보다 먼저라 거기서 쓰면 «최근 바뀜» 이 한 박자 늦다
+  host.routineNotes?.sync(host.registry.bots())
 }
 
 async function callTool(host: Host, botId: string, name: string, a: Record<string, unknown>, sid = ''): Promise<unknown> {

@@ -423,6 +423,14 @@ try {
       const cm = readFileSync(join(root, '3. Area/제품_Rondo/CLAUDE.md'), 'utf8')
       if (!cm.startsWith('# 제품_Rondo\n') || !/<!-- folderbot:routines/.test(cm) || !/· 화면 · 저녁 정리 · 새로 걸림/.test(cm)) fail('🔴 RB-3/5: CLAUDE.md 루틴 구역에 화면 변경이 안 남았다 · ' + cm)
       ok('RB-5 · /api/routines/overview 보드 · 화면에서 건 루틴이 그 폴더 CLAUDE.md 구역에 «화면» 으로')
+      // 🔴 최종 리뷰 · 오케스트레이터가 도구로 고치면 그 폴더 CLAUDE.md 구역에 바로 «오케스트레이터 · 이유» 로 남는다(재시작 기다리지 않고)
+      const callT = async (args) => (await mcp('tools/call', { name: 'routine_update', arguments: args })).result
+      const off = await callT({ bot: bot.id, name: '저녁 정리', enabled: false, why: '스모크 몰림 풀기' })
+      if (off?.isError) fail('RB-4: 오케스트레이터 routine_update 실패 · ' + JSON.stringify(off))
+      const cm2 = readFileSync(join(root, '3. Area/제품_Rondo/CLAUDE.md'), 'utf8')
+      if (!/· 오케스트레이터 · 저녁 정리 · 껐음 · 이유: 스모크 몰림 풀기/.test(cm2) || !/저녁 정리 — .+ \(꺼 둠\)/.test(cm2)) fail('🔴 최종 리뷰: 오케스트레이터 도구 변경이 CLAUDE.md 구역에 바로 안 남았다 · ' + cm2)
+      await callT({ bot: bot.id, name: '저녁 정리', enabled: true, why: '스모크 되돌리기' })
+      ok('RB-4 · 오케스트레이터 도구 변경이 그 폴더 CLAUDE.md 구역에 바로 «오케스트레이터 · 이유» 로')
     }
 
     // 🔴 ③ `.bot.yml` 을 에디터로 고치면 몇 초 안에 화면과 스케줄이 따라온다

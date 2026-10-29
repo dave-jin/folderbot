@@ -66,7 +66,17 @@ export function groupRuns(rows: RunRow[]): Map<string, RunRow[]> {
 }
 
 /** 루틴 하나의 묶음 — 순서는 설계 §4 (꺼 둠 → 지난 한 번짜리 → 주기 오류 → 마지막 결과) */
-export function classify(r: { enabled: boolean; once: boolean; onceAt?: number; error?: string }, last: RunRow | undefined, now: number): { state: BoardState; firstWait: boolean } {
+/** 반복 루틴이 예정 시각을 이만큼 넘겨도 돌지 않았으면 «놓침» — 보충이 줄에서 기다릴 틈 */
+export const MISSED_GRACE_MS = 30 * 60_000
+/** 지금 직전의 예정 시각 — 주기를 못 읽으면 undefined */
+export function prevDue(cron: string, now: number): number | undefined {
+  try { return new Cron(cron, { paused: true }).previousRuns(1, new Date(now))[0]?.getTime() } catch { return undefined }
+}
+/**
+ * 🔴 최종 리뷰(10/30) · 반복 루틴도 놓침을 판정한다(설계 §5) — `catchup:false` 라 보충하지 않았거나 주인 호스트가 꺼져 있으면
+ *    직전 예정 회차(`prevDue`) 뒤로 시작이 없다. 그대로 두면 이틀 안 돌아도 🟢 정상으로 보인다.
+ */
+export function classify(r: { enabled: boolean; once: boolean; onceAt?: number; error?: string; prevDue?: number }, last: RunRow | undefined, now: number): { state: BoardState; firstWait: boolean } {
   if (!r.enabled) return { state: 'off', firstWait: false }
   const bad = (x?: RunRow) => x?.result === 'fail' || x?.result === 'timeout'
   if (r.once && r.onceAt !== undefined && r.onceAt <= now) {
@@ -75,6 +85,7 @@ export function classify(r: { enabled: boolean; once: boolean; onceAt?: number; 
   }
   if (r.error) return { state: 'fail', firstWait: false }
   if (bad(last)) return { state: 'fail', firstWait: false }
+  if (!r.once && last && r.prevDue !== undefined && last.start < r.prevDue - 60_000 && now - r.prevDue > MISSED_GRACE_MS) return { state: 'missed', firstWait: false }
   if (last?.result === 'unknown') return { state: 'unknown', firstWait: false }
   return { state: 'ok', firstWait: !last }
 }

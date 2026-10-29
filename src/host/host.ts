@@ -109,7 +109,7 @@ export class Host {
     this.sessions.botOf = (id) => this.registry.bot(id)
     this.routines = new Routines({ run: (b, r, why) => { if (why?.catchup) this.queueRun(why.catchup, b, r, why); else this.runRoutine(b, r, why ?? {}) }, log: this.log })   // RB-2 · 보충은 시작 줄(동시 2개)로
     this.routines.owner = () => this.ownsRoutines()
-    this.routineNotes = new RoutineNotes({ root: this.registry.root, log: (m) => this.log(m) })
+    this.routineNotes = new RoutineNotes({ root: this.registry.root, log: (m) => this.log(m), owner: () => this.ownsRoutines() })
     this.akiflow = new AkiflowSync(this.registry.root, () => this.registry.bots(), (botId) => { const b = this.registry.bot(botId); if (b) this.broadcast({ ev: 'todo', botId, items: readTodo(b.abs) }) }, (botId, title) => { if (title) this.noteTodoTitle(botId, title) })
     this.akiflow.routineOn = () => !!this.registry.bot('orch')?.routines.some((x) => x.name === AK_ROUTINE && x.enabled !== false)
     this.bridges = new BridgeHub({ root: this.registry.root, dataDir: dataDir(), hostNames: () => [hostname(), this.hostName(), this.cfg.hostName ?? ''], log: (m) => this.log(m), deliver: (peer, items) => this.deliverLetters(peer, items),
@@ -191,8 +191,9 @@ export class Host {
         const lastA = [...r.items].reverse().find((i) => i.kind === 'assistant') as { text: string } | undefined
         const res = this.runs.end(r.id, r.state === 'done', lastA?.text, r.state === 'error' ? r.lastError : undefined)
         const w = this.waitEnd.get(r.id); if (w) { this.waitEnd.delete(r.id); w() }   // RB-2 · 시작 줄의 자리를 비운다
+        this.fromQueue.delete(r.id)
         // BR-2 · 실패한 회차는 `retry: true` 인 루틴만 10분 뒤 한 번 다시(기본 끔 — 외부 발송이 두 번 나가지 않게)
-        const info = this.routineRuns.get(r.id); this.routineRuns.delete(r.id)
+        const info = this.routineRuns.get(r.id); this.routineRuns.delete(r.id); this.startQueue.kick()   // 제시각 회차가 끝났으면 줄에 자리가 났다
         if (res && !res.ok && info && info.attempt === 1) {
           const def = this.registry.bot(info.botId)?.routines.find((x) => x.name === r.routine)
           if (def?.retry === true && def.enabled !== false) {
@@ -236,6 +237,7 @@ export class Host {
     // 🔴 다시 짜고 나서 보낸다 (AA-1) — 스케줄 결과(lastError·nextRun)가 같은 판에 실려 나가야 화면이 사실을 본다
     const bots = this.registry.bots()
     this.routines.reschedule(bots)
+    this.routineNotes?.sync(bots)   // 최종 리뷰 · `.bot.yml` 을 손으로 고쳐도 그 폴더 CLAUDE.md 구역이 따라온다
     this.broadcast({ ev: 'bots', bots })
   }
 
@@ -272,18 +274,30 @@ export class Host {
   /** RB-3 · 루틴 변경 기록 · 폴더 CLAUDE.md 루틴 구역 */
   routineNotes!: RoutineNotes
   /** RB-2 · 켜질 때 몰리는 실행(끊긴 회차 재시도 · 놓친 회차 보충)의 줄 — 동시 2개 · 예정 시각 이른 것부터 */
-  private startQueue = new StartQueue(2)
+  private startQueue = new StartQueue(2, () => this.onTimeLive())
+  /** RB-2 · 줄을 거쳐 시작한 회차(세션 id) — 나머지 도는 루틴은 제시각 회차다 */
+  private fromQueue = new Set<string>()
+  /** 최종 리뷰 · 지금 도는 제시각 회차 수 — 줄의 동시 한도에 넣는다(60분 넘은 것은 끝난 셈 · 멈춘 세션이 줄을 영영 막지 않게) */
+  private onTimeLive(now = Date.now()): number {
+    let n = 0
+    for (const [sid, x] of this.routineRuns) if (!this.fromQueue.has(sid) && now - x.t < RUN_TIMEOUT_MS) n++
+    return n
+  }
   /** RB-2 · 줄에서 시작한 회차가 끝나면 부를 것(세션 id → 자리 비우기) */
   private waitEnd = new Map<string, () => void>()
   /** RB-2 · 줄에 세워 돌린다 — 회차가 끝나거나 60분(`RUN_TIMEOUT_MS`)이 지나면 다음 것이 뜬다 */
   queueRun(at: number, b: Bot, r: RoutineDef, why: { attempt?: number; catchup?: number } = {}): void {
-    this.startQueue.push(at, () => new Promise<void>((res) => {
+    // 🔴 최종 리뷰 · 같은 루틴은 줄에 하나만 · 차례가 왔을 때 그사이 이 호스트가 이미 돌렸으면(제시각 회차·croner 의 늦은 타이머) 건너뛴다
+    const t0 = Date.now(), key = `${b.id}::${r.name}`
+    const queued = this.startQueue.push(at, () => new Promise<void>((res) => {
       const cur = this.registry.bot(b.id), d = cur?.routines.find((x) => x.name === r.name)
       if (!cur || !d || d.enabled === false) { res(); return }   // 줄에서 기다리는 사이 지워졌거나 꺼졌다
       const sid = this.runRoutine(cur, d, why)
-      this.waitEnd.set(sid, res)
-      setTimeout(() => { if (this.waitEnd.delete(sid)) res() }, RUN_TIMEOUT_MS).unref()
-    }))
+      this.fromQueue.add(sid)
+      const timer = setTimeout(() => { if (this.waitEnd.delete(sid)) res() }, RUN_TIMEOUT_MS); timer.unref()
+      this.waitEnd.set(sid, () => { clearTimeout(timer); res() })
+    }), { key, skip: () => { const done = this.routines.ranSince(b.id, r.name, t0); if (done) this.log(`줄에서 기다리던 회차를 건너뛰어요(그사이 이미 돌았어요): ${b.name} · ${r.name}`); return done } })
+    if (!queued) this.log(`이미 줄에서 기다리는 루틴이라 또 넣지 않아요: ${b.name} · ${r.name}${why.catchup ? ' · 보충' : ''}${why.attempt ? ` · ${why.attempt}번째 시도` : ''}`)
   }
   /** RB-2 · 이 호스트가 루틴 주인인가 — `.claude/ops.yml` 의 `host:`(운영 감시와 같은 판정 · 없으면 어디서나) */
   ownsRoutines(): boolean {
@@ -320,7 +334,7 @@ export class Host {
   }
 
   /** BR-2 · 이 호스트가 돌린 루틴 회차(세션 id → 몇 번째 시도) — 재시도 판단 */
-  private routineRuns = new Map<string, { botId: string; attempt: number }>()
+  private routineRuns = new Map<string, { botId: string; attempt: number; t: number }>()
   /** @returns 루틴 세션 id */
   runRoutine(bot: Bot, r: RoutineDef, why: { attempt?: number; catchup?: number } = {}): string {
     this.log(`루틴 실행: ${bot.name} · ${r.name}${why.attempt && why.attempt > 1 ? ` · ${why.attempt}번째 시도` : ''}${why.catchup ? ' · 놓친 회차 보충' : ''}`)
@@ -328,7 +342,7 @@ export class Host {
     const run = routineRun(r)   // BS · 문구와 권한 모드를 같은 값에서
     const s = this.sessions.create(bot, `루틴 · ${r.name}`, { permissionMode: run.mode, routine: r.name })
     this.runs.start(s.id, bot.id, bot.name, r.name, why)
-    this.routineRuns.set(s.id, { botId: bot.id, attempt: why.attempt ?? 1 })
+    this.routineRuns.set(s.id, { botId: bot.id, attempt: why.attempt ?? 1, t: Date.now() })
     /**
      * AI · 루틴 세션은 둘까지 → CC · **루틴마다** 둘까지 + 7일 지난 자동 세션 (2026-10-12) → **루틴마다 하나** (2026-10-19). 새로 만든 뒤 걷는다 —
      * 🔴 채팅(사람이 이어받은 세션 포함)·도는 중·확인 대기·백그라운드·대기 말·30분 안 활동은 걷지 않는다(`core/autoArea`).

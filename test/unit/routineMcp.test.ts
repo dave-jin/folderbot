@@ -26,7 +26,7 @@ function mkHost() {
     routines: { decorate: (_id: string, r: unknown[]) => r },
     sessions: { get: () => ({}) },
     runRoutine: vi.fn(() => 's_rt'),
-    routineNotes: { record: vi.fn() },
+    routineNotes: { record: vi.fn(), sync: vi.fn() },
     routineOverview: vi.fn(() => ({ summary: '요약', problems: [], changes: [] })),
   }
   return { host, saved, para }
@@ -51,6 +51,15 @@ describe('RB-4 · 루틴 도구의 bot · why', () => {
     expect(saved[0].routines).toEqual([expect.objectContaining({ name: 'PARA 결제 확인', cron: '7 * * * *', approve: 'readonly' })])
     expect(host.routineNotes.record).toHaveBeenCalledTimes(1)
     expect(host.routineNotes.record).toHaveBeenCalledWith(expect.objectContaining({ botId: 'b_para', routine: 'PARA 결제 확인', actor: '오케스트레이터', why: '정각 겹침 풀기', what: expect.stringContaining('→') }))
+  })
+  it('최종 리뷰 · 도구로 고치면 기록 뒤에 그 폴더 CLAUDE.md 구역을 바로 다시 쓴다(add · update · remove)', async () => {
+    const { host } = mkHost()
+    for (const [tool, args] of [['routine_add', { bot: 'b_home', name: '새것', when: '매일 저녁 8시', prompt: 'p', why: '시험' }], ['routine_update', { bot: 'b_home', name: '새것', enabled: false, why: '시험' }], ['routine_remove', { bot: 'b_home', name: '새것', why: '시험' }]] as const) {
+      host.routineNotes.record.mockClear(); host.routineNotes.sync.mockClear()
+      expect((await call(host, 'orch', tool, args)).isError).toBe(false)
+      expect(host.routineNotes.sync).toHaveBeenCalledTimes(1)
+      expect(host.routineNotes.sync.mock.invocationCallOrder[0]).toBeGreaterThan(host.routineNotes.record.mock.invocationCallOrder[0])
+    }
   })
   it('폴더 봇이 제 루틴을 고치면 «이 폴더 봇» 으로 기록 · why 없어도 된다', async () => {
     const { host } = mkHost()

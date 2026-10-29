@@ -69,6 +69,20 @@ describe('classify', () => {
   })
   it('classify 첫 회차 — 기록이 없는 반복 루틴은 ok + firstWait', () => expect(classify(rep, undefined, now)).toEqual({ state: 'ok', firstWait: true }))
   it('정상', () => expect(classify(rep, run('skip'), now)).toEqual({ state: 'ok', firstWait: false }))
+  it('최종 리뷰 · 반복 루틴이 직전 예정 회차를 건너뛰었고 30분이 지났으면 missed', () => {
+    const due = now - 2 * 60 * M   // 직전 예정 22:30 · 마지막 실행은 그보다 앞
+    const old = { ...run('ok'), start: due - 24 * 60 * M, end: due - 24 * 60 * M + M }
+    expect(classify({ ...rep, prevDue: due }, old, now).state).toBe('missed')
+    expect(classify({ ...rep, prevDue: now - 10 * M }, old, now).state).toBe('ok')            // 아직 30분 안 — 줄에서 기다릴 수 있다
+    expect(classify({ ...rep, prevDue: due }, { ...old, start: due + 5_000 }, now).state).toBe('ok')   // 그 회차가 돌았다
+    expect(classify({ ...rep, prevDue: due }, undefined, now)).toEqual({ state: 'ok', firstWait: true })   // 처음 보는 루틴은 기다림
+    expect(classify({ ...rep, prevDue: due }, { ...old, result: 'fail' }, now).state).toBe('fail')   // 실패가 먼저
+  })
+  it('prevDue — 지금 직전 예정 시각', async () => {
+    const { prevDue } = await import('../../src/core/routineBoard')
+    expect(prevDue('0 9 * * *', at('2026-10-30T10:00:00+09:00'))).toBe(at('2026-10-30T09:00:00+09:00'))
+    expect(prevDue('엉터리', now)).toBeUndefined()
+  })
   it('아직 안 온 한 번짜리는 ok', () => expect(classify({ enabled: true, once: true, onceAt: now + 60 * M }, undefined, now)).toEqual({ state: 'ok', firstWait: true }))
 })
 

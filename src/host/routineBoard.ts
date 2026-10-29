@@ -1,6 +1,6 @@
 import type { Bot, RoutineDef } from '../core/types'
 import { describeCron, isOnce, onceAt } from '../core/when'
-import { DEFAULT_MS, STATE_ORDER, classify, daveTodo, groupRuns, occurrences, pairRuns, planSlots, suggestShift, weekGrid,
+import { DEFAULT_MS, STATE_ORDER, classify, prevDue, daveTodo, groupRuns, occurrences, pairRuns, planSlots, suggestShift, weekGrid,
   type BoardRoutine, type BoardState, type ChangeRow, type RunEventLike, type RunRow } from '../core/routineBoard'
 
 /**
@@ -28,7 +28,7 @@ export function buildBoard(bots: Bot[], decorate: (botId: string, r: RoutineDef[
     const last = all.find((x) => x.start <= now)
     const durs = recent.filter((x) => x.end !== undefined).map((x) => x.ms ?? x.end! - x.start)
     const avgMs = durs.length ? Math.round(durs.reduce((p, c) => p + c, 0) / durs.length) : undefined
-    const { state, firstWait } = classify({ enabled, once, ...(oAt !== undefined ? { onceAt: oAt } : {}), ...(!once && r.lastError ? { error: r.lastError } : {}) }, last, now)
+    const { state, firstWait } = classify({ enabled, once, ...(oAt !== undefined ? { onceAt: oAt } : {}), ...(!once && r.lastError ? { error: r.lastError } : {}), ...(!once ? { prevDue: prevDue(r.cron, now) } : {}) }, last, now)
     routines.push({ botId: b.id, bot: b.name, name: r.name, cron: r.cron, when: describeCron(r.cron), enabled, once, ...(r.nextRun ? { next: r.nextRun } : {}), ...(r.lastError ? { error: r.lastError } : {}),
       state, firstWait, ...(last ? { last } : {}), recent, ...(avgMs !== undefined ? { avgMs } : {}), daveTodo: state === 'fail' && daveTodo(last?.reason),
       changes: changes.filter((c) => c.botId === b.id && c.routine === r.name).sort((x, y) => y.at - x.at).slice(0, 5) })

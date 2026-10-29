@@ -114,6 +114,8 @@ export class Routines {
   markRun(botId: string, name: string, at = Date.now()): void { this.loadLast()[this.key(botId, name)] = at; this.saveLast() }
   /** CR · 그 시각 이후로 돈 기록이 있나 */
   private ran(k: string, t: number): boolean { return (this.loadLast()[k] ?? 0) >= t }
+  /** 최종 리뷰 · 줄에 넣은 뒤 이 호스트가 그 루틴을 이미 돌렸나 — 차례가 온 보충·재시도를 건너뛸지 */
+  ranSince(botId: string, name: string, t: number): boolean { return this.ran(this.key(botId, name), t) }
   /** CR · 켜질 때 보충(catchUp)이 한 번 돌았나 — 그 뒤로는 다시 짤 때 놓친 한 번짜리를 바로 보충한다 */
   private started = false
   /**
@@ -214,21 +216,32 @@ export { routinesToDrop, AUTO_KEEP_PER_ROUTINE as ROUTINE_KEEP } from '../core/a
 /**
  * 🔴 RB-2 · 켜질 때 몰리는 실행을 줄 세운다 — 동시 `max`(기본 2)개 · 예정 시각 이른 것부터 (설계 §5).
  *    12시간 꺼졌다 켜지면 끊긴 회차 재시도 + 놓친 회차 보충이 한꺼번에 뜬다. 맥미니는 이미 hermes·크론으로 바쁘다.
- *    같은 틱에 넣은 것들은 다 넣은 뒤 정렬해서 시작한다(마이크로태스크). 제시각 루틴은 이 줄을 안 거친다.
+ *    같은 틱에 넣은 것들은 다 넣은 뒤 정렬해서 시작한다(마이크로태스크).
+ * 🔴 최종 리뷰(10/30) · 같은 루틴은 줄에 하나만(`key`) — 기다리는 사이 다시 짜기·깨어남·재시도가 같은 회차를 또 넣으면 두 번 돈다(한 번짜리 게시도).
+ *    차례가 왔을 때 `skip()` 이 참이면(그사이 제시각 회차가 먼저 돌았다) 돌리지 않는다. 제시각에 도는 수(`busy`)도 한도에 넣는다(설계 §5).
  */
 export class StartQueue {
-  private q: { at: number; job: () => Promise<void> }[] = []
+  private q: { at: number; job: () => Promise<void>; key?: string; skip?: () => boolean }[] = []
   private live = 0
   private armed = false
-  constructor(private max = 2) {}
-  push(at: number, job: () => Promise<void>): void {
-    this.q.push({ at, job })
+  constructor(private max = 2, private busy: () => number = () => 0) {}
+  /** @returns 줄에 넣었으면 true · 같은 열쇠가 이미 기다리면 false */
+  push(at: number, job: () => Promise<void>, o: { key?: string; skip?: () => boolean } = {}): boolean {
+    if (o.key && this.has(o.key)) return false
+    this.q.push({ at, job, ...o })
+    this.kick()
+    return true
+  }
+  has(key: string): boolean { return this.q.some((x) => x.key === key) }
+  /** 자리가 났을 수 있다 — 다시 본다(제시각 회차가 끝났을 때) */
+  kick(): void {
     if (!this.armed) { this.armed = true; queueMicrotask(() => { this.armed = false; this.pump() }) }
   }
   private pump(): void {
     this.q.sort((a, b) => a.at - b.at)
-    while (this.live < this.max && this.q.length) {
-      const { job } = this.q.shift()!
+    while (this.live + this.busy() < this.max && this.q.length) {
+      const { job, skip } = this.q.shift()!
+      if (skip?.()) continue
       this.live++
       let p: Promise<void>
       try { p = job() } catch (e) { p = Promise.reject(e) }

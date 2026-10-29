@@ -44,6 +44,11 @@ describe('RB-5 · buildBoard', () => {
     expect(b.today.slots[18]).toBe(3)
     expect(b.today.blocks.some((x) => x.name === 'PARA 결제 확인' && x.result === 'fail')).toBe(true)
   })
+  it('최종 리뷰 · catchup:false 매일 루틴이 이틀 안 돌았으면 놓침', () => {
+    const x = buildBoard([bot('d', '매일 폴더', [{ name: '매일 정리', cron: '0 9 * * *', prompt: 'p', catchup: false }])], decorate,
+      [E('2026-10-28T09:00:01+09:00', 'start', 'd', '매일 정리', 'd1'), E('2026-10-28T09:03:00+09:00', 'end', 'd', '매일 정리', 'd1', { result: 'ok' })], [], NOW)
+    expect(x.routines[0].state).toBe('missed')
+  })
   it('몰림 제안 · 한 주 칸 · CLAUDE.md 없는 폴더', () => {
     expect(b.suggest).toMatchObject({ botId: 'para', from: '0 * * * *' })
     expect(b.week.grid).toHaveLength(7)

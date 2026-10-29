@@ -103,3 +103,58 @@ describe('RB-2 · 공유 실행 기록', () => {
     rmSync(root, { recursive: true, force: true })
   })
 })
+
+/**
+ * 최종 리뷰(10/30) · 줄에 선 회차가 같은 루틴을 두 번 돌리지 않는다 — 기다리는 동안 다시 짜기·깨어남·재시도가 같은 루틴을 또 넣거나,
+ * 그사이 제시각 회차가 먼저 돌았으면 줄의 것은 건너뛴다 · 제시각에 도는 것도 동시 한도에 든다.
+ */
+describe('RB-2 · 줄 중복 막기', () => {
+  it('같은 열쇠는 줄에 하나만 — 두 번째 push 는 false', async () => {
+    const q = new StartQueue(1); const started: string[] = []; let hold!: () => void
+    q.push(1, () => new Promise<void>((res) => { started.push('x'); hold = res }), { key: 'b::x' })
+    expect(q.push(2, async () => { started.push('a') }, { key: 'b::a' })).toBe(true)
+    expect(q.push(3, async () => { started.push('a2') }, { key: 'b::a' })).toBe(false)
+    expect(q.has('b::a')).toBe(true)
+    await new Promise((r) => setTimeout(r, 0)); hold(); await new Promise((r) => setTimeout(r, 0)); await new Promise((r) => setTimeout(r, 0))
+    expect(started).toEqual(['x', 'a'])
+    expect(q.has('b::a')).toBe(false)
+  })
+  it('차례가 왔을 때 skip() 이 참이면 돌리지 않고 다음으로', async () => {
+    const q = new StartQueue(1); const started: number[] = []
+    q.push(1, async () => { started.push(1) }, { key: 'k1', skip: () => true })
+    q.push(2, async () => { started.push(2) }, { key: 'k2' })
+    await new Promise((r) => setTimeout(r, 0)); await new Promise((r) => setTimeout(r, 0))
+    expect(started).toEqual([2])
+  })
+  it('제시각에 도는 것(busy)도 한도에 든다 · kick 으로 다시 본다', async () => {
+    let busy = 2; const q = new StartQueue(2, () => busy); const started: number[] = []
+    q.push(1, async () => { started.push(1) })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(started).toEqual([])
+    busy = 1; q.kick(); await new Promise((r) => setTimeout(r, 0))
+    expect(started).toEqual([1])
+  })
+  it('다시 짜기가 줄에서 기다리는 한 번짜리를 또 넣지 않는다', async () => {
+    dir0 = mkdtempSync(join(tmpdir(), 'rb2-q-'))
+    vi.useFakeTimers({ now: at('2026-10-28T12:00:00') })
+    const q = new StartQueue(1, () => 1)   // 자리가 다 차 있다 — 줄에서 기다린다
+    const pushed: boolean[] = []
+    const r = new Routines({ run: (b, x, why) => { pushed.push(q.push(why?.catchup ?? 0, async () => {}, { key: `${b.id}::${x.name}` })) }, log: () => {} })
+    r.file = join(dir0, 'routine-runs.json')
+    const b = bot([{ name: 'once', cron: '2026-10-28T10:00', prompt: 'p' }])
+    r.catchUp([b], Date.now())
+    r.reschedule([bot([{ name: 'once', cron: '2026-10-28T10:00', prompt: 'p' }])])
+    r.reschedule([bot([{ name: 'once', cron: '2026-10-28T10:00', prompt: 'p' }])])
+    expect(pushed).toEqual([true, false, false])
+    vi.useRealTimers(); rmSync(dir0, { recursive: true, force: true })
+  })
+  it('ranSince — 그 시각 뒤에 이 호스트가 돌렸나', () => {
+    dir0 = mkdtempSync(join(tmpdir(), 'rb2-q-'))
+    const { r } = mk(dir0)
+    r.markRun('b', 'a', 1000)
+    expect(r.ranSince('b', 'a', 999)).toBe(true)
+    expect(r.ranSince('b', 'a', 1001)).toBe(false)
+    rmSync(dir0, { recursive: true, force: true })
+  })
+})
+let dir0 = ''

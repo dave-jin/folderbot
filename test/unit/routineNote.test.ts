@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { NOTE_OPEN, NOTE_CLOSE, renderNote, replaceBlock } from '../../src/core/routineNote'
@@ -75,6 +75,21 @@ describe('RoutineNotes', () => {
     expect(statSync(join(a, 'CLAUDE.md')).mtimeMs).toBe(m0)
     // 변경 기록은 파일에 한 줄씩 · 다시 만든 인스턴스도 읽는다
     expect(new RoutineNotes({ root, log: () => {} }).recent('b').map((c) => c.what)).toEqual(['새로 걸림'])
+  })
+  it('최종 리뷰 · 주인 호스트가 아니면 구역을 쓰지 않는다', () => {
+    root = mkdtempSync(join(tmpdir(), 'rb3-'))
+    const a = join(root, 'a'); mkdirSync(a); writeFileSync(join(a, 'CLAUDE.md'), '# a\n')
+    const notes = new RoutineNotes({ root, log: () => {}, owner: () => false })
+    notes.sync([mkBot({ abs: a, routines: [{ name: 'x', cron: '0 9 * * *', prompt: 'p' }] })])
+    expect(readFileSync(join(a, 'CLAUDE.md'), 'utf8')).toBe('# a\n')
+  })
+  it('최종 리뷰 · 다른 호스트가 기록 파일에 덧붙이면 다시 읽는다', () => {
+    root = mkdtempSync(join(tmpdir(), 'rb3-'))
+    const notes = new RoutineNotes({ root, log: () => {} })
+    notes.record(ch({ botId: 'b', what: '첫째' }))
+    expect(notes.all()).toHaveLength(1)
+    appendFileSync(join(root, '.folderbot', 'ops', 'routine-changes.jsonl'), JSON.stringify(ch({ botId: 'b', what: '다른 맥에서 둘째', at: at('2026-10-30T15:00:00') })) + '\n')
+    expect(notes.recent('b').map((c) => c.what)).toEqual(['다른 맥에서 둘째', '첫째'])
   })
   it('루틴을 다 지우면 구역도 지운다', () => {
     root = mkdtempSync(join(tmpdir(), 'rb3-'))
