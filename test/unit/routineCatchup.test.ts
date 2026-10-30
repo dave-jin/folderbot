@@ -100,6 +100,11 @@ describe('RB-2 · 공유 실행 기록', () => {
     const ev = log.events()
     expect(ev.map((e) => e.run)).toEqual(['x', 'y'])
     expect(latestStarts(ev).get('b::a')).toBe(at('2026-10-29T09:00:01+09:00'))
+    // 작은 지적 · 파일이 그대로면 다시 파싱하지 않는다 · 덧붙으면 다시 읽는다
+    expect(log.events()).toBe(ev)
+    const { appendFileSync } = await import('node:fs')
+    appendFileSync(join(root, '.folderbot', 'ops', 'runs-2026-10.jsonl'), JSON.stringify({ ts: '2026-10-29T10:00:00+09:00', host: 'macbook', event: 'start', botId: 'b', routine: 'a', run: 'z' }) + '\n')
+    expect(log.events().map((e) => e.run)).toEqual(['x', 'y', 'z'])
     rmSync(root, { recursive: true, force: true })
   })
 })

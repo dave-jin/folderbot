@@ -150,5 +150,7 @@ describe('RB-5 · diffRoutines — 화면 저장의 전후 비교', () => {
     const d = diffRoutines(before, after)
     expect(d.map((x) => [x.routine, x.what.split(' · ')[0]])).toEqual([['a', expect.stringMatching(/^시각 .+ → .+/)], ['b', '지움'], ['c', '새로 걸림']])
     expect(d[0].what).toContain('껐음'); expect(d[0].what).toContain('문구 바뀜')
+    const { describeCron } = await import('../../src/core/when')
+    expect(d[2].what).toBe(`새로 걸림 · ${describeCron('0 11 * * *')}`)   // 작은 지적 · MCP 기록과 같은 문구
   })
 })

@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSy
 import { dirname, join } from 'node:path'
 import type { Bot } from '../core/types'
 import type { ChangeRow } from '../core/routineBoard'
-import { renderNote, replaceBlock } from '../core/routineNote'
+import { NOTE_CLOSE, OPEN_PREFIX, renderNote, replaceBlock } from '../core/routineNote'
 
 /**
  * RB-3 · 루틴 변경 기록(`<볼트>/.folderbot/ops/routine-changes.jsonl` · 누가·언제·무엇·이유)과 폴더별 CLAUDE.md 루틴 구역.
@@ -51,7 +51,7 @@ export class RoutineNotes {
       try {
         const text = readFileSync(f, 'utf8')
         const out = replaceBlock(text, renderNote(routines, recent, b.orchestrator ? '.claude/routines.yml' : '.bot.yml'))
-        if (out === text) continue
+        if (out === text) { if (text.includes(OPEN_PREFIX) && !text.includes(NOTE_CLOSE)) this.d.log(`루틴 구역의 닫는 표식(${NOTE_CLOSE})이 없어 건드리지 않았어요 · ${f}`); continue }
         const tmp = `${f}.${process.pid}.tmp`; writeFileSync(tmp, out); renameSync(tmp, f)
       } catch (e) { this.d.log(`루틴 구역을 못 썼어요 · ${f} · ${(e as Error).message}`) }
     }

@@ -52,6 +52,14 @@ describe('RB-4 · 루틴 도구의 bot · why', () => {
     expect(host.routineNotes.record).toHaveBeenCalledTimes(1)
     expect(host.routineNotes.record).toHaveBeenCalledWith(expect.objectContaining({ botId: 'b_para', routine: 'PARA 결제 확인', actor: '오케스트레이터', why: '정각 겹침 풀기', what: expect.stringContaining('→') }))
   })
+  it('작은 지적 · 이름이 같은 봇이 둘이면 이름으로는 거절 · id·rel 로는 된다', async () => {
+    const { host } = mkHost()
+    const bots = host.registry.bots() as unknown as { id: string; name: string; rel: string; abs: string; routines: unknown[] }[]
+    bots.push({ id: 'b_para2', name: '2026-11-07_강의-PARA-AI', rel: '4. Archive/2026-11-07_강의-PARA-AI', abs: '/v/a', routines: [{ name: 'PARA 결제 확인', cron: '0 * * * *', prompt: 'p' }] })
+    const r = await call(host, 'orch', 'routine_update', { bot: '2026-11-07_강의-PARA-AI', name: 'PARA 결제 확인', enabled: false, why: '시험' })
+    expect(r.isError).toBe(true); expect(r.text).toContain('4. Archive/2026-11-07_강의-PARA-AI')
+    expect((await call(host, 'orch', 'routine_update', { bot: '1. Projects/2026-11-07_강의-PARA-AI', name: 'PARA 결제 확인', enabled: false, why: '시험' })).isError).toBe(false)
+  })
   it('최종 리뷰 · 도구로 고치면 기록 뒤에 그 폴더 CLAUDE.md 구역을 바로 다시 쓴다(add · update · remove)', async () => {
     const { host } = mkHost()
     for (const [tool, args] of [['routine_add', { bot: 'b_home', name: '새것', when: '매일 저녁 8시', prompt: 'p', why: '시험' }], ['routine_update', { bot: 'b_home', name: '새것', enabled: false, why: '시험' }], ['routine_remove', { bot: 'b_home', name: '새것', why: '시험' }]] as const) {

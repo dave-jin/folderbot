@@ -193,6 +193,6 @@ export function diffRoutines(before: RoutineDef[], after: RoutineDef[]): { routi
   const out: { routine: string; what: string; before?: RoutineDef; after?: RoutineDef }[] = []
   for (const a of after) { const b = before.find((x) => x.name === a.name); if (b) { const w = changeWhat(b, a); if (w) out.push({ routine: a.name, what: w, before: b, after: a }) } }
   for (const b of before) if (!after.some((x) => x.name === b.name)) out.push({ routine: b.name, what: '지움', before: b })
-  for (const a of after) if (!before.some((x) => x.name === a.name)) out.push({ routine: a.name, what: '새로 걸림', after: a })
+  for (const a of after) if (!before.some((x) => x.name === a.name)) out.push({ routine: a.name, what: `새로 걸림 · ${describeCron(a.cron)}`, after: a })   // 작은 지적 · MCP 기록과 같은 문구
   return out
 }

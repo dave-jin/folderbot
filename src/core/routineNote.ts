@@ -8,7 +8,7 @@ import type { ChangeRow } from './routineBoard'
  */
 export const NOTE_OPEN = '<!-- folderbot:routines — Folder Bot 이 고쳐 쓴다. 손으로 고치지 마세요(루틴 시트·루틴 페이지에서 고칩니다) -->'
 export const NOTE_CLOSE = '<!-- /folderbot:routines -->'
-const OPEN_PREFIX = '<!-- folderbot:routines'
+export const OPEN_PREFIX = '<!-- folderbot:routines'
 const p2 = (n: number) => String(n).padStart(2, '0')
 const stamp = (t: number) => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${p2(d.getHours())}:${p2(d.getMinutes())}` }
 
@@ -29,11 +29,17 @@ export function renderNote(routines: { name: string; cron: string; enabled: bool
 /** 구역을 바꿔 끼운다 — 없으면 끝에 빈 줄 하나 뒤로 덧붙이고, `block` 이 null 이면 덧붙였던 모양 그대로 걷어 낸다 · 구역 밖은 바이트 그대로 */
 export function replaceBlock(text: string, block: string | null): string {
   const i = text.indexOf(OPEN_PREFIX), j = i < 0 ? -1 : text.indexOf(NOTE_CLOSE, i)
-  if (i < 0 || j < 0) {
-    if (block === null) return text
-    return (text.endsWith('\n') ? text : text + '\n') + '\n' + block + '\n'
+  // 작은 지적 · 그 파일의 줄 끝(CRLF/LF)을 따른다 — 붙였다 지우면 바이트 그대로 돌아오게
+  const eol = text.includes('\r\n') ? '\r\n' : '\n', b = block?.replace(/\r?\n/g, eol) ?? null
+  // 🔴 작은 지적 · 시작 표식만 있고 닫는 표식이 없으면(사람이 지웠다) 건드리지 않는다 — 덧붙였다가 다음 교체 때 옛 시작부터 잘라 사람 글을 지운다
+  if (i >= 0 && j < 0) return text
+  if (i < 0) {
+    if (b === null) return text
+    // 끝 줄바꿈이 없던 파일에는 뒤에 줄바꿈을 붙이지 않는다 — 지울 때 줄바꿈 둘을 걷으면 원래대로
+    return text.endsWith(eol) ? text + eol + b + eol : text + eol + eol + b
   }
   const before = text.slice(0, i), after = text.slice(j + NOTE_CLOSE.length)
-  if (block !== null) return before + block + after
-  return before.replace(/\n$/, '') + after.replace(/^\n/, '')
+  if (b !== null) return before + b + after
+  if (after === '') return before.endsWith(eol + eol) ? before.slice(0, -2 * eol.length) : before.endsWith(eol) ? before.slice(0, -eol.length) : before
+  return (before.endsWith(eol) ? before.slice(0, -eol.length) : before) + (after.startsWith(eol) ? after.slice(eol.length) : after)
 }

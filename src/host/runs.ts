@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { isoLocal } from '../core/fbmf'
 import { RUN_TIMEOUT_MS, routineResult } from '../core/runs'
@@ -47,9 +47,13 @@ export class RunLog {
    * RB · 지난달·이번 달 실행 기록을 통째로 읽는다(모든 호스트 것 · 시각 순) — 루틴 보드·공유 «이미 돌았나» 판단이 쓴다.
    *    깨진 줄은 건너뛴다. 파일이 없으면 빈 목록.
    */
+  /** 작은 지적 · 두 달 치 파일이 그대로면 다시 파싱하지 않는다(루틴 화면·«⏰ 루틴» 줄이 자주 부른다) */
+  private evCache: { sig: string; rows: (RunEvent & { ts: string; host?: string })[] } | null = null
   events(): (RunEvent & { ts: string; host?: string })[] {
     const now = new Date(this.now())
     const months = [isoLocal(new Date(now.getFullYear(), now.getMonth() - 1, 1)).slice(0, 7), isoLocal(now).slice(0, 7)]
+    const sig = months.map((m) => { try { const s = statSync(join(this.root, '.folderbot', 'ops', `runs-${m}.jsonl`)); return `${m}:${s.size}:${s.mtimeMs}` } catch { return `${m}:-` } }).join('|')
+    if (this.evCache?.sig === sig) return this.evCache.rows
     const out: (RunEvent & { ts: string; host?: string })[] = []
     for (const m of months) {
       const f = join(this.root, '.folderbot', 'ops', `runs-${m}.jsonl`)
@@ -57,6 +61,7 @@ export class RunLog {
       let text = ''; try { text = readFileSync(f, 'utf8') } catch (e) { this.log(`실행 기록을 못 읽었어요 · ${f} · ${(e as Error).message}`); continue }
       for (const line of text.split('\n')) { if (!line.trim()) continue; try { const e = JSON.parse(line); if (e && typeof e.ts === 'string' && e.event) out.push(e) } catch { /* 깨진 줄 */ } }
     }
+    this.evCache = { sig, rows: out }
     return out
   }
   /**

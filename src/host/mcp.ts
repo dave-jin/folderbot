@@ -155,7 +155,11 @@ export function routineTarget(reg: Registry, callerId: string, a: Record<string,
   const q = typeof a.bot === 'string' ? a.bot.trim() : ''
   if (!q) { const b = reg.bot(callerId); if (!b) throw new Error('봇을 못 찾았어요'); return { bot: b, foreign: false } }
   if (callerId !== ORCH_ID) throw new Error('다른 폴더의 루틴은 오케스트레이터만 고칠 수 있어요 — 필요하면 orch_ask 로 부탁하세요')
-  const b = reg.bots().find((x) => x.id === q || x.name === q || x.rel === q || x.name.toLowerCase() === q.toLowerCase())
+  // 작은 지적 · id·폴더 경로가 먼저 · 이름이 같은 봇이 둘이면 첫 봇을 고르지 않고 거절한다(엉뚱한 폴더 루틴을 고치지 않게)
+  const all = reg.bots(), exact = all.find((x) => x.id === q || x.rel === q)
+  const named = exact ? [exact] : all.filter((x) => x.name === q || x.name.toLowerCase() === q.toLowerCase())
+  if (named.length > 1) throw new Error(`«${q}» 이라는 봇이 ${named.length}개예요 — 폴더 경로로 골라 주세요: ${named.map((x) => x.rel).join(' · ')}`)
+  const b = named[0]
   if (!b) throw new Error(`«${q}» 이라는 봇이 없어요 — bots_list 로 이름을 보세요`)
   const foreign = b.id !== callerId
   if (foreign && mutate && !(typeof a.why === 'string' && a.why.trim())) throw new Error('다른 봇 루틴을 고칠 때는 why(이유 한 줄)가 필요해요 — 그 폴더 CLAUDE.md 에 남습니다')

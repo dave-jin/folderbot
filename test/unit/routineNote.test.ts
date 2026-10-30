@@ -41,11 +41,27 @@ describe('replaceBlock', () => {
   })
   it('덧붙이기 — 구역이 없으면 끝에 빈 줄 하나 뒤로', () => {
     expect(replaceBlock('# 폴더\n본문\n', block('x'))).toBe('# 폴더\n본문\n\n' + block('x') + '\n')
-    expect(replaceBlock('# 폴더\n본문', block('x'))).toBe('# 폴더\n본문\n\n' + block('x') + '\n')
+    expect(replaceBlock('# 폴더\n본문', block('x'))).toBe('# 폴더\n본문\n\n' + block('x'))   // 끝 줄바꿈이 없던 파일엔 붙이지 않는다 — 지우면 그대로 돌아오게
   })
   it('지우기 — 덧붙였던 것을 지우면 원래대로', () => {
     const orig = '# 폴더\n본문\n'
     expect(replaceBlock(replaceBlock(orig, block('x')), null)).toBe(orig)
+  })
+  it('작은 지적 · 끝 줄바꿈 없는 파일도 붙였다 지우면 바이트 그대로', () => {
+    const orig = '# 폴더\n본문'
+    expect(replaceBlock(replaceBlock(orig, block('x')), null)).toBe(orig)
+  })
+  it('작은 지적 · CRLF 파일은 CRLF 로 붙이고 지우면 그대로', () => {
+    const orig = '# 폴더\r\n본문\r\n'
+    const added = replaceBlock(orig, block('x'))
+    expect(added.replace(/\r\n/g, '')).not.toContain('\n')
+    expect(replaceBlock(added, null)).toBe(orig)
+    expect(replaceBlock(replaceBlock(added, block('y')), null)).toBe(orig)
+  })
+  it('작은 지적 · 닫는 표식이 없으면(사람이 지움) 건드리지 않는다 — 다음 교체 때 그 사이 글이 잘리지 않게', () => {
+    const broken = '# 폴더\n\n' + NOTE_OPEN + '\n옛 구역\n\n## 사람이 뒤에 쓴 절\n지키기\n'
+    expect(replaceBlock(broken, block('새것'))).toBe(broken)
+    expect(replaceBlock(broken, null)).toBe(broken)
   })
   it('구역도 없고 지울 것도 없으면 그대로', () => expect(replaceBlock('abc\n', null)).toBe('abc\n'))
 })
