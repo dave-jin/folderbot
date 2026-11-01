@@ -68,7 +68,7 @@ const clean = (s: string): string => maskSensitive(s).replace(/%/g, '퍼센트')
 /** `state.md` 현재 목표(신선할 때) → `CLAUDE.md` 목적 첫 문장 → 목적 미정 */
 export function goalLine(stateMd: string | null, stateMtime: number | null, claudeMd: string | null, now: number): FolderInput['goal'] {
   if (stateMd && stateMtime !== null && now - stateMtime <= GOAL_FRESH_MS) {
-    const m = /^>\s*현재 목표:\s*(.+?)\s*$/m.exec(stateMd)
+    const m = /^>[ \t]*현재 목표:[ \t]*(\S.*?)[ \t]*$/m.exec(stateMd)
     if (m && m[1].trim()) return { text: clean(m[1].trim()), from: 'state' }
   }
   const first = claudeMd ? purposeSentence(claudeMd) : null
@@ -91,7 +91,10 @@ function purposeSentence(md: string): string | null {
   return null
 }
 
-/** `## 📤 오케스트레이터에게` 절의 `- [M/D HH:MM] 글 | …` 줄. 시각은 로컬, 연도는 부르는 쪽이 준다 */
+/**
+ * `## 📤 오케스트레이터에게` 절의 `- [M/D HH:MM] 글 | …` 줄. 시각은 로컬.
+ * 연도는 부르는 쪽이 고른다 — 12월 줄을 1월에 읽는 경우는 부르는 쪽 몫이다. 없는 날짜·시각 줄은 건너뛴다.
+ */
 export function outboxLines(stateMd: string | null, year: number): FolderInput['outbox'] {
   if (!stateMd) return []
   const out: FolderInput['outbox'] = []
@@ -101,9 +104,13 @@ export function outboxLines(stateMd: string | null, year: number): FolderInput['
     if (!inside) continue
     const m = /^\s*-\s*\[(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{2})\]\s*(.+?)\s*$/.exec(raw)
     if (!m) continue
+    const [mo, da, hh, mm] = [+m[1], +m[2], +m[3], +m[4]]
+    if (mo < 1 || mo > 12 || da < 1 || da > 31 || hh > 23 || mm > 59) continue
+    const at = new Date(year, mo - 1, da, hh, mm)
+    if (at.getMonth() !== mo - 1 || at.getDate() !== da) continue // 2/30 처럼 굴러 넘어가는 날짜
     const text = m[5].split(' | ')[0].trim()
     if (!text) continue
-    out.push({ at: new Date(year, +m[1] - 1, +m[2], +m[3], +m[4]).getTime(), text: clean(text) })
+    out.push({ at: at.getTime(), text: clean(text) })
   }
   return out
 }
@@ -180,17 +187,17 @@ export function buildBoard(i: {
     .map((w) => ({ kind: 'waiting' as const, botId: w.botId, folder: clean(w.folder), sessionId: w.sessionId, title: clean(w.name), line: '내 답을 기다리는 중', at: w.at }))
 
   // 어긋난 루틴 — 한 루틴은 한 줄 (1단계 판정: fail·missed 만)
-  const seen = new Set<string>()
-  const routine: StepRow[] = []
+  const latest = new Map<string, StepRow>()
   for (const r of i.routines) {
     if (r.state !== 'fail' && r.state !== 'missed') continue
-    const key = `${r.botId}\u0000${r.name}`
-    if (seen.has(key)) continue
-    seen.add(key)
     const why = r.last?.reason ?? r.error
     const head = r.state === 'fail' ? '실패했어요' : '돌아야 할 때 안 돌았어요'
-    routine.push({ kind: 'routine', botId: r.botId, folder: clean(r.bot), routine: r.name, title: clean(r.name), line: clean(why ? `${head} — ${why}` : head), at: r.last?.start ?? 0 })
+    const row: StepRow = { kind: 'routine', botId: r.botId, folder: clean(r.bot), routine: r.name, title: clean(r.name), line: clean(why ? `${head} — ${why}` : head), at: r.last?.start ?? 0 }
+    const key = `${r.botId}\u0000${r.name}`
+    const prev = latest.get(key)
+    if (!prev || row.at > prev.at) latest.set(key, row)
   }
+  const routine = [...latest.values()]
   routine.sort((a, b) => b.at - a.at)
 
   // 기간 합계 — 작업에 만든 때가 없어 «첫 카드가 시작된 때» 로 대신한다
@@ -207,14 +214,22 @@ export function buildBoard(i: {
     }
   }
 
-  return {
+  return scrub({
     v: 1, at: now, host: i.host, period: i.period, since,
     axis: i.axis ? { text: clean(i.axis.text), at: i.axis.at } : null,
     tally,
     step: { stalled: group(stalled), waiting: group(waiting), routine: group(routine) },
     goals, quiet,
     sources: i.sources.map((s) => ({ name: clean(s.name), ok: s.ok, at: s.at, ...(s.note === undefined ? {} : { note: clean(s.note) }) }))
-  }
+  })
+}
+
+/** 마지막 걸음 — 필드마다 놓친 곳이 없도록 판의 모든 글에서 `%` 를 지운다(id·이름·마감·host 포함) */
+function scrub<T>(v: T): T {
+  if (typeof v === 'string') return v.replace(/%/g, '퍼센트') as T
+  if (Array.isArray(v)) return v.map(scrub) as T
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, scrub(x)])) as T
+  return v
 }
 
 // ── 이야기 ────────────────────────────────────────────────────────────────────

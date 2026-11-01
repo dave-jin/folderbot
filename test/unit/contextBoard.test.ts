@@ -62,6 +62,11 @@ describe('goalLine', () => {
     expect(goalLine(null, null, null, NOW)).toEqual({ text: '목적 미정', from: 'none' })
     expect(goalLine('# x', NOW, '# y', NOW)).toEqual({ text: '목적 미정', from: 'none' })
   })
+  it('빈 현재 목표 줄은 다음 줄을 삼키지 않고 CLAUDE.md 로 넘어간다', () => {
+    const empty = '> 현재 목표:\n\n## 완료\n'
+    expect(goalLine(empty, NOW, claude, NOW)).toEqual({ text: '해커톤을 열어 참가자 열 팀이 시제품을 만든다.', from: 'claude' })
+    expect(goalLine(empty, NOW, null, NOW)).toEqual({ text: '목적 미정', from: 'none' })
+  })
   it('민감값은 가린다', () => {
     expect(goalLine('> 현재 목표: 010-1234-5678 에게 연락', NOW, null, NOW).text).not.toContain('1234')
   })
@@ -82,6 +87,11 @@ describe('outboxLines', () => {
       { at: new Date(2026, 9, 31, 23, 10).getTime(), text: '[완료] 결과 화면 고침' },
       { at: new Date(2026, 10, 1, 8, 5).getTime(), text: '[보고] 두 번째' }
     ])
+  })
+  it('없는 날짜·시각 줄은 건너뛴다', () => {
+    const bad = ['## 📤 오케스트레이터에게', '- [2/30 10:00] [보고] 없는 날', '- [13/1 10:00] [보고] 없는 달', '- [0/5 10:00] [보고] 영월', '- [5/0 10:00] [보고] 영일',
+      '- [5/5 24:00] [보고] 스물넷', '- [5/5 10:60] [보고] 육십분', '- [5/31 23:59] [보고] 멀쩡'].join('\n')
+    expect(outboxLines(bad, 2026).map((r) => r.text)).toEqual(['[보고] 멀쩡'])
   })
   it('null 이나 절 없음은 빈 배열', () => {
     expect(outboxLines(null, 2026)).toEqual([])
@@ -197,6 +207,25 @@ describe('buildBoard — 목표 카드', () => {
     expect(g.next).toBe('도는 일')
     expect(g.just).toBeNull()
     expect(g.problem).toBe(false)
+  })
+})
+
+describe('buildBoard — 리뷰 1회차', () => {
+  it('루틴 이름·마감·host·id·sessionId 의 % 도 지운다', () => {
+    const f = folder({ due: '100%-마감', tasks: [task('t%1', 'stalled')] })
+    const b = build([f], {
+      host: '맥%미니', routines: [routine('아침 5%', 'fail')],
+      waiting: [{ botId: 'h', folder: 'f', sessionId: 's%1', name: 'n', at: NOW }]
+    })
+    expect(b.step.routine.rows).toHaveLength(1)
+    expect(JSON.stringify(b)).not.toContain('%')
+  })
+  it('같은 루틴이 여러 번이면 가장 최근 실패 한 줄', () => {
+    const run = (start: number, reason: string) => ({ run: String(start), botId: 'hack1', routine: '아침', start, result: 'fail' as const, reason, catchup: false })
+    const b = build([folder()], { routines: [routine('아침', 'fail', { last: run(100, '옛 실패') }), routine('아침', 'fail', { last: run(900, '새 실패') }), routine('아침', 'fail', { last: run(500, '중간') })] })
+    expect(b.step.routine.rows).toHaveLength(1)
+    expect(b.step.routine.rows[0].at).toBe(900)
+    expect(b.step.routine.rows[0].line).toContain('새 실패')
   })
 })
 
