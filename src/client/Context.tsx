@@ -3,7 +3,7 @@ import { api } from './api'
 import { useStore } from './store'
 import { Icon } from './FolderBot'
 import { askName } from './Sheets'
-import { STEP_ROWS, type Board, type GoalCard, type Period, type StepGroup, type StepRow, type StoryRow } from '../core/contextBoard'
+import { STEP_ROWS, continueTarget, type Board, type GoalCard, type Period, type StepGroup, type StepRow, type StoryRow } from '../core/contextBoard'
 import type { PermissionRequest } from '../core/types'
 import type { CtxTask, TaskState } from '../core/contextTasks'
 import type { SessionCard } from '../core/contextCard'
@@ -17,7 +17,7 @@ import type { SessionCard } from '../core/contextCard'
  * ⚠ 주인이 아닌 맥은 볼트 `board.json` 을 그대로 받는다 — 기간을 골라도 판의 `period` 가 다르면 그 사실을 적는다.
  */
 type Status = { owner: boolean; paused: null | 'usage' | 'cap' | 'off'; calls: number; pending: number }
-type GoalResp = { goal: GoalCard | null; tasks: CtxTask[]; loose: SessionCard[]; story: StoryRow[]; brief: string }
+type GoalResp = { goal: GoalCard | null; tasks: CtxTask[]; loose: (SessionCard & { ownerBot?: string })[]; story: StoryRow[]; brief: string }
 type Go = (b: string, sid?: string) => void
 type Open = (goal?: { bot: string; task?: string }) => void
 
@@ -245,9 +245,10 @@ function GoalView({ at, back, onClose, go, goTodo, phone, openDoc, owner }: {
   useEffect(() => { load(); return () => { reqN.current++ } }, [bot, sel])
   const task = d && sel && sel !== 'loose' ? d.tasks.find((t) => t.id === sel) ?? null : null
   const rows: Row[] = !d ? [] : sel === 'loose'
-    ? d.loose.map((c) => ({ at: c.from, channel: c.channel, machine: c.machine, text: c.intent, stalled: c.ending === 'cut', ref: { sessionId: c.sessionId }, cards: [c.id] }))
+    ? d.loose.map((c) => ({ at: c.from, channel: c.channel, machine: c.machine, text: c.intent, stalled: c.ending === 'cut', ref: { sessionId: c.sessionId, ownerBot: c.ownerBot }, cards: [c.id] }))
     : d.story.map((r) => ({ ...r, cards: task && 'sessionId' in r.ref ? task.cards.filter((id) => sidOf(id) === (r.ref as { sessionId: string }).sessionId) : [] }))
-  const lastSid = (() => { for (let i = rows.length - 1; i >= 0; i--) { const r = rows[i].ref; if ('sessionId' in r) return r.sessionId } return task?.cards.length ? sidOf(task.cards[task.cards.length - 1]) : null })()
+  // «그 세션 이어서» 는 그 세션의 주인 봇으로 — 오케스트레이터 조각 카드면 오케스트레이터(최종 검토 2)
+  const cont = continueTarget(rows)
   const g = d?.goal
   const name = g?.folder ?? bot
 
@@ -270,7 +271,7 @@ function GoalView({ at, back, onClose, go, goTodo, phone, openDoc, owner }: {
   const reopen = async () => { if (!task) return; try { await api('/context/reopen', { body: { bot, task: task.id } }); say('다시 열었어요'); load() } catch (e) { say(errMsg(e)) } }
   const drop = (e: DragEvent, to: string) => { e.preventDefault(); setOver(''); try { const cards = JSON.parse(e.dataTransfer.getData(DRAG)) as string[]; if (cards.length) void move(cards, to) } catch { /* 다른 끌기 */ } }
   const dragOver = (e: DragEvent, id: string) => { if (e.dataTransfer.types.includes(DRAG)) { e.preventDefault(); setOver(id) } }
-  const clickRow = (r: Row) => { if ('sessionId' in r.ref) go(bot, r.ref.sessionId); else if (openDoc) openDoc(bot, r.ref.file) }
+  const clickRow = (r: Row) => { if ('sessionId' in r.ref) go(r.ref.ownerBot ?? bot, r.ref.sessionId); else if (openDoc) openDoc(bot, r.ref.file) }
   const sessionsOf = (t: CtxTask) => new Set(t.cards.map(sidOf)).size
 
   return <>
@@ -294,6 +295,7 @@ function GoalView({ at, back, onClose, go, goTodo, phone, openDoc, owner }: {
           {task && (task.state === 'done' || task.state === 'claimed') ? <button className="btn ghost cx-re" onClick={() => void reopen()}>안 끝났어</button> : null}</div>
         {task ? <div className="cx-now"><p><b>지금 어디까지</b> — {task.summary || '아직 요약이 없어요'}</p><p><b>빠진 것</b> — {task.missing || '없음'}</p></div>
           : sel === null && g?.gap ? <div className="cx-now"><p><b>목표 대비</b> — {g.gap}</p></div> : null}
+        {owner === false ? <div className="bempty">이야기는 주인 맥에서 보여요</div> : null}
         {rows.length ? rows.map((r, i) => <div key={i} className={`cx-ev ${r.stalled ? 'half' : ''}`} draggable={r.cards.length > 0}
           onDragStart={(e) => { e.dataTransfer.setData(DRAG, JSON.stringify(r.cards)); e.dataTransfer.effectAllowed = 'move' }}>
           <button className="cx-evb" onClick={() => clickRow(r)}>
@@ -304,10 +306,10 @@ function GoalView({ at, back, onClose, go, goTodo, phone, openDoc, owner }: {
             {menu === i ? <div className="menu cx-menu"><div className="h">다른 작업으로 옮기기</div>
               {d?.tasks.filter((t) => t.id !== sel).map((t) => <button key={t.id} onClick={() => void move(r.cards, t.id)}><span className={`st st-${t.state}`} />{t.title}</button>)}
               <hr /><button onClick={() => void moveNew(r.cards)}><Icon n="plus" size={12} />새 작업…</button></div> : null}</span> : null}
-        </div>) : <div className="bempty">{d ? '이 기간에 남은 이야기가 없어요' : '불러오는 중…'}</div>}
+        </div>) : owner === false ? null : <div className="bempty">{d ? '이 기간에 남은 이야기가 없어요' : '불러오는 중…'}</div>}
       </section>
 
-      <ChatBox bot={bot} name={name} task={task} lastSid={sel === 'loose' ? null : lastSid} brief={d?.brief ?? ''} go={(b, sid) => { onClose(); go(b, sid) }} />
+      <ChatBox bot={bot} name={name} task={task} cont={sel === 'loose' ? null : cont} brief={d?.brief ?? ''} go={(b, sid) => { onClose(); go(b, sid) }} />
     </div>
   </>
 }
@@ -315,7 +317,9 @@ function GoalView({ at, back, onClose, go, goTodo, phone, openDoc, owner }: {
 /* ── 오른쪽 채팅 ─────────────────────────────────────────────────────────── */
 
 type Target = 'cont' | 'new' | 'orch'
-function ChatBox({ bot, name, task, lastSid, brief, go }: { bot: string; name: string; task: CtxTask | null; lastSid: string | null; brief: string; go: Go }) {
+function ChatBox({ bot, name, task, cont, brief, go }: { bot: string; name: string; task: CtxTask | null; cont: { bot: string; sessionId: string } | null; brief: string; go: Go }) {
+  const { s } = useStore()
+  const lastSid = cont?.sessionId ?? null
   const [to, setTo] = useState<Target>(task && lastSid ? 'cont' : 'new')
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
@@ -323,14 +327,16 @@ function ChatBox({ bot, name, task, lastSid, brief, go }: { bot: string; name: s
   // 작업을 바꾸면 받는 쪽 기본값도 다시 — 작업이 있으면 그 세션 이어서, 목표 전체면 새 세션
   useEffect(() => { setTo(task && lastSid ? 'cont' : 'new') }, [task?.id, lastSid])
   const title = task?.title ?? name
-  const sub = to === 'cont' ? `받는 쪽: ${name} 봇 · 그 세션을 이어 씀` : to === 'new' ? `받는 쪽: ${name} 봇 · 새 세션 «상황판 · ${title}»` : '받는 쪽: 오케스트레이터 · 새 세션'
+  const contBot = cont ? s.bots.find((x) => x.id === cont.bot) : undefined
+  const contName = !cont || cont.bot === bot ? `${name} 봇` : contBot?.orchestrator ? '오케스트레이터' : `${contBot?.displayName || contBot?.name || cont.bot} 봇`
+  const sub = to === 'cont' ? `받는 쪽: ${contName} · 그 세션을 이어 씀` : to === 'new' ? `받는 쪽: ${name} 봇 · 새 세션 «상황판 · ${title}»` : '받는 쪽: 오케스트레이터 · 새 세션'
   const send = async () => {
     const msg = text.trim(); if (!msg || busy) return
     setBusy(true); setErr('')
     const full = brief ? `${brief}\n\n${msg}` : msg
     try {
-      const target = to === 'orch' ? 'orch' : bot
-      const body = to === 'cont' && lastSid ? { text: full, sessionId: lastSid } : to === 'new' ? { text: full, name: `상황판 · ${title}` } : { text: full }
+      const target = to === 'orch' ? 'orch' : to === 'cont' && cont ? cont.bot : bot
+      const body = to === 'cont' && cont ? { text: full, sessionId: cont.sessionId } : to === 'new' ? { text: full, name: `상황판 · ${title}` } : { text: full }
       const r = await api<{ sessionId: string }>(`/bots/${encodeURIComponent(target)}/send`, { body })
       setText(''); go(target, r.sessionId)
     } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }

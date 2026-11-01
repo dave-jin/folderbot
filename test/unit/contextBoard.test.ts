@@ -3,9 +3,10 @@ import type { SessionCard } from '../../src/core/contextCard'
 import { emptyTasks, type CtxTask, type FolderTasks, type TaskState } from '../../src/core/contextTasks'
 import type { BoardRoutine } from '../../src/core/routineBoard'
 import {
+  continueTarget,
   STEP_ROWS, SNOOZE_MS, FOLD_MS, GOAL_FRESH_MS, AXIS_MARK,
   goalLine, outboxLines, buildBoard, story, brief, renderBoardMd, axisPrompt,
-  type FolderInput, type Board
+  type FolderInput, type Board, type StoryRow
 } from '../../src/core/contextBoard'
 
 const DAY = 86_400_000
@@ -386,5 +387,18 @@ describe('axisPrompt', () => {
     expect(p).toContain('멈춘 일')
     expect(p).toContain('해커톤')
     expect(p).not.toContain('%')
+  })
+})
+
+describe('continueTarget — «그 세션 이어서» 는 그 세션의 주인 봇으로(최종 검토 2)', () => {
+  const row = (ref: StoryRow['ref'], at = 1): StoryRow => ({ at, channel: 'folder', machine: 'mini', text: 'x', stalled: false, ref })
+  it('마지막 세션 줄의 주인 봇과 세션 — 파일 줄은 건너뛴다', () => {
+    expect(continueTarget([row({ sessionId: 's1', ownerBot: 'hack1' }), row({ sessionId: 's_o', ownerBot: 'orch' }, 2), row({ file: 'state.md' }, 3)]))
+      .toEqual({ bot: 'orch', sessionId: 's_o' })
+  })
+  it('주인을 모르는 세션(지웠거나 다른 맥) · 세션 줄 없음 → null', () => {
+    expect(continueTarget([row({ sessionId: 's1', ownerBot: 'hack1' }), row({ sessionId: 's_gone' }, 2)])).toBeNull()
+    expect(continueTarget([row({ file: 'state.md' })])).toBeNull()
+    expect(continueTarget([])).toBeNull()
   })
 })

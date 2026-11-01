@@ -50,6 +50,11 @@ describe('verifyEvidence · file', () => {
     expect(verifyEvidence({ kind: 'file', ref: '.' }, c)).toBe(false)
     expect(verifyEvidence({ kind: 'file', ref: '' }, c)).toBe(false)
   })
+  it('폴더는 거짓 — 봇 폴더처럼 늘 있는 경로로 «끝남» 을 만들 수 없다(최종 검토 4)', () => {
+    expect(verifyEvidence({ kind: 'file', ref: '1. Projects/P' }, c)).toBe(false)
+    expect(verifyEvidence({ kind: 'file', ref: '1. Projects/P/' }, c)).toBe(false)
+    expect(verifyEvidence({ kind: 'letter', ref: '1. Projects/P' }, c)).toBe(false)
+  })
 })
 
 describe('verifyEvidence · letter', () => {

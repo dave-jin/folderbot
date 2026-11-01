@@ -145,18 +145,24 @@ export class ContextService {
     return this.compose(period, from, now)
   }
 
-  /** 목표 펼치기 — 그 폴더의 목표 카드 · 작업 · 안 묶인 카드 · 이야기 · 함께 가는 맥락 */
-  goal(botId: string, taskId: string | null): { goal: GoalCard | null; tasks: CtxTask[]; loose: SessionCard[]; story: StoryRow[]; brief: string } {
+  /**
+   * 목표 펼치기 — 그 폴더의 목표 카드 · 작업 · 안 묶인 카드 · 이야기 · 함께 가는 맥락.
+   * 세션 줄과 안 묶인 카드에는 그 세션의 주인 봇(`ownerBot`)을 싣는다 — «이어서» 는 그 봇으로 간다(최종 검토 2).
+   * 주인 아님 — 이 맥에는 카드가 없다. 작업은 tasks.json 상태 그대로, 목표 카드는 볼트 판의 것(최종 검토 3).
+   */
+  goal(botId: string, taskId: string | null): { goal: GoalCard | null; tasks: CtxTask[]; loose: (SessionCard & { ownerBot?: string })[]; story: StoryRow[]; brief: string } {
     const bot = this.botOf(botId)
     const now = Date.now()
-    const f = this.folderInput(bot, now)
+    const owner = this.owner()
+    const f = this.folderInput(bot, now, owner)
     const one = (since: number) => buildBoard({ folders: [f], waiting: [], routines: [], period: 'week', since, now, host: this.h.hostName(), axis: null, sources: [] }).goals[0] ?? null
     const byId = new Map(f.cards.map((c) => [c.id, c] as const))
+    const ownerOf = (sid: string): { ownerBot?: string } => { const b = this.h.sessions.get(sid)?.botId; return b ? { ownerBot: b } : {} }
     return {
-      goal: one(now - 7 * DAY) ?? one(0),
+      goal: (owner ? null : this.store.board()?.goals.find((g) => g.botId === botId)) ?? one(now - 7 * DAY) ?? one(0),
       tasks: f.tasks.tasks,
-      loose: f.tasks.loose.map((id) => byId.get(id)).filter((c): c is SessionCard => !!c),
-      story: story(f, taskId),
+      loose: f.tasks.loose.map((id) => byId.get(id)).filter((c): c is SessionCard => !!c).map((c) => ({ ...c, ...ownerOf(c.sessionId) })),
+      story: story(f, taskId).map((r) => ('sessionId' in r.ref ? { ...r, ref: { ...r.ref, ...ownerOf(r.ref.sessionId) } } : r)),
       brief: brief(f, taskId)
     }
   }
@@ -203,8 +209,13 @@ export class ContextService {
   private pokeCard(sid: string): void { this.q.poke(`card:${sid}`, this.delay('card'), () => this.cardJob(sid)) }
   private pokeGroup(botId: string): void { this.q.poke(`group:${botId}`, this.delay('group'), () => this.groupJob(botId)) }
 
-  /** 모델 한 번 — 성공이든 실패든 사용 기록 한 줄 */
-  private async call(job: 'card' | 'group' | 'axis', model: 'haiku' | 'sonnet', prompt: string, system: string): Promise<{ ok: boolean; out: string }> {
+  /**
+   * 모델 한 번 — 부르기 전에 줄이 막혔나 보고(꺼짐·상한·사용량 80 이면 부르지 않고 `blocked`), 부를 때마다 하루 상한에 센다(최종 검토 1).
+   * 성공이든 실패든 사용 기록 한 줄.
+   */
+  private async call(job: 'card' | 'group' | 'axis', model: 'haiku' | 'sonnet', prompt: string, system: string): Promise<{ ok: boolean; out: string; blocked?: true }> {
+    if (this.q.blocked()) return { ok: false, out: '', blocked: true }
+    this.q.charge()
     let r: { ok: boolean; out: string; ms: number }
     try { r = await this.ask(prompt, { model, system, dir: ONE_SHOT_DIR }) } catch (e) { this.log(`맥락 상황판 · 모델 호출 오류(${job}): ${e instanceof Error ? e.message : String(e)}`); r = { ok: false, out: '', ms: 0 } }
     this.guard('사용 기록', () => this.store.usageLog({ at: Date.now(), job, model, ms: r.ms, ok: r.ok, chars: prompt.length }), undefined)
@@ -222,25 +233,30 @@ export class ContextService {
     this.pokeGroup(r.botId)
   }
 
-  /** `card:<sid>` — 조각마다 새 item 만 요약한다. 실패하면 카드를 그대로 둔다(다음 턴 끝에 다시). 모델을 불렀으면 true */
-  private async cardJob(sid: string): Promise<boolean> {
-    if (!this.owner()) return false
+  /**
+   * `card:<sid>` — 조각마다 새 item 만 요약한다. 실패하면 카드를 그대로 둔다(다음 턴 끝에 다시).
+   * 상한·사용량에 막히면 거기서 멈추고 같은 세션을 다시 줄에 세운다 — 이미 쓴 조각은 cursor 가 있어 다시 부르지 않는다.
+   */
+  private async cardJob(sid: string): Promise<void> {
+    if (!this.owner()) return
     const r = this.h.sessions.get(sid)
-    if (!r) return false
-    if (isRoutine(r)) { this.routineCardNow(r); return false }   // 오케스트레이터 루틴도 — cardChannel 은 orch 를 먼저 본다
+    if (!r) return
+    if (isRoutine(r)) { this.routineCardNow(r); return }   // 오케스트레이터 루틴도 — cardChannel 은 orch 를 먼저 본다
     const ch = cardChannel(r)
     const bots = this.h.registry.bots()
-    if (!bots.some((b) => b.id === r.botId)) return false
+    if (!bots.some((b) => b.id === r.botId)) return
     const items = this.h.sessions.items(sid)
     const split = needsSplit(ch)
     const segs = split ? splitSegments(items) : items.length ? [items] : []
     const keys = botKeys(bots)
     const candidates = bots.map((b) => ({ id: b.id, name: nameOf(b) }))
-    let called = false
+    const oldest = Date.now() - START_WINDOW_MS
     for (let i = 0; i < segs.length; i++) {
       const seg = segs[i]
       const id = split ? `${sid}#${i}` : sid
       const prev = this.store.card(id)
+      const last = seg[seg.length - 1]
+      if (!prev && last.t < oldest) continue   // 처음 보는 조각인데 7일 밖 — 판의 가장 긴 기간이 7일이라 잃는 것이 없다
       const fresh = itemsSince(seg, prev?.cursor)
       if (!fresh.length) continue
       const convo = transcript(fresh)
@@ -252,12 +268,11 @@ export class ContextService {
         ? { folder: nameOf(bots.find((b) => b.id === folder)) }
         : { folder: '아직 모름 — 아래 후보에서 골라 줘', candidates })
       const res = await this.call('card', 'haiku', prompt, CARD_SYSTEM)
-      called = true
+      if (res.blocked) { this.pokeCard(sid); break }   // 남은 조각은 줄이 풀린 뒤에
       const body = res.ok ? parseCard(res.out) : null
       if (!body) { this.log(`맥락 카드를 못 만들었어요 — 다음 턴 끝에 다시: ${id}`); break }
       const settled = settleCard(body, { vaultRoot: this.h.registry.root, items: seg })   // 조각의 근거는 그 조각 안에서만(Ruling 20)
       const picked = folder ?? (settled.folder ? keys.get(settled.folder.trim()) : undefined) ?? VAULT_OPS
-      const last = seg[seg.length - 1]
       this.store.putCard({
         id, sessionId: sid, ...(split ? { seg: i } : {}), botId: picked, channel: ch, machine: this.h.hostName(),
         intent: settled.intent, done: settled.done, promised: settled.promised, ending: settled.ending, taskHint: settled.taskHint,
@@ -266,16 +281,15 @@ export class ContextService {
       this.pokeGroup(picked)
       if (prev && prev.botId !== picked) this.pokeGroup(prev.botId)   // 폴더가 바뀐 카드 — 옛 폴더 작업에서도 빼야 한다
     }
-    return called
   }
 
   // ── 묶기 ───────────────────────────────────────────────────────────────────
 
-  /** `group:<botId>` — 새 카드만 묶고(루틴은 LLM 없이) 상태를 다시 매긴 뒤 판을 다시 짓는다. 모델을 불렀으면 true */
-  private async groupJob(botId: string): Promise<boolean> {
-    if (!this.owner()) return false
+  /** `group:<botId>` — 새 카드만 묶고(루틴은 LLM 없이) 상태를 다시 매긴 뒤 판을 다시 짓는다. 상한에 막히면 묶기만 다음으로 미룬다 */
+  private async groupJob(botId: string): Promise<void> {
+    if (!this.owner()) return
     const bot = this.h.registry.bots().find((b) => b.id === botId)
-    if (!bot) return false
+    if (!bot) return
     const now = Date.now()
     const cards = this.store.folderCards(botId, 0)
     const byId = new Map(cards.map((c) => [c.id, c] as const))
@@ -286,7 +300,6 @@ export class ContextService {
     if (routines.length) f = routineTasks(f, routines, now)
     const news = fresh.filter((c) => c.channel !== 'routine')
     const facts = this.facts(bot)
-    let called = false
     if (news.length) {
       const input: GroupInput = {
         folder: nameOf(bot), goal: goalLine(facts.state, facts.stateMtime, facts.claude, now).text, newCards: news, tasks: f.tasks,
@@ -294,7 +307,6 @@ export class ContextService {
       }
       const ids = new Set(news.map((c) => c.id))
       const res = await this.call('group', 'haiku', groupPrompt(input), GROUP_SYSTEM)
-      called = true
       let g = res.ok ? onlyCards(parseGroup(res.out), ids) : null
       if (g) {
         const unsure = new Set(g.assign.filter((a) => a.unsure).map((a) => a.card))
@@ -308,13 +320,14 @@ export class ContextService {
         const now2 = placed(f)
         const lost = news.filter((c) => !now2.has(c.id)).map((c) => c.id)
         if (lost.length) f = { ...f, loose: [...f.loose, ...lost] }
-      } else this.log(`맥락 작업 묶기를 못 했어요 — 다음 신호에 다시: ${nameOf(bot)}`)
+      } else if (res.blocked) this.pokeGroup(botId)   // 상한·사용량 — 줄이 풀리면 묶는다
+      else this.log(`맥락 작업 묶기를 못 했어요 — 다음 신호에 다시: ${nameOf(bot)}`)
     }
     f = this.restate(f, byId, facts, now)
+    if (!this.owner()) return   // 모델을 기다리는 사이 주인이 바뀌었다 — 쓰지 않는다
     this.store.putTasks(bot.abs, f)
     const b = this.persistBoard(now)
     this.maybeAxis(b, now)
-    return called
   }
 
   /** 다른 폴더로 옮겨 간 카드(카드의 botId 가 이 폴더가 아님)는 이 폴더 작업에서 뺀다 */
@@ -362,16 +375,16 @@ export class ContextService {
   }
 
   /** «오늘의 축» 한 문장 — 실패하면 앞 축을 그대로 둔다(Ruling 17) */
-  private async axisJob(): Promise<boolean> {
-    if (!this.owner()) return false
+  private async axisJob(): Promise<void> {
+    if (!this.owner()) return
     const res = await this.call('axis', 'haiku', axisPrompt(this.compose('today', Date.now() - DAY, Date.now())), AXIS_SYSTEM)
+    if (res.blocked || !this.owner()) return   // 막혔으면 다음 묶기가 다시 세운다 · 기다리는 사이 주인이 바뀌었으면 쓰지 않는다
     const line = res.ok ? res.out.split('\n').map((l) => l.trim()).find(Boolean) : undefined
     if (line) {
       const now = Date.now()
       this.axis = { text: maskSensitive(line).slice(0, AXIS_MAX), at: now }
       this.persistBoard(now)
     } else this.log('오늘의 축을 못 지었어요 — 앞 축을 그대로 둬요')
-    return true
   }
 
   // ── 판 ─────────────────────────────────────────────────────────────────────
@@ -414,11 +427,12 @@ export class ContextService {
   /**
    * 판·목표 펼치기의 폴더 한 칸. 작업 상태는 **메모리에서만** 지금 시각으로 다시 매긴다(Ruling 19) —
    * «약속이 남은 채 30분 조용» 같은 시간 판정은 묶기 일이 다시 돌지 않아도 판에 나와야 한다. tasks.json 은 쓰지 않는다.
+   * `live` 가 아니면(주인 아님) 카드 없이 tasks.json 상태 그대로 — 이 맥 카드로 다시 매기면 모두 «아직» 이 된다(최종 검토 3).
    */
-  private folderInput(bot: Bot, now: number): FolderInput {
+  private folderInput(bot: Bot, now: number, live = true): FolderInput {
     const facts = this.facts(bot)
-    const cards = this.store.folderCards(bot.id, 0)
-    const tasks = this.restate(this.tasksOf(bot), new Map(cards.map((c) => [c.id, c] as const)), facts, now)
+    const cards = live ? this.store.folderCards(bot.id, 0) : []
+    const tasks = live ? this.restate(this.tasksOf(bot), new Map(cards.map((c) => [c.id, c] as const)), facts, now) : this.tasksOf(bot)
     return {
       botId: bot.id, folder: nameOf(bot), due: bot.due?.date ?? null, tasks, cards,
       goal: goalLine(facts.state, facts.stateMtime, facts.claude, now),

@@ -17,6 +17,7 @@ process.stdin.on('end', () => {
   const mode = s.split('\\n')[0]
   if (mode === 'SLEEP') return setTimeout(() => {}, 10000)
   if (mode === 'FAIL') { process.stderr.write('Not logged in'); process.exit(1) }
+  if (mode === 'SPLIT') { const b = Buffer.from('한글 답'); process.stdout.write(b.subarray(0, 2)); return setTimeout(() => process.stdout.write(b.subarray(2)), 80) }
   if (mode === 'BIG') { process.stdout.write('x'.repeat(200 * 1024)); return }
   if (mode === 'ARGS') { process.stdout.write(JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd() })); return }
   process.stdout.write('답: ' + s)
@@ -40,6 +41,10 @@ describe('oneShot', () => {
   })
   it('0 아닌 종료는 ok:false', async () => expect((await oneShot('FAIL', o())).ok).toBe(false))
   it('없는 실행 파일도 던지지 않고 ok:false', async () => expect((await oneShot('x', o({ bin: join(tmp, 'nope') }))).ok).toBe(false))
+  it('한 글자가 두 청크로 갈려 와도 깨지지 않는다(최종 검토 · setEncoding)', async () => {
+    const r = await oneShot('SPLIT', o())
+    expect(r.ok).toBe(true); expect(r.out).toBe('한글 답')
+  })
   it('stdout 은 64KB 에서 자른다', async () => {
     const r = await oneShot('BIG', o())
     expect(r.ok).toBe(true); expect(r.out.length).toBe(ONE_SHOT_MAX_OUT); expect(ONE_SHOT_MAX_OUT).toBe(65536)

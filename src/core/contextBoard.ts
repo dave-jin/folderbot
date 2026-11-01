@@ -57,7 +57,8 @@ export interface Board {
 }
 export interface StoryRow {
   at: number; channel: CardChannel | 'file'; machine: string; text: string; stalled: boolean
-  ref: { sessionId: string; itemId?: string } | { file: string }; ev?: EvidenceKind
+  /** `ownerBot` = 그 세션의 주인 봇(호스트가 채운다) — 오케스트레이터 조각 카드는 폴더 판에 있어도 주인이 오케스트레이터다 */
+  ref: { sessionId: string; itemId?: string; ownerBot?: string } | { file: string }; ev?: EvidenceKind
 }
 
 /** 가림 + 퍼센트 글자 제거 — 판에 들어가는 모든 글이 지난다 */
@@ -261,6 +262,18 @@ export function story(f: FolderInput, taskId: string | null): StoryRow[] {
     for (const o of f.outbox) rows.push({ at: o.at, channel: 'file', machine: '', text: clean(o.text), stalled: false, ref: { file: 'state.md' } })
   }
   return rows.sort((a, b) => a.at - b.at)
+}
+
+/**
+ * «그 세션 이어서» 가 갈 곳 — 마지막 세션 줄의 세션과 **그 세션의 주인 봇**(최종 검토 2).
+ * 주인을 모르면(지운 세션·다른 맥 세션) 이어 쓰지 않는다 — 엉뚱한 봇의 세션에 그 폴더 봇 신분으로 말이 들어가면 안 된다.
+ */
+export function continueTarget(rows: StoryRow[]): { bot: string; sessionId: string } | null {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i].ref
+    if ('sessionId' in r) return r.ownerBot ? { bot: r.ownerBot, sessionId: r.sessionId } : null
+  }
+  return null
 }
 
 // ── 함께 가는 맥락 ────────────────────────────────────────────────────────────

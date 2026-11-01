@@ -143,10 +143,10 @@ describe('ContextQueue', () => {
     }
   })
 
-  it('cap 2 → LLM 을 부른 일 둘 뒤 paused cap · false 를 돌려준 일은 수에 안 든다', async () => {
+  it('cap 2 → 모델을 부른(charge) 일 둘 뒤 paused cap · 부르지 않은 일은 수에 안 든다', async () => {
     const r = rig({ cap: () => 2 }); const q = new ContextQueue(r.deps)
     const ran: string[] = []
-    const mk = (n: string, v: boolean) => async () => { ran.push(n); return v }
+    const mk = (n: string, v: boolean) => async () => { ran.push(n); if (v) q.charge() }
     q.poke('card:r1', 0, mk('r1', false)); q.poke('card:r2', 0, mk('r2', false))
     q.poke('card:a', 0, mk('a', true)); q.poke('card:b', 0, mk('b', true)); q.poke('card:c', 0, mk('c', true))
     await r.advance(0)
@@ -159,7 +159,7 @@ describe('ContextQueue', () => {
   it('cap 으로 멈춘 줄은 로컬 자정 뒤에 다시 돌고 calls 가 0 으로 돌아간다', async () => {
     const r = rig({ cap: () => 1, start: new Date(2026, 10, 1, 23, 0, 0).getTime() }); const q = new ContextQueue(r.deps)
     const ran: string[] = []
-    const mk = (n: string) => async () => { ran.push(n); return true }
+    const mk = (n: string) => async () => { ran.push(n); q.charge() }
     q.poke('card:a', 0, mk('a')); q.poke('card:b', 0, mk('b'))
     await r.advance(0)
     expect(ran).toEqual(['a']); expect(q.paused).toBe('cap')
@@ -187,7 +187,7 @@ describe('ContextQueue', () => {
     const ran: string[] = []
     q.poke('card:a', 0, async () => { throw new Error('boom') })
     q.poke('card:b', 0, () => { throw new Error('sync boom') })
-    q.poke('card:c', 0, async () => { ran.push('c'); return true })
+    q.poke('card:c', 0, async () => { ran.push('c'); q.charge() })
     await r.advance(0)
     await q.idle()
     expect(ran).toEqual(['c'])
@@ -232,6 +232,30 @@ describe('ContextQueue', () => {
     boom = false
     await r.advance(USAGE_RECHECK_MS)
     expect(n).toBe(1)
+  })
+
+  it('🔴 상한은 일이 아니라 실제 호출을 센다 — 한 일이 셋을 부르려 해도 상한 2 에서 blocked() 로 멈춘다(최종 검토 1)', async () => {
+    const r = rig({ cap: () => 2 }); const q = new ContextQueue(r.deps)
+    let made = 0
+    q.poke('card:a', 0, async () => {
+      for (let i = 0; i < 3; i++) { if (q.blocked()) return; q.charge(); made++ }
+    })
+    await r.advance(0)
+    await r.flush()
+    expect(made).toBe(2)
+    expect(q.calls).toBe(2)
+    expect(q.blocked()).toBe(true)
+    expect(q.paused).toBe('cap')
+  })
+
+  it('blocked() — 사용량 80·꺼짐이면 참 · 재다 실패해도 참(못 재면 부르지 않는다)', () => {
+    let used = 10, off = false, boom = false
+    const r = rig({ usage: () => { if (boom) throw new Error('x'); return { available: true, five: { used, resetsAt: null }, fetchedAt: 0 } }, off: () => off })
+    const q = new ContextQueue(r.deps)
+    expect(q.blocked()).toBe(false)
+    used = 80; expect(q.blocked()).toBe(true)
+    used = 10; off = true; expect(q.blocked()).toBe(true)
+    off = false; boom = true; expect(q.blocked()).toBe(true)
   })
 
   it('group 디바운스 상수', () => { expect(GROUP_DEBOUNCE_MS).toBe(60_000) })

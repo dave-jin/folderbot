@@ -30,7 +30,8 @@ export function oneShot(prompt: string, o: OneShotOpts): Promise<OneShotResult> 
     const p = spawn(claudeBin(o.bin), args, { cwd, env: cleanClaudeEnv() })
     const timer = setTimeout(() => finish(false), o.timeoutMs ?? DEFAULT_TIMEOUT); timer.unref?.()   // 호스트가 내려갈 때 붙잡지 않는다
     p.on('error', () => finish(false))
-    p.stdout.on('data', (c: Buffer) => { out += c.toString(); if (out.length > ONE_SHOT_MAX_OUT) out = out.slice(0, ONE_SHOT_MAX_OUT) })
+    p.stdout.setEncoding('utf8')   // 한글 한 글자가 두 청크로 갈려 와도 깨지지 않게
+    p.stdout.on('data', (c: string) => { out += c; if (out.length > ONE_SHOT_MAX_OUT) out = out.slice(0, ONE_SHOT_MAX_OUT) })
     p.on('close', (code) => finish(code === 0))
     p.stdin.on('error', () => { /* 일찍 죽은 CLI */ })
     p.stdin.end(prompt)

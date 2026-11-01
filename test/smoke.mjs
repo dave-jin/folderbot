@@ -519,6 +519,18 @@ try {
       const vaultMd = await until(() => { try { const t = readFileSync(join(root, '.folderbot/context/board.md'), 'utf8'); return /오늘은 스모크가 축이다/.test(t) ? t : null } catch { return null } })
       if (!vaultMd) fail('🔴 CX-5: 볼트 board.md 에 같은 축 글이 없다')
       ok('CX-5 · 오케스트레이터 context_board · 볼트 board.md 가 같은 «오늘은 스모크가 축이다» 와 «## 내가 나설 곳»')
+
+      // CX-6 «그 세션 이어서» — 이야기 줄은 세션의 주인 봇을 싣고 · 다른 봇 이름으로 그 세션에 보내면 400 · 같은 봇이면 그 세션으로(최종 검토 2)
+      const row6 = (await goal()).story.find((r) => r.ref?.sessionId === s3y.sessionId)
+      if (row6?.ref?.ownerBot !== cx.id) fail('🔴 CX-6: 이야기 줄에 세션 주인 봇이 없다 · ' + JSON.stringify(row6))
+      const before6 = (await api(`/sessions/${s3y.sessionId}/chat`)).items.length
+      const r6 = await fetch(base + '/api/bots/orch/send', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '맥락 CX-6 엉뚱한 봇', sessionId: s3y.sessionId }) })
+      const t6 = await r6.text()
+      if (r6.status !== 400 || !t6.includes('세션이에요')) fail('🔴 CX-6: 다른 봇의 세션에 보내기가 400 으로 안 막혔다 · ' + r6.status + ' ' + t6)
+      if ((await api(`/sessions/${s3y.sessionId}/chat`)).items.length !== before6) fail('🔴 CX-6: 막혔는데 그 세션에 말이 들어갔다')
+      const same6 = await api(`/bots/${cx.id}/send`, { text: '맥락 CX-6 이어서', sessionId: s3y.sessionId }); await settle(s3y.sessionId)
+      if (same6.sessionId !== s3y.sessionId) fail('CX-6: 같은 봇의 세션 이어 쓰기가 그 세션으로 안 갔다 · ' + JSON.stringify(same6))
+      ok('CX-6 · 이야기 줄에 세션 주인 봇 · 다른 봇 이름으로 그 세션에 보내면 400(말이 안 들어감) · 같은 봇이면 그 세션으로')
       for (const sid of [s1x.sessionId, s2x.sessionId, s3x.sessionId, s3y.sessionId]) await api(`/sessions/${sid}`, undefined, 'DELETE').catch(() => {})
     }
 

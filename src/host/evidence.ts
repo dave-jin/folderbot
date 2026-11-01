@@ -5,7 +5,7 @@ import type { CardBody, DoneLine, Evidence } from '../core/contextCard'
 
 /**
  * 근거 확인 — 카드가 «끝냈다» 고 적은 줄에 붙은 근거를 **호스트가 코드로** 확인한다 (2026-11-01 · 맥락 상황판 1단계).
- * 인정하는 근거는 넷 — 지금 있는 파일 · 커밋 해시 · 보낸 편지 파일 · 세션 기록의 **성공한** 도구 호출.
+ * 인정하는 근거는 넷 — 지금 있는 파일(폴더 아님) · 커밋 해시 · 보낸 편지 파일 · 세션 기록의 **성공한** 도구 호출.
  * 모델이 쓴 근거는 믿지 않는다. 확인이 안 된 `done` 줄은 `settleCard` 가 `promised` 로 내린다.
  */
 export interface EvidenceCtx { vaultRoot: string; items: ChatItem[] }
@@ -28,7 +28,12 @@ function insideVault(root: string, ref: string, under?: string): string | null {
   return real.startsWith(baseReal + sep) ? real : null
 }
 
-function fileOk(ref: string, c: EvidenceCtx): boolean { return insideVault(c.vaultRoot, ref) !== null }
+/** 지금 있는 **파일**만 — 폴더(봇 폴더처럼 늘 있는 것)는 근거가 아니다(최종 검토 4) */
+function fileOk(ref: string, c: EvidenceCtx): boolean {
+  const real = insideVault(c.vaultRoot, ref)
+  if (!real) return false
+  try { return statSync(real).isFile() } catch { return false }
+}
 function letterOk(ref: string, c: EvidenceCtx): boolean {
   const real = insideVault(c.vaultRoot, ref, LETTER_DIR)
   if (real) { try { return statSync(real).isFile() } catch { return false } }

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { ContextService, NotOwner, type ContextHost } from '../../src/host/context'
 import { CARD_MARK } from '../../src/core/contextCard'
 import { GROUP_MARK, STALL_MS, type FolderTasks } from '../../src/core/contextTasks'
-import { AXIS_MARK, type Board } from '../../src/core/contextBoard'
+import { AXIS_MARK, continueTarget, type Board } from '../../src/core/contextBoard'
 import type { Bot, ChatItem } from '../../src/core/types'
 import type { SessionRec } from '../../src/host/session'
 import type { OneShotOpts, OneShotResult } from '../../src/host/oneShot'
@@ -68,13 +68,15 @@ beforeEach(() => {
   for (const b of bots) mkdirSync(b.abs, { recursive: true })
   recs = new Map()
   owner = true
+  cap = undefined
 })
 
+let cap: number | undefined
 function host(): ContextHost {
   return {
     sessions: { all: () => [...recs.values()], items: (id) => recs.get(id)?.items ?? [], get: (id) => recs.get(id) },
     registry: { bots: () => bots, root },
-    cfg: { context: {} },
+    cfg: { context: cap === undefined ? {} : { dailyCap: cap } },
     ownsRoutines: () => owner,
     routineBoard: () => ({ routines: [] }),
     dataDir: () => data,
@@ -93,6 +95,9 @@ const tasksOf = (b: Bot): FolderTasks => JSON.parse(readFileSync(join(b.abs, '.f
 const cardFile = (sid: string) => join(data, 'context', 'cards', `${sid}.json`)
 const boardFile = () => join(root, '.folderbot', 'context', 'board.json')
 const marked = (calls: { prompt: string }[], mark: string) => calls.filter((c) => c.prompt.startsWith(mark))
+/** 줄이 상한에 멈추면 idle() 이 끝나지 않는다 — 조건이 설 때까지 조금씩 기다린다 */
+const until = async (fn: () => boolean): Promise<boolean> => { for (let i = 0; i < 200; i++) { if (fn()) return true; await new Promise((r) => setTimeout(r, 5)) } return false }
+const DAY_MS = 86_400_000
 
 describe('ContextService — 주인 맥', () => {
   it('폴더 봇 세션 턴 끝 → 카드 1장 · 작업 1개 · 볼트에 board.json·board.md', async () => {
@@ -220,6 +225,7 @@ describe('ContextService — 주인 맥', () => {
     expect(t.tasks.map((x) => [x.title, x.cards])).toEqual([['투표 집계', ['s_u']]])
     expect(t.loose).toEqual(['s_l'])
     expect(calls.filter((c) => c.prompt.startsWith(GROUP_MARK)).map((c) => c.model)).toEqual(['haiku', 'sonnet'])
+    expect(svc.status().calls).toBe(calls.length)   // Haiku·Sonnet 두 번을 두 번으로 센다(최종 검토 1)
   })
 
   it('오케스트레이터 루틴 세션도 LLM 없이 → routine:<이름> 작업 (cardChannel 이 orch 를 먼저 봐도)', async () => {
@@ -271,6 +277,55 @@ describe('ContextService — 주인 맥', () => {
     expect(cards[0]).toMatchObject({ id: 's_seg#0', ending: 'finished' })
     expect(cards[0].done).toHaveLength(1)
     expect(cards[1]).toMatchObject({ id: 's_seg#1', ending: 'claimed', done: [], promised: ['했어요'] })
+  })
+
+  it('🔴 하루 상한은 실제 호출을 센다 — 조각 3개 세션에 상한 2 → 카드 호출 2번 · 남은 조각은 밀린다(최종 검토 1)', async () => {
+    cap = 2
+    const { ask, calls } = fakeAsk()
+    const svc = new ContextService(host(), ask)
+    const r = sess('s_cap', 'orch', [
+      it_('user', '[요청 ← 해커톤 · hack1 · s_x] 투표 하나'), it_('assistant', '넘겼어요'),
+      it_('user', '[요청 ← 웹사이트 · web1 · s_y] 랜딩 하나'), it_('assistant', '넘겼어요'),
+      it_('user', '[요청 ← 해커톤 · hack1 · s_z] 접수 하나'), it_('assistant', '넘겼어요')
+    ], { comm: true })
+    svc.onTurnEnd(r)
+    expect(await until(() => svc.status().paused === 'cap')).toBe(true)
+    await new Promise((res) => setTimeout(res, 30))
+    expect(calls).toHaveLength(2)
+    expect(marked(calls, CARD_MARK)).toHaveLength(2)
+    expect(svc.status().calls).toBe(2)
+    expect((JSON.parse(readFileSync(cardFile('s_cap'), 'utf8')) as { id: string }[]).map((c) => c.id)).toEqual(['s_cap#0', 's_cap#1'])
+    expect(svc.status().pending).toBeGreaterThan(0)   // 남은 조각(card:s_cap)과 묶기는 자정 뒤 이어서
+  })
+
+  it('조각 카드가 처음이면 마지막 말이 7일보다 오래된 조각은 건너뛴다 — 판의 가장 긴 기간이 7일', async () => {
+    const { ask, calls } = fakeAsk()
+    const svc = new ContextService(host(), ask)
+    const old = Date.now() - 8 * DAY_MS
+    const r = sess('s_old', 'orch', [
+      it_('user', '[요청 ← 해커톤 · hack1 · s_x] 투표 하나', old), it_('assistant', '넘겼어요', old + 1000),
+      it_('user', '[요청 ← 웹사이트 · web1 · s_y] 랜딩 하나'), it_('assistant', '넘겼어요')
+    ], { comm: true })
+    svc.onTurnEnd(r)
+    await svc.idle()
+    expect(marked(calls, CARD_MARK)).toHaveLength(1)
+    expect((JSON.parse(readFileSync(cardFile('s_old'), 'utf8')) as { id: string }[]).map((c) => c.id)).toEqual(['s_old#1'])
+    expect(svc.status().calls).toBe(calls.length)
+  })
+
+  it('🔴 오케스트레이터 조각 카드의 이야기 줄·안 묶인 카드는 주인이 오케스트레이터 — «이어서» 는 오케스트레이터 세션으로(최종 검토 2)', async () => {
+    const { ask } = fakeAsk({ group: () => ({ assign: [] }) })   // 모두 «안 묶임» 으로
+    const svc = new ContextService(host(), ask)
+    svc.onTurnEnd(sess('s_h', 'hack1', [it_('user', '투표', Date.now() - 5000), it_('assistant', '네', Date.now() - 4000)]))
+    await svc.idle()
+    svc.onTurnEnd(sess('s_oc', 'orch', [it_('user', '[요청 ← 해커톤 · hack1 · s_x] 투표 마무리'), it_('assistant', '넘겼어요')], { comm: true }))
+    await svc.idle()
+    const g = svc.goal('hack1', null)
+    expect(g.story.map((r) => ('sessionId' in r.ref ? [r.ref.sessionId, r.ref.ownerBot] : null))).toEqual([['s_h', 'hack1'], ['s_oc', 'orch']])
+    expect(continueTarget(g.story)).toEqual({ bot: 'orch', sessionId: 's_oc' })
+    expect(g.loose.map((c) => [c.id, c.ownerBot])).toEqual([['s_h', 'hack1'], ['s_oc#0', 'orch']])
+    recs.delete('s_oc')   // 지운 세션 — 주인을 모르면 이어 쓰지 않는다
+    expect(continueTarget(svc.goal('hack1', null).story)).toBeNull()
   })
 
   it('move → 카드가 옮겨지고 고정된다 · reopen → 그 작업이 하다 멈춤으로', async () => {
@@ -329,6 +384,27 @@ describe('ContextService — 주인 아님', () => {
     // ops.yml 을 못 읽으면(던짐) 판의 host 로
     const svc2 = new ContextService({ ...host(), routineOwner: () => { throw new Error('x') } }, fakeAsk().ask)
     expect(() => svc2.snooze('hack1', 't')).toThrow('주인 맥(맥북)에서만 고칠 수 있어요')
+  })
+
+  it('🔴 goal() 은 저장된 작업 상태를 그대로 — 이 맥 카드로 다시 매기지 않는다 · 목표 카드는 볼트 판에서(최종 검토 3)', () => {
+    owner = false
+    const ctx = join(bots[1].abs, '.folderbot', 'context')
+    mkdirSync(ctx, { recursive: true })
+    const task = (id: string, state: string) => ({ id, title: id, state, summary: '', missing: '', cards: [`s_${id}`], lastAt: 1, updatedAt: 1 })
+    const stored: FolderTasks = { v: 1, botId: 'hack1', tasks: [task('t1', 'stalled'), task('t2', 'claimed'), task('t3', 'done'), task('t4', 'running')] as FolderTasks['tasks'],
+      loose: ['s_l'], pins: {}, fixes: [], snooze: {}, reopened: {}, gap: '', updatedAt: 1 }
+    writeFileSync(join(ctx, 'tasks.json'), JSON.stringify(stored))
+    mkdirSync(join(root, '.folderbot', 'context'), { recursive: true })
+    const g = { botId: 'hack1', folder: '해커톤', goal: '주인 맥이 지은 목표', goalFrom: 'state', due: '', counts: { done: 1, claimed: 1, running: 1, stalled: 1, waiting: 0, todo: 0 },
+      gap: null, just: null, next: null, chips: { sessions: 4, routines: 0 }, problem: true, lastAt: 1, tasks: [] }
+    writeFileSync(boardFile(), JSON.stringify({ v: 1, at: 1, host: '맥미니', period: 'today', since: 0, axis: null, tally: { done: 1, stalled: 1, added: 0 },
+      step: { stalled: { rows: [], more: 0 }, waiting: { rows: [], more: 0 }, routine: { rows: [], more: 0 } }, goals: [g], quiet: [], sources: [] }))
+    const svc = new ContextService(host(), fakeAsk().ask)
+    const out = svc.goal('hack1', null)
+    expect(out.tasks.map((t) => [t.id, t.state])).toEqual([['t1', 'stalled'], ['t2', 'claimed'], ['t3', 'done'], ['t4', 'running']])
+    expect(out.goal).toEqual(g)
+    expect(out.story).toEqual([])
+    expect(out.loose).toEqual([])
   })
 
   it('볼트 판이 없으면 빈 판에 «아직 주인 맥 판 없음»', () => {

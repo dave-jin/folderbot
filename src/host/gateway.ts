@@ -653,7 +653,12 @@ export class Gateway {
         const s = h.sessions.create(bot, String(b.name ?? '새 세션'), { permissionMode: b.permissionMode as never, model: b.model ? String(b.model) : undefined, vendor: vd, id })
         return json(200, h.sessions.info(s))
       }
-      if (sub === 'send' && m === 'POST') { const b = await body(); const sid = h.sendToBot(bot, String(b.text), b.sessionId ? String(b.sessionId) : undefined, b.name ? String(b.name) : undefined, undefined, { model: b.model ? String(b.model) : undefined, effort: b.effort ? String(b.effort) : undefined, permissionMode: b.permissionMode ? (String(b.permissionMode) as never) : undefined, vendor: b.vendor === 'codex' || b.vendor === 'claude' ? b.vendor : undefined, client: clientOf(who, b.client) }); return json(200, { sessionId: sid }) }
+      if (sub === 'send' && m === 'POST') {
+        const b = await body(); let sid: string
+        try { sid = h.sendToBot(bot, String(b.text), b.sessionId ? String(b.sessionId) : undefined, b.name ? String(b.name) : undefined, undefined, { model: b.model ? String(b.model) : undefined, effort: b.effort ? String(b.effort) : undefined, permissionMode: b.permissionMode ? (String(b.permissionMode) as never) : undefined, vendor: b.vendor === 'codex' || b.vendor === 'claude' ? b.vendor : undefined, client: clientOf(who, b.client) }) }
+        catch (e) { if ((e as { code?: string }).code === 'wrong-bot') return json(400, { error: (e as Error).message }); throw e }   // 다른 봇의 세션 id(최종 검토 2)
+        return json(200, { sessionId: sid })
+      }
       // ⚠ 목록은 **그 세션의 벤더**로 정한다 — Claude 의 명령을 Codex 에 보여 주면 그 글자가 프롬프트로 들어간다
       /** 슬래시 명령 관리 (루프 8/10) — 목록은 파일 그대로, 만들기는 파일 하나. `rel` 은 봇 폴더 기준(루트 것은 `../`), 사용자 것은 문서 열 밖이라 rel 이 없다 */
       if (sub === 'commands' && m === 'GET') return json(200, listCommandFiles(bot.abs, reg.root).map((c) => ({ name: c.name, desc: c.desc, scope: c.scope, rel: c.scope === 'user' ? null : relative(bot.abs, c.abs) })))

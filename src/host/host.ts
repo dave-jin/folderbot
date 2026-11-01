@@ -250,6 +250,8 @@ export class Host {
   /** 세션에 지시 — 없으면 만든다 */
   sendToBot(bot: Bot, text: string, sessionId?: string, name?: string, from?: string, opts: { model?: string; effort?: string; permissionMode?: PermissionMode; vendor?: 'claude' | 'codex'; client?: ClientCtx; grant?: string[] } = {}): string {
     let r = sessionId ? this.sessions.get(sessionId) : undefined
+    // 🔴 다른 봇의 세션에 이 봇 신분으로 말을 넣지 않는다 — 잠든 세션이면 이 봇의 MCP·시스템 프롬프트로 깨어나 신분이 섞인다(맥락 상황판 최종 검토 2)
+    if (r && r.botId !== bot.id) throw Object.assign(new Error(`그 세션은 ${this.registry.bot(r.botId)?.name ?? r.botId} 봇의 세션이에요 — 그 봇으로 보내 주세요`), { code: 'wrong-bot' })
     // 🔴 봇끼리 오가는 말은 받는 봇의 «🤝 소통» 세션 하나로 (2026-10-02 Dave) — 세션을 집어 보냈으면 그 세션으로(답 돌려주기)
     if (!r && from && !name) r = this.sessions.commOf(bot, from)
     if (!r) {
