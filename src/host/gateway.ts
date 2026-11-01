@@ -22,6 +22,7 @@ import { pipeline } from 'node:stream'
 import { mark, routeLabel, slowSince } from './slow'
 import { saveConfig } from './paths'
 import { handleMcp } from './mcp'
+import { NotOwner } from './context'
 import { bearer, mcpGate } from './mcpAuth'
 import { readTokenEnv } from './wake'
 import { ASK_MAX_OPEN } from './ask'
@@ -379,6 +380,29 @@ export class Gateway {
     }
     // RB-5 · 루틴 관리 페이지 — 모든 봇 루틴의 보드 한 장(오케스트레이터 routines_overview 와 같은 계산)
     if (p === '/api/routines/overview' && m === 'GET') return json(200, h.routineBoard())
+    // 맥락 상황판 — 판은 어느 맥이든 읽는다(주인 아님 = 볼트 board.json) · 고치기(옮기기·놔둬·안 끝났어)는 주인 맥만(409)
+    if (p.startsWith('/api/context/')) {
+      const ctxErr = (e: unknown) => e instanceof NotOwner ? json(409, { error: e.message }) : json((e as { code?: string }).code === 'not-found' ? 404 : 400, { error: (e as Error).message })
+      try {
+        if (p === '/api/context/board' && m === 'GET') {
+          const period = url.searchParams.get('period') ?? 'today'
+          if (period !== 'today' && period !== 'week' && period !== 'away') return json(400, { error: 'period 는 today · week · away' })
+          return json(200, h.context.board(period))
+        }
+        if (p === '/api/context/goal' && m === 'GET') return json(200, h.context.goal(url.searchParams.get('bot') ?? '', url.searchParams.get('task') || null))
+        if (p === '/api/context/move' && m === 'POST') {
+          const b = await body()
+          const to = typeof b.newTitle === 'string' && b.newTitle.trim() ? { newTitle: b.newTitle } : typeof b.to === 'string' && b.to ? b.to : null
+          if (!to) return json(400, { error: 'to(작업 id) 나 newTitle 이 필요해요' })
+          h.context.move(String(b.bot ?? ''), String(b.card ?? ''), to)
+          return json(200, { ok: true })
+        }
+        if (p === '/api/context/snooze' && m === 'POST') { const b = await body(); h.context.snooze(String(b.bot ?? ''), String(b.task ?? '')); return json(200, { ok: true }) }
+        if (p === '/api/context/reopen' && m === 'POST') { const b = await body(); h.context.reopen(String(b.bot ?? ''), String(b.task ?? '')); return json(200, { ok: true }) }
+        if (p === '/api/context/seen' && m === 'POST') return json(200, h.context.seen())
+        if (p === '/api/context/status' && m === 'GET') return json(200, h.context.status())
+      } catch (e) { return ctxErr(e) }
+    }
     if (p === '/api/usage' && m === 'GET') {
       // 봇별 내역 — 세션의 CLI 세션 id 가 곧 기록 파일 이름이다 (L)
       const bySid = new Map<string, { botId: string; name: string }>()

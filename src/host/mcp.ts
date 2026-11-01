@@ -11,6 +11,7 @@ import { turnBlock, daveSaidOf, daveSaidLine, ORCH_GRANTABLE } from '../core/tur
 import { asksTodo, lastHumanText } from '../core/todo'
 import type { DocReq } from '../core/docReq'
 import { changeWhat } from '../core/routineBoard'
+import { renderBoardMd } from '../core/contextBoard'
 
 interface Rpc { jsonrpc: '2.0'; id?: number | string; method?: string; params?: Record<string, unknown> }
 type Tool = { name: string; description: string; inputSchema: Record<string, unknown> }
@@ -75,6 +76,8 @@ const COMMON: Tool[] = [
 const ORCH: Tool[] = [
   // RB-4 · 루틴 관리 페이지와 같은 계산 — 정기보고 «⏰ 루틴» 덩이(전체 요약 + 문제 + 고친 것)를 여기서 만든다
   { name: 'routines_overview', description: '모든 봇 루틴의 상태 — 요약 한 줄(지난 보고 뒤 회수·성공·건너뜀·실패·결과 없음·가장 몰린 때·오늘 예정 겹침) · 문제(실패·놓침·결과 줄 없음 · Dave 할 일 표시) · 그동안 바뀐 루틴. 정기보고 브리핑에 «⏰ 루틴» 덩이로 넣는다. since 를 안 주면 지난번 이 도구를 부른 뒤(처음이면 12시간).', inputSchema: obj({ since: { type: 'string', description: 'ISO 시각 — 이 뒤로' }, problemsOnly: { type: 'boolean' } }) },
+  // 맥락 상황판 — 화면·할일이(board.md)와 같은 계산. bot 을 주면 그 폴더의 작업과 이야기
+  { name: 'context_board', description: '맥락 상황판 — 오늘의 축 · 내가 나설 곳 · 목표마다 작업 진척. 화면·할일이 board.md 와 같은 값. bot 을 주면 그 폴더의 작업과 이야기.', inputSchema: obj({ period: { type: 'string', enum: ['today', 'week'], description: '기본 today(지난 24시간)' }, bot: { type: 'string', description: '폴더 이름·경로·봇 id — 주면 그 폴더의 목표·작업·이야기' } }) },
   // CK-2 · Akiflow 동기화 루틴 전용 — 무엇을 할지는 호스트가 정하고 루틴은 Akiflow MCP 로 손만 쓴다
   { name: 'akiflow_sync_plan', description: 'Akiflow 동기화 루틴 전용 · 두 번 부른다. ① remote 없이(projects 에 list_projects 결과) → 읽을 태스크 id(check)·훑을 프로젝트(watchProjects)·scanOnly. ② 읽어 온 태스크를 remote 로 주면 → 그 변화를 todo.md 로 내린 뒤 이번 회차의 runId 와 ops(create·update·complete·delete). mode 가 live 가 아니면 아무것도 하지 않는다.', inputSchema: obj({ projects: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' } } } }, remote: { type: 'array', items: { type: 'object' } } }) },
   { name: 'akiflow_sync_ack', description: 'Akiflow 동기화 루틴 전용. akiflow_sync_plan(②)의 ops 를 실행한 결과(results: {key, ok, akId?, error?})를 runId 와 함께 돌려준다. 호스트가 만든 태스크 id 를 todo.md 줄에 단다.', inputSchema: obj({ runId: { type: 'string' }, results: { type: 'array', items: { type: 'object' } }, remote: { type: 'array', items: { type: 'object' } } }, ['runId']) },
@@ -265,6 +268,11 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       if (!Number.isFinite(since)) throw new Error('since 는 ISO 시각이에요(예: 2026-10-30T03:50)')
       lastOverview = now
       return host.routineOverview(since, a.problemsOnly === true)
+    }
+    case 'context_board': {
+      const q = s('bot').trim()
+      if (q) { const b = findBot(q); if (!b) throw new Error(`«${q}» 이라는 봇이 없어요 — bots_list 로 이름을 보세요`); return host.context.goal(b.id, null) }
+      return renderBoardMd(host.context.board(s('period') === 'week' ? 'week' : 'today'))
     }
     case 'routine_list': {
       const { bot: b } = routineTarget(reg, botId, a, false)

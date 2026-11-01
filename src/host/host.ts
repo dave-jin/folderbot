@@ -40,6 +40,8 @@ import { SessionManager, setOauthToken, setKeychainLogin, AUTH_ERROR, type Sessi
 import { readTodo, todoAdd, todoContext } from './todoStore'
 import { recent as recentFiles, tree as fileTree } from './files'
 import { ConflictBook, sweep as sweepCopies } from './docSave'
+import { ContextService } from './context'
+import type { PlanUsage } from '../core/usage'
 
 /** 호스트 — 모든 부품을 묶고, 화면으로 나갈 프레임을 만든다 */
 const PERM_MODES: PermissionMode[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions', 'dontAsk']
@@ -66,12 +68,14 @@ export class Host {
   readonly ops: OpsWatch
   /** 파일 이름 색인 — `/exists` 가 이름만 적힌 것을 볼트 전체에서 찾을 때 (host/nameIndex 머리말) */
   readonly names = new NameIndex()
+  /** 맥락 상황판 — 턴 끝 카드 · 폴더 작업 묶기 · 판(host/context.ts) */
+  readonly context: ContextService
   auth: AuthState = { verdict: 'unknown', checkedAt: 0 }
   private queued: { botId: string; sessionId: string; text: string; origin: TurnFrom }[] = []
   broadcast: (f: Frame) => void = () => {}
   /** 🔴 `.bot.yml` 이 밖에서 바뀌면 **UI 로 저장한 것과 같은 길**을 탄다(AA-2) — 화면 갱신 + 스케줄 다시 걸기 */
   watcher = new FolderWatch(
-    (botId) => { mark('폴더 바뀜'); this.broadcast({ ev: 'files', botId }); this.refreshNames() },
+    (botId) => { mark('폴더 바뀜'); this.broadcast({ ev: 'files', botId }); this.refreshNames(); this.context?.onFiles(botId) },
     (botId) => { mark('설정 다시 읽기'); this.log(`설정 파일이 바뀌어 루틴·연결을 다시 읽어요 · ${this.registry.bot(botId)?.name ?? botId}`); this.afterBotsChanged(); if (botId === ORCH_ID) { this.bridges.reload(); this.ops.reload() } },
   )
   private lastNames = ''
@@ -120,12 +124,14 @@ export class Host {
       onAlive: (peer, last) => this.peerSignal(peer, last, true),
       onChange: () => this.bridgesChanged() })
     this.routines.file = join(dataDir(), 'routine-runs.json')   // BR-2 · 놓친 회차 판단 기준
+    this.context = new ContextService(this)   // 주인 맥만 카드·작업·판을 만든다 — 아니면 볼트 판을 읽기만
     this.runs = new RunLog(this.registry.root, () => this.bridges.cfg.runsCopy, () => hostname().replace(/\.local$/, ''), (m) => this.log(m))
     this.ops = new OpsWatch({ root: this.registry.root, hostNames: () => [hostname(), this.hostName(), this.cfg.hostName ?? ''], log: (m) => this.log(m),
       note: (e) => this.runs.note(e),
       alert: (text) => this.notifyOrch(text, 'ops'),
       firstDelayMs: Number(process.env.FOLDERBOT_OPS_FIRST_MS) || 30_000 })
     this.wire()
+    this.context.start()   // 꺼져 있던 사이 끝난 세션 중 카드가 없거나 뒤처진 것 — 디바운스 뒤 최신 순
     this.sessions.drainAll()   // 호스트가 다시 떴다 — 기다리던 봇 말을 내보낸다
     this.routines.reschedule(this.registry.bots())
     this.routineNotes.sync(this.registry.bots())   // RB-3 · 폴더 CLAUDE.md 루틴 구역
@@ -208,7 +214,7 @@ export class Host {
         this.sessions.closeAsks(r, (id) => answerAfter(r.items as { kind: string; text?: string }[], id) !== null)   // DB · 화면 «묻는 중» → «답함»
       }
       // L · 턴이 끝나면 사용량 캐시를 비운다 — 다음 /api/usage 가 새 기록을 훑어 60초 안에 원격 패널이 바뀐다
-      if (prev === 'running' && r.state !== 'running') { invalidateUsage(); planNow(this.sessions.bin, true) }   // BD · 턴을 썼으니 실제 한도도 다시(60초 문턱 안에서)
+      if (prev === 'running' && r.state !== 'running') { invalidateUsage(); planNow(this.sessions.bin, true); this.context.onTurnEnd(r) }   // BD · 턴을 썼으니 실제 한도도 다시(60초 문턱 안에서)
       this.broadcast({ ev: 'sessions', botId: r.botId, sessions: this.sessions.list(r.botId) })
       if (!notify || r.state === 'awaiting_input') return
       const bot = this.registry.bot(r.botId)
@@ -410,6 +416,11 @@ export class Host {
     for (const id of ids) { const r = this.sessions.get(id); this.log(`자동화 세션 정리: ${id}${r ? ` · ${r.name}` : ''}`); this.sessions.remove(id) }
     return ids
   }
+
+  /** 맥락 상황판(`ContextHost`) — 앱 데이터 폴더. ⚠ 몸의 `dataDir()` 은 모듈 함수(paths.ts)다 */
+  dataDir(): string { return dataDir() }
+  /** 맥락 상황판(`ContextHost`) — 요금제 창 사용량(기다리지 않는다). ⚠ 몸의 `planNow` 는 모듈 함수(planUsage.ts)다 */
+  planNow(): PlanUsage | null { return planNow(this.sessions.bin) }
 
   /** 메인(호스트) 이름 — 설정값이 없으면 맥의 컴퓨터 이름(시스템 설정 › 일반 › 정보), 그것도 없으면 hostname */
   private computerName = ''
