@@ -49,14 +49,23 @@ export class ContextQueue {
     if (day !== this.day) { this.day = day; this.count = 0 }
   }
 
-  /** 지금 멈춘 까닭 — 읽을 때마다 새로 잰다 */
-  get paused(): null | 'usage' | 'cap' | 'off' {
-    if (this.d.off()) return 'off'
-    if (this.calls >= this.d.cap()) return 'cap'
-    const u = this.d.usage()
-    if (u && u.available && ((u.five?.used ?? 0) >= USAGE_STOP || (u.week?.used ?? 0) >= USAGE_STOP)) return 'usage'
-    return null
+  /** 지금 멈춘 까닭 — 읽을 때마다 새로 잰다. 재다 실패하면 null(`check` 가 로그를 남긴다) */
+  get paused(): null | 'usage' | 'cap' | 'off' { return this.check().why }
+
+  /** 주입받은 값이 던져도 밖으로 새지 않는다 — `err` 면 «지금은 돌릴 수 없음» 으로 다룬다 */
+  private check(): { why: null | 'usage' | 'cap' | 'off'; err: boolean } {
+    try {
+      if (this.d.off()) return { why: 'off', err: false }
+      if (this.calls >= this.d.cap()) return { why: 'cap', err: false }
+      const u = this.d.usage()
+      if (u && u.available && ((u.five?.used ?? 0) >= USAGE_STOP || (u.week?.used ?? 0) >= USAGE_STOP)) return { why: 'usage', err: false }
+      return { why: null, err: false }
+    } catch (e) {
+      this.safeLog(`context 줄 점검 실패: ${e instanceof Error ? e.message : String(e)}`)
+      return { why: null, err: true }
+    }
   }
+  private safeLog(m: string): void { try { this.d.log(m) } catch { /* 로그가 던져도 줄은 산다 */ } }
 
   pending(): number { return this.waiting.size + this.ready.length + (this.current !== null ? 1 : 0) }
 
@@ -83,12 +92,17 @@ export class ContextQueue {
   }
 
   private pump(): void {
-    if (this.current !== null || this.ready.length === 0) return
-    const why = this.paused
-    if (why) { this.armResume(why); return }
-    const job = this.ready.shift()!
-    this.current = job.key
-    void this.exec(job)
+    try {
+      if (this.current !== null || this.ready.length === 0) return
+      const { why, err } = this.check()
+      if (err) { this.armResume('usage'); return }                 // 못 잰 동안은 돌리지 않고 평소 주기로 다시 본다
+      if (why) { this.armResume(why); return }
+      const job = this.ready.shift()!
+      this.current = job.key
+      this.exec(job).catch((e) => this.safeLog(`context 줄 오류 ${job.key}: ${e instanceof Error ? e.message : String(e)}`))
+    } catch (e) {
+      this.safeLog(`context 줄 오류: ${e instanceof Error ? e.message : String(e)}`)
+    }
   }
 
   private armResume(why: 'usage' | 'cap' | 'off'): void {
@@ -102,7 +116,7 @@ export class ContextQueue {
       const called = await job.run()
       if (called) { this.rollDay(); this.count++ }
     } catch (e) {
-      this.d.log(`context 일 실패 ${job.key}: ${e instanceof Error ? e.message : String(e)}`)
+      this.safeLog(`context 일 실패 ${job.key}: ${e instanceof Error ? e.message : String(e)}`)
     }
     this.current = null
     const re = this.again.get(job.key)

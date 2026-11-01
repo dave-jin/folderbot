@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { mkdtempSync, readFileSync, statSync, readdirSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, readdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { ContextStore } from '../../src/host/contextStore'
@@ -26,6 +26,7 @@ beforeEach(() => {
   dataDir = mkdtempSync(join(tmpdir(), 'fb-ctx-data-'))
   vaultRoot = mkdtempSync(join(tmpdir(), 'fb-ctx-vault-'))
   botAbs = join(vaultRoot, '1. Projects', 'b1')
+  mkdirSync(botAbs, { recursive: true })
   s = new ContextStore({ dataDir, vaultRoot })
 })
 
@@ -111,5 +112,37 @@ describe('ContextStore', () => {
     expect(files.length).toBe(3)
     for (const f of files) expect(readFileSync(f, 'utf8')).not.toContain('[사람]')
     expect(readFileSync(join(dataDir, 'context', 'cards', 'x.json'), 'utf8')).toContain('[사람]')
+  })
+
+  it('폴더가 없으면 putTasks·putBoard 는 안 쓰고 false — 유령 폴더를 만들지 않는다', () => {
+    const gone = join(vaultRoot, '4. Archive', 'moved')
+    expect(s.putTasks(gone, { ...emptyTasks('b1'), gap: 'x' })).toBe(false)
+    expect(existsSync(join(vaultRoot, '4. Archive'))).toBe(false)
+    const noVault = join(vaultRoot, 'nope')
+    const s2 = new ContextStore({ dataDir, vaultRoot: noVault })
+    expect(s2.putBoard(board(1), '# 판')).toBe(false)
+    expect(existsSync(noVault)).toBe(false)
+  })
+
+  it('JSON 은 맞지만 내용이 깨진 파일은 던지지 않고 무시한다', () => {
+    const cdir = join(dataDir, 'context', 'cards')
+    mkdirSync(cdir, { recursive: true })
+    writeFileSync(join(cdir, 'g.json'), '[null,1,{"id":"x"}]')
+    writeFileSync(join(cdir, 'h.json'), JSON.stringify([null, card('h', { botId: 'b1', to: 500 })]))
+    const t = new ContextStore({ dataDir, vaultRoot })
+    expect(t.card('g')).toBeNull(); expect(t.card('x')).toBeNull(); expect(t.cardsOf('g')).toEqual([])
+    expect(t.folderCards('b1', 0).map((c) => c.id)).toEqual(['h'])
+    expect(() => t.putCard(card('g', { to: 1 }))).not.toThrow()
+    expect(t.cardsOf('g').map((c) => c.id)).toEqual(['g'])
+    const tf = join(botAbs, '.folderbot', 'context'); mkdirSync(tf, { recursive: true })
+    for (const bad of ['{"v":1}', '{"v":1,"tasks":[],"loose":[],"pins":[]}', '[1]', 'null', '{"v":2,"tasks":[],"loose":[],"pins":{}}']) {
+      writeFileSync(join(tf, 'tasks.json'), bad)
+      expect(t.tasks(botAbs, 'b1')).toEqual(emptyTasks('b1'))
+    }
+    const bf = join(vaultRoot, '.folderbot', 'context'); mkdirSync(bf, { recursive: true })
+    for (const bad of ['{"v":1}', '{"v":1,"step":null,"goals":[]}', '{"v":1,"step":{},"goals":{}}', '[]', '5']) {
+      writeFileSync(join(bf, 'board.json'), bad)
+      expect(t.board()).toBeNull()
+    }
   })
 })

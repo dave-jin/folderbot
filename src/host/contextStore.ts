@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWrite, ensureDir } from './paths'
 import type { SessionCard } from '../core/contextCard'
@@ -33,7 +33,12 @@ export class ContextStore {
     return cards
   }
   private readCards(f: string): SessionCard[] {
-    try { const j = JSON.parse(readFileSync(f, 'utf8')) as unknown; return Array.isArray(j) ? (j as SessionCard[]) : [] } catch { return [] }
+    try {
+      const j = JSON.parse(readFileSync(f, 'utf8')) as unknown
+      if (!Array.isArray(j)) return []
+      // 모양이 깨진 원소는 버린다 — 정렬·조회가 던지지 않게
+      return j.filter((c): c is SessionCard => !!c && typeof c === 'object' && typeof (c as SessionCard).id === 'string' && typeof (c as SessionCard).sessionId === 'string' && typeof (c as SessionCard).botId === 'string' && typeof (c as SessionCard).to === 'number')
+    } catch { return [] }
   }
 
   card(id: string): SessionCard | null {
@@ -75,10 +80,11 @@ export class ContextStore {
   private tasksFile(botAbs: string): string { return join(botAbs, '.folderbot', 'context', 'tasks.json') }
   tasks(botAbs: string, botId: string): FolderTasks {
     const t = readJson<FolderTasks>(this.tasksFile(botAbs))
-    return t && t.v === 1 ? t : emptyTasks(botId)
+    return t && t.v === 1 && Array.isArray(t.tasks) && Array.isArray(t.loose) && isObj(t.pins) ? t : emptyTasks(botId)
   }
   /** `updatedAt` 은 비교에서 뺀다 — 값이 같으면 쓰지 않고 false */
   putTasks(botAbs: string, t: FolderTasks): boolean {
+    if (!isDir(botAbs)) return false           // 폴더가 옮겨졌거나 동기화 중 안 보이면 유령 폴더를 만들지 않는다
     const f = this.tasksFile(botAbs)
     const old = readJson<FolderTasks>(f)
     if (old && same({ ...old, updatedAt: 0 }, { ...t, updatedAt: 0 })) return false
@@ -92,10 +98,11 @@ export class ContextStore {
   private boardDir(): string { return join(this.vaultRoot, '.folderbot', 'context') }
   board(): Board | null {
     const b = readJson<Board>(join(this.boardDir(), 'board.json'))
-    return b && b.v === 1 ? b : null
+    return b && b.v === 1 && isObj(b.step) && Array.isArray(b.goals) ? b : null
   }
   /** `at` 은 비교에서 뺀다 — 판 내용이 같고 board.md 가 있으면 쓰지 않고 false */
   putBoard(b: Board, md: string): boolean {
+    if (!isDir(this.vaultRoot)) return false
     const dir = this.boardDir(), jf = join(dir, 'board.json'), mf = join(dir, 'board.md')
     const old = readJson<Board>(jf)
     if (old && existsSync(mf) && same({ ...old, at: 0 }, { ...b, at: 0 })) return false
@@ -123,6 +130,9 @@ export class ContextStore {
     appendFileSync(join(this.ctx(), 'usage.jsonl'), JSON.stringify(e) + '\n')
   }
 }
+
+const isObj = (v: unknown): boolean => !!v && typeof v === 'object' && !Array.isArray(v)
+const isDir = (p: string): boolean => { try { return statSync(p).isDirectory() } catch { return false } }
 
 function readJson<T>(f: string): T | null {
   try { const j = JSON.parse(readFileSync(f, 'utf8')) as unknown; return j && typeof j === 'object' ? (j as T) : null } catch { return null }

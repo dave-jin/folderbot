@@ -196,5 +196,43 @@ describe('ContextQueue', () => {
     expect(q.calls).toBe(1)
   })
 
+  it('usage() 가 던져도 처리 안 된 거부 없이 로그를 남기고, 멈춘 뒤 다시 보면 돈다', async () => {
+    let boom = true
+    const r = rig({ usage: () => { if (boom) throw new Error('usage down'); return null } })
+    const q = new ContextQueue(r.deps)
+    const unhandled: unknown[] = []
+    const onU = (e: unknown) => { unhandled.push(e) }
+    process.on('unhandledRejection', onU)
+    try {
+      let n = 0
+      q.poke('card:a', 0, async () => { n++; return true })
+      await r.advance(0)
+      expect(n).toBe(0)
+      expect(q.pending()).toBe(1)
+      expect(r.logs.some((l) => l.includes('usage down'))).toBe(true)
+      boom = false
+      await r.advance(USAGE_RECHECK_MS)
+      expect(n).toBe(1)
+      await q.idle()
+      await r.flush()
+      expect(unhandled).toEqual([])
+    } finally { process.off('unhandledRejection', onU) }
+  })
+
+  it('cap()·off() 가 던져도 같다 · log 가 던져도 줄은 산다', async () => {
+    let boom = true
+    const r = rig({ cap: () => { if (boom) throw new Error('cap down'); return 500 } })
+    const orig = r.deps.log
+    r.deps.log = (m) => { orig(m); throw new Error('log down') }
+    const q = new ContextQueue(r.deps)
+    let n = 0
+    q.poke('card:a', 0, async () => { n++; return true })
+    await r.advance(0)
+    expect(n).toBe(0); expect(q.paused).toBeNull()
+    boom = false
+    await r.advance(USAGE_RECHECK_MS)
+    expect(n).toBe(1)
+  })
+
   it('group 디바운스 상수', () => { expect(GROUP_DEBOUNCE_MS).toBe(60_000) })
 })
