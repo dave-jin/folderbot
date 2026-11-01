@@ -1012,7 +1012,7 @@ function Main() {
         {/* 🔴 **폰과 같은 네 칸을 레일 맨 위에** (2026-09-15 Dave: «이 메뉴가 데스크탑 화면에서도 좌측
             상단에 있으면 좋겠어»). 같은 컴포넌트를 `compact` 로 쓴다 — 두 화면이 갈리지 않게. */}
         {/* 🔴 맥락 상황판 띠 — 네 칸 **위** (2026-11-01 Dave «홈 맨 위»). 사이드바에 «상황판» 줄은 따로 두지 않는다(11/1 결정) */}
-        <div className="sbtiles"><ContextStrip go={go} open={openCtx} openRoutines={() => setModal('routines')} compact /><ActionTiles go={go} setModal={setModal} say={say} modal={modal} compact /><RoutineLine onOpen={() => setModal('routines')} /></div>
+        <div className="sbtiles"><ContextStrip go={go} open={openCtx} openRoutines={() => setModal('routines')} compact /><ActionTiles setModal={setModal} modal={modal} compact /><RoutineLine onOpen={() => setModal('routines')} /></div>
         {/* 정렬 갈래 — 마감일(2026-10-01 «이름» 대체) · 사용자(끌어 놓기, 구 «직접») · 상태. ⚠ 끌어 놓으면 «사용자» 로 알아서 넘어간다 */}
         <SortBar k={railSort} set={setRailSort} />
         <div className="sb-list">
@@ -1241,7 +1241,7 @@ function botSummary(bot: Bot, sessions: SessionInfo[], notif: NotifyEvent[]) {
 /** 창 — CJ 로 «sessions»(세션 창) · «board»(할 일 보드) · «folders»(폴더 현황) 가 늘었다. «cleanup» 은 셸 메뉴의 옛 «세션 정리» 길 */
 type ModalKey = 'picker' | 'notify' | 'settings' | 'keys' | 'palette' | 'search' | 'cleanup' | 'sessions' | 'board' | 'folders' | 'routines' | 'context'
 interface TodoAgg { open: number; rows: { botId: string; name: string; open: number; proposed?: number; next: { line: number; title: string } | null }[] }
-function ActionTiles({ setModal, compact, modal }: { go: (b: string, sid?: string) => void; setModal: (m: ModalKey) => void; say: (m: string) => void; compact?: boolean; modal?: ModalKey | null }) {
+function ActionTiles({ setModal, compact, modal }: { setModal: (m: ModalKey) => void; compact?: boolean; modal?: ModalKey | null }) {
   const { s } = useStore()
   const [todo, setTodo] = useState<TodoAgg | null>(null)
   const load = () => { void api<TodoAgg>('/todos').then(setTodo).catch(() => { /* 없으면 숫자 없이 */ }) }
@@ -1367,7 +1367,7 @@ function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, 
       <div className="msub"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} style={{ width: 7, height: 7 }} />{s.hostName}<MrBadge /></div>
       {usage && usage.tools.length ? <div style={{ padding: '0 16px 12px' }}><UsageStrip u={usage} onOpen={() => setUSheet(true)} /></div> : null}
       <ContextStrip go={go} open={openCtx} openRoutines={() => setModal('routines')} />
-      <ActionTiles go={go} setModal={setModal} say={say} />
+      <ActionTiles setModal={setModal} />
       <RoutineLine onOpen={() => setModal('routines')} />
       {/* AZ (2026-09-25 Dave: «모바일에서도 데스크톱처럼 정렬 버튼») — 레일과 **같은 값**(`fb:railsort`)을 쓴다. 폰에서 고르면 맥 레일도 그 차례다(이 기기 기준) */}
       <SortBar k={railSort} set={setRailSort} />

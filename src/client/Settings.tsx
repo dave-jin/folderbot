@@ -578,8 +578,9 @@ function ContextRows() {
   const [msg, setMsg] = useState('')
   const load = () => { void api<typeof cfg>('/context/config').then(setCfg).catch(() => {}); void api<typeof st>('/context/status').then(setSt).catch(() => {}) }
   useEffect(load, [])
-  const save = async (body: { off?: boolean; dailyCap?: number }) => { try { setCfg(await api<typeof cfg>('/context/config', { body })); setMsg('저장했어요'); load() } catch (e) { setMsg((e as Error).message) } }
-  const setCap = (v: string) => { const n = Number(v); if (!v.trim() || !Number.isInteger(n) || n <= 0) { setMsg('1 이상의 정수로 적어 주세요'); return } if (n !== cfg?.dailyCap) void save({ dailyCap: n }) }
+  const save = async (body: { off?: boolean; dailyCap?: number | null }) => { try { setCfg(await api<typeof cfg>('/context/config', { body })); setMsg('저장했어요'); load() } catch (e) { setMsg((e as Error).message) } }
+  // 비우면 null 을 보내 호스트가 키를 지운다 — 기본값 500 으로 돌아간다(Ruling 16)
+  const setCap = (v: string) => { if (!v.trim()) { if (cfg?.dailyCap !== null) void save({ dailyCap: null }); return } const n = Number(v); if (!Number.isInteger(n) || n <= 0) { setMsg('1 이상의 정수로 적어 주세요'); return } if (n !== cfg?.dailyCap) void save({ dailyCap: n }) }
   if (!cfg) return null
   const line = !st ? '' : !st.owner ? '이 맥은 주인 맥이 아니라 요약을 만들지 않아요 — 주인 맥의 판을 읽기만 해요'
     : `${st.paused ? PAUSE_T[st.paused] : '도는 중'} · 오늘 호출 ${st.calls}번 · 밀린 일 ${st.pending}개`
@@ -589,7 +590,7 @@ function ContextRows() {
       <span className="seg">{([[false, '켜기'], [true, '끄기']] as const).map(([v, l]) => <button key={l} className={cfg.off === v ? 'on' : ''} onClick={() => { if (cfg.off !== v) void save({ off: v }) }}>{l}</button>)}</span>
     </Row>
     <Row t="하루 호출 상한" d="요약 모델을 하루에 이만큼까지만 불러요. 넘으면 다음 날까지 쉬어요. 비우면 500." at="main">
-      <input className="bud" defaultValue={cfg.dailyCap ?? ''} placeholder="500" onBlur={(e) => { if (e.target.value.trim()) setCap(e.target.value) }} /><span className="unit">번</span>
+      <input className="bud" defaultValue={cfg.dailyCap ?? ''} placeholder="500" onBlur={(e) => setCap(e.target.value)} /><span className="unit">번</span>
     </Row>
     <Row t="상황판 지금 상태" d={line || '불러오는 중…'} />
   </>

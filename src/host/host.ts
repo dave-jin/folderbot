@@ -457,7 +457,13 @@ export class Host {
   }
   setIdle(minutes: number): void { this.cfg.idleMinutes = Math.max(0, Math.round(minutes)); this.applyDefaults(); saveConfig(this.cfg) }
   /** 맥락 상황판 설정 — 요약 끄기 · 하루 호출 상한(설정 › 세션 · 사용량). 값 검사는 게이트웨이가 한다 */
-  setContext(o: { off?: boolean; dailyCap?: number }): void { this.cfg.context = { ...this.cfg.context, ...o }; saveConfig(this.cfg) }
+  setContext(o: { off?: boolean; dailyCap?: number | null }): void {
+    const next: { off?: boolean; dailyCap?: number } = { ...this.cfg.context }
+    if (o.off !== undefined) next.off = o.off
+    if (o.dailyCap === null) delete next.dailyCap   // 비움 = 기본값(500)으로
+    else if (o.dailyCap !== undefined) next.dailyCap = o.dailyCap
+    this.cfg.context = next; saveConfig(this.cfg)
+  }
   /** 기본 모델·생각 레벨 — 저장하면 다음 세션부터. `agent` 로 어느 CLI 것인지 가른다 */
   setDefaults(model: string, effort: string, agent: 'claude' | 'codex' = 'claude', permissionMode?: string): void {
     if (agent === 'codex') { this.cfg.defaultCodexModel = model || undefined; this.cfg.defaultCodexEffort = effort || undefined }

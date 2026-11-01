@@ -3,7 +3,8 @@ import { api } from './api'
 import { useStore } from './store'
 import { Icon } from './FolderBot'
 import { askName } from './Sheets'
-import type { Board, GoalCard, Period, StepGroup, StepRow, StoryRow } from '../core/contextBoard'
+import { STEP_ROWS, type Board, type GoalCard, type Period, type StepGroup, type StepRow, type StoryRow } from '../core/contextBoard'
+import type { PermissionRequest } from '../core/types'
 import type { CtxTask, TaskState } from '../core/contextTasks'
 import type { SessionCard } from '../core/contextCard'
 
@@ -32,7 +33,7 @@ const when = (t: number) => (new Date(t).toDateString() === new Date().toDateStr
 const dueKo = (d: string) => { const m = /^\d{4}-(\d{2})-(\d{2})$/.exec(d); return m ? `${+m[1]}/${+m[2]} 마감` : d }
 const sidOf = (cardId: string) => cardId.split('#')[0]
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
-/** 판 파일이 아직 없는 주인 아닌 맥 — 빈 판을 «잘 도는 중» 으로 보이면 안 된다 */
+/** 판 파일이 아직 없는 맥(주인 아님) — 빈 판을 «잘 도는 중» 으로 보이면 안 된다. 주인 여부를 못 읽어도 이 표지로 판정한다 */
 const noFile = (b: Board) => b.sources.some((x) => x.name === '주인 맥 판' && !x.ok)
 
 /** 세션 상태가 바뀌면(SSE `state`) 다시 읽게 하는 표지 — 상태 글자만 모아 비교한다 */
@@ -41,56 +42,95 @@ function useStateSig(): string {
   return useMemo(() => Object.values(s.sessionsByBot).flat().map((x) => `${x.id}:${x.state}`).sort().join('|'), [s.sessionsByBot])
 }
 
+/**
+ * 🔴 «내 답을 기다림» 은 **이 맥의 세션**으로 짓는다 (Ruling 21) — 주인 맥 `compose()` 와 같은 원천(`awaiting_input`).
+ *    주인이 아닌 맥은 볼트 `board.json`(주인 맥의 세션 id)을 받으므로, 그 줄을 쓰면 [답하기] 가 없는 세션으로 간다.
+ *    판을 못 읽어도(옛 호스트·판 파일 없음·오류) 이 덩이는 선다 — 확인 대기가 화면에서 사라지면 안 된다.
+ */
+type WRow = StepRow & { req?: PermissionRequest }
+function useLocalWaiting(): { rows: WRow[]; more: number } {
+  const { s } = useStore()
+  return useMemo(() => {
+    const names = new Map(s.bots.map((b) => [b.id, b.orchestrator ? '볼트 운영' : b.displayName || b.name] as const))
+    const rows: WRow[] = Object.values(s.sessionsByBot).flat()
+      .filter((x) => x.state === 'awaiting_input' && names.has(x.botId))
+      .sort((a, b) => b.lastActivity - a.lastActivity)
+      .map((x) => {
+        const req = (s.pending[x.id] ?? x.pending ?? [])[0]
+        const line = req ? (req.ask ? '질문에 답해 주세요' : `허용을 기다려요 — ${req.displayName}`) : '내 답을 기다리는 중'
+        return { kind: 'waiting', botId: x.botId, folder: names.get(x.botId)!, sessionId: x.id, title: x.name, line, at: x.lastActivity, req }
+      })
+    return { rows: rows.slice(0, STEP_ROWS), more: Math.max(0, rows.length - STEP_ROWS) }
+  }, [s.sessionsByBot, s.pending, s.bots])
+}
+
+/** 띠의 [허용] — 종전 알림 칸의 [허용] 과 같은 문(같은 requestId · `/sessions/:id/permission` allow) */
+function useAllow(say: (m: string) => void): { allow: (r: WRow) => void; busy: string } {
+  const [busy, setBusy] = useState('')
+  const allow = (r: WRow) => {
+    if (!r.req || !r.sessionId || busy) return
+    setBusy(r.sessionId)
+    void api(`/sessions/${r.sessionId}/permission`, { body: { requestId: r.req.requestId, allow: true } })
+      .then(() => say('허용했어요'), (e) => say(errMsg(e))).finally(() => setBusy(''))
+  }
+  return { allow, busy }
+}
+
 /* ── 띠 ──────────────────────────────────────────────────────────────────── */
 
-function StepItem({ r, go, open, openRoutines, snooze }: { r: StepRow; go: Go; open: Open; openRoutines?: () => void; snooze: (r: StepRow) => void }) {
-  return <div className="cx-it" data-kind={r.kind} title={r.kind === 'routine' ? `${r.title} — ${r.line}` : r.line}>
+type Acts = { go: Go; open: Open; openRoutines?: () => void; snooze: (r: StepRow) => void; allow: (r: WRow) => void; busy: string }
+function StepItem({ r, a }: { r: WRow; a: Acts }) {
+  // 질문(AskUserQuestion)은 «허용» 할 것이 아니라 **답할** 것이다 (2026-09-25) — [허용] 은 도구 허용 요청에만
+  const perm = r.kind === 'waiting' && r.req && !r.req.ask
+  return <div className="cx-it" data-kind={r.kind} data-sid={r.sessionId} title={r.kind === 'routine' ? `${r.title} — ${r.line}` : r.line}>
     <div className="cx-f">{r.folder}{r.kind === 'routine' ? '' : ` · ${r.title}`}</div>
     <div className="cx-w">{r.kind === 'routine' ? `${r.title} — ${r.line}` : r.line}</div>
     <div className="cx-a">
-      {r.kind === 'stalled' ? <><button className="btn cx-pri" onClick={() => open({ bot: r.botId, task: r.taskId })}>이어서 하기</button><button className="btn ghost" onClick={() => snooze(r)}>놔둬</button></> : null}
-      {r.kind === 'waiting' ? <button className="btn cx-pri" onClick={() => go(r.botId, r.sessionId)}>답하기</button> : null}
-      {r.kind === 'routine' && openRoutines ? <button className="btn cx-pri" onClick={openRoutines}>점검하기</button> : null}
+      {r.kind === 'stalled' ? <><button className="btn cx-pri" onClick={() => a.open({ bot: r.botId, task: r.taskId })}>이어서 하기</button><button className="btn ghost" onClick={() => a.snooze(r)}>놔둬</button></> : null}
+      {perm ? <button className="btn cx-pri cx-allow" disabled={a.busy === r.sessionId} onClick={() => a.allow(r)}>{a.busy === r.sessionId ? '…' : '허용'}</button> : null}
+      {r.kind === 'waiting' ? <button className={`btn ${perm ? 'ghost' : 'cx-pri'} cx-reply`} onClick={() => a.go(r.botId, r.sessionId)}>답하기</button> : null}
+      {r.kind === 'routine' && a.openRoutines ? <button className="btn cx-pri" onClick={a.openRoutines}>점검하기</button> : null}
       {r.at ? <span className="cx-tm">{when(r.at)}</span> : null}
     </div>
   </div>
 }
 
-/** 띠 본체 — 홈 띠와 상황판 페이지가 같은 그림을 쓴다 */
-function StripView({ b, owner, go, open, openRoutines, onSnooze, compact, big, head }: {
-  b: Board; owner: boolean | null; go: Go; open: Open; openRoutines?: () => void; onSnooze: (r: StepRow) => void; compact?: boolean; big?: boolean; head?: ReactNode
+/** 띠 본체 — 홈 띠와 상황판 페이지가 같은 그림을 쓴다. 판이 없거나(옛 호스트·오류) 판 파일이 없어도 «내 답을 기다림» 은 선다 */
+function StripView({ b, owner, waiting, a, compact, big, head }: {
+  b: Board | null; owner: boolean | null; waiting: StepGroup; a: Acts; compact?: boolean; big?: boolean; head?: ReactNode
 }) {
-  const stamp = owner === false ? `${b.host} 판 · ${hm(b.at)} 정리` : `${hm(b.at)} 정리`
-  if (owner === false && noFile(b)) return <div className={`cx-strip ${compact ? 'mini' : ''} ${big ? 'big' : ''}`}>{head}<div className="cx-calm none">아직 주인 맥 판 없음<span>주인 맥이 판을 한 번 쓰면 여기에 보여요</span></div></div>
-  const t = b.tally
-  const groups = GROUPS.map((g) => ({ ...g, v: b.step[g.k] as StepGroup })).filter((g) => g.v.rows.length)
-  const total = b.goals.length + b.quiet.length
+  const board = b && !noFile(b) ? b : null
+  const groups = GROUPS.map((g) => ({ ...g, v: g.k === 'waiting' ? waiting : board ? board.step[g.k] : { rows: [], more: 0 } })).filter((g) => g.v.rows.length)
+  const total = board ? board.goals.length + board.quiet.length : 0
   return <div className={`cx-strip ${compact ? 'mini' : ''} ${big ? 'big' : ''}`}>
     {head}
-    <div className="cx-axis">{b.axis ? <b>{b.axis.text}</b> : null}<span className="s">끝남 {t.done} · 하다 만 {t.stalled} · 새로 생김 {t.added} · {stamp}</span></div>
+    {board ? <div className="cx-axis">{board.axis ? <b>{board.axis.text}</b> : null}<span className="s">끝남 {board.tally.done} · 하다 만 {board.tally.stalled} · 새로 생김 {board.tally.added} · {owner === false ? `${board.host} 판 · ` : ''}{hm(board.at)} 정리</span></div> : null}
+    {b && noFile(b) ? <div className="cx-calm none">아직 주인 맥 판 없음<span>주인 맥이 판을 한 번 쓰면 여기에 보여요</span></div> : null}
     {groups.length ? <div className="cx-need">{groups.map((g) => <div key={g.k} className={`cx-nk k-${g.k}`}>
       <h3>{g.t}<span className="c">{g.v.rows.length + g.v.more}</span></h3>
-      {g.v.rows.map((r, i) => <StepItem key={`${r.botId}:${r.taskId ?? r.sessionId ?? r.routine ?? i}`} r={r} go={go} open={open} openRoutines={openRoutines} snooze={onSnooze} />)}
-      {g.v.more ? (big ? <span className="cx-more">외 {g.v.more} — 아래 목표 카드에 있어요</span> : <button className="cx-more" onClick={() => open()}>외 {g.v.more}</button>) : null}
+      {g.v.rows.map((r, i) => <StepItem key={`${r.botId}:${r.taskId ?? r.sessionId ?? r.routine ?? i}`} r={r} a={a} />)}
+      {g.v.more ? (big || !board ? <span className="cx-more">외 {g.v.more}{big ? ' — 아래 목표 카드에 있어요' : ''}</span> : <button className="cx-more" onClick={() => a.open()}>외 {g.v.more}</button>) : null}
     </div>)}</div>
-      : <div className="cx-calm"><i />{total ? `목표 ${total}개 모두 잘 도는 중` : '아직 정리된 목표가 없어요'}</div>}
+      : board ? <div className="cx-calm"><i />{total ? `목표 ${total}개 모두 잘 도는 중` : '아직 정리된 목표가 없어요'}</div> : null}
   </div>
 }
 
-/** 홈 맨 위 띠 — 60초마다, 그리고 세션 상태가 바뀌면 다시 읽는다. 상황판이 없는 호스트(옛 판)면 아무것도 안 그린다 */
+/** 홈 맨 위 띠 — 60초마다, 그리고 세션 상태가 바뀌면 다시 읽는다. 판을 못 읽고 기다리는 세션도 없으면(옛 호스트) 아무것도 안 그린다 */
 export function ContextStrip({ go, open, compact, openRoutines }: { go: Go; open: Open; compact?: boolean; openRoutines?: () => void }) {
   const [b, setB] = useState<Board | null>(null)
   const [st, setSt] = useState<Status | null>(null)
   const [note, setNote] = useState('')
-  const load = () => { void api<Board>('/context/board?period=today').then(setB).catch(() => { /* 없으면 안 그린다 */ }); void api<Status>('/context/status').then(setSt).catch(() => {}) }
+  const waiting = useLocalWaiting()
+  const { allow, busy } = useAllow(setNote)
+  const load = () => { void api<Board>('/context/board?period=today').then(setB).catch(() => setB(null)); void api<Status>('/context/status').then(setSt).catch(() => {}) }
   useEffect(() => { load(); const t = window.setInterval(load, 60_000); return () => window.clearInterval(t) }, [])
   const sig = useStateSig(); const first = useRef(true)
   useEffect(() => { if (first.current) { first.current = false; return } const t = window.setTimeout(load, 1500); return () => window.clearTimeout(t) }, [sig])
   useEffect(() => { if (!note) return; const t = window.setTimeout(() => setNote(''), 4000); return () => window.clearTimeout(t) }, [note])
   const snooze = async (r: StepRow) => { try { await api('/context/snooze', { body: { bot: r.botId, task: r.taskId } }); setNote('7일 동안 여기서 뺐어요'); load() } catch (e) { setNote(errMsg(e)) } }
-  if (!b) return null
+  if (!b && !waiting.rows.length) return null
   const head = <button className="cx-h" onClick={() => open()} aria-label="상황판 열기"><b>상황판</b>{note ? <span className="cx-note">{note}</span> : null}<span className="sp" /><Icon n="chev" size={9} color="var(--t3)" /></button>
-  return <StripView b={b} owner={st ? st.owner : null} go={go} open={open} openRoutines={openRoutines} onSnooze={(r) => void snooze(r)} compact={compact} head={head} />
+  return <StripView b={b} owner={st ? st.owner : null} waiting={waiting} a={{ go, open, openRoutines, snooze: (r) => void snooze(r), allow, busy }} compact={compact} head={head} />
 }
 
 /* ── 상황판 페이지 ───────────────────────────────────────────────────────── */
@@ -143,6 +183,8 @@ export function ContextPage({ onClose, go, goTodo, openRoutines, at, phone, open
 
   const b = boards[period]
   const owner = st ? st.owner : null
+  const waiting = useLocalWaiting()
+  const { allow, busy } = useAllow(setNote)
   const snooze = async (r: StepRow) => { try { await api('/context/snooze', { body: { bot: r.botId, task: r.taskId } }); setNote('7일 동안 나설 곳에서 뺐어요'); load(period) } catch (e) { setNote(errMsg(e)) } }
   const open: Open = (g) => { if (g) setGoal(g) }
   const botOfName = (name: string) => s.bots.find((x) => (x.displayName || x.name) === name || x.name === name)
@@ -161,7 +203,7 @@ export function ContextPage({ onClose, go, goTodo, openRoutines, at, phone, open
           {period === 'away' && awaySub ? <div className="cx-sub">{awaySub}</div> : null}
           {mismatch ? <div className="cx-sub warn">{mismatch}</div> : null}
           {b ? <>
-            <StripView b={b} owner={owner} go={go} open={open} openRoutines={openRoutines} onSnooze={(r) => void snooze(r)} big />
+            <StripView b={b} owner={owner} waiting={waiting} a={{ go, open, openRoutines, snooze: (r) => void snooze(r), allow, busy }} big />
             {b.goals.length ? <section className="cx-goals">
               <div className="cx-gh"><b>목표</b><span className="m">문제 있는 목표 먼저 · 그다음 마감 가까운 순</span>
                 <span className="cx-leg">{STATES.map((x) => <span key={x}><i className={`st-${x}`} />{STATE_KO[x]}</span>)}</span></div>
@@ -193,8 +235,14 @@ function GoalView({ at, back, onClose, go, goTodo, phone, openDoc, owner }: {
   const [note, setNote] = useState('')
   const [menu, setMenu] = useState<number | null>(null)
   const [over, setOver] = useState('')
-  const load = () => { void api<GoalResp>(`/context/goal?bot=${encodeURIComponent(bot)}${typeof sel === 'string' && sel !== 'loose' ? `&task=${encodeURIComponent(sel)}` : ''}`).then(setD).catch((e) => setNote(errMsg(e))) }
-  useEffect(load, [bot, sel])
+  // 요청 번호 — 작업을 빨리 바꿔 누르면 늦게 온 옛 답이 새 작업의 이야기를 덮는다. 마지막 요청의 답만 쓴다
+  const reqN = useRef(0)
+  const load = () => {
+    const n = ++reqN.current
+    void api<GoalResp>(`/context/goal?bot=${encodeURIComponent(bot)}${typeof sel === 'string' && sel !== 'loose' ? `&task=${encodeURIComponent(sel)}` : ''}`)
+      .then((r) => { if (n === reqN.current) setD(r) }, (e) => { if (n === reqN.current) setNote(errMsg(e)) })
+  }
+  useEffect(() => { load(); return () => { reqN.current++ } }, [bot, sel])
   const task = d && sel && sel !== 'loose' ? d.tasks.find((t) => t.id === sel) ?? null : null
   const rows: Row[] = !d ? [] : sel === 'loose'
     ? d.loose.map((c) => ({ at: c.from, channel: c.channel, machine: c.machine, text: c.intent, stalled: c.ending === 'cut', ref: { sessionId: c.sessionId }, cards: [c.id] }))
@@ -204,17 +252,19 @@ function GoalView({ at, back, onClose, go, goTodo, phone, openDoc, owner }: {
   const name = g?.folder ?? bot
 
   const say = (m: string) => { setNote(m); window.setTimeout(() => setNote((x) => (x === m ? '' : x)), 5000) }
-  /** 카드 묶음 옮기기 — 새 작업이면 첫 장으로 작업을 만들고 그 id 로 나머지를 옮긴다 */
+  /** 카드 묶음 옮기기 — 새 작업이면 첫 장으로 작업을 만들고, 호스트가 돌려준 그 작업 id 로 나머지를 옮긴다(이름으로 다시 찾지 않는다) */
   const move = async (cards: string[], to: string | { newTitle: string }) => {
     setMenu(null)
+    let dest = to, done = 0
     try {
-      let dest = to
       for (const card of cards) {
-        await api('/context/move', { body: { bot, card, ...(typeof dest === 'string' ? { to: dest } : { newTitle: dest.newTitle }) } })
-        if (typeof dest !== 'string') { const title = dest.newTitle; const r = await api<GoalResp>(`/context/goal?bot=${encodeURIComponent(bot)}`); const t = r.tasks.find((x) => x.title === title); if (!t) break; dest = t.id }
+        const r = await api<{ task?: string }>('/context/move', { body: { bot, card, ...(typeof dest === 'string' ? { to: dest } : { newTitle: dest.newTitle }) } })
+        done++
+        if (typeof dest !== 'string') { if (!r.task) break; dest = r.task }
       }
-      say('옮겼어요 — 이 배정은 AI 가 다시 묶어도 그대로예요'); load()
-    } catch (e) { say(errMsg(e)) }
+      say(done === cards.length ? '옮겼어요 — 이 배정은 AI 가 다시 묶어도 그대로예요' : `${cards.length}장 중 ${done}장만 옮겼어요 — 다시 해 주세요`)
+    } catch (e) { say(done ? `${cards.length}장 중 ${done}장만 옮기고 멈췄어요 — ${errMsg(e)}` : errMsg(e)) }
+    load()
   }
   const moveNew = async (cards: string[]) => { setMenu(null); const t = await askName('새 작업 이름'); if (t?.trim()) await move(cards, { newTitle: t.trim() }) }
   const reopen = async () => { if (!task) return; try { await api('/context/reopen', { body: { bot, task: task.id } }); say('다시 열었어요'); load() } catch (e) { say(errMsg(e)) } }

@@ -278,9 +278,11 @@ describe('ContextService — 주인 맥', () => {
     const svc = new ContextService(host(), ask)
     svc.onTurnEnd(sess('s_m', 'hack1', [it_('user', '투표'), it_('assistant', '네')]))
     await svc.idle()
-    svc.move('hack1', 's_m', { newTitle: '결과 집계' })
+    const dest = svc.move('hack1', 's_m', { newTitle: '결과 집계' })
     let t = tasksOf(bots[1])
     const moved = t.tasks.find((x) => x.title === '결과 집계')!
+    expect(dest).toBe(moved.id)   // 새 작업 id 를 돌려준다 — 화면이 같은 이름 작업을 다시 찾지 않게
+    expect(svc.move('hack1', 's_m', moved.id)).toBe(moved.id)
     expect(moved.cards).toEqual(['s_m'])
     expect(t.pins).toEqual({ s_m: moved.id })
     svc.reopen('hack1', moved.id)

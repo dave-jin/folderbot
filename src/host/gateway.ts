@@ -23,6 +23,7 @@ import { mark, routeLabel, slowSince } from './slow'
 import { saveConfig } from './paths'
 import { handleMcp } from './mcp'
 import { NotOwner } from './context'
+import { contextConfigBody } from '../core/contextConfig'
 import { bearer, mcpGate } from './mcpAuth'
 import { readTokenEnv } from './wake'
 import { ASK_MAX_OPEN } from './ask'
@@ -394,8 +395,7 @@ export class Gateway {
           const b = await body()
           const to = typeof b.newTitle === 'string' && b.newTitle.trim() ? { newTitle: b.newTitle } : typeof b.to === 'string' && b.to ? b.to : null
           if (!to) return json(400, { error: 'to(작업 id) 나 newTitle 이 필요해요' })
-          h.context.move(String(b.bot ?? ''), String(b.card ?? ''), to)
-          return json(200, { ok: true })
+          return json(200, { ok: true, task: h.context.move(String(b.bot ?? ''), String(b.card ?? ''), to) })
         }
         if (p === '/api/context/snooze' && m === 'POST') { const b = await body(); h.context.snooze(String(b.bot ?? ''), String(b.task ?? '')); return json(200, { ok: true }) }
         if (p === '/api/context/reopen' && m === 'POST') { const b = await body(); h.context.reopen(String(b.bot ?? ''), String(b.task ?? '')); return json(200, { ok: true }) }
@@ -404,12 +404,9 @@ export class Gateway {
         // 설정 › 세션 · 사용량 «상황판» — 끄기 · 하루 호출 상한. 기존 설정 길(/idle·/quiet)처럼 칸마다 문 하나(Ruling 3)
         if (p === '/api/context/config' && m === 'GET') return json(200, { off: h.cfg.context?.off === true, dailyCap: h.cfg.context?.dailyCap ?? null, env: process.env.FOLDERBOT_CONTEXT === '0' })
         if (p === '/api/context/config' && m === 'POST') {
-          const b = await body()
-          const o: { off?: boolean; dailyCap?: number } = {}
-          if (b.off !== undefined) { if (typeof b.off !== 'boolean') return json(400, { error: 'off 는 참·거짓' }); o.off = b.off }
-          if (b.dailyCap !== undefined) { const n = b.dailyCap; if (typeof n !== 'number' || !Number.isInteger(n) || n <= 0) return json(400, { error: 'dailyCap 은 1 이상의 정수' }); o.dailyCap = n }
-          if (!Object.keys(o).length) return json(400, { error: 'off 나 dailyCap 이 필요해요' })
-          h.setContext(o)
+          const r = contextConfigBody(await body())
+          if ('error' in r) return json(400, { error: r.error })
+          h.setContext(r)
           return json(200, { off: h.cfg.context?.off === true, dailyCap: h.cfg.context?.dailyCap ?? null, env: process.env.FOLDERBOT_CONTEXT === '0' })
         }
       } catch (e) { return ctxErr(e) }

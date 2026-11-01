@@ -153,14 +153,15 @@ export class ContextService {
     }
   }
 
-  /** 카드를 다른 작업(또는 새 작업)으로 옮기고 고정한다 */
-  move(botId: string, cardId: string, to: string | { newTitle: string }): void {
-    this.edit(botId, (f, now) => {
+  /** 카드를 다른 작업(또는 새 작업)으로 옮기고 고정한다 · 옮겨 간 작업 id 를 돌려준다(새 작업이면 방금 만든 id) */
+  move(botId: string, cardId: string, to: string | { newTitle: string }): string {
+    const f = this.edit(botId, (f, now) => {
       if (!placed(f).has(cardId) && this.store.card(cardId)?.botId !== botId) throw new Error('그 카드가 이 폴더에 없어요')
       const next = moveCard(f, cardId, to, now)
       if (next === f) throw new Error('옮길 작업이 없어요')
       return next
     })
+    return f.pins[cardId]
   }
 
   /** [놔둬] — 나설 곳에서 7일 뺀다 */
@@ -426,7 +427,7 @@ export class ContextService {
   }
 
   /** Dave 의 손질 — 주인만 · 상태를 다시 매기고 쓰고 판을 바로 다시 짓는다 */
-  private edit(botId: string, fn: (f: FolderTasks, now: number) => FolderTasks): void {
+  private edit(botId: string, fn: (f: FolderTasks, now: number) => FolderTasks): FolderTasks {
     if (!this.owner()) throw new NotOwner(this.store.board()?.host || this.h.hostName())
     const bot = this.botOf(botId)
     const now = Date.now()
@@ -434,6 +435,7 @@ export class ContextService {
     const byId = new Map(this.store.folderCards(bot.id, 0).map((c) => [c.id, c] as const))
     this.store.putTasks(bot.abs, this.restate(f, byId, this.facts(bot), now))
     this.persistBoard(now)
+    return f
   }
 
   /** 볼트의 tasks.json — 저장소는 맨 위 모양만 본다. 원소까지 걸러 던지지 않게 한다 */

@@ -4220,32 +4220,62 @@ try {
             ok('내 메시지의 첨부·@멘션은 칩으로 보인다 · AW 같은 파일은 한 번 · 하단 칩 디자인')
           }
           /**
-           * 🔴 **네 칸은 «하는 곳» 이다** (2026-09-15 Dave: 폰 홈의 4칸을 전부 액션으로 · 맥 레일 맨 위에도).
-           * ⚠ 숫자만 있고 거기서 할 수 있는 일이 없으면 그 칸은 벽지가 된다 — 그래서 **칸 안의 단추가
-           *   실제로 일하는지**(확인 대기의 [허용]) 까지 잰다.
+           * 🔴 **네 칸 + 상황판 띠는 «하는 곳» 이다** (2026-09-15 Dave: 폰 홈의 4칸을 전부 액션으로 · 맥 레일 맨 위에도).
+           * ⚠ 숫자만 있고 거기서 할 수 있는 일이 없으면 벽지가 된다 — 그래서 **단추가 실제로 일하는지** 까지 잰다.
+           * 🔴 2026-11-01 맥락 상황판 — 확인 대기 수와 [허용]·[답하기] 는 알림 칸에서 네 칸 **위** 띠의 «내 답을 기다림» 으로 옮겼다
+           *    (원천이 같아 하나로 · 설계 §8 · Ruling 22). 알림 칸은 마지막 결과 한 줄만. 줄은 **이 맥의 세션**으로 짓는다(Ruling 21).
            */
           {
             const labels = await pg.$$eval('.sbtiles .mcards button .n', (r) => r.map((x) => x.textContent ?? ''))
             for (const want of ['폴더봇', '세션', '알림', '할 일']) if (!labels.some((l) => l.includes(want))) fail(`레일 4칸: «${want}» 칸이 없다 · ` + JSON.stringify(labels))
-            /**
-             * 🔴 2026-11-01 맥락 상황판 — 확인 대기는 알림 칸이 아니라 네 칸 **위** 띠의 «내 답을 기다림» 에 선다(원천이 같아 하나로 · 설계 §8).
-             *    알림 칸은 마지막 결과 한 줄만 남는다. 종전(CJ)엔 대기가 생기면 알림 칸이 «확인 대기» 로 바뀌고 칸 안에서 [허용] 을 띄웠다.
-             */
+            const dnR = (await api('/bots')).find((b) => b.id === bot.id)?.displayName ?? '제품_Rondo'
+            const rowOf = (sid) => pg.evaluate((sid) => { const r = document.querySelector(`.sbtiles .cx-strip .cx-it[data-kind="waiting"][data-sid="${sid}"]`); return r ? { f: r.querySelector('.cx-f')?.textContent ?? '', acts: [...r.querySelectorAll('.cx-a .btn')].map((b) => b.textContent ?? ''), strip: r.closest('.cx-strip')?.textContent ?? '' } : null }, sid)
+            const waitRow = async (sid) => { for (let i = 0; i < 60; i++) { const r = await rowOf(sid); if (r) return r; await wait(250) } return null }
+            const stOf = async (sid) => ((await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === sid) ?? {}).state
+            // ① 승인 대기 — 띠 줄의 [답하기] 는 그 대화를 열고, [허용] 은 그 자리에서 푼다
             const hold = await api(`/bots/${bot.id}/sessions`, { name: '칸에서 허용' })
             await api(`/sessions/${hold.id}/send`, { text: '승인이 필요한 일 해 줘' })
-            const dnR = (await api('/bots')).find((b) => b.id === bot.id)?.displayName ?? '제품_Rondo'
-            let row = null
-            for (let i = 0; i < 60; i++) { row = await pg.evaluate(() => { const r = [...document.querySelectorAll('.sbtiles .cx-strip .cx-it[data-kind="waiting"]')]; return r.length ? { f: r.map((x) => x.querySelector('.cx-f')?.textContent ?? '').join('|'), btn: r[0].querySelector('.cx-a .btn')?.textContent ?? '' } : null }); if (row) break; await wait(250) }
-            if (!row) fail('상황판 띠: 확인 대기가 생겼는데 «내 답을 기다림» 줄이 안 뜬다')
+            const row = await waitRow(hold.id)
+            if (!row) fail('상황판 띠: 승인 대기가 생겼는데 «내 답을 기다림» 줄이 안 뜬다')
             else {
               if (!row.f.includes(dnR)) fail('상황판 띠: 어느 폴더가 묻는지 안 보인다 · ' + JSON.stringify([row.f, dnR]))
-              if (row.btn !== '답하기') fail('상황판 띠: «내 답을 기다림» 줄의 단추가 [답하기] 가 아니다 · ' + row.btn)
+              if (!row.acts.includes('허용') || !row.acts.includes('답하기')) fail('🔴 상황판 띠: 승인 대기 줄에 [허용]·[답하기] 가 다 없다 · ' + JSON.stringify(row.acts))
+              if (await pg.$('.sbtiles .mcards button.hot')) fail('🔴 상황판: 확인 대기가 알림 칸에도 또 선다 — 띠와 두 번 보인다')
+              if (!/알림/.test(await pg.textContent('.sbtiles .mcards .t-note .n') ?? '')) fail('상황판: 확인 대기가 생기자 알림 칸 이름이 바뀌었다')
+              const hashWas = await pg.evaluate(() => location.hash)
+              await pg.click(`.sbtiles .cx-it[data-sid="${hold.id}"] .cx-reply`); await wait(500)
+              const h = await pg.evaluate(() => { const q = new URLSearchParams(location.hash.slice(1)); return { bot: q.get('bot'), s: q.get('s') } })
+              if (h.bot !== bot.id || h.s !== hold.id) fail('🔴 상황판 띠: [답하기] 가 그 세션 대화를 안 열었다 · ' + JSON.stringify(h))
+              await pg.click(`.sbtiles .cx-it[data-sid="${hold.id}"] .cx-allow`)
+              let st = 'awaiting_input'
+              for (let i = 0; i < 60; i++) { st = await stOf(hold.id); if (st !== 'awaiting_input') break; await wait(250) }
+              if (st === 'awaiting_input') fail('🔴 상황판 띠: [허용] 을 눌렀는데 그대로 기다린다')
+              await pg.evaluate((h) => { location.hash = h }, hashWas); await wait(400)   // 뒤 검사들이 보던 화면으로 되돌린다
             }
-            if (await pg.$('.sbtiles .mcards button.hot')) fail('🔴 상황판: 확인 대기가 알림 칸에도 또 선다 — 띠와 두 번 보인다')
-            if (!/알림/.test(await pg.textContent('.sbtiles .mcards .t-note .n') ?? '')) fail('상황판: 확인 대기가 생기자 알림 칸 이름이 바뀌었다')
             await api(`/sessions/${hold.id}`, undefined, 'DELETE')
+            // ② 주인이 아닌 맥 · 판 파일 없음 — 판이 «아직 주인 맥 판 없음» 이어도 이 맥의 대기는 이 맥 세션 id 로 선다(Ruling 21)
+            const opsF = join(root, '.claude/ops.yml'), boardF = join(root, '.folderbot/context/board.json')
+            const opsWas = existsSync(opsF) ? readFileSync(opsF, 'utf8') : null, boardWas = existsSync(boardF) ? readFileSync(boardF, 'utf8') : null
+            mkdirSync(join(root, '.claude'), { recursive: true }); writeFileSync(opsF, 'host: 다른맥\n'); rmSync(boardF, { force: true })
+            try {
+              const hold2 = await api(`/bots/${bot.id}/sessions`, { name: '주인 아님 대기' })
+              await api(`/sessions/${hold2.id}/send`, { text: '승인이 필요한 일 해 줘' })
+              const r2 = await waitRow(hold2.id)
+              let strip = r2?.strip ?? ''
+              for (let i = 0; i < 40 && !/아직 주인 맥 판 없음/.test(strip); i++) { await wait(250); strip = (await rowOf(hold2.id))?.strip ?? '' }
+              if (!r2) fail('🔴 Ruling 21: 주인 아닌 맥·판 파일 없음에서 이 맥의 확인 대기가 띠에 안 선다')
+              else {
+                if (!/아직 주인 맥 판 없음/.test(strip)) fail('Ruling 21: 판 파일이 없는데 «아직 주인 맥 판 없음» 이 안 보인다 · ' + strip.slice(0, 200))
+                if (/모두 잘 도는 중/.test(strip)) fail('🔴 판 파일이 없는데 «모두 잘 도는 중» 으로 보인다')
+                if (!r2.acts.includes('허용')) fail('Ruling 21: 주인 아닌 맥 대기 줄에 [허용] 이 없다 · ' + JSON.stringify(r2.acts))
+              }
+              await api(`/sessions/${hold2.id}`, undefined, 'DELETE')
+            } finally {
+              if (opsWas === null) rmSync(opsF, { force: true }); else writeFileSync(opsF, opsWas)
+              if (boardWas !== null) { mkdirSync(join(root, '.folderbot/context'), { recursive: true }); writeFileSync(boardF, boardWas) }
+            }
             await wait(400)
-            ok('레일 — 확인 대기는 상황판 띠 «내 답을 기다림» 에 [답하기] 로 서고 알림 칸은 «알림» 그대로')
+            ok('상황판 띠 «내 답을 기다림» — [답하기] 는 그 대화로 · [허용] 은 그 자리에서 · 주인 아닌 맥·판 없음에서도 이 맥 대기가 선다 · 알림 칸은 «알림» 그대로')
           }
           /**
            * 🔴 **CJ · 네 칸 = 관리 입구 넷** (2026-10-16 Dave «전부 추천대로» · 기획안 §2) — 칸 숫자가 호스트의 bots · sessions · notifications · todos 와 같다.
@@ -4504,11 +4534,11 @@ try {
              *    호스트도 질문에 온 «허용» 을 거절한다.
              */
             {
-              let tile = null
-              for (let i = 0; i < 40; i++) { tile = await pg.evaluate(() => { const r = [...document.querySelectorAll('.cx-strip .cx-it[data-kind="waiting"]')]; return r.length ? { acts: r.flatMap((x) => [...x.querySelectorAll('.cx-a .btn')].map((b) => b.textContent ?? '')), text: r.map((x) => x.textContent ?? '').join('|') } : null }); if (tile) break; await wait(250) }
-              if (!tile) fail('상황판 띠: 질문이 떴는데 «내 답을 기다림» 줄이 없다(검사 전제 깨짐)'); else if (tile.acts.some((a) => a !== '답하기') || /AskUserQuestion/.test(tile.text)) fail('🔴 상황판 띠: 질문에 [허용]·도구 이름이 떴다 · ' + JSON.stringify(tile))
               let sidQ = '', reqQ = ''
               for (const x of await api(`/bots/${bot.id}/sessions`)) { const c = await api(`/sessions/${x.id}/chat`); const p = c.info.pending?.find((q) => q.ask); if (p) { sidQ = x.id; reqQ = p.requestId } }
+              let tile = null
+              for (let i = 0; i < 40; i++) { tile = await pg.evaluate((sid) => { const r = document.querySelector(`.cx-strip .cx-it[data-kind="waiting"][data-sid="${sid}"]`); return r ? { acts: [...r.querySelectorAll('.cx-a .btn')].map((b) => b.textContent ?? ''), text: r.textContent ?? '' } : null }, sidQ); if (tile) break; await wait(250) }
+              if (!tile) fail('상황판 띠: 질문이 떴는데 «내 답을 기다림» 줄이 없다(검사 전제 깨짐)'); else if (tile.acts.some((a) => a !== '답하기') || /AskUserQuestion/.test(tile.text)) fail('🔴 상황판 띠: 질문에 [허용]·도구 이름이 떴다 · ' + JSON.stringify(tile))
               const r = await fetch(base + `/api/sessions/${sidQ}/permission`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: reqQ, allow: true }) })
               if (r.status !== 400) fail('🔴 호스트: 질문에 온 «허용» 을 받아 줬다 · ' + r.status)
               if (!(await pg.$('.card .opt input'))) fail('🔴 호스트: 질문에 «허용» 이 오자 질문 카드가 사라졌다')
