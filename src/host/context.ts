@@ -27,6 +27,8 @@ export interface ContextHost {
   readonly registry: { bots(): Bot[]; readonly root: string }
   readonly cfg: { context?: { off?: boolean; dailyCap?: number } }
   ownsRoutines(): boolean
+  /** 주인 맥 이름(`.claude/ops.yml` 의 `host:`) — 409 글에 쓴다. 없으면 볼트 판의 host */
+  routineOwner?(): string | undefined
   routineBoard(): { routines: BoardRoutine[] }
   dataDir(): string
   hostName(): string
@@ -78,6 +80,12 @@ export class ContextService {
   private cap(): number { const c = this.h.cfg.context?.dailyCap; return typeof c === 'number' && Number.isFinite(c) && c > 0 ? c : DEFAULT_CAP }
   private off(): boolean { return process.env.FOLDERBOT_CONTEXT === '0' || this.h.cfg.context?.off === true }
   private owner(): boolean { try { return this.h.ownsRoutines() } catch { return false } }
+  /** 409 글의 주인 이름 — ops.yml `host:` 가 정본(CX-4). 판 파일의 host 는 그 판을 쓴 맥이라 주인이 바뀌었으면 낡았다 */
+  private ownerName(): string {
+    let o: string | undefined
+    try { o = this.h.routineOwner?.()?.trim() } catch { /* 못 읽으면 판으로 */ }
+    return o || this.store.board()?.host || this.h.hostName()
+  }
   /** 시험 전용 덮어쓰기 — 스모크가 2분을 기다릴 수 없다(Ruling 2) */
   private delay(kind: 'card' | 'group'): number {
     const raw = process.env.FOLDERBOT_CONTEXT_DEBOUNCE_MS
@@ -428,7 +436,7 @@ export class ContextService {
 
   /** Dave 의 손질 — 주인만 · 상태를 다시 매기고 쓰고 판을 바로 다시 짓는다 */
   private edit(botId: string, fn: (f: FolderTasks, now: number) => FolderTasks): FolderTasks {
-    if (!this.owner()) throw new NotOwner(this.store.board()?.host || this.h.hostName())
+    if (!this.owner()) throw new NotOwner(this.ownerName())
     const bot = this.botOf(botId)
     const now = Date.now()
     const f = fn(this.tasksOf(bot), now)

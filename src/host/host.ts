@@ -307,9 +307,12 @@ export class Host {
   }
   /** RB-2 · 이 호스트가 루틴 주인인가 — `.claude/ops.yml` 의 `host:`(운영 감시와 같은 판정 · 없으면 어디서나) */
   ownsRoutines(): boolean {
-    let host: string | undefined
-    try { const f = join(this.registry.root, '.claude', 'ops.yml'); if (existsSync(f)) host = parseOps(readFileSync(f, 'utf8')).host } catch { /* 못 읽으면 지금처럼 어디서나 */ }
-    return ownsPeer({ host }, [hostname(), this.hostName(), this.cfg.hostName ?? ''])
+    return ownsPeer({ host: this.routineOwner() }, [hostname(), this.hostName(), this.cfg.hostName ?? ''])
+  }
+  /** 루틴 주인 맥 이름 — `.claude/ops.yml` 의 `host:` · 없거나 못 읽으면 undefined(= 어디서나). 상황판 409 글도 이 이름을 쓴다 */
+  routineOwner(): string | undefined {
+    try { const f = join(this.registry.root, '.claude', 'ops.yml'); if (existsSync(f)) return parseOps(readFileSync(f, 'utf8')).host } catch { /* 못 읽으면 지금처럼 어디서나 */ }
+    return undefined
   }
   /** RB-2 · 공유 실행 기록에 그 시각 이후 시작이 있나 — 다른 호스트가 이미 돌린 회차 */
   sharedRan(): (botId: string, name: string, t: number) => boolean {

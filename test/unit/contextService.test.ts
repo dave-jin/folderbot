@@ -319,6 +319,18 @@ describe('ContextService — 주인 아님', () => {
     expect(svc.status().owner).toBe(false)
   })
 
+  it('409 글의 주인 이름은 ops.yml host — 판 파일을 쓴 맥이 아니고 이 맥도 아니다(CX-4)', () => {
+    owner = false
+    mkdirSync(join(root, '.folderbot', 'context'), { recursive: true })
+    writeFileSync(boardFile(), JSON.stringify({ v: 1, at: 1, host: '맥북', period: 'today', since: 0, axis: null, tally: { done: 0, stalled: 0, added: 0 },
+      step: { stalled: { rows: [], more: 0 }, waiting: { rows: [], more: 0 }, routine: { rows: [], more: 0 } }, goals: [], quiet: [], sources: [] }))
+    const svc = new ContextService({ ...host(), routineOwner: () => '다른맥' }, fakeAsk().ask)
+    expect(() => svc.move('hack1', 's_n', { newTitle: 'x' })).toThrow('주인 맥(다른맥)에서만 고칠 수 있어요')
+    // ops.yml 을 못 읽으면(던짐) 판의 host 로
+    const svc2 = new ContextService({ ...host(), routineOwner: () => { throw new Error('x') } }, fakeAsk().ask)
+    expect(() => svc2.snooze('hack1', 't')).toThrow('주인 맥(맥북)에서만 고칠 수 있어요')
+  })
+
   it('볼트 판이 없으면 빈 판에 «아직 주인 맥 판 없음»', () => {
     owner = false
     const svc = new ContextService(host(), fakeAsk().ask)

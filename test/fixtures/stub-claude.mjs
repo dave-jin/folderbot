@@ -8,10 +8,42 @@ import { homedir } from 'node:os'
 const argv = process.argv.slice(2)
 const at = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined }
 if (argv[0] === 'auth') { process.stdout.write(JSON.stringify({ loggedIn: process.env.STUB_LOGGED_OUT ? false : true, authMethod: 'claude.ai', email: 'qa@example.com', subscriptionType: 'max' }) + '\n'); process.exit(0) }
+/**
+ * 맥락 상황판(2026-11-01 · host/context.ts) — 한 번 묻기의 첫 줄 표지(`CARD_MARK`·`GROUP_MARK`·`AXIS_MARK`)로 갈래를 고른다.
+ *    답은 호스트 파서(`parseCard`·`parseGroup`)가 읽는 JSON 그대로. 스모크는 **대화 글**로 결과를 고른다:
+ *    카드 — `STUB_CUT` 끊김 · `STUB_CLAIM <경로>` 그 파일을 근거로 끝남 · 그 밖은 «끝남» 인데 근거 없음(호스트가 claimed 로 내린다)
+ *    묶기 — 새 카드를 모두 «스모크 작업» 에. 새 카드 글에 `STUB_REGROUP` 이 있으면 모두 «딴 작업» 에
+ *    축 — 한 문장. 표지가 없으면 null(제목 묻기 갈래로)
+ */
+function contextReply(inp) {
+  const first = inp.split('\n', 1)[0].trim()
+  if (first === '[[folderbot:context-card]]') {
+    const i = inp.indexOf('\n대화\n')
+    const convo = i >= 0 ? inp.slice(i + 4) : ''
+    if (/STUB_CUT/.test(convo)) return JSON.stringify({ intent: '스모크 일', done: [], promised: ['마저 하기'], ending: 'cut', taskHint: '스모크 작업' })
+    const claim = /STUB_CLAIM (\S+)/.exec(convo)
+    if (claim) return JSON.stringify({ intent: '스모크 일', done: [{ text: '다 했어요', ev: [{ kind: 'file', ref: claim[1] }] }], promised: [], ending: 'finished', taskHint: '스모크 작업' })
+    // 그 밖 — 사람 말 첫 줄을 intent 로 되읊는다(묶기 갈래가 새 카드 글에서 `STUB_REGROUP` 을 본다)
+    const said = /^\[사람\] (.*)$/m.exec(convo)?.[1] ?? ''
+    return JSON.stringify({ intent: said.slice(0, 80), done: [], promised: [], ending: 'finished', taskHint: '스모크 작업' })
+  }
+  if (first === '[[folderbot:context-group]]') {
+    const lines = inp.split('\n')
+    const from = lines.indexOf('새 카드')
+    const cards = []
+    for (let k = from + 1; from >= 0 && k < lines.length && lines[k].trim(); k++) { try { const c = JSON.parse(lines[k]); if (c && typeof c.id === 'string') cards.push(c) } catch { /* 카드 줄이 아니다 */ } }
+    const title = cards.some((c) => JSON.stringify(c).includes('STUB_REGROUP')) ? '딴 작업' : '스모크 작업'
+    return JSON.stringify({ assign: cards.map((c) => ({ card: c.id, task: `new:${title}` })), tasks: [{ id: `new:${title}`, title, summary: '스모크 요약', missing: '' }] })
+  }
+  if (first === '[[folderbot:context-axis]]') return '오늘은 스모크가 축이다'
+  return null
+}
 /** DC · 세션 제목 한 번 묻기(`titleLLM.ts`) — `-p --output-format text` 로 오면 질문 앞머리로 «“제목: …”» 꼴을 돌려준다(호스트가 꾸밈을 걷는지도 잰다) */
 if (at('--output-format') === 'text') {
   let inp = ''; process.stdin.on('data', (c) => { inp += c }); process.stdin.on('end', () => {
-    const q = (/\[질문\] (.*)/.exec(inp)?.[1] ?? '').slice(0, 8)
+    const ctx = contextReply(inp)
+    if (ctx !== null) { process.stdout.write(ctx + '\n'); process.exit(0) }
+    const q =(/\[질문\] (.*)/.exec(inp)?.[1] ?? '').slice(0, 8)
     if (/제목실패/.test(inp)) { process.stderr.write('boom\n'); process.exit(1) }
     process.stdout.write(`제목: “요약 ${q}”\n`); process.exit(0)
   })

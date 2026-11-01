@@ -35,7 +35,7 @@ writeFileSync(join(fbHome, '.folderbot/usage.jsonl'),
 // ⚠ 메인 호스트는 «Claude 만 깔린 기기» 여야 한다 — 실제 codex 가 깔린 맥(2026-09-22 맥미니)에서는 제공자가 둘이 되어 세션 + 가 고르기를 띄우고
 //   «세션 삭제 UI» 같은 검사가 어긋난다. 없는 경로를 주면 codex 는 숨는다(providers.ts 의 ENV_OVERRIDE). 둘인 경우는 아래 V24 블록이 두 번째 호스트로 잰다
 // 🔴 `FOLDERBOT_QA` — 검사는 **실 CLI·실 앱을 건드리지 않는다**(실제로 `claude update` 를 돌려 버린 적이 있다)
-const env = { ...process.env, FOLDERBOT_QA: '1', FOLDERBOT_HOME: fbHome, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_CODEX_BIN: '/nonexistent/codex', FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg, FOLDERBOT_RETRY_MS: '1500', FOLDERBOT_REPORT_HOLD_MS: '1500', FOLDERBOT_OPS_FIRST_MS: '300', FOLDERBOT_GOG_BIN: join(data, 'gog-stub.sh') }   // R2 · 재시도 10분·보고 묶음 5분을 검사용으로 줄인다 · DA 긴급 메일은 스텁 gog(진짜 메일을 보내지 않는다)
+const env = { ...process.env, FOLDERBOT_QA: '1', FOLDERBOT_HOME: fbHome, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_CODEX_BIN: '/nonexistent/codex', FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg, FOLDERBOT_RETRY_MS: '1500', FOLDERBOT_REPORT_HOLD_MS: '1500', FOLDERBOT_OPS_FIRST_MS: '300', FOLDERBOT_GOG_BIN: join(data, 'gog-stub.sh'), FOLDERBOT_CONTEXT_DEBOUNCE_MS: '50' }   // R2 · 재시도 10분·보고 묶음 5분을 검사용으로 줄인다 · DA 긴급 메일은 스텁 gog(진짜 메일을 보내지 않는다) · 맥락 상황판 디바운스 2분을 50ms 로(CX)
 writeFileSync(join(data, 'gog-stub.sh'), `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(join(data, 'gog-calls.log'))}\n`, { mode: 0o755 })
 /**
  * 🔴 **포트가 이미 잡혀 있으면 그 자리에서 멈춘다** (2026-09-13 실사고).
@@ -431,6 +431,95 @@ try {
       if (!/· 오케스트레이터 · 저녁 정리 · 껐음 · 이유: 스모크 몰림 풀기/.test(cm2) || !/저녁 정리 — .+ \(꺼 둠\)/.test(cm2)) fail('🔴 최종 리뷰: 오케스트레이터 도구 변경이 CLAUDE.md 구역에 바로 안 남았다 · ' + cm2)
       await callT({ bot: bot.id, name: '저녁 정리', enabled: true, why: '스모크 되돌리기' })
       ok('RB-4 · 오케스트레이터 도구 변경이 그 폴더 CLAUDE.md 구역에 바로 «오케스트레이터 · 이유» 로')
+    }
+
+    /**
+     * 🔴 CX · 맥락 상황판 (2026-11-01) — 턴 끝 → 카드(스텁 Haiku) → 묶기 → 판. 스텁은 **대화 글**로 결과를 고른다(stub-claude.mjs `contextReply`).
+     *    다른 검사가 안 쓰는 폴더(`예시고객-자문`)에서 잰다 — 앞 검사들의 세션 카드가 같은 작업에 섞이지 않게.
+     *    호스트는 `FOLDERBOT_CONTEXT_DEBOUNCE_MS=50` 으로 2분 디바운스를 덮는다.
+     */
+    {
+      const cx = (await api('/bots')).find((b) => b.rel === nf.rel)
+      if (!cx) fail('CX: 예시고객-자문 봇이 없다')
+      const until = async (fn, n = 100) => { for (let i = 0; i < n; i++) { const v = await fn(); if (v) return v; await wait(150) } return null }
+      const board = () => api('/context/board?period=today')
+      const goal = () => api(`/context/goal?bot=${encodeURIComponent(cx.id)}`)
+      const cardOf = (sid) => { try { return JSON.parse(readFileSync(join(data, 'context/cards', `${sid.replace(/[^\w.-]/g, '_')}.json`), 'utf8')).find((c) => c.id === sid) ?? null } catch { return null } }
+      const taskOf = (g, title) => g.tasks.find((t) => t.title === title)
+      const settle = async (sid) => { for (let i = 0; i < 80; i++) { const x = (await api(`/bots/${cx.id}/sessions`)).find((y) => y.id === sid); if (x && x.state !== 'running') return; await wait(100) } }
+
+      // CX-1 하다 멈춤 — 끊긴 세션은 «하다 만 일» 에 그 폴더·작업으로 선다 · [놔둬] 하면 줄은 빠지고 목표 카드의 수는 남는다
+      const s1x = await api(`/bots/${cx.id}/send`, { text: 'STUB_CUT 하다 멈춤', name: '맥락 CX-1' }); await settle(s1x.sessionId)
+      const row = await until(async () => (await board()).step.stalled.rows.find((r) => r.botId === cx.id && r.title === '스모크 작업'))
+      if (!row) fail('🔴 CX-1: 끊긴 세션이 «하다 만 일» 에 안 선다 · ' + JSON.stringify({ step: (await board()).step.stalled, card: cardOf(s1x.sessionId), status: await api('/context/status') }))
+      if (row.folder !== (cx.displayName || cx.name)) fail('CX-1: 줄에 그 폴더 이름이 없다 · ' + JSON.stringify([row, cx.displayName, cx.name]))
+      await api('/context/snooze', { bot: cx.id, task: row.taskId })
+      const b1 = await board()
+      if (b1.step.stalled.rows.some((r) => r.taskId === row.taskId)) fail('🔴 CX-1: [놔둬] 했는데 «하다 만 일» 에 그대로 있다')
+      const g1 = b1.goals.find((g) => g.botId === cx.id)
+      if (g1?.counts?.stalled !== 1) fail('🔴 CX-1: [놔둬] 는 나설 곳에서만 빼야 한다 — 목표 카드의 «하다 멈춤» 수가 1이 아니다 · ' + JSON.stringify(g1?.counts))
+      ok('CX-1 · 끊긴 세션 → «하다 만 일» 에 폴더·«스모크 작업» · [놔둬] 하면 줄만 빠지고 목표 카드 하다 멈춤 1 은 남는다')
+
+      // CX-2 근거 없는 끝남 — 없는 파일을 근거로 댄 «끝남» 은 호스트가 claimed 로 내리고 done 을 promised 로 · 파일이 생기면 done
+      const s2x = await api(`/bots/${cx.id}/send`, { text: 'STUB_CLAIM 없는파일.md', name: '맥락 CX-2' }); await settle(s2x.sessionId)
+      const claimed = await until(async () => { const t = taskOf(await goal(), '스모크 작업'); return t?.cards.includes(s2x.sessionId) && t.state === 'claimed' ? t : null })
+      if (!claimed) fail('🔴 CX-2: 근거 파일이 없는데 작업이 claimed 가 아니다 · ' + JSON.stringify({ tasks: (await goal()).tasks, card: cardOf(s2x.sessionId) }))
+      const c2 = cardOf(s2x.sessionId)
+      if (!c2 || c2.done.length !== 0 || !c2.promised.includes('다 했어요') || c2.ending !== 'claimed') fail('🔴 CX-2: 확인 안 된 done 줄이 promised 로 안 내려갔다 · ' + JSON.stringify(c2))
+      const proofF = join(root, '없는파일.md')
+      writeFileSync(proofF, '# 스모크 근거\n')
+      try {
+        await api(`/sessions/${s2x.sessionId}/send`, { text: 'STUB_CLAIM 없는파일.md' }); await settle(s2x.sessionId)
+        const done = await until(async () => taskOf(await goal(), '스모크 작업')?.state === 'done')
+        if (!done) fail('🔴 CX-2: 근거 파일이 생겼는데 작업이 done 이 아니다 · ' + JSON.stringify({ tasks: (await goal()).tasks, card: cardOf(s2x.sessionId) }))
+      } finally { rmSync(proofF, { force: true }) }
+      ok('CX-2 · 없는 파일을 근거로 댄 끝남 → claimed · done 줄은 promised 로 · 파일을 만들고 다시 보내면 done')
+
+      // CX-3 Dave 가 옮긴 배정은 고정 — 같은 세션의 다음 턴도, 뒤이은 묶기(«딴 작업»)도 그 카드를 못 옮긴다
+      const s3x = await api(`/bots/${cx.id}/send`, { text: '맥락 CX-3 처음', name: '맥락 CX-3' }); await settle(s3x.sessionId)
+      if (!(await until(async () => (await goal()).tasks.some((t) => t.cards.includes(s3x.sessionId))))) fail('CX-3: 첫 카드가 작업에 안 묶였다 · ' + JSON.stringify({ tasks: (await goal()).tasks, card: cardOf(s3x.sessionId) }))
+      const mv = await api('/context/move', { bot: cx.id, card: s3x.sessionId, newTitle: '내가 고른 작업' })
+      if (!mv.ok || !mv.task) fail('CX-3: 옮기기 답 · ' + JSON.stringify(mv))
+      if (!taskOf(await goal(), '내가 고른 작업')?.cards.includes(s3x.sessionId)) fail('CX-3: 옮긴 카드가 «내가 고른 작업» 에 없다 · ' + JSON.stringify((await goal()).tasks))
+      await api(`/sessions/${s3x.sessionId}/send`, { text: 'STUB_REGROUP 같은 세션' }); await settle(s3x.sessionId)
+      if (!(await until(() => /STUB_REGROUP/.test(cardOf(s3x.sessionId)?.intent ?? '')))) fail('CX-3: 같은 세션 다음 턴의 카드가 안 고쳐졌다 · ' + JSON.stringify(cardOf(s3x.sessionId)))
+      // 같은 세션은 카드가 하나라 «새 카드» 가 아니다 — 묶기가 «딴 작업» 으로 보낼 새 카드는 새 세션에서 만든다
+      const s3y = await api(`/bots/${cx.id}/send`, { text: 'STUB_REGROUP 새 세션', name: '맥락 CX-3 새' }); await settle(s3y.sessionId)
+      const other = await until(async () => taskOf(await goal(), '딴 작업')?.cards.includes(s3y.sessionId))
+      const g3 = await goal()
+      if (!other) fail('CX-3: 새 카드가 «딴 작업» 으로 안 갔다 · ' + JSON.stringify({ tasks: g3.tasks, card: cardOf(s3y.sessionId) }))
+      if (!taskOf(g3, '내가 고른 작업')?.cards.includes(s3x.sessionId) || taskOf(g3, '딴 작업').cards.includes(s3x.sessionId)) fail('🔴 CX-3: Dave 가 옮긴 카드를 묶기가 다시 옮겼다 · ' + JSON.stringify(g3.tasks))
+      ok('CX-3 · Dave 가 옮긴 카드는 같은 세션 다음 턴·뒤이은 묶기 뒤에도 «내가 고른 작업» 에 · 새 카드만 «딴 작업» 으로')
+
+      // CX-4 주인 아님 — 볼트 board.json 을 그대로 보여 주고 · 고치기는 409 «주인 맥(다른맥)» · 판 파일이 없으면 «아직 주인 맥 판 없음»
+      const opsF = join(root, '.claude/ops.yml'), boardF = join(root, '.folderbot/context/board.json'), boardAway = join(data, 'cx-board-away.json')
+      const opsWas = existsSync(opsF) ? readFileSync(opsF, 'utf8') : null
+      if (!existsSync(boardF)) fail('CX-4: 주인 맥인데 볼트에 board.json 이 없다')
+      mkdirSync(join(root, '.claude'), { recursive: true }); writeFileSync(opsF, 'host: 다른맥\n')
+      try {
+        const fileAt = JSON.parse(readFileSync(boardF, 'utf8')).at
+        const b4 = await board()
+        if (b4.at !== fileAt) fail('🔴 CX-4: 주인 아닌 맥이 볼트 board.json 을 그대로 안 보여 준다 · ' + JSON.stringify({ got: b4.at, file: fileAt }))
+        const r409 = await fetch(base + '/api/context/move', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ bot: cx.id, card: s3y.sessionId, newTitle: '주인 아님' }) })
+        const t409 = await r409.text()
+        if (r409.status !== 409 || !t409.includes('주인 맥(다른맥)')) fail('🔴 CX-4: 주인 아닌 맥에서 옮기기가 409 «주인 맥(다른맥)» 으로 안 막혔다 · ' + r409.status + ' ' + t409)
+        writeFileSync(boardAway, readFileSync(boardF)); rmSync(boardF)
+        const b5 = await board()
+        if (!b5.sources.some((s) => /아직 주인 맥 판 없음/.test(s.note ?? ''))) fail('🔴 CX-4: 판 파일이 없는데 «아직 주인 맥 판 없음» 이 없다 · ' + JSON.stringify(b5.sources))
+      } finally {
+        if (opsWas === null) rmSync(opsF, { force: true }); else writeFileSync(opsF, opsWas)
+        if (existsSync(boardAway)) { mkdirSync(join(root, '.folderbot/context'), { recursive: true }); writeFileSync(boardF, readFileSync(boardAway)); rmSync(boardAway) }
+      }
+      ok('CX-4 · 주인 아닌 맥 — 볼트 board.json 의 at 그대로 · 옮기기 409 «주인 맥(다른맥)» · 판 파일이 없으면 «아직 주인 맥 판 없음»')
+
+      // CX-5 오케스트레이터 도구 — context_board 와 볼트 board.md 가 같은 «오늘의 축» 을 담는다
+      const md = await until(async () => { const r = await mcp('tools/call', { name: 'context_board', arguments: {} }); const t = r.result?.content?.[0]?.text ?? ''; return /오늘은 스모크가 축이다/.test(t) ? t : null })
+      if (!md) fail('🔴 CX-5: context_board 에 오늘의 축이 없다 · ' + JSON.stringify((await mcp('tools/call', { name: 'context_board', arguments: {} })).result).slice(0, 400))
+      if (!md.includes('## 내가 나설 곳')) fail('CX-5: context_board 에 «## 내가 나설 곳» 이 없다 · ' + md.slice(0, 400))
+      const vaultMd = await until(() => { try { const t = readFileSync(join(root, '.folderbot/context/board.md'), 'utf8'); return /오늘은 스모크가 축이다/.test(t) ? t : null } catch { return null } })
+      if (!vaultMd) fail('🔴 CX-5: 볼트 board.md 에 같은 축 글이 없다')
+      ok('CX-5 · 오케스트레이터 context_board · 볼트 board.md 가 같은 «오늘은 스모크가 축이다» 와 «## 내가 나설 곳»')
+      for (const sid of [s1x.sessionId, s2x.sessionId, s3x.sessionId, s3y.sessionId]) await api(`/sessions/${sid}`, undefined, 'DELETE').catch(() => {})
     }
 
     // 🔴 ③ `.bot.yml` 을 에디터로 고치면 몇 초 안에 화면과 스케줄이 따라온다
