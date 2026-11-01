@@ -16,6 +16,7 @@ import { DocPane, preloadEditor, useDocs } from './Doc'
 import { Search } from './Search'
 import { Cleanup, savedCleanDays } from './Cleanup'
 import { Routines, RoutineLine } from './Routines'
+import { ContextStrip, ContextPage } from './Context'
 import { cleanableCount } from '../core/cleanup'
 import { findFolders, pillEnter, weekTodo } from '../core/home'
 import { FolderSheet, TodoBoard } from './Manage'
@@ -423,6 +424,10 @@ function Main() {
   useEffect(() => { localStorage.setItem('fb:docopen', JSON.stringify(docOpen)) }, [docOpen])
   const [wide, setWide] = useState(false)
   const [modal, setModal] = useState<ModalKey | null>(null)
+  // 맥락 상황판 — 띠의 [이어서 하기] 는 그 목표·작업을 펼친 채로 연다 · 이야기의 파일 근거는 그 봇으로 가서 문서 창에 연다
+  const [ctxAt, setCtxAt] = useState<{ bot: string; task?: string } | undefined>(undefined)
+  const openCtx = (g?: { bot: string; task?: string }) => { setCtxAt(g); setModal('context') }
+  const [ctxDoc, setCtxDoc] = useState<{ botId: string; rel: string } | null>(null)
   // «설정의 그 칸을 열어 줘» — 에이전트 고르기 화면의 «바꾸기» 가 이걸 쏜다 (V24)
   const [setSec, setSetSec] = useState<SecId | undefined>(undefined)
   useEffect(() => { const f = (e: Event) => { setSetSec((e as CustomEvent).detail as SecId); setModal('settings') }; window.addEventListener('fb:settings', f); return () => window.removeEventListener('fb:settings', f) }, [])
@@ -631,6 +636,8 @@ function Main() {
     // 시안 C · 같은 문서를 다시 골라도(탭이 안 바뀌어도) 트리에 자리를 다시 짚는다 — 탭이 바뀌면 트리가 스스로 짚는다
     window.dispatchEvent(new CustomEvent('fb:reveal', { detail: { rel, file: true } }))
   }
+  // 맥락 상황판 이야기의 파일 근거 — 그 봇으로 옮겨 간 뒤에 그 봇 기준 경로로 연다
+  useEffect(() => { if (ctxDoc && bot?.id === ctxDoc.botId) { openInDocPane(ctxDoc.rel); setCtxDoc(null) } }, [ctxDoc, bot?.id])   // eslint-disable-line react-hooks/exhaustive-deps
   // 파일명만 적힌 칩이 여러 곳에 있을 때 — 고르기 (G)
   const [pickFile, setPickFile] = useState<{ name: string; rels: string[] } | null>(null)
   useEffect(() => { const f = (e: Event) => setPickFile((e as CustomEvent).detail as { name: string; rels: string[] }); window.addEventListener('fb:pickfile', f); return () => window.removeEventListener('fb:pickfile', f) }, [])
@@ -992,7 +999,7 @@ function Main() {
     return off
   }, [bot?.id, sessions.length])
   // H · 같은 부품을 세 단계가 나눠 쓴다 — 넓음은 흐름 안, 중간·좁음은 서랍 안. 데이터(순서·표시 이름·확인 대기 점)는 한 곳(rows)
-  const homeEl = <Home onPeer={openPeer} rows={rows} bot={bot} go={go} setModal={setModal} waiting={waiting} onAsk={(text) => { go('orch'); if (text) setSendReq({ botId: 'orch', text, n: Date.now() }); else setFocusReq(Date.now()) }} say={say} railSort={railSort} setRailSort={setRailSort} prefetch={prefetch} />
+  const homeEl = <Home openCtx={openCtx} onPeer={openPeer} rows={rows} bot={bot} go={go} setModal={setModal} waiting={waiting} onAsk={(text) => { go('orch'); if (text) setSendReq({ botId: 'orch', text, n: Date.now() }); else setFocusReq(Date.now()) }} say={say} railSort={railSort} setRailSort={setRailSort} prefetch={prefetch} />
   const sidebarEl = <div className="col side left" style={{ width: stage === 'wide' ? fit.sb : undefined }}>
         <div className="hdr"><FolderBot color="#e08850" size={16} mood={waiting ? 'wait' : 'idle'} mono /><span className="ttl">Folder Bot</span><span className="sp" /><AskChip go={go} /><div className="acts"><button className="ib" onClick={closeSb} title="목록 접기 (⌘B)"><Icon n="panel" size={14} /></button></div></div>
         <div style={{ padding: '10px 8px 0' }}>
@@ -1004,7 +1011,8 @@ function Main() {
         </div>
         {/* 🔴 **폰과 같은 네 칸을 레일 맨 위에** (2026-09-15 Dave: «이 메뉴가 데스크탑 화면에서도 좌측
             상단에 있으면 좋겠어»). 같은 컴포넌트를 `compact` 로 쓴다 — 두 화면이 갈리지 않게. */}
-        <div className="sbtiles"><ActionTiles go={go} setModal={setModal} say={say} modal={modal} compact /><RoutineLine onOpen={() => setModal('routines')} /></div>
+        {/* 🔴 맥락 상황판 띠 — 네 칸 **위** (2026-11-01 Dave «홈 맨 위»). 사이드바에 «상황판» 줄은 따로 두지 않는다(11/1 결정) */}
+        <div className="sbtiles"><ContextStrip go={go} open={openCtx} openRoutines={() => setModal('routines')} compact /><ActionTiles go={go} setModal={setModal} say={say} modal={modal} compact /><RoutineLine onOpen={() => setModal('routines')} /></div>
         {/* 정렬 갈래 — 마감일(2026-10-01 «이름» 대체) · 사용자(끌어 놓기, 구 «직접») · 상태. ⚠ 끌어 놓으면 «사용자» 로 알아서 넘어간다 */}
         <SortBar k={railSort} set={setRailSort} />
         <div className="sb-list">
@@ -1126,6 +1134,8 @@ function Main() {
     {modal === 'cleanup' ? <Cleanup onClose={() => setModal(null)} say={say} /> : null}
     {/* RB-6 · 루틴 관리 페이지 — 네 칸 아래 «⏰ 루틴» 줄 · 팔레트 · 셸 메뉴 «routines» */}
     {modal === 'routines' ? <Routines onClose={() => setModal(null)} go={(b, sid) => { setModal(null); go(b, sid) }} openSheet={(id) => { setModal(null); go(id); openRp('routines') }} say={say} phone={narrow} /> : null}
+    {modal === 'context' ? <ContextPage onClose={() => setModal(null)} go={(b, sid) => { setModal(null); go(b, sid) }} goTodo={(id) => { setModal(null); goTodo(id) }} openRoutines={() => setModal('routines')} at={ctxAt} phone={narrow}
+      openDoc={(b, rel) => { setModal(null); go(b); setCtxDoc({ botId: b, rel }) }} /> : null}
     {modal === 'sessions' ? <Cleanup manage onClose={() => setModal(null)} say={say} go={go} /> : null}
     {modal === 'board' ? <TodoBoard onClose={() => setModal(null)} onTodo={goTodo} say={say} /> : null}
     {modal === 'folders' ? <FolderSheet rows={rows.flatMap(([, l]) => l)} onClose={() => setModal(null)} go={go} onPick={() => setModal('picker')} /> : null}
@@ -1221,20 +1231,19 @@ function botSummary(bot: Bot, sessions: SessionInfo[], notif: NotifyEvent[]) {
  * 9/15 원칙(«세는 곳이 아니라 하는 곳»)의 뜻은 지킨다 — 숫자마다 **누르면 바로 관리 창**이 열린다:
  *   ① 폴더봇 — 레일에 선 폴더 수 · 작은 줄 «일하는 중 N · 후보 M» → 폴더 현황 시트
  *   ② 세션 — 모든 세션 수 · «정리할 만한 것 N» → 세션 창(종전 레일 «세션 정리» 를 흡수)
- *   ③ 알림 — 읽지 않은 수 → 알림 창(레일 «알림»·폰 위쪽 종을 흡수). 🔴 **확인 대기가 생기면 이 칸이 주황 «확인 대기» 로 바뀌고
- *      칸 안에서 [허용]·[답하기]** — 대기가 덜 보이면 안 된다(기획안 §6). 질문(AskUserQuestion)에는 [허용] 이 아니라 [답하기](2026-09-25).
+ *   ③ 알림 — 읽지 않은 수 → 알림 창(레일 «알림»·폰 위쪽 종을 흡수). 작은 줄은 **마지막 결과 한 줄**뿐이다.
+ *      🔴 2026-11-01 맥락 상황판 — 확인 대기 수와 [답하기] 는 위 띠의 «내 답을 기다림» 으로 옮겼다(원천이 같아 하나로 · 설계 §8).
+ *      종전엔 대기가 생기면 이 칸이 주황 «확인 대기» 로 바뀌고 칸 안에서 [허용]·[답하기] 를 띄웠다(2026-10-16 CJ).
  *   ④ 할 일 — **마감 7일 안 폴더의 열린 할 일 수**(결정 ① ⓒ · 볼트 전체 수는 보드 안에서만) → 전체 할 일 보드
  * [중단] 은 칸에서 뺐다(결정 ② — 중단은 대화 안 단추가 제자리).
- * ⚠ 칸 안의 작은 단추는 `<span role="button">` 이다 — 단추 안에 단추를 넣으면 HTML 이 깨진다.
  * ⚠ 폰·맥이 **같은 컴포넌트**를 쓴다(맥은 레일 맨 위 `compact`). 둘이 갈리면 설명이 두 벌이 된다. 판정은 `core/home`.
  */
 /** 창 — CJ 로 «sessions»(세션 창) · «board»(할 일 보드) · «folders»(폴더 현황) 가 늘었다. «cleanup» 은 셸 메뉴의 옛 «세션 정리» 길 */
-type ModalKey = 'picker' | 'notify' | 'settings' | 'keys' | 'palette' | 'search' | 'cleanup' | 'sessions' | 'board' | 'folders' | 'routines'
+type ModalKey = 'picker' | 'notify' | 'settings' | 'keys' | 'palette' | 'search' | 'cleanup' | 'sessions' | 'board' | 'folders' | 'routines' | 'context'
 interface TodoAgg { open: number; rows: { botId: string; name: string; open: number; proposed?: number; next: { line: number; title: string } | null }[] }
-function ActionTiles({ go, setModal, say, compact, modal }: { go: (b: string, sid?: string) => void; setModal: (m: ModalKey) => void; say: (m: string) => void; compact?: boolean; modal?: ModalKey | null }) {
+function ActionTiles({ setModal, compact, modal }: { go: (b: string, sid?: string) => void; setModal: (m: ModalKey) => void; say: (m: string) => void; compact?: boolean; modal?: ModalKey | null }) {
   const { s } = useStore()
   const [todo, setTodo] = useState<TodoAgg | null>(null)
-  const [busy, setBusy] = useState('')
   const load = () => { void api<TodoAgg>('/todos').then(setTodo).catch(() => { /* 없으면 숫자 없이 */ }) }
   useEffect(() => { load(); const t = window.setInterval(load, 60_000); return () => window.clearInterval(t) }, [])
   // 봇이 할 일을 고치면 알림이 오거나 파일이 바뀐다 — 그때 한 번 더 받아 온다
@@ -1249,12 +1258,6 @@ function ActionTiles({ go, setModal, say, compact, modal }: { go: (b: string, si
   const wk = useMemo(() => weekTodo(s.bots, todo?.rows ?? []), [s.bots, todo])
   const last = s.notifications.find((n) => n.kind === 'done' || n.kind === 'routine' || n.kind === 'error')
   const nameOf = (id?: string) => { const b = s.bots.find((x) => x.id === id); return b ? (b.displayName || b.name) : '' }
-  const w0 = waiting[0]
-  const allow = async () => {
-    const req = w0?.pending[0]; if (!w0 || !req) return
-    setBusy('w'); try { await api(`/sessions/${w0.id}/permission`, { body: { requestId: req.requestId, allow: true } }); say('허용했어요') } catch (e) { say((e as Error).message) } finally { setBusy('') }
-  }
-  const act = (on: () => void, label: string, key: string) => <span role="button" className="act" aria-label={label} onClick={(e) => { e.stopPropagation(); if (!busy) on() }}>{busy === key ? '…' : label}</span>
   const sz = compact ? 15 : 20
   const nearChip = wk.nearest ? botDueChip(wk.nearest) : null
   return <div className={`mcards big4 ${compact ? 'mini' : ''}`}>
@@ -1268,20 +1271,11 @@ function ActionTiles({ go, setModal, say, compact, modal }: { go: (b: string, si
       <span className="n"><b className="big">{all.length}</b>세션</span>
       <span className="sub">{cleanable ? `정리할 만한 것 ${cleanable}` : '정리할 것 없음'}</span>
     </button>
-    {w0
-      // ⚠ 몸통은 알림 센터 — 미뤄진 질문이 몇 시간 떠 있어도 폰에서 알림 센터로 갈 길이 남는다(종 단추가 빠졌다 · 리뷰 10/16). 그 세션으로는 [답하기]·[허용] 이 간다.
-      ? <button className="t-note hot" onClick={() => setModal('notify')} aria-label={`확인 대기 ${waiting.length}`}>
-        <Icon n="bell" size={sz} color="var(--wait)" />
-        <span className="n"><b className="big">{waiting.length}</b>확인 대기</span>
-        {/* 🔴 질문(AskUserQuestion)은 «허용» 할 것이 아니라 **답할** 것이다 (2026-09-25 디자인 검수). 도구 이름도 사람 말로 바꾼다. */}
-        <span className="subrow"><span className="sub">{`${nameOf(w0.botId)} · ${w0.pending[0]?.ask ? '질문에 답해 주세요' : w0.pending[0]?.displayName ?? w0.name}`}</span>
-        {w0.pending[0] ? (w0.pending[0].ask ? act(() => go(w0.botId, w0.id), '답하기', 'w') : act(allow, '허용', 'w')) : act(() => go(w0.botId, w0.id), '열기', 'w')}</span>
-      </button>
-      : <button className="t-note" onClick={() => setModal('notify')} aria-label={`알림 ${unread}`}>
-        <Icon n="bell" size={sz} color={last?.kind === 'error' ? 'var(--err)' : 'var(--t3)'} />
-        <span className="n"><b className="big">{unread}</b>알림</span>
-        <span className="sub">{last ? `${nameOf(last.botId)} · ${notePlain(last)}` : '아직 없어요'}</span>
-      </button>}
+    <button className="t-note" onClick={() => setModal('notify')} aria-label={`알림 ${unread}`}>
+      <Icon n="bell" size={sz} color={last?.kind === 'error' ? 'var(--err)' : 'var(--t3)'} />
+      <span className="n"><b className="big">{unread}</b>알림</span>
+      <span className="sub">{last ? `${nameOf(last.botId)} · ${notePlain(last)}` : '아직 없어요'}</span>
+    </button>
     <button className="t-todo" onClick={() => setModal('board')} aria-label={`할 일 ${wk.n}`}>
       <Icon n="check" size={sz} color={wk.n ? '#7fb0ff' : 'var(--t3)'} />
       <span className="n"><b className="big">{wk.n}</b>할 일</span>
@@ -1317,7 +1311,7 @@ function BotName({ b, chip = true }: { b: Bot; chip?: boolean }) {
   return <span ref={ref} className="bname" title={b.name}><b className="dn">{b.displayName}</b>{b.kind && !hideTag ? <span className="tag">{b.kind}</span> : null}{due ? <span className={`due ${due.tone}`} title={due.line ? `할 일 마감 — ${b.name}` : undefined}>{due.text}</span> : null}</span>
 }
 
-function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, prefetch, onPeer }: { /** BQ-9 · 연결 상대를 누르면 편지 스레드 */ onPeer?: (p: PeerView) => void; prefetch: (botId: string) => void; railSort: RailSort; setRailSort: (k: RailSort) => void; rows: Row[]; bot: Bot; go: (b: string, sid?: string) => void; setModal: (m: ModalKey) => void; waiting: number; onAsk: (text?: string) => void; say: (m: string) => void }) {
+function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, prefetch, onPeer, openCtx }: { /** 맥락 상황판 열기 */ openCtx: (g?: { bot: string; task?: string }) => void; /** BQ-9 · 연결 상대를 누르면 편지 스레드 */ onPeer?: (p: PeerView) => void; prefetch: (botId: string) => void; railSort: RailSort; setRailSort: (k: RailSort) => void; rows: Row[]; bot: Bot; go: (b: string, sid?: string) => void; setModal: (m: ModalKey) => void; waiting: number; onAsk: (text?: string) => void; say: (m: string) => void }) {
   const usage = useUsage() // 폰 홈 맨 위 — 한 줄 띠. 누르면 카드가 시트로 올라온다
   const [uSheet, setUSheet] = useState(false)
   const { s, refresh } = useStore()
@@ -1372,6 +1366,7 @@ function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, 
       {/* CJ · 봇·후보 수는 폴더봇 칸이 말한다 — 같은 숫자를 두 번 안 쓴다 */}
       <div className="msub"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} style={{ width: 7, height: 7 }} />{s.hostName}<MrBadge /></div>
       {usage && usage.tools.length ? <div style={{ padding: '0 16px 12px' }}><UsageStrip u={usage} onOpen={() => setUSheet(true)} /></div> : null}
+      <ContextStrip go={go} open={openCtx} openRoutines={() => setModal('routines')} />
       <ActionTiles go={go} setModal={setModal} say={say} />
       <RoutineLine onOpen={() => setModal('routines')} />
       {/* AZ (2026-09-25 Dave: «모바일에서도 데스크톱처럼 정렬 버튼») — 레일과 **같은 값**(`fb:railsort`)을 쓴다. 폰에서 고르면 맥 레일도 그 차례다(이 기기 기준) */}

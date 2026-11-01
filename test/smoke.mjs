@@ -4227,23 +4227,25 @@ try {
           {
             const labels = await pg.$$eval('.sbtiles .mcards button .n', (r) => r.map((x) => x.textContent ?? ''))
             for (const want of ['폴더봇', '세션', '알림', '할 일']) if (!labels.some((l) => l.includes(want))) fail(`레일 4칸: «${want}» 칸이 없다 · ` + JSON.stringify(labels))
-            // 승인 대기를 하나 만들어 두고 — 칸 안의 [허용] 으로 푼다
+            /**
+             * 🔴 2026-11-01 맥락 상황판 — 확인 대기는 알림 칸이 아니라 네 칸 **위** 띠의 «내 답을 기다림» 에 선다(원천이 같아 하나로 · 설계 §8).
+             *    알림 칸은 마지막 결과 한 줄만 남는다. 종전(CJ)엔 대기가 생기면 알림 칸이 «확인 대기» 로 바뀌고 칸 안에서 [허용] 을 띄웠다.
+             */
             const hold = await api(`/bots/${bot.id}/sessions`, { name: '칸에서 허용' })
             await api(`/sessions/${hold.id}/send`, { text: '승인이 필요한 일 해 줘' })
-            let shown = false
-            for (let i = 0; i < 60; i++) { shown = await pg.evaluate(() => !!document.querySelector('.sbtiles .mcards button.hot .act')); if (shown) break; await wait(250) }
-            if (!shown) fail('레일 4칸: 확인 대기가 생겼는데 칸에 [허용] 이 안 뜬다')
-            const sub = await pg.textContent('.sbtiles .mcards button.hot .sub')
             const dnR = (await api('/bots')).find((b) => b.id === bot.id)?.displayName ?? '제품_Rondo'
-            if (!(sub ?? '').includes(dnR)) fail('레일 4칸: 어느 폴더가 묻는지 안 보인다 · ' + JSON.stringify([sub, dnR]))
-            if (!/확인 대기/.test(await pg.textContent('.sbtiles .mcards button.hot .n') ?? '')) fail('🔴 CJ: 확인 대기가 생겼는데 알림 칸이 «확인 대기» 로 안 바뀌었다')
-            await pg.click('.sbtiles .mcards button.hot .act')
-            let st = 'awaiting_input'
-            for (let i = 0; i < 60; i++) { st = ((await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === hold.id) ?? {}).state; if (st !== 'awaiting_input') break; await wait(250) }
-            if (st === 'awaiting_input') fail('레일 4칸: [허용] 을 눌렀는데 그대로 기다린다')
+            let row = null
+            for (let i = 0; i < 60; i++) { row = await pg.evaluate(() => { const r = [...document.querySelectorAll('.sbtiles .cx-strip .cx-it[data-kind="waiting"]')]; return r.length ? { f: r.map((x) => x.querySelector('.cx-f')?.textContent ?? '').join('|'), btn: r[0].querySelector('.cx-a .btn')?.textContent ?? '' } : null }); if (row) break; await wait(250) }
+            if (!row) fail('상황판 띠: 확인 대기가 생겼는데 «내 답을 기다림» 줄이 안 뜬다')
+            else {
+              if (!row.f.includes(dnR)) fail('상황판 띠: 어느 폴더가 묻는지 안 보인다 · ' + JSON.stringify([row.f, dnR]))
+              if (row.btn !== '답하기') fail('상황판 띠: «내 답을 기다림» 줄의 단추가 [답하기] 가 아니다 · ' + row.btn)
+            }
+            if (await pg.$('.sbtiles .mcards button.hot')) fail('🔴 상황판: 확인 대기가 알림 칸에도 또 선다 — 띠와 두 번 보인다')
+            if (!/알림/.test(await pg.textContent('.sbtiles .mcards .t-note .n') ?? '')) fail('상황판: 확인 대기가 생기자 알림 칸 이름이 바뀌었다')
             await api(`/sessions/${hold.id}`, undefined, 'DELETE')
             await wait(400)
-            ok('레일 4칸 — 확인 대기가 생기면 알림 칸이 «확인 대기» 로 바뀌고 그 자리에서 허용까지')
+            ok('레일 — 확인 대기는 상황판 띠 «내 답을 기다림» 에 [답하기] 로 서고 알림 칸은 «알림» 그대로')
           }
           /**
            * 🔴 **CJ · 네 칸 = 관리 입구 넷** (2026-10-16 Dave «전부 추천대로» · 기획안 §2) — 칸 숫자가 호스트의 bots · sessions · notifications · todos 와 같다.
@@ -4498,12 +4500,13 @@ try {
             await pg.waitForSelector('.card .opt input', { timeout: 8000 })
             /**
              * 🔴 **질문에는 [허용] 이 없다** (2026-09-25 디자인 검수). 「확인 대기」 타일이 질문에도 [허용] 을 띄웠고, 누르면 답 없이
-             *    허용이 가거나 질문이 취소됐다. 타일은 [답하기] 로 그 대화를 열고, 호스트도 질문에 온 «허용» 을 거절한다.
+             *    허용이 가거나 질문이 취소됐다. 2026-11-01 부터 대기는 상황판 띠 «내 답을 기다림» 이 [답하기] 로 그 대화를 열고,
+             *    호스트도 질문에 온 «허용» 을 거절한다.
              */
             {
-              await wait(400)
-              const tile = await pg.evaluate(() => { const b = document.querySelector('.mcards .t-note.hot') /* CJ — 폴더봇 칸 아래 줄에도 «확인 대기 N» 이 서서 글자로 찾으면 그 칸을 집는다 */; return b ? { act: b.querySelector('.act')?.textContent ?? '', sub: b.querySelector('.sub')?.textContent ?? '' } : null })
-              if (!tile) fail('확인 대기 타일: 화면에 없다(검사 전제 깨짐)'); else if (tile.act !== '답하기' || (tile.act === '허용' || /AskUserQuestion/.test(tile.sub))) fail('🔴 확인 대기 타일: 질문에 [허용]·도구 이름이 떴다 · ' + JSON.stringify(tile))
+              let tile = null
+              for (let i = 0; i < 40; i++) { tile = await pg.evaluate(() => { const r = [...document.querySelectorAll('.cx-strip .cx-it[data-kind="waiting"]')]; return r.length ? { acts: r.flatMap((x) => [...x.querySelectorAll('.cx-a .btn')].map((b) => b.textContent ?? '')), text: r.map((x) => x.textContent ?? '').join('|') } : null }); if (tile) break; await wait(250) }
+              if (!tile) fail('상황판 띠: 질문이 떴는데 «내 답을 기다림» 줄이 없다(검사 전제 깨짐)'); else if (tile.acts.some((a) => a !== '답하기') || /AskUserQuestion/.test(tile.text)) fail('🔴 상황판 띠: 질문에 [허용]·도구 이름이 떴다 · ' + JSON.stringify(tile))
               let sidQ = '', reqQ = ''
               for (const x of await api(`/bots/${bot.id}/sessions`)) { const c = await api(`/sessions/${x.id}/chat`); const p = c.info.pending?.find((q) => q.ask); if (p) { sidQ = x.id; reqQ = p.requestId } }
               const r = await fetch(base + `/api/sessions/${sidQ}/permission`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: reqQ, allow: true }) })
@@ -4512,7 +4515,7 @@ try {
               // 🔴 답(/ask)은 질문에만 (리뷰 · Codex) — 질문이 아닌 id 에 답을 보내면 400
               const r2 = await fetch(base + `/api/sessions/${sidQ}/ask`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: 'not-a-question', answers: { a: 'b' } }) })
               if (r2.status !== 400) fail('🔴 호스트: 질문이 아닌 id 에도 답을 받아 줬다(허용 가드 우회) · ' + r2.status)
-              ok('질문에는 [허용] 이 없다 — 타일은 [답하기] · 호스트는 질문에 온 허용을 400 으로 거절')
+              ok('질문에는 [허용] 이 없다 — 상황판 띠는 [답하기] · 호스트는 질문에 온 허용을 400 으로 거절')
               // 🔴 타일 부제목은 말줄임표로 끝나고 단추 밑으로 안 들어간다 · 제목은 안 눌린다 (2026-09-25 디자인 검수)
               const tl = await pg.evaluate(() => [...document.querySelectorAll('.mcards button')].map((b) => {
                 const s = b.querySelector('.sub'), a = b.querySelector('.act'), n = b.querySelector('.n')
@@ -5339,6 +5342,8 @@ try {
         //    ⛔ «지우기» 는 **폴더를 건드리지 않는다** — 레일에서만 덜어낸다. 폴더가 사라지면 회귀다.
         {
           // ⚠ 첫 줄은 **관제(오케스트레이터)** 다 — 그 줄에는 지우기·은퇴가 없다(있으면 볼트를 지운다)
+          // ⚠ 레일 맨 위 상황판 띠(2026-11-01)가 줄을 아래로 민다 — 먼저 보이는 자리로 굴려 둔다(우클릭 중 스크롤이 메뉴를 닫는다)
+          await pg.locator('.sb-list .brow:has-text("제품_Rondo")').scrollIntoViewIfNeeded(); await wait(300)
           await pg.click('.sb-list .brow:has-text("제품_Rondo")', { button: 'right' }); await wait(300)
           const mtx = await pg.textContent('.menu.ctx')
           if (!/지우기/.test(mtx ?? '')) fail('레일 우클릭: 지우기 항목이 없다 · ' + mtx)

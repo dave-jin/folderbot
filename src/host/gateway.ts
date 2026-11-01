@@ -401,6 +401,17 @@ export class Gateway {
         if (p === '/api/context/reopen' && m === 'POST') { const b = await body(); h.context.reopen(String(b.bot ?? ''), String(b.task ?? '')); return json(200, { ok: true }) }
         if (p === '/api/context/seen' && m === 'POST') return json(200, h.context.seen())
         if (p === '/api/context/status' && m === 'GET') return json(200, h.context.status())
+        // 설정 › 세션 · 사용량 «상황판» — 끄기 · 하루 호출 상한. 기존 설정 길(/idle·/quiet)처럼 칸마다 문 하나(Ruling 3)
+        if (p === '/api/context/config' && m === 'GET') return json(200, { off: h.cfg.context?.off === true, dailyCap: h.cfg.context?.dailyCap ?? null, env: process.env.FOLDERBOT_CONTEXT === '0' })
+        if (p === '/api/context/config' && m === 'POST') {
+          const b = await body()
+          const o: { off?: boolean; dailyCap?: number } = {}
+          if (b.off !== undefined) { if (typeof b.off !== 'boolean') return json(400, { error: 'off 는 참·거짓' }); o.off = b.off }
+          if (b.dailyCap !== undefined) { const n = b.dailyCap; if (typeof n !== 'number' || !Number.isInteger(n) || n <= 0) return json(400, { error: 'dailyCap 은 1 이상의 정수' }); o.dailyCap = n }
+          if (!Object.keys(o).length) return json(400, { error: 'off 나 dailyCap 이 필요해요' })
+          h.setContext(o)
+          return json(200, { off: h.cfg.context?.off === true, dailyCap: h.cfg.context?.dailyCap ?? null, env: process.env.FOLDERBOT_CONTEXT === '0' })
+        }
       } catch (e) { return ctxErr(e) }
     }
     if (p === '/api/usage' && m === 'GET') {

@@ -175,6 +175,10 @@ export const INDEX: { sec: SecId; t: string; d: string }[] = [
   { sec: 'sessions', t: '예산 — 5시간 창', d: '달러 사용량 예산' },
   { sec: 'sessions', t: '예산 — 하루', d: '달러 사용량 예산' },
   { sec: 'sessions', t: '예산 — 한 주', d: '달러 사용량 예산' },
+  { sec: 'sessions', t: '상황판', d: '맥락 상황판 요약 Haiku' },
+  { sec: 'sessions', t: '상황판 요약 끄기', d: '맥락 상황판 세션 요약 카드 Haiku 끄기 멈춤' },
+  { sec: 'sessions', t: '하루 호출 상한', d: '맥락 상황판 요약 호출 수 하루 상한 500' },
+  { sec: 'sessions', t: '상황판 지금 상태', d: '맥락 상황판 멈춤 이유 오늘 호출 밀린 일' },
   { sec: 'akiflow', t: '동기화 상태', d: 'Akiflow 할 일 todo.md 미리보기 켜기' },
   { sec: 'akiflow', t: '옛 봇 줄', d: 'Akiflow 제안으로 돌리기 봇이 쓴 할 일' },
   { sec: 'notify', t: '이 기기 푸시', d: '알림 폰 푸시 켜기' },
@@ -558,6 +562,36 @@ function SessionsPane() {
     <Row t="예산 — 5시간 창" d="막대가 이 값을 기준으로 줄어듭니다." at="main"><input className="bud" defaultValue={st?.budget?.window ?? ''} onBlur={(e) => void setB('window', e.target.value)} /><span className="unit">달러</span></Row>
     <Row t="예산 — 하루" at="main"><input className="bud" defaultValue={st?.budget?.day ?? ''} onBlur={(e) => void setB('day', e.target.value)} /><span className="unit">달러</span></Row>
     <Row t="예산 — 한 주" d="0 이면 예산 없음 — 패널에 «—» 로 보입니다." at="main"><input className="bud" defaultValue={st?.budget?.week ?? ''} onBlur={(e) => void setB('week', e.target.value)} /><span className="unit">달러</span></Row>
+    <ContextRows />
+  </>
+}
+
+/**
+ * 맥락 상황판 — 세션 요약(Haiku) 끄기 · 하루 호출 상한 · 지금 상태 한 줄 (2026-11-01).
+ * 값은 호스트 `cfg.context` — 칸마다 문 하나인 기존 설정 길(/idle·/quiet)을 따라 `/api/context/config` 로 저장한다.
+ * ⚠ 상한 칸을 비우면 호스트 기본값 500 을 쓴다(Ruling 16). 환경변수 `FOLDERBOT_CONTEXT=0` 이면 여기 스위치와 상관없이 꺼져 있다.
+ */
+const PAUSE_T = { usage: '요금제 사용량이 많아 쉬는 중 — 10분마다 다시 봐요', cap: '오늘 상한에 닿아 자정까지 쉬어요', off: '꺼 둠' } as const
+function ContextRows() {
+  const [cfg, setCfg] = useState<{ off: boolean; dailyCap: number | null; env: boolean } | null>(null)
+  const [st, setSt] = useState<{ owner: boolean; paused: null | keyof typeof PAUSE_T; calls: number; pending: number } | null>(null)
+  const [msg, setMsg] = useState('')
+  const load = () => { void api<typeof cfg>('/context/config').then(setCfg).catch(() => {}); void api<typeof st>('/context/status').then(setSt).catch(() => {}) }
+  useEffect(load, [])
+  const save = async (body: { off?: boolean; dailyCap?: number }) => { try { setCfg(await api<typeof cfg>('/context/config', { body })); setMsg('저장했어요'); load() } catch (e) { setMsg((e as Error).message) } }
+  const setCap = (v: string) => { const n = Number(v); if (!v.trim() || !Number.isInteger(n) || n <= 0) { setMsg('1 이상의 정수로 적어 주세요'); return } if (n !== cfg?.dailyCap) void save({ dailyCap: n }) }
+  if (!cfg) return null
+  const line = !st ? '' : !st.owner ? '이 맥은 주인 맥이 아니라 요약을 만들지 않아요 — 주인 맥의 판을 읽기만 해요'
+    : `${st.paused ? PAUSE_T[st.paused] : '도는 중'} · 오늘 호출 ${st.calls}번 · 밀린 일 ${st.pending}개`
+  return <>
+    <Group t="상황판" right={msg ? <span className="sv">{msg}</span> : undefined} />
+    <Row t="상황판 요약 끄기" d={cfg.env ? '환경변수 FOLDERBOT_CONTEXT=0 으로 꺼져 있어요 — 여기 스위치와 상관없이 쉬어요.' : '끄면 세션이 끝나도 요약 카드를 만들지 않아요. 판은 마지막으로 만든 것을 그대로 보여 줘요.'} at="main">
+      <span className="seg">{([[false, '켜기'], [true, '끄기']] as const).map(([v, l]) => <button key={l} className={cfg.off === v ? 'on' : ''} onClick={() => { if (cfg.off !== v) void save({ off: v }) }}>{l}</button>)}</span>
+    </Row>
+    <Row t="하루 호출 상한" d="요약 모델을 하루에 이만큼까지만 불러요. 넘으면 다음 날까지 쉬어요. 비우면 500." at="main">
+      <input className="bud" defaultValue={cfg.dailyCap ?? ''} placeholder="500" onBlur={(e) => { if (e.target.value.trim()) setCap(e.target.value) }} /><span className="unit">번</span>
+    </Row>
+    <Row t="상황판 지금 상태" d={line || '불러오는 중…'} />
   </>
 }
 
