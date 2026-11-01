@@ -46,6 +46,21 @@ describe('maskSensitive · 크리덴셜 (수정 1회차)', () => {
   })
 })
 
+describe('maskSensitive · 수정 2회차', () => {
+  it('날짜 꼴로 보이는 진짜 계좌(카카오뱅크 3333-01-…)는 가린다', () => {
+    for (const x of ['3333-01-1234567', '3333-02-3156789', '1002-01-123456']) expect(maskSensitive(x)).toBe('[가림]')
+    expect(maskSensitive('계좌 3333-01-1234567 로')).toBe('계좌 [가림] 로')
+  })
+  it('날짜로 시작하는 덩이는 여전히 그대로', () => {
+    for (const x of ['2026-11-01-1530', '2026-11-01-12-30', '2026-11-01-2026-11-05']) expect(maskSensitive(x)).toBe(x)
+  })
+  it('JSON 꼴 «"키": "값"» 은 값만 가린다', () => {
+    expect(maskSensitive('{"api_key": "abc123def456"}')).toBe('{"api_key": [가림]}')
+    expect(maskSensitive('{"password":"hunter2","id":1}')).toBe('{"password":[가림],"id":1}')
+    expect(maskSensitive("token: 'abc def'")).toBe('token: [가림]')
+  })
+})
+
 describe('itemsSince', () => {
   const items = [u('u1', 'a'), a('a1', 'b'), u('u2', 'c'), a('a2', 'd')]
   it('커서 뒤의 item 만 돌려준다', () => expect(itemsSince(items, 'u2').map((i) => i.id)).toEqual(['a2']))
@@ -159,6 +174,13 @@ describe('parseCard', () => {
       { kind: 'commit', ref: h }, { kind: 'tool', ref: 't12' },
       { kind: 'file', ref: 'a/[가림].md' }, { kind: 'letter', ref: '싱크/[가림].md' }
     ])
+  })
+  it('commit·tool 근거도 해시 외의 개인 값은 가린다', () => {
+    const h = 'b5060cd8809db1234567890abcdef1234567890a'
+    const r = parseCard(JSON.stringify({ intent: '', taskHint: '', promised: [], ending: 'finished', done: [{ text: 'x', ev: [
+      { kind: 'tool', ref: '010-1234-5678' }, { kind: 'commit', ref: h }, { kind: 'commit', ref: 'd8809db' }, { kind: 'tool', ref: 't12' }
+    ] }] }))!
+    expect(r.done[0].ev).toEqual([{ kind: 'tool', ref: '[가림]' }, { kind: 'commit', ref: h }, { kind: 'commit', ref: 'd8809db' }, { kind: 'tool', ref: 't12' }])
   })
   it('JSON 이 아니면 null', () => { expect(parseCard('없음')).toBeNull(); expect(parseCard('{깨진')).toBeNull() })
   it('ending 이 다섯 값 밖이면 null', () => expect(parseCard(JSON.stringify({ ...body, ending: 'done' }))).toBeNull())

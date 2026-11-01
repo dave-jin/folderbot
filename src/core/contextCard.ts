@@ -39,7 +39,7 @@ const KINDS: readonly EvidenceKind[] = ['file', 'commit', 'letter', 'tool']
 
 const RE_BEARER = /\bBearer\s+[A-Za-z0-9._~+/-]{16,}=*/gi
 /** 키 이름 뒤의 값만 가린다 — 이름은 남겨야 «무엇이 있었나» 가 읽힌다 */
-const RE_KEYED = /((?:password|passwd|pwd|secret|token|api[_-]?key)\s*[:=]\s*)\S+/gi
+const RE_KEYED = /((?:password|passwd|pwd|secret|token|api[_-]?key)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|\S+)/gi
 const RE_KEY = /\b(?:(?:sk|pk|rk)-[A-Za-z0-9_-]{16,}|(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]*)/g
 const RE_TELEGRAM = /\b\d{8,10}:[A-Za-z0-9_-]{35}\b/g
 /** 주민·외국인등록번호 — 성별 자리 1~8 */
@@ -49,15 +49,18 @@ const RE_PHONE = /(?<![\d-])(?:\+82[-.\s]?0?1[016-9]|01[016-9])[-.\s]?\d{3,4}[-.
 /** 하이픈으로 이은 숫자 덩이 셋 이상 — 숫자 합 10자리 이상일 때만 계좌로 본다(아래 replacer) */
 const RE_ACCOUNT = /(?<![\d-])\d{2,6}(?:-\d{2,8}){2,}(?![\d-])/g
 /** 날짜로 시작하는 덩이(`2026-11-01-1530` 등)는 계좌가 아니다 */
-const RE_DATE_HEAD = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])/
+const RE_DATE_HEAD = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])(?=-|$)/
 const RE_HEX = /(?<![0-9A-Za-z])[0-9a-fA-F]{32,}(?![0-9A-Za-z])/g
 
 /**
  * 개인 값 가리기. ⚠ 날짜(`2026-11-01`)·버전(`v206`)·짧은 커밋 해시(`d8809db`)는 그대로 둔다.
- * 40자 16진수(전체 커밋 해시)도 글 칸에서는 가린다 — 근거 `commit`·`tool` 의 ref 만 `parseCard` 가 따로 이 함수를 건너뛴다.
+ * 40자 16진수(전체 커밋 해시)도 글 칸에서는 가린다 — 근거 `commit`·`tool` 의 ref 만 `parseCard` 가 16진수 규칙을 뺀 `maskWith(s,false)` 로 가린다(나머지 규칙은 그대로).
  */
-export function maskSensitive(s: string): string {
-  return (s ?? '')
+export function maskSensitive(s: string): string { return maskWith(s, true) }
+
+/** `hex:false` 면 32자+ 16진수 규칙만 뺀다 — 근거 `commit` ref(전체 해시)용 */
+function maskWith(s: string, hex: boolean): string {
+  const r = (s ?? '')
     .replace(RE_BEARER, MASK)
     .replace(RE_KEYED, `$1${MASK}`)
     .replace(RE_KEY, MASK)
@@ -65,7 +68,7 @@ export function maskSensitive(s: string): string {
     .replace(RE_RRN, MASK)
     .replace(RE_PHONE, MASK)
     .replace(RE_ACCOUNT, (m) => (RE_DATE_HEAD.test(m) || m.replace(/\D/g, '').length < 10 ? m : MASK))
-    .replace(RE_HEX, MASK)
+  return hex ? r.replace(RE_HEX, MASK) : r
 }
 
 // ── 대화 줄이기 ───────────────────────────────────────────────────────────────
@@ -179,8 +182,9 @@ const TEXT_MAX = 300, DONE_MAX = 20, EV_MAX = 10, PROMISED_MAX = 10
 const clip = (s: string): string => s.trim().slice(0, TEXT_MAX)
 /** 마스킹 먼저, 자르기는 나중 — 먼저 자르면 잘린 전화번호가 가려지지 않는다 */
 const text = (v: unknown): string => (typeof v === 'string' ? clip(maskSensitive(v)) : '')
-/** 근거 ref — 커밋 해시와 item id 는 가리면 검증이 깨지므로 commit·tool 은 그대로 둔다 */
-const refOf = (kind: EvidenceKind, v: unknown): string => (typeof v !== 'string' ? '' : kind === 'commit' || kind === 'tool' ? clip(v) : text(v))
+/** 근거 ref — 전체 커밋 해시(40자 16진수)는 가리면 검증이 깨지므로 commit·tool 은 16진수 규칙만 빼고 나머지(전화·계좌·토큰 등)는 가린다 */
+const refOf = (kind: EvidenceKind, v: unknown): string =>
+  typeof v !== 'string' ? '' : clip(maskWith(v, !(kind === 'commit' || kind === 'tool')))
 
 function toBody(o: unknown): CardBody | null {
   if (!o || typeof o !== 'object') return null
