@@ -36,6 +36,8 @@ export interface HostConfig {
   openaiApiKey?: string
   /** 메인(호스트) 이름 — 비면 컴퓨터 이름 */
   hostName?: string
+  /** 맥락 상황판 — `off` 로 끄고 `dailyCap` 은 Haiku 하루 호출 상한(기본 500) */
+  context?: { off?: boolean; dailyCap?: number }
 }
 
 export function dataDir(): string {
