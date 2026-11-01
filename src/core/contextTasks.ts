@@ -106,6 +106,7 @@ function detach(f: FolderTasks, cardId: string): string | null {
 }
 const pushFix = (f: FolderTasks, fix: FolderTasks['fixes'][number]): void => { f.fixes = [...f.fixes, fix].slice(-FIX_KEEP) }
 
+/** 새 작업 틀 — `lastAt` 은 자리표시(now)일 뿐이다. 호출자가 카드의 `to` 로 다시 정한다 */
 function newTask(id: string, title: string, now: number): CtxTask {
   return { id, title, state: 'todo', summary: '', missing: '', cards: [], lastAt: now, updatedAt: now }
 }
@@ -155,7 +156,7 @@ export function groupPrompt(i: GroupInput): string {
       : ['(없음)']),
     '',
     '할 일(todo.md)',
-    ...(i.todo.length ? i.todo.map((t) => `- [${t.done ? 'x' : ' '}] ${t.title}`) : ['(없음)']),
+    ...(i.todo.length ? i.todo.map((t) => `- [${t.done ? 'x' : ' '}] ${text(t.title)}`) : ['(없음)']),
     '',
     'state.md 에서',
     text(i.stateNotes, STATE_NOTES_MAX) || '(없음)',
@@ -215,17 +216,32 @@ export function parseGroup(raw: string): GroupResult | null {
   const s = raw ?? ''
   const cands: string[] = []
   for (const m of s.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) cands.push(m[1])
-  const last = s.lastIndexOf('}')
-  if (last >= 0) {
-    let i = s.indexOf('{')
-    for (let n = 0; i >= 0 && i < last && n < 20; n++, i = s.indexOf('{', i + 1)) cands.push(s.slice(i, last + 1))
+  let i = s.indexOf('{')
+  for (let n = 0; i >= 0 && n < 20; n++, i = s.indexOf('{', i + 1)) {
+    const end = balancedEnd(s, i)
+    if (end > i) cands.push(s.slice(i, end + 1))
   }
   for (const c of cands) {
     let o: unknown
     try { o = JSON.parse(c) } catch { continue }
-    if (isObj(o)) return toGroup(o)
+    if (!isObj(o)) continue
+    const g = toGroup(o)
+    if (g) return g
   }
   return null
+}
+
+/** `start` 의 `{` 와 짝이 맞는 `}` 위치. JSON 문자열 안의 중괄호는 세지 않는다. 못 찾으면 -1 */
+function balancedEnd(s: string, start: number): number {
+  let depth = 0, inStr = false
+  for (let k = start; k < s.length; k++) {
+    const ch = s[k]
+    if (inStr) { if (ch === '\\') k++; else if (ch === '"') inStr = false; continue }
+    if (ch === '"') inStr = true
+    else if (ch === '{') depth++
+    else if (ch === '}' && --depth === 0) return k
+  }
+  return -1
 }
 
 // ── 묶기 적용 ─────────────────────────────────────────────────────────────────
@@ -282,7 +298,9 @@ export function applyGroup(prev: FolderTasks, r: GroupResult, now: number): Fold
 }
 
 function setMeta(t: CtxTask, m: GroupResult['tasks'][number]): void {
-  t.summary = text(m.summary); t.missing = text(m.missing)
+  const summary = text(m.summary)
+  if (summary) t.summary = summary          // 빈 요약이 좋은 요약을 덮지 않는다
+  t.missing = text(m.missing)               // 빈 값 = 남은 것 없음
   if (m.title && !m.id.startsWith('new:')) t.title = text(m.title) || t.title
   if (m.todoTitle) t.todoTitle = text(m.todoTitle)
   if (m.stateDoneLine) t.stateDoneLine = text(m.stateDoneLine)
@@ -307,8 +325,9 @@ export function routineTasks(prev: FolderTasks, cards: SessionCard[], now: numbe
     let t = f.tasks.find((x) => x.id === id)
     if (!t) { t = newTask(id, `루틴 · ${id.slice('routine:'.length)}`, now); f.tasks.push(t) }
     for (const c of [...cs].sort((a, b) => a.from - b.from)) {
-      f.loose = f.loose.filter((x) => x !== c.id)
-      if (!t.cards.includes(c.id)) t.cards.push(c.id)
+      if (t.cards.includes(c.id)) continue
+      detach(f, c.id)                         // loose 와 다른 작업 어디에 있었든 뺀다
+      t.cards.push(c.id)
     }
     let last = cs[0]
     for (const c of cs) if (c.to > last.to) last = c

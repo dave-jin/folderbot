@@ -106,6 +106,19 @@ describe('parseGroup', () => {
     expect(r?.assign).toHaveLength(2)
     expect(parseGroup('결과: ' + JSON.stringify(body) + ' 감사합니다')?.assign).toHaveLength(2)
   })
+  it('울타리 없는 JSON 뒤에 } 가 든 군말이 와도 읽는다', () => {
+    const j = JSON.stringify(body)
+    expect(parseGroup(j + ' 끝{}')?.assign).toHaveLength(2)
+    expect(parseGroup('앞말 {먼저} ' + j + ' 뒷말 }')?.assign).toHaveLength(2)
+  })
+  it('문자열 안의 중괄호는 짝 맞추기에 세지 않는다', () => {
+    const r = parseGroup('{"assign":[{"card":"c1","task":"new:a}b{"}],"tasks":[]} 끝}')
+    expect(r?.assign).toEqual([{ card: 'c1', task: 'new:a}b{' }])
+  })
+  it('읽히지만 assign 이 없는 객체가 앞에 있어도 다음 후보로 넘어간다', () => {
+    const r = parseGroup('{"note":1} ' + JSON.stringify(body))
+    expect(r?.assign).toHaveLength(2)
+  })
   it('assign 이 배열이 아니면 null', () => {
     expect(parseGroup('{"assign":"x","tasks":[]}')).toBeNull()
     expect(parseGroup('{"tasks":[]}')).toBeNull()
@@ -201,6 +214,13 @@ describe('applyGroup', () => {
     const prev = folder([], [], { gap: '옛 gap' })
     expect(applyGroup(prev, res({ gap: '전화 010-1234-5678 남음' }), NOW).gap).toBe('전화 [가림] 남음')
     expect(applyGroup(prev, res({}), NOW).gap).toBe('옛 gap')
+  })
+  it('r.tasks 에 summary 가 빠졌어도 저장된 좋은 summary 는 지키고, missing 은 비울 수 있다', () => {
+    const prev = folder([task('t-aaaaaa', ['c1'], { title: '투표', summary: '좋은 요약', missing: '집계' })])
+    const a = applyGroup(prev, res({ tasks: [{ id: 't-aaaaaa', title: '', summary: '', missing: '' }] }), NOW)
+    expect(a.tasks[0]).toMatchObject({ title: '투표', summary: '좋은 요약', missing: '' })
+    const b = applyGroup(prev, res({ tasks: [{ id: 't-aaaaaa', title: '새 제목', summary: '새 요약', missing: '' }] }), NOW)
+    expect(b.tasks[0]).toMatchObject({ title: '새 제목', summary: '새 요약' })
   })
   it('title 도 마스킹한다', () => {
     const a = applyGroup(emptyTasks('x'), res({ assign: [{ card: 'c1', task: 'new:010-1234-5678 연락' }] }), NOW)
@@ -301,6 +321,13 @@ describe('routineTasks', () => {
     expect(a.tasks.find((t) => t.id === 't-aaaaaa')).toEqual(prev.tasks[0])
     expect(a.tasks.some((t) => t.cards.includes('c1') && t.id.startsWith('routine:'))).toBe(false)
   })
+  it('다른 작업에 들어 있던 루틴 카드는 거기서 빠져 routine 작업으로만 간다', () => {
+    const prev = folder([task('t-x', ['r1', 'c1'])])
+    const a = routineTasks(prev, [r('r1', '아침정리')], NOW)
+    expect(a.tasks.find((t) => t.id === 't-x')?.cards).toEqual(['c1'])
+    expect(a.tasks.find((t) => t.id === 'routine:아침정리')?.cards).toEqual(['r1'])
+    expect(a.tasks.filter((t) => t.cards.includes('r1'))).toHaveLength(1)
+  })
   it('loose 에 있던 루틴 카드는 loose 에서 빠진다', () => {
     const a = routineTasks(folder([], ['r1']), [r('r1', '아침정리')], NOW)
     expect(a.loose).toEqual([])
@@ -339,6 +366,11 @@ describe('groupPrompt', () => {
   it('새 카드·기존 작업·할 일·목표가 실린다', () => {
     const p = groupPrompt(input)
     for (const s of ['c1', '결과 화면 만들기', 't-aaaaaa', '투표 화면', '투표 만들기', '해커톤 투표까지 마치기', '현재 목표: 투표']) expect(p).toContain(s)
+  })
+  it('할 일 제목의 개인 값도 가린다', () => {
+    const p = groupPrompt({ ...input, todo: [{ title: '연락 010-1234-5678', done: false }] })
+    expect(p).not.toContain('010-1234-5678')
+    expect(p).toContain('연락 [가림]')
   })
   it('fixes 가 없으면 예 절을 빼고, 상태 글은 마스킹한다', () => {
     const p = groupPrompt({ ...input, fixes: [], stateNotes: '연락 010-1234-5678' })
