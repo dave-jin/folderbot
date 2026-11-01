@@ -418,8 +418,7 @@ function TodoSec({ bot, items, loading = false, open, tog, onDelegate, onOpenFil
    * 누르면 날짜 고르기(오늘 · 내일 · 이번 주 금 · 다음 주 월 · 날짜 고르기 · 지우기). 폰은 편집 시트에서 고른다.
    */
   const dueBadge = (t: TodoItem, small: boolean) => {
-    // 마감이 없으면 칩 자리에 흐린 📅 — 손을 올리면 보인다(데스크톱 · 폰 행엔 칩을 두지 않는다 V19)
-    if (!t.due && !t.done && !small && !phone) return <button className="duec0" title="마감 정하기" aria-label="마감 정하기" onClick={(e) => { e.stopPropagation(); setDueMenu({ t, at: anchorOf(e.currentTarget as HTMLElement, { gap: 4 }) }) }}><Icon n="cal" size={10} /></button>
+    // 마감이 없으면 칩을 두지 않는다 — 마감 정하기는 손을 올리면 뜨는 오른쪽 도구 칸의 📅 하나로 한다(2026-11-01 Dave «왜 캘린더 아이콘이 두 개야» · 종전엔 제목 옆에 흐린 📅 가 하나 더 떴다)
     if (!t.due || t.done) return null
     const ch = dueChipOf(t.due); if (!ch) return null
     return small ? <span className={`duec sm ${ch.tone}`} title={`${dueText(t.due)} 마감`}>{ch.text}</span>

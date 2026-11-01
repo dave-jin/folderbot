@@ -3127,6 +3127,9 @@ try {
           appendFileSync(rf, JSON.stringify({ ts: t0.toISOString(), host: 'smoke', event: 'start', botId: cfo.id, routine: 'RB 실패 검사', run: 'rb-smoke-1' }) + '\n' + JSON.stringify({ ts: new Date(t0.getTime() + 60_000).toISOString(), host: 'smoke', event: 'end', botId: cfo.id, routine: 'RB 실패 검사', run: 'rb-smoke-1', ok: false, result: 'fail', reason: '검사용 로그인 필요', ms: 60_000 }) + '\n')
           await wait(400)
           await pg.waitForSelector('.rtline', { timeout: 4000 }).catch(() => fail('🔴 RB-6: 네 칸 아래 «⏰ 루틴» 줄이 없다'))
+          // 🔴 (2026-11-01 Dave «루틴도 한쪽으로 치우쳐져서 안 예뻐») — 버튼 width:auto 가 글자 폭만큼 줄어 왼쪽에 붙었다. 네 칸의 왼쪽 끝·오른쪽 끝과 맞아야 한다
+          const rtFit = async (page) => page.$eval('.rtline', (b) => { const tiles = [...(b.parentElement?.querySelectorAll('.mcards > button') ?? [])].map((x) => x.getBoundingClientRect()); const r = b.getBoundingClientRect(); return tiles.length ? { l: Math.round(r.left - Math.min(...tiles.map((t) => t.left))), r: Math.round(Math.max(...tiles.map((t) => t.right)) - r.right) } : null })
+          { const f = await rtFit(pg); if (f && (Math.abs(f.l) > 1 || Math.abs(f.r) > 1)) fail('🔴 RB-6: «루틴» 줄이 네 칸 폭과 안 맞는다(치우침) · ' + JSON.stringify(f)) }
           await pg.click('.rtline'); await pg.waitForSelector('.modal.rt .rtgrp', { timeout: 6000 }).catch(() => fail('🔴 RB-6: «루틴» 줄을 눌렀는데 루틴 페이지가 안 열린다'))
           const first = await pg.$eval('.modal.rt .rtgrp', (g) => ({ st: g.getAttribute('data-state'), names: [...g.querySelectorAll('.rtr')].map((x) => x.getAttribute('data-routine')), dave: !!g.querySelector('.dave') }))
           if (first.st !== 'fail' || !first.names.includes('RB 실패 검사') || !first.dave) fail('🔴 RB-6: 실패 묶음이 맨 위에 안 왔다 · ' + JSON.stringify(first))
@@ -3143,6 +3146,7 @@ try {
             const sp3 = await br.newPage({ viewport: vp, deviceScaleFactor: 1, hasTouch: vp.width < 500, isMobile: vp.width < 500 })
             await sp3.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
             await sp3.goto(base + '/'); await sp3.waitForSelector('.rtline', { timeout: 8000 }).catch(() => fail(`RB-6(${vp.width}): «⏰ 루틴» 줄이 없다`))
+            { const f = await rtFit(sp3); if (f && (Math.abs(f.l) > 1 || Math.abs(f.r) > 1)) fail(`🔴 RB-6(${vp.width}): «루틴» 줄이 네 칸 폭과 안 맞는다 · ` + JSON.stringify(f)) }
             await sp3.click('.rtline'); await sp3.waitForSelector('.modal.rt .rtgrp', { timeout: 6000 })
             const m = await sp3.evaluate(() => { const r = document.querySelector('.modal.rt').getBoundingClientRect(); return { W: innerWidth, sw: document.scrollingElement.scrollWidth, l: r.left, r: r.right, over: [...document.querySelectorAll('.modal.rt .btn')].filter((b) => { const q = b.getBoundingClientRect(); return q.width && (q.right > innerWidth + 1 || q.left < -1) }).length } })
             if (m.sw > m.W + 1 || m.l < -1 || m.r > m.W + 1 || m.over) fail(`🔴 RB-6(${vp.width}): 루틴 페이지가 화면 밖으로 넘친다 · ` + JSON.stringify(m))
@@ -5081,6 +5085,31 @@ try {
            *   것처럼 보였다. 그래서 줄을 통째로 입력칸으로 바꾸는 길을 따로 둔다(두 번 누르기 · 연필).
            */
           {
+            /**
+             * 🔴 **오른쪽 빈칸 없애기** (2026-11-01 Dave: «우측에 쓸데없이 여백이 많아. 수정은 더블클릭으로 하면 되고
+             *    X 는 마우스 오버 하면 슬라이딩으로»). 연필·X·파일 시각이 안 보일 때도 칸을 잡고 있었다 —
+             *    이제 연필은 없고(두 번 누르기), X 와 시각은 줄 위에 겹쳐 뜬다(할 일 줄 .tools 와 같은 방식).
+             */
+            {
+              await pg.mouse.move(2, 2); await wait(250)
+              const g = await pg.evaluate(() => {
+                const row = document.querySelector('.srow:not(.sadd):not(.autoh):not(.edit)'); if (!row) return null
+                const ren = row.querySelector('.ren'), del = row.querySelector('.del'), m = row.querySelector('.m')
+                const tr = [...document.querySelectorAll('.trow:not(.dir):not(.trefadd)')].find((x) => x.querySelector('time'))
+                return { ren: ren ? getComputedStyle(ren).display : 'none', delPos: del ? getComputedStyle(del).position : '', delOp: del ? getComputedStyle(del).opacity : '', gap: m ? Math.round(row.getBoundingClientRect().right - m.getBoundingClientRect().right) : -1, tpos: tr ? getComputedStyle(tr.querySelector('time')).position : 'none' }
+              })
+              if (!g) fail('오른쪽 빈칸: 세션 줄이 없다')
+              else {
+                if (g.ren !== 'none') fail('🔴 오른쪽 빈칸: 세션 줄에 연필이 아직 있다(이름 바꾸기는 두 번 누르기) · ' + JSON.stringify(g))
+                if (g.delPos !== 'absolute' || g.delOp !== '0') fail('🔴 오른쪽 빈칸: X 가 손을 안 올려도 칸을 잡거나 보인다 · ' + JSON.stringify(g))
+                if (g.gap > 16) fail('🔴 오른쪽 빈칸: 세션 줄 시각·절전 글자 오른쪽이 비어 있다 · ' + JSON.stringify(g))
+                if (g.tpos !== 'none' && g.tpos !== 'absolute') fail('🔴 오른쪽 빈칸: 파일 줄의 시각이 안 보일 때도 칸을 잡는다 · ' + JSON.stringify(g))
+                await pg.hover('.srow:not(.sadd):not(.autoh):not(.edit)'); await wait(300)
+                const op = await pg.$eval('.srow:not(.sadd):not(.autoh):not(.edit) .del', (d) => getComputedStyle(d).opacity)
+                if (op !== '1') fail('🔴 오른쪽 빈칸: 손을 올렸는데 X 가 안 뜬다 · opacity ' + op)
+                ok('세션·파일 줄 오른쪽 빈칸 없음 — X·시각은 손을 올리면 겹쳐 뜬다')
+              }
+            }
             await pg.hover('.srow'); await pg.dblclick('.srow')
             await pg.waitForSelector('.srow.edit .rin', { timeout: 4000 })
             await pg.fill('.srow.edit .rin', '내가 고친 제목')
@@ -5635,6 +5664,12 @@ try {
         // 편집 — 한 칸에 «제목: 설명»
         /* ⚠ 첫 줄이 무엇인지는 앞 검사들(완료 처리·이동·추가)에 따라 바뀐다 — **설명이 있는 줄**을 집는다.
            재려는 것은 «편집 상자에 «제목: 설명» 이 한 칸으로 들어오는가» 이므로 어느 줄이냐는 상관없다. */
+        // 🔴 달력은 하나 (2026-11-01 Dave «왜 todo 는 캘린더 아이콘이 두 개야») — 제목 옆 흐린 📅 를 뺐다. 마감 정하기는 오른쪽 도구 칸의 📅 하나
+        {
+          await pg.hover('.todo:not(.add):not(.addbtn):not(.done)'); await wait(150)
+          const cals = await pg.$eval('.todo:not(.add):not(.addbtn):not(.done)', (r) => ({ inline: r.querySelectorAll('.tt [title="마감 정하기"], .duec0').length, tools: r.querySelectorAll('.tools button[title^="마감"]').length }))
+          if (cals.inline || cals.tools !== 1) fail('🔴 할 일 줄 달력이 하나가 아니다 · ' + JSON.stringify(cals))
+        }
         await pg.hover('.todo:has(.mk)'); await pg.click('.todo:has(.mk) .tools button[title="편집"]'); await wait(200)
         if (!(await pg.$('.todo.edit .ein'))) fail('ui todo edit box'); const cur = await pg.inputValue('.todo.edit .ein'); if (!/:/.test(cur)) fail('ui todo edit value: ' + cur)
         await pg.fill('.todo.edit .ein', `${cur.split(':')[0]} (편집됨):${cur.split(':').slice(1).join(':')}`); await pg.keyboard.press('Enter'); await wait(600)

@@ -1529,7 +1529,6 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .duec.sm { display:inline-block; margin-left:7px; vertical-align:2px; font-size:11px; cursor:default }
 .duehint { display:flex; align-items:center; gap:4px; font-size:11px; color:var(--done); margin-top:3px }
 .duehint.ask { color:var(--t3) }
-.duec0 { opacity:0; background:transparent; color:var(--t3); padding:0 4px; flex:none } .todo:hover .duec0, .duec0:focus-visible { opacity:.7 }
 .akb { flex:none; margin-left:6px; font-size:9.5px; letter-spacing:.02em; color:var(--t3); border:1px solid var(--line2); border-radius:4px; padding:0 4px; line-height:14px }
 .menu.duem button.on { color:var(--w) }
 .menu.duem { min-width:220px } .menu.duem .dpick { display:flex; align-items:center; gap:8px; padding:6px 10px; font-size:13px; color:var(--t); cursor:pointer }
@@ -1778,10 +1777,11 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .askchip:hover { background:color-mix(in srgb, var(--run) 14%, transparent) }
 
 /* ── RB-6 · 루틴 관리 페이지 (2026-10-30 · 목업 03_디자인/2026-10-30_루틴-관리-목업) ── */
-.rtline { display:flex; align-items:center; gap:8px; width:calc(100% - 24px); margin:6px 12px 10px; padding:8px 12px; border-radius:10px; background:var(--box); border:1px solid var(--line2); color:var(--t); font-size:13px; text-align:left }
-.rtline:hover { background:var(--hover) } .rtline .sp { flex:1 } .rtline .t { color:var(--w) }
-.rtline .bad { font-size:11.5px; padding:1px 8px; border-radius:9px; background:color-mix(in srgb, var(--err) 22%, transparent); color:var(--err) } .rtline .all { font-size:12px; color:var(--t3) }
-.sbtiles .rtline { width:auto; margin:6px 0 0 }
+/* 2026-11-01 Dave «한쪽으로 치우쳐져서 안 예뻐» — 버튼에 width:auto 를 주면 글자 폭만큼 줄어 왼쪽에 붙었다. 네 칸 아래 한 줄을 꽉 채우고 칸과 같은 테두리·모서리로 맞춘다 */
+.rtline { display:flex; align-items:center; gap:8px; width:calc(100% - 32px); margin:0 16px 10px; padding:0 16px; height:52px; border-radius:16px; background:var(--bg2); border:1px solid var(--line); color:var(--t); font-size:15px; text-align:left }
+.rtline:hover { background:var(--hover) } .rtline .sp { flex:1 } .rtline .t { color:var(--w) } .rtline .ico { flex:none }
+.rtline .bad { font-size:12px; padding:2px 9px; border-radius:9px; background:color-mix(in srgb, var(--err) 22%, transparent); color:var(--err) } .rtline .all { font-size:12.5px; color:var(--t3) }
+.sbtiles .rtline { width:100%; margin:6px 0 0; height:34px; padding:0 9px; border-radius:11px; font-size:12px; gap:6px } .sbtiles .rtline .all { font-size:11px } .sbtiles .rtline .bad { font-size:10.5px; padding:1px 7px }
 .modal.board.rt { width:min(1080px, calc(100% - 24px)); height:min(820px, calc(100% - 24px)) }
 .modal.rt .rtbox { border:1px solid var(--line2); border-radius:12px; background:var(--box); padding:10px 12px; margin:0 8px 10px }
 .modal.rt .rth { display:flex; align-items:center; gap:10px; margin-bottom:6px; font-size:13px } .modal.rt .rth b { color:var(--w) }
@@ -1828,4 +1828,21 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
   .modal.rt .exp { grid-template-columns:minmax(0,1fr); margin:0 4px 8px } .modal.rt .exp td { white-space:normal }
   .modal.rt .rtq { font-size:16px; height:36px } .modal.rt .legend { display:none }
   .modal.rt .gh { flex-wrap:wrap } .modal.rt .gh .h { flex-basis:100%; padding-left:22px; font-size:11.5px } .modal.rt .cfold { max-width:150px; font-size:13px; padding:5px 6px }
+}
+
+/* 2026-11-01 Dave — «오른쪽에 쓸데없이 여백이 많다». 세션 줄의 연필·X 와 파일 줄의 시각이 안 보일 때도 칸을 잡고 있었다.
+   마우스가 있는 화면에선 할 일 줄(.todo .tools)처럼 줄 위에 겹쳐 미끄러져 뜬다. 이름 바꾸기는 줄을 두 번 누른다(연필은 뺀다).
+   손가락 화면(폰·터치)은 누를 칸이 있어야 하니 종전대로 둔다. --rowbg 는 겹치는 칸 뒤를 줄 배경과 같은 색으로 덮는다(글자가 비치지 않게 불투명색만). */
+@media (min-width:768px) and (hover:hover) {
+  .srow, .trow { position:relative }
+  .srow:hover, .trow:hover { --rowbg:var(--hover) }
+  .srow.on, .srow.on:hover, .trow.on, .trow.sel { --rowbg:var(--sel) }
+  .trow.flash { --rowbg:color-mix(in srgb, #e08850 14%, var(--bg)) } .trow.box { --rowbg:color-mix(in srgb, #e08850 10%, var(--bg)) }
+  .srow .ren { display:none }
+  .srow .del { position:absolute; right:6px; top:50%; margin:0; opacity:0; pointer-events:none; transform:translate(8px,-50%); transition:opacity .14s ease, transform .14s ease; background:var(--rowbg); box-shadow:-12px 0 8px -2px var(--rowbg) }
+  .srow.on .del { opacity:0 }   /* 위 «.srow.on .del { opacity:1 }» 을 덮는다 — 열린 줄도 손을 올렸을 때만 */
+  .srow:hover .del, .srow.on:hover .del { opacity:1; pointer-events:auto; transform:translate(0,-50%) }
+  .srow .del:hover { color:var(--err); background:var(--sel); box-shadow:-12px 0 8px -2px var(--rowbg) }
+  .trow time { position:absolute; right:10px; top:50%; visibility:visible; opacity:0; pointer-events:none; transform:translate(8px,-50%); transition:opacity .14s ease, transform .14s ease; padding-left:16px; background:linear-gradient(90deg, transparent, var(--rowbg) 14px) }
+  .trow:hover time, .trow.flash time { opacity:1; transform:translate(0,-50%) }
 }

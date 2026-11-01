@@ -145,5 +145,5 @@ export function RoutineLine({ onOpen }: { onOpen: () => void }) {
   const load = () => { void api<Board>('/routines/overview').then((b) => setC({ total: b.total, bad: b.counts.fail + b.counts.missed + b.counts.unknown })).catch(() => { /* 숫자 없이 */ }) }
   useEffect(() => { load(); const t = window.setInterval(load, 120_000); return () => window.clearInterval(t) }, [])
   useEffect(() => { load() }, [s.bots])
-  return <button className="rtline" onClick={onOpen} aria-label="루틴"><span className="ic">⏰</span><span className="t">루틴</span><span className="sp" />{c ? c.bad ? <span className="bad">문제 {c.bad}</span> : <span className="all">{c.total}개</span> : null}</button>
+  return <button className="rtline" onClick={onOpen} aria-label="루틴"><Icon n="cal" size={14} color="var(--t3)" /><span className="t">루틴</span>{c ? <span className="all">{c.total}개</span> : null}<span className="sp" />{c?.bad ? <span className="bad">문제 {c.bad}</span> : null}<Icon n="chev" size={9} color="var(--t3)" /></button>
 }
