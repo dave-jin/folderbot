@@ -115,7 +115,7 @@ export class ContextService {
   onTurnEnd(r: SessionRec): void {
     this.guard('턴 끝', () => {
       if (!this.owner() || this.off()) return
-      if (cardChannel(r) === 'routine') this.routineCardNow(r)
+      if (isRoutine(r)) this.routineCardNow(r)
       else this.pokeCard(r.id)
     }, undefined)
   }
@@ -218,8 +218,8 @@ export class ContextService {
     if (!this.owner()) return false
     const r = this.h.sessions.get(sid)
     if (!r) return false
+    if (isRoutine(r)) { this.routineCardNow(r); return false }   // 오케스트레이터 루틴도 — cardChannel 은 orch 를 먼저 본다
     const ch = cardChannel(r)
-    if (ch === 'routine') { this.routineCardNow(r); return false }
     const bots = this.h.registry.bots()
     if (!bots.some((b) => b.id === r.botId)) return false
     const items = this.h.sessions.items(sid)
@@ -246,7 +246,7 @@ export class ContextService {
       called = true
       const body = res.ok ? parseCard(res.out) : null
       if (!body) { this.log(`맥락 카드를 못 만들었어요 — 다음 턴 끝에 다시: ${id}`); break }
-      const settled = settleCard(body, { vaultRoot: this.h.registry.root, items })
+      const settled = settleCard(body, { vaultRoot: this.h.registry.root, items: seg })   // 조각의 근거는 그 조각 안에서만(Ruling 20)
       const picked = folder ?? (settled.folder ? keys.get(settled.folder.trim()) : undefined) ?? VAULT_OPS
       const last = seg[seg.length - 1]
       this.store.putCard({
@@ -402,10 +402,16 @@ export class ContextService {
       sources: [{ name: '주인 맥 판', ok: false, at: null, note: '아직 주인 맥 판 없음' }] })
   }
 
+  /**
+   * 판·목표 펼치기의 폴더 한 칸. 작업 상태는 **메모리에서만** 지금 시각으로 다시 매긴다(Ruling 19) —
+   * «약속이 남은 채 30분 조용» 같은 시간 판정은 묶기 일이 다시 돌지 않아도 판에 나와야 한다. tasks.json 은 쓰지 않는다.
+   */
   private folderInput(bot: Bot, now: number): FolderInput {
     const facts = this.facts(bot)
+    const cards = this.store.folderCards(bot.id, 0)
+    const tasks = this.restate(this.tasksOf(bot), new Map(cards.map((c) => [c.id, c] as const)), facts, now)
     return {
-      botId: bot.id, folder: nameOf(bot), due: bot.due?.date ?? null, tasks: this.tasksOf(bot), cards: this.store.folderCards(bot.id, 0),
+      botId: bot.id, folder: nameOf(bot), due: bot.due?.date ?? null, tasks, cards,
       goal: goalLine(facts.state, facts.stateMtime, facts.claude, now),
       outbox: outboxLines(facts.state, new Date(now).getFullYear())
     }
@@ -444,6 +450,9 @@ export class ContextService {
 }
 
 interface Facts { state: string | null; stateMtime: number | null; claude: string | null; todo: { title: string; done: boolean }[] }
+
+/** 루틴 세션(사람이 이어받지 않은 것)은 LLM 없이 — 갈래(orch·comm…)보다 먼저 본다 */
+const isRoutine = (r: SessionRec): boolean => !!r.routine && !r.adopted
 
 function readText(f: string): string | null { try { return readFileSync(f, 'utf8') } catch { return null } }
 

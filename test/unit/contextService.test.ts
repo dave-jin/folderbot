@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { ContextService, NotOwner, type ContextHost } from '../../src/host/context'
 import { CARD_MARK } from '../../src/core/contextCard'
-import { GROUP_MARK, type FolderTasks } from '../../src/core/contextTasks'
+import { GROUP_MARK, STALL_MS, type FolderTasks } from '../../src/core/contextTasks'
 import { AXIS_MARK, type Board } from '../../src/core/contextBoard'
 import type { Bot, ChatItem } from '../../src/core/types'
 import type { SessionRec } from '../../src/host/session'
@@ -27,7 +27,7 @@ let seq = 0
 const it_ = (kind: 'user' | 'assistant', text: string, t = Date.now()): ChatItem => ({ id: `i${++seq}`, t, kind, text } as ChatItem)
 
 /** 가짜 모델 — 표지로 갈래를 고르고, 부른 프롬프트를 다 적어 둔다 */
-function fakeAsk(o: { failCards?: number; group?: (cards: { id: string; taskHint: string }[], model: string) => unknown } = {}) {
+function fakeAsk(o: { failCards?: number; card?: (convo: string) => unknown; group?: (cards: { id: string; taskHint: string }[], model: string) => unknown } = {}) {
   const calls: { prompt: string; model: string }[] = []
   let cardFails = o.failCards ?? 0
   const ask = async (prompt: string, opts: OneShotOpts): Promise<OneShotResult> => {
@@ -35,6 +35,7 @@ function fakeAsk(o: { failCards?: number; group?: (cards: { id: string; taskHint
     if (prompt.startsWith(CARD_MARK)) {
       if (cardFails > 0) { cardFails--; return { ok: false, out: '', ms: 1 } }
       const convo = prompt.slice(prompt.lastIndexOf('\n대화\n'))
+      if (o.card) return { ok: true, out: JSON.stringify(o.card(convo)), ms: 1 }
       const hint = convo.includes('접수') ? '접수 폼' : convo.includes('랜딩') ? '랜딩 페이지' : '투표 기능'
       return { ok: true, out: JSON.stringify({ intent: `${hint} 만들기`, done: [], promised: ['배포'], ending: 'running', taskHint: hint }), ms: 1 }
     }
@@ -87,6 +88,7 @@ const sess = (id: string, botId: string, items: ChatItem[], extra: Partial<Sessi
   recs.set(id, r)
   return r
 }
+afterEach(() => { vi.useRealTimers() })
 const tasksOf = (b: Bot): FolderTasks => JSON.parse(readFileSync(join(b.abs, '.folderbot', 'context', 'tasks.json'), 'utf8'))
 const cardFile = (sid: string) => join(data, 'context', 'cards', `${sid}.json`)
 const boardFile = () => join(root, '.folderbot', 'context', 'board.json')
@@ -218,6 +220,57 @@ describe('ContextService — 주인 맥', () => {
     expect(t.tasks.map((x) => [x.title, x.cards])).toEqual([['투표 집계', ['s_u']]])
     expect(t.loose).toEqual(['s_l'])
     expect(calls.filter((c) => c.prompt.startsWith(GROUP_MARK)).map((c) => c.model)).toEqual(['haiku', 'sonnet'])
+  })
+
+  it('오케스트레이터 루틴 세션도 LLM 없이 → routine:<이름> 작업 (cardChannel 이 orch 를 먼저 봐도)', async () => {
+    mkdirSync(join(root, '.folderbot', 'context'), { recursive: true })
+    const seeded: Board = { v: 1, at: Date.now(), host: 'mini', period: 'today', since: 0, axis: { text: '축', at: Date.now() }, tally: { done: 0, stalled: 0, added: 0 },
+      step: { stalled: { rows: [], more: 0 }, waiting: { rows: [], more: 0 }, routine: { rows: [], more: 0 } }, goals: [], quiet: [], sources: [] }
+    writeFileSync(boardFile(), JSON.stringify(seeded))
+    const { ask, calls } = fakeAsk()
+    const svc = new ContextService(host(), ask)
+    const r = sess('s_or', 'orch', [it_('user', '정기 동기화'), it_('assistant', '넘겼어요'), it_('user', '두 번째 일'), it_('assistant', '끝\n결과: fail — 우편함 못 읽음')], { routine: '정기동기화' })
+    svc.onTurnEnd(r)
+    await svc.idle()
+    expect(calls).toHaveLength(0)
+    const t = tasksOf(bots[0])
+    expect(t.tasks.map((x) => [x.id, x.cards])).toEqual([['routine:정기동기화', ['s_or']]])
+    expect(JSON.parse(readFileSync(cardFile('s_or'), 'utf8'))).toMatchObject([{ id: 's_or', channel: 'routine', llm: false, ending: 'cut' }])
+  })
+
+  it('시간이 지나 정해지는 stalled — 묶기 없이도 board() 가 하다 만 일로 보이고 tasks.json 은 안 바뀐다', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const tool = { id: 'tok1', t: Date.now(), kind: 'tool', name: 'Write', summary: '파일 씀', isError: false } as ChatItem
+    const { ask } = fakeAsk({ card: () => ({ intent: '투표 만들기', done: [{ text: '폼 만듦', ev: [{ kind: 'tool', ref: 'tok1' }] }], promised: ['배포'], ending: 'finished', taskHint: '투표 기능' }) })
+    const svc = new ContextService(host(), ask)
+    svc.onTurnEnd(sess('s_t', 'hack1', [it_('user', '투표'), tool, it_('assistant', '폼 만들었어요')]))
+    await svc.idle()
+    expect(tasksOf(bots[1]).tasks[0].state).toBe('done')
+    const before = readFileSync(join(bots[1].abs, '.folderbot', 'context', 'tasks.json'), 'utf8')
+    expect(svc.board('today').step.stalled.rows).toEqual([])
+
+    vi.setSystemTime(Date.now() + STALL_MS + 60_000)
+    const b = svc.board('today')
+    expect(b.step.stalled.rows.map((r) => [r.botId, r.title])).toEqual([['hack1', '투표 기능']])
+    expect(b.goals[0].counts.stalled).toBe(1)
+    expect(svc.goal('hack1', null).tasks[0].state).toBe('stalled')
+    expect(readFileSync(join(bots[1].abs, '.folderbot', 'context', 'tasks.json'), 'utf8')).toBe(before)
+  })
+
+  it('조각 카드의 근거는 그 조각 안에서만 — 조각 A 의 성공 도구가 조각 B 를 끝남으로 만들지 않는다', async () => {
+    const tool = { id: 'tA', t: Date.now(), kind: 'tool', name: 'Write', summary: '접수 폼 씀', isError: false } as ChatItem
+    const { ask } = fakeAsk({ card: () => ({ intent: '일', done: [{ text: '했어요', ev: [{ kind: 'tool', ref: 'tA' }] }], promised: [], ending: 'finished', taskHint: '일' }) })
+    const svc = new ContextService(host(), ask)
+    sess('s_seg', 'orch', [
+      it_('user', '[요청 ← 해커톤 · hack1 · s_x] 접수 폼'), tool, it_('assistant', '했어요'),
+      it_('user', '[요청 ← 웹사이트 · web1 · s_y] 랜딩'), it_('assistant', '했어요')
+    ], { comm: true })
+    svc.onTurnEnd(recs.get('s_seg')!)
+    await svc.idle()
+    const cards = JSON.parse(readFileSync(cardFile('s_seg'), 'utf8')) as { id: string; done: unknown[]; ending: string; promised: string[] }[]
+    expect(cards[0]).toMatchObject({ id: 's_seg#0', ending: 'finished' })
+    expect(cards[0].done).toHaveLength(1)
+    expect(cards[1]).toMatchObject({ id: 's_seg#1', ending: 'claimed', done: [], promised: ['했어요'] })
   })
 
   it('move → 카드가 옮겨지고 고정된다 · reopen → 그 작업이 하다 멈춤으로', async () => {
