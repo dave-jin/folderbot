@@ -1847,63 +1847,77 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
   .trow:hover time, .trow.flash time { opacity:1; transform:translate(0,-50%) }
 }
 
-/* ── 맥락 상황판 (2026-11-01 · Context.tsx) — 띠 · 페이지 · 목표 펼치기. 목업 `03_디자인/2026-11-01_맥락-상황판-목업/` ①② ──
-   ⚠ 클래스는 모두 `cx` 접두 — 다른 화면과 안 겹친다. 상태 여섯 색: 끝남 초록 · 끝났다고 함 초록 빗금 · 하는 중 파랑 · 하다 멈춤 주황 · 내 답 대기 노랑 · 아직 회색 */
-.cx-strip, .modal.cx { --cxrun:#6ea6f7; --cxhalf:#e07a3b; --cxask:#8b7cf6; --cxno:#3a3a3a }
-:root[data-theme="light"] .cx-strip, :root[data-theme="light"] .modal.cx { --cxrun:#2f6fd0; --cxhalf:#c25e1f; --cxask:#6a59d8; --cxno:#cfcfd4 }
+/* ── 맥락 상황판 (2026-11-01 · Context.tsx) — 띠 · 페이지 · 목표 펼치기. 목업 `03_디자인/2026-11-01_맥락-상황판-목업/` ①②
+   🔴 2026-11-02 다듬기(Dave «목업대로 · 두 색 + 회색» · 목업 `03_디자인/2026-11-02_상황판-다듬기-목업/`):
+   ⚠ 뜻을 가진 색은 둘 — 초록 = 끝남 · 앰버(--wait, 앱의 «확인 대기») = 내 차례(하다 멈춤 · 내 답 대기). 나머지는 회색 밝기.
+     앱 전체에서 주황(--run)은 «돌고 있음» 이라 상황판에서 «하다 멈춤» 에 쓰지 않는다. 테두리는 회색 한 가지.
+   ⚠ 상자는 한 겹 — 덩이는 제목 + 가는 줄로 나눈다. 페이지 글자는 17 · 13 · 11.5 세 단계, 간격은 4의 배수 */
+.cx-strip, .modal.cx { --cxrun:#7a7a7a; --cxno:#333333; --cxme:var(--wait) }
+:root[data-theme="light"] .cx-strip, :root[data-theme="light"] .modal.cx { --cxrun:#a3a3a8; --cxno:#dcdce0 }
 .st-done { background:var(--done) } .st-claimed { background:repeating-linear-gradient(135deg, var(--done) 0 2px, transparent 2px 5px); box-shadow:inset 0 0 0 1px var(--done) }
-.st-running { background:var(--cxrun) } .st-stalled { background:var(--cxhalf) } .st-waiting { background:var(--wait) } .st-todo { background:var(--cxno) }
-.cx-strip { margin:0 16px 10px; padding:10px 12px; border:1px solid var(--line); border-radius:14px; background:var(--bg2); display:flex; flex-direction:column; gap:8px; min-width:0 }
-.cx-strip .cx-h { display:flex; align-items:center; gap:8px; width:100%; text-align:left; font-size:12px; color:var(--t3) } .cx-strip .cx-h b { color:var(--t2); font-weight:600 } .cx-strip .cx-h .sp { flex:1 } .cx-strip .cx-h:hover b { color:var(--w) }
+.st-running { background:var(--cxrun) } .st-stalled, .st-waiting { background:var(--cxme) } .st-todo { background:var(--cxno) }
+.cx-d { width:6px; height:6px; border-radius:50%; flex:none; background:var(--t3); display:inline-block } .cx-it.k-waiting .cx-d, .cx-gc .cx-d { background:var(--cxme) }
 .cx-note { color:var(--wait); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 }
-.cx-axis { padding:7px 11px; border-left:3px solid var(--cxask); background:var(--box); border-radius:0 9px 9px 0; display:flex; flex-direction:column; gap:2px; min-width:0 }
-.cx-axis b { color:var(--w); font-weight:500; font-size:13.5px; line-height:1.45 } .cx-axis .s { color:var(--t3); font-size:11.5px }
-.cx-need { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:8px }
-.cx-nk { border:1px solid var(--line2); border-radius:10px; padding:8px 10px; background:var(--bg); min-width:0 }
-.cx-nk h3 { margin:0 0 4px; font-size:12.5px; font-weight:600; color:var(--w); display:flex; align-items:center; gap:6px }
-.cx-nk h3 .c { font-size:11px; padding:0 7px; border-radius:9px; font-weight:500 }
-.cx-nk.k-stalled { border-color:color-mix(in srgb, var(--cxhalf) 45%, var(--line2)) } .cx-nk.k-stalled .c { background:color-mix(in srgb, var(--cxhalf) 25%, transparent); color:var(--cxhalf) }
-.cx-nk.k-waiting { border-color:color-mix(in srgb, var(--cxask) 50%, var(--line2)) } .cx-nk.k-waiting .c { background:color-mix(in srgb, var(--cxask) 25%, transparent); color:var(--cxask) }
-.cx-nk.k-routine { border-color:color-mix(in srgb, var(--err) 40%, var(--line2)) } .cx-nk.k-routine .c { background:color-mix(in srgb, var(--err) 22%, transparent); color:var(--err) }
-.cx-it { border-top:1px solid var(--line); padding:6px 0 5px; font-size:12.5px; min-width:0 } .cx-it:first-of-type { border-top:0 }
-.cx-it .cx-f { color:var(--t3); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
-.cx-it .cx-w { color:var(--t); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden }
-.cx-it .cx-a { display:flex; align-items:center; gap:6px; margin-top:4px } .cx-it .cx-a .btn { min-height:24px; padding:1px 9px; font-size:12px } .cx-it .cx-tm { margin-left:auto; color:var(--t3); font-size:11px; white-space:nowrap }
-.btn.cx-pri { border-color:color-mix(in srgb, var(--cxask) 60%, var(--line2)); color:var(--w) }
-.cx-more { font-size:11.5px; color:var(--t3); padding:2px 0 0 } .cx-more:hover { color:var(--w) }
-.cx-calm { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--t2) } .cx-calm i { width:8px; height:8px; border-radius:50%; background:var(--done); flex:none }
+.btn.cx-pri { color:var(--w); border-color:var(--line2); background:var(--box) } .btn.cx-pri:hover { background:var(--sel) }
+.cx-more { display:block; text-align:left; font-size:11.5px; color:var(--t3); padding:4px 0 0 } button.cx-more:hover { color:var(--w) }
+.cx-calm { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--t2) } .cx-calm i { width:6px; height:6px; border-radius:50%; background:var(--done); flex:none }
 .cx-calm.none { flex-direction:column; align-items:flex-start; gap:2px; color:var(--t) } .cx-calm.none span { font-size:11.5px; color:var(--t3) }
-/* 맥 레일 맨 위 — 좁다: 덩이는 한 줄씩 쌓고 글을 줄인다 */
-.sbtiles .cx-strip, .cx-strip.mini { margin:0 0 6px; padding:8px 9px; border-radius:11px; gap:6px }
-.cx-strip.mini .cx-need { grid-template-columns:1fr; gap:6px } .cx-strip.mini .cx-nk { padding:6px 8px } .cx-strip.mini .cx-axis { padding:5px 8px } .cx-strip.mini .cx-axis b { font-size:12.5px }
-.cx-strip.mini .cx-axis .s { white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
-/* 레일은 세로 자리가 귀하다 — 줄 하나를 «폴더 · 작업 + 단추» 한 줄로 접는다(무슨 일인지는 줄에 마우스를 올리거나 상황판에서) */
-.cx-strip.mini .cx-it { display:flex; align-items:center; gap:6px; padding:4px 0 } .cx-strip.mini .cx-it .cx-f { flex:1; min-width:0; color:var(--t); font-size:12px }
-.cx-strip.mini .cx-it .cx-w, .cx-strip.mini .cx-it .cx-tm { display:none } .cx-strip.mini .cx-it .cx-a { margin:0; gap:2px; flex:none } .cx-strip.mini .cx-it .cx-a .btn { min-height:22px; padding:0 7px; font-size:11.5px }
-.cx-strip.mini .cx-nk h3 { margin-bottom:2px; font-size:12px }
-/* 레일 아래 폴더 목록을 밀어내지 않게 — 덩이 칸은 화면 높이의 3분의 1 안에서 안쪽으로 스크롤한다 */
-.sbtiles .cx-strip .cx-need { max-height:34vh; overflow:auto; overscroll-behavior:contain }
-/* 상황판 페이지 */
+
+/* 홈 띠(맥 레일 mini · 폰 홈) — 머리줄 = 접기/펴기 + ↗ 열기. 펼쳐도 상자 없이 줄만 */
+.cx-strip { margin:0 16px 10px; display:flex; flex-direction:column; min-width:0 }
+.cx-strip .cx-h { display:flex; align-items:center; gap:2px; min-width:0 }
+.cx-strip .cx-fold { flex:1; min-width:0; display:flex; align-items:center; gap:6px; height:30px; padding:0 6px; border-radius:8px; text-align:left; font-size:12px; color:var(--t3) }
+.cx-strip .cx-fold:hover { background:var(--hover) } .cx-strip .cx-fold b { color:var(--t); font-weight:600; flex:none }
+.cx-strip .cx-sum { margin-left:auto; font-size:11.5px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 } .cx-strip .cx-sum .hot { color:var(--wait) }
+.cx-strip .cx-fold .cx-note { margin-left:auto }
+.cx-strip .cx-open { width:24px; height:24px; flex:none; color:var(--t3) } .cx-strip .cx-open:hover { color:var(--w) }
+.cx-sbody { padding:2px 6px 6px 22px; min-width:0 }
+.cx-strip .cx-axis b { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; font-size:12.5px; line-height:1.5; font-weight:500; color:var(--w); margin:2px 0 4px }
+.cx-gl { display:flex; gap:6px; font-size:11px; color:var(--t3); margin:8px 0 2px } .cx-gl .c { color:var(--t2) }
+.cx-strip:not(.big) .cx-it { display:flex; align-items:center; gap:8px; min-height:28px; padding:0 6px; margin:0 -6px; border-radius:7px; font-size:12px; min-width:0 }
+.cx-strip:not(.big) .cx-it:hover { background:var(--hover) }
+.cx-strip:not(.big) .cx-it .cx-f { flex:1; min-width:0; color:var(--t); white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .cx-strip:not(.big) .cx-it .cx-f small { font-size:11.5px; color:var(--t3) }
+.cx-strip:not(.big) .cx-it .cx-w, .cx-strip:not(.big) .cx-it .cx-tm { display:none }
+.cx-strip:not(.big) .cx-it .cx-a { display:flex; gap:4px; flex:none } .cx-strip:not(.big) .cx-it .cx-a .btn { min-height:20px; padding:0 7px; font-size:11px; border-radius:6px }
+/* 하다 만 일 [이어서] 는 줄에 마우스를 올리거나 키보드로 닿을 때만 — 줄마다 단추가 서면 레일이 단추 벽이 된다. 답 기다림 단추는 늘 보인다 */
+.cx-strip.mini .cx-it.k-stalled .cx-a { opacity:0 } .cx-strip.mini .cx-it.k-stalled:hover .cx-a, .cx-strip.mini .cx-it.k-stalled:focus-within .cx-a { opacity:1 }
+.sbtiles .cx-strip, .cx-strip.mini { margin:0 0 6px }
+/* 레일 아래 폴더 목록을 밀어내지 않게 — 펼친 몸통은 화면 높이의 3분의 1 안에서 안쪽으로 스크롤한다 */
+.sbtiles .cx-strip .cx-sbody { max-height:34vh; overflow:auto; overscroll-behavior:contain }
+@media (hover:none) { .cx-strip.mini .cx-it.k-stalled .cx-a { opacity:1 } }
+
+/* 상황판 페이지 — 축은 제목처럼 · 나설 곳은 한 목록 · 목표 카드는 같은 줄끼리 높이를 맞춘다 */
 .modal.board.cx { width:min(1180px, calc(100% - 24px)); height:min(860px, calc(100% - 24px)) }
 .modal.cx .modal-h { align-items:center } .modal.cx .cx-seg { flex:none }
-.modal.cx .cx-body { display:flex; flex-direction:column; gap:12px; padding:0 18px 16px }
-.modal.cx .cx-strip.big { margin:0; padding:12px 14px; background:var(--box) } .modal.cx .cx-strip.big .cx-axis { background:var(--bg) } .modal.cx .cx-strip.big .cx-axis b { font-size:14.5px }
-.cx-sub { font-size:12px; color:var(--t3) } .cx-sub.warn { color:var(--wait) }
-.cx-goals { border:1px solid var(--line2); border-radius:12px; background:var(--box); padding:12px 14px }
-.cx-gh { display:flex; align-items:center; gap:10px; margin-bottom:8px; flex-wrap:wrap } .cx-gh b { color:var(--w) } .cx-gh .m { color:var(--t3); font-size:12px }
-.cx-leg { display:flex; gap:10px; margin-left:auto; font-size:11px; color:var(--t3); flex-wrap:wrap } .cx-leg i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px }
-.cx-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:10px }
-.cx-gc { display:flex; flex-direction:column; align-items:stretch; gap:4px; text-align:left; border:1px solid var(--line2); border-radius:11px; padding:10px 12px; background:var(--bg); min-width:0 } .cx-gc:hover { border-color:var(--t3) }
-.cx-gc.bad { border-color:color-mix(in srgb, var(--cxhalf) 45%, var(--line2)) }
-.cx-gc .top { display:flex; align-items:center; gap:8px; min-width:0 } .cx-gc .nm { color:var(--w); font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 }
-.cx-gc .dd { margin-left:auto; flex:none; font-size:11px; padding:0 6px; border-radius:6px; border:1px solid var(--line2); color:var(--t2); white-space:nowrap }
-.cx-gc .goal { font-size:12px; color:var(--t2); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden }
-.cx-gc .gap { font-size:12px; color:var(--t) }
-.cx-bar { display:flex; gap:2px; height:8px; border-radius:4px; overflow:hidden; background:var(--line); margin:4px 0 2px } .cx-bar i { display:block; height:100%; flex-basis:0; min-width:4px }
-.cx-gc .ln { font-size:12px; color:var(--t); white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .cx-gc .ln .k { color:var(--t3); display:inline-block; width:34px }
-.cx-gc .chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:2px }
-.cx-chip { border:1px solid var(--line2); border-radius:12px; padding:0 8px; font-size:11px; color:var(--t2); white-space:nowrap } button.cx-chip:hover { color:var(--w); border-color:var(--t3) }
-.cx-quiet summary { cursor:pointer; font-size:12.5px; color:var(--t2) } .cx-quiet .l { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px }
+.modal.cx .cx-body { display:flex; flex-direction:column; gap:20px; padding:4px 24px 24px }
+.cx-strip.big { margin:0; gap:0 }
+.cx-hero { display:flex; flex-direction:column; gap:8px; padding:0 0 20px; border-bottom:1px solid var(--line) }
+.cx-hero b { font-size:17px; line-height:1.55; font-weight:500; color:var(--w); max-width:880px }
+.cx-hero .s { display:flex; gap:16px; font-size:11.5px; color:var(--t3) } .cx-hero .s em { font-style:normal; color:var(--t2) }
+.cx-strip.big .cx-need { padding-top:20px } .cx-strip.big .cx-calm, .cx-strip.big .cx-calm.none { padding-top:20px }
+.cx-st { display:flex; align-items:baseline; gap:12px; margin-bottom:8px; flex-wrap:wrap } .cx-st b { font-size:13px; font-weight:600; color:var(--w) } .cx-st .m { font-size:11.5px; color:var(--t3) }
+.cx-list { border-top:1px solid var(--line) }
+.cx-strip.big .cx-it { display:grid; grid-template-columns:8px 180px minmax(0,1fr) 44px auto; gap:12px; align-items:center; min-height:40px; padding:0 4px; border-bottom:1px solid var(--line); font-size:13px }
+.cx-strip.big .cx-it:hover { background:var(--hover) }
+.cx-strip.big .cx-it .cx-f { font-size:11.5px; color:var(--t2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .cx-strip.big .cx-it .cx-f small { display:none }
+.cx-strip.big .cx-it .cx-w { color:var(--t2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 } .cx-strip.big .cx-it .cx-w .ti { color:var(--t) }
+.cx-strip.big .cx-it .cx-tm { font-family:var(--mono); font-size:11.5px; color:var(--t3); text-align:right; white-space:nowrap }
+.cx-strip.big .cx-it .cx-a { display:flex; gap:4px; justify-content:flex-end } .cx-strip.big .cx-it .cx-a .btn { min-height:26px; padding:0 10px; font-size:12px; border-radius:7px }
+.cx-strip.big .cx-more { padding:8px 4px 0 }
+.cx-sub { font-size:11.5px; color:var(--t3) } .cx-sub.warn { color:var(--wait) }
+.cx-gh { margin-bottom:8px } .cx-leg { display:flex; gap:12px; margin-left:auto; font-size:11.5px; color:var(--t3); flex-wrap:wrap }
+.cx-leg i { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; vertical-align:0 }
+.cx-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:12px }
+.cx-gc { display:flex; flex-direction:column; align-items:stretch; gap:8px; text-align:left; border:1px solid var(--line); border-radius:12px; padding:14px; background:var(--bg2); min-width:0; min-height:148px }
+.cx-gc:hover { border-color:var(--line2); background:var(--hover) }
+.cx-gc .top { display:flex; align-items:center; gap:8px; min-width:0 } .cx-gc .nm { flex:1; color:var(--w); font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 }
+.cx-gc .dd { flex:none; font-size:11.5px; color:var(--t3); white-space:nowrap } .cx-gc .dd.soon { color:var(--wait) }
+.cx-gc .goal { font-size:13px; line-height:1.5; color:var(--t2); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; min-height:39px }
+.cx-bar { display:flex; gap:2px; height:4px; border-radius:2px; overflow:hidden; background:var(--line) } .cx-bar i { display:block; height:100%; flex-basis:0; min-width:4px }
+.cx-gc .ln { font-size:11.5px; color:var(--t); white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .cx-gc .ln .k { color:var(--t3); display:inline-block; width:32px }
+.cx-gc .chips { display:flex; gap:12px; margin-top:auto; font-size:11.5px; color:var(--t3) }
+.cx-chip { border:1px solid var(--line2); border-radius:12px; padding:0 8px; font-size:11.5px; color:var(--t2); white-space:nowrap } button.cx-chip:hover { color:var(--w); border-color:var(--t3) }
+.cx-quiet summary { cursor:pointer; font-size:11.5px; color:var(--t3) } .cx-quiet summary:hover { color:var(--t2) } .cx-quiet .l { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px }
 .cx-src { display:flex; gap:12px; flex-wrap:wrap; font-size:11.5px; color:var(--t3) }
 /* 목표 펼치기 — 왼쪽 작업 · 가운데 이야기 · 오른쪽 채팅 */
 .modal.cx .cx-gvh .t { min-width:0 } .modal.cx .cx-gvh .cnt { white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
@@ -1912,20 +1926,19 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .cx-ch { display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:13px; min-width:0 } .cx-ch b { color:var(--w); white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .cx-ch .m { color:var(--t3); font-size:11.5px }
 .cx-ch .cx-re { margin-left:auto; min-height:24px; padding:1px 9px; font-size:12px; color:var(--wait) }
 .cx-tk { display:flex; gap:8px; align-items:flex-start; padding:7px 8px; border-radius:8px; font-size:12.5px; text-align:left; width:100%; border:1px dashed transparent }
-.cx-tk:hover { background:var(--hover) } .cx-tk.on { background:var(--sel) } .cx-tk.over { border-color:var(--cxask); background:color-mix(in srgb, var(--cxask) 12%, transparent) }
+.cx-tk:hover { background:var(--hover) } .cx-tk.on { background:var(--sel) } .cx-tk.over { border-color:var(--t3); background:var(--hover) }
 .cx-tk .st, .cx-menu .st { width:9px; height:9px; border-radius:50%; margin-top:5px; flex:none } .cx-tk .st.all { background:transparent; box-shadow:inset 0 0 0 1.5px var(--t3) } .cx-menu .st { margin-top:0 }
 .cx-tk .nm { display:block; color:var(--w) } .cx-tk .sb { display:block; color:var(--t3); font-size:11.5px } .cx-tk.loose .nm { color:var(--t2) }
 .cx-now { font-size:12.5px; color:var(--t); background:var(--bg); border-radius:8px; padding:8px 10px; margin-bottom:6px } .cx-now p { margin:0 } .cx-now p + p { margin-top:4px } .cx-now b { color:var(--w); font-weight:500 }
 .cx-ev { display:flex; align-items:flex-start; gap:4px; border-top:1px solid var(--line); border-radius:6px } .cx-ev[draggable="true"] { cursor:grab }
-.cx-ev.half { background:color-mix(in srgb, var(--cxhalf) 9%, transparent) } .cx-ev.half .tx .l { color:var(--cxhalf) }
+.cx-ev.half { background:color-mix(in srgb, var(--cxme) 7%, transparent) } .cx-ev.half .tx .l { color:var(--cxme) }
 .cx-evb { flex:1; min-width:0; display:grid; grid-template-columns:62px 92px minmax(0,1fr); gap:8px; align-items:start; padding:6px 4px; text-align:left; font-size:12.5px } .cx-evb:hover .l { color:var(--w) }
 .cx-evb .tm { font-family:var(--mono); font-size:11px; color:var(--t3); padding-top:1px; white-space:nowrap }
 .cx-evb .src { font-size:10.5px; border-radius:5px; padding:1px 6px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:var(--line); color:var(--t2) }
-.cx-evb .src.c-folder { background:color-mix(in srgb, var(--cxrun) 18%, transparent); color:var(--cxrun) } .cx-evb .src.c-orch, .cx-evb .src.c-comm { background:color-mix(in srgb, var(--cxask) 20%, transparent); color:var(--cxask) }
-.cx-evb .src.c-bridge { background:color-mix(in srgb, var(--wait) 20%, transparent); color:var(--wait) } .cx-evb .src.c-routine { background:color-mix(in srgb, var(--err) 18%, transparent); color:var(--err) }
+/* 출처 칩은 회색 한 가지(2026-11-02 «두 색 + 회색») — 어느 갈래인지는 글자가 말한다 */
 .cx-evb .tx .l { color:var(--t) } .cx-evb .tx .r { display:block; color:var(--t3); font-size:11px }
 .cx-mw { position:relative; flex:none; padding-top:5px } .cx-menu { right:0; top:28px; max-height:280px; overflow:auto }
-.cx-to { display:flex; gap:6px; flex-wrap:wrap } .cx-to button { font-size:11.5px; border:1px solid var(--line2); border-radius:10px; padding:1px 9px; color:var(--t2) } .cx-to button.on { border-color:var(--cxask); color:var(--w) } .cx-to button:disabled { opacity:.4; cursor:default }
+.cx-to { display:flex; gap:6px; flex-wrap:wrap } .cx-to button { font-size:11.5px; border:1px solid var(--line2); border-radius:10px; padding:1px 9px; color:var(--t2) } .cx-to button.on { border-color:var(--t3); background:var(--box); color:var(--w) } .cx-to button:disabled { opacity:.4; cursor:default }
 .cx-tosub { font-size:11.5px; color:var(--t3); margin:6px 0 4px }
 .cx-brief { border:1px dashed var(--line2); border-radius:8px; padding:6px 9px; font-size:11.5px; color:var(--t2) } .cx-brief summary { cursor:pointer }
 .cx-brief pre { margin:6px 0 0; white-space:pre-wrap; word-break:break-word; font-family:var(--ui); font-size:11.5px; color:var(--t2); max-height:200px; overflow:auto }

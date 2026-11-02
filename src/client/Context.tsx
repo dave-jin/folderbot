@@ -26,11 +26,21 @@ const STATE_KO: Record<TaskState, string> = { done: '끝남', claimed: '끝났�
 const PERIOD_KO: Record<Period, string> = { today: '오늘', week: '이번 주', away: '내가 비운 사이' }
 const CH_KO: Record<StoryRow['channel'], string> = { folder: '폴더 봇', orch: '오케스트레이터', comm: '소통', bridge: '연결 편지', routine: '루틴', file: '파일 변화' }
 const EV_KO = { file: '파일 근거', commit: '커밋 근거', letter: '편지 근거', tool: '도구 기록 근거' } as const
-const GROUPS: { k: keyof Board['step']; t: string }[] = [{ k: 'stalled', t: '하다 만 일' }, { k: 'waiting', t: '내 답을 기다림' }, { k: 'routine', t: '어긋난 루틴' }]
+/** 🔴 2026-11-02 Dave «목업대로» — 내 답이 필요한 것 먼저, 그다음 하다 만 일 · 어긋난 루틴 */
+const GROUPS: { k: keyof Board['step']; t: string }[] = [{ k: 'waiting', t: '내 답을 기다림' }, { k: 'stalled', t: '하다 만 일' }, { k: 'routine', t: '어긋난 루틴' }]
+/** 범례 — 뜻을 가진 색은 둘(초록 끝남 · 앰버 내 차례). 하다 멈춤과 내 답 대기는 같은 «내 차례» 색이라 범례에서 한 칸이다 */
+const LEGEND: { k: string; t: string }[] = [{ k: 'done', t: '끝남' }, { k: 'claimed', t: '끝났다고 함' }, { k: 'running', t: '하는 중' }, { k: 'waiting', t: '내 차례' }, { k: 'todo', t: '아직' }]
+const FOLD_KEY = 'fb.cx.fold'
 const p2 = (n: number) => String(n).padStart(2, '0')
 const hm = (t: number) => { const d = new Date(t); return `${p2(d.getHours())}:${p2(d.getMinutes())}` }
 const when = (t: number) => (new Date(t).toDateString() === new Date().toDateString() ? hm(t) : `${new Date(t).getMonth() + 1}/${new Date(t).getDate()} ${hm(t)}`)
 const dueKo = (d: string) => { const m = /^\d{4}-(\d{2})-(\d{2})$/.exec(d); return m ? `${+m[1]}/${+m[2]} 마감` : d }
+/** 카드의 마감 글자 — 이틀 안(지난 것 포함)이면 «soon» 으로 앰버. 오늘·내일은 말로 쓴다 */
+const dueTag = (d: string): { t: string; soon: boolean } => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d); if (!m) return { t: d, soon: false }
+  const now = new Date(); const days = Math.round((new Date(+m[1], +m[2] - 1, +m[3]).getTime() - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) / 86_400_000)
+  return { t: days === 0 ? '오늘 마감' : days === 1 ? '내일 마감' : days < 0 ? `${+m[2]}/${+m[3]} 지남` : `${+m[2]}/${+m[3]} 마감`, soon: days <= 2 }
+}
 const sidOf = (cardId: string) => cardId.split('#')[0]
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 /** 판 파일이 아직 없는 맥(주인 아님) — 빈 판을 «잘 도는 중» 으로 보이면 안 된다. 주인 여부를 못 읽어도 이 표지로 판정한다 */
@@ -79,47 +89,91 @@ function useAllow(say: (m: string) => void): { allow: (r: WRow) => void; busy: s
 /* ── 띠 ──────────────────────────────────────────────────────────────────── */
 
 type Acts = { go: Go; open: Open; openRoutines?: () => void; snooze: (r: StepRow) => void; allow: (r: WRow) => void; busy: string }
-function StepItem({ r, a }: { r: WRow; a: Acts }) {
+/**
+ * 나설 곳 한 줄 — 점 · 폴더 · 무엇 · 시각 · 단추. 홈 띠(mini)는 «점 · 폴더 · 작업» 한 줄에 단추만, 상황판 페이지는 다섯 칸 격자.
+ * 🔴 앰버 점은 «내 답을 기다림» 만 — 나머지 줄은 회색 점(2026-11-02 Dave «두 색 + 회색»).
+ */
+function StepItem({ r, a, mini }: { r: WRow; a: Acts; mini?: boolean }) {
   // 질문(AskUserQuestion)은 «허용» 할 것이 아니라 **답할** 것이다 (2026-09-25) — [허용] 은 도구 허용 요청에만
   const perm = r.kind === 'waiting' && r.req && !r.req.ask
-  return <div className="cx-it" data-kind={r.kind} data-sid={r.sessionId} title={r.kind === 'routine' ? `${r.title} — ${r.line}` : r.line}>
-    <div className="cx-f">{r.folder}{r.kind === 'routine' ? '' : ` · ${r.title}`}</div>
-    <div className="cx-w">{r.kind === 'routine' ? `${r.title} — ${r.line}` : r.line}</div>
+  const what = r.kind === 'routine' ? `${r.title} — ${r.line}` : r.line
+  return <div className={`cx-it k-${r.kind}`} data-kind={r.kind} data-sid={r.sessionId} title={r.kind === 'routine' ? what : `${r.title} — ${r.line}`}>
+    <i className="cx-d" />
+    <div className="cx-f"><span className="fo">{r.folder}</span>{r.kind === 'routine' ? null : <small> · {r.title}</small>}</div>
+    <div className="cx-w">{r.kind === 'routine' ? what : <><span className="ti">{r.title}</span> — {r.line}</>}</div>
+    {r.at ? <span className="cx-tm">{when(r.at)}</span> : <span className="cx-tm" />}
     <div className="cx-a">
-      {r.kind === 'stalled' ? <><button className="btn cx-pri" onClick={() => a.open({ bot: r.botId, task: r.taskId })}>이어서 하기</button><button className="btn ghost" onClick={() => a.snooze(r)}>놔둬</button></> : null}
+      {r.kind === 'stalled' ? <><button className="btn cx-pri cx-cont" onClick={() => a.open({ bot: r.botId, task: r.taskId })}>{mini ? '이어서' : '이어서 하기'}</button>{mini ? null : <button className="btn ghost" onClick={() => a.snooze(r)}>놔둬</button>}</> : null}
       {perm ? <button className="btn cx-pri cx-allow" disabled={a.busy === r.sessionId} onClick={() => a.allow(r)}>{a.busy === r.sessionId ? '…' : '허용'}</button> : null}
       {r.kind === 'waiting' ? <button className={`btn ${perm ? 'ghost' : 'cx-pri'} cx-reply`} onClick={() => a.go(r.botId, r.sessionId)}>답하기</button> : null}
       {r.kind === 'routine' && a.openRoutines ? <button className="btn cx-pri" onClick={a.openRoutines}>점검하기</button> : null}
-      {r.at ? <span className="cx-tm">{when(r.at)}</span> : null}
     </div>
   </div>
 }
 
-/** 띠 본체 — 홈 띠와 상황판 페이지가 같은 그림을 쓴다. 판이 없거나(옛 호스트·오류) 판 파일이 없어도 «내 답을 기다림» 은 선다 */
-function StripView({ b, owner, waiting, a, compact, big, head }: {
-  b: Board | null; owner: boolean | null; waiting: StepGroup; a: Acts; compact?: boolean; big?: boolean; head?: ReactNode
-}) {
+type Grp = { k: keyof Board['step']; t: string; v: StepGroup }
+/** 띠가 보여 줄 덩이 — 판이 없거나(옛 호스트·오류) 판 파일이 없어도 «내 답을 기다림» 은 선다 */
+function groupsOf(b: Board | null, waiting: StepGroup): { board: Board | null; groups: Grp[] } {
   const board = b && !noFile(b) ? b : null
-  const groups = GROUPS.map((g) => ({ ...g, v: g.k === 'waiting' ? waiting : board ? board.step[g.k] : { rows: [], more: 0 } })).filter((g) => g.v.rows.length)
+  return { board, groups: GROUPS.map((g) => ({ ...g, v: g.k === 'waiting' ? waiting : board ? board.step[g.k] : { rows: [], more: 0 } })).filter((g) => g.v.rows.length) }
+}
+
+/** 띠 본체 — 홈 띠(mini · 접고 펴기)와 상황판 페이지(big)가 같은 원천을 쓴다. 상자는 한 겹 — 덩이는 제목 + 가는 줄로만 나눈다 */
+function StripView({ b, owner, waiting, a, compact, big, head, folded }: {
+  b: Board | null; owner: boolean | null; waiting: StepGroup; a: Acts; compact?: boolean; big?: boolean; head?: ReactNode; folded?: boolean
+}) {
+  const { board, groups } = groupsOf(b, waiting)
   const total = board ? board.goals.length + board.quiet.length : 0
-  return <div className={`cx-strip ${compact ? 'mini' : ''} ${big ? 'big' : ''}`}>
+  const calm = board ? <div className="cx-calm"><i />{total ? `목표 ${total}개 모두 잘 도는 중` : '아직 정리된 목표가 없어요'}</div> : null
+  const none = b && noFile(b) ? <div className="cx-calm none">아직 주인 맥 판 없음<span>주인 맥이 판을 한 번 쓰면 여기에 보여요</span></div> : null
+  if (big) {
+    const rows = groups.flatMap((g) => g.v.rows)
+    const more = groups.reduce((n, g) => n + g.v.more, 0)
+    return <div className="cx-strip big">
+      {board ? <div className="cx-hero">{board.axis ? <b>{board.axis.text}</b> : null}<span className="s"><span><em>끝남</em> {board.tally.done}</span><span><em>하다 만</em> {board.tally.stalled}</span><span><em>새로 생김</em> {board.tally.added}</span></span></div> : null}
+      {none}
+      {rows.length ? <section className="cx-need">
+        <div className="cx-st"><b>지금 나설 곳</b><span className="m">내 답이 필요한 것 먼저 · 그다음 하다 만 일</span></div>
+        <div className="cx-list">{rows.map((r, i) => <StepItem key={`${r.kind}:${r.botId}:${r.taskId ?? r.sessionId ?? r.routine ?? i}`} r={r} a={a} />)}</div>
+        {more ? <span className="cx-more">외 {more} — 아래 목표 카드에 있어요</span> : null}
+      </section> : calm}
+    </div>
+  }
+  return <div className={`cx-strip ${compact ? 'mini' : ''} ${folded ? 'folded' : ''}`}>
     {head}
-    {board ? <div className="cx-axis">{board.axis ? <b>{board.axis.text}</b> : null}<span className="s">끝남 {board.tally.done} · 하다 만 {board.tally.stalled} · 새로 생김 {board.tally.added} · {owner === false ? `${board.host} 판 · ` : ''}{hm(board.at)} 정리</span></div> : null}
-    {b && noFile(b) ? <div className="cx-calm none">아직 주인 맥 판 없음<span>주인 맥이 판을 한 번 쓰면 여기에 보여요</span></div> : null}
-    {groups.length ? <div className="cx-need">{groups.map((g) => <div key={g.k} className={`cx-nk k-${g.k}`}>
-      <h3>{g.t}<span className="c">{g.v.rows.length + g.v.more}</span></h3>
-      {g.v.rows.map((r, i) => <StepItem key={`${r.botId}:${r.taskId ?? r.sessionId ?? r.routine ?? i}`} r={r} a={a} />)}
-      {g.v.more ? (big || !board ? <span className="cx-more">외 {g.v.more}{big ? ' — 아래 목표 카드에 있어요' : ''}</span> : <button className="cx-more" onClick={() => a.open()}>외 {g.v.more}</button>) : null}
-    </div>)}</div>
-      : board ? <div className="cx-calm"><i />{total ? `목표 ${total}개 모두 잘 도는 중` : '아직 정리된 목표가 없어요'}</div> : null}
+    {folded ? null : <div className="cx-sbody">
+      {board?.axis ? <div className="cx-axis"><b>{board.axis.text}</b></div> : null}
+      {none}
+      {groups.length ? groups.map((g) => <div key={g.k} className={`cx-grp k-${g.k}`}>
+        <div className="cx-gl">{g.t}<span className="c">{g.v.rows.length + g.v.more}</span></div>
+        {g.v.rows.map((r, i) => <StepItem key={`${r.botId}:${r.taskId ?? r.sessionId ?? r.routine ?? i}`} r={r} a={a} mini />)}
+        {g.v.more ? (board ? <button className="cx-more" onClick={() => a.open()}>외 {g.v.more} — 상황판에서</button> : <span className="cx-more">외 {g.v.more}</span>) : null}
+      </div>) : calm}
+    </div>}
   </div>
 }
 
-/** 홈 맨 위 띠 — 60초마다, 그리고 세션 상태가 바뀌면 다시 읽는다. 판을 못 읽고 기다리는 세션도 없으면(옛 호스트) 아무것도 안 그린다 */
+/** 접힌 머리줄의 요약 — «답 N» 만 앰버, 나머지는 회색 글자(압박 숫자를 색 배지로 세우지 않는다) */
+function foldSum(groups: Grp[]): ReactNode {
+  const n = (k: Grp['k']) => { const g = groups.find((x) => x.k === k); return g ? g.v.rows.length + g.v.more : 0 }
+  const parts: ReactNode[] = []
+  if (n('waiting')) parts.push(<span key="w" className="hot">답 {n('waiting')}</span>)
+  if (n('stalled')) parts.push(<span key="s">하다 만 {n('stalled')}</span>)
+  if (n('routine')) parts.push(<span key="r">루틴 {n('routine')}</span>)
+  return parts.length ? parts.flatMap((x, i) => (i ? [<span key={`d${i}`}> · </span>, x] : [x])) : null
+}
+
+/**
+ * 홈 맨 위 띠 — 60초마다, 그리고 세션 상태가 바뀌면 다시 읽는다. 판을 못 읽고 기다리는 세션도 없으면(옛 호스트) 아무것도 안 그린다.
+ * 🔴 2026-11-02 Dave — 머리줄을 누르면 접고 펴고(맥마다 기억 · `fb.cx.fold`), ↗ 는 상황판을 연다.
+ *    처음엔 펼침. 접어 두어도 «내 답을 기다림» 에 **새** 세션이 생기면 저절로 펼친다 — 답할 것을 놓치지 않게.
+ */
 export function ContextStrip({ go, open, compact, openRoutines }: { go: Go; open: Open; compact?: boolean; openRoutines?: () => void }) {
   const [b, setB] = useState<Board | null>(null)
   const [st, setSt] = useState<Status | null>(null)
   const [note, setNote] = useState('')
+  const [folded, setFolded] = useState(() => { try { return localStorage.getItem(FOLD_KEY) === '1' } catch { return false } })
+  const fold = (v: boolean) => { setFolded(v); try { if (v) localStorage.setItem(FOLD_KEY, '1'); else localStorage.removeItem(FOLD_KEY) } catch { /* 저장 못 해도 화면은 따른다 */ } }
   const waiting = useLocalWaiting()
   const { allow, busy } = useAllow(setNote)
   const load = () => { void api<Board>('/context/board?period=today').then(setB).catch(() => setB(null)); void api<Status>('/context/status').then(setSt).catch(() => {}) }
@@ -127,10 +181,25 @@ export function ContextStrip({ go, open, compact, openRoutines }: { go: Go; open
   const sig = useStateSig(); const first = useRef(true)
   useEffect(() => { if (first.current) { first.current = false; return } const t = window.setTimeout(load, 1500); return () => window.clearTimeout(t) }, [sig])
   useEffect(() => { if (!note) return; const t = window.setTimeout(() => setNote(''), 4000); return () => window.clearTimeout(t) }, [note])
+  // 새로 생긴 «내 답을 기다림» — 이 화면을 연 뒤에 처음 보는 세션 id 가 있으면 펼친다(연 순간 이미 있던 것은 접힌 머리줄의 «답 N» 이 알린다)
+  const seenWait = useRef<Set<string> | null>(null)
+  const waitIds = waiting.rows.map((r) => r.sessionId ?? '').filter(Boolean).join('|')
+  useEffect(() => {
+    const ids = waitIds ? waitIds.split('|') : []
+    if (seenWait.current && ids.some((id) => !seenWait.current!.has(id)) && folded) fold(false)
+    seenWait.current = new Set([...(seenWait.current ?? []), ...ids])
+  }, [waitIds])   // eslint-disable-line react-hooks/exhaustive-deps
   const snooze = async (r: StepRow) => { try { await api('/context/snooze', { body: { bot: r.botId, task: r.taskId } }); setNote('7일 동안 여기서 뺐어요'); load() } catch (e) { setNote(errMsg(e)) } }
   if (!b && !waiting.rows.length) return null
-  const head = <button className="cx-h" onClick={() => open()} aria-label="상황판 열기"><b>상황판</b>{note ? <span className="cx-note">{note}</span> : null}<span className="sp" /><Icon n="chev" size={9} color="var(--t3)" /></button>
-  return <StripView b={b} owner={st ? st.owner : null} waiting={waiting} a={{ go, open, openRoutines, snooze: (r) => void snooze(r), allow, busy }} compact={compact} head={head} />
+  const sum = folded ? foldSum(groupsOf(b, waiting).groups) : null
+  const head = <div className="cx-h">
+    <button className="cx-fold" onClick={() => fold(!folded)} aria-expanded={!folded} aria-label={folded ? '상황판 펼치기' : '상황판 접기'}>
+      <Icon n="chevd" size={10} color="var(--t3)" style={{ transform: folded ? 'rotate(-90deg)' : undefined, transition: 'transform .15s' }} /><b>상황판</b>
+      {note ? <span className="cx-note">{note}</span> : <span className="cx-sum">{folded ? sum : b && !noFile(b) ? hm(b.at) : null}</span>}
+    </button>
+    <button className="ib cx-open" onClick={() => open()} aria-label="상황판 열기" title="상황판 열기"><Icon n="open" size={12} /></button>
+  </div>
+  return <StripView b={b} owner={st ? st.owner : null} waiting={waiting} a={{ go, open, openRoutines, snooze: (r) => void snooze(r), allow, busy }} compact={compact} head={head} folded={folded} />
 }
 
 /* ── 상황판 페이지 ───────────────────────────────────────────────────────── */
@@ -140,14 +209,15 @@ function Bar({ counts }: { counts: Record<TaskState, number> }) {
 }
 
 function GoalTile({ g, onOpen }: { g: GoalCard; onOpen: () => void }) {
-  return <button className={`cx-gc ${g.problem ? 'bad' : ''}`} onClick={onOpen}>
-    <span className="top"><b className="nm">{g.folder}</b><span className="dd">{dueKo(g.due)}</span></span>
-    <span className="goal">{g.goal}</span>
-    {g.gap ? <span className="gap">{g.gap}</span> : null}
+  const due = dueTag(g.due)
+  // 🔴 테두리 색은 없다 — 문제 있는 목표는 이름 앞 앰버 점 하나(2026-11-02 Dave «두 색 + 회색»). 본문은 «목표 대비 남은 것» 이 있으면 그것, 없으면 목표
+  return <button className={`cx-gc ${g.problem ? 'bad' : ''}`} onClick={onOpen} title={g.goal}>
+    <span className="top">{g.problem ? <i className="cx-d" title="살펴볼 것이 있는 목표" /> : null}<b className="nm">{g.folder}</b><span className={`dd ${due.soon ? 'soon' : ''}`}>{due.t}</span></span>
+    <span className="goal">{g.gap || g.goal}</span>
     <Bar counts={g.counts} />
     {g.just ? <span className="ln"><span className="k">방금</span>{g.just}</span> : null}
     {g.next ? <span className="ln"><span className="k">다음</span>{g.next}</span> : null}
-    <span className="chips">{g.chips.sessions ? <span className="cx-chip">세션 {g.chips.sessions}</span> : null}{g.chips.routines ? <span className="cx-chip">루틴 {g.chips.routines}</span> : null}</span>
+    <span className="chips">{g.chips.sessions ? <span>세션 {g.chips.sessions}</span> : null}{g.chips.routines ? <span>루틴 {g.chips.routines}</span> : null}</span>
   </button>
 }
 
@@ -205,8 +275,8 @@ export function ContextPage({ onClose, go, goTodo, openRoutines, at, phone, open
           {b ? <>
             <StripView b={b} owner={owner} waiting={waiting} a={{ go, open, openRoutines, snooze: (r) => void snooze(r), allow, busy }} big />
             {b.goals.length ? <section className="cx-goals">
-              <div className="cx-gh"><b>목표</b><span className="m">문제 있는 목표 먼저 · 그다음 마감 가까운 순</span>
-                <span className="cx-leg">{STATES.map((x) => <span key={x}><i className={`st-${x}`} />{STATE_KO[x]}</span>)}</span></div>
+              <div className="cx-gh cx-st"><b>목표</b><span className="m">문제 있는 목표 먼저 · 그다음 마감 가까운 순</span>
+                <span className="cx-leg">{LEGEND.map((x) => <span key={x.k}><i className={`st-${x.k}`} />{x.t}</span>)}</span></div>
               <div className="cx-grid">{b.goals.map((g) => <GoalTile key={g.botId} g={g} onOpen={() => setGoal({ bot: g.botId })} />)}</div>
             </section> : null}
             {b.quiet.length ? <details className="cx-quiet"><summary>조용한 목표 {b.quiet.length}</summary>
