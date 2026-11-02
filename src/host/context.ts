@@ -60,6 +60,8 @@ export class ContextService {
   readonly store: ContextStore
   private q: ContextQueue
   private axis: Board['axis'] = null
+  /** 묶기 실패 횟수(카드 id 별 · 메모리만). GROUP_GIVEUP 번 실패한 카드는 «안 묶임» 으로 두고 다시 보내지 않는다 */
+  private groupFails = new Map<string, number>()
 
   constructor(private h: ContextHost, private ask: AskFn = oneShot) {
     this.store = new ContextStore({ dataDir: h.dataDir(), vaultRoot: h.registry.root })
@@ -298,8 +300,11 @@ export class ContextService {
     const fresh = cards.filter((c) => !have.has(c.id)).sort((a, b) => a.from - b.from)
     const routines = fresh.filter((c) => c.channel === 'routine')
     if (routines.length) f = routineTasks(f, routines, now)
-    const news = fresh.filter((c) => c.channel !== 'routine')
+    // 🔴 한 번에 GROUP_BATCH 장까지만 — 큰 폴더의 새 카드를 한꺼번에 보내면 45초를 넘겨 같은 입력이 계속 실패했다(2026-11-02 맥미니 40번). 남은 카드는 다음 차례에
+    const waitingNews = fresh.filter((c) => c.channel !== 'routine')
+    const news = waitingNews.slice(0, GROUP_BATCH)
     const facts = this.facts(bot)
+    let more = false
     if (news.length) {
       const input: GroupInput = {
         folder: nameOf(bot), goal: goalLine(facts.state, facts.stateMtime, facts.claude, now).text, newCards: news, tasks: f.tasks,
@@ -320,14 +325,29 @@ export class ContextService {
         const now2 = placed(f)
         const lost = news.filter((c) => !now2.has(c.id)).map((c) => c.id)
         if (lost.length) f = { ...f, loose: [...f.loose, ...lost] }
+        for (const c of news) this.groupFails.delete(c.id)
+        more = waitingNews.length > news.length
       } else if (res.blocked) this.pokeGroup(botId)   // 상한·사용량 — 줄이 풀리면 묶는다
-      else this.log(`맥락 작업 묶기를 못 했어요 — 다음 신호에 다시: ${nameOf(bot)}`)
+      else {
+        // 같은 카드가 GROUP_GIVEUP 번 실패하면 «안 묶임» 으로 — 같은 입력을 13~15분마다 다시 보내 호출만 쓰던 고리를 끊는다
+        const giveUp: string[] = []
+        for (const c of news) {
+          const n = (this.groupFails.get(c.id) ?? 0) + 1
+          if (n >= GROUP_GIVEUP) { giveUp.push(c.id); this.groupFails.delete(c.id) } else this.groupFails.set(c.id, n)
+        }
+        if (giveUp.length) {
+          f = { ...f, loose: [...f.loose, ...giveUp] }
+          more = waitingNews.length > news.length
+          this.log(`맥락 작업 묶기를 ${GROUP_GIVEUP}번 못 해서 카드 ${giveUp.length}장을 «안 묶임» 으로 뒀어요: ${nameOf(bot)}`)
+        } else this.log(`맥락 작업 묶기를 못 했어요 — 다음 신호에 다시: ${nameOf(bot)}`)
+      }
     }
     f = this.restate(f, byId, facts, now)
     if (!this.owner()) return   // 모델을 기다리는 사이 주인이 바뀌었다 — 쓰지 않는다
     this.store.putTasks(bot.abs, f)
     const b = this.persistBoard(now)
     this.maybeAxis(b, now)
+    if (more) this.pokeGroup(botId)   // 남은 새 카드 — 다음 묶음으로
   }
 
   /** 다른 폴더로 옮겨 간 카드(카드의 botId 가 이 폴더가 아님)는 이 폴더 작업에서 뺀다 */
@@ -490,6 +510,10 @@ function botKeys(bots: Bot[]): Map<string, string> {
 }
 
 const bodyOf = (c: SessionCard): CardBody => ({ intent: c.intent, done: c.done, promised: c.promised, ending: c.ending, taskHint: c.taskHint })
+
+/** 묶기 한 번에 보내는 새 카드 수 · 같은 카드가 이만큼 실패하면 «안 묶임» 으로 둔다 */
+export const GROUP_BATCH = 20
+export const GROUP_GIVEUP = 2
 
 function placed(f: FolderTasks): Set<string> { return new Set([...f.tasks.flatMap((t) => t.cards), ...f.loose]) }
 

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { ContextService, NotOwner, type ContextHost } from '../../src/host/context'
+import { ContextService, NotOwner, GROUP_BATCH, type ContextHost } from '../../src/host/context'
 import { CARD_MARK } from '../../src/core/contextCard'
 import { GROUP_MARK, STALL_MS, type FolderTasks } from '../../src/core/contextTasks'
 import { AXIS_MARK, continueTarget, type Board } from '../../src/core/contextBoard'
@@ -226,6 +226,44 @@ describe('ContextService — 주인 맥', () => {
     expect(t.loose).toEqual(['s_l'])
     expect(calls.filter((c) => c.prompt.startsWith(GROUP_MARK)).map((c) => c.model)).toEqual(['haiku', 'sonnet'])
     expect(svc.status().calls).toBe(calls.length)   // Haiku·Sonnet 두 번을 두 번으로 센다(최종 검토 1)
+  })
+
+  it('🔴 묶기는 한 번에 GROUP_BATCH 장까지 — 넘치는 새 카드는 다음 묶음으로 넘어가 모두 놓인다(2026-11-02 맥미니 시간 초과)', async () => {
+    const { ask, calls } = fakeAsk()
+    const svc = new ContextService(host(), ask)
+    const n = GROUP_BATCH + 5
+    for (let i = 0; i < n; i++) svc.onTurnEnd(sess(`s_b${i}`, 'hack1', [it_('user', '투표'), it_('assistant', '네')]))
+    await svc.idle()
+    // «새 카드» 칸의 줄만 센다(기존 작업 줄도 {"id" 로 시작한다)
+    const sizes = marked(calls, GROUP_MARK).map((c) => { const L = c.prompt.split('\n'); let k = L.indexOf('새 카드') + 1, m = 0; while (k < L.length && L[k].startsWith('{')) { m++; k++ } return m })
+    expect(sizes.length).toBeGreaterThan(1)
+    expect(Math.max(...sizes)).toBe(GROUP_BATCH)   // 한 번은 꽉 찬 묶음이 갔다 — 나눠 보냈다는 증거
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(GROUP_BATCH)
+    const t = tasksOf(bots[1])
+    const all = new Set([...t.tasks.flatMap((x) => x.cards), ...t.loose])
+    for (let i = 0; i < n; i++) expect(all.has(`s_b${i}`)).toBe(true)
+  })
+
+  it('🔴 같은 카드가 묶기에 두 번 실패하면 «안 묶임» 으로 — 같은 입력을 다시 보내지 않는다', async () => {
+    const base = fakeAsk()
+    const calls: string[] = []
+    const ask = async (prompt: string, opts: OneShotOpts): Promise<OneShotResult> => {
+      if (prompt.startsWith(GROUP_MARK)) { calls.push(prompt); return { ok: false, out: '', ms: 1 } }
+      return base.ask(prompt, opts)
+    }
+    const svc = new ContextService(host(), ask)
+    svc.onTurnEnd(sess('s_f1', 'hack1', [it_('user', '투표'), it_('assistant', '네')]))
+    await svc.idle()
+    expect(calls).toHaveLength(1)
+    expect(tasksOf(bots[1]).loose).toEqual([])
+    svc.onTurnEnd(sess('s_f2', 'hack1', [it_('user', '랜딩'), it_('assistant', '네')]))   // 다음 신호 — 두 번째 실패
+    await svc.idle()
+    expect(calls).toHaveLength(2)
+    expect(tasksOf(bots[1]).loose).toEqual(['s_f1'])   // 두 번 실패한 카드만
+    svc.onTurnEnd(sess('s_f3', 'hack1', [it_('user', '접수'), it_('assistant', '네')]))
+    await svc.idle()
+    expect(calls[2]).not.toContain('"id":"s_f1"')   // 내려놓은 카드는 다시 안 보낸다
+    expect(tasksOf(bots[1]).loose).toEqual(['s_f1', 's_f2'])
   })
 
   it('오케스트레이터 루틴 세션도 LLM 없이 → routine:<이름> 작업 (cardChannel 이 orch 를 먼저 봐도)', async () => {

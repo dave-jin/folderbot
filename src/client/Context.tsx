@@ -210,9 +210,11 @@ function Bar({ counts }: { counts: Record<TaskState, number> }) {
 
 function GoalTile({ g, onOpen }: { g: GoalCard; onOpen: () => void }) {
   const due = dueTag(g.due)
-  // 🔴 테두리 색은 없다 — 문제 있는 목표는 이름 앞 앰버 점 하나(2026-11-02 Dave «두 색 + 회색»). 본문은 «목표 대비 남은 것» 이 있으면 그것, 없으면 목표
+  // 🔴 테두리 색은 없다. 이름 앞 앰버 점은 «내 답을 기다리는 작업» 이 있을 때만(2026-11-02 Dave — 실제 판에서 문제 있는 목표가 거의 전부라 점이 구별을 못 했다).
+  // 하다 만 일은 진행 막대에만 보인다. 본문은 «목표 대비 남은 것» 이 있으면 그것, 없으면 목표
+  const ask = (g.counts.waiting ?? 0) > 0
   return <button className={`cx-gc ${g.problem ? 'bad' : ''}`} onClick={onOpen} title={g.goal}>
-    <span className="top">{g.problem ? <i className="cx-d" title="살펴볼 것이 있는 목표" /> : null}<b className="nm">{g.folder}</b><span className={`dd ${due.soon ? 'soon' : ''}`}>{due.t}</span></span>
+    <span className="top">{ask ? <i className="cx-d" title="내 답을 기다리는 일이 있어요" /> : null}<b className="nm">{g.folder}</b><span className={`dd ${due.soon ? 'soon' : ''}`}>{due.t}</span></span>
     <span className="goal">{g.gap || g.goal}</span>
     <Bar counts={g.counts} />
     {g.just ? <span className="ln"><span className="k">방금</span>{g.just}</span> : null}
