@@ -1,6 +1,7 @@
 import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Bot, ChatItem, NotifyEvent, PermissionMode, PermissionRequest, RoutineDef, SessionInfo, SessionState, SlashCmd } from '../core/types'
 import { api, setToken, token, uploadFile } from './api'
+import { cleanDraft, draftSid, isEmptyDraft, pickStart, sameDraft, shouldAdopt, type Draft, type DraftAtt } from '../core/draft'
 import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
 import { holdHeader, holdLine, holderOf, type Holder } from '../core/waiting'
 import { cliNeedsUpdate, cliVersionShort, cliUpdateLine } from '../core/cliUpdate'
@@ -31,6 +32,7 @@ import { fmtTime, useStore } from './store'
 import { cacheWriter } from './cache'
 import { ACT_ICON, FOLDER_SWIPE, type SwipeAct } from './swipe'
 import { CopyProgressHost } from './fileCopy'
+import { OpenSheetHost } from './openSheet'
 import { attachRoom } from '../core/attach'
 import { applyViewport, planViewport } from '../core/viewport'
 import { canStartSwipe, dragProgress, fromLeftEdge, lockOf, scrollableEats, stageOf, swipeVerdict } from '../core/drawer'
@@ -1148,6 +1150,7 @@ function Main() {
     <AskHost />
     <ConfirmHost />
     <ColorHost say={say} />
+    <OpenSheetHost say={say} />
     <LocalOpenHost />
     {pickFile ? <><div className="backdrop" onClick={() => setPickFile(null)} /><div className="modal conf pickfile" style={{ width: 'min(520px,calc(100% - 24px))' }}>
       <div className="modal-h"><div className="t"><b>{pickFile.name} — {pickFile.rels.length}곳에 있어요</b></div></div>
@@ -1461,20 +1464,67 @@ function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pendi
    */
   const draftKey = `fb:draft:${bot.id}:${cur?.id ?? 'new'}`
   const draftRef = useRef(draftKey)
+  /*
+   * 🔴 **DR · 초안의 정본은 호스트다** (2026-11-04 Dave: «채팅창은 자동 저장되어서 모바일이나 다른 곳에서도 동일한 세션에 동일한 채팅이 보이면 좋겠어 (첨부 포함)»).
+   *    기기 저장소(localStorage)는 줄이 끊겼을 때의 예비다. 고치면 0.7초 뒤 호스트로 가고, 호스트는 같은 세션을 연 다른 기기에 알린다.
+   * ⚠ **받은 초안은 다시 호스트로 밀지 않는다** — `appliedRef` 와 같은 내용이면 «내가 친 것» 이 아니다(되돌이·핑퐁 방지).
+   * ⚠ **지금 치고 있는 입력창은 덮지 않는다** (`core/draft.shouldAdopt` · 1.5초). 글자가 손가락 밑에서 바뀌면 안 된다.
+   * ⚠ 첨부는 경로만 간다(`cleanDraft`) — 미리보기 그림(thumb)은 그 기기 것이라 다른 기기에서는 이름 칩으로 보인다.
+   */
+  const sidKey = draftSid(cur?.id)
+  const typedAt = useRef(0); const localAt = useRef(0); const appliedRef = useRef<{ text: string; attach: DraftAtt[] } | null>(null)
+  const applyDraft = (d: { text?: string; attach?: DraftAtt[] } | null, at: number) => {
+    const t = d?.text ?? ''; const a = (d?.attach ?? []).map((x) => ({ uploaded: true, ...x }) as Att)
+    appliedRef.current = { text: t, attach: cleanDraft({ attach: a }).attach }; localAt.current = at; setText(t); setAttach(a)
+  }
+  /** 호스트 것을 받아 더 새것이면 들인다 · 호스트에 없고 이 기기에만 있으면 올린다(옛 판의 기기 초안을 넘기는 길) */
+  const pullDraft = (key: string, local: Draft | null) => {
+    void api<{ draft: Draft | null }>(`/bots/${bot.id}/draft?sid=${encodeURIComponent(draftSid(cur?.id))}`).then((r) => {
+      if (draftRef.current !== key) return
+      const start = pickStart(local, r.draft)
+      if (start && start === r.draft && !sameDraft(start, local) && Date.now() - typedAt.current > 1500) applyDraft(start, start.at)
+      else if (!r.draft && local && !isEmptyDraft(local)) void api(`/bots/${bot.id}/draft`, { body: { sid: draftSid(cur?.id), ...local } }).catch(() => {})
+    }).catch(() => { /* 호스트가 안 닿음 — 기기 예비본으로 계속 */ })
+  }
+  /** 보냈다 — 호스트 초안을 비운다(빈 값을 지금 시각으로). 다른 기기 입력창도 따라 비운다 */
+  const clearHostDraft = (sid: string) => { appliedRef.current = { text: '', attach: [] }; void api(`/bots/${bot.id}/draft`, { body: { sid, text: '', attach: [], at: Date.now() } }).catch(() => {}) }
+  const readLocal = (key: string): Draft | null => {
+    let d: { text?: string; attach?: Att[]; at?: number } = {}
+    try { d = JSON.parse(localStorage.getItem(key) ?? '{}') } catch { d = {} }
+    const c = cleanDraft({ text: d.text, attach: d.attach, at: d.at ?? 1 })
+    return isEmptyDraft(c) ? null : { ...c, at: d.at ?? 0 }
+  }
   useEffect(() => {
     draftRef.current = draftKey                      // ⚠ setText 보다 **먼저** 바꾼다 — 저장 이펙트가 새 키로 쓰게
-    let d: { text?: string; attach?: Att[] } = {}
+    let d: { text?: string; attach?: Att[]; at?: number } = {}
     try { d = JSON.parse(localStorage.getItem(draftKey) ?? '{}') } catch { d = {} }
-    setText(typeof d.text === 'string' ? d.text : '')
-    setAttach(Array.isArray(d.attach) ? d.attach : [])
-  }, [draftKey])
+    typedAt.current = 0
+    applyDraft({ text: typeof d.text === 'string' ? d.text : '', attach: Array.isArray(d.attach) ? d.attach : [] }, d.at ?? 0)
+    setAttach(Array.isArray(d.attach) ? d.attach : [])   // ⚠ 이 기기 것은 미리보기(thumb)까지 그대로
+    pullDraft(draftKey, readLocal(draftKey))
+  }, [draftKey]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const k = draftRef.current
+    const mine = { text, attach: cleanDraft({ attach }).attach }
+    const remote = !!appliedRef.current && sameDraft(mine, appliedRef.current)
+    if (!remote) { appliedRef.current = null; localAt.current = Date.now(); typedAt.current = Date.now() }
+    const at = localAt.current
     const t = window.setTimeout(() => {
-      try { if (text || attach.length) localStorage.setItem(k, JSON.stringify({ text, attach })); else localStorage.removeItem(k) } catch { /* 저장이 막힌 창 — 입력은 계속된다 */ }
+      try { if (text || attach.length) localStorage.setItem(k, JSON.stringify({ text, attach, at })); else localStorage.removeItem(k) } catch { /* 저장이 막힌 창 — 입력은 계속된다 */ }
     }, 300)
-    return () => window.clearTimeout(t)
-  }, [text, attach])
+    // 올리는 중인 첨부가 있으면 다 올라간 뒤에 보낸다 — 경로가 아직 임시 이름이다
+    const t2 = remote || attach.some((a) => a.uploading) ? 0 : window.setTimeout(() => { if (draftRef.current === k) void api(`/bots/${bot.id}/draft`, { body: { sid: sidKey, text, attach: mine.attach, at } }).catch(() => {}) }, 700)
+    return () => { window.clearTimeout(t); if (t2) window.clearTimeout(t2) }
+  }, [text, attach]) // eslint-disable-line react-hooks/exhaustive-deps
+  // 다른 기기에서 고친 초안 — 이 입력창의 세션 것이면 들인다
+  useEffect(() => {
+    const f = s.draftIn
+    if (!f || f.botId !== bot.id || f.sid !== sidKey) return
+    if (shouldAdopt({ incoming: f.draft, me: s.device.id, local: { text, attach: cleanDraft({ attach }).attach, at: localAt.current }, lastTypedAt: typedAt.current })) applyDraft(f.draft, f.draft?.at ?? Date.now())
+  }, [s.draftIn?.n]) // eslint-disable-line react-hooks/exhaustive-deps
+  // 다시 붙으면 호스트 것을 한 번 더 본다 — 끊긴 사이 다른 기기가 고쳤을 수 있다(리포 계약: 프레임으로만 최신이 되는 것은 재접속에도)
+  const wasOn = useRef(s.online === 'on')
+  useEffect(() => { const on = s.online === 'on'; if (on && !wasOn.current) pullDraft(draftRef.current, readLocal(draftRef.current)); wasOn.current = on }, [s.online]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [drill, setDrill] = useState<string | null>(null)
   const [drop, setDrop] = useState<'' | 'tree' | 'files'>(''); const [dropN, setDropN] = useState(0); const dragN = useRef(0)
@@ -1636,6 +1686,7 @@ function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pendi
     // 보냈으면 초안은 그 자리에서 지운다. ⚠ 첫 메시지는 세션을 만들며 키가 `new` → 실제 id 로 바뀌므로
     //    지연 저장이 새 키에 대고 지우는 수가 있다 — 둘 다 명시적으로 치운다.
     try { localStorage.removeItem(draftRef.current); localStorage.removeItem(`fb:draft:${bot.id}:new`) } catch { /* */ }
+    clearHostDraft(sidKey); if (sidKey !== 'new') clearHostDraft('new')   // DR · 다른 기기에도 «보냈음» 이 간다
     // 🔴 미뤄진 질문만 떠 있으면 대기열에 묶지 않고 바로 보낸다 — 호스트가 이 글로 질문을 닫는다(2026-10-02 Dave: «AskUserQuestion 을
     //    두번씩»). 묶어 두면 글이 안 보이게 기다리다 카드에 답한 **뒤에** 따로 들어가, 모델이 같은 질문을 또 하기도 했다.
     const deferredOnly = state === 'awaiting_input' && pending.length > 0 && pending.every((p) => p.deferred)
@@ -1678,6 +1729,7 @@ function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pendi
     setFixing(false)
     if (attach.length) t = `${t || '첨부한 파일을 봐 줘.'}\n\n첨부 파일 (읽어서 참고해):\n${attach.map((a) => (a.dir ? `- ${a.abs}/ (폴더 — 안의 파일들)` : `- ${a.abs}`)).join('\n')}`
     setText(''); setAttach([]); try { localStorage.removeItem(draftRef.current) } catch { /* */ }
+    clearHostDraft(sidKey)
     // 미뤄진 질문만 걸린 대기는 턴이 이미 끝났다 — 멈출 것 없이 바로 보낸다(그 말이 질문을 닫는다 · 리뷰 10/16)
     if (!mustWaitNow()) { try { await post(t) } catch (e) { onQueue((q) => [t, ...q]); say((e as Error).message) } return }
     await api(`/sessions/${sid}/interrupt`, { body: { by: 'human' } }).catch(() => {})
@@ -1706,6 +1758,7 @@ function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pendi
   const rewindSend = async (t: string): Promise<boolean> => {
     if (!cur || !cur.stopped) return false
     setText(''); setAttach([]); try { localStorage.removeItem(draftRef.current) } catch { /* */ }
+    clearHostDraft(sidKey)
     setBusy(true)
     try { const r = await api<{ ok: boolean }>(`/sessions/${cur.id}/rewind`, { body: { text: t, client: clientCtx() } }); return !!r.ok } catch { return false } finally { setBusy(false) }
   }

@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { openSheet } from './openSheet'
 import { createPortal } from 'react-dom'
 import { renderMarkdown } from './render'
 import { ImageView } from './ImageView'
@@ -354,6 +355,8 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
         <button className="ib openb" title={main ? '기본 앱으로 열기' : '이 기기에서 열기'} onClick={openHere}><Icon n="open" size={13} /></button>
         <span style={{ position: 'relative' }}><button className="ib" title="더 보기" onClick={(e) => setMenu(menu ? null : anchorOf(e.currentTarget, { right: true }))}><Icon n="more" size={13} /></button>
             {menu ? <Float at={menu} onClose={() => setMenu(null)}><div style={{ display: 'contents' }} onClick={() => setMenu(null)}>{heads.length > 1 ? <button onClick={() => setToc(!toc)}><Icon n="list" size={13} /><span>목차</span></button> : null}<button onClick={() => onTalk(rel)}><Icon n="sub" size={13} /><span>봇에게 이 파일 말하기</span></button><button onClick={() => onAttach(rel)}><Icon n="plus" size={13} /><span>첨부로 보내기</span></button><button onClick={() => { void copySay(`${bot.abs}/${rel}`, say, '경로를 복사했어요') }}><Icon n="file" size={13} /><span>경로 복사</span></button><button onClick={openHere}><Icon n="open" size={13} /><span>{main ? '기본 앱으로 열기' : '이 기기에서 열기'}</span></button>
+              {/* OL · 폰 — 다른 앱으로 · 내려받기 · 링크 복사 · Safari 를 한 시트로 (2026-11-04 Dave) */}
+              {phone && !main ? <button onClick={() => openSheet({ kind: 'file', bot, rel })}><Icon n="up" size={13} /><span>바깥으로 열기…</span></button> : null}
               {main ? null : <a className="menu-a" href={raw(rel)} download style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="doc" size={13} /><span>이 기기로 내려받기</span></a>}
               <a className="menu-a" href={raw(rel)} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', color: 'var(--t)', textDecoration: 'none', fontSize: 12.5 }}><Icon n="open" size={13} /><span>새 창에서 열기</span></a><hr /><button onClick={() => docs.pin(rel)}><Icon n="doc" size={13} /><span>탭 고정</span><span className="k">더블클릭</span></button>
               {/**

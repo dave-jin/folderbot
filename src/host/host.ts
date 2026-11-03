@@ -16,6 +16,7 @@ import { FolderWatch } from './watch'
 import { NameIndex } from './nameIndex'
 import { Notifier } from './notify'
 import { type HostConfig, absRoot, atomicWrite, dataDir, saveConfig } from './paths'
+import { DraftStore } from './drafts'
 import { McpAuth } from './mcpAuth'
 import { BridgeHub, type Incoming } from './bridge'
 import { INTERRUPTED_REASON, RunLog } from './runs'
@@ -52,6 +53,8 @@ export class Host {
   readonly sessions = new SessionManager()
   /** BF · 문서 창 충돌 사본 장부 — 필요 없어진 사본은 `sweepClashes` 가 스스로 휴지통에 넣는다 */
   readonly clashes = new ConflictBook()
+  /** DR · 입력창 초안 — 기기를 건너 같은 세션에서 이어 쓴다(앱 데이터 · Dropbox 밖) */
+  readonly drafts = new DraftStore(dataDir())
   readonly notifier: Notifier
   readonly routines: Routines
   /** BT · 로컬 MCP 세션 토큰 */

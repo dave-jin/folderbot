@@ -5017,6 +5017,55 @@ try {
           const left = await pg.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('fb:draft:')).length)
           if (left) fail('초안: 비웠는데 키가 남아 있다 ' + left)
         }
+        // 🔴 DR · 초안은 기기를 건너간다 (2026-11-04 Dave: «채팅창은 자동 저장되어서 모바일이나 다른 곳에서도 동일한 세션에 동일한 채팅이 보이면»)
+        //    맥(로컬) ↔ 폰(x-fb-as 로 원격) — 같은 세션 입력창이 0.7초 지연 저장 + 호스트 알림으로 이어진다. 비우면(=보냄) 양쪽 다 빈다.
+        {
+          const asDev = (name) => async (pgx) => { await pgx.addInitScript((n) => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark'); const of = window.fetch.bind(window); window.fetch = (u, o = {}) => { const h = new Headers(o.headers || {}); h.set('x-fb-as', n); return of(u, { ...o, headers: h }) } }, name) }
+          const val = (pgx) => pgx.getAttribute('.composer .cin', 'data-value').then((v) => v ?? '')
+          const until = async (pgx, want) => { let v = ''; for (let i = 0; i < 40; i++) { v = await val(pgx); if (v === want) return v; await wait(150) } return v }
+          const url = pg.url()
+          const rp = await br.newPage({ viewport: { width: 1200, height: 800 }, deviceScaleFactor: 1 }); await asDev('phone')(rp)
+          await rp.goto(url); await rp.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(900)
+          await pg.fill('.composer .cin', '맥에서 쓰던 초안')
+          let v = await until(rp, '맥에서 쓰던 초안'); if (v !== '맥에서 쓰던 초안') fail('DR 초안: 맥에서 친 글이 폰 입력창에 안 왔다 · ' + JSON.stringify(v))
+          await wait(1700)   // 맥 쪽 «방금 친 입력창은 덮지 않는다»(1.5초)가 지나길
+          await rp.fill('.composer .cin', '폰에서 이어 씀')
+          v = await until(pg, '폰에서 이어 씀'); if (v !== '폰에서 이어 씀') fail('DR 초안: 폰에서 고친 글이 맥에 안 왔다 · ' + JSON.stringify(v))
+          await wait(1700)
+          const np = await br.newPage({ viewport: { width: 1200, height: 800 }, deviceScaleFactor: 1 }); await asDev('tablet')(np)
+          await np.goto(url); await np.waitForSelector('.composer .cin', { timeout: 15000 })
+          v = await until(np, '폰에서 이어 씀'); if (v !== '폰에서 이어 씀') fail('DR 초안: 새로 연 기기가 호스트 초안으로 시작하지 않았다 · ' + JSON.stringify(v))
+          await np.close()
+          await rp.fill('.composer .cin', '')
+          v = await until(pg, ''); if (v !== '') fail('DR 초안: 폰에서 비웠는데 맥에 남았다 · ' + JSON.stringify(v))
+          await rp.close()
+          ok('DR 초안: 맥 ↔ 폰 같은 세션 입력창이 이어진다 · 새로 연 기기도 호스트 초안으로 · 비우면 양쪽 다')
+        }
+        // 🔴 OL · 홈 화면 웹 앱에서 바깥 링크는 «바깥으로 열기» 시트로 (2026-11-04 Dave: 앱 안 브라우저에서 «Safari 로» 가 안 됨)
+        {
+          const sp = await br.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, hasTouch: true })
+          await sp.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark'); Object.defineProperty(navigator, 'standalone', { get: () => true }); window.__opened = []; window.open = (u) => { window.__opened.push(String(u)); return null } })
+          await sp.goto(base + `/#bot=${bot.id}`); await sp.waitForSelector('.app', { timeout: 15000 }); await wait(800)
+          await sp.evaluate(() => { const a = document.createElement('a'); a.id = 'olx'; a.href = 'https://theminda.com/esim'; a.target = '_blank'; a.textContent = '링크'; a.style.cssText = 'position:fixed;top:120px;left:20px;z-index:99'; document.body.appendChild(a) })
+          await sp.click('#olx'); await wait(300)
+          const rows = await sp.$$eval('.opensheet .osr .osl b', (bs) => bs.map((b) => b.textContent))
+          if (rows.join('|') !== 'Safari 에서 열기|앱 안에서 보기|다른 앱으로|링크 복사|닫기') fail('OL: 시트 줄이 다르다 ' + JSON.stringify(rows))
+          if ((await sp.evaluate(() => window.__opened.length)) !== 0) fail('OL: 시트를 띄우기 전에 이미 열었다')
+          await sp.screenshot({ path: 'test/tmp/phone-opensheet.png' })
+          await sp.click('.opensheet .osr:has-text("앱 안에서 보기")'); await wait(200)
+          const op = await sp.evaluate(() => window.__opened); if (op[0] !== 'https://theminda.com/esim') fail('OL: «앱 안에서 보기» 가 그 주소를 안 열었다 ' + JSON.stringify(op))
+          if (await sp.$('.opensheet')) fail('OL: 고른 뒤에도 시트가 남았다')
+          await sp.close()
+          // 브라우저 탭(standalone 아님)은 종전대로 — 가로채지 않는다
+          const tp = await br.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 })
+          await tp.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
+          await tp.goto(base + `/#bot=${bot.id}`); await tp.waitForSelector('.app', { timeout: 15000 }); await wait(500)
+          await tp.evaluate(() => { const a = document.createElement('a'); a.id = 'olx'; a.href = 'https://example.invalid/'; a.target = '_blank'; a.textContent = '링크'; a.style.cssText = 'position:fixed;top:120px;left:20px;z-index:99'; a.addEventListener('click', (e) => e.preventDefault()); document.body.appendChild(a) })
+          await tp.click('#olx'); await wait(300)
+          if (await tp.$('.opensheet')) fail('OL: 브라우저 탭에서도 시트가 떴다')
+          await tp.close()
+          ok('OL: 홈 화면 웹 앱의 바깥 링크는 시트(Safari · 앱 안 · 다른 앱 · 복사) · 브라우저 탭은 종전대로')
+        }
         // 명령 · 스킬 — 한 줄에 «아이콘 · 이름 · 범위» (2026-09-13 Dave: «지침과 하네스쪽 디자인도 깨져 있어»)
         //    클래스만 붙이고 CSS 를 안 써서 아이콘이 한 줄, 이름·범위가 붙어 흘렀다
         //    ⚠ V(09-22) 에서 「지침 · 하네스」와 「슬래시 명령」이 한 칸(명령 · 스킬)으로 합쳐졌다

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { draftSid } from '../core/draft'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { execFile } from 'node:child_process'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
@@ -640,6 +641,9 @@ export class Gateway {
       //    에이전트 연동 삭제»*). 레일의 «지우기» 는 위 `stop` — 목록에서만 덜어낸다. 파일을 치우는 것은
       //    아래 트리의 `sub === 'trash'` 로, **봇 폴더 안 파일**에만 닿는다.
       if (sub === 'sessions' && m === 'GET') return json(200, h.sessions.list(bot.id))
+      // DR · 입력창 초안 — 보내지 않은 글과 첨부 경로를 세션마다 호스트에 둔다. 바뀌면 다른 기기에 알린다(core/draft · host/drafts)
+      if (sub === 'draft' && m === 'GET') return json(200, { draft: h.drafts.get(bot.id, url.searchParams.get('sid') ?? 'new') })
+      if (sub === 'draft' && m === 'POST') { const b = await body(); const sid = draftSid(String(b.sid ?? '')); const d = h.drafts.set(bot.id, sid, b, who.id); h.broadcast({ ev: 'draft', botId: bot.id, sid, draft: d, by: d?.by ?? who.id }); return json(200, { draft: d }) }
       // ⚠ `vendor` 는 **세션마다** 고를 수 있다 — 한 폴더에 Claude 세션과 Codex 세션이 섞여 산다
       if (sub === 'sessions' && m === 'POST') {
         const b = await body(); const vd = b.vendor === 'codex' || b.vendor === 'claude' ? b.vendor : undefined

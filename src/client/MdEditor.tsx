@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { openExternal } from './openSheet'
 import { EditorSelection, EditorState, StateEffect, StateField, Transaction, type Extension, type Range } from '@codemirror/state'
 import { EditorView, Decoration, ViewPlugin, WidgetType, keymap, type DecorationSet } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
@@ -161,7 +162,7 @@ const lead = (t: string): number => /^[*_~`]*/.exec(t)?.[0].length ?? 0
  * 길은 `window.open(_blank)` 하나뿐이다 — 데스크톱 셸의 `setWindowOpenHandler` 가 받아 기본 브라우저로 넘기고
  * (`desktop/main.js`), 폰·브라우저에서는 새 탭이다. 채팅 답변(`Sheets.tsx`)과 같은 계약.
  */
-function openExt(url: string): void { window.open(url, '_blank', 'noopener,noreferrer') }
+function openExt(url: string): void { openExternal(url) }   // OL · 홈 화면 웹 앱이면 «바깥으로 열기» 시트
 
 /**
  * 본문 링크의 «누르면 열린다» 표식 — **마크**라 문서 글자는 한 자도 안 바뀐다(churn 0).

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react'
 import type { PermissionMode, AuthState, Bot, Candidate, ChatItem, FolderRules, Frame, NotifyEvent, PermissionRequest, SessionInfo, TodoItem } from '../core/types'
 import { api, connectEvents, resyncPush, token } from './api'
+import type { Draft } from '../core/draft'
 import { cacheWriter, pool, readChats, storeVer, writeChats } from './cache'
 import { forgetMissing } from './existsCache'
 
@@ -10,6 +11,8 @@ export interface StateShape {
   root: string
   /** 마지막 «문서 창 열어 달라» 프레임(rondo_open/rondo_reveal) — n 은 같은 내용이 또 와도 효과가 돌게 하는 번호 */
   docReq?: { botId: string; sid: string; rel: string; action: 'open' | 'reveal'; turn: number; device?: string; n: number }
+  /** DR · 다른 기기에서 바뀐 입력창 초안 — 마지막 한 건만. 입력창이 자기 세션 것이면 들인다(`core/draft.shouldAdopt`). n 은 같은 값이 또 와도 다시 보게 */
+  draftIn?: { botId: string; sid: string; draft: Draft | null; by: string; n: number }
   rules: FolderRules | null
   rulesInstalled: boolean
   bots: Bot[]
@@ -104,6 +107,7 @@ function reducer(s: StateShape, a: Action): StateShape {
         case 'todo': return { ...s, todos: { ...s.todos, [f.botId]: f.items } }
         case 'files': return { ...s, filesTick: { ...s.filesTick, [f.botId]: Date.now() } }
         case 'inbox': return { ...s, inbox: f.count }
+        case 'draft': return { ...s, draftIn: { botId: f.botId, sid: f.sid, draft: f.draft, by: f.by, n: Date.now() } }
         // J-4 · 세션 줄에도 남긴다 — 지금 다른 봇을 보고 있어도 그 봇으로 가면 연다(`core/docReq`)
         case 'doc': {
           const list = s.sessionsByBot[f.botId]

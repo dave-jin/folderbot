@@ -3,6 +3,7 @@ import { api } from './api'
 import { fmtTime } from './store'
 import { freshness, type HostStat, type LocalStat } from '../core/localOpen'
 import type { Bot } from '../core/types'
+import { openSheet } from './openSheet'
 
 /**
  * 원격에서 파일 열기 (E · 2026-09-19 Dave 1안 확정) — «Finder 에서 보기 · 열기» 가 **지금 앉아 있는 기기에서** 된다.
@@ -59,7 +60,9 @@ export async function openOnThisDevice(bot: Bot, rel: string, mode: OpenMode, ct
   }
   const b = localBridge()
   if (!b) {
-    if (ctx.phone) { ctx.say('이 기기에서는 열 수 없어요 — 맥에서 열거나 «이 기기로 내려받기» 를 쓰세요'); return }
+    // OL · 폰에서 «열기» 는 «열 수 없어요» 로 끝내지 않는다(2026-11-04 Dave) — 다른 앱으로 · 내려받기 · 링크 복사 · Safari 시트.
+    // «Finder 에서 보기»(봇의 rondo_reveal 포함)는 종전대로 안내만 — 사람이 누르지 않은 시트가 폰에 불쑥 뜨지 않게(J-3 계약)
+    if (ctx.phone) { if (mode === 'open') openSheet({ kind: 'file', bot, rel }); else ctx.say('이 기기에서는 Finder 로 못 보여 드려요 — 문서 창 ⋯ 의 «바깥으로 열기…» 를 쓰세요'); return }
     window.open(`${rawUrl(bot, rel)}&token=${encodeURIComponent(localStorage.getItem('folderbot:token') ?? '')}`, '_blank', 'noopener'); ctx.say('이 브라우저에서는 내려받기로 열어요'); return
   }
   const st = await b.settings()

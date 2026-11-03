@@ -1,4 +1,5 @@
 /** Folder Bot — 호스트·클라이언트가 공유하는 순수 타입 (Electron/DOM 의존 없음) */
+import type { Draft } from './draft'
 import type { AskMark } from './askMark'
 import type { DocReq } from './docReq'
 
@@ -312,6 +313,8 @@ export type Frame =
   | { ev: 'inbox'; count: number }
   /** BQ-9 · 연결(Bridge) 화면을 다시 읽어라 — 편지 들어옴·보냄·끊김·설정. 내용은 싣지 않는다(`GET /api/bridges`) */
   | { ev: 'bridges' }
+  /** DR · 입력창 초안이 바뀌었다 — 같은 세션을 연 다른 기기가 받아 이어 쓴다. 보내서 비우면 draft 는 null */
+  | { ev: 'draft'; botId: string; sid: string; draft: Draft | null; by: string }
 
 export const STATE_LABEL: Record<SessionState, string> = {
   idle: '대기', running: '일하는 중', awaiting_input: '확인해 주세요', done: '끝났어요', error: '문제 있어요'
