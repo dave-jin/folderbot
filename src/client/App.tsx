@@ -421,6 +421,17 @@ function Main() {
    *    그대로 유지되어야 하는데 항상 채팅 화면으로 가더라»*). 목록은 덮개일 뿐이라 걷으면 밑에 있던 것이 나와야 한다.
    */
   const navClose = () => { if (view === 'list') setView(underRef.current); else setNav(dismiss) }
+  /**
+   * DT · **채팅 탭을 두 번 연달아 누르면 봇 목록(사이드 메뉴)이 열린다** (2026-11-04 Dave: *«채팅 버튼 연속 두번 누르면 사이드 메뉴가 나오게 해줘»*).
+   *    첫 누름은 지금처럼 채팅으로 가고, 0.35초 안의 두 번째 누름이 좌상단 ☰ 와 같은 `toList` 를 부른다.
+   *    ⚠ `dblclick` 에 기대지 않는다 — iOS 는 `touch-action:manipulation` 아래 버튼에서 dblclick 을 믿을 수 없게 낸다. 누른 시각을 직접 잰다.
+   */
+  const chatTapAt = useRef(0)
+  const chatTab = () => {
+    const now = Date.now()
+    if (now - chatTapAt.current < 350) { chatTapAt.current = 0; toList(); return }
+    chatTapAt.current = now; setView('chat')
+  }
   const [lay, setLay] = useState<Layout>(() => { try { return { ...DEF, ...JSON.parse(localStorage.getItem('fb:layout') ?? '') } } catch { return DEF } })
   useEffect(() => { localStorage.setItem('fb:layout', JSON.stringify(lay)) }, [lay])
   const [docOpen, setDocOpen] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem('fb:docopen') ?? '{}') } catch { return {} } })
@@ -1143,7 +1154,7 @@ function Main() {
         const on = tabActive(view, panelTab)
         const todoN = (s.todos[bot.id] ?? []).filter((t) => !t.done).length
         return <nav className="tabbar">
-          <button className={`tb ${on === 'chat' ? 'on' : ''}`} data-tab="chat" onClick={() => setView('chat')}><Icon n="chat" size={19} /><span>채팅</span></button>
+          <button className={`tb ${on === 'chat' ? 'on' : ''}`} data-tab="chat" onClick={chatTab}><Icon n="chat" size={19} /><span>채팅</span></button>
           <button className={`tb ${on === 'doc' ? 'on' : ''} ${docs.tabs.length ? '' : 'dim'}`} data-tab="doc" onClick={() => setView('doc')}><Icon n="doc" size={19} />{docs.tabs.length ? <span className="bd">{docs.tabs.length}</span> : null}<span>문서</span></button>
           <button className={`tb ${on === 'todo' ? 'on' : ''}`} data-tab="todo" onClick={() => { setPanelTab('todo'); setView('panel') }}><Icon n="check" size={19} />{todoN ? <span className="bd">{todoN}</span> : null}<span>{bot.orchestrator ? 'Inbox' : '할 일'}</span></button>
           <button className={`tb ${on === 'files' ? 'on' : ''}`} data-tab="files" onClick={() => { setPanelTab('files'); setView('panel') }}><Icon n="folder" size={19} /><span>폴더</span></button>

@@ -6267,6 +6267,18 @@ try {
           // 🔴 폰에는 떠 있는 독이 없다 — 하단 탭이 그 자리다(Z · 2026-09-22 Dave 「B」)
           if (await vpg.$('.dock')) fail('🔴 Z: 폰에 아직 떠 있는 독이 있다 — 하단 탭이어야 한다')
           if (!(await vpg.$('.tabbar [data-tab="files"]'))) fail('🔴 Z: 폰에 하단 탭이 없다')
+          // DT · 채팅 탭을 두 번 연달아 누르면 봇 목록 서랍이 열린다 — 한 번이나 느린 두 번은 안 연다 (2026-11-04 Dave)
+          {
+            const listOpen = () => vpg.evaluate(() => !!document.querySelector('.drawer.left.open'))
+            await vpg.click('.tabbar [data-tab="chat"]'); await wait(700)
+            if (await listOpen()) fail('DT: 채팅 탭을 한 번 눌렀는데 봇 목록이 열렸다')
+            await vpg.click('.tabbar [data-tab="chat"]'); await wait(700)
+            if (await listOpen()) fail('DT: 느리게 두 번 눌렀는데 봇 목록이 열렸다')
+            await vpg.click('.tabbar [data-tab="chat"]', { delay: 0 }); await wait(120); await vpg.click('.tabbar [data-tab="chat"]', { delay: 0 }); await wait(600)
+            if (!(await listOpen())) fail('DT: 채팅 탭을 두 번 연달아 눌렀는데 봇 목록이 안 열렸다 ' + await vpg.evaluate(() => document.querySelector('.app').dataset.view))
+            await vpg.evaluate(() => document.querySelector('.scrim')?.click()); await wait(600)
+            if (await listOpen()) fail('DT: 덮개를 눌러도 봇 목록이 안 닫힌다')
+          }
 
           /**
            * 폴더 패널을 연다. 🔴 **「명령 · 스킬」은 AD(2026-09-23)로 폰에서 빠졌다** — Dave: *«하네스나 스킬 같은 건
