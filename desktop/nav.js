@@ -27,4 +27,22 @@ function withHash(url, hash) {
   return cur ? `${url}&${h}` : `${url}${h}`
 }
 
-module.exports = { navHash, withHash }
+/**
+ * 딥링크 → 화면 해시 (DQ · 2026-11-04). `folderbot://bot/<id>?s=<sid>&ask=<글>` — 모르는 모양이면 ''.
+ * `ask` 는 4,000자(`src/core/deepAsk.ts` MAX_ASK 와 같은 값)를 넘으면 싣지 않는다 — 화면이 다시 보고 채우기만 한다(보내지 않음).
+ */
+const MAX_ASK = 4000
+function deepLinkHash(url) {
+  let u
+  try { u = new URL(url) } catch { return '' }
+  if (u.protocol !== 'folderbot:' || u.hostname !== 'bot') return ''
+  const bot = u.pathname.split('/').filter(Boolean)[0]
+  if (!bot) return ''
+  const p = new URLSearchParams()
+  p.set('bot', decodeURIComponent(bot))
+  const s = u.searchParams.get('s'); if (s) p.set('s', s)
+  const ask = u.searchParams.get('ask'); if (ask && ask.trim() && [...ask].length <= MAX_ASK) p.set('ask', ask)
+  return p.toString()
+}
+
+module.exports = { navHash, withHash, deepLinkHash }

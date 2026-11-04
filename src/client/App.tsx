@@ -1,6 +1,7 @@
 import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Bot, ChatItem, NotifyEvent, PermissionMode, PermissionRequest, RoutineDef, SessionInfo, SessionState, SlashCmd } from '../core/types'
 import { api, setToken, token, uploadFile } from './api'
+import { FILL_BLOCK, cleanAsk, joinFill } from '../core/deepAsk'
 import { cleanDraft, draftSid, isEmptyDraft, pickStart, sameDraft, shouldAdopt, type Draft, type DraftAtt } from '../core/draft'
 import { FolderBot, Icon, Mid, moodOf } from './FolderBot'
 import { holdHeader, holdLine, holderOf, type Holder } from '../core/waiting'
@@ -944,6 +945,27 @@ function Main() {
   // BO · 누르는 순간 그 세션으로 간다 — 만들기는 뒤에서(`newSession.ts`). ⛔ 여기서 호스트 답이나 /state 를 기다리지 않는다
   const newSession = async () => { startSession({ bot, name: `세션 ${sessions.filter((x) => sessArea(x) === 'chat').length + 1}`, defaults: s.defaults, dispatch, go, prev: sessionId, say, after: () => void refreshModels() }) }
   /**
+   * DQ · 딥링크 `?ask=` — 그 봇 입력칸에 채우기만 한다(보내지 않음 · `core/deepAsk`). `s` 가 있고 목록에 있으면 그 세션,
+   *   없으면 새 세션을 열어 채운다(보던 대화에 바깥 질문이 끼지 않게). 쓰다 만 글은 덮지 않고 빈 줄 하나 뒤에.
+   * ⚠ `ask` 는 주소에서 곧바로 뗀다 — 남겨 두면 새로고침·다시 켤 때마다 또 채운다. 같은 주소는 한 번만 쓴다(`askTook`).
+   * ⚠ 봇 목록이 오기 전에는 기다린다 — 모르는 봇이면 채우지 않는다(엉뚱한 봇의 입력칸에 들어가지 않게).
+   */
+  const askTook = useRef('')
+  useEffect(() => {
+    if (hash.ask == null || !s.loaded) return
+    const key = `${hash.bot ?? ''}|${hash.s ?? ''}|${hash.ask}`
+    if (askTook.current === key) return
+    askTook.current = key
+    const text = cleanAsk(hash.ask)
+    const target = hash.bot && s.bots.some((b) => b.id === hash.bot) ? hash.bot : ''
+    const keep = hash.s && sessions.some((x) => x.id === hash.s) ? hash.s : ''
+    setHash({ ...(hash.bot ? { bot: hash.bot } : {}), ...(keep ? { s: keep } : {}) })
+    if (!text || !target || bot?.id !== target) { if (hash.ask && !text) say('바깥에서 온 글이 비었거나 4,000자를 넘어 채우지 않았어요'); return }
+    if (!keep) void newSession()
+    setPrefill(FILL_BLOCK + text)
+    if (phone) setView('chat')
+  }, [hash.ask, hash.bot, hash.s, s.loaded, s.bots]) // eslint-disable-line react-hooks/exhaustive-deps
+  /**
    * 전역 단축키 — **맥 앱의 상식대로** (2026-09-13 Dave: «맥 기본 단축키로»).
    *
    * 🔴 **전부 ⌘(⌃) 를 낀다.** 맨 글자 단축키를 두면 **입력칸에 글자를 치는 순간 명령이 돈다** —
@@ -1555,7 +1577,7 @@ function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pendi
   const cfg = { model: cur?.model || draft.model || (vendOf() === 'codex' ? (s.defaults.codex?.model || DEFAULT_MODEL.codex) : (s.defaults.model || DEFAULT_MODEL.claude)), effort: cur?.effort || draft.effort || (vendOf() === 'codex' ? (s.defaults.codex?.effort || DEFAULT_EFFORT.codex) : (s.defaults.effort || DEFAULT_EFFORT.claude)), mode: (cur?.permissionMode || draft.permissionMode || 'default') as PermissionMode }
   // ⚠ 대기열은 여기서 비우지 않는다 — 세션마다 부모가 따로 들고 있다(위 `queues` 머리말)
   useEffect(() => { setDrill(null); setDraft({}); setPop('') }, [cur?.id])
-  useEffect(() => { if (prefill) { setText((t) => (t ? `${t} ${prefill}` : prefill)); onPrefilled(); taRef.current?.focus() } }, [prefill])
+  useEffect(() => { if (prefill) { setText((t) => joinFill(t, prefill)); onPrefilled(); taRef.current?.focus() } }, [prefill])
   useEffect(() => { if (focusReq) taRef.current?.focus() }, [focusReq])
   useEffect(() => { if (attachReq.length) { for (const r of attachReq) addAtt(r); onAttached() } }, [attachReq])
   useEffect(() => { if (mentionReq.length) { for (const rel of mentionReq) mention(rel); onMentioned() } }, [mentionReq])

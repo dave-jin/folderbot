@@ -21,7 +21,7 @@ const { clampZoom, stepZoom, zoomPct } = require('./zoom')
  * ⚠ 스위치는 `app.whenReady()` **전에** 걸어야 먹는다.
  */
 app.commandLine.appendSwitch('disable-features', 'OverscrollHistoryNavigation')
-const { navHash, withHash } = require('./nav')
+const { navHash, withHash, deepLinkHash } = require('./nav')
 const { createNoteKeeper } = require('./notes')
 const notes = createNoteKeeper()   // 띄운 알림을 눌리거나 닫힐 때까지 붙잡는다 — GC 가 클릭 처리기를 가져가던 버그(notes.js 머리말)
 if (process.env.FOLDERBOT_QA) global.__fbNotes = notes   // QA 손잡이 — 검사가 «붙잡혔나» 를 직접 본다
@@ -52,8 +52,8 @@ app.on('second-instance', (_e, argv) => { const u = argv.find((a) => a.startsWit
 app.on('open-url', (e, url) => { e.preventDefault(); openDeepLink(url) })
 
 function openDeepLink(url) {
-  // folderbot://bot/<id>?s=<sid>  → 해당 대화로
-  try { const u = new URL(url); const parts = u.pathname.split('/').filter(Boolean); const bot = u.hostname === 'bot' ? parts[0] : null; if (bot) navigate(`#bot=${bot}${u.searchParams.get('s') ? `&s=${u.searchParams.get('s')}` : ''}`) } catch {}
+  // folderbot://bot/<id>?s=<sid>&ask=<글>  → 해당 대화로 · `ask` 는 입력칸에 채우기만(DQ · `nav.js` deepLinkHash)
+  const h = deepLinkHash(url); if (h) navigate(`#${h}`)
 }
 /**
  * 🔴 창이 없으면 **만든다** (2026-09-17 Dave: «알람 버튼 클릭하면 해당 세션으로 이동해야 해»). 종전엔 목적지만 적고

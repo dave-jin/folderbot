@@ -5126,6 +5126,38 @@ try {
           await rp.close()
           ok('DR 초안: 맥 ↔ 폰 같은 세션 입력창이 이어진다 · 새로 연 기기도 호스트 초안으로 · 비우면 양쪽 다')
         }
+        // 🔴 DQ · 딥링크 `?ask=` 는 입력칸에 채우기만 한다 (2026-11-04 Alfred 봇 요청 · Dave «지금 만들고 v211 배포»)
+        //    셸은 `folderbot://bot/<id>?ask=` 를 `#bot=…&ask=…` 로 옮긴다(`desktop/nav.js` deepLinkHash · 유닛). 여기서는 화면 쪽을 잰다.
+        {
+          const val = () => pg.getAttribute('.composer .cin', 'data-value').then((v) => v ?? '')
+          const hashOf = () => pg.evaluate(() => Object.fromEntries(new URLSearchParams(location.hash.slice(1))))
+          const until = async (want) => { let v = ''; for (let i = 0; i < 40; i++) { v = await val(); if (v === want) return v; await wait(150) } return v }
+          const B = encodeURIComponent(bot.id)
+          const back = await pg.evaluate(() => location.hash)   // 뒤 검사들이 보던 세션 — 끝나면 되돌린다
+          const sid0 = (await api(`/bots/${bot.id}/sessions`, { name: 'dq-ask' })).id
+          await pg.evaluate((h) => { location.hash = h }, `#bot=${B}&s=${sid0}`); await pg.waitForSelector('.composer .cin', { timeout: 8000 }); await wait(900)
+          if ((await hashOf()).s !== sid0) fail('DQ: 시작 세션으로 못 갔다 ' + JSON.stringify(await hashOf()))
+          const users = async (sid) => (await api(`/sessions/${sid}/chat`)).items.filter((x) => x.kind === 'user').length
+          const n0 = await users(sid0)
+          await pg.fill('.composer .cin', '쓰던 글'); await wait(200)
+          await pg.evaluate((h) => { location.hash = h }, `#bot=${B}&s=${sid0}&ask=${encodeURIComponent('바깥 질문\n둘째 줄')}`)
+          let v = await until('쓰던 글\n\n바깥 질문\n둘째 줄'); if (v !== '쓰던 글\n\n바깥 질문\n둘째 줄') fail('DQ: 지금 세션 쓰던 글 뒤에 빈 줄 하나로 안 붙었다 · ' + JSON.stringify(v))
+          const h1 = await hashOf(); if ('ask' in h1 || h1.s !== sid0) fail('DQ: ask 가 주소에 남았거나 세션이 바뀌었다 · ' + JSON.stringify(h1))
+          await wait(900)
+          if ((await users(sid0)) !== n0) fail('DQ: 채우기만 해야 하는데 보냈다')
+          await pg.fill('.composer .cin', ''); await wait(900)
+          await pg.evaluate((h) => { location.hash = h }, `#bot=${B}&ask=${encodeURIComponent('새 세션 질문')}`)
+          v = await until('새 세션 질문'); if (v !== '새 세션 질문') fail('DQ: 세션 없이 온 글이 새 세션 입력칸에 안 채워졌다 · ' + JSON.stringify(v))
+          const h2 = await hashOf(); if ('ask' in h2 || !h2.s || h2.s === sid0) fail('DQ: 새 세션으로 안 갔다 · ' + JSON.stringify(h2))
+          await pg.fill('.composer .cin', ''); await wait(900)
+          await pg.evaluate((h) => { location.hash = h }, `#bot=${B}&s=${h2.s}&ask=${encodeURIComponent('가'.repeat(4001))}`)
+          await wait(900); v = await val(); if (v !== '') fail('DQ: 4,000자 넘는 글을 채웠다 · ' + v.length)
+          if ('ask' in (await hashOf())) fail('DQ: 너무 긴 ask 가 주소에 남았다')
+          // 만든 세션 둘을 지우고 원래 주소로 — 뒤 검사(↓ 최근으로 등)는 «가장 최근 세션» 의 긴 대화를 전제한다
+          for (const sid of [sid0, h2.s]) await api(`/sessions/${sid}`, undefined, 'DELETE').catch(() => {})
+          await pg.evaluate((h) => { location.hash = h }, back); await pg.waitForSelector('.composer .cin', { timeout: 8000 }); await wait(900)
+          ok('DQ 딥링크: ?ask= 는 채우기만 · 쓰던 글 뒤 빈 줄 · 세션 없으면 새 세션 · 4,000자 넘으면 안 채움 · 주소에서 뗀다')
+        }
         // 🔴 OL · 홈 화면 웹 앱에서 바깥 링크는 «바깥으로 열기» 시트로 (2026-11-04 Dave: 앱 안 브라우저에서 «Safari 로» 가 안 됨)
         {
           const sp = await br.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, hasTouch: true })
