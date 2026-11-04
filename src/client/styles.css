@@ -2020,3 +2020,60 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 @media (max-width:900px) { .lm-main { flex-direction:column } .lm-side { width:auto; position:static; max-height:none } .lm-insights { grid-template-columns:1fr } }
 @media (max-width:767px) { .lm-list .lr { grid-template-columns:1fr; gap:6px } .lm-meta { margin-left:0 } .lm-q { min-width:0; flex:1 } .modal.cx .cx-tab { margin-left:0 } }
 .lm.phone .lm-side { order:-1 } .lm.phone .lm-list .lu:has(> .m:only-child), .lm.phone .lm-list .la:empty { display:none }
+
+/* ═══ 줄기 관리 · 지난 일 (11/4 Dave «수정/편집/삭제 가능하게 · 아카이브와도 연결») — 목업 03_디자인/2026-11-04_줄기-관리-목업 ═══
+   📱 폰: .modal 이 이미 전체 화면(위 @media) · 끌기 대신 ↑↓ · 버튼 34px · 입력 16px(iOS 확대 방지) */
+.lm-tag.dave { color:#c9b8f0; background:color-mix(in srgb, #b48cf0 16%, transparent) } .lm-tag.bot { color:#8fb3d9; border:1px solid color-mix(in srgb, #5fa8ff 35%, transparent) }
+.lm-tag.new { color:var(--wait); border:1px dashed color-mix(in srgb, var(--wait) 55%, transparent) } .lm-tag.past { color:var(--t2); border:1px dashed var(--line2) }
+.lm-legend .dot.arch { background:transparent; border:1.4px dashed var(--t2); width:7px; height:7px }
+.lm-pt.arch { opacity:.75 } .lm-pt.arch.off { opacity:.12 }
+.lm-node .stsel { display:flex; align-items:center; gap:6px; flex:1; min-width:0 } .lm-node .stsel select { min-width:0 }
+.lm-node .pst { display:flex; flex-direction:column; gap:4px; padding:8px 10px; border-radius:10px; border:1px dashed var(--line2) }
+.lm-node .pst .t { display:flex; align-items:center; gap:4px; flex-wrap:wrap } .lm-node .pst .t b { color:var(--w) } .lm-node .pst .w { font-size:11.5px; color:var(--t2) }
+.lm-list .lsec-btn { display:flex; align-items:center; gap:6px; width:100%; text-align:left } .lm-list .lsec-btn .m { margin-left:auto; font-size:11px }
+.backdrop.smg-bd { z-index:60 }
+.modal.smg { z-index:61; width:min(1080px,calc(100% - 32px)); height:min(760px,calc(100% - 48px)); max-height:none }
+.modal.smg .modal-h { align-items:center; border-bottom:1px solid var(--line); padding-bottom:12px }
+.smg-b { display:grid !important; grid-template-columns:minmax(0,1fr) 320px; gap:0 !important; padding:0 !important }
+.smg-main { overflow:auto; padding:8px 16px 16px; border-right:1px solid var(--line) } .smg-side { overflow:auto; padding:14px 16px; display:flex; flex-direction:column; gap:14px }
+.smg-row { display:grid; grid-template-columns:22px 10px minmax(0,1fr) auto auto; gap:10px; align-items:center; min-height:48px; padding:6px 6px; border-bottom:1px solid var(--line) }
+.smg-row.open { background:var(--hover); border-radius:10px 10px 0 0; border-bottom-color:transparent } .smg-row.drag { opacity:.4 }
+.smg-row .hd { color:var(--t3); cursor:grab; letter-spacing:-2px; font-size:13px; user-select:none; text-align:center }
+.smg-row .ud { display:flex; flex-direction:column } .smg-row .ud .ib:disabled { opacity:.25 }
+.smg-row .dotc, .smg-row.prop .dotc { width:10px; height:10px; border-radius:50%; display:inline-block } .smg-row .dotc.dash { border:1.4px dashed var(--wait) }
+.smg-row .nm { min-width:0; display:flex; flex-wrap:wrap; align-items:center; gap:2px 4px }
+.smg-row .nm .t { display:inline-flex; align-items:center; gap:5px; color:var(--w); font-size:13.5px } .smg-row .nm .t b { font-weight:650 } .smg-row .nm .t svg { opacity:.35 } .smg-row .nm .t:hover svg { opacity:.9 }
+.smg-row .nm .l { flex-basis:100%; text-align:left; font-size:11.5px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .smg-row .nm .l:hover { color:var(--t2) }
+.smg-row .cnt { display:inline-flex; align-items:center; gap:4px; font-size:12px; color:var(--t2); white-space:nowrap } .smg-row .cnt i { font-style:normal; color:var(--t3) }
+.smg-row .ac { display:flex; gap:4px }
+.smg-row.prop { grid-template-columns:22px minmax(0,1fr) auto; padding-left:6px } .smg-row.prop .dotc { margin-left:6px }
+.smg-exp { background:var(--hover); border-radius:0 0 10px 10px; padding:2px 14px 14px 48px; margin-bottom:6px; border-bottom:1px solid var(--line) }
+.smg-exp .h { font-size:11px; color:var(--t3); margin:10px 0 6px } .smg-exp .chips { display:flex; flex-wrap:wrap; gap:6px; align-items:flex-start }
+.smg-chip { display:inline-flex; align-items:center; gap:5px; height:26px; padding:0 4px 0 10px; border-radius:13px; border:1px solid var(--line2); background:var(--bg); font-size:12px; color:var(--t); max-width:100% }
+.smg-chip .lb { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px } .smg-chip .dd { font-size:10.5px; color:var(--t3); white-space:nowrap }
+.smg-chip .x { width:20px; height:20px; display:inline-flex; align-items:center; justify-content:center; color:var(--t3); border-radius:10px } .smg-chip .x:hover { color:var(--w); background:var(--sel) }
+.smg-chip.past { border-style:dashed; background:transparent; color:var(--t2) } .smg-chip.bot { border-color:color-mix(in srgb, #5fa8ff 30%, var(--line2)) } .smg-chip .lm-tag { margin-left:0 }
+.smg-chip.add { border-style:dashed; color:var(--t3); padding:0 10px; gap:4px } .smg-chip.add:hover { color:var(--w) }
+.smg-pick { display:flex; flex-direction:column; gap:6px; width:min(320px,100%); padding:8px; border:1px solid var(--line2); border-radius:10px; background:var(--bg) }
+.smg-pick .list { display:flex; flex-direction:column; max-height:220px; overflow:auto } .smg-pick .list button { display:flex; flex-direction:column; align-items:flex-start; text-align:left; padding:5px 6px; border-radius:6px } .smg-pick .list button:hover { background:var(--sel) }
+.smg-pick .list b { color:var(--w); font-size:12.5px; font-weight:550 } .smg-pick .list span { font-size:11px; color:var(--t3) } .smg-pick > .btn { align-self:flex-end }
+.smg-in, .smg-sel { height:28px; border-radius:7px; background:var(--bg); color:var(--w); border:1px solid var(--line2); padding:0 8px; font:inherit; font-size:12.5px; outline:0; min-width:0 } .smg-in:focus { border-color:var(--t3) }
+.smg-merge { margin:4px 0 8px 32px; padding:10px 12px; border-radius:10px; border:1px solid color-mix(in srgb, #b48cf0 35%, var(--line2)); background:color-mix(in srgb, #b48cf0 6%, transparent); font-size:12.5px; color:var(--t2) } .smg-merge b { color:var(--w) }
+.smg-merge .row { display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap } .smg-merge .row .sp { flex:1 } .smg-merge .smg-in { flex:1; min-width:160px }
+.smg-foot { display:flex; align-items:center; gap:10px; justify-content:space-between; padding:12px 6px 4px; flex-wrap:wrap } .smg-foot .m { font-size:11.5px; color:var(--t3) } .smg-foot .ac { display:flex; gap:4px }
+.smg-rule { border:1px solid color-mix(in srgb, #5fa8ff 22%, var(--line2)); border-radius:10px; padding:11px 13px; background:color-mix(in srgb, #5fa8ff 4%, transparent) } .smg-rule > b { color:var(--w); font-size:12.5px }
+.smg-rule ol { margin:6px 0 0; padding-left:18px; font-size:12px; color:var(--t2); line-height:1.6 } .smg-rule ol b { color:var(--t); font-weight:600 }
+.smg-log .h { display:flex; align-items:baseline; gap:8px; margin-bottom:4px } .smg-log .h b { color:var(--w); font-size:12.5px } .smg-log .m { font-size:11.5px; color:var(--t3) }
+.smg-log .li { padding:8px 0; border-bottom:1px solid var(--line); font-size:12px; color:var(--t2) } .smg-log .li b { color:var(--w) } .smg-log .li .lk { color:var(--t); text-decoration:underline; text-decoration-color:var(--line2) }
+.smg-log .why { font-size:11.5px; color:var(--t3); margin-top:2px } .smg-log .acts { display:flex; gap:6px; margin-top:6px; align-items:center } .smg-log .smg-sel { height:24px; font-size:11.5px }
+@media (max-width: 767px) {
+  .modal.smg { width:auto; height:auto }
+  .smg-b { grid-template-columns:1fr; overflow:auto !important } .smg-main, .smg-side { overflow:visible; border-right:0 } .smg-side { border-top:1px solid var(--line) }
+  .smg-row { grid-template-columns:30px 10px minmax(0,1fr); grid-template-areas:'ud dot nm' 'ud cnt cnt' 'ud ac ac'; row-gap:6px; padding:10px 4px }
+  .smg-row > .ud, .smg-row > .hd { grid-area:ud } .smg-row > .dotc { grid-area:dot } .smg-row > .nm { grid-area:nm } .smg-row > .cnt { grid-area:cnt; justify-self:start; min-height:30px } .smg-row > .ac { grid-area:ac }
+  .smg-row .ud .ib { width:30px; height:30px } .smg-row .nm .t { font-size:15px } .smg-row .ac .btn { height:34px; padding:0 14px; font-size:13px }
+  .smg-row.prop { grid-template-columns:22px minmax(0,1fr); grid-template-areas:'dot nm' 'ac ac' } .smg-row.prop > .ac { grid-area:ac }
+  .smg-exp { padding:2px 12px 14px 14px } .smg-chip { height:32px; font-size:13px } .smg-chip .x { width:28px; height:28px }
+  .smg-in, .smg-sel { height:36px; font-size:16px } .smg-merge { margin-left:0 } .smg-pick { width:100% }
+  .smg-log .smg-sel { height:32px; font-size:16px } .smg-log .acts .btn { height:32px }
+}

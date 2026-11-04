@@ -1,3 +1,4 @@
+import type { StemOp } from '../core/linkMap'
 import { createHash } from 'node:crypto'
 import { draftSid } from '../core/draft'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
@@ -392,10 +393,13 @@ export class Gateway {
         }
         if (p === '/api/links/stem' && m === 'POST') {
           const b = await body()
-          const map = b.action === 'rename' ? await h.links.rename(String(b.key ?? ''), String(b.name ?? ''))
+          // 11/4 줄기 관리 — { action: 'op', op: StemOp } · 옛 rename·move·reset 도 받는다
+          const OPS = ['rename', 'line', 'add', 'out', 'auto', 'order', 'merge', 'delete', 'create', 'accept', 'drop', 'reset']
+          const map = b.action === 'op' && b.op && typeof b.op === 'object' && OPS.includes(String((b.op as { op?: unknown }).op)) ? await h.links.op(b.op as StemOp)
+            : b.action === 'rename' ? await h.links.rename(String(b.key ?? ''), String(b.name ?? ''))
             : b.action === 'move' ? await h.links.move(String(b.folder ?? ''), b.to === null ? null : b.to === 'auto' ? 'auto' : String(b.to ?? ''))
               : b.action === 'reset' ? await h.links.resetEdits() : null
-          if (!map) return json(400, { error: 'action 은 rename · move · reset' })
+          if (!map) return json(400, { error: 'action 은 op(줄기 관리) · rename · move · reset' })
           return json(200, { map, status: h.links.status() })
         }
         if (p === '/api/links/tell' && m === 'POST') {

@@ -135,6 +135,7 @@ export class Host {
       root: this.registry.root,
       folders: () => { const bots = new Map(this.registry.bots().filter((b) => !b.orchestrator).map((b) => [b.rel, b])); return this.registry.candidates().map((c) => { const b = bots.get(c.rel); return { id: c.rel, name: c.name, ...(b ? { botId: b.id, ...(b.displayName && b.displayName !== b.name ? { display: b.displayName } : {}) } : {}) } }) },
       refs: () => Object.fromEntries(this.registry.bots().map((b) => [b.id, (b.refs ?? []).map((r) => relative(this.registry.root, r).split(sep).join('/'))])),
+      archiveRoots: () => this.registry.rules.roles.archive,   // 11/4 · 보관 폴더도 지도에(«지난 일»)
       outboxes: () => this.bridges.cfg.peers.map((p) => join(this.bridges.abs(p.mailbox), 'from-folderbot')),
       owner: () => this.ownsRoutines(),
       model: (job, model, prompt, system) => this.context.askModel(job, model, prompt, system),
