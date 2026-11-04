@@ -62,6 +62,8 @@ if (/못쓰는모델/.test(at('--model') ?? '')) {
  *    «기억확인» 에는 기록에 남은 사람 말을 되읊어, 되감긴 뒤의 대화가 멈춘 말을 모르는지 검사가 본다.
  */
 const tdir = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-'))
+// LM · 스모크가 봇의 시스템 프롬프트(«이어진 폴더» 카드)를 재게 받은 값을 남긴다
+if (process.env.STUB_SYSPROMPT_LOG && at('--append-system-prompt')) { try { appendFileSync(process.env.STUB_SYSPROMPT_LOG, JSON.stringify({ cwd: process.cwd(), p: at('--append-system-prompt') }) + '\n') } catch { /* */ } }
 const forkAt = argv.includes('--fork-session') ? at('--resume-session-at') : undefined
 const sessionId = forkAt ? `stub-fork-${randomUUID()}` : at('--resume') ?? `stub-${randomUUID()}`
 /**

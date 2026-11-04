@@ -382,6 +382,32 @@ export class Gateway {
     }
     // RB-5 · 루틴 관리 페이지 — 모든 봇 루틴의 보드 한 장(오케스트레이터 routines_overview 와 같은 계산)
     if (p === '/api/routines/overview' && m === 'GET') return json(200, h.routineBoard())
+    // LM · 연결 지도 — 어느 맥이든 읽는다(모델 추측은 주인 맥이 볼트에 둔 것) · 줄기 고치기는 볼트 edit.json(어느 맥이든)
+    if (p.startsWith('/api/links')) {
+      try {
+        if (p === '/api/links' && m === 'GET') {
+          if (url.searchParams.get('fresh') === '1') await h.links.rebuild()
+          const map = h.links.get() ?? (await h.links.rebuild())
+          return json(200, { map, status: h.links.status() })
+        }
+        if (p === '/api/links/stem' && m === 'POST') {
+          const b = await body()
+          const map = b.action === 'rename' ? await h.links.rename(String(b.key ?? ''), String(b.name ?? ''))
+            : b.action === 'move' ? await h.links.move(String(b.folder ?? ''), b.to === null ? null : b.to === 'auto' ? 'auto' : String(b.to ?? ''))
+              : b.action === 'reset' ? await h.links.resetEdits() : null
+          if (!map) return json(400, { error: 'action 은 rename · move · reset' })
+          return json(200, { map, status: h.links.status() })
+        }
+        if (p === '/api/links/tell' && m === 'POST') {
+          // [알려 주기] — 받는 봇의 «🤝 소통» 세션에 넣는다(사람이 누른 것 · 오케스트레이터 이름으로 보내 소통 세션 하나로 모인다)
+          const b = await body(); const bot = reg.bot(String(b.bot ?? '')); const text = String(b.text ?? '').trim()
+          if (!bot || bot.orchestrator) return json(404, { error: '그 폴더의 봇이 없어요 — 봇을 켠 뒤에 알려 줄 수 있어요' })
+          if (!text) return json(400, { error: '보낼 글이 비었어요' })
+          const sid = h.sendToBot(bot, text.slice(0, 4000), undefined, undefined, 'orch')
+          return json(200, { ok: true, session: sid })
+        }
+      } catch (e) { return json(400, { error: (e as Error).message }) }
+    }
     // 맥락 상황판 — 판은 어느 맥이든 읽는다(주인 아님 = 볼트 board.json) · 고치기(옮기기·놔둬·안 끝났어)는 주인 맥만(409)
     if (p.startsWith('/api/context/')) {
       const ctxErr = (e: unknown) => e instanceof NotOwner ? json(409, { error: e.message }) : json((e as { code?: string }).code === 'not-found' ? 404 : 400, { error: (e as Error).message })

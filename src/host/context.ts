@@ -215,7 +215,7 @@ export class ContextService {
    * 모델 한 번 — 부르기 전에 줄이 막혔나 보고(꺼짐·상한·사용량 80 이면 부르지 않고 `blocked`), 부를 때마다 하루 상한에 센다(최종 검토 1).
    * 성공이든 실패든 사용 기록 한 줄.
    */
-  private async call(job: 'card' | 'group' | 'axis', model: 'haiku' | 'sonnet', prompt: string, system: string): Promise<{ ok: boolean; out: string; blocked?: true }> {
+  private async call(job: 'card' | 'group' | 'axis' | 'links', model: 'haiku' | 'sonnet', prompt: string, system: string): Promise<{ ok: boolean; out: string; blocked?: true }> {
     if (this.q.blocked()) return { ok: false, out: '', blocked: true }
     this.q.charge()
     let r: { ok: boolean; out: string; ms: number }
@@ -223,6 +223,14 @@ export class ContextService {
     this.guard('사용 기록', () => this.store.usageLog({ at: Date.now(), job, model, ms: r.ms, ok: r.ok, chars: prompt.length }), undefined)
     return r
   }
+
+  /** LM · 연결 지도도 같은 줄·하루 상한으로 모델을 부른다(host/links.ts) — 꺼져 있으면 부르지 않는다 */
+  askModel(job: 'links', model: 'haiku' | 'sonnet', prompt: string, system: string): Promise<{ ok: boolean; out: string; blocked?: true }> {
+    if (this.off()) return Promise.resolve({ ok: false, out: '', blocked: true })
+    return this.call(job, model, prompt, system)
+  }
+  /** LM · 상황판이 꺼졌나(연결 지도의 모델 추측도 같이 멈춘다) */
+  isOff(): boolean { return this.off() }
 
   // ── 카드 ───────────────────────────────────────────────────────────────────
 

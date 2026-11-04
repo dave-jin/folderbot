@@ -7,6 +7,7 @@ import { STEP_ROWS, continueTarget, type Board, type GoalCard, type Period, type
 import type { PermissionRequest } from '../core/types'
 import type { CtxTask, TaskState } from '../core/contextTasks'
 import type { SessionCard } from '../core/contextCard'
+import { LinksView } from './Links'
 
 /**
  * 🔴 맥락 상황판 — 화면 (2026-11-01 · «맥락 상황판» 1단계 Task 8).
@@ -235,6 +236,9 @@ export function ContextPage({ onClose, go, goTodo, openRoutines, at, phone, open
   const [st, setSt] = useState<Status | null>(null)
   const [goal, setGoal] = useState<{ bot: string; task?: string } | null>(at ?? null)
   const [note, setNote] = useState('')
+  /** LM · «목표 | 연결» — 연결 지도는 상황판의 두 번째 보기(11/3 Dave) · 마지막에 고른 쪽을 기억한다 */
+  const [tab, setTab] = useState<'goal' | 'link'>(() => { try { return localStorage.getItem('fb.cx.tab') === 'link' ? 'link' : 'goal' } catch { return 'goal' } })
+  useEffect(() => { try { localStorage.setItem('fb.cx.tab', tab) } catch { /* */ } }, [tab])
   const load = (p: Period) => {
     if (p === 'away') return   // «내가 비운 사이» 는 연 순간 한 번만 — seen 뒤에 다시 읽으면 빈 판이다
     void api<Board>(`/context/board?period=${p}`).then((b) => setBoards((x) => ({ ...x, [p]: b }))).catch((e) => setNote(errMsg(e)))
@@ -269,9 +273,10 @@ export function ContextPage({ onClose, go, goTodo, openRoutines, at, phone, open
     {goal ? <GoalView key={`${goal.bot}`} at={goal} back={() => setGoal(null)} onClose={onClose} go={go} goTodo={goTodo} phone={phone} openDoc={openDoc} owner={owner} />
       : <>
         <div className="modal-h"><div className="t"><b>상황판</b><span className="cnt">{b ? `${owner === false ? `${b.host} 판 · ` : ''}${hm(b.at)} 정리` : '불러오는 중…'}{note ? ` · ${note}` : ''}</span></div>
-          <span className="seg cx-seg">{(['today', 'week', 'away'] as Period[]).map((p) => <button key={p} className={period === p ? 'on' : ''} onClick={() => setPeriod(p)} title={p === 'away' ? awaySub : undefined}>{PERIOD_KO[p]}</button>)}</span>
+          <span className="seg cx-seg cx-tab">{([['goal', '목표'], ['link', '연결']] as const).map(([k, t]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{t}</button>)}<button onClick={openRoutines} title="루틴 관리">루틴</button></span>
+          {tab === 'goal' ? <span className="seg cx-seg">{(['today', 'week', 'away'] as Period[]).map((p) => <button key={p} className={period === p ? 'on' : ''} onClick={() => setPeriod(p)} title={p === 'away' ? awaySub : undefined}>{PERIOD_KO[p]}</button>)}</span> : null}
           <button className="ib" onClick={onClose} title="닫기 ⎋" aria-label="닫기"><Icon n="x" size={14} /></button></div>
-        <div className="bbody cx-body">
+        {tab === 'link' ? <div className="bbody cx-body lm-body"><LinksView phone={phone} go={go} openDoc={openDoc} say={setNote} /></div> : <div className="bbody cx-body">
           {period === 'away' && awaySub ? <div className="cx-sub">{awaySub}</div> : null}
           {mismatch ? <div className="cx-sub warn">{mismatch}</div> : null}
           {b ? <>
@@ -286,7 +291,7 @@ export function ContextPage({ onClose, go, goTodo, openRoutines, at, phone, open
             </details> : null}
             {missing.length ? <div className="cx-src">{missing.map((x) => <span key={x.name}>{x.name}: {x.note ?? '못 읽음'}</span>)}</div> : null}
           </> : <div className="bempty">{period === 'away' ? '비운 사이 판을 못 읽었어요' : '불러오는 중…'}</div>}
-        </div>
+        </div>}
       </>}
   </div></>
 }

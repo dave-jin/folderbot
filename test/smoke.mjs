@@ -35,7 +35,7 @@ writeFileSync(join(fbHome, '.folderbot/usage.jsonl'),
 // ⚠ 메인 호스트는 «Claude 만 깔린 기기» 여야 한다 — 실제 codex 가 깔린 맥(2026-09-22 맥미니)에서는 제공자가 둘이 되어 세션 + 가 고르기를 띄우고
 //   «세션 삭제 UI» 같은 검사가 어긋난다. 없는 경로를 주면 codex 는 숨는다(providers.ts 의 ENV_OVERRIDE). 둘인 경우는 아래 V24 블록이 두 번째 호스트로 잰다
 // 🔴 `FOLDERBOT_QA` — 검사는 **실 CLI·실 앱을 건드리지 않는다**(실제로 `claude update` 를 돌려 버린 적이 있다)
-const env = { ...process.env, FOLDERBOT_QA: '1', FOLDERBOT_HOME: fbHome, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_CODEX_BIN: '/nonexistent/codex', FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg, FOLDERBOT_RETRY_MS: '1500', FOLDERBOT_REPORT_HOLD_MS: '1500', FOLDERBOT_OPS_FIRST_MS: '300', FOLDERBOT_GOG_BIN: join(data, 'gog-stub.sh'), FOLDERBOT_CONTEXT_DEBOUNCE_MS: '50' }   // R2 · 재시도 10분·보고 묶음 5분을 검사용으로 줄인다 · DA 긴급 메일은 스텁 gog(진짜 메일을 보내지 않는다) · 맥락 상황판 디바운스 2분을 50ms 로(CX)
+const env = { ...process.env, FOLDERBOT_QA: '1', FOLDERBOT_HOME: fbHome, FOLDERBOT_DATA: data, FOLDERBOT_CLI_BIN: join(process.cwd(), 'test/fixtures/stub-claude.mjs'), FOLDERBOT_CODEX_BIN: '/nonexistent/codex', FOLDERBOT_NO_MAC_NOTIFY: '1', FOLDERBOT_NO_AUTH: '1', CLAUDE_CONFIG_DIR: claudeCfg, FOLDERBOT_RETRY_MS: '1500', FOLDERBOT_REPORT_HOLD_MS: '1500', FOLDERBOT_OPS_FIRST_MS: '300', FOLDERBOT_GOG_BIN: join(data, 'gog-stub.sh'), FOLDERBOT_CONTEXT_DEBOUNCE_MS: '50', STUB_SYSPROMPT_LOG: join(data, 'sysprompt.jsonl') }   // R2 · 재시도 10분·보고 묶음 5분을 검사용으로 줄인다 · DA 긴급 메일은 스텁 gog(진짜 메일을 보내지 않는다) · 맥락 상황판 디바운스 2분을 50ms 로(CX)
 writeFileSync(join(data, 'gog-stub.sh'), `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(join(data, 'gog-calls.log'))}\n`, { mode: 0o755 })
 /**
  * 🔴 **포트가 이미 잡혀 있으면 그 자리에서 멈춘다** (2026-09-13 실사고).
@@ -531,6 +531,50 @@ try {
       const same6 = await api(`/bots/${cx.id}/send`, { text: '맥락 CX-6 이어서', sessionId: s3y.sessionId }); await settle(s3y.sessionId)
       if (same6.sessionId !== s3y.sessionId) fail('CX-6: 같은 봇의 세션 이어 쓰기가 그 세션으로 안 갔다 · ' + JSON.stringify(same6))
       ok('CX-6 · 이야기 줄에 세션 주인 봇 · 다른 봇 이름으로 그 세션에 보내면 400(말이 안 들어감) · 같은 봇이면 그 세션으로')
+
+      /**
+       * ═══ LM · 연결 지도 (2026-11-04 Dave «모든 단계 한번에») ═══════════════════════════════════
+       * 폴더끼리 문서 언급 → 지도 · 봇 도구(links_get·links_search·links_read 읽기만) · 세션 시작 «이어진 폴더» 카드 · 줄기 고치기(볼트 edit.json)
+       */
+      {
+        const cfoRel = '3. Area/재무_CFO', cxName = nf.rel.split('/').pop()
+        writeFileSync(join(root, cfoRel, 'readme.md'), `# CFO\n\n자문 정산은 ${cxName} 폴더의 계약서를 본다. ${cxName} 대금 · ${cxName} 세금계산서.\n`)
+        writeFileSync(join(root, nf.rel, '정산메모.md'), '# 정산\n\n재무_CFO 쪽 장부에 적는다. 전화 010-1234-5678\n')
+        const lm = await api('/links?fresh=1')
+        const e = lm.map.edges.find((x) => x.t === 'mention' && [x.a, x.b].sort().join() === [cfoRel, nf.rel].sort().join())
+        if (!e) fail('🔴 LM: 서로 이름을 적은 두 폴더(CFO ↔ 예시고객-자문)가 지도에 안 이어졌다 · ' + JSON.stringify(lm.map.edges.slice(0, 5)))
+        if (!lm.map.nodes.some((n) => n.id === nf.rel && n.botId === cx.id)) fail('LM: 지도 노드에 봇 id 가 없다')
+        const mcpLM = async (name, args) => { const r = await (await mcpFetch(base + `/mcp/${cx.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'tools/call', params: { name, arguments: args } }) })).json(); const t = r.result?.content?.[0]?.text ?? ''; try { return JSON.parse(t) } catch { return { error: t } } }
+        const g = await mcpLM('links_get', {})
+        if (g.folder !== nf.rel || !g.linked?.some((x) => x.folder === cfoRel && x.kind === '문서 언급')) fail('🔴 LM: links_get 이 이 폴더의 이웃(CFO · 문서 언급)을 안 준다 · ' + JSON.stringify(g).slice(0, 400))
+        const rd = await mcpLM('links_read', { folder: '재무_CFO', path: 'readme.md' })
+        if (!String(rd.text ?? '').includes('자문 정산은')) fail('🔴 LM: links_read 가 이어진 폴더 파일을 못 읽었다 · ' + JSON.stringify(rd).slice(0, 300))
+        const out = await mcpLM('links_read', { folder: '재무_CFO', path: '../../etc/passwd' })
+        if (!/폴더 밖/.test(String(out.error ?? ''))) fail('🔴 LM: links_read 가 폴더 밖 경로를 막지 않았다 · ' + JSON.stringify(out).slice(0, 200))
+        const own = await (async () => { const r = await (await mcpFetch(base + `/mcp/orch`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 12, method: 'tools/call', params: { name: 'links_read', arguments: { folder: nf.rel, path: '정산메모.md' } } }) })).json(); return JSON.parse(r.result.content[0].text) })()
+        if (own.text.includes('010-1234-5678')) fail('🔴 LM: links_read 가 전화번호를 가리지 않았다')
+        const sr = await mcpLM('links_search', { query: 'CFO' })
+        if (!sr.folders?.some((x) => x.id === cfoRel)) fail('LM: links_search 가 CFO 를 못 찾았다 · ' + JSON.stringify(sr).slice(0, 300))
+        // 세션 시작 카드 — 새 세션의 --append-system-prompt 에 «## 이어진 폴더» 와 CFO
+        const logF = join(data, 'sysprompt.jsonl'); const was = existsSync(logF) ? readFileSync(logF, 'utf8').split('\n').length : 0
+        const s9 = await api(`/bots/${cx.id}/send`, { text: '연결 지도 카드 확인', name: 'LM 카드' }); await settle(s9.sessionId)   // 이름을 줘야 새 세션 — 없으면 이미 떠 있는 세션(카드 전)으로 간다
+        const lines = await until(() => { try { const xs = readFileSync(logF, 'utf8').split('\n').slice(Math.max(0, was - 1)).filter(Boolean).map((l) => JSON.parse(l)); return xs.length ? xs : null } catch { return null } })
+        const card = (lines ?? []).map((x) => x.p).find((p) => p.includes('## 이어진 폴더'))
+        if (!card || !card.includes(cfoRel) || !card.includes('읽기만') || !card.includes('orch_ask')) fail('🔴 LM: 새 세션의 시스템 프롬프트에 «이어진 폴더» 카드(CFO · 읽기만 · orch_ask)가 없다 · ' + JSON.stringify((lines ?? []).map((x) => x.p.slice(-300))).slice(0, 600))
+        await fetch(base + `/api/sessions/${s9.sessionId}`, { method: 'DELETE' })   // 다른 검사처럼 쓰고 지운다 — 남기면 «최근» 칸이 활성 폴더를 다 먹어 DE(PARA 칸 머리)가 빨개진다
+        // 줄기 고치기 — 이름 · 볼트 edit.json · 되돌리기
+        const st = lm.map.stems.find((x) => x.members.includes(nf.rel))
+        if (!st) fail('LM: 두 폴더가 한 줄기로 안 묶였다 · ' + JSON.stringify(lm.map.stems))
+        const rn = await api('/links/stem', { action: 'rename', key: st.key, name: '스모크 정산' })
+        if (!rn.map.stems.some((x) => x.name === '스모크 정산' && x.named === 'dave')) fail('🔴 LM: 줄기 이름 고치기가 안 먹었다 · ' + JSON.stringify(rn.map.stems))
+        if (!existsSync(join(root, '.folderbot/links/edit.json'))) fail('🔴 LM: 고친 줄기가 볼트 .folderbot/links/edit.json 에 안 남았다')
+        const mv = await api('/links/stem', { action: 'move', folder: cfoRel, to: null })
+        if (mv.map.nodes.find((n) => n.id === cfoRel).stem !== undefined) fail('LM: 줄기 밖으로 옮기기가 안 먹었다')
+        await api('/links/stem', { action: 'reset' })
+        const t404 = await fetch(base + '/api/links/tell', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ bot: 'nobody', text: 'x' }) })
+        if (t404.status !== 404) fail('LM: 봇이 없는 폴더로 알려 주기가 404 가 아니다 · ' + t404.status)
+        ok('LM · 연결 지도 — 문서 언급 선 · links_get/search/read(읽기만 · 폴더 밖 막힘 · 전화번호 가림) · 새 세션 «이어진 폴더» 카드 · 줄기 이름·옮기기(볼트 edit.json)')
+      }
       for (const sid of [s1x.sessionId, s2x.sessionId, s3x.sessionId, s3y.sessionId]) await api(`/sessions/${sid}`, undefined, 'DELETE').catch(() => {})
     }
 
@@ -5065,6 +5109,28 @@ try {
           if (await tp.$('.opensheet')) fail('OL: 브라우저 탭에서도 시트가 떴다')
           await tp.close()
           ok('OL: 홈 화면 웹 앱의 바깥 링크는 시트(Safari · 앱 안 · 다른 앱 · 복사) · 브라우저 탭은 종전대로')
+        }
+        // 🔴 LM · 상황판 «연결» — 흐름(기본) · 지도(과녁) · 목록 · 폴더를 누르면 «왜 이어졌나» (2026-11-04)
+        {
+          const lp = await br.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
+          await lp.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark'); localStorage.setItem('fb.cx.tab', 'link') })
+          await lp.goto(base + '/'); await lp.waitForSelector('.app', { timeout: 15000 }); await wait(800)
+          await lp.click('.cx-h button[aria-label="상황판 열기"]'); await lp.waitForSelector('.lm', { timeout: 8000 }); await wait(800)
+          if (!(await lp.$('.cx-tab button.on:has-text("연결")'))) fail('LM 화면: 상황판에 «연결» 이 안 켜졌다')
+          if ((await lp.textContent('.lm-bar .seg button.on')) !== '흐름') fail('LM 화면: 기본 보기가 «흐름» 이 아니다')
+          await lp.waitForSelector('.lm-svg .lm-p, .lm-svg .lm-a', { timeout: 8000 })
+          await lp.click('.lm-bar .seg button:has-text("지도")'); await wait(400)
+          const pts = await lp.$$eval('.lm-pt', (x) => x.length); if (!pts) fail('LM 화면: 과녁 지도에 점이 없다')
+          if (!(await lp.$('.lm-stems .st'))) fail('LM 화면: 지도 옆에 «일의 줄기» 가 없다')
+          await lp.click('.lm-pt >> nth=0'); await wait(400)
+          const why = await lp.textContent('.lm-node'); if (!why?.includes('왜 이어졌나')) fail('LM 화면: 점을 눌러도 «왜 이어졌나» 가 안 나온다')
+          await lp.screenshot({ path: 'test/tmp/links-map.png' })
+          await lp.click('.lm-bar .seg button:has-text("목록")'); await wait(400)
+          if (!(await lp.$$eval('.lm-list .lr', (x) => x.length))) fail('LM 화면: 목록에 줄이 없다')
+          await lp.click('.cx-tab button:has-text("목표")'); await wait(300)
+          if (await lp.$('.lm')) fail('LM 화면: «목표» 로 돌아가도 연결 지도가 남았다')
+          await lp.close()
+          ok('LM 화면: 상황판 «목표 | 연결» — 흐름 기본 · 과녁 지도(점 · 줄기 · 왜 이어졌나) · 목록')
         }
         // 명령 · 스킬 — 한 줄에 «아이콘 · 이름 · 범위» (2026-09-13 Dave: «지침과 하네스쪽 디자인도 깨져 있어»)
         //    클래스만 붙이고 CSS 를 안 써서 아이콘이 한 줄, 이름·범위가 붙어 흘렀다

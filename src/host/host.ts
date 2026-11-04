@@ -6,7 +6,7 @@ import { mdPlain } from '../core/mdPlain'   // 알림 미리보기는 글자만 
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { execFile, execFileSync } from 'node:child_process'
 import { hostname } from 'node:os'
-import { join, relative, resolve } from 'node:path'
+import { join, relative, resolve, sep } from 'node:path'
 import { TODO_RULES_PROMPT, asksTodo, lastHumanText, parseTodo, setMetaLine } from '../core/todo'
 import type { AuthState, Bot, Frame, PermissionMode, PermissionRequest, RoutineDef, SessionState } from '../core/types'
 import { STATE_LABEL, stripRuntime } from '../core/types'
@@ -42,6 +42,7 @@ import { readTodo, todoAdd, todoContext } from './todoStore'
 import { recent as recentFiles, tree as fileTree } from './files'
 import { ConflictBook, sweep as sweepCopies } from './docSave'
 import { ContextService } from './context'
+import { LinkService } from './links'
 import type { PlanUsage } from '../core/usage'
 
 /** 호스트 — 모든 부품을 묶고, 화면으로 나갈 프레임을 만든다 */
@@ -73,12 +74,14 @@ export class Host {
   readonly names = new NameIndex()
   /** 맥락 상황판 — 턴 끝 카드 · 폴더 작업 묶기 · 판(host/context.ts) */
   readonly context: ContextService
+  /** LM · 연결 지도 — 폴더끼리 문서 언급·봇 중계·같은 사람·장소·비슷한 일(host/links.ts) */
+  readonly links: LinkService
   auth: AuthState = { verdict: 'unknown', checkedAt: 0 }
   private queued: { botId: string; sessionId: string; text: string; origin: TurnFrom }[] = []
   broadcast: (f: Frame) => void = () => {}
   /** 🔴 `.bot.yml` 이 밖에서 바뀌면 **UI 로 저장한 것과 같은 길**을 탄다(AA-2) — 화면 갱신 + 스케줄 다시 걸기 */
   watcher = new FolderWatch(
-    (botId) => { mark('폴더 바뀜'); this.broadcast({ ev: 'files', botId }); this.refreshNames(); this.context?.onFiles(botId) },
+    (botId) => { mark('폴더 바뀜'); this.broadcast({ ev: 'files', botId }); this.refreshNames(); this.context?.onFiles(botId); this.links?.onFiles() },
     (botId) => { mark('설정 다시 읽기'); this.log(`설정 파일이 바뀌어 루틴·연결을 다시 읽어요 · ${this.registry.bot(botId)?.name ?? botId}`); this.afterBotsChanged(); if (botId === ORCH_ID) { this.bridges.reload(); this.ops.reload() } },
   )
   private lastNames = ''
@@ -128,12 +131,25 @@ export class Host {
       onChange: () => this.bridgesChanged() })
     this.routines.file = join(dataDir(), 'routine-runs.json')   // BR-2 · 놓친 회차 판단 기준
     this.context = new ContextService(this)   // 주인 맥만 카드·작업·판을 만든다 — 아니면 볼트 판을 읽기만
+    this.links = new LinkService({
+      root: this.registry.root,
+      folders: () => { const bots = new Map(this.registry.bots().filter((b) => !b.orchestrator).map((b) => [b.rel, b])); return this.registry.candidates().map((c) => { const b = bots.get(c.rel); return { id: c.rel, name: c.name, ...(b ? { botId: b.id, ...(b.displayName && b.displayName !== b.name ? { display: b.displayName } : {}) } : {}) } }) },
+      refs: () => Object.fromEntries(this.registry.bots().map((b) => [b.id, (b.refs ?? []).map((r) => relative(this.registry.root, r).split(sep).join('/'))])),
+      outboxes: () => this.bridges.cfg.peers.map((p) => join(this.bridges.abs(p.mailbox), 'from-folderbot')),
+      owner: () => this.ownsRoutines(),
+      model: (job, model, prompt, system) => this.context.askModel(job, model, prompt, system),
+      aiOff: () => this.context.isOff(),
+      hostName: () => this.hostName(),
+      dataDir: () => dataDir(),
+      log: (m) => this.log(m),
+    })
     this.runs = new RunLog(this.registry.root, () => this.bridges.cfg.runsCopy, () => hostname().replace(/\.local$/, ''), (m) => this.log(m))
     this.ops = new OpsWatch({ root: this.registry.root, hostNames: () => [hostname(), this.hostName(), this.cfg.hostName ?? ''], log: (m) => this.log(m),
       note: (e) => this.runs.note(e),
       alert: (text) => this.notifyOrch(text, 'ops'),
       firstDelayMs: Number(process.env.FOLDERBOT_OPS_FIRST_MS) || 30_000 })
     this.wire()
+    this.links.start()   // LM · 30초 뒤 첫 지도 · 15분마다
     this.context.start()   // 꺼져 있던 사이 끝난 세션 중 카드가 없거나 뒤처진 것 — 디바운스 뒤 최신 순
     this.sessions.drainAll()   // 호스트가 다시 떴다 — 기다리던 봇 말을 내보낸다
     this.routines.reschedule(this.registry.bots())
@@ -237,6 +253,8 @@ export class Host {
     if (this.bridges?.cfg.peers.some((p) => p.enabled && (this.isDeliverTarget(p, bot) || p.maySend.includes(bot.id) || p.mayAsk.some((x) => askPatternHits(x, askBotOf(bot)))))) parts.push(LETTER_RULES_MD)
     parts.push(this.registry.todoRules() ?? TODO_RULES_PROMPT)   // CK-3 · 볼트 `todo-rules` 블록이 이긴다
     parts.push(DEVICE_RULES_MD)   // J-2 · 볼트 CLAUDE.md 에도 같은 글이 있지만, 옛 볼트에는 없으므로 시스템 프롬프트로도 준다
+    const lc = this.links?.card(bot.rel)   // LM · «이어진 폴더» 카드 — 세션 시작 때 받는다
+    if (lc) parts.push(lc)
     const ctx = todoContext(bot.abs)
     if (ctx) parts.push(ctx)
     return parts.join('\n\n')

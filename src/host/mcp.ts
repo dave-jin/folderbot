@@ -70,6 +70,10 @@ const COMMON: Tool[] = [
    * 🔴 CK-3 · 봇은 할 일을 **제안**하고 사람이 정한다 (2026-10-16 Dave «추천대로» · 볼트 `todo-rules`).
    *   `todo_add` 는 사람이 대화에서 «할 일로 적어 줘» 라고 한 턴에서만 정식 줄이 된다 — 그 밖의 턴(봇·루틴·바깥 상대)이 부르면 제안으로 내려간다.
    */
+  /* LM · 연결 지도 (2026-11-04) — 이어진 폴더를 보고 · 찾고 · 그 폴더 파일을 읽는다(읽기만). 쓰기·시키기는 orch_ask */
+  { name: 'links_get', description: '연결 지도에서 이 폴더(또는 folder)와 이어진 폴더를 본다 — 종류(문서 언급·봇 중계·같은 사람·장소·비슷한 일) · 근거 · 일의 줄기 · 가져다 쓸 파일. «봇 추측»(guess) 은 확인한 사실이 아니다. 다른 폴더 일을 시작하기 전에, 비슷한 일을 했던 폴더가 있는지 볼 때 쓴다.', inputSchema: obj({ folder: { type: 'string', description: '비우면 이 폴더 · 폴더 이름·경로·이름표' } }) },
+  { name: 'links_search', description: '연결 지도에서 폴더·사람·장소·주제로 찾는다 — 이름표 · 줄기 이름 · 선의 근거 글(사람·장소 이름 포함)을 본다.', inputSchema: obj({ query: { type: 'string' } }, ['query']) },
+  { name: 'links_read', description: '다른 폴더의 파일을 읽는다(읽기만 · 글 파일만 · 민감정보는 가려짐). path 를 비우면 그 폴더의 최근 파일 목록. 그 폴더에 쓰거나 그 봇에게 일을 시킬 일이면 orch_ask 로 부탁한다.', inputSchema: obj({ folder: { type: 'string', description: '폴더 이름·경로·이름표' }, path: { type: 'string', description: '그 폴더 기준 상대 경로 — 비우면 목록' } }, ['folder']) },
   { name: 'todo_add', description: '이 봇 폴더의 todo.md 에 정식 할 일 줄을 쓴다. 사람이 대화에서 «할 일로 적어 줘» 라고 했을 때만 쓴다 — 그 밖에 할 일이 생기면 todo_propose 로 제안한다(사람이 시키지 않은 턴에서 부르면 제안으로 내려간다). 봇이 적은 줄로 표시된다.', inputSchema: obj({ title: { type: 'string', description: '한글 15자 이내' }, desc: { type: 'string', description: '설명 — 약 N분 · 첫 행동: … 처럼 소요 시간과 첫 행동을 붙인다' }, due: { type: 'string', description: '마감 YYYY-MM-DD — 바깥에서 정해진 날(제출일·행사일·약속일)만. 지어내지 않는다' }, for_user: { type: 'boolean', description: '사용자가 할 일이면 true (알림이 간다)' } }, ['title']) },
   { name: 'todo_propose', description: '할 일을 제안한다 — todo.md 에 «제안» 줄로 들어가고 화면 «제안» 칸에 뜬다. 사람이 [넣기] 해야 정식 할 일이 되고 Akiflow 로 간다. 같은 일이 이미 있으면 새로 제안하지 말고 그 줄 설명에 덧붙이자고 대화에서 말한다. 봇 자신이 다음 세션에 할 일은 여기가 아니라 state.md «다음 작업» 에 쓴다.', inputSchema: obj({ title: { type: 'string', description: '한글 15자 이내' }, desc: { type: 'string', description: '설명 — 약 N분 · 첫 행동: …' }, due: { type: 'string', description: '마감 YYYY-MM-DD — 바깥에서 정해진 날만' } }, ['title']) }
 ]
@@ -269,6 +273,9 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       lastOverview = now
       return host.routineOverview(since, a.problemsOnly === true)
     }
+    case 'links_get': return host.links.toolGet(reg.bot(botId)?.orchestrator ? null : reg.bot(botId)?.rel ?? null, s('folder').trim())
+    case 'links_search': return host.links.toolSearch(s('query'))
+    case 'links_read': return host.links.toolRead(s('folder'), s('path').trim())
     case 'context_board': {
       const q = s('bot').trim()
       if (q) { const b = findBot(q); if (!b) throw new Error(`«${q}» 이라는 봇이 없어요 — bots_list 로 이름을 보세요`); return host.context.goal(b.id, null) }
