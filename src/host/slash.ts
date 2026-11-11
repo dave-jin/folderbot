@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import type { SlashCmd } from '../core/types'
+import type { AgentDef, SlashCmd } from '../core/types'
 import { CODEX_LOCAL } from '../core/slashLocal'
 
 /** frontmatter 의 description — 없으면 첫 문단 한 줄 */
@@ -76,6 +76,39 @@ export function listCommandFiles(botDir: string, rootDir: string): CmdFile[] {
   one(homedir(), 'user')
   return out
 }
+/* ── 에이전트 정의 (EA · 2026-11-11) ──────────────────────────────────────────
+   🔴 **봇이 부를 수 있는 서브에이전트는 파일이다** — `<봇 폴더>/.claude/agents/*.md` 와 `<사용자 설정>/agents/*.md`.
+      종전에는 명령·스킬·커넥터만 보여서, 이 폴더의 봇이 어떤 에이전트를 부를 수 있는지 화면으로는 알 길이 없었다.
+   ⚠ 읽기만 한다. 이름과 설명은 머리말(frontmatter)의 `name`·`description` 에서 읽고, 이름이 없으면 파일 이름을 쓴다.
+   ⚠ 같은 이름은 폴더 것이 이긴다(CLI 와 같다). 사용자 자리는 `CLAUDE_CONFIG_DIR` 을 따른다(세션 기록 자리와 같은 규칙). */
+function agentHead(text: string, fallback: string): { name: string; desc: string; model?: string } {
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)
+  const pick = (k: string) => { const m = fm ? new RegExp(`^${k}:[ \\t]*(.*)$`, 'm').exec(fm[1]) : null; return m ? m[1].trim().replace(/^["']|["']$/g, '') : '' }
+  const name = pick('name').slice(0, 80) || fallback
+  // 설명이 여러 줄(`>-`·`|`)이면 이어지는 들여쓴 줄을 한 줄로 잇는다
+  let desc = pick('description')
+  if (fm && /^[>|][+-]?$/.test(desc)) { const m = /^description:.*\r?\n((?:[ \t]+.*\r?\n?)+)/m.exec(fm[1]); desc = m ? m[1].split(/\r?\n/).map((l) => l.trim()).filter(Boolean).join(' ') : '' }
+  const model = pick('model').slice(0, 40)
+  return { name, desc: desc.replace(/\\n/g, ' ').replace(/\s+/g, ' ').slice(0, 160), ...(model ? { model } : {}) }
+}
+export function userAgentsDir(): string { return join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'agents') }
+export function listAgentDefs(folderDirs: string[], userDir = userAgentsDir()): AgentDef[] {
+  const out: AgentDef[] = []; const seen = new Set<string>()
+  const one = (dir: string, scope: AgentDef['scope']) => {
+    for (const n of safeList(dir)) {
+      if (!n.endsWith('.md')) continue
+      const f = join(dir, n)
+      let text = ''; try { const st = statSync(f); if (!st.isFile() || st.size > 400_000) continue; text = readFileSync(f, 'utf8') } catch { continue }
+      const h = agentHead(text, n.slice(0, -3))
+      if (seen.has(h.name)) continue
+      seen.add(h.name); out.push({ name: h.name, desc: h.desc, scope, ...(h.model ? { model: h.model } : {}) })
+    }
+  }
+  for (const d of [...new Set(folderDirs)]) one(join(d, '.claude', 'agents'), 'folder')
+  one(userDir, 'user')
+  return out
+}
+
 export const CMD_NAME_RE = /^[\w-]{1,60}$/
 export function commandTemplate(name: string, desc: string): string {
   return `---\ndescription: ${desc || '무엇을 하는 명령인지 한 줄'}\n---\n# /${name}\n\n봇이 할 일을 여기에 적으세요. 아래 \`$ARGUMENTS\` 자리에 \`/${name}\` 뒤에 쓴 말이 들어갑니다.\n\n$ARGUMENTS\n`

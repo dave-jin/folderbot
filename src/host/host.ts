@@ -26,6 +26,7 @@ import { OpsWatch } from './opsWatch'
 import { isDaveSaid, letterBatch } from '../core/fbmf'
 import { askPatternHits, askTarget, ownsPeer, wakeMail, type AskBot, type PeerDef } from '../core/bridges'
 import type { QueuedMsg } from '../core/types'
+import type { BgTask } from '../core/bgTasks'
 /** BX · 셸이 주는 업데이트 상태(`desktop/updater.js state()`) · 새벽 적용 걸기/풀기 */
 export interface ShellUpdate { state: () => unknown; dawn: (on: boolean) => unknown }
 import { ORCH_ID, Registry, canon, ORCH_REQUEST_RULES_MD, DAVE_SAID_RULES_MD, ORCH_ASK_HINT, ORCH_REPORT_HINT, LETTER_RULES_MD } from './registry'
@@ -36,8 +37,10 @@ import { RoutineNotes } from './routineNotes'
 import { parseOps } from '../core/ops'
 import { RUN_TIMEOUT_MS } from '../core/runs'
 import { autoToDrop, sessArea } from '../core/autoArea'
+import { isPermMode } from '../core/permPolicy'
+import { approvalTimeoutMin, fmtWait } from '../core/approvalTimeout'
 import { mark } from './slow'
-import { SessionManager, setOauthToken, setKeychainLogin, AUTH_ERROR, type SessionRec } from './session'
+import { SessionManager, SteerRefused, setOauthToken, setKeychainLogin, AUTH_ERROR, type SessionRec } from './session'
 import { readTodo, todoAdd, todoContext } from './todoStore'
 import { recent as recentFiles, tree as fileTree } from './files'
 import { ConflictBook, sweep as sweepCopies } from './docSave'
@@ -46,7 +49,6 @@ import { LinkService } from './links'
 import type { PlanUsage } from '../core/usage'
 
 /** 호스트 — 모든 부품을 묶고, 화면으로 나갈 프레임을 만든다 */
-const PERM_MODES: PermissionMode[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions', 'dontAsk']
 
 export class Host {
   readonly version: string
@@ -197,8 +199,14 @@ export class Host {
     this.sessions.on('sessions', (botId: string) => this.broadcast({ ev: 'sessions', botId, sessions: this.sessions.list(botId) }))
     this.sessions.on('chat', (sessionId: string, item, replace: boolean) => this.broadcast({ ev: 'chat', sessionId, item, replace }))
     this.sessions.on('files', (botId: string) => this.broadcast({ ev: 'files', botId }))
+    this.sessions.on('task', (r: SessionRec, task: BgTask) => this.broadcast({ ev: 'task', sessionId: r.id, botId: r.botId, task }))   // EA · 맡긴 일 한 줄
     this.sessions.on('activity', (r: SessionRec) => this.broadcast({ ev: 'activity', sessionId: r.id, botId: r.botId, activity: r.activity ?? '', turnStartedAt: r.turnStartedAt }))
     this.sessions.on('auth-error', () => { void this.refreshAuth(true) })
+    // EB · 승인 시간 초과 — 루틴 회차면 실행 기록에 남긴다(끝을 적을 때 «실패 · 승인 시간 초과» 가 된다)
+    this.sessions.on('approval-timeout', (r: SessionRec, req: PermissionRequest, minutes: number) => {
+      this.log(`승인 시간 초과: ${this.registry.bot(r.botId)?.name ?? r.botId} · ${r.name} · ${req.displayName} · ${fmtWait(minutes)} 동안 답이 없어 거절`)
+      if (r.routine) this.runs.approvalTimedOut(r.id, req.displayName, minutes)
+    })
     this.sessions.on('chat', (sessionId: string, item) => {
       // CLI 가 인증 오류를 result/assistant 로 흘리는 경우도 잡는다
       if ((item.kind === 'result' && !item.ok && AUTH_ERROR.test(item.error ?? '')) || (item.kind === 'assistant' && AUTH_ERROR.test(item.text) && item.text.length < 200)) void this.refreshAuth(true)
@@ -267,6 +275,27 @@ export class Host {
     this.routines.reschedule(bots)
     this.routineNotes?.sync(bots)   // 최종 리뷰 · `.bot.yml` 을 손으로 고쳐도 그 폴더 CLAUDE.md 구역이 따라온다
     this.broadcast({ ev: 'bots', bots })
+  }
+
+  /**
+   * EC · **끼워 넣기** — 사람이 줄 세워 둔 말을, 턴을 멈추지 않고 그 세션의 도는 턴에 넣는다(`SessionManager.steer`).
+   * 도는 턴이 없으면(누르는 사이 끝난 경주) 보통 말로 보낸다 — `sendToBot` 과 같은 길이라 로그인 대기·자동화 세션 이어받기(CC)도 그대로 탄다.
+   * ⚠ 턴의 출처(`turnFrom`)는 건드리지 않는다 — 루틴·봇이 연 턴은 사람이 한마디 넣어도 그 턴이 끝날 때까지 루틴·봇의 턴이다(`SessionManager.steer` 머리말).
+   * 거절(Codex · 카드가 걸림)은 이어받기 표시를 남기기 **전에** 던진다 — 말이 안 들어갔는데 세션만 «사람이 이어받음» 이 되지 않게.
+   * @returns how — 'steered' 끼워 넣음 · 'sent' 보통 말로 보냄 / sessionId — 말이 들어간 세션(갈라 열렸으면 새 채팅)
+   */
+  steerSession(bot: Bot, sessionId: string, text: string, client?: ClientCtx): { how: 'steered' | 'sent'; sessionId: string } {
+    const r = this.sessions.get(sessionId)
+    if (!r || r.botId !== bot.id) throw new Error('그런 세션이 없어요')
+    const v = this.sessions.steerCheck(r, bot)
+    if (!v.ok && !v.sendable) throw new SteerRefused(v.text ?? '지금은 끼워 넣을 수 없어요', v.why ?? 'idle')
+    const loggedOut = this.auth.verdict === 'unreadable' || this.auth.verdict === 'loggedout'
+    // 턴이 없다 · 로그인이 풀렸다 → 보통 말의 길로
+    if (!v.ok || loggedOut) return { how: 'sent', sessionId: this.sendToBot(bot, text, r.id, undefined, undefined, { client }) }
+    // CC · 사람이 자동화 세션에 말을 넣었다 — 루틴·봇끼리는 그 세션을 채팅으로 옮기고(같은 세션에 끼워 넣는다),
+    //      소통·채널은 새 채팅을 갈라 연다(그 채팅에는 도는 턴이 없으니 `steer` 가 보통 말로 보낸다)
+    const t = this.sessions.takeOver(r, bot)
+    return { how: this.sessions.steer(t, bot, text, client), sessionId: t.id }
   }
 
   /** 세션에 지시 — 없으면 만든다 */
@@ -481,7 +510,10 @@ export class Host {
     // 절전 — 0 이면 «안 재운다» (밤새 돌리는 사람) · 아니면 그 분 뒤. 기본은 60분 (루프 4/10)
     const idle = cfg.idleMinutes === undefined ? 60 : cfg.idleMinutes
     this.sessions.idleTtlMs = idle > 0 ? idle * 60 * 1000 : Number.POSITIVE_INFINITY
+    this.sessions.approvalTimeoutMin = approvalTimeoutMin(cfg.approvalTimeoutMinutes)   // EB · 비면 기본(끄기) · 0 은 끄기
   }
+  /** EB · 승인 시간 초과(분) — 사람이 시작하지 않은 턴만. 이미 시계가 걸린 요청은 걸릴 때의 값으로 간다 */
+  setApprovalTimeout(minutes: number): void { this.cfg.approvalTimeoutMinutes = approvalTimeoutMin(minutes); this.applyDefaults(); saveConfig(this.cfg) }
   setIdle(minutes: number): void { this.cfg.idleMinutes = Math.max(0, Math.round(minutes)); this.applyDefaults(); saveConfig(this.cfg) }
   /** 맥락 상황판 설정 — 요약 끄기 · 하루 호출 상한(설정 › 세션 · 사용량). 값 검사는 게이트웨이가 한다 */
   setContext(o: { off?: boolean; dailyCap?: number | null }): void {
@@ -497,7 +529,7 @@ export class Host {
     else {
       this.cfg.defaultModel = model || undefined; this.cfg.defaultEffort = effort || undefined
       // 새 채팅 기본 권한 — 아는 값만 받는다. `default` 는 «안 정함» 과 같아서 지운다
-      if (permissionMode !== undefined) this.cfg.defaultPermissionMode = PERM_MODES.includes(permissionMode as PermissionMode) && permissionMode !== 'default' ? (permissionMode as PermissionMode) : undefined
+      if (permissionMode !== undefined) this.cfg.defaultPermissionMode = isPermMode(permissionMode) && permissionMode !== 'default' ? permissionMode : undefined
     }
     this.applyDefaults()
     saveConfig(this.cfg)

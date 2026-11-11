@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useReducer, useRef, type
 import type { PermissionMode, AuthState, Bot, Candidate, ChatItem, FolderRules, Frame, NotifyEvent, PermissionRequest, SessionInfo, TodoItem } from '../core/types'
 import { api, connectEvents, resyncPush, token } from './api'
 import type { Draft } from '../core/draft'
+import { upsertTask, type BgTask } from '../core/bgTasks'
 import { cacheWriter, pool, readChats, storeVer, writeChats } from './cache'
 import { forgetMissing } from './existsCache'
 
@@ -19,6 +20,11 @@ export interface StateShape {
   candidates: Candidate[]
   sessionsByBot: Record<string, SessionInfo[]>
   chats: Record<string, ChatItem[]>
+  /**
+   * EA · 세션마다의 맡긴 일(서브에이전트·뒤에서 도는 셸) — 대화를 받을 때 함께 받고(`/sessions/:id/chat`), 그 뒤로는 `task` 프레임이 한 줄씩 고친다.
+   * ⚠ 프레임으로만 최신이 되는 것이다 — 다시 붙을 때 `resync` 가 본 대화를 다시 받으면서 이것도 함께 맞춘다(«그대로» 답에도 실려 온다).
+   */
+  tasks: Record<string, BgTask[]>
   pending: Record<string, PermissionRequest[]>
   todos: Record<string, TodoItem[]>
   auth: AuthState
@@ -30,7 +36,7 @@ export interface StateShape {
   port: number
   devices: { id: string; name: string; lastSeen: number }[]
   /** ⚠ Codex 기본값은 **따로** 온다 — 이름 체계가 달라 섞으면 Codex 세션이 그 자리에서 죽는다 */
-  defaults: { model: string; effort: string; permissionMode?: PermissionMode; idleMinutes?: number; codex?: { model: string; effort: string; sandbox: string; auth: { ok: boolean; how: 'login' | 'key' | null; where?: string } } }
+  defaults: { model: string; effort: string; permissionMode?: PermissionMode; idleMinutes?: number; /** EB · 승인 시간 초과(분) · 0 = 끔 */ approvalTimeoutMinutes?: number; codex?: { model: string; effort: string; sandbox: string; auth: { ok: boolean; how: 'login' | 'key' | null; where?: string } } }
   /** 조용한 시간 — 이 사이에는 «확인해 주세요» 만 통과한다 (설정 › 알림) */
   quiet?: { from: string; to: string; off?: boolean }
   /** 메인(호스트) 이름 · 이 화면이 어디서 보고 있는지 */
@@ -49,9 +55,9 @@ export interface StateShape {
   /** BO · 화면이 먼저 띄운 새 세션 — 호스트 목록에 그 id 가 나타날 때까지 목록 맨 위에 붙들어 둔다(`newSession.ts`) */
   ghosts: Record<string, SessionInfo>
 }
-const init: StateShape = { version: '', root: '', rules: null, rulesInstalled: false, bots: [], candidates: [], sessionsByBot: {}, chats: {}, pending: {}, todos: {}, auth: { verdict: 'unknown', checkedAt: 0 }, inbox: 0, notifications: [], vapidPublic: '', tailnet: null, addrs: [], port: 7373, devices: [], defaults: { model: 'claude-fable-5-1', effort: 'high' }, hostName: '', device: { id: '', name: '', main: false }, online: 'off', loaded: false, syncing: false, filesTick: {}, railReorder: 0, ghosts: {} }
+const init: StateShape = { version: '', root: '', rules: null, rulesInstalled: false, bots: [], candidates: [], sessionsByBot: {}, chats: {}, tasks: {}, pending: {}, todos: {}, auth: { verdict: 'unknown', checkedAt: 0 }, inbox: 0, notifications: [], vapidPublic: '', tailnet: null, addrs: [], port: 7373, devices: [], defaults: { model: 'claude-fable-5-1', effort: 'high' }, hostName: '', device: { id: '', name: '', main: false }, online: 'off', loaded: false, syncing: false, filesTick: {}, railReorder: 0, ghosts: {} }
 
-type Action = { type: 'state'; s: Partial<StateShape> } | { type: 'hydrate'; chats: Record<string, ChatItem[]> } | { type: 'frame'; f: Frame } | { type: 'chat'; sessionId: string; items: ChatItem[]; pending: PermissionRequest[] } | { type: 'synced' } | { type: 'online'; v: 'on' | 'off' } | { type: 'todos'; botId: string; items: TodoItem[] } | { type: 'refiles' } | { type: 'ghost'; info: SessionInfo } | { type: 'unghost'; id: string }
+type Action = { type: 'state'; s: Partial<StateShape> } | { type: 'hydrate'; chats: Record<string, ChatItem[]> } | { type: 'frame'; f: Frame } | { type: 'chat'; sessionId: string; items: ChatItem[]; pending: PermissionRequest[] } | { type: 'tasks'; sessionId: string; tasks: BgTask[] } | { type: 'synced' } | { type: 'online'; v: 'on' | 'off' } | { type: 'todos'; botId: string; items: TodoItem[] } | { type: 'refiles' } | { type: 'ghost'; info: SessionInfo } | { type: 'unghost'; id: string }
 
 /**
  * BO · 호스트 목록에 임시 세션을 덧댄다. 호스트 목록에 이미 있는 id 는 임시 표시를 걷는다(호스트 것이 정답).
@@ -82,6 +88,7 @@ function reducer(s: StateShape, a: Action): StateShape {
     case 'online': return { ...s, online: a.v, syncing: a.v === 'off' && s.loaded ? true : s.syncing }
     case 'synced': return s.syncing ? { ...s, syncing: false } : s
     case 'chat': return { ...s, chats: { ...s.chats, [a.sessionId]: a.items }, pending: { ...s.pending, [a.sessionId]: a.pending } }
+    case 'tasks': return { ...s, tasks: { ...s.tasks, [a.sessionId]: a.tasks } }
     // DA · 디스크 캐시에서 꺼낸 대화 — **이미 받은 것은 덮지 않는다**(호스트에서 막 온 것이 더 새것이다)
     case 'hydrate': { const add = Object.fromEntries(Object.entries(a.chats).filter(([k]) => !s.chats[k])); return Object.keys(add).length ? { ...s, chats: { ...s.chats, ...add } } : s }
     case 'todos': return { ...s, todos: { ...s.todos, [a.botId]: a.items } }
@@ -99,6 +106,9 @@ function reducer(s: StateShape, a: Action): StateShape {
           else items = cur.some((x) => x.id === f.item.id) ? cur : [...cur, f.item]
           return { ...s, chats: { ...s.chats, [f.sessionId]: items } }
         }
+        // EA · 맡긴 일 한 줄 — 그 세션의 대화를 들고 있을 때만 고친다(안 받은 세션은 대화를 열 때 목록째 받는다)
+        // ⚠ 방금 만든 세션은 대화를 «받은» 적이 없다(화면이 먼저 세운다) — 그래서 목록이 없으면 빈 목록에서 시작한다
+        case 'task': { const cur = s.tasks[f.sessionId] ?? (s.chats[f.sessionId] ? [] : null); if (!cur) return s; return { ...s, tasks: { ...s.tasks, [f.sessionId]: upsertTask(cur, f.task) } } }
         case 'state': { const list = s.sessionsByBot[f.botId]; if (!list) return s; return { ...s, sessionsByBot: { ...s.sessionsByBot, [f.botId]: list.map((x) => (x.id === f.sessionId ? { ...x, state: f.state, alive: true, hibernated: false } : x)) } } }
         case 'activity': { const list = s.sessionsByBot[f.botId]; if (!list) return s; return { ...s, sessionsByBot: { ...s.sessionsByBot, [f.botId]: list.map((x) => (x.id === f.sessionId ? { ...x, activity: f.activity, turnStartedAt: f.turnStartedAt ?? x.turnStartedAt } : x)) } } }
         case 'permission': return { ...s, pending: { ...s.pending, [f.sessionId]: [...(s.pending[f.sessionId] ?? []).filter((p) => p.requestId !== f.req.requestId), f.req] } }
@@ -151,9 +161,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const loadChat = (sid: string, revalidate = false): Promise<void> => {
     const had = chatReq.current.get(sid); if (had) return had
     const v = revalidate ? chatVers.current.get(sid) : undefined
-    const p = api<{ info: SessionInfo; items?: ChatItem[]; same?: boolean; ver?: string }>(`/sessions/${sid}/chat${v ? `?v=${encodeURIComponent(v)}` : ''}`).then((r) => {
+    const p = api<{ info: SessionInfo; items?: ChatItem[]; same?: boolean; ver?: string; tasks?: BgTask[] }>(`/sessions/${sid}/chat${v ? `?v=${encodeURIComponent(v)}` : ''}`).then((r) => {
       if (r.ver) chatVers.current.set(sid, r.ver)
       fresh.current.add(sid)
+      // EA · 맡긴 일은 대화가 «그대로» 여도 다시 맞춘다 — 끊긴 사이 놓친 `task` 프레임을 여기서 따라잡는다
+      if (r.tasks) dispatch({ type: 'tasks', sessionId: sid, tasks: r.tasks })
       if (r.same || !r.items) return
       dispatch({ type: 'chat', sessionId: sid, items: r.items, pending: r.info.pending })
     }).finally(() => { chatReq.current.delete(sid) })

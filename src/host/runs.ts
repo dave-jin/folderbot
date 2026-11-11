@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'n
 import { isAbsolute, join, resolve } from 'node:path'
 import { isoLocal } from '../core/fbmf'
 import { RUN_TIMEOUT_MS, routineResult } from '../core/runs'
+import { approvalRunReason } from '../core/approvalTimeout'
 
 /**
  * BR-1 · 루틴 실행 기록 (2026-10-09). 종전엔 실패 기록이 300건 상한 알림 목록과 휘발되는 콘솔뿐이라,
@@ -10,13 +11,13 @@ import { RUN_TIMEOUT_MS, routineResult } from '../core/runs'
  *  - 사본: `.claude/bridges.yml` 의 `runs_copy` 폴더에 `folderbot-YYYY-MM.jsonl` (감시기가 읽는 자리)
  * 쓰는 것은 그 루틴을 돌린 호스트 하나다(루틴은 호스트에서만 돈다).
  */
-export interface RunEvent { event: 'start' | 'end' | 'timeout' | 'retry' | 'peer_stale' | 'peer_ok' | 'wake' | 'report' | 'ops_watch'; botId?: string; bot?: string; routine?: string; run?: string; ok?: boolean; result?: string; reason?: string; error?: string; ms?: number; attempt?: number; catchup?: string; peer?: string; [k: string]: unknown }
+export interface RunEvent { event: 'start' | 'end' | 'timeout' | 'retry' | 'peer_stale' | 'peer_ok' | 'wake' | 'report' | 'ops_watch' | 'approval_timeout'; botId?: string; bot?: string; routine?: string; run?: string; ok?: boolean; result?: string; reason?: string; error?: string; ms?: number; attempt?: number; catchup?: string; peer?: string; [k: string]: unknown }
 
 /** CI · 호스트가 다시 떠서 끊긴 회차의 끝 사유 — 감시기·화면이 이 말로 가른다 */
 export const INTERRUPTED_REASON = '호스트 재시작으로 중단'
 
 export class RunLog {
-  private open = new Map<string, { botId: string; bot: string; routine: string; at: number; timedOut?: boolean }>()
+  private open = new Map<string, { botId: string; bot: string; routine: string; at: number; timedOut?: boolean; denied?: string[]; deniedMin?: number }>()
   constructor(private root: string, private copyDir: () => string | undefined, private host: () => string, private log: (s: string) => void = () => {}, private now: () => number = () => Date.now()) {}
 
   /** 루틴 회차 밖의 사건(연결 끊김·깨우기·재시도 예약)도 같은 기록에 남긴다 — 감시기가 한 곳만 읽게 */
@@ -39,9 +40,22 @@ export class RunLog {
     const o = this.open.get(run); if (!o) return null
     this.open.delete(run)
     const r = routineResult(lastText)
-    const out = { ok: ok && r.result !== 'fail', result: ok ? r.result : 'fail' }
-    this.write({ event: 'end', botId: o.botId, bot: o.bot, routine: o.routine, run, ...out, ...(r.reason ? { reason: r.reason } : {}), ...(error ? { error: error.slice(0, 300) } : {}), ms: this.now() - o.at })
+    // EB · 승인이 시간 초과로 거절된 회차는 루틴이 «ok» 라고 적었어도 실패다 — 하려던 일 하나를 못 했다. 이유에 «승인 시간 초과» 가 남는다(보드가 «Dave 할 일» 로 가른다)
+    const denied = o.denied?.length ? approvalRunReason(o.deniedMin ?? 0, o.denied) : ''
+    const out = denied ? { ok: false, result: 'fail' } : { ok: ok && r.result !== 'fail', result: ok ? r.result : 'fail' }
+    const reason = [denied, r.reason].filter(Boolean).join(' · ').slice(0, 300)
+    this.write({ event: 'end', botId: o.botId, bot: o.bot, routine: o.routine, run, ...out, ...(reason ? { reason } : {}), ...(denied ? { approvalTimeouts: o.denied!.length } : {}), ...(error ? { error: error.slice(0, 300) } : {}), ms: this.now() - o.at })
     return out
+  }
+  /**
+   * EB · 이 회차의 승인 요청 하나가 시간 초과로 거절됐다(`core/approvalTimeout`) — 그 자리에서 한 줄 적고, 끝을 적을 때 실패 사유로 싣는다.
+   * @returns 이 호스트가 시작한 회차였으면 true
+   */
+  approvalTimedOut(run: string, tool: string, minutes: number): boolean {
+    const o = this.open.get(run); if (!o) return false
+    ;(o.denied ??= []).push(tool); o.deniedMin = minutes
+    this.write({ event: 'approval_timeout', botId: o.botId, bot: o.bot, routine: o.routine, run, tool, minutes })
+    return true
   }
   /**
    * RB · 지난달·이번 달 실행 기록을 통째로 읽는다(모든 호스트 것 · 시각 순) — 루틴 보드·공유 «이미 돌았나» 판단이 쓴다.

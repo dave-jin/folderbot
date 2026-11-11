@@ -2,6 +2,7 @@
 import type { Draft } from './draft'
 import type { AskMark } from './askMark'
 import type { DocReq } from './docReq'
+import type { BgTask } from './bgTasks'
 
 export type SessionState = 'idle' | 'running' | 'awaiting_input' | 'done' | 'error'
 
@@ -15,7 +16,12 @@ export type SessionEvent =
   | { kind: 'acknowledged' }
 
 export type Vendor = 'claude' | 'codex'
-export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' | 'dontAsk'
+/**
+ * 권한 모드 — Claude Code CLI 의 `--permission-mode` 값 그대로다.
+ * EB · `auto` = «자동»(Claude 가 권한을 판단 · CLI 2.1.322 실측) · `default` = «수동»(바꾸기 전에 늘 묻기). 화면 이름은 `core/permPolicy.PERM_MODE_MENU`.
+ * 🔴 저장된 `default` 를 `auto` 로 옮기지 않는다 — 이름만 «수동» 으로 바뀐 것이고, 조용히 옮기면 권한이 풀린다.
+ */
+export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' | 'dontAsk' | 'auto'
 
 /** 폴더 규칙 (루트 CLAUDE.md 의 ```yaml folder-rules 블록) */
 export interface FolderRules {
@@ -57,8 +63,8 @@ export interface RoutineDef {
   cron: string
   prompt: string
   vendor?: Vendor
-  /** 사람이 없을 때 승인 정책: readonly · folder(폴더 안 쓰기 허용) · always(기본 · routines.ts DEFAULT_ROUTINE_APPROVE) */
-  approve?: 'readonly' | 'folder' | 'always'
+  /** 사람이 없을 때 승인 정책: readonly · folder(폴더 안 쓰기 허용) · auto(EB · Claude 가 권한을 판단 — `--permission-mode auto`) · always(기본 · routines.ts DEFAULT_ROUTINE_APPROVE) */
+  approve?: 'readonly' | 'folder' | 'auto' | 'always'
   push?: boolean
   /** 꺼 두면 스케줄에 안 건다 — 지우지 않고 잠시 멈추는 길 (AA-4). 없으면 켜진 것으로 본다 */
   enabled?: boolean
@@ -174,6 +180,13 @@ export interface SessionInfo {
   slashN?: number
   /** 모델·노력·모드를 바꿨는데 턴이 도는 중이라 다음 턴부터 적용 */
   restartPending?: boolean
+  /**
+   * EB · 살아 있는 워커가 **실제로** 도는 권한 모드 — CLI 가 `system/init`·`system/status` 로 말해 준 값(없으면 모른다).
+   * 저장된 값(`permissionMode`)과 다를 수 있다: 모드를 안 정한 세션은 지금의 «새 채팅 기본 권한» 을 따라 뜬다(워커가 없으면 다음에 뜰 모드).
+   */
+  liveMode?: PermissionMode
+  /** EB · 도는 중에 모드를 바꿨을 때 — `now` 워커에 바로 적용됨(set_permission_mode) · `next` 이 턴은 호스트가 대신 답하고 다음 워커부터. 턴이 끝나면 지운다 */
+  modeApplied?: 'now' | 'next'
 }
 
 /** 슬래시 자동완성 항목 — 스킬(.claude/skills) · 명령(.claude/commands) · CLI 내장 */
@@ -200,6 +213,8 @@ export interface HarnessRow {
   by: Record<HarnessScope, number>
 }
 export interface HarnessDetail extends HarnessRow { skillList: HarnessItem[]; mcpList: HarnessItem[] }
+/** EA · 봇이 부를 수 있는 에이전트 정의 한 개(`.claude/agents/<이름>.md`) — 읽기만 한다 */
+export interface AgentDef { name: string; desc: string; scope: 'folder' | 'user'; model?: string }
 
 /** 호스트 대기열의 말 한 개 — `from` 은 보낸 봇 id */
 /** `origin` — 이 말이 나가 시작하는 턴의 출처(core/turnGuard). 비면 'bot' */
@@ -233,12 +248,12 @@ export interface PermissionRequest {
 
 /** 대화 항목 — 화면이 그리는 단위 */
 export type ChatItem =
-  | { id: string; t: number; kind: 'user'; text: string; /** J-4 · 어느 기기에서 보냈나 */ from?: { device: string; main: boolean; tier: 'desktop' | 'phone' | 'browser' } }
+  | { id: string; t: number; kind: 'user'; text: string; /** J-4 · 어느 기기에서 보냈나 */ from?: { device: string; main: boolean; tier: 'desktop' | 'phone' | 'browser' }; /** EC · 턴을 멈추지 않고 도는 중에 끼워 넣은 말(`priority: "next"`) — 화면이 «끼워 넣음» 표시를 단다 */ steer?: boolean }
   | { id: string; t: number; kind: 'assistant'; text: string; streaming?: boolean }
   | { id: string; t: number; kind: 'tool'; name: string; summary: string; input?: Record<string, unknown>; result?: string; isError?: boolean; parentId?: string }
   | { id: string; t: number; kind: 'thinking'; text: string; streaming?: boolean }
   /** Task/Agent 도구 하나 = 서브에이전트 하나. 자식 도구 줄은 parentId 로 이 id 를 가리킨다 */
-  | { id: string; t: number; kind: 'subagent'; name: string; prompt: string; tools: number; last: string; status: 'run' | 'done' | 'error'; result?: string; /** run_in_background — 턴이 끝나도 계속 돈다. 끝은 system/task_notification 이 알린다 */ bg?: boolean; taskId?: string }
+  | { id: string; t: number; kind: 'subagent'; name: string; prompt: string; tools: number; last: string; status: 'run' | 'done' | 'error'; result?: string; /** run_in_background — 턴이 끝나도 계속 돈다. 끝은 system/task_notification 이 알린다 */ bg?: boolean; taskId?: string; /** EA · 사람이 이 작업 하나를 멈췄다(`stop_task`) — 상태는 `error` 로 두되(옛 화면이 «끝남» 으로 읽지 않게) 화면은 «멈춤» 이라 적는다 */ stopped?: boolean }
   /** TodoWrite — 세션당 하나(최신)만 남긴다 */
   | { id: string; t: number; kind: 'todos'; items: { content: string; status: 'pending' | 'in_progress' | 'completed'; activeForm?: string }[] }
   | { id: string; t: number; kind: 'system'; text: string }
@@ -301,6 +316,8 @@ export type Frame =
   | { ev: 'bots'; bots: Bot[]; /** A · 오케스트레이터가 순서를 바꿨다 → 그 기기의 레일 정렬을 «직접» 으로 */ reorderedBy?: 'orchestrator' }
   | { ev: 'sessions'; botId: string; sessions: SessionInfo[] }
   | { ev: 'chat'; sessionId: string; item: ChatItem; replace?: boolean }
+  /** EA · 맡긴 일 한 줄이 생기거나 바뀌었다(`core/bgTasks`) — 전체 목록은 대화를 받을 때(`/sessions/:id/chat`) 함께 온다 */
+  | { ev: 'task'; sessionId: string; botId: string; task: BgTask }
   | { ev: 'state'; sessionId: string; botId: string; state: SessionState }
   | { ev: 'activity'; sessionId: string; botId: string; activity: string; turnStartedAt?: number }
   | { ev: 'permission'; sessionId: string; botId: string; req: PermissionRequest }

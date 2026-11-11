@@ -283,6 +283,19 @@ b,strong { color:var(--w); font-weight:600 }
 .queue .qwho { font-size:11px; padding:1px 7px; border-radius:999px; background:var(--line2); color:var(--t2) }
 .queue .qb { display:inline-flex; align-items:center; gap:4px; font-size:12px; color:var(--t3); padding:2px 6px; border-radius:6px }
 .queue .qb:hover { color:var(--w); background:var(--line2) }
+/* EC · 대기 줄의 단추 묶음 — [끼워 넣기] [멈추고 보내기] [고치기] [빼기]. 좁으면 묶음째 다음 줄로 내려간다(단추가 낱개로 흩어지지 않게) */
+.queue .qh { flex-wrap:wrap; row-gap:4px }
+.queue .qacts { display:flex; align-items:center; gap:4px; margin-left:auto; flex-wrap:wrap; justify-content:flex-end }
+.queue .qb.steer { color:var(--t); border:1px solid var(--line2) }
+.queue .qb.now { color:var(--t); border:1px solid var(--line2) }
+.queue .qb.steer.off { opacity:.45; cursor:default }
+.queue .qb.steer.off:hover { color:var(--t); background:none }
+/* 폰 — 올리기가 없고 엄지로 누른다. 단추 높이 34px 이상 */
+.app.phone .queue .qb { min-height:34px; padding:6px 10px; font-size:13px }
+.app.phone .queue .qacts { gap:6px }
+/* EC · 끼워 넣은 사람 말의 작은 표시(기기 표시 `.dev` 와 같은 자리·크기) */
+.umsg .steertag { display:block; width:fit-content; font-size:10.5px; color:var(--t3); border:1px solid var(--line2); border-radius:999px; padding:0 7px; margin-bottom:4px; line-height:1.6 }
+.umsg .dev + .steertag { margin-top:-2px }
 .queue .tx { color:var(--t); font-size:14px; line-height:1.6; text-align:left; white-space:pre-wrap; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden }
 .queue button.tx:hover { color:var(--w) }
 .queue .qin { width:100%; min-height:72px; resize:none; background:var(--bg); border:1px solid var(--line2); border-radius:8px; padding:8px 10px; color:var(--w); font:inherit; font-size:14px; line-height:1.6; outline:0 }
@@ -364,6 +377,16 @@ b,strong { color:var(--w); font-weight:600 }
 .cbtn { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:6px; font-size:12.5px; color:var(--t2); white-space:nowrap; position:relative } .cbtn:hover { color:var(--w); background:var(--hover) } .cbtn.on { color:var(--w); background:var(--sel) } .cbtn .chev { color:var(--t3) }
 /* 모드 칩 «적용 중» — 옛 모드 워커가 턴을 끝낼 때까지 (host autoAllow 가 그 사이를 맡는다) */
 .cbtn .pend { font-size:10px; line-height:14px; padding:0 5px; border-radius:7px; border:1px solid var(--hair); color:var(--t3); margin-left:2px } .cpop .hint.pend { display:block; border-top:0; padding-top:2px; white-space:normal; line-height:1.4 }
+/* EB · 도는 워커에 모드가 바로 들어갔다 — «적용 중»(다음 턴부터)과 색으로 가른다 · Codex 세션의 모드 팝업은 안내 한 줄뿐이라 좁게 */
+.cbtn .pend.pend-now { color:var(--done); border-color:color-mix(in srgb, var(--done) 45%, transparent) }
+.cpop.modepop-cx { min-width:240px; max-width:300px } .cpop.modepop-cx .hint.pend { padding:4px 10px 8px } .cpop.modepop-cx .hint.pend b { color:var(--t); font-weight:600 }
+/* EC · 카드의 키 — ⌘J 로 뛰어오면 카드에 초점이 선다. 안내는 자판이 있는 화면에만(폰은 화면이 `keys` 를 안 준다) */
+.card[data-req] { outline:0 }
+.card[data-req]:focus { outline:1px solid var(--wait); outline-offset:8px; border-radius:6px }
+.card .pkeys { margin-left:auto; font-size:11px; color:var(--t3); white-space:nowrap }
+.card .pkeys .pk-on { display:none; color:var(--t2) }
+.card[data-kind="perm"]:focus .pkeys .pk-on { display:inline }
+.card[data-kind="perm"]:focus .pkeys .pk-off { display:none }
 .card .meta.rule { font-family:var(--mono); font-size:11px; color:var(--t3); margin-top:6px; word-break:break-all }
 /* ⚠ 큰 링도 12시에서 시작하고, 빠듯하면 같은 색으로 경고한다 (작은 링 `.ring` 과 한 몸) */
 .ctxpop .big svg { transform:rotate(-90deg) } .ctxpop .big { color:var(--t2) } .ctxpop .big.hot { color:var(--run) }
@@ -1479,6 +1502,14 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 /* ── 세션 정리 (2026-10-02 · 시안 B) — 넓은 창 · 거름 알약 · 표 · 잠긴 줄은 흐리게 · 되돌리기 띠 ── */
 .modal.clean { width:min(860px, calc(100% - 24px)); height:min(640px, calc(100% - 24px)) }
 .modal.clean .modal-h .cnt { font-size:12px; color:var(--t3) }
+/* EC · 세션 창 상태 탭 — 전체 · 내 답 기다림 · 일하는 중 · 안 읽음 · 쉼. 줄은 접히지 않고, 좁으면 옆으로 밀어 본다 */
+.modal.clean .stabs { display:flex; align-items:center; gap:4px; padding:0 18px 10px; flex:none; min-width:0; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch } .modal.clean .stabs::-webkit-scrollbar { display:none }
+.modal.clean .stab { display:inline-flex; align-items:center; gap:6px; flex:none; white-space:nowrap; font-size:12.5px; color:var(--t2); padding:5px 11px; border-radius:8px; border:1px solid transparent }
+.modal.clean .stab:hover { background:var(--hover) }
+.modal.clean .stab.on { color:var(--w); background:var(--line2); border-color:var(--line2) }
+.modal.clean .stab .c { font-family:var(--mono); font-size:11px; color:var(--t3) }
+.modal.clean .stab.on .c { color:var(--t2) }
+.modal.clean .stab.hot .c { color:var(--wait) }
 .modal.clean .cbar { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:0 18px 10px }
 .modal.clean .pill { font-size:12px; padding:3px 10px; border-radius:999px; background:var(--line2); color:var(--t2) }
 .modal.clean .pill.on { background:var(--w); color:var(--onAccent, #111) }
@@ -1627,6 +1658,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 @media (max-width: 640px) {
   .modal.clean { width:100%; height:100%; max-height:none; transform:none; left:0; top:0; border:0; border-radius:0; padding-top:var(--sat, 0px); padding-bottom:var(--sab, 0px) }
   .modal.clean .modal-h .t { min-width:0 }
+  .modal.clean .stabs { padding:0 14px 10px; gap:6px } .modal.clean .stab { font-size:13.5px; padding:8px 12px; min-height:36px }
   .modal.clean .cbar { flex-wrap:nowrap; overflow-x:auto; padding:0 14px 10px; scrollbar-width:none; -webkit-overflow-scrolling:touch } .modal.clean .cbar::-webkit-scrollbar { display:none }
   .modal.clean .cbar .pill { flex:none; white-space:nowrap; font-size:13px; padding:5px 12px } .modal.clean .cbar .pill.dpill { padding:0 } .modal.clean .cbar .pill.dpill > button { padding:5px 12px 5px 3px }
   .modal.clean .cbar > span[style] { display:none } .modal.clean .cfold { flex:none; max-width:150px; font-size:13px; padding:5px 6px }
@@ -2076,4 +2108,65 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
   .smg-exp { padding:2px 12px 14px 14px } .smg-chip { height:32px; font-size:13px } .smg-chip .x { width:28px; height:28px }
   .smg-in, .smg-sel { height:36px; font-size:16px } .smg-merge { margin-left:0 } .smg-pick { width:100% }
   .smg-log .smg-sel { height:32px; font-size:16px } .smg-log .acts .btn { height:32px }
+}
+
+/* ═══ EA · 뒤에서 도는 일 (2026-11-11 Dave 승인 «맡긴 에이전트를 보고 멈춘다») ═══════════════════════
+   목록 한 벌(`.bgtasks`)을 두 자리에서 쓴다 — 데스크톱은 오른쪽 패널의 절(`.bgsec`), 폰은 바닥 시트(`.tsheet.bgsheet`).
+   ⚠ 단추는 올리지 않아도 늘 보인다(폰에는 올리기가 없다). 색은 새로 만들지 않는다 — 도는 것은 주황(--run), 나머지는 회색 사다리. */
+.live .bgo { display:inline-flex; align-items:center; gap:5px; flex:none; font-size:11.5px; line-height:1; color:var(--t2); border:1px solid var(--line2); border-radius:11px; padding:3px 8px; white-space:nowrap }
+.live .bgo .sh { display:none }
+.live .bgo b { font-weight:600; color:var(--w); font-variant-numeric:tabular-nums }
+.live .bgo:hover { color:var(--w); border-color:var(--t3) }
+.live.hold .bgo { border-color:color-mix(in srgb, var(--hold) 45%, var(--line)); color:color-mix(in srgb, var(--hold) 70%, var(--w)) }
+.live.hold .bgo b { color:inherit }
+.live.bgline .tx { color:var(--t3) }
+/* 🔴 단추가 하나 는 만큼 좁은 채팅 칸(데스크톱에서 양옆을 키운 360px · 폰 320)에서 줄이 상자를 뚫었다(fit 실측 35px). 이 단추가 있는 줄만
+   자리가 모자랄 때 뒤의 단추들을 다음 줄로 내린다 — 넓으면 종전처럼 한 줄이다. 글은 10자 아래로는 안 줄인다(«…» 만 남지 않게). */
+.live:has(.bgo) { flex-wrap:wrap; row-gap:6px; height:auto }
+.live:has(.bgo) .tx { min-width:min(100%, 10em) }
+.sub .l .sstop { display:inline-flex; align-items:center; gap:4px; flex:none; margin-left:auto; font-size:11.5px; line-height:1; color:var(--t3); border:1px solid var(--line); border-radius:10px; padding:3px 8px 3px 7px; white-space:nowrap }
+.sub .l .sstop:hover { color:var(--w); border-color:var(--line2) } .sub .l .sstop:disabled { opacity:.55; cursor:default }
+.sub .l .sstop + .op { margin-left:0 }
+.sub .l .sstop svg rect, .bgt .stopb svg rect, .drill-r .stopb svg rect { fill:currentColor }
+.sub .in .submore { align-self:flex-start; display:inline-flex; align-items:center; gap:3px; font-size:12px; color:var(--t2); padding:2px 0 } .sub .in .submore:hover { color:var(--w) }
+.bgtasks { display:flex; flex-direction:column; padding:0 0 6px; min-width:0 }
+.bgt-h { display:flex; align-items:center; gap:6px; width:100%; padding:6px 16px 2px; font-size:11px; color:var(--t3); text-align:left } .bgt-h .c { color:var(--t2); font-variant-numeric:tabular-nums } button.bgt-h:hover { color:var(--t2) }
+.bgt-empty { padding:3px 16px 6px; font-size:12px; color:var(--t3); line-height:1.5 }
+.bgt { display:flex; align-items:flex-start; gap:8px; padding:6px 10px 6px 16px; min-width:0 } .bgt:hover { background:var(--hover) }
+.bgt .ki { flex:none; width:12px; height:22px; display:inline-flex; align-items:center; justify-content:center }
+.bgt .tb { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px }
+.bgt .r1 { display:flex; align-items:center; gap:6px; min-width:0; min-height:22px }
+.bgt .nm { flex:1; min-width:0; display:block; font-size:12.5px; line-height:18px; color:var(--t); white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .bgt.run .nm { color:var(--w) }
+.bgt .nm svg { vertical-align:-1px; margin-right:5px }
+.bgt .st { display:block; font-size:11.5px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-variant-numeric:tabular-nums }
+.bgt.run .st .el, .bgt .st .la { font-family:var(--mono); font-size:11px } .bgt.run .st .el { color:var(--t2) }
+.bgt .sm { font-size:11.5px; line-height:1.45; color:var(--t3); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; word-break:break-word }
+.bgt .ac { flex:none; display:inline-flex; align-items:center; gap:4px; min-height:18px }
+.bgt .stopb, .bgt .openb, .drill-r .stopb { display:inline-flex; align-items:center; gap:4px; flex:none; font-size:11.5px; line-height:1; color:var(--t2); border:1px solid var(--line2); border-radius:9px; padding:4px 8px; white-space:nowrap }
+.bgt .stopb:hover, .bgt .openb:hover, .drill-r .stopb:hover { color:var(--w); background:var(--sel) } .bgt .stopb:disabled, .drill-r .stopb:disabled { opacity:.5; cursor:default }
+.bgt .openb { border-color:transparent; color:var(--t3); padding:4px 4px 4px 6px }
+.bgsec .bgsb { max-height:236px } .bgsec .sech .c.bgc { color:var(--run) } .bgsec .sech .dot { margin-left:2px }
+.tsheet.bgsheet { padding:10px 0 calc(var(--sab) + 12px); max-height:72dvh }
+.bgsheet .bgsh { display:flex; align-items:center; gap:10px; padding:2px 18px 8px; flex:none } .bgsheet .bgsh b { font-size:16px; color:var(--w) } .bgsheet .bgsh .c { flex:1; font-size:13px; color:var(--t3) }
+.tsheet.bgsheet .bgsh .xb { height:34px; padding:0 13px; gap:0; font-size:14px; color:var(--t2); border-radius:10px; background:var(--sel) }
+.bgsheet .bgsb { overflow:auto; min-height:0; overscroll-behavior:contain }
+.tsheet.bgsheet .bgt-h { height:auto; padding:8px 18px 2px; gap:6px; font-size:12.5px; color:var(--t3) } .tsheet.bgsheet button.bgt-h { min-height:36px }
+.tsheet.bgsheet .bgt-empty { padding:4px 18px 10px; font-size:14px }
+.tsheet.bgsheet .bgt { padding:10px 12px 10px 18px; gap:10px } .tsheet.bgsheet .bgt .ki, .tsheet.bgsheet .bgt .r1 { height:36px; min-height:36px }
+.tsheet.bgsheet .bgt .nm { font-size:15px; line-height:22px } .tsheet.bgsheet .bgt .st { font-size:13px } .tsheet.bgsheet .bgt.run .st .el, .tsheet.bgsheet .bgt .st .la { font-size:12px } .tsheet.bgsheet .bgt .sm { font-size:13px }
+.tsheet.bgsheet .bgt .stopb, .tsheet.bgsheet .bgt .openb { height:36px; padding:0 12px; gap:5px; font-size:13.5px; border-radius:10px; border:0; background:var(--sel); color:var(--w) }
+.tsheet.bgsheet .bgt .openb { color:var(--t2) }
+.drill-r { display:flex; flex-direction:column; gap:6px; margin-top:4px; padding-top:10px; border-top:1px solid var(--line); min-width:0 }
+.drill-r .dr-res { min-width:0; color:var(--t) } .drill-r .dr-none { font-size:12.5px; color:var(--t3); line-height:1.5 }
+.drill-r .dr-run { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--t2) }
+.drill-w { display:flex; flex-direction:column; gap:8px; margin-top:8px; min-width:0 }
+.drill-w .wbtn { align-self:flex-start; display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--t2); border:1px solid var(--line2); border-radius:9px; padding:5px 11px; white-space:nowrap } .drill-w .wbtn:hover { color:var(--w); background:var(--hover) } .drill-w .wbtn:disabled { opacity:.5; cursor:default }
+.drill-w .meta .cut { color:var(--t3); font-size:11.5px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap } .drill-w .meta .sp { flex:1 } .drill-w .rld { flex:none; font-size:12px; color:var(--t2); white-space:nowrap } .drill-w .rld:hover { color:var(--w) }
+.drill-w .dr-wt { min-width:0; padding:10px 13px; border:1px solid var(--line); border-radius:10px; background:var(--bg2) }
+@media (max-width: 767px) {
+  .live .bgo { height:32px; padding:0 11px; gap:6px; border:0; border-radius:16px; background:var(--box); font-size:13px } .live .bgo .sh { display:inline } .live.hold .bgo { background:color-mix(in srgb, var(--hold) 16%, var(--box)) }
+  .sub .l .sstop { width:30px; height:30px; padding:0; justify-content:center; border:0; border-radius:50%; background:var(--box) } .sub .l .sstop svg { width:11px; height:11px }
+  .sub .in .submore { min-height:34px; font-size:14px }
+  .drill-r .dr-none, .drill-r .dr-run { font-size:14px } .drill-r .stopb { height:34px; padding:0 12px; font-size:13.5px; border:0; background:var(--box); border-radius:10px }
+  .drill-w .wbtn { height:38px; padding:0 14px; font-size:14px; border-radius:11px } .drill-w .rld { min-height:32px; font-size:13.5px } .drill-w .meta .cut { font-size:12.5px }
 }

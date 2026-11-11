@@ -41,7 +41,7 @@ for (let i = 0; i < 80; i++) { try { await fetch(base + '/api/bots'); break } ca
  * 품어야 하는 상자들. 여기 없는 것은 안 잰다 — 스크롤 칸처럼 **넘치는 게 정상**인 것도 있다.
  * ⚠ `.live.hold` 는 화면에 늘 있지는 않다(대기 중에만). 그래서 아래에서 **진짜 마크업을 심어** 잰다.
  */
-const BOXES = ['.composer', '.live.hold', '.imgv .zbar', '.tabbar', '.cbar']
+const BOXES = ['.composer', '.live.hold', '.imgv .zbar', '.tabbar', '.cbar', '.qlist .queue']   // EC · 대기 말 줄(단추 넷)도 제 상자 안에
 const overflow = (pg) => pg.evaluate((sels) => {
   const out = []
   for (const sel of sels) for (const box of document.querySelectorAll(sel)) {
@@ -76,7 +76,7 @@ const overflow = (pg) => pg.evaluate((sels) => {
 /** 글자가 단추 안에서 두 줄로 접혔나 — 「맞/춤」 같은 것 */
 const wrapped = (pg) => pg.evaluate(() => {
   const out = []
-  for (const el of document.querySelectorAll('.zbar button, .cbtn, .hact, .sendb, .tabbar [data-tab] span')) {
+  for (const el of document.querySelectorAll('.zbar button, .cbtn, .hact, .sendb, .tabbar [data-tab] span, .queue .qb > span, .modal.clean .stab > span:first-child')) {   // EC · 대기 줄 단추 · 세션 창 탭(폰에서는 단추에 손가락 여백이 붙으므로 글자 칸으로 잰다)
     const t = (el.textContent || '').trim(); if (!t) continue
     const lh = Number.parseFloat(getComputedStyle(el).lineHeight) || 16
     if (el.getBoundingClientRect().height > lh * 1.7) out.push({ el: String(el.className || el.tagName).slice(0, 24), txt: t.slice(0, 12), h: Math.round(el.getBoundingClientRect().height), lh: Math.round(lh) })
@@ -110,8 +110,8 @@ for (const [label, W, H, phone, lay] of CASES) {
   // 대기 줄은 대화 중에만 뜬다 — **진짜 마크업**을 심어 폭만 잰다(CSS 는 실물 그대로)
   await pg.evaluate(() => {
     const host2 = document.querySelector('.chat-body'); if (!host2 || document.querySelector('.live.hold')) return
-    const d = document.createElement('div'); d.className = 'live hold'
-    d.innerHTML = '<span style="width:22px;height:22px;flex:none;display:inline-block"></span><span class="bounce"><i></i><i></i><i></i></span><span class="tx">오래 걸리네요 — 다른 일 보셔도 됩니다. 끝나면 알려 드릴게요</span><span class="el mono">38분 9초</span><span class="sp"></span><button class="hact">알림 켜기</button>'
+    const d = document.createElement('div'); d.className = 'live hold'   // EA · 2분 넘은 대기 줄에 «뒤에서 도는 일» 단추까지 — 가장 빽빽한 경우로 잰다(좁으면 단추가 다음 줄로 내려가야 한다)
+    d.innerHTML = '<span style="width:22px;height:22px;flex:none;display:inline-block"></span><span class="bounce"><i></i><i></i><i></i></span><span class="tx">오래 걸리네요 — 다른 일 보셔도 됩니다. 끝나면 알려 드릴게요</span><span class="el mono">38분 9초</span><span class="sp"></span><button class="bgo"><svg class="ico" viewBox="0 0 16 16" width="11" height="11"></svg><span class="w">뒤에서 도는 일</span><span class="sh">뒤에서</span><b>12</b></button><button class="hact">알림 켜기</button>'
     host2.appendChild(d)
   })
   /**
@@ -128,6 +128,32 @@ for (const [label, W, H, phone, lay] of CASES) {
       `<button aria-label="원본">${ic}<span class="lb">원본</span></button>` +
       `<button class="cp" aria-label="복사">${ic}<span class="lb">복사</span></button></div>`
     app.appendChild(v)
+  })
+  /**
+   * EC · 대기 말 줄 — 단추가 넷([끼워 넣기] [멈추고 보내기] [고치기] [빼기])으로 늘었다. 봇 이름표까지 붙은 가장 빽빽한 줄을 **진짜 마크업**으로 심어 잰다
+   *   (좁으면 단추 묶음이 다음 줄로 내려가야 한다 — 줄 밖으로 나가거나 글자가 접히면 빨강).
+   */
+  await pg.evaluate(() => {
+    const foot = document.querySelector('.chat-foot'); if (!foot || document.querySelector('.qlist')) return
+    const ic = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M3 13l2-6 6-4 2 2-4 6z"/></svg>'
+    const q = document.createElement('div'); q.className = 'qlist'
+    q.innerHTML = '<div class="qhead">대기 1개 · 지금 일이 끝나면 차례로 보내요</div><div class="queue"><div class="qh"><span class="qn">대기 1</span><span class="qwho">🛠 오케스트레이터</span><span style="flex:1"></span>' +
+      `<span class="qacts"><button class="qb steer"><span>끼워 넣기</span></button><button class="qb now"><span>멈추고 보내기</span></button><button class="qb">${ic}<span>고치기</span></button><button class="qb drop">${ic}<span>빼기</span></button></span></div>` +
+      '<button class="tx">남은 단계는 하지 말고 표만 먼저 고쳐 줘. 길어지면 세 줄에서 접힌다.</button></div>'
+    foot.insertBefore(q, foot.firstChild)
+  })
+  /**
+   * EC · 세션 창의 상태 탭 — 다섯 탭을 **진짜 마크업**으로 심어 잰다. 넓은 폭에서는 한 줄에 다 들어가야 하고,
+   *   폰 폭에서는 줄이 접히지 않은 채 옆으로 밀려야 한다(창 자체는 옆으로 안 샌다). 넘치는 것이 정상인 칸이라 BOXES 에 넣지 않고 따로 잰다(아래 `tabsFit`).
+   */
+  await pg.evaluate(() => {
+    if (document.querySelector('.modal.clean')) return
+    const app = document.querySelector('.app'); if (!app) return
+    const m = document.createElement('div'); m.className = 'modal clean manage'; m.dataset.fit = '1'
+    m.innerHTML = '<div class="modal-h"><div class="t"><b>세션</b><span class="cnt">전체 128개 · 고른 것 0개</span></div></div>' +
+      '<div class="stabs" role="tablist">' + [['all', '전체', 128], ['wait', '내 답 기다림', 12], ['work', '일하는 중', 34], ['unread', '안 읽음', 56], ['rest', '쉼', 26]].map(([k, t, c], i) => `<button class="stab${i === 0 ? ' on' : ''}" data-tab="${k}"><span>${t}</span><span class="c">${c}</span></button>`).join('') + '</div>' +
+      '<div class="ctab"></div>'
+    app.appendChild(m)
   })
   await wait(250)
   /* 데스크톱 아래 줄은 **첨부가 있을 때** 가장 길어진다 — Dave 가 겪은 상태를 그대로 만든다 */
@@ -166,6 +192,19 @@ for (const [label, W, H, phone, lay] of CASES) {
   }).catch(() => null)
   if (process.env.FB_DEBUG3) console.log('   칩:', JSON.stringify(chipOff))
   const [ov, wr] = [await overflow(pg), await wrapped(pg)]
+  // EC · 세션 창 탭 — 한 줄인가 · 창 밖으로 안 나가나 · (넓으면) 다 들어가나 · (좁으면) 옆으로 밀리나
+  const tf = await pg.evaluate(() => {
+    const m = document.querySelector('.modal.clean[data-fit]'); const st = m?.querySelector('.stabs'); if (!m || !st) return { none: true }
+    const mr = m.getBoundingClientRect(), sr = st.getBoundingClientRect(); const bs = [...st.querySelectorAll('.stab')].map((b) => b.getBoundingClientRect())
+    return { lines: new Set(bs.map((b) => Math.round(b.top))).size, out: Math.round(Math.max(sr.right - mr.right, mr.left - sr.left)), modalOver: m.scrollWidth - m.clientWidth, over: st.scrollWidth - st.clientWidth, ox: getComputedStyle(st).overflowX, vw: innerWidth, mw: Math.round(mr.width) }
+  })
+  if (tf.none) ov.push({ box: '.modal.clean .stabs', el: '(못 찾음)', over: 0, axis: '가로', txt: '탭을 못 심었다' })
+  else {
+    if (tf.lines !== 1) ov.push({ box: '.modal.clean .stabs', el: 'stab', over: tf.lines, axis: '세로', txt: '탭이 두 줄로 접힘' })
+    if (tf.out > 1 || tf.modalOver > 1 || tf.mw > tf.vw + 1) ov.push({ box: '.modal.clean', el: 'stabs', over: Math.max(tf.out, tf.modalOver), axis: '가로', txt: '창 밖으로 나감' })
+    if (tf.over > 1 && tf.ox !== 'auto' && tf.ox !== 'scroll') ov.push({ box: '.modal.clean .stabs', el: 'stab', over: tf.over, axis: '가로', txt: '넘치는데 못 밀어 봄' })
+    if (tf.over > 1 && W >= 900) ov.push({ box: '.modal.clean .stabs', el: 'stab', over: tf.over, axis: '가로', txt: '넓은 폭인데 넘침' })
+  }
   if (ov.length || wr.length) bad++
   console.log(`\n■ ${label}`)
   if (process.env.FB_DEBUG4) console.log('   바:', JSON.stringify(await pg.evaluate(() => {

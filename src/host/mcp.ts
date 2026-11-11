@@ -48,10 +48,11 @@ const COMMON: Tool[] = [
    * AA-5 · 루틴 도구 (2026-09-22 Dave). 봇은 자기 폴더에 어떤 루틴이 걸렸는지조차 몰랐다.
    * 🔴 **approve 는 일부러 없다.** `approve: always` 는 `approveToMode()` 를 거쳐 `bypassPermissions` 가 된다 —
    *    봇이 스스로 권한을 올리는 길을 열지 않는다. 승인 수준은 사람이 UI 에서만 바꾼다.
+   *    EB(2026-11-11) · 선택지에 `auto`(Claude 가 권한을 판단)가 생겼지만 인자는 여전히 없다 — 설명과 `routine_list` 의 값으로만 알린다.
    */
   { name: 'routine_list', description: '이 폴더에 걸린 루틴 목록 — 주기(사람 말)·다음 실행·켜짐·마지막 오류. 루틴이 안 도는 것 같으면 여기부터 본다. 오케스트레이터는 bot 으로 다른 폴더 것도 본다.', inputSchema: obj({ bot: { type: 'string', description: '오케스트레이터만 — 다른 폴더 이름(또는 봇 id)' } }) },
-  { name: 'routine_add', description: `이 폴더에 루틴을 새로 건다. when 은 ${WHEN_DESC} prompt 에는 «무엇을 확인하고, 변화가 없으면 어떻게 하라» 까지 적는다. 승인 수준(approve)은 여기서 못 바꾼다 — 사람이 화면에서 정한다.`, inputSchema: obj({ name: { type: 'string', description: '루틴 이름(이 폴더 안에서 유일)' }, when: { type: 'string', description: '사람 말로 적은 주기' }, prompt: { type: 'string', description: '루틴이 돌 때 보낼 말' }, push: { type: 'boolean', description: '끝나면 폰으로 알릴지' }, bot: { type: 'string', description: '오케스트레이터만 — 다른 폴더의 루틴을 다룰 때 그 폴더 이름(또는 봇 id)' }, why: { type: 'string', description: '오케스트레이터가 다른 봇 루틴을 바꿀 때 필수 — 이유 한 줄(그 폴더 CLAUDE.md 루틴 구역에 남는다)' } }, ['name', 'when', 'prompt']) },
-  { name: 'routine_update', description: `루틴을 고친다. 준 값만 바뀐다. when 은 ${WHEN_DESC} 되돌릴 수 있게 **직전 값**을 결과에 담아 준다. 승인 수준(approve)은 여기서 못 바꾼다.`, inputSchema: obj({ name: { type: 'string' }, when: { type: 'string' }, prompt: { type: 'string' }, push: { type: 'boolean' }, enabled: { type: 'boolean', description: '끄면 지우지 않고 잠시 멈춘다' }, bot: { type: 'string', description: '오케스트레이터만 — 다른 폴더의 루틴을 다룰 때 그 폴더 이름(또는 봇 id)' }, why: { type: 'string', description: '오케스트레이터가 다른 봇 루틴을 바꿀 때 필수 — 이유 한 줄(그 폴더 CLAUDE.md 루틴 구역에 남는다)' } }, ['name']) },
+  { name: 'routine_add', description: `이 폴더에 루틴을 새로 건다. when 은 ${WHEN_DESC} prompt 에는 «무엇을 확인하고, 변화가 없으면 어떻게 하라» 까지 적는다. 승인 수준(approve: always 묻지 않고 바로 · auto Claude 가 권한을 판단 · folder 이 폴더 안에서만 · readonly 계획만)은 여기서 못 바꾼다 — 사람이 화면에서 정한다.`, inputSchema: obj({ name: { type: 'string', description: '루틴 이름(이 폴더 안에서 유일)' }, when: { type: 'string', description: '사람 말로 적은 주기' }, prompt: { type: 'string', description: '루틴이 돌 때 보낼 말' }, push: { type: 'boolean', description: '끝나면 폰으로 알릴지' }, bot: { type: 'string', description: '오케스트레이터만 — 다른 폴더의 루틴을 다룰 때 그 폴더 이름(또는 봇 id)' }, why: { type: 'string', description: '오케스트레이터가 다른 봇 루틴을 바꿀 때 필수 — 이유 한 줄(그 폴더 CLAUDE.md 루틴 구역에 남는다)' } }, ['name', 'when', 'prompt']) },
+  { name: 'routine_update', description: `루틴을 고친다. 준 값만 바뀐다. when 은 ${WHEN_DESC} 되돌릴 수 있게 **직전 값**을 결과에 담아 준다. 승인 수준(approve · always/auto/folder/readonly)은 여기서 못 바꾼다 — 사람이 화면에서 정한다.`, inputSchema: obj({ name: { type: 'string' }, when: { type: 'string' }, prompt: { type: 'string' }, push: { type: 'boolean' }, enabled: { type: 'boolean', description: '끄면 지우지 않고 잠시 멈춘다' }, bot: { type: 'string', description: '오케스트레이터만 — 다른 폴더의 루틴을 다룰 때 그 폴더 이름(또는 봇 id)' }, why: { type: 'string', description: '오케스트레이터가 다른 봇 루틴을 바꿀 때 필수 — 이유 한 줄(그 폴더 CLAUDE.md 루틴 구역에 남는다)' } }, ['name']) },
   { name: 'routine_run', description: '이 폴더의 루틴 하나를 지금 한 번 돌린다(새 루틴 세션). 루틴이 안 도는지 확인하거나 실패한 회차를 사람이 다시 돌려 달라고 할 때. 결과는 그 세션에 남는다. 오케스트레이터는 bot 으로 다른 폴더 것도 돌린다.', inputSchema: obj({ name: { type: 'string' }, bot: { type: 'string', description: '오케스트레이터만 — 다른 폴더 이름(또는 봇 id)' } }, ['name']) },
   /**
    * 🔴 **BU · orch_report — 답을 기다리지 않는 보고** (2026-10-09 소통 재설계). 폴더 봇이 루트 state.md 에 직접 쓰던 일을 대신한다.
@@ -301,7 +302,7 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       const def: RoutineDef = { name, cron: w.cron, prompt: s('prompt'), ...(a.push === undefined ? {} : { push: !!a.push }) }
       saveRoutines(reg, host, b, [...b.routines, def])
       noteChange(host, botId, b.id, foreign, name, `새로 걸림 · ${describeCron(def.cron)}`, s('why'), undefined, def)
-      return { ok: true, name, when: w.text, confirm: confirmLine(w.cron), note: '승인 수준(approve)은 사람이 화면에서 정해요 — 기본은 «묻지 않고 바로 한다» 입니다(루틴은 사람이 없을 때 도니까)' }
+      return { ok: true, name, when: w.text, confirm: confirmLine(w.cron), note: '승인 수준(approve)은 사람이 화면에서 정해요 — 기본은 «묻지 않고 바로 한다»(always) 이고, «자동»(auto · Claude 가 권한을 판단)으로 낮출 수 있어요. 낮춘 루틴이 승인을 물으면 정한 시간 뒤 거절돼 그 회차는 실패로 남습니다' }
     }
     case 'routine_update': {
       const { bot: b, foreign } = routineTarget(reg, botId, a, true)

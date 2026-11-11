@@ -19,7 +19,8 @@ describe('autoAllows — 호스트가 모드를 대신 집행한다', () => {
     expect(autoAllows('acceptEdits', 'Bash')).toBe(false)
     expect(autoAllows('acceptEdits', 'WebFetch')).toBe(false)
   })
-  it('자동·계획·미정이면 아무것도 대신 답하지 않는다', () => {
+  it('수동·자동(auto)·계획·미정이면 아무것도 대신 답하지 않는다', () => {
+    expect(autoAllows('auto', 'Bash')).toBe(false)
     expect(autoAllows('default', 'Bash')).toBe(false)
     expect(autoAllows('plan', 'Edit')).toBe(false)
     expect(autoAllows(undefined, 'Write')).toBe(false)

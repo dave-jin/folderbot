@@ -6186,7 +6186,7 @@ try {
           if ((await api('/bots')).find((b) => b.orchestrator).routines.some((r) => r.name === 'Akiflow 동기화')) fail('CK-2: 미리보기로 돌렸는데 루틴이 남았다')
           ok('CK-2 Akiflow — 처음 미리보기 · 켜면 루틴 · 읽고 나서 민다(첫 회차 훑기) · 만들기(마감·프로젝트·출처) → 짝 표식 · Akiflow 완료가 내려옴 · 다시 연 줄은 새 짝 · 마감 후보 · 끄면 루틴 없음')
         }
-        const cbar = await pg.textContent('.composer .cbar'); if (!/Fable 5.1|Sonnet 5/.test(cbar) || !/자동|계획/.test(cbar) || !/높음/.test(cbar)) fail('ui cbar labels: ' + cbar)
+        const cbar = await pg.textContent('.composer .cbar'); if (!/Fable 5.1|Sonnet 5/.test(cbar) || !/수동|계획/.test(cbar) || !/높음/.test(cbar)) fail('ui cbar labels: ' + cbar)   // EB · default 세션의 칩은 이제 «수동» 이다(종전 «자동» — 그 이름은 auto 로 갔다)
         // 슬래시 자동완성 → 스킬이 뜬다 · @ → 파일이 뜬다
         await pg.fill('.composer .cin', '/st'); await wait(300); const sp = await pg.textContent('.cpop'); if (!/standup/.test(sp ?? '') || !/status/.test(sp ?? '')) fail('ui slash popup: ' + sp)
         /**
@@ -7252,8 +7252,119 @@ try {
         ok('CF ②③④⑤ — 바꾼 직후 옛 대화 흐리게(inert) · 머리줄은 곧바로 새 세션 · 0.4초 넘으면 말풍선 회색 줄 · 할 일 회색 줄(«없어요» 안 함) · 받으면 걷힘 · 받기 실패는 다시 받음 · 다시 붙는 중 «맞추는 중» 점')
       }
     }
+    /**
+     * ═══ EA · 맡긴 에이전트를 보고 멈춘다 (2026-11-11 Dave 승인) ═══════════════════════════════
+     * 맡긴 일 목록 · 하나 멈추기(턴 중 · 턴 뒤) · «뒤에서 도는 일» 화면(데스크톱 패널 · 폰 바닥 시트) · 결과 전문 · 서브에이전트가 쓴 글 · 에이전트 정의.
+     * 검사 본문은 `test/ea-tasks.mjs` 다 — 혼자서도 돌아(`node test/ea-tasks.mjs`) 옛 판에서 검사마다 빨개지는지 따로 잴 수 있다.
+     * 🔴 되돌려 본 결과(11/11): `src` 를 고치기 전으로 되돌리면 17개 전부 빨강. 한 줄씩 되돌려도 빨개진다 — stop_task 를 안 보내면 A2·A3·A4·U3·U4·U5·U7,
+     *    다시 붙을 때 목록을 안 맞추면 U3, 결과를 2000자에서 자르면 A6·U6, 심링크 검사를 빼면 A8, 진행 줄에 손잡이를 안 넘기면 U2,
+     *    워커 종료 때 안 닫으면 A5, id 생김새 검사를 빼면 A4·A8, 폰 시트를 안 열면 U7.
+     */
+    {
+      const { eaTasks } = await import('./ea-tasks.mjs')
+      const eaBot = (await api('/bots')).find((b) => b.name === '재무_CFO') ?? await api('/bots/start', { rel: '3. Area/재무_CFO' })
+      const names = []
+      await eaTasks({ base, root, claudeCfg, botId: eaBot.id, botAbs: join(root, '3. Area/재무_CFO'), br, shots: 'test/tmp', check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 EA · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } names.push(name.split(' ')[0]) } })
+      globalThis.__eaDone = true
+      ok(`EA 맡긴 일 — 목록(도는 중·끝남) · 하나 멈추기(턴 중·턴 뒤·카드·패널) · 워커가 내려가면 닫힘 · 결과 전문 · 쓴 글(경로·심링크 거절) · 에이전트 정의 · 다시 붙기 · 폰 바닥 시트 [${names.join(' ')}]`)
+    }
+    /**
+     * ═══ EB · 사람이 없어도 안전하게 돈다 (2026-11-11 Dave 승인) ═══════════════════════════════
+     * Auto 권한 모드와 이름(자동 · 수동 · 편집 자동 수락 · 계획 · 항상 허용) · Auto 를 못 켜면 수동으로 · 도는 워커의 모드 바로 바꾸기 ·
+     * 승인 시간 초과(사람이 시작하지 않은 턴만) · 루틴 승인의 Auto · Codex 에는 이 모드가 없다 · 화면(데스크톱 · 폰).
+     * 검사 본문은 `test/eb-perm.mjs` 다 — 혼자서도 돌아(`node test/eb-perm.mjs`) 핵심 줄을 하나씩 되돌려 검사마다 빨개지는지 따로 잰다.
+     * 🔴 되돌려 본 결과(11/11 · 줄 하나씩): M1←PERM_MODES 에서 auto 빼기·스폰 인자에서 auto 빼기·liveMode 안 싣기
+     *    M2←auto 를 호스트가 대신 허용
+     *    M3←PERM_MODES 에서 auto 빼기
+     *    M4←죽었을 때 다시 안 띄우기
+     *    M5←init 불일치 모른 척·느슨하게 떠도 그대로 두기
+     *    M6←set_permission_mode 안 보내기
+     *    M7←실패해도 종전 방식으로 안 떨어지기
+     *    M8←같은 둘
+     *    M9←modeExplicit 안 남기기·liveMode 안 싣기
+     *    M10←Codex 가드 둘(만들 때·바꿀 때)
+     *    T1←상태에 기본값 안 싣기
+     *    T2←시계 안 걸기·실행 기록 실패 안 남기기·거절 사유 안 주기
+     *    T3←시계 안 걸기·사유 안 주기
+     *    T4←사람 턴에도 걸기
+     *    T5←질문 카드에도 걸기·0 을 끄기로 안 보기
+     *    R1←approve auto 모르기·스폰 인자에서 auto 빼기
+     *    U1←목록을 옛 넷으로·숫자 키 1~4
+     *    U2←목록을 옛 넷으로
+     *    U3←(호스트) 죽었을 때 다시 안 띄우기
+     *    U4←«바로 적용» 표시 빼기
+     *    U5←(호스트) 시계 안 걸기
+     *    U6←칩이 저장값만 보이기
+     *    U7←Codex 갈래 빼기
+     *    U8←설정 줄 빼기·목록을 옛 넷으로
+     *    U9←루틴 선택지에서 auto 빼기.
+     *    스물다섯 모두 따로 빨개졌다(되돌린 줄 27가지)
+     */
+    {
+      const { ebPerm } = await import('./eb-perm.mjs')
+      const ebBot = (await api('/bots')).find((b) => b.name === '재무_CFO') ?? await api('/bots/start', { rel: '3. Area/재무_CFO' })
+      const names = []
+      await ebPerm({ base, root, data, claudeCfg, botId: ebBot.id, botAbs: join(root, '3. Area/재무_CFO'), br, shots: 'test/tmp', check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 EB · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } names.push(name.split(' ')[0]) } })
+      globalThis.__ebDone = true
+      ok(`EB 권한 — Auto 모드 · 이름 다섯 · 저장값 그대로 · Auto 거부 → 수동 · 도는 중 바로 적용 / 다음 턴부터 · 실제 모드 표시 · Codex 제외 · 승인 시간 초과(루틴·봇만 · 사람 턴은 기다림 · 0 은 끄기) · 루틴 Auto · 화면 두 판 [${names.join(' ')}]`)
+    }
+    /**
+     * ═══ EC · 일하는 중에도 말이 통한다 (2026-11-11 Dave 승인) ═══════════════════════════════
+     * 끼워 넣기(멈추지 않고 고쳐 말하기 · 대기 줄의 [끼워 넣기] [멈추고 보내기]) · ⌘J «내 답을 기다리는 다음 세션» · 카드 키(↩ 허용 · ⎋ 거부 — ⎋ 는 카드가 걸려 있으면 거부 하나만) ·
+     * 세션 창 상태 탭 다섯 · 폰에서 끝난 일 다시 보기 · 화면(데스크톱 · 폰).
+     * 검사 본문은 `test/ec-steer.mjs` 다 — 혼자서도 돌아(`node test/ec-steer.mjs --only H1`) 핵심 줄을 하나씩 되돌려 검사마다 빨개지는지 따로 잰다.
+     * 🔴 되돌려 본 결과(11/11 · 줄 하나씩): H1←priority 빼기·steer 표시 빼기·기기 블록 빼기
+     *    H2←«턴 없음» 을 보통 말로 안 돌리기
+     *    H3←카드 거절 빼기·미뤄진 질문도 거절
+     *    H4←Codex 거절 빼기·빈 말 가드 빼기
+     *    H5←이어받기(takeOver) 빼기
+     *    H6←끼워 넣을 때 출처를 사람으로
+     *    U1←[끼워 넣기] 단추 빼기·«끼워 넣음» 표시 빼기
+     *    U2←[멈추고 보내기] 빼기(U1 도 함께 빨강)
+     *    U3←까닭 안 넘기기
+     *    U4←봇 말 줄의 까닭 빼기
+     *    U5←⌘J 처리기 빼기·단축키 표에서 빼기·차례 뒤집기·카드 초점 안 두기·키 안내 끄기·↩ 허용 빼기·조합 가드 빼기
+     *    U6←⎋ 의 카드 갈래 빼기·0.7초 가드 빼기·«카드 자신» 조건 빼기
+     *    U7←토스트 빼기
+     *    U8←탭 거름 빼기·개수 세기 빼기
+     *    P1←초점 안 뺏기 빼기·폰 단추 크기 빼기
+     *    P2←폰에도 키 안내
+     *    P3←탭 줄 접히게(fit 도 빨강)
+     *    P4←끝난 카드의 [열기] 숨기기.
+     *    서른다섯(fit·유닛 하나씩 포함) 모두 그 검사가 빨개졌다. 따로 빨강을 못 본 단언은 `docs/PRD.md` 의 EC 문단 끝에 적었다
+     *    ⚠ 실 CLI 가 끼워 넣은 말을 정말 따르는지는 스모크가 못 잰다 — `07_검증/2026-11-11_실측-스크립트_끼워넣기-호스트모양.py` 가 쟀다(2.1.322 · 세 번)
+     */
+    {
+      const { ecSteer } = await import('./ec-steer.mjs')
+      const ecBot = (await api('/bots')).find((b) => b.name === '재무_CFO') ?? await api('/bots/start', { rel: '3. Area/재무_CFO' })
+      const names = []
+      await ecSteer({ base, root, data, claudeCfg, botId: ecBot.id, br, shots: 'test/tmp', check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 EC · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } names.push(name.split(' ')[0]) } })
+      globalThis.__ecDone = true
+      ok(`EC 끼워 넣기 — 같은 턴에 반영(priority next) · 경주는 보통 말로 한 번 · 카드·Codex·봇 말은 거절 · 턴 출처 유지 · 대기 줄 두 단추 · ⌘J 다음 기다리는 세션 · 카드 키(↩ ⎋) · 세션 창 탭 다섯 · 폰 [${names.join(' ')}]`)
+    }
     await br.close(); ok('ui renders (desktop · phone) → test/tmp/*.png')
   } catch (e) { try { await globalThis.__br?.close() } catch {} if (/executablePath|Executable doesn't exist|Cannot find (module|package) 'playwright/.test(String(e.message))) console.log('(화면 검사 건너뜀 — 브라우저 없음:', e.message.split('\n')[0], ')'); else fail('ui: ' + e.stack.split('\n').slice(0, 4).join(' | ')) }
+  // EA · 브라우저가 없어 화면 검사를 건너뛴 기기에서도 호스트 쪽 검사(A1~A10)는 돈다
+  if (!globalThis.__eaDone) {
+    const { eaTasks } = await import('./ea-tasks.mjs')
+    const eaBot = (await api('/bots')).find((b) => b.name === '재무_CFO') ?? await api('/bots/start', { rel: '3. Area/재무_CFO' })
+    await eaTasks({ base, root, claudeCfg, botId: eaBot.id, botAbs: join(root, '3. Area/재무_CFO'), br: null, check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 EA · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } } })
+    ok('EA 맡긴 일 — 호스트 쪽만(A1~A10 · 화면 검사는 브라우저가 없어 건너뜀)')
+  }
+  // EB · 브라우저가 없는 기기에서도 호스트 쪽 검사(M · T · R)는 돈다
+  if (!globalThis.__ebDone) {
+    const { ebPerm } = await import('./eb-perm.mjs')
+    const ebBot = (await api('/bots')).find((b) => b.name === '재무_CFO') ?? await api('/bots/start', { rel: '3. Area/재무_CFO' })
+    await ebPerm({ base, root, data, claudeCfg, botId: ebBot.id, botAbs: join(root, '3. Area/재무_CFO'), br: null, check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 EB · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } } })
+    ok('EB 권한 — 호스트 쪽만(M1~M10 · T1~T5 · R1 · 화면 검사는 브라우저가 없어 건너뜀)')
+  }
+  // EC · 브라우저가 없는 기기에서도 호스트 쪽 검사(H1~H6)는 돈다
+  if (!globalThis.__ecDone) {
+    const { ecSteer } = await import('./ec-steer.mjs')
+    const ecBot = (await api('/bots')).find((b) => b.name === '재무_CFO') ?? await api('/bots/start', { rel: '3. Area/재무_CFO' })
+    await ecSteer({ base, root, data, claudeCfg, botId: ecBot.id, br: null, check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 EC · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } } })
+    ok('EC 끼워 넣기 — 호스트 쪽만(H1~H6 · 화면 검사는 브라우저가 없어 건너뜀)')
+  }
   // ── 에이전트 제공자 — 깔린 것만 나온다 (Dave: Codex가 없으면 아예 안보여야 해) ──
   {
     const ps = await api('/agents')

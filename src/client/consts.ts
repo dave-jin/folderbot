@@ -1,6 +1,7 @@
 import type { PermissionMode } from '../core/types'
 import { AGENT_EFFORTS, AGENT_MODELS, DEFAULT_EFFORT, DEFAULT_MODEL, MORE_MODELS, type AgentModel, type ProviderId, sameModel, splitModels } from '../core/agents'
 import { mergeModels } from '../core/modelList'
+import { PERM_MODE_MENU, permModeLabel } from '../core/permPolicy'
 import { api } from './api'
 
 /**
@@ -72,12 +73,12 @@ export const moreModelsFor = (v?: ProviderId): AgentModel[] => {
   return mergeModels(found[id], MORE_MODELS[id]).filter((m) => m.v && !first.has(m.v)) as AgentModel[]
 }
 export const effortsFor = (v?: ProviderId): { v: string; t: string }[] => AGENT_EFFORTS[v ?? 'claude']
-export const MODES: { v: PermissionMode; t: string; d: string }[] = [
-  { v: 'default', t: '자동', d: '읽기는 바로, 쓰기·실행은 물어봄' },
-  { v: 'acceptEdits', t: '편집 자동 수락', d: '파일 편집은 자동 승인' },
-  { v: 'plan', t: '계획', d: '변경하기 전에 계획 만들기' },
-  { v: 'bypassPermissions', t: '항상 허용', d: '묻지 않음 — 루틴·신뢰하는 폴더에서만' }
-]
+/**
+ * EB · 권한 모드 다섯 — 🔴 **정본은 `core/permPolicy.PERM_MODE_MENU` 다**(호스트의 시스템 줄과 같은 이름을 쓴다).
+ *    `auto` = «자동»(Claude 가 권한을 판단) · `default` = «수동»(바꾸기 전에 늘 묻기) — Claude Desktop 과 같은 이름이다.
+ * ⚠ Codex 세션에는 이 목록을 보이지 않는다 — 그쪽은 샌드박스(`CODEX_SANDBOX`)가 권한이다.
+ */
+export const MODES: { v: PermissionMode; t: string; d: string }[] = PERM_MODE_MENU
 /** 이름이 목록에 없으면 **지어내지 않고** id 를 다듬어 그대로 보여 준다 — 사용자가 직접 넣은 이름일 수 있다 */
 /**
  * AH · 🔴 **날짜 꼬리표가 붙어도 제 이름표를 단다** (2026-09-24). CLI 는 답에 `claude-opus-5-5-20260…` 처럼
@@ -91,5 +92,5 @@ export const modelLabel = (id?: string, vendor?: ProviderId): string =>
   ?? MORE_MODELS.claude.find((m) => sameModel(m.v, id))?.t
   ?? (id ? id.replace(/^claude-/, '').replace(/-\d{8}$/, '').replace(/-(\d)-(\d)$/, ' $1.$2').replace(/-/g, ' ') : modelLabel(DEFAULT_MODEL[vendor ?? 'claude'], vendor))
 export const effortLabel = (v?: string, vendor?: ProviderId): string => effortsFor(vendor).find((e) => e.v === v)?.t ?? effortsFor(vendor).find((e) => e.v === DEFAULT_EFFORT[vendor ?? 'claude'])?.t ?? '높음'
-export const modeLabel = (v?: string): string => MODES.find((m) => m.v === v)?.t ?? '자동'
+export const modeLabel = (v?: string): string => permModeLabel(v)
 export const fmtK = (n: number): string => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))

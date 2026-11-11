@@ -1,6 +1,7 @@
 import { pickColor } from './ColorPick'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Bot, HarnessDetail, HarnessItem, SessionInfo, TodoItem } from '../core/types'
+import type { AgentDef, Bot, HarnessDetail, HarnessItem, SessionInfo, TodoItem } from '../core/types'
+import { TaskSec } from './Tasks'
 import { copyImageWhy, copySay } from './clip'
 import { copyFiles } from './fileCopy'
 import { copyIntent } from '../core/copyIntent'
@@ -40,7 +41,7 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
    */
   only?: 'todo' | 'files'; touched: string[]; filesTick?: number; secH: SecH; onSecH: (h: SecH) => void; onCollapse: () => void; say: (m: string) => void; refresh: () => Promise<void>; activeDoc: string | null; onDragY: (on: boolean) => void; focusSec?: { sec: string; n: number } | null }) {
   const { s, loadTodo, dispatch } = useStore()
-  const [open, setOpen] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem(`fb:secs:${bot.id}`) ?? '') } catch { return { sessions: true, todo: true, files: true, routines: false } } })
+  const [open, setOpen] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem(`fb:secs:${bot.id}`) ?? '') } catch { return { sessions: true, todo: true, files: true, routines: false } } })   // ⚠ `tasks`(뒤에서 도는 일)는 여기 없어도 펼친 채로 시작한다 — 아래 `open.tasks !== false`
   useEffect(() => { try { setOpen(JSON.parse(localStorage.getItem(`fb:secs:${bot.id}`) ?? '')) } catch { setOpen({ sessions: true, todo: true, files: true, routines: false }) } }, [bot.id])
   useEffect(() => { localStorage.setItem(`fb:secs:${bot.id}`, JSON.stringify(open)) }, [open, bot.id])
   const tog = (k: string) => setOpen({ ...open, [k]: !open[k] })
@@ -152,6 +153,11 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
         {pick ? <Float at={pick} onClose={() => setPick(null)}>{provs.map((pv) => <button key={pv.id} onClick={() => void newSession(pv.id)}><Mark id={pv.id} size={14} /><span>{PROVIDER_LABEL[pv.id]}</span></button>)}<hr /><button onClick={() => setPick(null)}><span>취소</span></button></Float> : null}</div> : null}
     </div>}
     {only === 'files' ? null : <div className="divy" onPointerDown={dragY('sessions')} onDoubleClick={() => onSecH({ ...secH, sessions: 112 })} />}
+    {/**
+      * EA · **뒤에서 도는 일** (2026-11-11 Dave 승인) — 지금 보는 세션이 맡긴 서브에이전트·셸. 세션 바로 아래에 둔다(세션에 딸린 것이라).
+      * 맡긴 일이 한 번도 없던 세션에는 절이 안 선다. 폰은 탭(`only`)이 아니라 진행 줄의 바닥 시트로 본다(`Tasks.tsx`).
+      */}
+    {only ? null : <TaskSec sid={sessionId} open={open.tasks !== false} tog={() => setOpen({ ...open, tasks: open.tasks === false })} say={say} />}
     {/* 할 일 / Inbox — `only='todo'` 면 이 절 하나가 화면을 다 쓴다 */}
     {only === 'files' ? null : <div className={only === 'todo' ? 'sec grow' : 'sec fix'} style={!only && open.todo ? { height: secH.todo } : undefined}>
       {bot.orchestrator ? <InboxSec open={secOn('todo')} tog={() => tog('todo')} onSend={onTalk} /> : <TodoSec bot={bot} items={todos} loading={!s.todos[bot.id]} open={secOn('todo')} tog={() => tog('todo')} onDelegate={(t) => onTalk(`${t.title}${t.desc ? ` — ${t.desc}` : ''}`)} onOpenFile={onOpenFile} reload={() => loadTodo(bot.id)} phone={phone} />}
@@ -199,17 +205,21 @@ interface CmdRow { name: string; desc: string; scope: 'folder' | 'root' | 'user'
 function HarnessSec({ bot, open, tog, onOpenFile, say, filesTick }: { bot: Bot; open: boolean; tog: () => void; onOpenFile: (rel: string) => void; say: (m: string) => void; filesTick?: number }) {
   const [hz, setHz] = useState<HarnessDetail | null>(null)
   const [cmds, setCmds] = useState<CmdRow[] | null>(null)
+  /** EA · 이 봇이 부를 수 있는 에이전트 정의(`.claude/agents`) — 폴더 것과 사용자 것. 읽기만 한다 */
+  const [agents, setAgents] = useState<AgentDef[] | null>(null)
   const [all, setAll] = useState(false)
   useEffect(() => { if (!open) return; void api<HarnessDetail>(`/harness?rel=${encodeURIComponent(bot.rel)}`).then(setHz).catch(() => setHz(null)) }, [open, bot.rel])
   useEffect(() => { if (!open) return; void api<CmdRow[]>(`/bots/${bot.id}/commands`).then(setCmds).catch(() => setCmds([])) }, [open, bot.id, filesTick])
+  useEffect(() => { if (!open) return; void api<AgentDef[]>(`/bots/${bot.id}/agents`).then(setAgents).catch(() => setAgents([])) }, [open, bot.id, filesTick])
   const guides = hz ? [hz.claudeMd ? 'CLAUDE.md' : null, hz.agentsMd ? 'AGENTS.md' : null].filter(Boolean) as string[] : []
   /**
    * V · **한 목록에 명령·스킬·커넥터를 함께** (2026-09-22 Dave: «커맨드랑 스킬을 따로 구분하지 말고 한 공간에서 한 번에 볼 수는 없을까»).
-   * 차례는 «내가 부르는 것 → 봇이 쓰는 것» — 슬래시 명령(`/이름`)이 먼저, 그다음 스킬, 그다음 커넥터.
+   * 차례는 «내가 부르는 것 → 봇이 쓰는 것» — 슬래시 명령(`/이름`)이 먼저, 그다음 에이전트(봇이 일을 맡기는 상대 · EA), 스킬, 커넥터.
    * ⚠ 종류는 왼쪽 아이콘과 오른쪽 범위 칩이 말한다 — 섹션을 둘로 가르면 같은 것을 두 군데서 찾게 된다.
    */
   const rows = [
     ...(cmds ?? []).map((c) => ({ key: `cmd:${c.scope}:${c.name}`, icon: 'run' as const, name: `/${c.name}`, desc: c.desc, kind: '명령', scope: SCOPE_T[c.scope === 'root' ? 'root' : c.scope === 'user' ? 'user' : 'folder'], rel: c.rel ?? '', folder: c.scope === 'folder' })),
+    ...(agents ?? []).map((a) => ({ key: `agent:${a.scope}:${a.name}`, icon: 'sub' as const, name: a.name, desc: a.desc, kind: '에이전트', scope: SCOPE_T[a.scope], rel: '', folder: a.scope === 'folder' })),
     ...(hz?.skillList ?? []).map((i) => ({ key: `skill:${i.name}`, icon: 'run' as const, name: i.name, desc: '', kind: '스킬', scope: SCOPE_T[i.scope], rel: '', folder: i.scope === 'folder' })),
     ...(hz?.mcpList ?? []).map((i) => ({ key: `mcp:${i.name}`, icon: 'plug' as const, name: i.name, desc: '', kind: '커넥터', scope: SCOPE_T[i.scope], rel: '', folder: i.scope === 'folder' }))
   ]

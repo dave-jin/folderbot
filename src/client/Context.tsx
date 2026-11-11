@@ -5,6 +5,7 @@ import { Icon } from './FolderBot'
 import { askName } from './Sheets'
 import { STEP_ROWS, continueTarget, type Board, type GoalCard, type Period, type StepGroup, type StepRow, type StoryRow } from '../core/contextBoard'
 import type { PermissionRequest } from '../core/types'
+import { waitingOrder } from '../core/sessionTabs'
 import type { CtxTask, TaskState } from '../core/contextTasks'
 import type { SessionCard } from '../core/contextCard'
 import { LinksView } from './Links'
@@ -63,9 +64,8 @@ function useLocalWaiting(): { rows: WRow[]; more: number } {
   const { s } = useStore()
   return useMemo(() => {
     const names = new Map(s.bots.map((b) => [b.id, b.orchestrator ? '볼트 운영' : b.displayName || b.name] as const))
-    const rows: WRow[] = Object.values(s.sessionsByBot).flat()
-      .filter((x) => x.state === 'awaiting_input' && names.has(x.botId))
-      .sort((a, b) => b.lastActivity - a.lastActivity)
+    // EC · 목록은 `core/sessionTabs.waitingOrder` 하나가 짓는다 — ⌘J(다음 기다리는 세션)와 세션 창의 «내 답 기다림» 탭이 같은 것을 쓴다
+    const rows: WRow[] = waitingOrder(Object.values(s.sessionsByBot).flat(), (id) => names.has(id))
       .map((x) => {
         const req = (s.pending[x.id] ?? x.pending ?? [])[0]
         const line = req ? (req.ask ? '질문에 답해 주세요' : `허용을 기다려요 — ${req.displayName}`) : '내 답을 기다리는 중'

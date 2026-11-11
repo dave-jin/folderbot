@@ -44,10 +44,16 @@ export const AGENT_MODELS: Record<ProviderId, AgentModel[]> = {
     //    (실측: «The 'gpt-5.1-codex' model is not supported when using Codex with a ChatGPT account»).
     //    빈 값이면 `--model` 을 아예 안 넘기고 Codex 가 제 계정에 맞는 것을 고른다.
     { v: '', t: 'CLI 기본 (계정에 맞춰서)', d: '권장' },
-    { v: 'gpt-5.1-codex', t: 'GPT-5.1 Codex', d: 'API 키 계정' },
-    { v: 'gpt-5.1-codex-mini', t: 'GPT-5.1 Codex mini', d: '빠름' },
-    { v: 'gpt-5-codex', t: 'GPT-5 Codex', d: '' },
-    { v: 'gpt-5', t: 'GPT-5', d: '' }
+    /**
+     * EB · 옛 이름 넷(`gpt-5.1-codex` · `gpt-5.1-codex-mini` · `gpt-5-codex` · `gpt-5`)을 걷었다 (2026-11-11).
+     *    이 목록은 **못 주워 왔을 때의 대비**다 — 평소에는 호스트가 `~/.codex/models_cache.json` 에서 주운 이름이 앞에 선다(`core/modelList`).
+     *    확인한 곳: 맥미니 `~/.codex/models_cache.json`(2026-11-11 받아 온 판 · `visibility: list`) — 그 목록의 6 세대 넷만 둔다(`gpt-6-sol` 과 5.6 세대는 캐시에 있지만 대비 목록에는 안 넣었다).
+     *    ⛔ 짐작으로 더하지 않는다. 계정이 못 쓰는 이름이면 턴이 죽는다 — 그때는 모델을 빼고 한 번 더 보낸다(`isModelRejected`).
+     */
+    { v: 'gpt-6.1-sol', t: 'GPT-6.1 Sol', d: '코딩·일상 작업의 기본' },
+    { v: 'gpt-6-astra', t: 'GPT-6 Astra', d: '가장 어려운 일에' },
+    { v: 'gpt-6.1-terra', t: 'GPT-6.1 Terra', d: '' },
+    { v: 'gpt-6-luna', t: 'GPT-6 Luna', d: '빠르고 가벼움' }
   ]
 }
 

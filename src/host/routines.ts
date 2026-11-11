@@ -186,9 +186,14 @@ export function missedSince(cron: string, lastRunAt: number, now: number): numbe
  *    ② 루틴마다 낮출 수 있게 두고 ③ **봇은 이 값을 못 바꾼다**(AA-5 · MCP 도구에 `approve` 가 없다).
  */
 export const DEFAULT_ROUTINE_APPROVE: NonNullable<RoutineDef['approve']> = 'always'
+/**
+ * EB · `auto` — Claude 가 권한을 판단한다(`--permission-mode auto` · 2026-11-11). «묻지 않고 바로»(always)와 «폴더 안에서만»(folder) 사이의 선택지다.
+ * ⚠ **기본값은 그대로 `always` 다** — Auto 로 바꿀지는 Dave 결정 대기. 옛 값으로 저장된 루틴은 그대로 돈다.
+ * ⚠ 모르는 값(손으로 적은 오타)은 가장 좁은 «계획만» 으로 떨어진다.
+ */
 export function approveToMode(a: RoutineDef['approve']): PermissionMode {
   const v = a ?? DEFAULT_ROUTINE_APPROVE
-  return v === 'always' ? 'bypassPermissions' : v === 'folder' ? 'acceptEdits' : 'plan'
+  return v === 'always' ? 'bypassPermissions' : v === 'auto' ? 'auto' : v === 'folder' ? 'acceptEdits' : 'plan'
 }
 
 /**
@@ -199,7 +204,7 @@ export function approveToMode(a: RoutineDef['approve']): PermissionMode {
  */
 export function routineRun(r: Pick<RoutineDef, 'name' | 'prompt' | 'approve'>): { mode: PermissionMode; text: string } {
   const a = r.approve ?? DEFAULT_ROUTINE_APPROVE
-  const how = a === 'always' ? '' : a === 'folder' ? '이 폴더 안 파일만 고치고 ' : '파일을 고치지 말고 제안만 하고 '
+  const how = a === 'always' || a === 'auto' ? '' : a === 'folder' ? '이 폴더 안 파일만 고치고 ' : '파일을 고치지 말고 제안만 하고 '
   return {
     mode: approveToMode(a),
     text: `${r.prompt}\n\n(이건 예약된 루틴 "${r.name}" 이야. 사람이 없을 수 있으니 ${how}결과를 짧게 요약해. 폴더 생성·이동·은퇴·외부 발송처럼 되돌리기 어려운 일은 하지 말고 제안으로 남겨. ${RESULT_LINE_HINT})`,

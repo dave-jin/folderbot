@@ -23,13 +23,21 @@ export interface StreamLine {
   modelUsage?: Record<string, { contextWindow?: number; inputTokens?: number; outputTokens?: number; cacheReadInputTokens?: number; cacheCreationInputTokens?: number }>
   /** system/init 줄 — CLI 가 아는 슬래시 명령 이름들 */
   slash_commands?: string[]
+  /** EB · system/init · system/status 줄 — 워커가 실제로 도는 권한 모드(CLI 2.1.322 실측) */
+  permissionMode?: string
   /** system/task_started · task_notification · task_updated (백그라운드 Agent) — 2026-09-13 CLI 2.1.269 실측 */
   task_id?: string
   tool_use_id?: string
   is_backgrounded?: boolean
   status?: string
   summary?: string
-  patch?: { status?: string }
+  patch?: { status?: string; end_time?: number; is_backgrounded?: boolean }
+  /** EA · task_started — 무엇을 맡겼나 · 어떤 종류인가(`local_agent`·`local_bash`) (CLI 2.1.322 실측) */
+  description?: string
+  subagent_type?: string
+  task_type?: string
+  /** EA · system/background_tasks_changed — 지금 뒤에서 도는 작업 전체(바뀔 때마다 다시 온다) */
+  tasks?: { task_id?: string; task_type?: string; subagent_type?: string; description?: string }[]
 }
 
 export interface Ctx { used: number; window: number }

@@ -11,7 +11,8 @@ import { ACT_ICON, ACT_LABEL, SWIPE_DEFAULT, useSwipeCfg, type SwipeAct, type Sw
 import { CacheRow } from './fileCopy'
 import { fmtTime, useStore } from './store'
 import { LocalOpenPicker, localBridge, useLocalSettings } from './localOpen'
-import { EFFORTS, MODES, modelsFor, moreModelsFor, setFoundModels } from './consts'
+import { DEFAULT_APPROVAL_TIMEOUT_MIN, fmtWait } from '../core/approvalTimeout'
+import { EFFORTS, MODES, modeLabel, modelsFor, moreModelsFor, setFoundModels } from './consts'
 import { norm } from '../core/search'
 import { dueText } from '../core/due'
 import { BridgesPane } from './Bridges'
@@ -159,7 +160,7 @@ export const INDEX: { sec: SecId; t: string; d: string }[] = [
   { sec: 'claude', t: 'Claude Code 로그인', d: '터미널에서 로그인 /login' },
   { sec: 'claude', t: '장기 토큰', d: 'setup-token 헤드리스 SSH 인증' },
   { sec: 'claude', t: '모델 · 생각 레벨', d: '새 채팅 기본값 새 세션부터 적용' },
-  { sec: 'claude', t: '새 채팅 기본 권한', d: '권한 모드 자동 편집 자동 수락 계획 항상 허용 permission' },
+  { sec: 'claude', t: '새 채팅 기본 권한', d: '권한 모드 자동 auto 수동 편집 자동 수락 계획 항상 허용 permission' },
   { sec: 'claude', t: '다시 연결', d: '일꾼 내리기 커넥터 새 환경' },
   { sec: 'claude', t: '연결 진단', d: '로그인 안 될 때 진단 복사' },
   { sec: 'claude', t: '토큰 지우기', d: '키체인 로그인 모드로' },
@@ -171,6 +172,7 @@ export const INDEX: { sec: SecId; t: string; d: string }[] = [
   { sec: 'codex', t: 'Codex 다시 연결', d: '일꾼 내리기 키 바꿈' },
   { sec: 'codex', t: 'Codex 키 지우기', d: 'codex login 모드로' },
   { sec: 'sessions', t: '유휴 세션 절전', d: '워커 내리기 절전 시간 분' },
+  { sec: 'sessions', t: '승인 시간 초과', d: '루틴 봇이 시작한 턴 승인 대기 거절 분 timeout 사람이 없을 때' },
   { sec: 'sessions', t: '턴마다 기록하기', d: '훅 설치 사용량' },
   { sec: 'sessions', t: '예산 — 5시간 창', d: '달러 사용량 예산' },
   { sec: 'sessions', t: '예산 — 하루', d: '달러 사용량 예산' },
@@ -461,7 +463,7 @@ function ClaudePane() {
       <select className="ssel" value={model} onChange={(e) => { setModel(e.target.value); void saveD(e.target.value, effort) }}>{clModels.map((m) => <option key={m.v} value={m.v}>{m.t}</option>)}</select>
       <select className="ssel sm" value={effort} onChange={(e) => { setEffort(e.target.value); void saveD(model, e.target.value) }}>{EFFORTS.map((e) => <option key={e.v} value={e.v}>{e.t}</option>)}</select>
     </Row>
-    <Row t="새 채팅 기본 권한" d={<>새 세션이 이 모드로 시작해요. 세션 안에서는 입력창의 «모드» 로 바꿉니다 · 루틴은 루틴의 승인 설정이 이겨요.{perm === 'bypassPermissions' ? <><br /><b>⚠ «항상 허용» 은 묻지 않고 실행합니다 — 신뢰하는 볼트에서만 두세요.</b></> : null}</>} at="main">
+    <Row t="새 채팅 기본 권한" d={<>새 세션이 이 모드로 시작해요. 모드를 따로 고르지 않은 세션(봇끼리 말하는 «소통» 세션 포함)도 다음에 뜰 때 이 모드를 따릅니다. 세션 안에서는 입력창의 «모드» 로 바꿉니다 · 루틴은 루틴의 승인 설정이 이겨요. «자동» 은 Claude 가 권한을 판단하고, «수동» 은 바꾸기 전에 늘 물어요.{perm === 'bypassPermissions' ? <><br /><b>⚠ «항상 허용» 은 묻지 않고 실행합니다 — 신뢰하는 볼트에서만 두세요.</b></> : null}</>} at="main">
       <select className="ssel" value={perm} onChange={(e) => void savePerm(e.target.value as PermissionMode)}>{MODES.map((m) => <option key={m.v} value={m.v}>{m.t} — {m.d}</option>)}</select>
     </Row>
 
@@ -533,6 +535,12 @@ function CodexPane() {
   </>
 }
 
+/** EB · 승인 시간 초과 선택지 — 저장된 값이 목록에 없으면(손으로 고친 설정) 그 값도 한 줄로 보인다 */
+function approvalChoices(cur?: number): [number, string][] {
+  const base: [number, string][] = [[5, '5분'], [10, '10분'], [30, '30분'], [60, '1시간'], [0, '끄기 — 끝까지 기다림']]
+  return cur !== undefined && !base.some(([v]) => v === cur) ? [[cur, fmtWait(cur)], ...base] : base
+}
+
 /** 세션 · 사용량 — 어느 에이전트든 공통인 «세션이 어떻게 살고 얼마나 쓰나». 🔴 «요금제의 몇 %가 남았나» 는 CLI 가 안 내준다(실측) */
 function SessionsPane() {
   const { s, refresh } = useStore()
@@ -549,6 +557,12 @@ function SessionsPane() {
     <Row t="유휴 세션 절전" d="이만큼 조용하면 워커를 내려요. 대화·세션은 남고, 다음 메시지에 같은 자리에서 이어집니다." at="main">
       <select className="ssel" value={String(s.defaults.idleMinutes ?? 60)} onChange={async (e) => { try { await api('/idle', { body: { minutes: Number(e.target.value) } }); await refresh(); setMsg('저장했어요') } catch (err) { setMsg((err as Error).message) } }}>
         {[[15, '15분'], [30, '30분'], [60, '1시간'], [120, '2시간'], [240, '4시간'], [0, '재우지 않음']].map(([v, t]) => <option key={String(v)} value={String(v)}>{t}</option>)}
+      </select>
+    </Row>
+    {/* 🔴 EB · 승인 시간 초과 — 사람이 시작하지 않은 턴(루틴 · 다른 봇의 말 · 바깥 편지)만. 사람이 보낸 턴은 끝까지 기다린다. 값은 메인에 산다(어느 기기에서 바꿔도 같다) */}
+    <Row t="승인 시간 초과" d="루틴과 봇이 시작한 턴에서 승인 요청이 이만큼 답을 못 받으면 거절하고 넘어가요(루틴은 그 회차가 «실패 · 승인 시간 초과» 로 남아요). 내가 보낸 턴은 끝까지 기다립니다." at="main">
+      <select className="ssel" data-approval-timeout value={String(s.defaults.approvalTimeoutMinutes ?? DEFAULT_APPROVAL_TIMEOUT_MIN)} onChange={async (e) => { try { await api('/approval-timeout', { body: { minutes: Number(e.target.value) } }); await refresh(); setMsg('저장했어요 — 다음 승인 요청부터 적용돼요') } catch (err) { setMsg((err as Error).message) } }}>
+        {approvalChoices(s.defaults.approvalTimeoutMinutes).map(([v, t]) => <option key={String(v)} value={String(v)}>{t}</option>)}
       </select>
     </Row>
     <Group t="사용량" />

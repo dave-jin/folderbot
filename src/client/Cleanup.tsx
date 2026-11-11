@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CLEAN_DAYS, CLEAN_DEFAULT, CLEAN_FILTER_LABEL, cleanDaysOf, cleanMatch, cleanPreselect, dayWord, sessKind, sessLocked, type CleanFilter } from '../core/cleanup'
 import { STATE_LABEL, type SessionInfo } from '../core/types'
+import { SESS_TABS, tabCounts, tabMatch, type SessTab } from '../core/sessionTabs'
 import { api } from './api'
 import { Icon } from './FolderBot'
 import { useStore } from './store'
@@ -20,6 +21,11 @@ import { useStore } from './store'
  *    처음엔 아무것도 골라 두지 않은 **전체 목록**(최근 활동 순)이고, «정리할 만한 것 N 고르기» 를 눌러야 지금처럼 골라진다.
  *    **줄을 누르면 그 세션으로 간다** — 고르기는 왼쪽 체크 칸으로. 지우기·10초 되돌리기·잠긴 줄 보호는 그대로.
  *    ⚠ 최근 활동 순은 **연 순간의 차례로 얼린다** — 위 사고(일하는 세션이 자리를 바꿔 엉뚱한 줄이 눌림)를 다시 내지 않게. 새로 생긴 세션만 맨 위에 붙는다.
+ *
+ * 🔴 **EC · 상태 탭** (2026-11-11) — 맨 위에 «전체 · 내 답 기다림 · 일하는 중 · 안 읽음 · 쉼». 탭마다 개수를 단다(판정 `core/sessionTabs` — 세션 하나는 탭 하나).
+ *    탭은 **보이는 줄만 거른다** — 거름 알약·폴더·정렬·골라 지우기와 함께 돈다. 개수는 알약·폴더 거름을 지난 줄 중에서 센다(탭을 눌렀을 때 보일 수와 같다).
+ *    «보이는 것 모두 고르기» 도 그 탭에 보이는 줄만 고른다. ⚠ 고른 탭은 기억하지 않는다 — 거름 알약·폴더와 같이 늘 «전체» 로 연다(기억하는 것은 «안 쓴 지» 날수뿐이다).
+ *    폰에서는 탭이 한 줄에 안 들어가면 옆으로 밀어 본다(줄이 접히지 않는다).
  */
 const DAY = 24 * 3600_000
 export const CLEAN_DAYS_KEY = 'fb:cleanDays'
@@ -33,6 +39,7 @@ export function Cleanup({ onClose, say, manage = false, go }: { onClose: () => v
   const [auto, setAuto] = useState(!manage)
   const [days, setDays] = useState(savedCleanDays)
   const [folder, setFolder] = useState('')
+  const [tab, setTab] = useState<SessTab>('all')
   const [pick, setPick] = useState<Set<string>>(new Set())
   const [undo, setUndo] = useState<{ ids: string[]; until: number } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -46,9 +53,12 @@ export function Cleanup({ onClose, say, manage = false, go }: { onClose: () => v
     const ra = rankAt.current?.get(a.id) ?? -1, rb = rankAt.current?.get(b.id) ?? -1
     return ra - rb || b.createdAt - a.createdAt || a.id.localeCompare(b.id)
   }
-  const shown = useMemo(() => all.filter((x) => (!folder || x.botId === folder) && cleanMatch(x, on, Date.now(), days)).sort(order), [all, on, folder, days]) // eslint-disable-line react-hooks/exhaustive-deps
+  /** 알약·폴더 거름을 지난 줄 — 탭의 개수는 여기서 센다 */
+  const scoped = useMemo(() => all.filter((x) => (!folder || x.botId === folder) && cleanMatch(x, on, Date.now(), days)), [all, on, folder, days])
+  const counts = useMemo(() => tabCounts(scoped), [scoped])
+  const shown = useMemo(() => scoped.filter((x) => tabMatch(x, tab)).sort(order), [scoped, tab]) // eslint-disable-line react-hooks/exhaustive-deps
   // 거름을 바꾸면 체크도 처음 규칙대로 다시 — «보이는 것 중 지워도 되는 것». 세션 창은 «고르기» 를 누른 뒤부터
-  useEffect(() => { if (!auto) return; setPick(new Set(shown.filter((x) => cleanPreselect(x, on, Date.now(), days)).map((x) => x.id))) }, [on, folder, days, auto]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!auto) return; setPick(new Set(shown.filter((x) => cleanPreselect(x, on, Date.now(), days)).map((x) => x.id))) }, [on, folder, days, auto, tab]) // eslint-disable-line react-hooks/exhaustive-deps
   const cleanN = useMemo(() => all.filter((x) => (!folder || x.botId === folder) && cleanPreselect(x, CLEAN_DEFAULT, Date.now(), days)).length, [all, folder, days])
   const pickCleanable = () => { setAuto(true); setOn(CLEAN_DEFAULT) }
   // 목록이 바뀌어(지움·새 답) 잠기거나 사라진 줄은 체크에서 뺀다
@@ -79,6 +89,10 @@ export function Cleanup({ onClose, say, manage = false, go }: { onClose: () => v
   const toggleRow = (id: string) => setPick((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n })
   return <><div className="backdrop" onClick={onClose} /><div className={`modal clean ${manage ? 'manage' : ''}`} role="dialog" aria-label={manage ? '세션' : '세션 정리'}>
     <div className="modal-h"><div className="t"><b>{manage ? '세션' : '세션 정리'}</b><span className="cnt">전체 {all.length}개 · 고른 것 {pick.size}개</span></div><button className="ib" onClick={onClose} title="닫기 ⎋"><Icon n="x" size={14} /></button></div>
+    {/* EC · 상태 탭 — 개수는 아래 거름(알약·폴더)을 지난 줄 중에서 센다 */}
+    <div className="stabs" role="tablist" aria-label="상태">
+      {SESS_TABS.map((t) => <button key={t.k} role="tab" aria-selected={tab === t.k} data-tab={t.k} className={`stab ${tab === t.k ? 'on' : ''} ${t.k === 'wait' && counts.wait ? 'hot' : ''}`} onClick={() => setTab(t.k)}><span>{t.t}</span><span className="c">{counts[t.k]}</span></button>)}
+    </div>
     <div className="cbar">
       {manage ? <button className="pill pickc" disabled={!cleanN} onClick={pickCleanable} title="7일 넘게 안 씀(또는 고른 날) + 봇끼리 대화 중 지워도 되는 것">정리할 만한 것 {cleanN} 고르기</button> : null}
       {(Object.keys(CLEAN_FILTER_LABEL) as CleanFilter[]).map((f) => f === 'old'
@@ -104,7 +118,7 @@ export function Cleanup({ onClose, say, manage = false, go }: { onClose: () => v
             <td className={`st ${lock ? 'lk' : ''}`}>{lock ?? STATE_LABEL[x.state]}</td>
             <td className="tm">{ago(x.lastActivity)}</td>
           </tr> })}
-          {!shown.length ? <tr className="none"><td colSpan={6} style={{ color: 'var(--t3)', textAlign: 'center', padding: 24 }}>이 거름에 걸리는 세션이 없어요</td></tr> : null}
+          {!shown.length ? <tr className="none"><td colSpan={6} style={{ color: 'var(--t3)', textAlign: 'center', padding: 24 }}>{tab === 'all' ? '이 거름에 걸리는 세션이 없어요' : `«${SESS_TABS.find((t) => t.k === tab)?.t}» 인 세션이 없어요`}</td></tr> : null}
         </tbody>
       </table>
     </div>

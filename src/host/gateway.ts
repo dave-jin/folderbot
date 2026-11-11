@@ -11,11 +11,14 @@ import { gzipSync } from 'node:zlib'
 import { spawn } from 'node:child_process'
 /** zip 을 표준 출력으로 — 숨김 파일(.folderbot 등)은 뺀다 */
 function spawnZip(cwd: string, name: string) { return spawn('zip', ['-r', '-q', '-', name, '-x', '*/.*', '.*'], { cwd }) }
-import type { Frame, RoutineDef } from '../core/types'
+import type { Frame, PermissionMode, RoutineDef } from '../core/types'
+import { isPermMode } from '../core/permPolicy'
+import { approvalTimeoutMin } from '../core/approvalTimeout'
 import { stripRuntime } from '../core/types'
 import { diffRoutines } from '../core/routineBoard'
 import { WHEN_EXAMPLES, confirmLine, cronOk, describeCron, parseWhen, sameOnce } from '../core/when'
 import type { Host } from './host'
+import { SteerRefused } from './session'
 import { bindAddresses, tailnetInfo, tailnetInfoCached } from './tailnet'
 import { StaticCache, pickEncoding } from './staticCache'
 import { chatVer } from '../core/chatVer'
@@ -90,7 +93,9 @@ import { saveDoc, fileVer } from './docSave'
 import { allDirs, guard, headHash, kindOf, mime, readText, recent, resolveNF, resolveNFDeep, stream, tree, writeText, exists, listDir, renameEntry } from './files'
 import { readTodo, todoDelete, todoDue, todoEdit, todoMeta, todoMove, todoToggle } from './todoStore'
 import { globParents, roleOf } from '../core/rules'
-import { createCommand, listCommandFiles, slashCommands } from './slash'
+import { createCommand, listAgentDefs, listCommandFiles, slashCommands } from './slash'
+import { validTaskId } from '../core/bgTasks'
+import { readSubTranscript, subTranscriptFile } from './subTranscript'
 import { globalHarness, harnessDetail, harnessRow } from './harness'
 import { cleanAnnotations } from '../core/askPreview'
 
@@ -464,7 +469,7 @@ export class Gateway {
     }
     if (p === '/api/state') {
       const tn = await tailnetInfoCached()
-      return json(200, { version: h.version, root: reg.root, rules: reg.rules, rulesInstalled: reg.rulesInstalled(), bots: reg.bots(), candidates: reg.candidates(), auth: h.auth, inbox: reg.inboxItems().length, notifications: h.notifier.events.slice(0, 100) /* CJ · 알림 칸 숫자 = 알림 창(100)과 같은 창 — 50 이면 칸이 덜 셌다 */, vapidPublic: h.notifier.vapidPublic(), tailnet: tn, addrs: this.addrs, port: h.cfg.port, devices: h.cfg.devices.filter((d) => d.name !== LOCAL_DEVICE).map((d) => ({ id: d.id, name: d.name, lastSeen: d.lastSeen })), sessionsByBot: Object.fromEntries(reg.bots().map((b) => [b.id, h.sessions.list(b.id)])), quiet: h.cfg.quiet ?? { from: '23:00', to: '07:00' }, defaults: { model: h.cfg.defaultModel ?? '', effort: h.cfg.defaultEffort ?? '', permissionMode: h.cfg.defaultPermissionMode ?? 'default', idleMinutes: h.cfg.idleMinutes ?? 60, codex: { model: h.cfg.defaultCodexModel ?? '', effort: h.cfg.defaultCodexEffort ?? '', sandbox: h.cfg.codexSandbox ?? 'read-only', auth: codexAuth(h.cfg.openaiApiKey) } }, hostName: h.hostName(), device: { id: who.id, name: who.main ? h.hostName() : who.device, main: who.main } })
+      return json(200, { version: h.version, root: reg.root, rules: reg.rules, rulesInstalled: reg.rulesInstalled(), bots: reg.bots(), candidates: reg.candidates(), auth: h.auth, inbox: reg.inboxItems().length, notifications: h.notifier.events.slice(0, 100) /* CJ · 알림 칸 숫자 = 알림 창(100)과 같은 창 — 50 이면 칸이 덜 셌다 */, vapidPublic: h.notifier.vapidPublic(), tailnet: tn, addrs: this.addrs, port: h.cfg.port, devices: h.cfg.devices.filter((d) => d.name !== LOCAL_DEVICE).map((d) => ({ id: d.id, name: d.name, lastSeen: d.lastSeen })), sessionsByBot: Object.fromEntries(reg.bots().map((b) => [b.id, h.sessions.list(b.id)])), quiet: h.cfg.quiet ?? { from: '23:00', to: '07:00' }, defaults: { model: h.cfg.defaultModel ?? '', effort: h.cfg.defaultEffort ?? '', permissionMode: h.cfg.defaultPermissionMode ?? 'default', idleMinutes: h.cfg.idleMinutes ?? 60, approvalTimeoutMinutes: approvalTimeoutMin(h.cfg.approvalTimeoutMinutes), codex: { model: h.cfg.defaultCodexModel ?? '', effort: h.cfg.defaultCodexEffort ?? '', sandbox: h.cfg.codexSandbox ?? 'read-only', auth: codexAuth(h.cfg.openaiApiKey) } }, hostName: h.hostName(), device: { id: who.id, name: who.main ? h.hostName() : who.device, main: who.main } })
     }
     /**
      * 🔴 **볼트 루트는 앱에서 바꾼다** (2026-09-14 Dave: «지금 현재 기본 볼트 수정이 안되네»).
@@ -652,6 +657,12 @@ export class Gateway {
 
     // 레일 순서 — 끌어다 놓은 차례를 볼트에 남긴다(기기마다 달라지지 않게)
     if (p === '/api/idle' && m === 'POST') { const b = await body(); h.setIdle(Number(b.minutes)); return json(200, { minutes: h.cfg.idleMinutes ?? 60 }) }
+    // EB · 승인 시간 초과(분) — 사람이 시작하지 않은 턴만. 0 = 끄기. 값은 메인에 산다(어느 기기에서 바꿔도 같다)
+    if (p === '/api/approval-timeout' && m === 'POST') {
+      const b = await body(); const n = Number(b.minutes)
+      if (!Number.isFinite(n) || n < 0) return json(400, { error: '분은 0 이상의 숫자여야 해요 (0 = 끄기)' })
+      h.setApprovalTimeout(n); return json(200, { minutes: approvalTimeoutMin(h.cfg.approvalTimeoutMinutes) })
+    }
     if (p === '/api/bots/pin' && m === 'POST') { const b = await body(); try { reg.pin(String(b.id), !!b.on) } catch (e) { return json(400, { error: (e as Error).message }) } h.afterBotsChanged(); return json(200, { ok: true }) }
     // CK-2 · Akiflow 동기화 — 미리보기·켜기·카드 고르기(설정 «Akiflow 동기화»)
     if (p === '/api/akiflow' && m === 'GET') return json(200, h.akiflow.status())
@@ -684,17 +695,19 @@ export class Gateway {
           if (v === 'bad') return json(400, { error: '세션 id 를 쓸 수 없어요' })
           if (v === 'same') return json(200, h.sessions.info(h.sessions.get(id)!))
         }
-        const s = h.sessions.create(bot, String(b.name ?? '새 세션'), { permissionMode: b.permissionMode as never, model: b.model ? String(b.model) : undefined, vendor: vd, id })
+        const s = h.sessions.create(bot, String(b.name ?? '새 세션'), { permissionMode: isPermMode(b.permissionMode) ? b.permissionMode : undefined, model: b.model ? String(b.model) : undefined, vendor: vd, id })
         return json(200, h.sessions.info(s))
       }
       if (sub === 'send' && m === 'POST') {
         const b = await body(); let sid: string
-        try { sid = h.sendToBot(bot, String(b.text), b.sessionId ? String(b.sessionId) : undefined, b.name ? String(b.name) : undefined, undefined, { model: b.model ? String(b.model) : undefined, effort: b.effort ? String(b.effort) : undefined, permissionMode: b.permissionMode ? (String(b.permissionMode) as never) : undefined, vendor: b.vendor === 'codex' || b.vendor === 'claude' ? b.vendor : undefined, client: clientOf(who, b.client) }) }
+        try { sid = h.sendToBot(bot, String(b.text), b.sessionId ? String(b.sessionId) : undefined, b.name ? String(b.name) : undefined, undefined, { model: b.model ? String(b.model) : undefined, effort: b.effort ? String(b.effort) : undefined, permissionMode: isPermMode(b.permissionMode) ? b.permissionMode : undefined, vendor: b.vendor === 'codex' || b.vendor === 'claude' ? b.vendor : undefined, client: clientOf(who, b.client) }) }
         catch (e) { if ((e as { code?: string }).code === 'wrong-bot') return json(400, { error: (e as Error).message }); throw e }   // 다른 봇의 세션 id(최종 검토 2)
         return json(200, { sessionId: sid })
       }
       // ⚠ 목록은 **그 세션의 벤더**로 정한다 — Claude 의 명령을 Codex 에 보여 주면 그 글자가 프롬프트로 들어간다
       /** 슬래시 명령 관리 (루프 8/10) — 목록은 파일 그대로, 만들기는 파일 하나. `rel` 은 봇 폴더 기준(루트 것은 `../`), 사용자 것은 문서 열 밖이라 rel 이 없다 */
+      // EA · 이 봇이 부를 수 있는 에이전트 정의(`.claude/agents`) — 읽기만. 코드 리포가 붙은 봇은 작업 폴더(리포)의 것도 본다
+      if (sub === 'agents' && m === 'GET') return json(200, listAgentDefs([...(bot.repo ? [bot.repo] : []), bot.abs]))
       if (sub === 'commands' && m === 'GET') return json(200, listCommandFiles(bot.abs, reg.root).map((c) => ({ name: c.name, desc: c.desc, scope: c.scope, rel: c.scope === 'user' ? null : relative(bot.abs, c.abs) })))
       if (sub === 'commands' && m === 'POST') {
         const b = await body()
@@ -1067,14 +1080,47 @@ export class Gateway {
         const info = h.sessions.info(r); const items = r.items.slice(-800)
         // CF-1 · 화면이 든 판과 같으면 «그대로» 만 — 다시 붙을 때 안 바뀐 대화를 다시 보내지 않는다
         const ver = chatVer(items, info.state, info.lastActivity, info.pending.length)
-        if (url.searchParams.get('v') === ver) return json(200, { same: true, ver, info })
-        return json(200, { info, items, ver })
+        // EA · 맡긴 일 목록은 «그대로» 일 때도 함께 보낸다 — 도구 횟수처럼 대화 끝 몇 줄에 안 드러나는 변화가 있다(다시 붙을 때 이 길로 맞춘다)
+        const tasks = h.sessions.tasksOf(r.id)
+        if (url.searchParams.get('v') === ver) return json(200, { same: true, ver, info, tasks })
+        return json(200, { info, items, ver, tasks })
+      }
+      /**
+       * EA · 맡긴 일(서브에이전트·뒤에서 도는 셸) — 목록 · 하나 멈추기 · 서브에이전트가 쓴 글.
+       * 🔴 작업 id 는 `validTaskId` 를 통과해야 한다(글자·숫자·`_`·`-`). 통과해도 **이 세션이 아는 작업**일 때만 받는다.
+       * 🔴 기록 파일 경로는 호스트가 만든다(`subTranscript.ts`) — 화면이 준 글자는 경로에 안 들어간다.
+       */
+      if (sub === 'tasks') {
+        if (!seg[4] && m === 'GET') return json(200, { tasks: h.sessions.tasksOf(r.id) })
+        let tid = ''; try { tid = decodeURIComponent(seg[4] ?? '') } catch { tid = '' }
+        if (!validTaskId(tid)) return json(400, { error: '작업 id 가 이상해요' })
+        const task = h.sessions.tasksOf(r.id).find((t) => t.taskId === tid)
+        if (seg[5] === 'stop' && m === 'POST') {
+          try { return json(200, { ok: true, task: await h.sessions.stopTask(r, tid) }) } catch (e) { return json(task ? 409 : 404, { error: (e as Error).message }) }
+        }
+        if (seg[5] === 'transcript' && m === 'GET') {
+          const known = !!task || r.items.some((it) => it.kind === 'subagent' && it.taskId === tid)
+          if (!known) return json(404, { error: '이 세션의 작업이 아니에요' })
+          return json(200, await readSubTranscript(subTranscriptFile(r.cwd, task?.cliSid ?? r.cliSessionId, tid)))
+        }
+        return json(404, { error: 'not found' })
       }
       // CC · 자동화 세션(소통·채널)에 보낸 사람 말은 새 채팅으로 갈라진다 — 화면이 그 세션으로 넘어가게 id 를 돌려준다
       if (sub === 'send' && m === 'POST') { const b = await body(); const sid = h.sendToBot(bot, String(b.text), r.id, undefined, undefined, { client: clientOf(who, b.client) }); return json(200, { ok: true, sessionId: sid }) }
       // CL-1 B · 고쳐 다시 = 되감기 — 못 하면 { ok: false } 로 답하고 화면이 A(이어서 고치기)로 보낸다
       if (sub === 'rewind' && m === 'POST') { const b = await body(); if (h.auth.verdict === 'unreadable' || h.auth.verdict === 'loggedout') return json(200, { ok: false }); return json(200, { ok: h.sessions.rewind(r, bot, String(b.text ?? ''), clientOf(who, b.client)) }) }
       // 호스트 대기열(다른 봇이 보낸 말) 고치기·빼기 — 빈 글이면 뺀다 (2026-10-02)
+      /**
+       * EC · 끼워 넣기 — 사람이 줄 세워 둔 말(화면이 들고 있다)을 턴을 멈추지 않고 도는 턴에 넣는다. 화면은 그 말을 제 대기 줄에서 **먼저 빼고** 부른다.
+       * 200 `{ how: 'steered' | 'sent', sessionId }` — 'sent' 는 누르는 사이 턴이 끝나 보통 말로 나갔다는 뜻이다(두 번 보내지 않는다).
+       * 409 — 끼워 넣을 수 없다(Codex · 승인/질문 카드가 걸림). 화면이 그 말을 대기 줄 맨 앞에 되돌린다.
+       */
+      if (sub === 'queue-steer' && m === 'POST') {
+        const b = await body(); const text = typeof b.text === 'string' ? b.text : ''
+        if (!text.trim()) return json(400, { error: '빈 말은 끼워 넣을 수 없어요' })
+        try { return json(200, { ok: true, ...h.steerSession(bot, r.id, text, clientOf(who, b.client)) }) }
+        catch (e) { return e instanceof SteerRefused ? json(409, { error: e.message, why: e.why }) : json(400, { error: (e as Error).message }) }
+      }
       if (sub === 'queue-now' && m === 'POST') { const b = await body(); try { h.sessions.nowQueue(r, Number(b.i)); return json(200, { ok: true }) } catch (e) { return json(400, { error: (e as Error).message }) } }
       if (sub === 'queue' && m === 'POST') { const b = await body(); try { return json(200, { queue: h.sessions.editQueue(r, Number(b.i), String(b.text ?? '')) }) } catch (e) { return json(400, { error: (e as Error).message }) } }
       if (sub === 'permission' && m === 'POST') {
@@ -1110,7 +1156,13 @@ export class Gateway {
       if (sub === 'ack' && m === 'POST') { h.sessions.acknowledge(r); return json(200, { ok: true }) }
       if (sub === 'rename' && m === 'POST') { const b = await body(); h.sessions.rename(r.id, String(b.name)); return json(200, { ok: true }) }
       if (sub === 'hibernate' && m === 'POST') { h.sessions.hibernate(r.id); return json(200, { ok: true }) }
-      if (sub === 'settings' && m === 'POST') { const b = await body(); h.sessions.configure(r, { model: b.model === undefined ? undefined : String(b.model), effort: b.effort === undefined ? undefined : String(b.effort), permissionMode: b.permissionMode === undefined ? undefined : (String(b.permissionMode) as never) }); return json(200, h.sessions.info(r)) }
+      if (sub === 'settings' && m === 'POST') {
+        const b = await body()
+        // EB · 모르는 모드는 CLI 인자로 흘려보내지 않는다 · 답에는 «바로 적용됐나»(modeApplied)가 실린다 — 워커의 답을 기다린 뒤 돌려준다
+        if (b.permissionMode !== undefined && !isPermMode(b.permissionMode)) return json(400, { error: '모르는 권한 모드예요' })
+        await h.sessions.configure(r, { model: b.model === undefined ? undefined : String(b.model), effort: b.effort === undefined ? undefined : String(b.effort), permissionMode: b.permissionMode === undefined ? undefined : (b.permissionMode as PermissionMode) })
+        return json(200, h.sessions.info(r))
+      }
     }
     return json(404, { error: 'not found' })
   }

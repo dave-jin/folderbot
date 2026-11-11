@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from '
 import { homedir, platform } from 'node:os'
 import { join, resolve } from 'node:path'
 import { DEFAULT_PORT, type PermissionMode } from '../core/types'
+import { isPermMode } from '../core/permPolicy'
 
 export interface HostConfig {
   root: string | null
@@ -32,6 +33,8 @@ export interface HostConfig {
    * 세션마다 입력창에서 바꾸는 값의 **출발점**이다 — 루틴은 루틴의 승인 설정이 이긴다(routines.ts). 비면 `default`.
    */
   defaultPermissionMode?: PermissionMode
+  /** EB · 승인 시간 초과(분) — 루틴·봇·바깥 편지로 시작된 턴의 승인 요청을 이만큼 기다린 뒤 거절한다. 비면 기본(끄기 · 0) · 0 은 끄기(`core/approvalTimeout`) */
+  approvalTimeoutMinutes?: number
   /** `codex login` 을 못 쓰는 문맥(헤드리스)의 대안 — 워커 환경에 OPENAI_API_KEY 로 들어간다 */
   openaiApiKey?: string
   /** 메인(호스트) 이름 — 비면 컴퓨터 이름 */
@@ -62,7 +65,8 @@ export function loadConfig(): HostConfig {
      *    업데이트는 앱을 다시 켜므로 «업데이트마다 되돌아감» 으로 보였다. 새 칸을 더할 때 여기를 잊어도 이제 남는다.
      */
     // 손으로 고친 설정이 CLI 인자로 그대로 가지 않게 — 모르는 권한 값은 버린다(host.ts PERM_MODES 와 같은 목록)
-    if (j.defaultPermissionMode && !['acceptEdits', 'plan', 'bypassPermissions', 'dontAsk'].includes(j.defaultPermissionMode)) delete j.defaultPermissionMode
+    if (j.defaultPermissionMode && (!isPermMode(j.defaultPermissionMode) || j.defaultPermissionMode === 'default')) delete j.defaultPermissionMode
+    if (j.approvalTimeoutMinutes !== undefined && !(typeof j.approvalTimeoutMinutes === 'number' && j.approvalTimeoutMinutes >= 0)) delete j.approvalTimeoutMinutes
     return { ...j, root: j.root ?? null, port: j.port ?? DEFAULT_PORT, devices: j.devices ?? [], vapid: j.vapid, pushSubs: j.pushSubs ?? [], quiet: j.quiet, claudeBin: j.claudeBin, claudeOauthToken: j.claudeOauthToken, defaultModel: j.defaultModel ?? 'claude-fable-5-1', defaultEffort: j.defaultEffort ?? 'high', defaultCodexModel: j.defaultCodexModel, defaultCodexEffort: j.defaultCodexEffort, codexSandbox: j.codexSandbox, openaiApiKey: j.openaiApiKey, hostName: j.hostName }
   } catch {
     return { root: null, port: DEFAULT_PORT, devices: [], pushSubs: [], defaultModel: 'claude-fable-5-1', defaultEffort: 'high' }

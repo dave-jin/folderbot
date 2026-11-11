@@ -21,12 +21,78 @@ export interface PermUpdate { type: 'addRules'; rules: PermRule[]; behavior: 'al
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 
-/** 이 모드라면 호스트가 사람 대신 «허용» 을 눌러도 되는가 — 질문(AskUserQuestion)은 어떤 모드에도 대신 답하지 않는다 */
+/**
+ * 이 모드라면 호스트가 사람 대신 «허용» 을 눌러도 되는가 — 질문(AskUserQuestion)은 어떤 모드에도 대신 답하지 않는다.
+ * ⚠ EB · `auto`(자동)는 **대신 답하지 않는다** — 무엇이 안전한지는 CLI 가 판단하고, 그래도 물어 온 것은 사람에게 보인다.
+ *    호스트가 «자동이니까 허용» 으로 답하면 그건 자동이 아니라 «항상 허용» 이다.
+ */
 export function autoAllows(mode: PermissionMode | undefined, toolName: string): boolean {
   if (toolName === 'AskUserQuestion') return false
   if (mode === 'bypassPermissions') return true
   if (mode === 'acceptEdits') return EDIT_TOOLS.has(toolName)
   return false
+}
+
+/**
+ * 🔴 **EB · 권한 모드 이름은 Claude Desktop 과 같다** (2026-11-11 Dave 승인 — 기획 «사람이 없어도 안전하게 돈다»).
+ *    종전 Folder Bot 의 «자동» 은 `default`(바꾸기 전에 늘 묻기)였다 — Claude Desktop 의 «자동»(Auto · Claude 가 권한을 판단)과 뜻이 반대였다.
+ *    이제 `auto` = «자동», `default` = «수동». 화면(입력창 · 설정 · 시스템 줄)이 이 목록 하나를 읽는다.
+ * ⛔ 저장된 `default` 를 `auto` 로 옮기지 않는다 — 이름만 바뀐 것이다. 옮기면 묻던 세션이 묻지 않게 된다.
+ * ⚠ 순서가 곧 숫자 키(1~5)다 — 가운데에 끼워 넣으면 손에 익은 키가 바뀐다.
+ */
+export const PERM_MODE_MENU: { v: PermissionMode; t: string; d: string }[] = [
+  { v: 'auto', t: '자동', d: 'Claude 가 권한을 판단 — 물어 오는 것만 확인' },
+  { v: 'default', t: '수동', d: '바꾸기 전에 늘 물어봄 (읽기는 바로)' },
+  { v: 'acceptEdits', t: '편집 자동 수락', d: '파일 편집은 바로, 명령 실행은 물어봄' },
+  { v: 'plan', t: '계획', d: '바꾸지 않고 계획만 세움' },
+  { v: 'bypassPermissions', t: '항상 허용', d: '묻지 않음 — 루틴·신뢰하는 폴더에서만' }
+]
+/** CLI 가 받는 값 전부(2.1.322 `set_permission_mode` 오류 글 실측) — 설정 파일·API 로 들어온 값은 이 목록으로 거른다 */
+export const PERM_MODES: readonly PermissionMode[] = ['auto', 'default', 'acceptEdits', 'plan', 'bypassPermissions', 'dontAsk']
+export function isPermMode(v: unknown): v is PermissionMode { return typeof v === 'string' && (PERM_MODES as readonly string[]).includes(v) }
+/** 모드의 화면 이름 — 모르는 값·빈 값은 «수동»(= `default`) */
+export function permModeLabel(v?: string): string {
+  return PERM_MODE_MENU.find((m) => m.v === v)?.t ?? (v === 'dontAsk' ? '묻지 않고 거절' : '수동')
+}
+
+/**
+ * EB · CLI 가 `--permission-mode auto` 를 받지 않고 죽었나 (옛 판 · 계정 조건) — stderr 로 가른다.
+ * 모양을 외우지 않는다: 「permission mode / --permission-mode」 나 「auto mode」 를 말하는 오류면 그렇게 본다.
+ * ⚠ 모델 거절·로그인 오류는 따로 먼저 거른다(부르는 쪽) — 여기는 그 뒤에 온다.
+ */
+export function autoRejected(stderr: string): boolean {
+  return /permission[- ]mode|auto mode|argument ['"]?auto['"]?/i.test(stderr)
+}
+
+/**
+ * 🔴 **EB · 워커를 띄울 모드 — 모드를 안 정한 세션은 «새 채팅 기본 권한» 을 따른다** (2026-11-11 Dave 결정).
+ *
+ * 실 CLI 는 `--permission-mode` 없이 띄우면 그 맥의 `~/.claude/settings.json` `permissions.defaultMode` 를 따른다(맥미니는 `auto` · 실측
+ * `07_검증/2026-11-11_실측_CLI-2.1.322-…`). 그래서 기록에 모드가 없는 세션(봇 소통 세션 다수)은 화면에 뭐라고 적혀 있든 Auto 로 돌았고,
+ * 10/22 에는 Auto 가 오케스트레이터의 폴더 만들기를 거부했다. 이제 호스트는 **늘** 모드를 인자로 넘긴다:
+ *  - 사람이 고른 모드(`explicit`)는 그대로 — «수동» 을 골랐으면 기본이 무엇이든 수동이다
+ *  - 기록에 `default` 가 아닌 모드가 있으면 그대로(만들 때의 기본값 · 루틴 · 채널)
+ *  - 그 밖(모드 없음 · 고르지 않은 `default`)은 지금의 «새 채팅 기본 권한»(`appDefault`) — 없으면 수동
+ */
+export function spawnMode(stored: PermissionMode | undefined, explicit: boolean, appDefault: PermissionMode | undefined): PermissionMode {
+  if (explicit) return stored ?? 'default'
+  if (stored && stored !== 'default') return stored
+  return appDefault ?? 'default'
+}
+
+/**
+ * EB · 워커가 말한 실제 모드를 요청한 모드와 견준다.
+ *  - `auto-denied`   — 자동을 요청했는데 다른 모드로 떴다 → 수동으로 내리고 알린다
+ *  - `follows-cli`   — 모드를 인자로 안 넘긴 워커가 그 맥의 Claude Code 설정을 따라 다른 모드로 돈다. ⚠ 호스트는 이제 늘 모드를 넘긴다(`spawnMode`) — 이 갈래는 옛 워커·바깥에서 띄운 CLI 를 가릴 때만 남는다
+ *  - `same`          — 같다(또는 CLI 가 모드를 안 알려 줬다)
+ */
+export function modeDrift(asked: PermissionMode | undefined, explicit: boolean, reported: string | undefined): 'same' | 'auto-denied' | 'follows-cli' | 'other' {
+  if (!reported || !isPermMode(reported)) return 'same'
+  const want = asked ?? 'default'
+  if (reported === want) return 'same'
+  if (want === 'auto') return 'auto-denied'
+  if (want === 'default' && !explicit) return 'follows-cli'
+  return 'other'
 }
 
 /** 조각(`&&` `||` `;` `|`)마다 첫 낱말 — 환경변수 대입(`FOO=1`)은 건너뛴다. 못 믿을 낱말이면 null */

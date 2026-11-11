@@ -15,7 +15,8 @@ import { CODEX_LOCAL, parseLocalSlash } from '../core/slashLocal'
 import { isAutoSessionName, titleFromText } from '../core/sessionTitle'
 import { llmTitle } from './titleLLM'
 import { isModelRejected } from '../core/codexMap'
-import { autoAllows, fallbackRules, rulesLabel } from '../core/permPolicy'
+import { autoAllows, autoRejected, fallbackRules, isPermMode, modeDrift, permModeLabel, rulesLabel, spawnMode } from '../core/permPolicy'
+import { DEFAULT_APPROVAL_TIMEOUT_MIN, approvalDenyMessage, approvalNote, approvalTimeoutApplies } from '../core/approvalTimeout'
 import type { Bot, ChatItem, PermissionMode, PermissionRequest, QueuedMsg, SessionInfo, SessionState } from '../core/types'
 import type { TurnFrom } from '../core/turnGuard'
 import type { DocReq } from '../core/docReq'
@@ -29,6 +30,11 @@ import { slashCommands } from './slash'
 import { CUT_TURN_NOTE, cutTurnAtLoad } from '../core/cutTurn'
 import { mark } from './slow'
 import { askEcho, askResultText, type AskAnnotation } from '../core/askPreview'
+import { agentIdIn, applyTaskLine, closeRunningTasks, startAgentTask, upsertTask, type BgTask } from '../core/bgTasks'
+import { steerVerdict, type SteerVerdict } from '../core/steer'
+
+/** EA · 서브에이전트의 마지막 결과는 이만큼까지 든다 — 종전에는 다른 도구 결과와 같이 2000자에서 잘랐다(카드는 300자) */
+export const SUB_RESULT_MAX = 20_000
 
 /**
  * 워커 env — 중첩 마커를 지우고, **필요할 때만** 장기 토큰을 넣는다.
@@ -128,12 +134,25 @@ export class ClaudeWorker extends EventEmitter {
   pending = new Map<string, PermissionRequest>()
   private deferredAsks = new Set<string>()
   private stderrBuf = ''
+  /** EA · 답을 기다리는 제어 요청(`control`) — request_id → 답을 받을 함수 */
+  private ctl = new Map<string, (r: ControlResult) => void>()
+  /**
+   * EB · 이 워커에 **요청한** 권한 모드 — 인자로 넘겼거나(`--permission-mode`) 도는 중에 바꾼(`setMode`) 값. 안 넘겼으면 undefined
+   * (그때 CLI 는 그 맥의 Claude Code 설정 `permissions.defaultMode` 를 따른다 — 세션 워커는 늘 넘긴다 · `SessionManager.modeFor`).
+   */
+  askedMode?: PermissionMode
+  /** EB · CLI 가 말해 준 **실제** 모드(`system/init` · `system/status` 의 `permissionMode` · 2.1.322 실측). 아직 못 들었으면 undefined */
+  liveMode?: string
+  /** EB · 지금 바꾸는 중인 모드 — 답(control_response)보다 상태 줄이 먼저 와도 «요청과 다르다» 로 보지 않게 */
+  private switchingTo?: PermissionMode
+  /** EB · 갈아 끼우려고 버린 워커 — 종료를 «턴이 끝났다» 로 세지 않는다(자동 모드를 못 켜 수동으로 다시 띄울 때) */
+  dropped = false
 
   constructor(spec: SpawnSpec) {
     super()
     this.cliSessionId = spec.resumeAt ? null : spec.resume ?? null   // 되감으면 새 id 가 init 으로 온다 — 옛 id 로 되돌아가지 않게
     const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-prompt-tool', 'stdio']
-    if (spec.permissionMode && (spec.permissionMode !== 'default' || spec.explicitMode)) args.push('--permission-mode', spec.permissionMode)
+    if (spec.permissionMode && (spec.permissionMode !== 'default' || spec.explicitMode)) { args.push('--permission-mode', spec.permissionMode); this.askedMode = spec.permissionMode }
     for (const d of spec.addDirs ?? []) args.push('--add-dir', d)
     if (spec.mcpConfig) args.push('--mcp-config', spec.mcpConfig)
     if (spec.strictMcp) args.push('--strict-mcp-config')
@@ -150,10 +169,39 @@ export class ClaudeWorker extends EventEmitter {
     this.proc.stdin.on('error', (e: Error) => { this.lastError = e.message })
     const rl = createInterface({ input: this.proc.stdout })
     rl.on('line', (raw) => this.onLine(raw))
-    this.proc.on('exit', (code, signal) => this.emit('exit', code, signal, this.lastError))
-    this.proc.on('error', (err) => { this.lastError = err.message; this.emit('exit', 1, null, err.message) })
+    this.proc.on('exit', (code, signal) => { this.failControls('세션이 끝났어요'); this.emit('exit', code, signal, this.lastError) })
+    this.proc.on('error', (err) => { this.lastError = err.message; this.failControls(err.message); this.emit('exit', 1, null, err.message) })
+  }
+  private failControls(why: string): void { for (const cb of [...this.ctl.values()]) cb({ ok: false, error: why }) }
+  /**
+   * EA · 제어 요청을 보내고 CLI 의 답(`control_response`)을 기다린다 — `stop_task` 처럼 «됐는지» 를 사람에게 말해야 하는 요청에 쓴다.
+   * 답이 없으면 `timeoutMs` 뒤 실패로 푼다(옛 CLI 는 모르는 요청에 답을 안 할 수 있다). 권한 답(`respondPermission`)과는 다른 길이다.
+   */
+  control(request: Record<string, unknown>, timeoutMs = 6000): Promise<ControlResult> {
+    const id = randomUUID()
+    return new Promise((res) => {
+      let timer: NodeJS.Timeout | undefined
+      const done = (v: ControlResult) => { if (!this.ctl.delete(id)) return; if (timer) clearTimeout(timer); res(v) }
+      this.ctl.set(id, done)
+      timer = setTimeout(() => done({ ok: false, error: 'Claude Code 가 답하지 않았어요' }), timeoutMs); timer.unref()
+      if (!this.write({ type: 'control_request', request_id: id, request })) done({ ok: false, error: '세션이 내려가 있어요' })
+    })
+  }
+  /**
+   * 🔴 **EB · 도는 워커의 권한 모드를 바로 바꾼다** — 제어 요청 `set_permission_mode {mode}` (CLI 2.1.322 실측 11/11:
+   *    `control_response {subtype:success, response:{mode}}` 뒤에 `system/status {permissionMode}` 가 오고, 다음 턴의 init 도 새 모드다).
+   *    종전에는 모드가 스폰 인자뿐이라 턴이 끝나야 새 모드로 떴다. 못 바꾸면(옛 CLI 는 답이 없다 · `bypassPermissions` 는
+   *    `--dangerously-skip-permissions` 없이 뜬 워커에서 `bypass_not_launched` 로 거절된다) 부르는 쪽이 종전 방식(호스트가 대신 답하기)으로 떨어진다.
+   */
+  async setMode(mode: PermissionMode, timeoutMs = 2500): Promise<ControlResult> {
+    this.switchingTo = mode
+    const res = await this.control({ subtype: 'set_permission_mode', mode }, timeoutMs)
+    if (this.switchingTo === mode) this.switchingTo = undefined
+    if (res.ok) { this.askedMode = mode; this.liveMode = mode }
+    return res
   }
   private onLine(raw: string): void {
+    if (this.dropped) return
     let line: StreamLine & { request_id?: string; request?: Record<string, unknown>; response?: Record<string, unknown> }
     try { line = JSON.parse(raw) } catch { return }
     if (line.type === 'control_request') {
@@ -168,8 +216,20 @@ export class ClaudeWorker extends EventEmitter {
       }
       return
     }
-    if (line.type === 'control_response') return
+    if (line.type === 'control_response') {
+      const resp = (line.response ?? {}) as { subtype?: string; request_id?: string; error?: unknown; error_code?: unknown }
+      const cb = this.ctl.get(String(resp.request_id ?? ''))
+      if (cb) cb(resp.subtype === 'error' ? { ok: false, error: String(resp.error ?? '거절됐어요').slice(0, 200), ...(typeof resp.error_code === 'string' ? { code: resp.error_code } : {}) } : { ok: true })
+      return
+    }
     if (line.session_id) this.cliSessionId = line.session_id
+    // EB · 워커가 실제로 도는 모드 — init(턴마다) · status(모드가 바뀔 때). 바뀌었으면 알린다(세션 층이 요청과 견준다)
+    if (line.type === 'system' && (line.subtype === 'init' || line.subtype === 'status') && typeof line.permissionMode === 'string' && line.permissionMode !== this.liveMode) {
+      this.liveMode = line.permissionMode
+      if (this.switchingTo === line.permissionMode) this.askedMode = this.switchingTo
+      this.emit('mode', line.permissionMode)
+      if (this.dropped) return   // 세션 층이 이 워커를 버렸다(자동을 못 켜 수동으로 다시 띄운다) — 뒤따르는 줄을 대화에 싣지 않는다
+    }
     // CQ · 미뤄진 질문을 기다리는 동안 새 턴이 돌면(본 대화의 답 · 턴 끝) 그 질문은 CLI 가 이미 버렸다
     if ((line.type === 'assistant' || line.type === 'result') && !line.parent_tool_use_id) this.dropDeferred()
     if (line.type === 'result' && line.stop_reason === 'tool_deferred' && line.deferred_tool_use?.name === 'AskUserQuestion' && line.deferred_tool_use.id) {
@@ -187,6 +247,15 @@ export class ClaudeWorker extends EventEmitter {
   }
   send(text: string): boolean {
     return this.write({ type: 'user', message: { role: 'user', content: [{ type: 'text', text }] } })
+  }
+  /**
+   * 🔴 **EC · 끼워 넣기** — 도는 턴을 멈추지 않고 사람 말을 넣는다. 보통 말(`send`)과 같은 줄에 `priority: "next"` 하나가 더 붙는다.
+   *    CLI 2.1.322 실측(11/11 · `07_검증/…_끼워넣기-호스트모양.py`): 이 모양 그대로 넣으면 도는 도구가 끝난 직후 **같은 턴 안에서** 모델이 따른다
+   *    (result 한 번 · init 한 번). `priority: "now"` 는 턴을 닫고 새 턴을 열므로 쓰지 않는다 — 그건 «멈추고 보내기» 가 이미 한다.
+   * @returns stdin 에 썼으면 true(워커가 내려가 있으면 false — 부르는 쪽이 보통 말로 보낸다)
+   */
+  steer(text: string): boolean {
+    return this.write({ type: 'user', message: { role: 'user', content: [{ type: 'text', text }] }, priority: 'next' })
   }
   /**
    * 🔴 **미뤄진 질문에 사람이 카드 대신 채팅으로 답했다** (2026-10-02 Dave: *«AskUserQuestion 을 두번씩 동일한
@@ -250,6 +319,12 @@ export class ClaudeWorker extends EventEmitter {
   get alive(): boolean { return this.proc.exitCode === null && this.proc.signalCode === null }
 }
 
+/** EC · 끼워 넣기를 거절했다 — `why` 는 `core/steer.SteerBlock`. 게이트웨이가 409 로 돌려주고 화면은 그 말을 대기 줄 맨 앞에 되돌린다 */
+export class SteerRefused extends Error { constructor(message: string, readonly why: string) { super(message) } }
+
+/** EA · 제어 요청의 답 — `code` 는 CLI 가 준 오류 코드(`bypass_not_launched` · `invalid_mode` …) */
+export interface ControlResult { ok: boolean; error?: string; code?: string }
+
 /** 워커 — Claude 든 Codex 든 세션 층이 쓰는 것은 이만큼뿐이다 */
 export type Worker = ClaudeWorker | CodexWorker
 
@@ -303,6 +378,8 @@ export interface SessionRec {
   cut?: { at: number }
   /** DB · `folderbot ask` 로 온 편지 — 묻는 중·답함을 화면 맨 위에 올린다(`core/askMark`) */
   asks?: AskMark[]
+  /** EA · 맡긴 일 — 서브에이전트와 뒤에서 도는 셸. 도는 것 전부 + 끝난 것 30개(`core/bgTasks`) */
+  tasks?: BgTask[]
   id: string
   botId: string
   name: string
@@ -315,6 +392,13 @@ export interface SessionRec {
   lastError?: string
   routine?: string
   permissionMode?: PermissionMode
+  /**
+   * EB · 이 세션의 모드를 **누가 골랐다**(입력창에서 사람이 · 만들 때 값을 줘서 · 자동을 못 켜 수동으로 내려서) — `default`(수동)도 인자로 넘긴다.
+   * 없으면(ED · 11/11) 값이 `default`·빈 세션은 설정의 «새 채팅 기본 권한» 을 따른다 — `spawnMode`. 호스트는 어느 쪽이든 늘 모드를 인자로 넘긴다.
+   */
+  modeExplicit?: boolean
+  /** EB · 도는 중에 모드를 바꿨다 — `now` 워커에 바로 적용 · `next` 이 턴은 호스트가 대신 답하고 다음 워커부터. 턴이 끝나면 지운다 */
+  modeApplied?: 'now' | 'next'
   /** 이 세션을 도는 에이전트 — 없으면 봇의 것. 벤더는 폴더가 아니라 세션의 성질이다 */
   vendor?: 'claude' | 'codex'
   model?: string
@@ -352,6 +436,10 @@ export interface ManagerEvents {
   permission: (s: SessionRec, req: PermissionRequest) => void
   sessions: (botId: string) => void
   files: (botId: string) => void
+  /** EA · 맡긴 일 한 줄이 생기거나 바뀌었다 */
+  task: (s: SessionRec, t: BgTask) => void
+  /** EB · 사람이 시작하지 않은 턴의 승인 요청이 시간 안에 답을 못 받아 거절됐다 */
+  'approval-timeout': (s: SessionRec, req: PermissionRequest, minutes: number) => void
 }
 
 export class SessionManager extends EventEmitter {
@@ -400,6 +488,14 @@ export class SessionManager extends EventEmitter {
   openaiApiKey?: string
   /** Claude 새 세션의 기본 권한 모드 — 만들 때 값을 안 주면 이걸 쓴다(설정 › Claude). Codex 는 샌드박스가 그 자리다 */
   defaultPermissionMode?: PermissionMode
+  /**
+   * 🔴 EB · 이 세션의 워커를 띄울 모드 — 모드를 안 정한 세션은 지금의 «새 채팅 기본 권한» 을 따른다(`core/permPolicy.spawnMode` · 2026-11-11 Dave 결정).
+   *    호스트는 늘 `--permission-mode` 를 넘긴다 — 안 넘기면 CLI 가 그 맥의 Claude Code 설정(`permissions.defaultMode`)을 따라 뜬다.
+   */
+  private modeFor(r: SessionRec): PermissionMode { return spawnMode(r.permissionMode, !!r.modeExplicit, this.defaultPermissionMode) }
+  /** EB · 승인 시간 초과(분) — 사람이 시작하지 않은 턴만. 0 이면 끈다(`core/approvalTimeout`) */
+  approvalTimeoutMin = DEFAULT_APPROVAL_TIMEOUT_MIN
+  private approvalTimers = new Map<string, NodeJS.Timeout>()
 
   /** CI-2 · 이번에 켜질 때 닫은 끊긴 턴 — 호스트가 오케스트레이터에게 알릴지 정한다(`Host.afterCutTurns`) */
   cutTurns: { id: string; botId: string; name: string; from?: TurnFrom; at: number }[] = []
@@ -415,6 +511,8 @@ export class SessionManager extends EventEmitter {
         const cut = cutTurnAtLoad(r, Date.now())
         if (r.state === 'running' || r.state === 'awaiting_input') r.state = 'idle' // 호스트가 다시 뜨면 워커는 없다
         let dirty = closeOpenItems(r.items, 'restore').length > 0   // 스피너로 남은 항목도 함께 마감
+        // EA · 워커가 없으면 그 작업도 없다 — «도는 중» 으로 남은 맡긴 일을 닫는다(안 닫으면 다시 켠 뒤 영영 도는 중이다)
+        if (r.tasks?.length) { const c = closeRunningTasks(r.tasks, Date.now(), '호스트가 다시 떠서 중단됨'); if (c.changed.length) { r.tasks = c.tasks; dirty = true } }
         if (cut) {
           if (cut === 'note') {
             r.items.push({ id: itemId('s'), t: Date.now(), kind: 'system', text: CUT_TURN_NOTE })
@@ -437,7 +535,18 @@ export class SessionManager extends EventEmitter {
   }
   info(r: SessionRec): SessionInfo {
     const w = this.workers.get(r.id)
-    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, inflight: r.inflight, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, ...(r.comm ? { comm: true } : {}), ...(r.channel ? { channel: r.channel } : {}), ...(r.delegatedFrom && !r.comm ? { delegated: true } : {}), ...(r.adopted ? { adopted: true } : {}), ...(r.exChannel ? { exChannel: true } : {}), ...(r.exComm ? { exComm: true } : {}), ...(r.queue?.length ? { queue: r.queue } : {}), ...(r.held ? { held: true } : {}), ...(r.stopped ? { stopped: r.stopped } : {}), activity: r.activity, turnStartedAt: r.turnStartedAt, ...(r.docReq ? { docReq: r.docReq } : {}), model: r.model, effort: r.effort, permissionMode: r.permissionMode, ctx: r.ctx, restartPending: r.restartPending, ...(r.slash?.length ? { slashN: r.slash.length } : {}), ...(r.asks?.length ? { asks: r.asks } : {}) }
+    return { id: r.id, botId: r.botId, name: r.name, vendor: r.vendor, state: r.state, cliSessionId: r.cliSessionId, createdAt: r.createdAt, lastActivity: r.lastActivity, inflight: r.inflight, lastReplyAt: r.lastReplyAt, readAt: r.readAt, alive: !!w?.alive, hibernated: !w && !!r.cliSessionId, bg: r.items.filter((it) => it.kind === 'subagent' && it.bg && it.status === 'run').length, pending: w ? [...w.pending.values()] : [], lastError: r.lastError, routine: r.routine, ...(r.comm ? { comm: true } : {}), ...(r.channel ? { channel: r.channel } : {}), ...(r.delegatedFrom && !r.comm ? { delegated: true } : {}), ...(r.adopted ? { adopted: true } : {}), ...(r.exChannel ? { exChannel: true } : {}), ...(r.exComm ? { exComm: true } : {}), ...(r.queue?.length ? { queue: r.queue } : {}), ...(r.held ? { held: true } : {}), ...(r.stopped ? { stopped: r.stopped } : {}), activity: r.activity, turnStartedAt: r.turnStartedAt, ...(r.docReq ? { docReq: r.docReq } : {}), model: r.model, effort: r.effort, permissionMode: r.permissionMode, ...(this.liveModeOf(r, w) ? { liveMode: this.liveModeOf(r, w) } : {}), ...(r.modeApplied ? { modeApplied: r.modeApplied } : {}), ctx: r.ctx, restartPending: r.restartPending, ...(r.slash?.length ? { slashN: r.slash.length } : {}), ...(r.asks?.length ? { asks: r.asks } : {}) }
+  }
+  /**
+   * EB · 이 세션이 **실제로** 도는(돌) 모드 — 살아 있는 워커가 말한 값이 정본이다. 워커가 없거나 아직 말해 주지 않았으면,
+   * 모드를 안 정한 세션에 한해 «다음에 뜰 모드»(`modeFor` — 지금의 «새 채팅 기본 권한»)를 쓴다. Codex 는 샌드박스가 그 자리라 없다.
+   */
+  private liveModeOf(r: SessionRec, w: Worker | undefined): PermissionMode | undefined {
+    if (r.vendor === 'codex') return undefined
+    const rep = w instanceof ClaudeWorker && w.alive ? w.liveMode : undefined
+    if (isPermMode(rep)) return rep
+    if (!r.modeExplicit && !r.channel && (r.permissionMode ?? 'default') === 'default') return this.modeFor(r)
+    return undefined
   }
   get(id: string): SessionRec | undefined { return this.recs.get(id) }
   /** 볼트 전체의 세션 기록 — 「지난 대화 찾기」 가 훑는다(읽기만) */
@@ -476,7 +585,7 @@ export class SessionManager extends EventEmitter {
    */
   create(bot: Bot, name: string, opts: { permissionMode?: PermissionMode; model?: string; effort?: string; routine?: string; vendor?: 'claude' | 'codex'; delegatedFrom?: string; comm?: boolean; id?: string; channel?: string; trust?: Trust } = {}): SessionRec {
     const id = opts.id ?? `s_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-    const r: SessionRec = { id, botId: bot.id, name, cwd: bot.repo ?? bot.abs, cliSessionId: null, state: 'idle', createdAt: Date.now(), lastActivity: Date.now(), items: [], routine: opts.routine, ...(opts.delegatedFrom ? { delegatedFrom: opts.delegatedFrom } : {}), ...(opts.comm ? { comm: true } : {}), ...(opts.channel ? { channel: opts.channel, trust: opts.trust ?? 'propose', named: true } : {}), permissionMode: opts.permissionMode ?? ((opts.vendor ?? bot.vendor) === 'codex' ? undefined : this.defaultPermissionMode), vendor: opts.vendor ?? bot.vendor, model: opts.model ?? this.defaults[opts.vendor ?? bot.vendor].model, effort: opts.effort ?? this.defaults[opts.vendor ?? bot.vendor].effort }
+    const r: SessionRec = { id, botId: bot.id, name, cwd: bot.repo ?? bot.abs, cliSessionId: null, state: 'idle', createdAt: Date.now(), lastActivity: Date.now(), items: [], routine: opts.routine, ...(opts.delegatedFrom ? { delegatedFrom: opts.delegatedFrom } : {}), ...(opts.comm ? { comm: true } : {}), ...(opts.channel ? { channel: opts.channel, trust: opts.trust ?? 'propose', named: true } : {}), permissionMode: (opts.vendor ?? bot.vendor) === 'codex' ? undefined : opts.permissionMode ?? this.defaultPermissionMode, ...(opts.permissionMode && (opts.vendor ?? bot.vendor) !== 'codex' ? { modeExplicit: true } : {}), vendor: opts.vendor ?? bot.vendor, model: opts.model ?? this.defaults[opts.vendor ?? bot.vendor].model, effort: opts.effort ?? this.defaults[opts.vendor ?? bot.vendor].effort }
     this.recs.set(id, r)
     this.persist(r)
     this.emit('sessions', bot.id)
@@ -496,6 +605,7 @@ export class SessionManager extends EventEmitter {
         if (!r.deleted) continue
         delete r.deleted
         if (r.state === 'running' || r.state === 'awaiting_input') r.state = 'idle'
+        if (r.tasks?.length) r.tasks = closeRunningTasks(r.tasks, Date.now(), '세션이 끝나 중단됨').tasks
         this.recs.set(id, r); this.persist(r); back.push(id)
         this.emit('sessions', r.botId)
       } catch { /* 없는 파일 */ }
@@ -503,7 +613,7 @@ export class SessionManager extends EventEmitter {
     return back
   }
   remove(id: string): void {
-    this.workers.get(id)?.kill(); this.workers.delete(id)
+    this.workers.get(id)?.kill(); this.workers.delete(id); this.clearApprovals(id)
     const r = this.recs.get(id); this.recs.delete(id)
     try { const f = join(this.dir, `${id}.json`); if (existsSync(f)) atomicWrite(f, JSON.stringify({ ...r, deleted: true, deletedAt: Date.now() })) } catch { /* */ }
     if (r) this.emit('sessions', r.botId)
@@ -620,20 +730,53 @@ export class SessionManager extends EventEmitter {
     }).catch(() => {})
   }
 
-  /** 세션의 모델·노력·모드 — 셋 다 스폰 인자라 워커를 내리고 같은 id 로 이어서 띄운다. 턴이 도는 중이면 끝난 뒤에 */
-  configure(r: SessionRec, o: { model?: string; effort?: string; permissionMode?: PermissionMode }): void {
-    let changed = false
-    if (o.model !== undefined && o.model !== r.model) { r.model = o.model || undefined; changed = true }
-    if (o.effort !== undefined && o.effort !== r.effort) { r.effort = o.effort || undefined; changed = true }
-    if (o.permissionMode !== undefined && o.permissionMode !== r.permissionMode) { r.permissionMode = o.permissionMode; changed = true }
-    if (!changed) return
+  /**
+   * 세션의 모델·노력·모드. 모델·노력은 스폰 인자라 워커를 내리고 같은 id 로 이어서 띄운다(턴이 도는 중이면 끝난 뒤에).
+   *
+   * 🔴 **EB · 모드는 도는 워커에 바로 넣는다** (2026-11-11). 워커가 살아 있으면 `set_permission_mode` 로 바꾸고(`ClaudeWorker.setMode`),
+   *    답이 없거나 거절되면 종전 방식으로 떨어진다 — 그 턴은 호스트가 새 모드를 대신 집행하고(`autoAllow`) 턴이 끝나면 새 모드로 다시 띄운다.
+   *    어느 쪽이었는지는 `modeApplied`(`now` · `next`)와 대화의 시스템 줄로 남는다.
+   * ⚠ 사람이 고른 모드는 `modeExplicit` 로 남긴다 — «수동»(`default`)을 골랐는데 «새 채팅 기본 권한» 을 따라 다른 모드로 뜨면 안 된다(`modeFor`).
+   * ⚠ 저장값이 같아도 워커의 실제 모드가 다르면(기본 권한을 따라 도는 세션) 바꾼다.
+   * ⚠ Codex 세션에는 이 모드가 없다(샌드박스가 그 자리다) — 값이 와도 버린다.
+   */
+  async configure(r: SessionRec, o: { model?: string; effort?: string; permissionMode?: PermissionMode }): Promise<void> {
+    let changed = false, restart = false
+    if (o.model !== undefined && o.model !== r.model) { r.model = o.model || undefined; changed = restart = true }
+    if (o.effort !== undefined && o.effort !== r.effort) { r.effort = o.effort || undefined; changed = restart = true }
     const w = this.workers.get(r.id)
+    const want = r.vendor === 'codex' ? undefined : o.permissionMode
+    let modeDirty = false
+    if (want !== undefined) {
+      const cw = w instanceof ClaudeWorker && w.alive ? w : undefined
+      const stored = want === r.permissionMode && (!!r.modeExplicit || want !== 'default')
+      // 워커에 반영할 것이 있나 — 실제 모드를 들었으면 그것과, 못 들었으면 저장값과 견준다
+      modeDirty = !!cw && (cw.liveMode !== undefined ? cw.liveMode !== want : !stored)
+      if (!stored || modeDirty) changed = true
+      r.permissionMode = want; r.modeExplicit = true
+      if (!cw && w?.alive && !stored) restart = true   // Claude 가 아닌 워커 — 종전대로 다시 띄운다
+    }
+    if (!changed) return
+    r.modeApplied = undefined
     if (w?.alive) {
       // 새 모드가 대신 답해도 되는 물음은 지금 바로 닫는다 — 화면에 남은 카드를 하나하나 누르게 두지 않는다
       let answered = false
       for (const p of [...w.pending.values()]) if (this.autoAllow(r, w, p)) answered = true
       if (answered && !w.pending.size) this.setState(r, { kind: 'input_provided' })
-      if (r.state === 'running' || r.state === 'awaiting_input' || w.pending.size) r.restartPending = true; else { w.kill(); this.workers.delete(r.id) }
+      if (modeDirty && want !== undefined && w instanceof ClaudeWorker) {
+        const busy0 = r.state === 'running' || r.state === 'awaiting_input'
+        const res = await w.setMode(want)
+        // 기다리는 사이 워커가 바뀌었거나 사람이 다른 모드를 또 골랐으면 그쪽이 이긴다
+        if (this.workers.get(r.id) !== w || !w.alive || r.permissionMode !== want) { this.persist(r); this.emit('sessions', r.botId); return }
+        const busy = r.state === 'running' || r.state === 'awaiting_input'
+        if (res.ok) {
+          if (busy) { r.modeApplied = 'now'; this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `권한 모드 → «${permModeLabel(want)}» · 도는 중인 턴에 바로 적용했어요` }) }
+        } else {
+          restart = true
+          if (busy || busy0) { r.modeApplied = 'next'; this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `권한 모드 → «${permModeLabel(want)}» · 다음 턴부터 적용돼요 — 그때까지 물어 오는 것은 Folder Bot 이 새 모드대로 답해요 (${modeWhy(res)})` }) }
+        }
+      }
+      if (restart) { if (r.state === 'running' || r.state === 'awaiting_input' || w.pending.size) r.restartPending = true; else { w.kill(); this.workers.delete(r.id) } }
     }
     this.persist(r); this.emit('sessions', r.botId)
   }
@@ -641,9 +784,65 @@ export class SessionManager extends EventEmitter {
   private autoAllow(r: SessionRec, w: Worker, p: PermissionRequest): boolean {
     if (!autoAllows(r.permissionMode, p.toolName) || !w.pending.has(p.requestId)) return false
     w.respondPermission(p.requestId, true)
-    this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `자동 허용 · ${p.displayName} (${r.permissionMode === 'acceptEdits' ? '편집 자동 수락' : '항상 허용'} 모드)` })
+    this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `자동 허용 · ${p.displayName} (${permModeLabel(r.permissionMode)} 모드)` })
     return true
   }
+  /**
+   * EB · 워커가 실제 모드를 말했다. ① «자동» 을 요청했는데(고른 모드든 «새 채팅 기본 권한» 이든) 다른 모드로 떴으면 수동으로 내린다(`autoFallback`)
+   * ② 그 밖에는 화면이 실제 모드를 보이도록 알리기만 한다.
+   */
+  private onWorkerMode(r: SessionRec, bot: Bot, w: ClaudeWorker, reported: string): void {
+    if (modeDrift(w.askedMode, w.askedMode !== undefined, reported) === 'auto-denied' && this.modeFor(r) === 'auto') {
+      this.autoFallback(r, bot, w, `Claude Code 가 «${permModeLabel(reported)}» 모드로 떴어요`, reported)
+      return
+    }
+    this.emit('sessions', r.botId)
+  }
+  /**
+   * 🔴 **EB · «자동»(Auto)을 못 켰다 — 수동으로 내린다** (옛 CLI · 계정 조건). 턴이 죽지 않게 하고, 대화에 한 줄로 알리고,
+   *    기록의 모드를 `default`(명시)로 바꿔 화면이 실제 모드를 보이게 한다. ⚠ 권한을 조이는 쪽이라 묻지 않고 한다(푸는 쪽은 절대 안 한다).
+   *  - 워커가 이미 수동(`default`)으로 떠 있으면 그대로 둔다 — 턴이 이어진다.
+   *  - 다른 모드로 떴거나(그 맥의 설정을 따라 더 느슨할 수 있다) 죽었으면, 수동을 명시해 다시 띄우고 하던 말을 다시 보낸다.
+   */
+  private autoFallback(r: SessionRec, bot: Bot, w: ClaudeWorker | null, why: string, reported?: string): void {
+    r.permissionMode = 'default'; r.modeExplicit = true; r.modeApplied = undefined; r.restartPending = false
+    this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `«자동» 모드를 못 켜 «수동» 으로 돌려요(바꾸기 전에 물어봄) — ${why}. 다시 쓰려면 입력창의 모드에서 «자동» 을 고르세요.` })   // ⚠ 결론이 앞에 온다 — 시스템 줄은 폰에서 한 줄로 접힌다
+    if (w && reported === 'default') { w.askedMode = 'default'; this.persist(r); this.emit('sessions', r.botId); return }
+    if (w) { w.dropped = true; w.kill(); if (this.workers.get(r.id) === w) this.workers.delete(r.id); this.clearApprovals(r.id) }
+    this.persist(r); this.emit('sessions', r.botId)
+    const lastUser = [...r.items].reverse().find((it) => it.kind === 'user') as { text: string } | undefined
+    const live = r.state === 'running' || r.state === 'awaiting_input'
+    if (!lastUser?.text || !live) { if (live) this.setState(r, { kind: 'process_exited', code: 0 }); return }
+    const again = r.turnFrom, grantAgain = r.turnGrant
+    setTimeout(() => { try { if (this.recs.get(r.id) === r) this.send(r, bot, lastUser.text, undefined, again, grantAgain, true) } catch (e) { this.push(r, { id: itemId('e'), t: Date.now(), kind: 'system', text: `다시 보내지 못했어요 · ${(e as Error).message}` }); this.setState(r, { kind: 'process_exited', code: 1 }) } }, 50)
+  }
+
+  // ── EB · 승인 시간 초과 (core/approvalTimeout) ─────────────────────────────────────────────
+  /** 사람이 시작하지 않은 턴의 권한 요청에 시계를 건다 — 시간 안에 답이 없으면 거절한다. 사람이 보낸 턴·질문 카드에는 안 건다 */
+  private armApproval(r: SessionRec, w: Worker, p: PermissionRequest): void {
+    const min = this.approvalTimeoutMin
+    if (!approvalTimeoutApplies(r.turnFrom, p, min)) return
+    const key = `${r.id}:${p.requestId}`
+    const t = setTimeout(() => { this.approvalTimers.delete(key); this.approvalExpired(r, w, p, min) }, Math.max(50, Math.round(min * 60_000)))
+    t.unref()
+    this.approvalTimers.set(key, t)
+  }
+  private approvalExpired(r: SessionRec, w: Worker, p: PermissionRequest, min: number): void {
+    // 이미 답했거나(사람·모드 전환) 워커가 바뀌었으면 아무 일도 안 한다 · 그사이 사람이 턴을 이어받았으면 기다린다
+    if (this.recs.get(r.id) !== r || this.workers.get(r.id) !== w || !w.alive || !w.pending.has(p.requestId)) return
+    if (!approvalTimeoutApplies(r.turnFrom, p, min)) return
+    if (w.respondPermission(p.requestId, false, false, approvalDenyMessage(min))) this.closeTool(r, p.requestId, '승인 시간 초과로 거절했어요', true)
+    this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: approvalNote(min, p.displayName, r.turnFrom) })
+    this.emit('approval-timeout', r, p, min)
+    if (!w.pending.size) this.setState(r, { kind: 'input_provided' })
+    this.persist(r); this.emit('sessions', r.botId)
+  }
+  private clearApprovals(sid: string): void {
+    for (const [k, t] of this.approvalTimers) if (k.startsWith(`${sid}:`)) { clearTimeout(t); this.approvalTimers.delete(k) }
+  }
+  /** 검사·진단 — 지금 시계가 걸린 승인 요청 수(호스트가 다시 뜨면 0 이다 · 워커가 없으면 요청도 없다) */
+  approvalClocks(): number { return this.approvalTimers.size }
+
   /**
    * 🔴 **채널 세션의 물음은 호스트가 그 자리에서 답한다** — 사람이 없는 세션이라 기다리면 편지가 쌓인다
    * (2026-10-11 맥미니 실측: `bridge_send` 7시간 43분 · `todo_add` 4시간+ 승인 대기). 판정은 core/bridges.channelVerdict.
@@ -824,6 +1023,30 @@ export class SessionManager extends EventEmitter {
     }
     this.afterTurn(r)
   }
+  /**
+   * 🔴 **EC · 끼워 넣기** (2026-11-11) — 사람이 줄 세워 둔 말을, 턴을 멈추지 않고 도는 워커에 바로 넣는다(`ClaudeWorker.steer` · `priority: "next"`).
+   *    대화에는 사람 말로 서고(`steer` 표시) 기록에 남는다. 턴의 출처(`turnFrom`)는 **바꾸지 않는다** — 루틴·봇이 연 턴에 사람이 한마디 넣었다고
+   *    그 턴이 «사람의 턴» 이 되면, 사람만 시킬 수 있는 도구(core/turnGuard)가 남의 턴에서 열린다.
+   * 넣어도 되는지는 `core/steer.steerVerdict` 가 정한다(화면의 단추와 같은 판정):
+   *   · Codex · 승인/질문 카드가 걸림 → 거절(`SteerRefused` · 화면이 그 말을 줄 맨 앞에 되돌린다)
+   *   · 도는 턴이 없음(누르는 사이 턴이 끝난 경주 · 미뤄진 질문만 걸림) → **보통 말로 바로 보낸다**(말을 잃지 않는다 · 한 번만 나간다)
+   * @returns 'steered' 끼워 넣었다 · 'sent' 턴이 없어 보통 말로 보냈다
+   */
+  steerCheck(r: SessionRec, bot: Bot): SteerVerdict { return steerVerdict({ vendor: r.vendor ?? bot.vendor, state: r.state, pending: this.pendingOf(r.id) }) }
+  steer(r: SessionRec, bot: Bot, text: string, client?: ClientCtx): 'steered' | 'sent' {
+    const v = this.steerCheck(r, bot)
+    const w = this.workers.get(r.id)
+    if (!v.ok && !v.sendable) throw new SteerRefused(v.text ?? '지금은 끼워 넣을 수 없어요', v.why ?? 'idle')
+    // 도는 턴이 없거나(경주) 워커가 내려가 있으면 — 보통 말로. `send` 가 워커를 띄우고 사람 말을 한 번 세운다
+    if (!v.ok || !(w instanceof ClaudeWorker) || !w.alive) { this.send(r, bot, text, client, 'human'); return 'sent' }
+    if (client) r.lastClient = client
+    const from = client ? { device: client.device, main: client.origin === 'host', tier: client.tier } : undefined
+    // ⚠ stdin 에 못 썼으면(막 내려간 워커) 사람 말을 세우기 전에 보통 말로 돌린다 — 대화에 같은 말이 두 번 서지 않게
+    if (!w.steer(withClient(text, client))) { this.send(r, bot, text, client, 'human'); return 'sent' }
+    this.push(r, { id: itemId('u'), t: Date.now(), kind: 'user', text, steer: true, ...(from ? { from } : {}) })
+    this.persist(r)
+    return 'steered'
+  }
   /** 이 세션의 봇을 찾는 길 — 호스트가 꽂는다(대기열을 내보낼 때 워커를 띄우려면 봇이 필요하다) */
   botOf: (botId: string) => Bot | undefined = () => undefined
   /** 턴이 끝났다 — ① 대기 말이 있으면 하나 내보낸다 ② 없으면 컨텍스트가 클 때 압축한다 */
@@ -903,7 +1126,7 @@ export class SessionManager extends EventEmitter {
       // ⚠ 모델 이름은 CLI 마다 다르다 — Claude 이름(claude-opus-5)을 Codex 에 넘기면 그 자리에서 죽는다.
       //    Codex 것처럼 보이는 이름만 넘기고 아니면 CLI 의 기본값에 맡긴다.
       ? new CodexWorker({ cwd: r.cwd, resume: r.cliSessionId, model: fitsProvider('codex', r.model) ? r.model : undefined, effort: r.effort, sandbox: this.codexSandbox, apiKey: this.openaiApiKey, addDirs: extraDirs(bot) })
-      : new ClaudeWorker({ cwd: r.cwd, resume: r.cliSessionId, ...(r.rewindAt ? { resumeAt: r.rewindAt } : {}), permissionMode: r.permissionMode, addDirs: extraDirs(bot), mcpConfig: this.mcpUrl(r.id, bot.id), model: r.model, effort: r.effort, name: `${bot.name}-${r.name}`, appendSystemPrompt: this.systemPromptFor(bot) || undefined, bin: this.bin, ...(r.channel ? channelWorkerSpec(r.trust ?? 'propose', r.daveMay) : {}) })
+      : new ClaudeWorker({ cwd: r.cwd, resume: r.cliSessionId, ...(r.rewindAt ? { resumeAt: r.rewindAt } : {}), permissionMode: this.modeFor(r), explicitMode: true /* 🔴 늘 넘긴다 — 안 넘기면 CLI 가 그 맥의 설정(맥미니는 auto)을 따른다 */, addDirs: extraDirs(bot), mcpConfig: this.mcpUrl(r.id, bot.id), model: r.model, effort: r.effort, name: `${bot.name}-${r.name}`, appendSystemPrompt: this.systemPromptFor(bot) || undefined, bin: this.bin, ...(r.channel ? channelWorkerSpec(r.trust ?? 'propose', r.daveMay) : {}) })
     this.workers.set(r.id, w)
     /**
      * 🔴 CL-1 B · 갈아 끼운 옛 워커(되감기가 죽인 것)의 줄·종료는 버린다 — 늦게 온 `exit` 가 새 워커를 띄운 뒤
@@ -920,7 +1143,10 @@ export class SessionManager extends EventEmitter {
       if (r.channel && this.channelAnswer(r, w, p)) return
       if (this.autoAllow(r, w, p)) return
       this.setState(r, { kind: 'permission_requested' }); this.emit('permission', r, p)
+      this.armApproval(r, w, p)   // EB · 사람이 시작하지 않은 턴이면 정한 시간 뒤 거절한다
     })
+    // EB · 워커가 실제 모드를 말했다(init · status) — 요청과 견준다
+    w.on('mode', (reported: string) => { if (!replaced() && w instanceof ClaudeWorker) this.onWorkerMode(r, bot, w, reported) })
     // CQ · CLI 가 버린 미뤄진 질문 — 카드를 걷고(세션 목록의 pending) 도구 줄을 닫는다
     w.on('asks-dropped', (ids: string[]) => {
       if (replaced()) return
@@ -930,11 +1156,14 @@ export class SessionManager extends EventEmitter {
       this.emit('sessions', r.botId)
     })
     w.on('exit', (code: number | null, _sig: string | null, err: string) => {
-      if (replaced()) return
+      if (replaced() || (w instanceof ClaudeWorker && w.dropped)) return
       if (this.closing) return   // CI-2 · 호스트가 내려가는 중 — 끊김 표식(stopAll)을 «끝남» 으로 덮지 않는다
       if (this.workers.get(r.id) === w) this.workers.delete(r.id)
+      this.clearApprovals(r.id)   // EB · 워커가 없으면 기다리는 요청도 없다
+      if (r.modeApplied) r.modeApplied = undefined
       if (w.cliSessionId) r.cliSessionId = w.cliSessionId
       for (const it of closeOpenItems(r.items, 'exit')) this.push(r, it, true)
+      { const c = closeRunningTasks(r.tasks ?? [], Date.now(), '세션이 끝나 중단됨'); this.tasksChanged(r, c.tasks, c.changed) }   // EA · 워커와 함께 끝난 맡긴 일
       this.streaming.delete(r.id); this.thinking.delete(r.id); this.thinkSent.delete(r.id); this.thinkShown.delete(r.id)
       if (code !== 0 && code !== 143 && code !== 137 && code !== null) {
         r.lastError = (err || `exit ${code}`).trim().slice(-600)
@@ -958,6 +1187,14 @@ export class SessionManager extends EventEmitter {
           const again = r.turnFrom; const grantAgain = r.turnGrant
           setTimeout(() => { try { this.send(r, bot2, lastUser.text, undefined, again, grantAgain) } catch { /* 두 번은 안 한다 */ } }, 50)
           this.emit('sessions', r.botId)
+          return
+        }
+        /**
+         * 🔴 **EB · «자동» 을 CLI 가 받지 않고 죽었다** (옛 판 · 계정 조건). 모델 거절과 같은 길 — 턴이 통째로 죽지 않게
+         *    «수동» 을 명시해 한 번 더 보낸다. 모드 기록이 `default` 로 바뀌므로 두 번 돌지 않는다.
+         */
+        if (!authErr && w instanceof ClaudeWorker && w.askedMode === 'auto' && this.modeFor(r) === 'auto' && autoRejected(r.lastError)) {
+          this.autoFallback(r, bot, null, `이 Claude Code 가 받지 않아요 · ${r.lastError.split('\n').pop()?.slice(0, 160) ?? ''}`)
           return
         }
         this.push(r, { id: itemId('e'), t: Date.now(), kind: 'system', text: authErr ? 'Claude 로그인이 필요해요 — 미니에서 claude → /login, 또는 설정 › Claude 토큰' : `세션을 못 띄웠어요 · ${r.lastError.split('\n').pop() ?? ''}` })
@@ -1004,16 +1241,86 @@ export class SessionManager extends EventEmitter {
    * 종전엔 즉시 오는 tool_result 로 «끝남» 을 찍어 실제로는 돌고 있는데 끝난 것처럼 보였고, 반대로 호스트가 재시작되면 영원히 «실행 중» 이었다.
    */
   private onTask(r: SessionRec, line: StreamLine): void {
+    // EA · 먼저 맡긴 일 목록에 적는다 — 셸처럼 대화 카드가 없는 작업도 여기에는 남는다
+    const res = applyTaskLine(r.tasks ?? [], line, Date.now(), r.cliSessionId)
+    this.tasksChanged(r, res.tasks, res.changed)
+    if (line.subtype === 'background_tasks_changed') {
+      // «지금 뒤에서 도는 것 전체» — 목록에서 빠져 닫힌 줄의 카드도 닫는다(끝 알림을 놓쳐도 카드가 영영 돌지 않게)
+      let closed = false
+      for (const t of res.changed) {
+        const it = this.subItemOf(r, t); if (!it) continue
+        if (t.bg && !it.bg) { it.bg = true; this.push(r, it, true) }
+        if (t.status !== 'run' && it.status === 'run') { it.status = t.status === 'done' ? 'done' : 'error'; if (t.status === 'stopped') it.stopped = true; this.push(r, it, true); closed = true }
+      }
+      if (res.changed.length) this.emit('sessions', r.botId)
+      if (closed) this.persist(r)
+      return
+    }
     const byTool = line.tool_use_id ? r.items.find((it) => it.id === `t_${line.tool_use_id}`) : undefined
     const it = (byTool ?? (line.task_id ? r.items.find((x) => x.kind === 'subagent' && x.taskId === line.task_id) : undefined)) as (ChatItem & { kind: 'subagent' }) | undefined
-    if (!it || it.kind !== 'subagent') return
+    if (!it || it.kind !== 'subagent') { if (line.subtype !== 'task_started' && res.changed.length) this.emit('sessions', r.botId); return }
     if (line.subtype === 'task_started') { it.taskId = line.task_id; if (line.is_backgrounded) it.bg = true; this.push(r, it, true); return }
-    if (line.subtype === 'task_updated') { const st = line.patch?.status; if (st === 'failed' || st === 'killed' || st === 'cancelled') { it.status = 'error'; it.result = it.result || `백그라운드 작업 ${st}`; this.push(r, it, true) } return }
+    if (line.subtype === 'task_updated') {
+      const st = line.patch?.status
+      if (line.patch?.is_backgrounded && !it.bg) { it.bg = true; this.push(r, it, true) }
+      if (st === 'failed' || st === 'killed' || st === 'cancelled') {
+        it.status = 'error'
+        if (st !== 'failed') it.stopped = true   // EA · 사람이 하나만 멈춘 것(`stop_task` → killed)은 실패가 아니다
+        it.result = it.result || (st === 'failed' ? '백그라운드 작업 failed' : '멈췄어요')
+        this.push(r, it, true); this.emit('sessions', r.botId)
+      }
+      return
+    }
     // task_notification — 진짜 끝
     it.status = line.status === 'completed' ? 'done' : 'error'
+    if (line.status === 'stopped' || line.status === 'killed' || line.status === 'cancelled') it.stopped = true
     if (line.summary) it.result = String(line.summary).slice(0, 2000)
     this.push(r, it, true)
-    this.setActivity(r, `${it.name} 끝남`, true); this.emit('sessions', r.botId)
+    this.setActivity(r, `${it.name} ${it.stopped ? '멈춤' : '끝남'}`, true); this.emit('sessions', r.botId)
+  }
+  /** EA · 맡긴 일 목록을 바꾸고 바뀐 줄만 화면에 알린다(`task` 프레임). 목록 자체는 세션 파일에 함께 남는다 */
+  private tasksChanged(r: SessionRec, tasks: BgTask[], changed: BgTask[]): void {
+    if (!changed.length) return
+    r.tasks = tasks
+    for (const t of changed) this.emit('task', r, t)
+    this.persistSoon(r)
+  }
+  /** EA · 맡긴 일 한 줄을 고친다 — 열쇠는 도구 호출 id. 없는 줄이면 아무 일도 안 한다 */
+  private patchTask(r: SessionRec, toolUseId: string, patch: (t: BgTask) => Partial<BgTask> | null): void {
+    const t = r.tasks?.find((x) => x.id === toolUseId); if (!t) return
+    const p = patch(t); if (!p) return
+    const next = { ...t, ...p }
+    this.tasksChanged(r, upsertTask(r.tasks ?? [], next), [next])
+  }
+  private subItemOf(r: SessionRec, t: BgTask): (ChatItem & { kind: 'subagent' }) | undefined {
+    for (let i = r.items.length - 1; i >= 0; i--) {
+      const it = r.items[i]
+      if (it.kind === 'subagent' && ((t.toolUseId && it.id === `t_${t.toolUseId}`) || (t.taskId && it.taskId === t.taskId))) return it
+    }
+    return undefined
+  }
+  /** EA · 이 세션의 맡긴 일 — 화면이 대화를 받을 때 함께 받는다 */
+  tasksOf(id: string): BgTask[] { return this.recs.get(id)?.tasks ?? [] }
+  /**
+   * 🔴 **EA · 맡긴 일 하나만 멈춘다** (2026-11-11 Dave 승인). 종전의 멈추기는 턴 전체뿐이었고, 턴이 끝난 뒤 뒤에서 도는 작업은
+   *    멈출 길이 아예 없었다. CLI 2.1.322 의 제어 요청 `stop_task {task_id}` 를 쓴다 — CLI 가 `task_updated{killed}` ·
+   *    `task_notification{stopped}` 로 답하고 그 줄이 목록을 닫는다(여기서 미리 닫지 않는다 · 정본은 CLI 다).
+   * ⚠ 워커가 살아 있을 때만 된다. 턴이 돌든 끝났든 상관없다. 못 하면 이유를 그대로 던진다(화면이 그 말을 보여 준다).
+   */
+  async stopTask(r: SessionRec, taskId: string): Promise<BgTask> {
+    const t = (r.tasks ?? []).find((x) => x.taskId === taskId)
+    if (!t) throw new Error('그런 작업이 없어요')
+    if (t.status !== 'run') throw new Error('이미 끝난 작업이에요')
+    const w = this.workers.get(r.id)
+    if (!w?.alive) {
+      // 워커가 없는데 «도는 중» 으로 남은 줄 — 있을 수 없는 상태라 그 자리에서 닫는다
+      const c = closeRunningTasks(r.tasks ?? [], Date.now(), '세션이 끝나 중단됨'); this.tasksChanged(r, c.tasks, c.changed)
+      throw new Error('세션이 쉬고 있어 멈출 작업이 없어요')
+    }
+    if (!(w instanceof ClaudeWorker)) throw new Error('이 세션은 작업 하나만 멈출 수 없어요')
+    const res = await w.control({ subtype: 'stop_task', task_id: taskId })
+    if (!res.ok) throw new Error(`못 멈췄어요 — ${res.error ?? '이유를 모르겠어요'}`)
+    return (r.tasks ?? []).find((x) => x.taskId === taskId) ?? t
   }
   private subOf(r: SessionRec, parentId: string | null | undefined): (ChatItem & { kind: 'subagent' }) | undefined {
     if (!parentId) return undefined
@@ -1045,7 +1352,7 @@ export class SessionManager extends EventEmitter {
     mark(`스트림 ${line.type}`)
     // CL-1 B · 되감은 워커는 새 id 를 받아야 비로소 되감긴 것이다 — 그 전에 죽으면 다음 워커가 다시 가른다(리뷰 10/16)
     if (line.session_id && r.cliSessionId !== line.session_id) { r.cliSessionId = line.session_id; r.rewindAt = undefined; this.persist(r) }
-    if (line.type === 'system' && (line.subtype === 'task_started' || line.subtype === 'task_notification' || line.subtype === 'task_updated')) { this.onTask(r, line); return }
+    if (line.type === 'system' && (line.subtype === 'task_started' || line.subtype === 'task_notification' || line.subtype === 'task_updated' || line.subtype === 'background_tasks_changed')) { this.onTask(r, line); return }
     this.noteModel(r, line)
     if (line.type === 'system' && line.subtype === 'init') {
       if (Array.isArray(line.slash_commands)) {
@@ -1090,7 +1397,7 @@ export class SessionManager extends EventEmitter {
           if (cur) { cur.text = text; cur.streaming = false; this.streaming.delete(r.id); this.push(r, cur, true) }
           else this.push(r, { id: itemId('a'), t: Date.now(), kind: 'assistant', text })
         }
-      } else if (sub && text) { sub.last = text.slice(0, 80).replace(/\s+/g, ' '); this.push(r, sub, true) }
+      } else if (sub && text) { sub.last = text.slice(0, 80).replace(/\s+/g, ' '); this.push(r, sub, true); const s2 = sub; this.patchTask(r, s2.id.slice(2), () => ({ last: s2.last })) }
       const touched: string[] = []
       for (const b of line.message?.content ?? []) {
         if (b.type !== 'tool_use') continue
@@ -1102,12 +1409,14 @@ export class SessionManager extends EventEmitter {
         }
         if ((name === 'Task' || name === 'Agent') && !parent) {
           this.push(r, { id, t: Date.now(), kind: 'subagent', name: toolSummary(name, input) || '서브에이전트', prompt: typeof input.prompt === 'string' ? input.prompt : '', tools: 0, last: '', status: 'run' })
+          // EA · 맡긴 일 목록에도 바로 세운다 — CLI 의 시작 신호(task_started)가 오면 task_id 가 붙는다
+          { const st = startAgentTask(r.tasks ?? [], { toolUseId: id.slice(2), name: toolSummary(name, input) || '서브에이전트', subagentType: typeof input.subagent_type === 'string' ? input.subagent_type : undefined, bg: input.run_in_background === true, cliSid: r.cliSessionId }, Date.now()); if (st.task) this.tasksChanged(r, st.tasks, [st.task]) }
           r.inflight = { name, summary: toolSummary(name, input) || '서브에이전트', since: Date.now() }
           this.setActivity(r, `에이전트 · ${toolSummary(name, input)}`, true)
           continue
         }
         this.push(r, { id, t: Date.now(), kind: 'tool', name, summary: toolSummary(name, input), input, parentId: sub ? sub.id : undefined })
-        if (sub) { sub.tools += 1; sub.last = `${name} ${toolSummary(name, input)}`.slice(0, 80); this.push(r, sub, true) }
+        if (sub) { sub.tools += 1; sub.last = `${name} ${toolSummary(name, input)}`.slice(0, 80); this.push(r, sub, true); const s2 = sub; this.patchTask(r, s2.id.slice(2), () => ({ tools: s2.tools, last: s2.last })) }
         r.inflight = { name, summary: toolSummary(name, input), since: Date.now() }
         this.setActivity(r, `${sub ? `${sub.name} › ` : ''}${name} · ${toolSummary(name, input)}`.slice(0, 120), true)
         const tp = touchedPath(name, input); if (tp) { touched.push(tp); this.captureBefore(r, tp, name) }
@@ -1126,13 +1435,24 @@ export class SessionManager extends EventEmitter {
         const id = `t_${String(b.tool_use_id ?? '')}`
         let it: ChatItem | undefined; for (let i = r.items.length - 1; i >= 0; i--) if (r.items[i].id === id) { it = r.items[i]; break }
         const c = b.content
-        const resText = (typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => (x as { text?: string }).text ?? '').join('\n') : '').slice(0, 2000)
+        const fullText = typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => (x as { text?: string }).text ?? '').join('\n') : ''
+        const resText = fullText.slice(0, 2000)
         if (it && it.kind === 'tool') {
           it.result = resText; it.isError = !!b.is_error; this.push(r, it, true)
           // 고친 뒤의 디스크가 다음 턴의 «전» 이다
           const tp = touchedPath(it.name, it.input ?? {}); if (tp && !b.is_error) { this.seenOf(r).set(tp, this.diskText(tp)); r.wroteThisTurn = true; this.emit('files', r.botId) }
         }
-        else if (it && it.kind === 'subagent') { if (it.bg || /^Async agent launched/i.test(resText)) { it.bg = true; this.push(r, it, true) } else { it.status = b.is_error ? 'error' : 'done'; it.result = resText; this.push(r, it, true) } }
+        else if (it && it.kind === 'subagent') {
+          // EA · 시작 신호를 못 받은 경로의 보험 — 결과 꼬리의 `agentId:` 로 기록 파일을 찾을 수 있게
+          if (!it.taskId) { const aid = agentIdIn(fullText); if (aid) it.taskId = aid }
+          const sa = it
+          if (it.bg || /^Async agent launched/i.test(resText)) { it.bg = true; this.push(r, it, true); this.patchTask(r, id.slice(2), (t) => { const p: Partial<BgTask> = {}; if (!t.bg) p.bg = true; if (!t.taskId && sa.taskId) p.taskId = sa.taskId; return Object.keys(p).length ? p : null }) }
+          else {
+            // 🔴 EA · 서브에이전트의 마지막 결과는 2000자에서 자르지 않는다 — 열어 보는 화면이 전문을 보여 준다(상한 `SUB_RESULT_MAX`)
+            it.status = b.is_error ? 'error' : 'done'; it.result = fullText.length > SUB_RESULT_MAX ? `${fullText.slice(0, SUB_RESULT_MAX)}\n\n…(여기까지만 담았어요 — 전체는 «서브에이전트가 쓴 글 보기»)` : fullText; this.push(r, it, true)
+            this.patchTask(r, id.slice(2), (t) => (t.status !== 'run' ? null : { status: b.is_error ? 'error' : 'done', endedAt: Date.now(), summary: fullText.slice(0, 2000), ...(!t.taskId && sa.taskId ? { taskId: sa.taskId } : {}) }))
+          }
+        }
       }
       return
     }
@@ -1141,6 +1461,9 @@ export class SessionManager extends EventEmitter {
       const cur = this.streaming.get(r.id); if (cur) { cur.streaming = false; this.streaming.delete(r.id); this.push(r, cur, true) }
       this.endThinking(r)
       for (const it of closeOpenItems(r.items, 'result')) this.push(r, it, true)
+      // EA · 턴이 끝났다 — 앞에서 돌던 맡긴 일(백그라운드가 아닌 것)은 턴과 함께 끝난 것이다. 뒤에서 도는 것은 남는다
+      { const now = Date.now(); const stop = !!r.stopping && !!line.is_error; const fg = (r.tasks ?? []).filter((t) => t.status === 'run' && !t.bg).map((t) => ({ ...t, status: stop ? 'stopped' as const : 'done' as const, endedAt: now }))
+        if (fg.length) this.tasksChanged(r, (r.tasks ?? []).map((t) => fg.find((x) => x.id === t.id) ?? t), fg) }
       /**
        * CL-1 · 사람이 멈춘 턴의 끝 — 실 CLI(2.1.288)는 `error_during_execution`·`is_error` 로 끝낸다(10/16 실측). 그건 오류가 아니라 사람의 뜻이므로
        * 빨간 오류 줄·오류 상태로 두지 않는다. 화면 끝의 «응답을 멈췄어요» 줄이 그 자리를 말한다.
@@ -1154,12 +1477,14 @@ export class SessionManager extends EventEmitter {
       // 안전망 — 이 턴에 파일을 썼으면 턴이 끝날 때 한 번 더 알린다(중간 신호를 놓친 화면도 여기서 따라잡는다)
       if (r.wroteThisTurn) { r.wroteThisTurn = false; this.emit('files', r.botId) }
       if (r.restartPending) { const w = this.workers.get(r.id); if (!w || !w.pending.size) { r.restartPending = false; if (w) { w.kill(); this.workers.delete(r.id) } } }
+      r.modeApplied = undefined   // EB · «바로 적용 · 다음 턴부터» 표시는 그 턴까지만
       this.persist(r); this.emit('sessions', r.botId)
       if (!line.is_error) this.llmRetitle(r)
     }
   }
 
-  send(r: SessionRec, bot: Bot, text: string, client?: ClientCtx, origin: TurnFrom = 'human', grant?: string[]): void {
+  /** `resend` — 같은 말을 새 워커에 다시 보낸다(EB · 자동 모드를 못 켜 수동으로 다시 띄울 때). 대화에 사람 말을 한 번 더 세우지 않는다 */
+  send(r: SessionRec, bot: Bot, text: string, client?: ClientCtx, origin: TurnFrom = 'human', grant?: string[], resend = false): void {
     r.turnFrom = origin
     r.turnGrant = (origin === 'peer' || origin === 'bot') && grant?.length ? grant : undefined   // CS · 봇의 턴은 Dave 원문이 붙은 orch_ask 만 grant 를 싣는다
     // CL-1 · 사람이 새 말을 보내면 멈춤이 풀린다 — 붙잡아 둔 대기 말은 이 턴 뒤에 차례로 나간다
@@ -1169,7 +1494,7 @@ export class SessionManager extends EventEmitter {
     // 🔴 CF-2 · 슬래시 명령은 맨 앞이 `/` 여야 CLI 가 명령으로 받는다 — 인수인계·기기 블록은 다음 일반 말로 미룬다
     const slash = r.vendor !== 'codex' && isCliSlash(text, this.knownSlash(r, bot))
     if (r.handover && !slash) { text = `[이전 채널 인수인계]\n${r.handover}\n\n---\n\n${text}`; r.handover = undefined }
-    this.autoTitle(r, text)
+    if (!resend) this.autoTitle(r, text)
     if (client) r.lastClient = client
     const from = client ? { device: client.device, main: client.origin === 'host', tier: client.tier } : undefined
     this.turnAt.set(r.id, Date.now())
@@ -1199,7 +1524,7 @@ export class SessionManager extends EventEmitter {
       }
     }
     const w = this.ensureWorker(r, bot)
-    this.push(r, { id: itemId('u'), t: Date.now(), kind: 'user', text, ...(from ? { from } : {}) })
+    if (!resend) this.push(r, { id: itemId('u'), t: Date.now(), kind: 'user', text, ...(from ? { from } : {}) })
     // J-1 · 워커에게만 기기 블록을 앞세운다 — 채팅에는 사람의 글 그대로
     // 🔴 남아 있던 미뤄진 질문은 이 글로 닫는다 — 안 닫으면 같은 질문 카드가 둘 선다(ClaudeWorker.sendClosingAsks)
     const pre = slash ? undefined : r.prelude; if (!slash) r.prelude = undefined
@@ -1372,6 +1697,13 @@ export { mkdirSync }
 function channelWorkerSpec(trust: Trust, daveMay?: string[]): Pick<SpawnSpec, 'permissionMode' | 'explicitMode' | 'strictMcp' | 'disallowed' | 'allowed'> {
   const sp = channelSpawn(trust, daveMay)
   return { permissionMode: sp.permissionMode, explicitMode: true, strictMcp: sp.strictMcp, disallowed: sp.disallowed, allowed: sp.allowed }
+}
+
+/** EB · 도는 워커에 모드를 못 넣은 까닭을 사람 말로 */
+function modeWhy(res: ControlResult): string {
+  if (res.code === 'bypass_not_launched') return '«항상 허용» 은 도는 워커에 넣을 수 없어요'
+  if (res.code === 'invalid_mode') return '이 Claude Code 가 모르는 모드예요'
+  return res.error ? res.error.slice(0, 120) : '이유를 모르겠어요'
 }
 
 /** BV-2 · 갈아타기 직전에 채널에 보내는 말 — 다음 세션이 아무것도 묻지 않고 이어받게 */
