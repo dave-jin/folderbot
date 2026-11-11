@@ -9,7 +9,8 @@ permissions:
   contents: write
 jobs:
   build:
-    runs-on: macos-14
+    # macos-14 러너는 2026-11-02 에 은퇴했다(github.blog changelog 2026-10-01) — 214번 실행이 «configuration not supported» 로 시작도 못 했다
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
