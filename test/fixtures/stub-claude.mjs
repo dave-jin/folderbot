@@ -570,6 +570,16 @@ rl.on('line', (raw) => {
    *    modelUsage 에는 서브에이전트가 한 번 쓴 1M 모델도 섞어 둔다.
    *    ⚠ 둘을 헷갈리면 화면에 «3483k / 1000k · 100%» 가 찍힌다(Dave 가 본 그 화면).
    */
+  /**
+   * 미디어카드 (2026-11-12) — 답에 파일을 «한 줄에 혼자» 적는다. 화면이 그림 둘은 한 묶음 · 영상 · 음성 · PDF 를 카드로 펼치고,
+   * 문장 속 이름은 칩으로 두는지 잰다(`core/media.planCards`). 파일은 스모크가 봇 폴더에 미리 만들어 둔다.
+   */
+  if (/미디어카드/.test(text)) {
+    const t = ['만든 것:', '', 'mc-a.png', '', 'mc-b.png', '', '- `mc-clip.mp4`', '- `mc-voice.m4a`', '', 'mc-doc.pdf', '', '![차트](mc-b.png)', '', '문장 속 mc-a.png 는 칩으로 남아요. <!-- bot -->'].join('\n')
+    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: t }], stop_reason: 'end_turn' } })
+    say({ type: 'result', subtype: 'success', duration_ms: 30, total_cost_usd: 0.001 })
+    return
+  }
   const mset = /^\/model\s+(\S+)/.exec(text.trim())
   if (mset) model = mset[1]
   say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: mset ? `Set model to ${model} for this session only` : `스텁이 받았습니다: ${text.slice(0, 60)}` }], stop_reason: 'end_turn', usage: { input_tokens: 4000, cache_read_input_tokens: 60000, cache_creation_input_tokens: 0, output_tokens: 300 } } })

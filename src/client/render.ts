@@ -3,6 +3,7 @@ import { unlinkFileMailto } from '../core/paths'
 import { extractMath, fillMath, type MathChunk } from '../core/math'
 import { expandWikilinks } from '../core/wikilinks'
 import { mdBlocks } from '../core/mdBlocks'
+import { sanitizeHtml } from '../core/sanitize'
 
 marked.setOptions({ gfm: true, breaks: true })
 /**
@@ -12,6 +13,21 @@ marked.setOptions({ gfm: true, breaks: true })
  */
 const TILDE: MarkedExtension = { tokenizer: { del(src: string) { return src.startsWith('~~') ? false : undefined } } }
 marked.use(TILDE)
+/**
+ * 🔴 **`![](그림.png)` 도 그림으로 보인다** (2026-11-12 시각화 채팅). 봇이 가장 흔히 쓰는 표기인데 종전에는 `src="그림.png"` 가
+ *    앱 주소 기준으로 풀려 깨진 그림이었다. 볼트 안 상대 경로면 위키 그림(`![[그림.png]]`)과 같은 길로 보낸다 —
+ *    `img.wimg[data-wiki]` 로 내고, 그린 뒤 호스트가 «있는 파일» 로 확인하면 원본 주소가 붙는다(`Sheets.resolveWiki`). 없으면 «찾을 수 없음».
+ * ⚠ 주소에 스킴이 있거나(`https:` · `data:`) `//` 로 시작하면 손대지 않는다(`false` = marked 원래 해석기).
+ */
+const IMG_REL = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp)$/i
+const escA = (t: string) => t.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+export function relImage(href: string): string | null {
+  if (!href || /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//') || href.startsWith('#')) return null
+  let rel = href.replace(/^\.\//, '')
+  try { rel = decodeURIComponent(rel) } catch { /* `%` 가 글자로 든 이름 — 그대로 */ }
+  return IMG_REL.test(rel) ? rel : null
+}
+marked.use({ renderer: { image(t: { href: string; text: string }) { const rel = relImage(t.href); return rel ? `<img class="wimg" data-wiki="${escA(rel)}" alt="${escA(t.text || rel)}">` : false } } })
 /**
  * 🔴 **BM-1 · 내 말도 마크다운으로** (2026-10-07 Dave: «채팅창 안에서도 기본적인 마크다운 포맷이 적용되었으면»).
  *    봇의 답과 같은 해석(줄바꿈 = 줄바꿈 · 목록 · 굵게 · 코드 · 링크)이되, **쓴 HTML 은 글자로** 보인다 —
@@ -27,7 +43,8 @@ const userMarked = new Marked({ gfm: true, breaks: true }, TILDE, { renderer: { 
 export function renderMarkdown(text: string, math: ((c: MathChunk) => string) | null = null, user = false): string {
   const m = extractMath(text)
   /* AP · 마크다운이 `이름@2x.png` 을 메일로 보고 링크로 감싼다 — 파일 이름이면 되돌린다(`core/paths`) */
-  const h = unlinkFileMailto((user ? userMarked : marked).parse(expandWikilinks(m.text)) as string)
+  /* BM-4 · 거르개 — marked 가 낸 HTML 전체를 지난다(답에 섞인 날 HTML · `[x](javascript:…)` 둘 다). 수식(KaTeX)은 우리가 만든 것이라 거른 **뒤**에 끼운다 */
+  const h = unlinkFileMailto(sanitizeHtml((user ? userMarked : marked).parse(expandWikilinks(m.text)) as string))
   return fillMath(h, m.chunks, math)
 }
 

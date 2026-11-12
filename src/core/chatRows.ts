@@ -1,4 +1,5 @@
 import type { ChatItem } from './types'
+import { askSummary } from './askDone'
 type Tool = Extract<ChatItem, { kind: 'tool' }>
 
 export type ChatRow = { k: 'item'; it: ChatItem } | { k: 'group'; items: Tool[]; endT?: number }
@@ -28,6 +29,8 @@ export function buildRows(items: ChatItem[], drill: string | null): ChatRow[] {
    * ⚠ 같은 파일을 여러 번 건드려도 칩은 하나다.
    */
   let held: string[] = []
+  /** 방금 요약으로 꺼낸 질문의 답 글 — 바로 뒤에 오는 같은 글의 사람 줄을 감출 때 쓴다 */
+  let echo: string | null = null
   const chips = () => { if (held.length) out.push({ k: 'item', it: { id: `f_${out.length}`, t: 0, kind: 'files', paths: held } as ChatItem }); held = [] }
   // CL-1 B · 되감기 표시 줄(`rewind`)이 가리키는 사람 말부터 그 줄 앞까지를 «이전 시도» 한 줄로 접는다
   const starts = new Map<string, string>()
@@ -43,6 +46,13 @@ export function buildRows(items: ChatItem[], drill: string | null): ChatRow[] {
     if (drill) { if ((it.kind === 'tool' && it.parentId === drill)) out.push({ k: 'item', it }); continue }
     if (it.kind === 'tool' && it.parentId) continue
     if (it.kind === 'result' && it.ok) continue
+    /* 🔴 **답한 질문은 접지 않는다** (2026-11-12 Dave: «뭘 답변했는지 제대로 내용이 안보인다»). 기계는 접히지만 이것은 **사람이 한 결정**이다 —
+       묶음 밖 제 줄로 꺼내 «내가 답한 것» 요약(`AskDone`)으로 보인다. 못 읽는 답·취소·아직 답 전인 질문은 종전대로 묶음 안이다 */
+    const done = it.kind === 'tool' && it.name === 'AskUserQuestion' && !it.isError ? askSummary(it.input, it.result) : null
+    if (done) { flush(it.t); out.push({ k: 'item', it }); echo = done.partial ? null : done.rows.map((r) => r.answer).join(' · '); continue }
+    /* 요약이 선 질문의 **되읊는 사람 줄**(호스트 `askEcho` — 답만 « · » 로 이은 글)은 같은 내용이라 감춘다. 요약이 답을 다 못 읽었거나(partial)
+       고친 글 전문이 붙은 줄은 그대로 둔다 — 그 줄에만 있는 내용이다 */
+    if (it.kind === 'user' || it.kind === 'assistant') { const same = it.kind === 'user' && echo !== null && it.text === echo; echo = null; if (same) continue }
     if (it.kind === 'tool') { run.push(it); continue }
     if (it.kind === 'files') { for (const p of it.paths) if (!held.includes(p)) held.push(p); continue }
     flush(it.t); out.push({ k: 'item', it })

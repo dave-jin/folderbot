@@ -2311,6 +2311,60 @@ try {
           await mp.waitForSelector('.md.streaming', { timeout: 5000 }); for (let i = 0; i < 60 && (await mp.$('.md.streaming')); i++) await wait(200)
           const cs = await mp.evaluate(() => ({ bare: window.__bare, shrink: window.__shrink }))
           if (cs.bare || cs.shrink.length) fail('🔴 BM-3: 스트리밍 중 코드블록이 흔들린다 ' + JSON.stringify(cs))
+          /**
+           * 🔴 **시각화 채팅 첫 묶음** (2026-11-12 Dave: «채팅창을 더욱 시각화 … 채팅 창 안에서 바로 재생»).
+           *  ① BM-4 거르개 — **봇 답**에 섞인 HTML 은 허용 태그만 남는다(`onerror`·`onclick` 은 사라진다). 종전에는 그대로 심겨 실행됐다.
+           *  ② 미디어 카드 — 혼자 선 그림 둘은 한 묶음 · 영상·음성은 누를 때까지 받지 않는다(`preload=none`) · PDF 카드 · 문장 속 이름은 칩 그대로 ·
+           *     폰 폭(390)에서 카드가 화면 밖으로 안 나간다 · 그림은 원본 주소로 실제로 받아진다.
+           *  ③ 호스트 — 영상·음성을 문서 창이 여는 종류로 알려 주고(`video`·`audio`), 원본은 맞는 MIME 과 조각(206)으로 준다.
+           */
+          {
+            await api(`/sessions/${sidM}/send`, { text: '<img src=x onerror="__xss2=1"> <b onclick="__xss2=2">굵게</b>' }   /* ⚠ 스텁은 받은 글의 앞 60자만 되읊는다 — 그 안에 들어가게 짧게 */)
+            let san = null
+            for (let i = 0; i < 40; i++) { san = await mp.evaluate(() => { const m = [...document.querySelectorAll('.amsg .md')].pop(); if (!m || m.classList.contains('streaming') || !/스텁이 받았습니다/.test(m.textContent ?? '')) return null; const im = m.querySelector('img[src="x"]'); const b = m.querySelector('b'); return { img: !!im, on: !!im?.hasAttribute('onerror'), b: !!b, click: !!b?.hasAttribute('onclick'), xss: window.__xss2 ?? 0 } }); if (san) break; await wait(150) }
+            await wait(300)
+            const xss2 = await mp.evaluate(() => window.__xss2 ?? 0)
+            if (!san) fail('BM-4: 스텁 답이 안 왔다(검사 전제 깨짐)')
+            else if (san.on || san.click || xss2) fail('🔴 BM-4: 봇 답 속 HTML 의 이벤트 속성이 살아 있다 ' + JSON.stringify({ ...san, xss2 }))
+            else if (!san.img || !san.b) fail('BM-4: 허용 태그(img·b)까지 사라졌다 ' + JSON.stringify(san))
+            // ② 미디어 카드 — 파일을 봇 폴더에 만들고 스텁이 한 줄씩 적게 한다
+            const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64')
+            for (const [n, buf] of [['mc-a.png', PNG], ['mc-b.png', PNG], ['mc-clip.mp4', Buffer.alloc(4096, 1)], ['mc-voice.m4a', Buffer.alloc(2048, 2)], ['mc-doc.pdf', Buffer.from('%PDF-1.4\n%%EOF\n')]]) writeFileSync(join(bot.abs, n), buf)
+            // ⚠ 이 화면은 앞의 «마크다운스트리밍» 에서 이미 바닥을 놓쳤다(v215 에도 있는 일 — 폰에서 코드블록이 60px 로 나타나는 프레임에 따라가기가 끊긴다). «맨 아래를 보던 중» 을 재려면 먼저 내린다
+            await mp.evaluate(() => { const b = document.querySelector('.tobot'); if (b && !b.classList.contains('off')) b.click() })
+            for (let i = 0; i < 20; i++) { const g = await mp.evaluate(() => { const sc = document.querySelector('.chat-scroll'); return sc ? sc.scrollHeight - sc.scrollTop - sc.clientHeight : 0 }); if (g <= 2) break; await wait(150) }
+            await api(`/sessions/${sidM}/send`, { text: '미디어카드 보여 줘' })
+            let mc = null
+            const readMc = () => mp.evaluate(() => { const m = [...document.querySelectorAll('.amsg .md')].pop(); if (!m || !/문장 속/.test(m.textContent ?? '')) return null; const cards = [...m.querySelectorAll('.mcard')]; const vw = document.documentElement.clientWidth; const v = m.querySelector('.mcard video'); const a = m.querySelector('.mcard audio'); return { kinds: cards.map((c) => c.dataset.mcard), cells: m.querySelectorAll('.mc-grid .mc-cell').length, vPre: v?.getAttribute('preload') ?? '', vInline: !!v?.hasAttribute('playsinline'), aPre: a?.getAttribute('preload') ?? '', vBuf: v ? v.networkState : -1, pdf: !!m.querySelector('.mc-pdfb'), chips: m.querySelectorAll('.pchip').length, over: cards.map((c) => Math.round(c.getBoundingClientRect().right - vw)).filter((x) => x > 0), loaded: [...m.querySelectorAll('.mc-cell img')].map((i) => i.complete && i.naturalWidth > 0), bullets: [...m.querySelectorAll('li.mcli')].map((l) => getComputedStyle(l).listStyleType), mdimg: (() => { const i = m.querySelector('img.wimg'); return i ? { src: i.getAttribute('src') ?? '', ok: i.complete && i.naturalWidth > 0 } : null })(), cmt: /<!--|bot -->/.test(m.textContent ?? ''), btnH: Math.max(0, ...[...m.querySelectorAll('.mc-open')].map((b) => Math.round(b.getBoundingClientRect().height))), pdfH: Math.round(m.querySelector('.mc-pdfb')?.getBoundingClientRect().height ?? 0), gap: (() => { let sc = m.parentElement; while (sc && !(sc.scrollHeight > sc.clientHeight + 4 && /auto|scroll/.test(getComputedStyle(sc).overflowY))) sc = sc.parentElement; return sc ? Math.round(sc.scrollHeight - sc.scrollTop - sc.clientHeight) : -1 })() } })
+            for (let i = 0; i < 50; i++) { mc = await readMc(); if (mc && mc.kinds.length >= 4 && mc.loaded.length === 2 && mc.loaded.every(Boolean) && mc.mdimg?.ok) break; await wait(200) }
+            await wait(700); { const again = await readMc(); if (again) mc = again }   // 카드가 붙은 뒤 바닥 따라가기(부드럽게 내려간다)가 끝나기를 기다렸다 잰다
+            if (!mc) fail('미디어 카드: 스텁 답이 안 왔다(검사 전제 깨짐)')
+            else {
+              if (mc.kinds.join(',') !== 'gallery,video,audio,pdf') fail('🔴 미디어 카드: 혼자 선 파일이 카드로 안 펼쳐졌다 ' + JSON.stringify(mc))
+              if (mc.cells !== 2 || !mc.loaded.every(Boolean)) fail('🔴 미디어 카드: 이웃한 그림 둘이 한 묶음이 아니거나 그림을 못 받았다 ' + JSON.stringify(mc))
+              if (mc.vPre !== 'none' || mc.aPre !== 'none' || !mc.vInline) fail('🔴 미디어 카드: 영상·음성이 누르기 전에 받아진다(preload) 또는 playsinline 이 없다 ' + JSON.stringify(mc))
+              if (mc.vBuf === 2) fail('🔴 미디어 카드: 누르지 않았는데 영상을 받고 있다(networkState LOADING)')
+              if (!mc.pdf) fail('미디어 카드: PDF 카드가 없다 ' + JSON.stringify(mc))
+              if (mc.chips < 1) fail('🔴 미디어 카드: 문장 속 파일 이름까지 카드가 됐다(칩이 남아야 한다) ' + JSON.stringify(mc))
+              if (mc.over.length) fail('🔴 미디어 카드: 폰 폭에서 카드가 화면 밖으로 나간다 ' + JSON.stringify(mc.over))
+              if (!mc.mdimg?.ok || !/\/raw\?rel=mc-b\.png/.test(mc.mdimg.src)) fail('🔴 `![](상대경로.png)` 가 그림으로 안 보인다(호스트 원본 주소가 안 붙었다) ' + JSON.stringify(mc.mdimg))
+              if (mc.cmt) fail('🔴 거르개: HTML 주석(`<!-- bot -->`)이 글자로 드러났다')
+              if (mc.btnH > 32 || mc.pdfH > 100) fail('🔴 미디어 카드: 카드 안 단추가 늘어났다(다른 화면의 스타일이 샌다) ' + JSON.stringify({ btnH: mc.btnH, pdfH: mc.pdfH }))
+              if (mc.gap > 80) fail('🔴 미디어 카드: 맨 아래를 보고 있었는데 카드가 붙으며 대화가 밀렸다(바닥까지 ' + mc.gap + 'px)')
+              if (mc.bullets.some((b) => b !== 'none')) fail('미디어 카드: 카드가 된 목록 줄에 글머리표가 남았다 ' + JSON.stringify(mc.bullets))
+            }
+            await mp.evaluate(() => document.querySelector('.mcard')?.scrollIntoView({ block: 'start' })); await wait(200)
+            await mp.screenshot({ path: 'test/tmp/media-cards-phone.png' })
+            // 데스크톱 폭 캡처 — 이 폰 페이지는 이 블록 뒤에 닫히므로 폭을 바꿔 한 장 더 찍고 되돌린다(눈으로 볼 자료 · 판정은 위에서 끝났다)
+            { const vp = mp.viewportSize(); await mp.setViewportSize({ width: 1180, height: 820 }); await wait(500); await mp.evaluate(() => document.querySelector('.mcard')?.scrollIntoView({ block: 'center' })); await wait(200); await mp.screenshot({ path: 'test/tmp/media-cards-desktop.png' }); if (vp) { await mp.setViewportSize(vp); await wait(300) } }
+            // ③ 호스트 — 종류 · MIME · 조각
+            const fk = await api(`/bots/${bot.id}/file?rel=${encodeURIComponent('mc-clip.mp4')}`); const ak = await api(`/bots/${bot.id}/file?rel=${encodeURIComponent('mc-voice.m4a')}`)
+            if (fk.kind !== 'video' || ak.kind !== 'audio') fail('🔴 호스트: 영상·음성이 문서 창 종류로 안 온다 ' + JSON.stringify({ v: fk.kind, a: ak.kind }))
+            const rr = await fetch(base + `/api/bots/${bot.id}/raw?rel=${encodeURIComponent('mc-clip.mp4')}&token=x`, { headers: { range: 'bytes=0-99' } })
+            if (rr.status !== 206 || rr.headers.get('content-type') !== 'video/mp4' || (await rr.arrayBuffer()).byteLength !== 100) fail('🔴 호스트: 영상 원본이 조각(206)·video/mp4 로 안 온다 ' + JSON.stringify({ s: rr.status, t: rr.headers.get('content-type') }))
+            for (const n of ['mc-a.png', 'mc-b.png', 'mc-clip.mp4', 'mc-voice.m4a', 'mc-doc.pdf']) { rmSync(join(bot.abs, n), { force: true }) }
+            ok('시각화 채팅 — 봇 답 HTML 은 허용 태그만(이벤트 속성 없음) · 미디어 카드(그림 묶음·영상·음성·PDF · 누를 때까지 안 받음 · 문장 속은 칩 · 폰 폭 안 · 카드가 붙어도 바닥 따라감) · `![](상대경로)` 그림 · 주석 안 보임 · 호스트 video/audio 종류와 206')
+          }
           await mp.screenshot({ path: 'test/tmp/bm-phone.png' }); await mp.close(); await fetch(base + `/api/sessions/${sidM}`, { method: 'DELETE' })
           ok('BM 채팅 포맷 — 입력창 줄바꿈 보존 · 내 말 마크다운(굵게·목록) · HTML 은 글자 · ~ 하나는 글자 · @칩 제자리 · 내 말 링크 파비콘 · 코드블록 흔들림 0')
         }
@@ -4801,6 +4855,24 @@ try {
             // ⚠ 위 대조는 스텁이 턴을 아직 안 끝낸 3초 안에 한다 — 턴이 끝나면 호스트가 열린 줄을 다 닫아 버그가 가려진다
             await wait(3500)   // 스텁의 턴이 끝날 때까지 — 다음 검사가 «한가한 세션» 을 전제한다
             ok('미룬 질문 — 답하면 AskUserQuestion 도구 줄이 멈춘다(호스트가 닫는다)')
+            /**
+             * 🔴 **답한 질문은 «내가 답한 것» 으로 남는다** (2026-11-12 Dave: *«Ask User Question 의 답변 후 뭘 답변했는지 제대로 내용이 안보인다»*).
+             *    종전에는 «보냈어요» 한 줄 뒤 접힌 도구 묶음 안의 `AskUserQuestion` 줄뿐이었다. 요약은 접힌 묶음 **밖**에 서고,
+             *    누르면 질문 글과 고르지 않은 선택지가 펼쳐진다.
+             */
+            const ad = await pg.evaluate(() => { const a = [...document.querySelectorAll('.askdone')].pop(); if (!a) return null; return { text: a.textContent ?? '', picks: [...a.querySelectorAll('.pick:not(.more)')].map((p) => p.textContent), inGroup: !!a.closest('.grp, .tgroup, .tools'), vis: a.getBoundingClientRect().height > 0 } })
+            if (!ad) fail('🔴 답 요약: 답한 질문이 대화에 «내가 답한 것» 으로 안 남는다')
+            else {
+              if (!ad.vis || !/내가 답한 것/.test(ad.text) || !/미룸/.test(ad.text) || ad.picks.join('|') !== '예 안') fail('🔴 답 요약: 머리말·고른 답이 안 보인다 ' + JSON.stringify(ad))
+              if (/아니오 안/.test(ad.text)) fail('답 요약: 접힌 상태에서 고르지 않은 선택지가 보인다 ' + JSON.stringify(ad.text))
+              await pg.evaluate(() => [...document.querySelectorAll('.askdone .hd')].pop()?.click()); await wait(150)
+              const opened = await pg.evaluate(() => [...document.querySelectorAll('.askdone')].pop()?.textContent ?? '')
+              if (!/미룬 질문은 무엇으로 할까요\?/.test(opened) || !/고르지 않은 것: 아니오 안/.test(opened)) fail('🔴 답 요약: 펼쳐도 질문 글·고르지 않은 선택지가 안 보인다 ' + JSON.stringify(opened))
+              await pg.screenshot({ path: 'test/tmp/ask-done.png' })
+              { const vp = pg.viewportSize(); await pg.setViewportSize({ width: 390, height: 844 }); await wait(500); await pg.evaluate(() => [...document.querySelectorAll('.askdone')].pop()?.scrollIntoView({ block: 'center' })); await wait(200); await pg.screenshot({ path: 'test/tmp/ask-done-phone.png' }); if (vp) { await pg.setViewportSize(vp); await wait(400) } }   // 폰 폭 캡처(눈으로 볼 자료) — 찍고 되돌린다
+              await pg.evaluate(() => [...document.querySelectorAll('.askdone .hd')].pop()?.click())
+              ok('답 요약 — 답한 질문이 접힌 묶음 밖에 «내가 답한 것» 으로 남고(머리말 · 고른 답) 누르면 질문 글과 고르지 않은 선택지가 펼쳐진다')
+            }
           }
           /**
            * 🔴 **DL · 질문 카드의 미리보기 블록 — 보낼 글이 블록으로 보이고, 고친 글이 에이전트에게 그대로 간다** (2026-10-26 Dave:

@@ -1138,6 +1138,49 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
    ⚠ 썸네일이 도착하면 왼쪽에 붙는다(`.has-th`) — 자리를 미리 비워 두지 않는다(빈 네모가 더 눈에 띈다). */
 .md .linkbox { display:flex; gap:10px; align-items:stretch; margin:8px 0; padding:9px 11px; border:1px solid var(--line2); border-radius:10px; background:var(--box); color:inherit; text-decoration:none; max-width:520px; overflow:hidden }
 .md .linkbox:hover { border-color:var(--t3); background:var(--sel) }
+/* 말풍선 안 미디어 카드 (2026-11-12 · `mediaCards.ts`) — 🔴 자리는 미리 잡는다(상자 높이 고정) · 그림·영상이 도착해도 대화가 덜컹이지 않게 */
+.md .mcset { display:flex; flex-direction:column; gap:8px; margin:8px 0 10px }
+.md .mcard { border:1px solid var(--line2); border-radius:11px; background:var(--box); overflow:hidden; width:min(440px, 100%) }
+.md .mcard .mc-ft { display:flex; align-items:center; gap:8px; padding:6px 10px; font-size:12px; border-top:1px solid var(--line); min-width:0 }
+.md .mcard .mc-ft .nm { color:var(--w); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 }
+.md .mcard .mc-ft .sp { flex:1 } .md .mcard .mc-ft .m { color:var(--t3); font-size:11px; white-space:nowrap }
+.md .mcard .mc-open { border:1px solid var(--line2); border-radius:7px; padding:1px 9px; font-size:11.5px; font-family:inherit; color:var(--t); background:var(--sel); white-space:nowrap; flex:none; cursor:pointer }
+.md .mcard .mc-open:hover { color:var(--w); border-color:var(--t3) }
+.md .mc-pic { display:block; width:100%; height:220px; padding:0; border:0; background:var(--bg2); cursor:zoom-in }
+.md .mc-pic img, .md .mc-cell img { width:100%; height:100%; object-fit:contain; display:block; border-radius:0; margin:0 }
+.md .mc-cell img { object-fit:cover }
+.md .mc-grid { display:grid; gap:3px; padding:3px; grid-template-columns:repeat(4, 1fr) } .md .mc-grid.n2 { grid-template-columns:repeat(2, 1fr) } .md .mc-grid.n3 { grid-template-columns:repeat(3, 1fr) }
+.md .mc-cell { position:relative; height:84px; padding:0; border:0; border-radius:6px; overflow:hidden; background:var(--bg2); cursor:zoom-in } .md .mc-grid.n2 .mc-cell { height:130px } .md .mc-grid.n3 .mc-cell { height:104px }
+.md .mc-more { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.55); color:#fff; font-size:14px; font-weight:600 }
+.md .mc-bad { display:flex; align-items:center; justify-content:center; height:100%; padding:0 8px; color:var(--t3); font-size:11.5px; overflow:hidden }
+.md .mc-vbox { position:relative; aspect-ratio:16/9; background:#000 }
+.md .mc-vbox video { width:100%; height:100%; display:block; object-fit:contain; background:#000 }
+.md .mc-play { position:absolute; inset:0; margin:auto; width:54px; height:54px; border-radius:50%; border:1px solid rgba(255,255,255,.35); background:rgba(255,255,255,.16); color:#fff; display:flex; align-items:center; justify-content:center; padding:0 0 0 3px; cursor:pointer }
+.md .mc-vbox.on .mc-play, .md .mc-vbox.err .mc-play { display:none }
+.md .mc-err { display:none; position:absolute; inset:0; align-items:center; justify-content:center; text-align:center; padding:0 18px; color:#ddd; font-size:12px; background:rgba(0,0,0,.72) } .md .mc-vbox.err .mc-err { display:flex }
+.md .mc-audio audio { display:block; width:calc(100% - 16px); height:36px; margin:8px 8px 6px }
+.md .mc-pdfb { display:flex; gap:12px; align-items:center; width:100%; padding:10px 12px; border:0; background:none; color:inherit; font-family:inherit; font-size:inherit; text-align:left; cursor:pointer } .md .mc-pdfb:hover { background:var(--sel) }
+.md .mc-pg { display:block; width:46px; height:60px; background:#f3f3f1; border-radius:4px; flex:none; padding:7px 6px } .md .mc-pg i { display:block; height:3px; border-radius:2px; background:#c9c9c4; margin-bottom:5px } .md .mc-pg i.h { height:6px; width:70%; background:#8e8e88; margin-bottom:7px } .md .mc-pg i.s { width:55% }
+.md .mc-pdfb .tx { display:flex; flex-direction:column; gap:2px; min-width:0 } .md .mc-pdfb .tx b { color:var(--w); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap } .md .mc-pdfb .tx span { color:var(--t2); font-size:12px }
+.md li.mcli { list-style:none } .md ul.mclist, .md ol.mclist { padding-left:0 }
+.app.phone .md .mcard { width:100% } .app.phone .md .mc-pic { height:190px }
+/* 질문에 답한 뒤 남는 요약 (2026-11-12 · `AskDone.tsx`) — 종전 «보냈어요» 한 줄 */
+.askdone { border:1px solid var(--line2); border-radius:11px; background:var(--box); width:min(560px, 100%); margin:4px 0 8px; font-size:12.5px; overflow:hidden }
+.askdone .hd { display:flex; align-items:center; gap:7px; width:100%; padding:6px 11px; border:0; border-bottom:1px solid var(--line); background:none; color:var(--t2); font:inherit; font-size:12px; text-align:left; cursor:pointer }
+.askdone .hd:hover { color:var(--w) } .askdone .hd .sp { flex:1 } .askdone .hd .tm { color:var(--t3); font-size:11px }
+.askdone .q { padding:7px 11px 6px; border-top:1px solid var(--line) } .askdone .hd + .q { border-top:0 }
+.askdone .q .k { display:block; font-size:11px; color:var(--t3) } .askdone .q .qq { display:block; font-size:12px; color:var(--t2); margin:1px 0 4px; white-space:pre-wrap; word-break:break-word }
+.askdone .picks { display:flex; flex-wrap:wrap; gap:4px 5px; margin-top:3px; align-items:center }
+.askdone .pick { display:inline-block; max-width:100%; background:color-mix(in srgb, var(--acc, #e08850) 22%, var(--box)); color:var(--w); border-radius:8px; padding:1px 9px; word-break:break-word }
+.askdone .pick.free { background:color-mix(in srgb, var(--done) 16%, var(--box)) } .askdone .pick.free .fl { color:var(--done); font-size:11px; margin-right:6px }
+.askdone .pick.more { display:none; background:var(--sel); color:var(--t2) }
+.askdone .ed { color:var(--t3); font-size:11.5px } .askdone .not { color:var(--t3); font-size:11.5px; margin-top:4px } .askdone .not.tail { padding:0 11px 7px }
+.askdone:not(.open) .pick.free { white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.app.phone .askdone { width:100% } .app.phone .askdone:not(.open) .pick.xtra { display:none } .app.phone .askdone:not(.open) .pick.more { display:inline-block }
+/* 문서 창 — 영상·음성 (종전 «미리보기 없음») */
+.dbody.mediabody { padding:0; display:flex; align-items:center; justify-content:center; background:var(--bg); overflow:hidden }
+.dvideo { max-width:100%; max-height:100%; background:#000 }
+.daudio { display:flex; flex-direction:column; gap:14px; align-items:center; padding:24px; width:min(520px, 100%) } .daudio .nm { color:var(--w); font-size:14px; text-align:center; word-break:break-all } .daudio audio { width:100% }
 .md .linkbox .th { width:64px; height:64px; object-fit:cover; border-radius:6px; flex:none; background:var(--line) }
 .md .linkbox .tx { display:flex; flex-direction:column; justify-content:center; gap:3px; min-width:0; flex:1 }
 .md .linkbox .t { font-size:13.5px; font-weight:600; color:var(--w); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }

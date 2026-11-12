@@ -11,6 +11,9 @@ const SKIP = new Set(['node_modules', '.git', '.DS_Store', '.folderbot', '.proje
 export const SKIP_DIRS: ReadonlySet<string> = SKIP
 const TEXT_EXT = new Set(['.md', '.txt', '.yml', '.yaml', '.json', '.ts', '.tsx', '.js', '.mjs', '.py', '.sh', '.css', '.html', '.csv', '.toml', '.env.example', '.canvas'])
 const IMG_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'])
+// 영상·음성 — 화면의 `core/media` 와 같은 목록이다(말풍선 카드와 문서 창이 같은 것을 연다 · 2026-11-12)
+const VIDEO_MIME: Record<string, string> = { '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm' }
+const AUDIO_MIME: Record<string, string> = { '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.wav': 'audio/wav', '.ogg': 'audio/ogg' }
 
 /** 허용 루트(볼트·연결 리포) 안인지 — 밖이면 던진다 */
 export function guard(roots: string[], abs: string): string {
@@ -107,7 +110,7 @@ export function recent(base: string, limit = 12): TreeNode[] {
   return out.sort((a, b) => b.mtime - a.mtime).slice(0, limit)
 }
 
-export function kindOf(abs: string): 'text' | 'image' | 'pdf' | 'html' | 'canvas' | 'other' {
+export function kindOf(abs: string): 'text' | 'image' | 'pdf' | 'html' | 'canvas' | 'video' | 'audio' | 'other' {
   const e = extname(abs).toLowerCase()
   // ⚠ `.canvas` 는 JSON 이라 TEXT_EXT 로 떨어지면 원문이 보인다 — 먼저 가른다(Obsidian JSON Canvas)
   if (e === '.canvas') return 'canvas'
@@ -117,6 +120,9 @@ export function kindOf(abs: string): 'text' | 'image' | 'pdf' | 'html' | 'canvas
   if (TEXT_EXT.has(e) || e === '') return 'text'
   if (IMG_EXT.has(e)) return 'image'
   if (e === '.pdf') return 'pdf'
+  // 종전에는 «미리보기 없음» 이었다 — 원본 응답이 조각(Range)을 주므로 `<video>`·`<audio>` 가 그대로 넘겨 본다
+  if (VIDEO_MIME[e]) return 'video'
+  if (AUDIO_MIME[e]) return 'audio'
   return 'other'
 }
 
@@ -185,5 +191,5 @@ export function resolveNF(abs: string): string {
 }
 export function mime(abs: string): string {
   const e = extname(abs).toLowerCase()
-  return ({ '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.pdf': 'application/pdf', '.md': 'text/markdown; charset=utf-8', '.json': 'application/json', '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript' } as Record<string, string>)[e] ?? 'application/octet-stream'
+  return ({ '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.pdf': 'application/pdf', '.md': 'text/markdown; charset=utf-8', '.json': 'application/json', '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', ...VIDEO_MIME, ...AUDIO_MIME } as Record<string, string>)[e] ?? 'application/octet-stream'
 }

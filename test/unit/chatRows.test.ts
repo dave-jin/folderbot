@@ -45,3 +45,33 @@ describe('CL-1 B · 되감기로 빠진 턴은 «이전 시도» 한 줄로 접�
   })
 })
 
+
+describe('답한 질문은 묶음 밖 제 줄로 (2026-11-12)', () => {
+  const ask = (id: string, result?: string, isError?: boolean): ChatItem => ({ id, t: 5, kind: 'tool', name: 'AskUserQuestion', summary: '', input: { questions: [{ question: '무엇으로 할까요?', header: '하나', options: [{ label: '가 안' }, { label: '나 안' }] }] }, result, isError })
+  const read = (id: string): ChatItem => ({ id, t: 4, kind: 'tool', name: 'Read', summary: 'a.md', result: 'ok' })
+  it('답이 읽히면 도구 묶음을 끊고 제 줄이 된다 — 앞뒤 도구는 따로 묶인다', () => {
+    const rows = buildRows([read('r1'), ask('q1', 'Your questions have been answered: "무엇으로 할까요?"="가 안". You can now continue with these answers in mind.'), read('r2')], null)
+    expect(rows.map((r) => (r.k === 'group' ? `g${r.items.length}` : r.k === 'item' ? r.it.id : r.k))).toEqual(['g1', 'q1', 'g1'])
+  })
+  it('아직 답 전 · 취소 · 못 읽는 답은 종전대로 묶음 안', () => {
+    for (const q of [ask('q1'), ask('q1', '사용자가 질문을 취소했습니다.', true), ask('q1', '{"무엇":"가 안"}')]) {
+      const rows = buildRows([read('r1'), q, read('r2')], null)
+      expect(rows.map((r) => (r.k === 'group' ? `g${r.items.length}` : r.k))).toEqual(['g3'])
+    }
+  })
+  it('요약이 선 질문의 되읊는 사람 줄은 감춘다 — 다른 말 · 고친 글이 붙은 줄은 그대로', () => {
+    const ans = 'Your questions have been answered: "무엇으로 할까요?"="가 안". You can now continue with these answers in mind.'
+    const usr = (id: string, text: string): ChatItem => ({ id, t: 6, kind: 'user', text })
+    const ids = (items: ChatItem[]) => buildRows(items, null).map((r) => (r.k === 'item' ? r.it.id : r.k))
+    expect(ids([ask('q1', ans), usr('e1', '가 안'), usr('u2', '가 안')])).toEqual(['q1', 'u2'])   // 바로 뒤 한 줄만
+    expect(ids([ask('q1', ans), usr('e1', '가 안\n\n고친 글:\n전문')])).toEqual(['q1', 'e1'])
+    expect(ids([ask('q1', ans), usr('u1', '다른 말'), usr('u2', '가 안')])).toEqual(['q1', 'u1', 'u2'])
+    expect(ids([usr('u0', '가 안')])).toEqual(['u0'])
+  })
+  it('읽는 순서 그대로 — 질문 앞의 답 글 · 내가 답한 것 · 그 뒤의 답 글', () => {
+    // 실 CLI 는 글 블록을 닫고 질문을 내고, 답을 받은 뒤 새 글을 낸다. 요약이 제 자리(질문이 있던 곳)에 서야 «무엇을 답했고 그래서 어떻게 됐나» 가 위에서 아래로 읽힌다
+    const ans = 'Your questions have been answered: "무엇으로 할까요?"="가 안". You can now continue with these answers in mind.'
+    const rows = buildRows([u('u1'), a('a1', '먼저 여쭙겠습니다'), ask('q1', ans), { id: 'e1', t: 6, kind: 'user', text: '가 안' } as ChatItem, a('a2', '가 안으로 진행합니다')], null)
+    expect(rows.map((r) => (r.k === 'item' ? r.it.id : r.k))).toEqual(['u1', 'a1', 'q1', 'a2'])
+  })
+})

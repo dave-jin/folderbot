@@ -15,6 +15,7 @@ import { token } from './api'
 import { loadKatex, renderMath, renderMermaid } from './mathmaid'
 import { decorateLinks } from './favicons'
 import { boxifyLinks, decorateCode, hoverLinks, hoverable } from './previews'
+import { cardify } from './mediaCards'
 import { copyText } from './clip'
 import { askExists } from './existsCache'
 import { pickAgent } from './AgentPick'
@@ -41,6 +42,7 @@ function decorate(root: HTMLElement, hits: PathHit[], open: (rel: string) => voi
     const b = document.createElement('button')
     b.className = h.dir ? 'pchip dir' : 'pchip'; b.type = 'button'; b.title = h.text
     b.dataset.rel = h.rel
+    if (h.matches && h.matches.length > 1) b.dataset.multi = '1'   // 어느 파일인지 모르는 이름은 카드로 펼치지 않는다(`mediaCards`)
     const full = h.text.replace(/\/+$/, '').split('/').pop() || h.text
     // 🔴 폴더 칩은 문서 탭이 아니라 **트리를 연다** — 폴더는 읽을 글이 없다 (2026-09-15)
     // P-1 · 칩은 글자처럼 — 확장자만 흐리게, 긴 이름은 가운데 생략, 안에서 줄 바꿈 없음(CSS)
@@ -66,7 +68,7 @@ function decorate(root: HTMLElement, hits: PathHit[], open: (rel: string) => voi
     if (c.closest('pre')) continue
     const t = (c.textContent ?? '').trim().replace(/\/+$/, '')
     const hit = hits.find((h) => h.text === t)
-    if (hit) { c.classList.add('code-path'); c.title = hit.matches && hit.matches.length > 1 ? `${hit.text} — ${hit.matches.length}곳에 있어요` : hit.rel; c.dataset.rel = hit.rel; c.addEventListener('click', (e) => { e.preventDefault(); if (hit.dir) openDir?.(hit.rel); else if (hit.matches && hit.matches.length > 1) window.dispatchEvent(new CustomEvent('fb:pickfile', { detail: { name: hit.text, rels: hit.matches } })); else open(hit.rel) }) }
+    if (hit) { c.classList.add('code-path'); c.title = hit.matches && hit.matches.length > 1 ? `${hit.text} — ${hit.matches.length}곳에 있어요` : hit.rel; c.dataset.rel = hit.rel; if (hit.matches && hit.matches.length > 1) c.dataset.multi = '1'; c.addEventListener('click', (e) => { e.preventDefault(); if (hit.dir) openDir?.(hit.rel); else if (hit.matches && hit.matches.length > 1) window.dispatchEvent(new CustomEvent('fb:pickfile', { detail: { name: hit.text, rels: hit.matches } })); else open(hit.rel) }) }
   }
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     // K-2 · `code` 안은 걷지 않는다 — 통째로 경로인 코드 조각은 위에서 요소째 바꿨고, 나머지는 예시라 토막 내지 않는다(스크린샷 1236)
@@ -177,7 +179,9 @@ export function Md({ text, streaming, botId, onPath, onDir, user, chips }: { tex
   useEffect(() => {
     const el = ref.current
     if (!el || !botId || !onPath || streaming) return
-    const wiki = wikiNames(text)
+    // 위키 그림·링크 이름 — 글에서 읽은 것 + 그려진 것(`![](상대경로.png)` 도 `data-wiki` 로 나온다 · render.ts `relImage`)
+    const wikiTxt = wikiNames(text)
+    const wiki = [...new Set([...wikiTxt, ...[...el.querySelectorAll<HTMLElement>('[data-wiki]')].map((e) => e.dataset.wiki ?? '').filter(Boolean)])]
     const cands = [...new Set([...candidatePaths(text), ...wiki])]
     if (!cands.length) return
     let live = true
@@ -185,12 +189,16 @@ export function Md({ text, streaming, botId, onPath, onDir, user, chips }: { tex
       .then((ok) => {
         if (!live || !ref.current) return
         // 한 자리에서 여러 후보가 걸리면 **긴 것**이 이긴다 — `3. Area/…` 가 `Area/…` 보다 맞다
-        const found = cands.filter((c) => !wiki.includes(c) && ok[c]).sort((a, b) => b.length - a.length)
+        /* ⚠ 칩에서 빼는 것은 **글에 `[[이름]]` 으로 적힌** 이름뿐이다 — `![](그림.png)` 의 이름은 보이는 글자가 아니라서, 같은 이름이 글에 따로 적혀 있으면 그건 칩이 돼야 한다 */
+        const found = cands.filter((c) => !wikiTxt.includes(c) && ok[c]).sort((a, b) => b.length - a.length)
         // K-2 · 긴 경로의 **조각**은 칩이 되지 않는다 — «PARA/첨부/x.png» 가 있으면 «PARA/»·«첨부» 는 버린다(통째 칩 하나)
         const whole = found.filter((c, i) => !found.slice(0, i).some((longer) => longer.includes(c)))
         const hits: PathHit[] = whole.map((c) => { const r = ok[c] as { rel: string; dir: boolean; matches?: string[] }; return { text: c, rel: r.rel, dir: r.dir, matches: r.matches } })
         decorate(ref.current, hits, onPath, onDir, botId)
         resolveWiki(ref.current, wiki, ok, botId, onPath)
+        // 혼자 선 그림·영상·음성·PDF 는 카드로 펼친다 — 칩이 «있는 파일» 로 확인된 뒤에만(2026-11-12 · `mediaCards.ts`). 내 말은 칩 그대로 둔다
+        // ⚠ 카드는 답이 그려진 **뒤**에 붙어 높이를 늘린다 — 맨 아래를 따라가던 대화가 카드만큼 밀리지 않게 알린다(App 의 `fb:grew`)
+        if (!user && cardify(ref.current, botId, onPath) > 0) window.dispatchEvent(new CustomEvent('fb:grew'))
       })
       .catch(() => { /* 못 물어봤으면 그냥 글자로 둔다 */ })
     return () => { live = false }

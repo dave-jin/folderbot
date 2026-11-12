@@ -47,6 +47,7 @@ import { chatPhase, nextPhaseIn, SYNC_DOT_AFTER_MS, type ChatPhase } from '../co
 import { clampDockOffset, isDockDrag, readDockOffset } from '../core/dock'
 import { tabActive } from '../core/tabbar'
 import { activePreview, askReply, monoText, sameText, type AskQuestion, type PreviewBlock } from '../core/askPreview'
+import { AskDone, askDoneOf } from './AskDone'
 import { SwipeRow } from './SwipeRow'
 import { botDueChip, byDue } from '../core/botName'
 import { LocalOpenHost, localBridge, openOnThisDevice, useLocalSettings } from './localOpen'
@@ -1622,6 +1623,8 @@ function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pendi
    */
   const [showJump, setShowJump] = useState(false)
   useEffect(() => { const el = scRef.current; if (!el || typeof ResizeObserver === 'undefined') return; const ro = new ResizeObserver(() => { if (atBottomRef.current) followBottom() }); ro.observe(el); return () => ro.disconnect() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // 답이 그려진 뒤에 붙는 것(미디어 카드)이 높이를 늘리면 — 맨 아래를 보고 있었을 때만 따라 내려간다. 줄 수·글 길이는 그대로라 아래 효과가 못 본다
+  useEffect(() => { const grew = () => { if (atBottomRef.current) followBottom() }; window.addEventListener('fb:grew', grew); return () => window.removeEventListener('fb:grew', grew) }, []) // eslint-disable-line react-hooks/exhaustive-deps
   /**
    * 폰에서 키보드가 올라오면 **대화를 맨 아래로 붙인다** — 읽으려고 위로 올려 둔 채 입력칸을 누르면
    * 종전에는 그 자리에 그대로 멈춰 있어 «무엇에 답하는지» 가 안 보였다(Dave: «타이핑 위치 안 잡혀»).
@@ -2618,7 +2621,8 @@ function Item({ it, bot, items, onFile, onReveal, onDrill, state, say, isLastAss
             답과 답 사이가 조용해지고, 무엇을 하는지는 툴팁이 말한다. ⚠ 시각은 남긴다(언제 온 답인지) */}
         {!it.streaming && isLastAssistant ? <div className="acts-row"><button className="ib" onClick={() => void copySay(it.text, say)} title="답 복사"><Icon n="copy" size={14} /></button>{onRetry && state !== 'running' ? <button className="ib" onClick={onRetry} title="같은 질문 다시"><Icon n="undo" size={14} /></button> : null}<span>{fmtTime(it.t)}</span></div> : null}</div>
     case 'thinking': return <div><button className={`meta ${open ? 'open' : ''}`} onClick={() => setOpen(!open)}><span className="lb">생각</span>{!open ? <span className="tx">· {it.text.trim() ? it.text.replace(/\s+/g, ' ').slice(0, 100) : it.streaming ? '생각 중…' : '(내용 없음)'}</span> : null}<Icon n={open ? 'chevd' : 'chev'} size={9} /></button>{open ? <div className="think">{it.text.trim() ? it.text : it.streaming ? '생각 중…' : 'Claude Code 가 headless 출력에서는 생각 내용을 주지 않아요 (서명만 옵니다).'}</div> : null}</div>
-    case 'tool': return <ToolLine it={it} onFile={onFile} base={bot.abs} />
+    /* 답한 질문은 도구 줄 대신 «내가 답한 것» 요약으로 (2026-11-12) — 못 읽는 답·취소·아직 답 전이면 종전 도구 줄 */
+    case 'tool': return askDoneOf(it) ? <AskDone it={it} /> : <ToolLine it={it} onFile={onFile} base={bot.abs} />
     case 'subagent': {
       /**
        * 🔴 **EA · 카드에서 멈추고, 결과는 자르지 않는다** (2026-11-11). 종전에는 결과를 300자에서 잘랐고(그 뒤를 볼 길이 없었다)
