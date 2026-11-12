@@ -462,7 +462,7 @@ function TodoSec({ bot, items, loading = false, open, tog, onDelegate, onOpenFil
   const rowInner = (t: TodoItem, isOpen: boolean) => <div
       className={`todo ${t.done ? 'done' : ''} ${isOpen ? 'on' : ''}`}
       onDoubleClick={phone ? undefined : () => toggleRow(t)} onClick={phone ? () => toggleRow(t) : undefined}>
-      <button className="bx" onClick={(e) => { e.stopPropagation(); void toggle(t) }} aria-label={t.done ? '되돌리기' : '완료'}>{t.done ? <Icon n="check" size={9} color="var(--onAccent)" /> : null}</button>
+      <button className="bx" onClick={(e) => { e.stopPropagation(); void toggle(t) }} aria-label={t.done ? '되돌리기' : '완료'}>{t.done ? <Icon n="check" size={9} /> : null}</button>
       <div className="tdb">
         <div className="tt">{t.title}{t.by === 'bot' ? <span className="byb" title="봇이 적음"><Icon n="sub" size={10} /></span> : null}</div>
         {isOpen && t.desc ? <div className="dsc">{t.desc}</div> : null}
@@ -498,7 +498,7 @@ function TodoSec({ bot, items, loading = false, open, tog, onDelegate, onOpenFil
       onDragOver={(e) => { if (drag === null) return; e.preventDefault(); setOver(t.line) }} onDragLeave={() => setOver((o) => (o === t.line ? null : o))}
       onDrop={(e) => { e.preventDefault(); void drop(t.line) }}
       onDoubleClick={phone ? undefined : () => toggleRow(t)} onClick={phone ? () => toggleRow(t) : undefined}>
-      <button className="bx" onClick={(e) => { e.stopPropagation(); void toggle(t) }} aria-label={t.done ? '되돌리기' : '완료'}>{t.done ? <Icon n="check" size={9} color="#111" /> : null}</button>
+      <button className="bx" onClick={(e) => { e.stopPropagation(); void toggle(t) }} aria-label={t.done ? '되돌리기' : '완료'}>{t.done ? <Icon n="check" size={9} /> : null}</button>
       <div className="tdb">
         {/* CK-1 · 마감 칩은 제목 바로 옆 — 오른쪽 끝은 손을 올리면 도구 줄이 덮는 자리라 칩을 누를 수 없다(스모크가 잡았다) */}
         <div className="tt dueln" onClick={(e) => { if (isOpen) { e.stopPropagation(); startEdit(t) } }} title={phone ? '누르면 펼치기' : '더블클릭하면 펼치기'}><span className="ttx">{t.title}</span>{t.by === 'bot' ? <span className="byb" title="봇이 적음"><Icon n="sub" size={10} /></span> : null}{dueBadge(t, false)}{t.ak && !phone ? <span className="akb" title="Akiflow 와 짝 — 제목·설명·완료·마감이 같이 움직여요">Akiflow</span> : null}</div>

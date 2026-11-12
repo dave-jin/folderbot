@@ -102,6 +102,29 @@ describe('눈금 — 스타일 값은 눈금에서 고른다', () => {
     expect(bad).toEqual([])
   })
 
+  /**
+   * 🔴 **가장 흐린 글자도 읽혀야 한다** (2026-11-13 Dave 카드 «올린다»). 보조 글자색 `--t3` 는 시각 · 설명 · 힌트 400여 곳이 쓴다.
+   * 종전 값(다크 #666666 · 라이트 #8a8a8a)은 바탕 대비가 3.2~3.6:1 이었다. 바탕(`--bg`)과 옆 칸(`--sb`) 위에서 4.5:1(WCAG AA)을 넘긴다.
+   * ⚠ 한 단계 위 `--t2` 보다 진해지면 위계가 뒤집힌다 — 그것도 같이 잰다.
+   */
+  it('보조 글자색 — 바탕과 옆 칸 위에서 대비 4.5:1 이상 · 한 단계 위 글자색보다는 흐리다', () => {
+    const lum = (hex: string) => { const h = hex.replace('#', ''); const f = h.length === 3 ? h.split('').map((c) => c + c).join('') : h; const [r, g, b] = [0, 2, 4].map((i) => parseInt(f.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)); return 0.2126 * r + 0.7152 * g + 0.0722 * b }
+    const ratio = (a: string, b: string) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05) }
+    const blockOf = (head: string) => { const i = blank.indexOf(head); expect(i, head).toBeGreaterThanOrEqual(0); return blank.slice(i, blank.indexOf('}', i)) }   // 토큰 줄 — 주석은 지운 글에서 읽는다
+    const themes = { dark: blockOf(':root {'), light: blockOf(':root[data-theme="light"] {') }
+    for (const [name, body] of Object.entries(themes)) {
+      const tok = (k: string) => { const m = new RegExp(`(?<![\\w-])${k}:\\s*(#[0-9a-fA-F]{3,6})\\s*;`).exec(body); expect(m, `${name} ${k}`).toBeTruthy(); return m![1] }
+      for (const bg of ['--bg', '--sb']) expect(ratio(tok('--t3'), tok(bg)), `${name} --t3 on ${bg}`).toBeGreaterThanOrEqual(4.5)
+      expect(ratio(tok('--t2'), tok('--bg')), `${name} --t2 는 --t3 보다 또렷해야 한다`).toBeGreaterThan(ratio(tok('--t3'), tok('--bg')))
+      // 🔴 `--t3` 는 끝낸 할 일의 체크 칸을 «칠하는» 데도 쓴다. 그 위의 체크 표시(`--onAccent`)가 묻히면 안 된다(그림 기준 3:1).
+      //    색을 올린 날 스모크가 잡았다 — 데스크톱 쪽 체크만 `#111` 로 박혀 있어 라이트에서 2.7:1 이 됐다.
+      expect(ratio(tok('--onAccent'), tok('--t3')), `${name} 체크 표시(--onAccent) on --t3`).toBeGreaterThanOrEqual(3)
+    }
+    expect(/\.todo\.done \.bx \{[^}]*color:var\(--onAccent\)/.test(blank), '.todo.done .bx 는 체크 표시 색을 --onAccent 로 정한다').toBe(true)
+    const fixed = tsx.filter(({ s }) => /className="bx"[^\n]*n="check"[^>]*color=/.test(s)).map(({ f }) => f)
+    expect(fixed, '할 일 체크 칸의 체크 표시에 색을 박지 않는다 — 칸의 글자색을 물려받는다').toEqual([])
+  })
+
   it('움직임 — 전환은 빠르게 · 보통 두 토큰과 이징 하나', () => {
     const BOUNCE = 'cubic-bezier(.34,1.3,.64,1)'                                      // 폴더봇을 누르면 튀며 커진다 — 하나뿐인 예외
     const part = (p: string) => p === 'none' || new RegExp(`^[a-z-]+ var\\(--t-(fast|mid)\\) (var\\(--ease\\)|${BOUNCE.replace(/[.()]/g, '\\$&')})$`).test(p)

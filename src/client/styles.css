@@ -1,5 +1,5 @@
 /* Folder Bot — V4 컴포저 · V7 모바일 · V9 유리. 바탕 #141414 사다리(커서 실측) · 색은 상태 점 4개와 흰 버튼뿐 · 떠 있는 것만 유리 */
-:root { --bg:#141414; --bg2:#181818; --sb:#111111; --line:#232323; --line2:#2c2c2c; --box:#1c1c1c; --sel:#222222; --hover:#1a1a1a; --w:#ededed; --t:#d6d6d6; --t2:#9a9a9a; --t3:#666666; --run:#e08850; --hold:#4aa8c7; --wait:#e2a33b; --done:#4fbf87; --err:#e5534b; --ui:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',system-ui,sans-serif; --mono:'JetBrains Mono','SF Mono',Menlo,monospace; --hh:44px;
+:root { --bg:#141414; --bg2:#181818; --sb:#111111; --line:#232323; --line2:#2c2c2c; --box:#1c1c1c; --sel:#222222; --hover:#1a1a1a; --w:#ededed; --t:#d6d6d6; --t2:#9a9a9a; --t3:#8c8c8c; --run:#e08850; --hold:#4aa8c7; --wait:#e2a33b; --done:#4fbf87; --err:#e5534b; --ui:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',system-ui,sans-serif; --mono:'JetBrains Mono','SF Mono',Menlo,monospace; --hh:44px;
   --glassA:rgba(20,20,20,.70); --glassB:rgba(28,28,28,.68); --hair:rgba(255,255,255,.07); --blur:blur(22px) saturate(1.4); --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
   /* 🔴 눈금 (2026-11-13 · UX/UI 정리 «눈금과 규칙») — 새 값을 짓지 말고 여기서 고른다. 눈금 밖 값은 `test/unit/cssScale.test.ts` 가 빨강.
      글자 11 라벨 · 12 보조 · 13 기본 · 15 창 제목 · 17 폰 제목 · 22 큰 제목 (폰 문맥은 14 보조 · 16 본문·입력칸 도) — 숫자로 쓴다.
@@ -15,7 +15,7 @@
 /* 라이트 테마 (2026-09-13) — 같은 구조, 색만 뒤집는다. 어느 쪽인지는 JS 가 data-theme 으로 정한다(시스템·라이트·다크) */
 :root[data-theme="light"] {
   --bg:#ffffff; --bg2:#f4f4f5; --sb:#f6f6f7; --line:#e4e4e6; --line2:#d6d6d9; --box:#efeff1; --sel:#e6e6e9; --hover:#f1f1f3;
-  --w:#111111; --t:#2e2e2e; --t2:#5f5f5f; --t3:#8a8a8a;
+  --w:#111111; --t:#2e2e2e; --t2:#5f5f5f; --t3:#6e6e6e;   /* --t3 보조 글자 — 2026-11-13 Dave 카드 «올린다»: 다크 #666666 → #8c8c8c · 라이트 #8a8a8a → #6e6e6e. 배경 대비 4.5:1 을 넘겨야 한다(`test/unit/cssScale.test.ts`) */
   --run:#c2662f; --hold:#2b7f9c; --wait:#a07208; --done:#2f9e6b; --err:#c93b2e;
   --glassA:rgba(255,255,255,.72); --glassB:rgba(255,255,255,.80); --hair:rgba(0,0,0,.10);
   --fade0:rgba(255,255,255,0); --fadeA:rgba(255,255,255,.88); --fadeB:rgba(244,244,245,.96); --solid:#efeff1; --hover0:rgba(241,241,243,0); --shadow:rgba(0,0,0,.14); --sh-1:0 4px 14px rgba(0,0,0,.10); --sh-2:0 10px 30px rgba(0,0,0,.14); --sh-3:0 24px 60px rgba(0,0,0,.22); --onAccent:#ffffff; color-scheme:light }
@@ -468,7 +468,7 @@ b,strong { color:var(--w); font-weight:600 }
 .todo.on .tt { cursor:text }
 .todo .dsc { font-size:12px; color:var(--t2); line-height:1.55; margin-top:4px; white-space:pre-wrap; word-break:break-word; cursor:text }
 .todo .byb { display:inline-flex; margin-left:5px; vertical-align:-1px; color:var(--t3) }
-.todo.done .tt { color:var(--t3); font-weight:400; text-decoration:line-through } .todo.done .bx { background:var(--t3); border-color:var(--t3) }
+.todo.done .tt { color:var(--t3); font-weight:400; text-decoration:line-through } .todo.done .bx { background:var(--t3); border-color:var(--t3); color:var(--onAccent) }
 .todo .bx { width:15px; height:15px; border:1.5px solid var(--line2); border-radius:6px; flex:none; margin-top:1px; display:inline-flex; align-items:center; justify-content:center } .todo .bx:hover { border-color:var(--t2) }
 .todo .bx.ghost { border-color:var(--line) } .todo .bx.dash { border-style:dashed }
 .todo .mk { flex:none; display:inline-flex; align-items:center; margin-top:3px; color:var(--t3) }
@@ -729,7 +729,7 @@ b,strong { color:var(--w); font-weight:600 }
   .composer .crow { align-items:center; gap:10px }
   .composer .cin { font-size:17px; min-height:24px; padding:6px 0; max-height:140px } .ichip { height:26px; font-size:14px; vertical-align:middle; max-width:220px }   /* AM · 손으로 맞춘 -7px 대신 같은 규칙으로 */
   .composer .plusb { width:40px; height:40px; border-radius:50%; background:rgba(255,255,255,.06); display:inline-flex; align-items:center; justify-content:center; color:var(--t); flex:none }
-  .sendb { width:36px; height:36px } .sendb.mic { background:transparent; color:var(--t2) }
+  .sendb { width:36px; height:36px }
   .cpop { left:0; right:0; width:auto; border-radius:var(--r-sheet); padding:6px; bottom:calc(100% + 10px) } .cpop.r { width:auto } .prow2 { min-height:52px; padding:10px 14px; border-radius:12px } .prow2 .t b { font-size:16px } .prow2 .t small { font-size:13px }
   /* 키보드가 올라오면 아래는 전부 키보드가 덮는다 — `--sab`(홈 인디케이터) 를 비워 둘 이유가 없다 */
   .app.kb .cchips, .app.kb .tobot { display:none } .app.kb .chat-foot { padding-bottom:6px } .app.kb .chat-hdr { display:none }

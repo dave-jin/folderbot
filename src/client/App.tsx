@@ -2172,14 +2172,15 @@ function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pendi
    *    대기 줄의 «지금» 이 맡는다. ⛔ 입력줄에 ⏹ 를 다시 세우지 마라 — 같은 일을 하는 단추가 둘이 된다.
    */
   const idle = mode === 'off' || mode === 'stop'
-  const sendBtn = idle && phone ? <span className="sendb mic"><Icon n="mic" size={20} /></span>
-      /**
-       * 🔴 **보내기 단추는 초점을 뺏지 않는다** (2026-09-22 실측). 누르는 순간 입력칸에서 초점이 빠지면 키보드가 닫히고,
-       *    그 바람에 입력칸이 제자리를 다시 잡느라 **mousedown 과 mouseup 사이에 단추가 움직여 click 이 아예 안 난다** —
-       *    폰에서 보내기가 «눌리지도 않고 아무 일도 안 일어나는» 정체가 이것이었다(Z 의 하단 탭이 들어오며 드러났다).
-       *    보낸 뒤에도 키보드가 남아 있는 것이 사람이 바라는 동작이기도 하다.
-       */
-      : <button className={`sendb ${idle ? 'off' : ''}`} onMouseDown={(e) => e.preventDefault()} onClick={send} disabled={idle || busy || uploading} title={mode === 'queue' ? `대기열에 넣기 (${sendKey})` : `보내기 (${sendKey})`}><Icon n="up" size={phone ? 16 : 12} />{mode === 'queue' ? <span className="bd">+{queue.length + 1}</span> : null}</button>
+  /**
+   * 🔴 **보내기 단추는 초점을 뺏지 않는다** (2026-09-22 실측). 누르는 순간 입력칸에서 초점이 빠지면 키보드가 닫히고,
+   *    그 바람에 입력칸이 제자리를 다시 잡느라 **mousedown 과 mouseup 사이에 단추가 움직여 click 이 아예 안 난다** —
+   *    폰에서 보내기가 «눌리지도 않고 아무 일도 안 일어나는» 정체가 이것이었다(Z 의 하단 탭이 들어오며 드러났다).
+   *    보낸 뒤에도 키보드가 남아 있는 것이 사람이 바라는 동작이기도 하다.
+   * 🔴 **폰도 빈 입력칸에서는 흐린 보내기 단추다** (2026-11-13 Dave 카드 «뺀다»). 그 자리에 마이크 그림이 있었는데 단추가 아니라
+   *    눌러도 아무 일도 없었다(음성 입력이 없다). ⛔ 기능이 없는 그림을 단추 자리에 세우지 않는다.
+   */
+  const sendBtn = <button className={`sendb ${idle ? 'off' : ''}`} onMouseDown={(e) => e.preventDefault()} onClick={send} disabled={idle || busy || uploading} title={mode === 'queue' ? `대기열에 넣기 (${sendKey})` : `보내기 (${sendKey})`}><Icon n="up" size={phone ? 16 : 12} />{mode === 'queue' ? <span className="bd">+{queue.length + 1}</span> : null}</button>
   const sendEl = sendBtn
   const popEl = pop === 'mode' ? (vendOf() === 'codex'
     ? <div className="cpop modepop modepop-cx"><div className="h">권한 · Codex</div><div className="hint pend">Codex 세션은 권한 모드 대신 <b>샌드박스</b>를 써요 — 지금 «{cxSandbox}». 설정 › Codex 에서 바꿉니다(모든 Codex 세션에 같이 적용).</div></div>
