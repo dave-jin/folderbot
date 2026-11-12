@@ -175,8 +175,11 @@ export class Gateway {
     if (process.env.FOLDERBOT_NO_AUTH) { const as = req.headers['x-fb-as']; return as ? { ok: true, device: String(as), id: 'as', main: false } : { ok: true, device: 'local', id: 'local', main: true } }
     const h = req.headers.authorization ?? ''
     const url = new URL(req.url ?? '/', 'http://x')
-    const tok = h.startsWith('Bearer ') ? h.slice(7) : (url.searchParams.get('token') ?? '')
+    const viaHeader = h.startsWith('Bearer ')
+    const tok = viaHeader ? h.slice(7) : (url.searchParams.get('token') ?? '')
     if (!tok) return { ok: false, device: '', id: '', main: false }
+    // 🔴 주소에 실은 토큰(`?token=`)은 **파일 받기에만** 통한다(`queryTokenOk` 머리말). 그 밖의 요청은 머리말(`Authorization`)로만 받는다
+    if (!viaHeader && !queryTokenOk(req.method, url.pathname)) return { ok: false, device: '', id: '', main: false }
     for (const d of this.host.cfg.devices) {
       const a = Buffer.from(d.token), b = Buffer.from(tok)
       if (a.length === b.length && timingSafeEqual(a, b)) { d.lastSeen = Date.now(); return { ok: true, device: d.name, id: d.id, main: d.name === LOCAL_DEVICE } }
@@ -1020,7 +1023,8 @@ export class Gateway {
       if (sub === 'raw') {
         const abs = resolveNFDeep('/', guard(roots(bot), join(bot.abs, url.searchParams.get('rel') ?? '')).slice(1)); if (!exists(abs)) return json(404, { error: 'none' })
         const st = statSync(abs); const tag = rawEtag(st.size, st.mtimeMs)
-        const head: Record<string, string> = { 'content-type': mime(abs), 'cache-control': 'private, no-cache', etag: tag, 'last-modified': new Date(st.mtimeMs).toUTCString(), 'accept-ranges': 'bytes' }
+        const ct = mime(abs)
+        const head: Record<string, string> = { 'content-type': ct, 'cache-control': 'private, no-cache', etag: tag, 'last-modified': new Date(st.mtimeMs).toUTCString(), 'accept-ranges': 'bytes', ...rawGuard(ct) }
         if (etagHit(req.headers['if-none-match'], tag)) { res.writeHead(304, head); res.end(); return }
         const ir = req.headers['if-range']
         const rg = ifRangeOk(Array.isArray(ir) ? ir[0] : ir, tag, st.mtimeMs) ? parseRange(req.headers.range, st.size) : null   // 바뀐 파일이면 조각 대신 전체
@@ -1192,6 +1196,29 @@ export class Gateway {
   stop(): void { for (const s of this.servers) s.close() }
 }
 
+/**
+ * 🔴 **주소에 실은 토큰(`?token=`)은 파일 받기에만 통한다** (2026-11-12 실측).
+ *    `<img>`·`<video>`·`<iframe>` 은 머리말을 못 실어 원본 주소에 기기 토큰이 붙는다(`…/raw?rel=…&token=…`). 문서 창의 html 보기는
+ *    그 주소를 격리 틀에 넣는다 — 틀 안의 스크립트는 **제 주소에서 토큰을 읽는다.** 종전에는 그 토큰을 주소에 실은 쓰는 요청
+ *    (`POST /api/folders?token=…`)이 통해, 볼트에 들어온 html 하나가 폴더를 만들고 봇에게 말을 보낼 수 있었다(임시 볼트에서 재현 · `test/sec-raw.mjs`).
+ *    머리말로 싣는 길은 브라우저가 막는다 — 틀의 출처가 달라 먼저 묻는데(preflight) 이 호스트는 허락하지 않는다.
+ * ⛔ 여기에 길을 더하지 않는다. 태그로 받아야 하는 새 원본이 생기면 **읽기만 하는 GET** 인지 확인하고 넣는다.
+ */
+export function queryTokenOk(method: string | undefined, pathname: string): boolean {
+  return (method === 'GET' || method === 'HEAD') && /^\/api\/bots\/[^/]+\/(?:raw|zip)$/.test(pathname)
+}
+/**
+ * 원본 응답의 울타리 머리 (2026-11-12). 스크립트가 도는 종류(html · svg)는 `Content-Security-Policy: sandbox` 를 달고 나간다 —
+ * 문서 창의 격리 틀 **밖**에서(맨 위 창 · 맥 앱이 바깥 브라우저로 넘긴 새 창) 열려도 호스트와 다른 출처가 되어 API 답을 못 읽는다.
+ * 격리 틀의 허용(`allow-scripts allow-popups`)과 같다 — 문서 창에서 보이는 모습은 그대로다.
+ * ⛔ PDF 에는 붙이지 않는다(크롬 PDF 보기가 격리되면 안 뜬다). ⛔ `allow-same-origin` 을 넣지 않는다.
+ * `nosniff` 는 어느 응답이든 — 종류를 모르는 파일을 브라우저가 내용으로 짐작해 html 로 그리지 않게.
+ */
+export function rawGuard(contentType: string): Record<string, string> {
+  const h: Record<string, string> = { 'x-content-type-options': 'nosniff' }
+  if (/^(?:text\/html|image\/svg\+xml)\b/i.test(contentType)) h['content-security-policy'] = 'sandbox allow-scripts allow-popups'
+  return h
+}
 /** CF-④ · 프록시(tailscale serve)를 거친 요청은 출발지가 127.0.0.1 이어도 바깥 요청이다 */
 export function isLoopbackReq(addr: string | undefined, headers: Record<string, string | string[] | undefined>): boolean {
   if (headers['x-forwarded-for'] || headers['tailscale-user-login'] || headers['forwarded']) return false

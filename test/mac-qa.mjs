@@ -287,6 +287,36 @@ ok(`봇 화면 · ${bot.name} · 스크린샷 test/tmp/mac-qa-app.png`)
   ok(`⎋ 멈추기 · 글 그대로 · 대기 붙잡기 · ⌥⏎ 멈추고 바로 보내기 ${Date.now() - t0}ms (앱 창 키 이벤트)`)
 }
 
+// ── ⑭ 새 창 요청은 웹·메일·전화 주소만 바깥으로 넘긴다 (2026-11-12) ────────────────────
+// 셸은 화면의 `window.open` 을 받아 기본 브라우저로 넘긴다(`setWindowOpenHandler`). 종전에는 주소를 거르지 않았다 —
+// 문서 창의 html 보기(격리 틀 · `allow-popups`) 안의 스크립트가 `window.open("smb://…")` 을 부르면 그 주소가 맥으로 넘어갔다
+// (고치기 전 실측: `smb:` 가 넘어감 · `file:` 은 크롬이 «Not allowed to load local resource» 로 먼저 막음).
+// ⚠ `shell.openExternal` 을 기록만 하는 것으로 갈아 끼운 뒤에 잰다 — 검사가 실제로 무엇을 열지 않는다.
+{
+  await app.evaluate(({ shell }) => { global.__ext = []; global.__extOrig = shell.openExternal; shell.openExternal = async (u) => { global.__ext.push(String(u)) } })
+  if (!(await app.evaluate(({ shell }) => shell.openExternal !== global.__extOrig))) await fail('⑭ 검사 전제 깨짐 — openExternal 을 못 갈아 끼웠다')
+  try {
+    const urls = ['file:///nonexistent-fb-qa/none.command', 'smb://nonexistent-fb-qa/share', 'https://example.invalid/fb-qa', 'mailto:qa@example.invalid']
+    // 문서 창의 html 보기와 같은 격리 틀 안에서 부른다
+    await page.evaluate((us) => { const f = document.createElement('iframe'); f.id = 'qa-ext'; f.setAttribute('sandbox', 'allow-scripts allow-popups'); f.srcdoc = `<script>for (const u of ${JSON.stringify(us)}) { try { window.open(u) } catch (e) {} }<\/script>`; document.body.appendChild(f) }, urls)
+    await wait(1200)
+    const fromFrame = await app.evaluate(() => global.__ext.splice(0))
+    // 앱 화면 자체가 부를 때(문서의 링크를 누른 길)
+    await page.evaluate((us) => { for (const u of us) { try { window.open(u, '_blank', 'noopener,noreferrer') } catch (e) {} } }, urls)
+    await wait(1200)
+    const fromApp = await app.evaluate(() => global.__ext.splice(0))
+    for (const [who, got] of [['격리 틀', fromFrame], ['앱 화면', fromApp]]) {
+      const bad = got.filter((u) => !/^(https?|mailto|tel):/i.test(u))
+      if (bad.length) await fail(`🔴 ⑭ ${who}의 새 창 요청이 걸러지지 않고 바깥으로 넘어갔다 ${JSON.stringify(bad)}`)
+      if (!got.some((u) => u.startsWith('https://example.invalid/'))) await fail(`⑭ ${who}의 웹 주소가 바깥으로 안 넘어갔다(회귀) ${JSON.stringify(got)}`)
+    }
+    ok(`새 창 요청 · 웹·메일만 바깥으로 · file: · smb: 는 안 넘긴다 (격리 틀 ${fromFrame.length}건 · 앱 화면 ${fromApp.length}건)`)
+  } finally {
+    await app.evaluate(({ shell }) => { shell.openExternal = global.__extOrig })
+    await page.evaluate(() => document.getElementById('qa-ext')?.remove())
+  }
+}
+
 if (errs.length) console.log('  ⚠ pageerror:', errs.join(' | ').slice(0, 500))
 console.log('\n🍎 맥 QA 통과')
 await cleanup()

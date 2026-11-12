@@ -19,6 +19,7 @@ files:
   - trayIcon.js
   - winBounds.js
   - zoom.js
+  - extern.js
   - nav.js
   - notes.js
   - localfs.js

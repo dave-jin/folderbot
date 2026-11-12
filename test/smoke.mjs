@@ -7427,8 +7427,26 @@ try {
       globalThis.__ecDone = true
       ok(`EC 끼워 넣기 — 같은 턴에 반영(priority next) · 경주는 보통 말로 한 번 · 카드·Codex·봇 말은 거절 · 턴 출처 유지 · 대기 줄 두 단추 · ⌘J 다음 기다리는 세션 · 카드 키(↩ ⎋) · 세션 창 탭 다섯 · 폰 [${names.join(' ')}]`)
     }
+    /**
+     * ═══ 원본 응답의 울타리 (2026-11-12) ═══════════════════════════════════════════════════
+     * 격리 틀(문서 창 html 보기) 안의 글이 제 주소에 실린 토큰으로 볼트를 바꾸거나 API 답을 읽지 못한다.
+     * 이 스모크의 호스트는 인증을 끄고 돌아 못 잰다 — 검사 본문(`test/sec-raw.mjs`)이 **인증을 켠** 호스트를 따로 띄운다.
+     */
+    {
+      const { secRaw } = await import('./sec-raw.mjs')
+      const names = []
+      await secRaw({ br, check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 원본 울타리 · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } names.push(name.split(' ')[0]) } })
+      globalThis.__secDone = true
+      ok(`원본 울타리 — html·svg 는 격리 머리 · 주소에 실은 토큰은 파일 받기에만(쓰기 401 · 목록 401) · 격리 틀 안의 글이 볼트를 못 바꾼다 · 맨 위 창으로 열려도 다른 출처 · 그림 그대로 [${names.join(' ')}]`)
+    }
     await br.close(); ok('ui renders (desktop · phone) → test/tmp/*.png')
   } catch (e) { try { await globalThis.__br?.close() } catch {} if (/executablePath|Executable doesn't exist|Cannot find (module|package) 'playwright/.test(String(e.message))) console.log('(화면 검사 건너뜀 — 브라우저 없음:', e.message.split('\n')[0], ')'); else fail('ui: ' + e.stack.split('\n').slice(0, 4).join(' | ')) }
+  // 원본 울타리 · 브라우저가 없는 기기에서도 호스트 쪽 검사(S1~S3)는 돈다
+  if (!globalThis.__secDone) {
+    const { secRaw } = await import('./sec-raw.mjs')
+    await secRaw({ br: null, check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 원본 울타리 · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } } })
+    ok('원본 울타리 — 호스트 쪽만(S1~S3 · 화면 검사는 브라우저가 없어 건너뜀)')
+  }
   // EA · 브라우저가 없어 화면 검사를 건너뛴 기기에서도 호스트 쪽 검사(A1~A10)는 돈다
   if (!globalThis.__eaDone) {
     const { eaTasks } = await import('./ea-tasks.mjs')

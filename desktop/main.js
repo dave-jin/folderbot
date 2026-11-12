@@ -11,6 +11,7 @@ const localfs = require('./localfs')
 const { folderIcon } = require('./trayIcon')
 const { pickBounds } = require('./winBounds')
 const { clampZoom, stepZoom, zoomPct } = require('./zoom')
+const { externalOk } = require('./extern')
 
 /**
  * 🔴 **AO · 두 손가락 쓸기로 앞뒤 페이지에 가지 않는다** (2026-09-24 Dave: *«왼쪽 혹은 오른쪽으로 쓸기에서
@@ -101,7 +102,8 @@ function createWin() {
   win.on('close', () => { clearTimeout(bt); remember() })
   win.on('closed', () => { win = null })
   win.on('focus', () => { try { win.webContents.send('fb:perms', perms.list({ host: settings.mode === 'host', openMode: settings.openMode })) } catch {} })
-  win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' } })
+  // 🔴 새 창 요청은 웹·메일·전화 주소만 바깥으로 넘긴다(`extern.js`) — 문서 창 html 보기(격리 틀) 안의 글도 이 문을 지난다
+  win.webContents.setWindowOpenHandler(({ url }) => { if (externalOk(url)) shell.openExternal(url); return { action: 'deny' } })
   win.webContents.on('did-finish-load', applyZoom)   // BP · 새로 읽을 때마다 저장된 배율을 다시 건다
   Menu.setApplicationMenu(appMenu())
   loadHome()
@@ -434,7 +436,7 @@ function trayPanel() {
   })
   panel.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   // ⛔ 링크는 패널 안에서 열지 않는다 — 여기는 창이 아니라 «메뉴» 다
-  panel.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' } })
+  panel.webContents.setWindowOpenHandler(({ url }) => { if (externalOk(url)) shell.openExternal(url); return { action: 'deny' } })
   panel.on('blur', () => { if (panel && !panel.isDestroyed()) panel.hide() })
   panel.on('closed', () => { panel = null })
   return panel
