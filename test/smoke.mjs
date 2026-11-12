@@ -2306,11 +2306,25 @@ try {
             if (!u.link || !u.fav) fail('🔴 BM-2: 내 말의 링크에 파비콘이 없다 ' + JSON.stringify(u))
           }
           // BM-3 코드블록 흔들림 — 그리기 직전마다 잰다
-          await mp.evaluate(() => { const w = window; w.__bare = 0; w.__shrink = []; let pH = 0, pEl = null; const f = () => { const md = document.querySelector('.md.streaming'); if (md) { if ([...md.querySelectorAll('pre')].some((p) => !p.parentElement?.classList.contains('cbwrap'))) w.__bare++; const h = md.getBoundingClientRect().height; if (md === pEl && h < pH - 0.5) w.__shrink.push(Math.round(pH - h)); pH = h; pEl = md } requestAnimationFrame(f) }; requestAnimationFrame(f) })
+          await mp.evaluate(() => { const w = window; w.__bare = 0; w.__shrink = []; w.__lost = 0; let pH = 0, pEl = null; const f = () => { if (document.querySelector('.tobot.newc')) w.__lost++; const md = document.querySelector('.md.streaming'); if (md) { if ([...md.querySelectorAll('pre')].some((p) => !p.parentElement?.classList.contains('cbwrap'))) w.__bare++; const h = md.getBoundingClientRect().height; if (md === pEl && h < pH - 0.5) w.__shrink.push(Math.round(pH - h)); pH = h; pEl = md } requestAnimationFrame(f) }; requestAnimationFrame(f) })
+          const gapOf = () => mp.evaluate(() => { const sc = document.querySelector('.chat-scroll'); return sc ? Math.round(sc.scrollHeight - sc.scrollTop - sc.clientHeight) : -1 })
+          const gap0 = await gapOf()
           await api(`/sessions/${sidM}/send`, { text: '마크다운스트리밍' })
           await mp.waitForSelector('.md.streaming', { timeout: 5000 }); for (let i = 0; i < 60 && (await mp.$('.md.streaming')); i++) await wait(200)
           const cs = await mp.evaluate(() => ({ bare: window.__bare, shrink: window.__shrink }))
           if (cs.bare || cs.shrink.length) fail('🔴 BM-3: 스트리밍 중 코드블록이 흔들린다 ' + JSON.stringify(cs))
+          /**
+           * 🔴 **맨 아래를 보던 중이면 코드블록이 나타나도 끝까지 따라간다** (2026-11-12 Dave «지금 따로 고쳐 배포» · v215 에도 있던 문제).
+           *    코드블록이 나타나는 프레임에 높이가 한 번에 60px 넘게 자란다. 그때 «우리가 놓은 scrollTop» 표식을 `measure(true)` 가 먼저 써 버려
+           *    뒤따라 온 우리 자신의 scroll 이벤트가 «사람이 올렸다» 로 읽혔다 → 따라가기가 끊기고 «↓ 새 내용» 이 떴다.
+           */
+          if (gap0 > 2) fail('맨 아래 따라가기: 검사 전제 깨짐 — 보내기 전에 이미 맨 아래가 아니다 gap=' + gap0)
+          else {
+            await wait(900)
+            const fl = { lost: await mp.evaluate(() => window.__lost), gap: await gapOf() }
+            if (fl.lost || fl.gap > 2) fail('🔴 폰에서 답이 흘러나오는 중 코드블록이 나타나면 맨 아래 따라가기가 끊긴다 ' + JSON.stringify(fl))
+            else ok('폰 · 답이 흘러나오는 중 코드블록이 나타나도 맨 아래를 따라간다(«새 내용» 0프레임 · 끝 거리 ' + fl.gap + 'px)')
+          }
           /**
            * 🔴 **시각화 채팅 첫 묶음** (2026-11-12 Dave: «채팅창을 더욱 시각화 … 채팅 창 안에서 바로 재생»).
            *  ① BM-4 거르개 — **봇 답**에 섞인 HTML 은 허용 태그만 남는다(`onerror`·`onclick` 은 사라진다). 종전에는 그대로 심겨 실행됐다.
@@ -2330,8 +2344,7 @@ try {
             // ② 미디어 카드 — 파일을 봇 폴더에 만들고 스텁이 한 줄씩 적게 한다
             const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64')
             for (const [n, buf] of [['mc-a.png', PNG], ['mc-b.png', PNG], ['mc-clip.mp4', Buffer.alloc(4096, 1)], ['mc-voice.m4a', Buffer.alloc(2048, 2)], ['mc-doc.pdf', Buffer.from('%PDF-1.4\n%%EOF\n')]]) writeFileSync(join(bot.abs, n), buf)
-            // ⚠ 이 화면은 앞의 «마크다운스트리밍» 에서 이미 바닥을 놓쳤다(v215 에도 있는 일 — 폰에서 코드블록이 60px 로 나타나는 프레임에 따라가기가 끊긴다). «맨 아래를 보던 중» 을 재려면 먼저 내린다
-            await mp.evaluate(() => { const b = document.querySelector('.tobot'); if (b && !b.classList.contains('off')) b.click() })
+            // «맨 아래를 보던 중» 을 잰다 — 앞의 답을 따라 내려가는 중일 수 있으니 바닥에 닿기를 기다린다(종전에는 «마크다운스트리밍» 에서 따라가기가 끊겨 단추로 내려야 했다 · 2026-11-12 고침)
             for (let i = 0; i < 20; i++) { const g = await mp.evaluate(() => { const sc = document.querySelector('.chat-scroll'); return sc ? sc.scrollHeight - sc.scrollTop - sc.clientHeight : 0 }); if (g <= 2) break; await wait(150) }
             await api(`/sessions/${sidM}/send`, { text: '미디어카드 보여 줘' })
             let mc = null
