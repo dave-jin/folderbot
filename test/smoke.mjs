@@ -7439,6 +7439,17 @@ try {
       globalThis.__secDone = true
       ok(`원본 울타리 — html·svg 는 격리 머리 · 주소에 실은 토큰은 파일 받기에만(쓰기 401 · 목록 401) · 격리 틀 안의 글이 볼트를 못 바꾼다 · 맨 위 창으로 열려도 다른 출처 · 그림 그대로 [${names.join(' ')}]`)
     }
+    /**
+     * ═══ UX/UI 정리 첫 걸음 «고장 여덟» (2026-11-13) ═══════════════════════════════════════════════
+     * 11/12 리뷰가 찾은 실제 고장 — ⎋ 로 안 닫히는 창 · 안 닫히는 세션 메뉴 · 정의 없는 색 토큰 · 폰 설정 13px 입력칸 등.
+     * 검사 본문(`test/uxui-eight.mjs`)이 제 호스트를 따로 띄운다 — 이 스모크의 긴 흐름이 남긴 상태에 기대지 않는다.
+     */
+    {
+      const { uxuiEight } = await import('./uxui-eight.mjs')
+      const names = []
+      await uxuiEight({ br, shots: 'test/tmp', check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 고장 여덟 · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } names.push(name.split(' ')[0]) } })
+      ok(`고장 여덟 — 창 아홉과 루틴 편집이 ⎋ 로 닫힌다 · 겹치면 위의 것만 · 고친 루틴은 닫기 전에 묻는다 · 세션 메뉴(⎋·바깥·같은 단추) · 모델 숫자 키 · «새로고침» 한 줄 · color-scheme · 폰 설정 입력칸 16px · 묻기 창 어둠막 [${names.join(' ')}]`)
+    }
     await br.close(); ok('ui renders (desktop · phone) → test/tmp/*.png')
   } catch (e) { try { await globalThis.__br?.close() } catch {} if (/executablePath|Executable doesn't exist|Cannot find (module|package) 'playwright/.test(String(e.message))) console.log('(화면 검사 건너뜀 — 브라우저 없음:', e.message.split('\n')[0], ')'); else fail('ui: ' + e.stack.split('\n').slice(0, 4).join(' | ')) }
   // 원본 울타리 · 브라우저가 없는 기기에서도 호스트 쪽 검사(S1~S3)는 돈다

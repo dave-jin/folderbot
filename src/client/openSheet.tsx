@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useEsc } from './esc'
 import type { Bot } from '../core/types'
 import { dropboxWebUrl, isExternalLink, safariUrl } from '../core/openLink'
 import { token } from './api'
@@ -85,9 +86,10 @@ export function OpenSheetHost({ say }: { say: (m: string) => void }) {
   useEffect(() => { setT = setTarget; return () => { setT = null } }, [])
   sayRef = say
   useEffect(() => installLinkSheet(), [])
+  const close = () => setTarget(null)
+  useEsc(close, !!t)
   if (!t) return null
   const { title, sub, rows } = rowsOf(t, (m) => sayRef(m))
-  const close = () => setTarget(null)
   return <>
     <div className="backdrop" onClick={close} />
     <div className="opensheet" role="dialog" aria-label="바깥으로 열기">

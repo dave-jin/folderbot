@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEsc } from './esc'
 import { rank, scoreName } from '../core/search'
 import { agoShort, dueShort, finderGroups, lastReadOf, paraOf, PARA_WORD, type Para } from '../core/folderFind'
 import { freezeOrder, isLive, liveOrder, liveSince, liveView, type LiveView } from '../core/liveFind'
@@ -37,6 +38,7 @@ const SHOW = 5
 const FLASH_MS = 1700
 
 export function Search({ go, onClose }: { go: (botId: string, sid?: string) => void; onClose: () => void }) {
+  useEsc(onClose)
   const { s } = useStore()
   const [q, setQ] = useState('')
   const [selKey, setSelKey] = useState('')

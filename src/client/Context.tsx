@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { useEsc } from './esc'
 import { api } from './api'
 import { useStore } from './store'
 import { Icon } from './FolderBot'
@@ -254,7 +255,7 @@ export function ContextPage({ onClose, go, goTodo, openRoutines, at, phone, open
   useEffect(() => { load(period); if (period === 'away') return; const t = window.setInterval(() => load(period), 60_000); return () => window.clearInterval(t) }, [period])
   const sig = useStateSig(); const first = useRef(true)
   useEffect(() => { if (first.current) { first.current = false; return } const t = window.setTimeout(() => load(period), 1500); return () => window.clearTimeout(t) }, [sig])
-  useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.querySelector('.modal.ask')) { if (goal) setGoal(null); else onClose() } }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k) }, [goal, onClose])
+  useEsc(() => { if (goal) setGoal(null); else onClose() })
   useEffect(() => { if (!note) return; const t = window.setTimeout(() => setNote(''), 5000); return () => window.clearTimeout(t) }, [note])
 
   const b = boards[period]

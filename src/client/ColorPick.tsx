@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useEsc } from './esc'
 import type { Bot } from '../core/types'
 import { ORCH_COLOR, PALETTE } from '../core/botColor'
 import { api } from './api'
@@ -17,7 +18,7 @@ export function ColorHost({ say }: { say: (m: string) => void }) {
   const [b, setB] = useState<Bot | null>(null)
   const [busy, setBusy] = useState('')
   useEffect(() => { opener = (x) => setB(x); return () => { opener = null } }, [])
-  useEffect(() => { if (!b) return; const k = (e: KeyboardEvent) => { if (e.key === 'Escape') setB(null) }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k) }, [b])
+  useEsc(() => setB(null), !!b)
   if (!b) return null
   const cur = (busy || b.color).toLowerCase()
   const choose = async (hex: string) => {

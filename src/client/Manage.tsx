@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useEsc } from './esc'
 import { botDueChip } from '../core/botName'
 import { dueChipOf, dueText } from '../core/due'
 import { BOARD_FILTER_LABEL, BOARD_PEEK, boardRows, folderGroup, type BoardFilter, type BoardItem, type FolderGroup } from '../core/home'
@@ -33,7 +34,7 @@ export function TodoBoard({ onClose, onTodo, say }: { onClose: () => void; onTod
   // 봇이 할 일을 고치면 알림이 오거나 파일이 바뀐다 — 열려 있는 동안 따라간다
   // ⚠ 할 일 프레임(`ev:'todo'`)·파일 바뀜도 따라간다 — 줄 번호가 밀린 채 체크하면 엉뚱한 줄이 끝난다(리뷰 10/16 · 호스트도 제목으로 한 번 더 막는다)
   useEffect(() => { if (!data) return; const t = window.setTimeout(() => void load(), 250); return () => window.clearTimeout(t) }, [s.notifications[0]?.id, s.todos, s.filesTick]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k) }, [onClose])
+  useEsc(onClose)
   const oldHost = !!data && !data.items
   const rows = useMemo(() => (data?.items ? boardRows(s.bots, data.rows.map((r) => ({ botId: r.botId, items: r.items ?? [] })), filter, q) : []), [data, s.bots, filter, q])
   const meta = useMemo(() => new Map((data?.rows ?? []).map((r) => [r.botId, r])), [data])
@@ -87,7 +88,7 @@ export function TodoBoard({ onClose, onTodo, say }: { onClose: () => void; onTod
 const GROUP_LABEL: Record<FolderGroup, string> = { wait: '확인 대기', run: '일하는 중', rest: '쉬는 중', idle: '오래 쉼 · 14일 넘게' }
 export function FolderSheet({ rows, onClose, go, onPick }: { rows: { b: Bot; sum: { state: SessionInfo['state'] | null; text: string; t: number; mood: Mood; unread: boolean; recent: boolean } }[]; onClose: () => void; go: (botId: string, sid?: string) => void; onPick: () => void }) {
   const { s } = useStore()
-  useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k) }, [onClose])
+  useEsc(onClose)
   const groups = useMemo(() => {
     const g: Record<FolderGroup, typeof rows> = { wait: [], run: [], rest: [], idle: [] }
     for (const r of rows) if (!r.b.orchestrator) g[folderGroup(r.sum.state, r.sum.t)].push(r)

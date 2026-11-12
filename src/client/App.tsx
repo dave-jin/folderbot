@@ -1,4 +1,5 @@
 import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEsc } from './esc'
 import type { Bot, ChatItem, NotifyEvent, PermissionMode, PermissionRequest, RoutineDef, SessionInfo, SessionState, SlashCmd } from '../core/types'
 import { api, setToken, token, uploadFile } from './api'
 import { FILL_BLOCK, cleanAsk, joinFill } from '../core/deepAsk'
@@ -13,7 +14,7 @@ import { AgentPickHost, pickAgent } from './AgentPick'
 import type { SecId } from './Settings'
 import { VendorMark } from './Brand'
 import { ColorHost, pickColor } from './ColorPick'
-import { Float } from './Float'
+import { Float, anchorOf, type Anchor } from './Float'
 import { DocPane, preloadEditor, useDocs } from './Doc'
 import { Search } from './Search'
 import { Cleanup, savedCleanDays } from './Cleanup'
@@ -247,6 +248,7 @@ export const KEYS: { k: string; t: string; d?: string }[] = [
 ]
 
 function KeysSheet({ onClose }: { onClose: () => void }) {
+  useEsc(onClose)
   return <div className="modal-w" onClick={onClose}><div className="modal keys" onClick={(e) => e.stopPropagation()}>
     <div className="modal-h"><b>단축키</b><span className="sp" /><button className="ib" onClick={onClose}><Icon n="x" size={13} /></button></div>
     <div className="modal-b">{KEYS.map((x) => <div className="krow" key={x.k}><span className="kk mono">{x.k}</span><span className="kt">{x.t}</span>{x.d ? <span className="kd">{x.d}</span> : null}</div>)}</div>
@@ -665,6 +667,7 @@ function Main() {
   useEffect(() => { if (ctxDoc && bot?.id === ctxDoc.botId) { openInDocPane(ctxDoc.rel); setCtxDoc(null) } }, [ctxDoc, bot?.id])   // eslint-disable-line react-hooks/exhaustive-deps
   // 파일명만 적힌 칩이 여러 곳에 있을 때 — 고르기 (G)
   const [pickFile, setPickFile] = useState<{ name: string; rels: string[] } | null>(null)
+  useEsc(() => setPickFile(null), !!pickFile)
   useEffect(() => { const f = (e: Event) => setPickFile((e as CustomEvent).detail as { name: string; rels: string[] }); window.addEventListener('fb:pickfile', f); return () => window.removeEventListener('fb:pickfile', f) }, [])
   // 에이전트의 rondo_reveal — 지금 보고 있는 봇의 것만 · J-3 · 요청이 온 기기만(호스트는 'host', 원격은 그 기기 이름)
   const meDevice = s.device.main ? 'host' : s.device.name
@@ -960,7 +963,7 @@ function Main() {
     else setDragSide('')
   }
   const swCancel = () => { const g = gref.current; gref.current = null; if (g?.side) settle(g.side) }
-  useEffect(() => { if (!narrow) return; const f = (e: KeyboardEvent) => { if (e.key === 'Escape' && view !== 'chat' && !modal && !document.querySelector('.modal-w, .tsheet, .menu')) navClose() }; window.addEventListener('keydown', f); return () => window.removeEventListener('keydown', f) }, [narrow, view, modal])
+  useEffect(() => { if (!narrow) return; const f = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented && view !== 'chat' && !modal && !document.querySelector('.modal-w, .tsheet, .menu')) navClose() }; window.addEventListener('keydown', f); return () => window.removeEventListener('keydown', f) }, [narrow, view, modal])
   const stripBots = rows.flatMap(([, it]) => it)
   // 펼친 목록의 행 호버 → 상세 카드 (접힌 스트립의 .fly 와 같은 정보 + 세션·할 일·마지막 메시지)
   const [hov, setHov] = useState<{ id: string; top: number } | null>(null); const hovT = useRef<number | undefined>(undefined)
@@ -1390,9 +1393,11 @@ function BotName({ b, chip = true }: { b: Bot; chip?: boolean }) {
 function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, prefetch, onPeer, openCtx }: { /** 맥락 상황판 열기 */ openCtx: (g?: { bot: string; task?: string }) => void; /** BQ-9 · 연결 상대를 누르면 편지 스레드 */ onPeer?: (p: PeerView) => void; prefetch: (botId: string) => void; railSort: RailSort; setRailSort: (k: RailSort) => void; rows: Row[]; bot: Bot; go: (b: string, sid?: string) => void; setModal: (m: ModalKey) => void; waiting: number; onAsk: (text?: string) => void; say: (m: string) => void }) {
   const usage = useUsage() // 폰 홈 맨 위 — 한 줄 띠. 누르면 카드가 시트로 올라온다
   const [uSheet, setUSheet] = useState(false)
+  useEsc(() => setUSheet(false), uSheet)
   const { s, refresh } = useStore()
   /** 폰 폴더 행 쓸기 — 자리는 `swipe.ts` 의 FOLDER_SWIPE 로 고정. 메뉴 시트는 레일 우클릭과 같은 세 가지 */
   const [fsheet, setFsheet] = useState<Bot | null>(null)
+  useEsc(() => setFsheet(null), !!fsheet)
   const folderAct = async (b: Bot, a: SwipeAct) => {
     try {
       if (a === 'pin') { await api('/bots/pin', { body: { id: b.id, on: !b.pinned } }); say(b.pinned ? '고정을 풀었어요' : '맨 위에 고정했어요'); await refresh() }
@@ -1522,7 +1527,7 @@ const fuzzy = (q: string, s: string): number => { if (!q) return 1; const t = no
 
 function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pending, prefill, onPrefilled, sendReq, onSendReq, attachReq, onAttached, mentionReq, onMentioned, focusReq, cardFocusReq, onSession, onFile, docBadge, docTabs, docOn, onDocToggle, say, refreshAll, collapsed, onUncollapse, phone, onBack, onPanel, newSession, filesTick, queue, onQueue, onReveal }: { bot: Bot; sessions: SessionInfo[]; cur?: SessionInfo; items: ChatItem[]; loaded: boolean; /** CF · 대화 칸 단계(`core/loadPhase`) */ phase?: ChatPhase; /** CF ④ · 받는 동안 흐리게 남기는 옛 대화 — 그리기만(그 대화의 봇·세션으로 그린다 · 파일 칩이 새 폴더 기준으로 풀리지 않게) */ ghost?: { sid: string; items: ChatItem[]; bot: Bot }; pending: PermissionRequest[]; prefill: string; onPrefilled: () => void; sendReq: { botId: string; text: string; n: number } | null; onSendReq: () => void; attachReq: Att[]; onAttached: () => void; mentionReq: string[]; onMentioned: () => void; focusReq: number; /** EC · 이 세션의 승인·질문 카드에 초점을 두라(⌘J 로 뛰어왔다) */ cardFocusReq?: { sid: string; n: number } | null; onSession: (sid: string) => void; onFile: (rel: string, pin?: boolean) => void; docBadge: number; docTabs: string[]; docOn: boolean; onDocToggle: () => void; say: (m: string) => void; refreshAll: () => Promise<void>; collapsed: boolean; onUncollapse: () => void; phone: boolean; onBack: () => void; onPanel: () => void; newSession: () => Promise<void>; filesTick?: number; queue: string[]; onQueue: (f: (q: string[]) => string[]) => void; onReveal: (rel: string) => void }) {
   const { s } = useStore()
-  const [text, setText] = useState(''); const [caret, setCaret] = useState(0); const [sessMenu, setSessMenu] = useState(false); const [busy, setBusy] = useState(false)
+  const [text, setText] = useState(''); const [caret, setCaret] = useState(0); const [sessMenu, setSessMenu] = useState<Anchor | null>(null); const sessDown = useRef(false); const [busy, setBusy] = useState(false)
   const [attach, setAttach] = useState<Att[]>([]); const [pop, setPop] = useState<'' | 'plus' | 'mode' | 'model' | 'effort' | 'ctx'>(''); const [pickOpen, setPickOpen] = useState(false); const [uploading, setUploading] = useState(false)
   const [routineDraft, setRoutineDraft] = useState<RoutineDef | null>(null)
   /**
@@ -1755,7 +1760,8 @@ function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pendi
   useEffect(() => { const el = scRef.current; if (!el) return; if (atBottom) { followBottom(); measure(true) } else measure() }, [items.length, last && (last.kind === 'assistant' || last.kind === 'thinking') ? last.text.length : 0, pending.length, cur?.activity, lastUser?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   // 세션을 바꿨을 때만 **즉시** 맨 아래 — 그 밖의 모든 따라가기는 부드럽게(followBottom)
   useEffect(() => { const el = scRef.current; if (el) { el.scrollTop = el.scrollHeight; autoScrollRef.current = el.scrollTop } }, [cur?.id])
-  useEffect(() => { if (!pop) return; const off = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest('.cpop, .cbtn, .ring, .plusb')) setPop('') }; const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setPop(''); if (pop === 'mode' && vendOf() !== 'codex' && /^[1-5]$/.test(e.key) && !(e.target as HTMLElement).matches('textarea,input')) { e.preventDefault(); void applyCfg({ permissionMode: MODES[Number(e.key) - 1].v }) } }; window.addEventListener('mousedown', off); window.addEventListener('keydown', key); return () => { window.removeEventListener('mousedown', off); window.removeEventListener('keydown', key) } }, [pop])
+  const modelKeys = useRef<string[]>([])
+  useEffect(() => { if (!pop) return; const off = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest('.cpop, .cbtn, .ring, .plusb')) setPop('') }; const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented) setPop(''); if (pop === 'mode' && vendOf() !== 'codex' && /^[1-5]$/.test(e.key) && !(e.target as HTMLElement).matches('textarea,input')) { e.preventDefault(); void applyCfg({ permissionMode: MODES[Number(e.key) - 1].v }) } if (pop === 'model' && /^[1-9]$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey && !(e.target as HTMLElement).matches('textarea,input')) { const v = modelKeys.current[Number(e.key) - 1]; if (v) { e.preventDefault(); void applyCfg({ model: v }) } } }; window.addEventListener('mousedown', off); window.addEventListener('keydown', key); return () => { window.removeEventListener('mousedown', off); window.removeEventListener('keydown', key) } }, [pop])
   /**
    * 🔴 **돌던 대화의 모델을 바꾸는 건 공짜가 아니다** (2026-09-15 Dave 지정 — Claude Code 와 같은 확인창).
    *    지금까지의 대화는 **지금 모델 기준으로 캐시**돼 있다. 모델을 갈면 다음 메시지에서 전체 세션을
@@ -2100,9 +2106,11 @@ function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pendi
   const mode: 'send' | 'queue' | 'stop' | 'off' = hasText ? (running || state === 'awaiting_input' ? 'queue' : 'send') : running ? 'stop' : 'off'
   const ctx = cur?.ctx; const pct = ctx ? Math.min(100, Math.round((ctx.used / ctx.window) * 100)) : 0
   if (collapsed) return <div className="strip" style={{ background: 'var(--bg)' }}><button className="ib" onClick={onUncollapse} title="대화 펼치기"><Icon n="sub" size={14} /></button><div className="gap" /><FolderBot color={bot.color} size={17} mood={moodOf(state, !!cur?.hibernated)} mono />{running ? <span className="pulse" style={{ marginTop: 8 }} /> : null}</div>
-  const sessMenuEl = sessMenu ? <div className="menu" style={phone ? { left: 0, top: 50 } : { left: 0, top: 28 }} onClick={() => setSessMenu(false)}>{/* ⚠ 세션 이름 **오른쪽에** 회사 표식 (2026-09-13 Dave: «세션 뒤에는 모든 곳에 … 세션이름 우측에
+  // 🔴 세션 단추는 누르기(mousedown)를 **삼키지 않는다** (2026-11-13 검토) — 삼키면 열려 있던 입력창 팝오버·다른 메뉴의 «바깥 누르기» 가 이 클릭을 못 들어 둘이 같이 뜬다.
+  //    «같은 단추로 닫기» 는 누르는 순간 열려 있었는지(`sessDown`)로 가린다: 메뉴의 바깥 누르기가 먼저 닫고, 뒤따르는 click 은 다시 열지 않는다. 키보드(⏎·Space · detail 0)는 상태로 바로 뒤집는다.
+  const sessMenuEl = sessMenu ? <Float at={sessMenu} onClose={() => setSessMenu(null)} className="menu sessm" width={220}><div style={{ display: 'contents' }} onClick={() => setSessMenu(null)}>{/* ⚠ 세션 이름 **오른쪽에** 회사 표식 (2026-09-13 Dave: «세션 뒤에는 모든 곳에 … 세션이름 우측에
                   아이콘이 있어야 해»). 벤더는 폴더가 아니라 세션의 성질이라 세션이 보이는 곳마다 따라다녀야 한다 */}
-              {sessions.filter((x) => sessArea(x) === 'chat').map((x) => <button key={x.id} className={x.id === cur?.id ? 'on' : ''} onClick={() => onSession(x.id)}><span className={`dot ${stateDot(x.state)}`} /><span>{x.name}</span><VendorMark vendor={x.vendor} size={11} /><span style={{ flex: 1 }} /><span className="k">{x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span></button>)}{sessions.some((x) => sessArea(x) === 'auto') ? <><hr /><div className="mhead">자동화</div>{sessions.filter((x) => sessArea(x) === 'auto').map((x) => <button key={x.id} className={x.id === cur?.id ? 'on' : ''} onClick={() => onSession(x.id)}><span className={`dot ${stateDot(x.state)}`} /><span>{x.name}</span><VendorMark vendor={x.vendor} size={11} /><span style={{ flex: 1 }} /><span className="k">{x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span></button>)}</> : null}<hr /><button onClick={() => void newSession()}><Icon n="plus" size={12} /><span>새 세션</span></button>{cur ? <button onClick={async () => { const n = await askName('세션 이름', cur.name); if (n?.trim()) await api(`/sessions/${cur.id}/rename`, { body: { name: n.trim() } }) }}><Icon n="edit" size={12} /><span>이름 바꾸기</span></button> : null}{cur ? <button className="warn" onClick={async () => { if (confirm('이 세션 기록을 지울까요?')) { await api(`/sessions/${cur.id}`, { method: 'DELETE' }); await refreshAll() } }}><Icon n="x" size={12} /><span>세션 삭제</span></button> : null}</div> : null
+              {sessions.filter((x) => sessArea(x) === 'chat').map((x) => <button key={x.id} className={x.id === cur?.id ? 'on' : ''} onClick={() => onSession(x.id)}><span className={`dot ${stateDot(x.state)}`} /><span>{x.name}</span><VendorMark vendor={x.vendor} size={11} /><span style={{ flex: 1 }} /><span className="k">{x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span></button>)}{sessions.some((x) => sessArea(x) === 'auto') ? <><hr /><div className="mhead">자동화</div>{sessions.filter((x) => sessArea(x) === 'auto').map((x) => <button key={x.id} className={x.id === cur?.id ? 'on' : ''} onClick={() => onSession(x.id)}><span className={`dot ${stateDot(x.state)}`} /><span>{x.name}</span><VendorMark vendor={x.vendor} size={11} /><span style={{ flex: 1 }} /><span className="k">{x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span></button>)}</> : null}<hr /><button onClick={() => void newSession()}><Icon n="plus" size={12} /><span>새 세션</span></button>{cur ? <button onClick={async () => { const n = await askName('세션 이름', cur.name); if (n?.trim()) await api(`/sessions/${cur.id}/rename`, { body: { name: n.trim() } }) }}><Icon n="edit" size={12} /><span>이름 바꾸기</span></button> : null}{cur ? <button className="warn" onClick={async () => { if (confirm('이 세션 기록을 지울까요?')) { await api(`/sessions/${cur.id}`, { method: 'DELETE' }); await refreshAll() } }}><Icon n="x" size={12} /><span>세션 삭제</span></button> : null}</div></Float> : null
   /**
    * 🔴 **채팅에 쓴 한 줄을 그대로 루틴으로** (2026-09-13 Dave: «루틴을 폴더 채팅에서 바로 채팅으로 생성»).
    *    「매주 월요일 아침 9시에 지난주 정리해 줘」 라고 써 두고 + → 루틴으로 만들기 를 누르면
@@ -2149,6 +2157,7 @@ function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pendi
   const modelList = modelsFor(vend), effortList = effortsFor(vend)
   // 「더 많은 모델」 — 긴 문맥(1M) 과 기계에서 주워 온 이름. 평소엔 접혀 있다
   const moreList = moreModelsFor(vend)
+  modelKeys.current = modelList.map((m) => m.v)
   const [moreOpen, setMoreOpen] = useState(false)
   useEffect(() => { if (pop !== 'model') setMoreOpen(false) }, [pop])
   // 🔴 여는 순간 한 번 더 물어본다 — 켜 둔 채 CLI 를 업데이트해도 목록이 따라온다 (2026-09-15 Dave)
@@ -2279,13 +2288,13 @@ function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pendi
       {/* H-5 · 좁음 헤더 한 줄 — ☰(레일 서랍 · H 전까지는 봇 목록으로) · 표시 이름 · 작업 중 ●. ‹·폴더 아이콘은 없다(폴더는 독의 📄 · 쓸기) */}
       {phone ? <><button className="rb glassb hb-menu" onClick={drillSub ? () => setDrill(null) : onBack} title={drillSub ? '메인 대화로' : '봇 목록'}><Icon n={drillSub ? 'back' : 'list'} size={20} /></button>
         {/* 감싸는 span 은 헤더의 flex 아이템 — 폭이 내용에 의존하는데 알약이 그 100% − 118px 을 최대폭으로 삼아 스스로를 눌러 이름이 «2026-…» 로 잘렸다(2026-09-13 Dave). 알약 최대폭은 감싸는 칸의 100%, 칸이 남는 공간을 받는다 */}
-        <span className="hname" style={{ position: 'relative' }}><button className="hnb" onClick={() => setSessMenu(!sessMenu)} title={cur?.name ?? '세션'}>{drillSub ? <b className="dn">{drillSub.name}</b> : <BotName b={bot} chip={false} />}{chatHolder === 'other' ? <span className="dot hold" title="남을 기다리는 중" /> : running ? <span className="dot run" title="작업 중" /> : state === 'awaiting_input' ? <span className="dot wait" /> : null}</button>{sessMenuEl}</span>
+        <span className="hname" style={{ position: 'relative' }}><button className="hnb" onMouseDown={() => { sessDown.current = !!sessMenu }} onClick={(e) => { const was = e.detail === 0 ? !!sessMenu : sessDown.current; setSessMenu(was ? null : anchorOf(e.currentTarget, { gap: 6 })) }} title={cur?.name ?? '세션'}>{drillSub ? <b className="dn">{drillSub.name}</b> : <BotName b={bot} chip={false} />}{chatHolder === 'other' ? <span className="dot hold" title="남을 기다리는 중" /> : running ? <span className="dot run" title="작업 중" /> : state === 'awaiting_input' ? <span className="dot wait" /> : null}</button>{sessMenuEl}</span>
         <span className="sp" /><SyncDot /></>
         : drillSub ? <><button className="ib" onClick={() => setDrill(null)} title="메인 대화로"><Icon n="back" size={14} /></button><span style={{ color: 'var(--t3)' }}>/</span><span className="ttl">{drillSub.name}</span>{drillSub.status === 'run' ? <span className="spin run" /> : <Icon n={drillSub.status === 'error' ? 'x' : 'check'} size={11} color={drillSub.status === 'error' ? 'var(--err)' : 'var(--done)'} />}<span style={{ color: 'var(--t3)', fontSize: 12, whiteSpace: 'nowrap' }}>도구 {drillSub.tools}</span><span className="sp" /></>
           : <><FolderBot color={bot.color} size={16} mood={moodOf(state, !!cur?.hibernated, chatHolder)} mono /><span className="ttl" title={bot.name}><Mid s={bot.displayName} /></span><VendorMark vendor={cur?.vendor} size={12} />
             {/* AB · 헤더 한 줄 — 레일·대기 줄과 **같은 값**에서 나온다 */}
             {chatHolder === 'other' ? <span className="hstate"><i />{holdHeader(chatHolder, cur?.inflight, cur?.bg ?? 0)}</span> : null}
-            <span style={{ position: 'relative', flex: 'none' }}><button onClick={() => setSessMenu(!sessMenu)} style={{ color: 'var(--t3)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}>{cur?.name ?? '새 대화'} <Icon n="chevd" size={10} /></button>{sessMenuEl}</span>
+            <span style={{ position: 'relative', flex: 'none' }}><button className="hsess" onMouseDown={() => { sessDown.current = !!sessMenu }} onClick={(e) => { const was = e.detail === 0 ? !!sessMenu : sessDown.current; setSessMenu(was ? null : anchorOf(e.currentTarget, { gap: 6 })) }} style={{ color: 'var(--t3)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}>{cur?.name ?? '새 대화'} <Icon n="chevd" size={10} /></button>{sessMenuEl}</span>
             <span className={`dot ${stateDot(state)}`} /><span className="sp" /><SyncDot />
             <div className="acts"><button className={`ib ${docOn ? 'on' : ''}`} onClick={onDocToggle} title="문서 열 (⌘⇧D)"><Icon n="doc" size={14} />{!docOn && docBadge ? <span className="bd">{docBadge}</span> : null}</button></div></>}
     </div>
@@ -2687,6 +2696,7 @@ function TodoWidget({ it, stopped }: { it: Extract<ChatItem, { kind: 'todos' }>;
 function FilePickModal({ bot, onClose, onPick }: { bot: Bot; onClose: () => void; onPick: (rel: string) => void }) {
   const [tree, setTree] = useState<{ name: string; rel: string; dir: boolean; mtime: number; children?: unknown[] }[]>([])
   const [q, setQ] = useState('')
+  useEsc(onClose)
   useEffect(() => { void api<typeof tree>(`/bots/${bot.id}/files?depth=4`).then(setTree) }, [bot.id])
   const flat: { rel: string; mtime: number }[] = []
   const walk = (n: typeof tree) => { for (const x of n) { if (!x.dir) flat.push({ rel: x.rel, mtime: x.mtime }); if (x.children) walk(x.children as typeof tree) } }

@@ -317,7 +317,7 @@ export function BridgesPane() {
   if (wiz) return <BridgeWizard onDone={() => setWiz(false)} />
   return <>
     <Row t="지금 연결" d={b?.peers.length ? '레일의 «연결» 절에도 보여요. 누르면 편지 스레드가 열려요' : '아직 연결이 없어요 — 바깥 에이전트(클라우드 비서·스크립트·자동화)와 편지 파일로 대화하는 길이에요'} />
-    {b?.peers.map((p) => <div className="brg-prow" key={p.id} data-peer={p.id}><PeerIcon p={p} size={24} /><span className="n"><b>{p.name}</b><small>{p.mailbox} · trust {p.trust}{p.host ? ` · ${p.host}` : ''}</small></span>{p.stale ? <span className="pill e">끊김</span> : null}</div>)}
+    {b?.peers.map((p) => <div className="brg-prow" key={p.id} data-peer={p.id}><PeerIcon p={p} size={24} /><span className="n"><b>{p.name}</b><small>{p.mailbox} · trust {p.trust}{p.host ? ` · ${p.host}` : ''}</small></span>{p.stale ? <span className="brg-pill e">끊김</span> : null}</div>)}
     {b?.errors.length ? <div className="brg-err">⚠ .claude/bridges.yml — {b.errors.join(' · ')}</div> : null}
     <Row t="새 연결 만들기" d="세 단계 — 상대 종류 → 우편함 자리·권한 → 만들기. 우편함 폴더와 README 를 만들고, 상대에게 줄 한 줄을 알려 드려요"><button className="btn on" onClick={() => setWiz(true)}>만들기</button></Row>
   </>

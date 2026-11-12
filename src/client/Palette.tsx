@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEsc } from './esc'
 import { rank } from '../core/search'
 import { api } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
@@ -32,6 +33,7 @@ export interface PaletteProps {
 }
 
 export function Palette(p: PaletteProps) {
+  useEsc(p.onClose)
   const { s } = useStore()
   const [q, setQ] = useState('')
   const [files, setFiles] = useState<string[] | null>(null)

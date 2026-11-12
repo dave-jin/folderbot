@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEsc } from './esc'
 import { CLEAN_DAYS, CLEAN_DEFAULT, CLEAN_FILTER_LABEL, cleanDaysOf, cleanMatch, cleanPreselect, dayWord, sessKind, sessLocked, type CleanFilter } from '../core/cleanup'
 import { STATE_LABEL, type SessionInfo } from '../core/types'
 import { SESS_TABS, tabCounts, tabMatch, type SessTab } from '../core/sessionTabs'
@@ -34,6 +35,7 @@ const ago = (t: number) => { const d = Math.floor((Date.now() - t) / DAY); if (d
 
 export function Cleanup({ onClose, say, manage = false, go }: { onClose: () => void; say: (m: string) => void; manage?: boolean; go?: (botId: string, sid?: string) => void }) {
   const { s } = useStore()
+  useEsc(onClose)
   const [on, setOn] = useState<CleanFilter[]>(manage ? ['all'] : CLEAN_DEFAULT)
   /** 세션 창은 «고르기» 를 누르기 전까지 아무것도 골라 두지 않는다 */
   const [auto, setAuto] = useState(!manage)

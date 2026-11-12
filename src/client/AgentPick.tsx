@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useEsc } from './esc'
 import type { HarnessDetail } from '../core/types'
 import { PROVIDER_LABEL, type Provider, type ProviderId } from '../core/agents'
 import { api } from './api'
@@ -42,8 +43,9 @@ export function AgentPickHost() {
   const [hz, setHz] = useState<HarnessDetail | null>(null)
   useEffect(() => { pickSet = (n) => { setQ(n); setSel(n?.list[0].id ?? 'claude'); setHz(null) }; return () => { pickSet = null } }, [])
   useEffect(() => { if (!q) return; void api<HarnessDetail>(`/harness?rel=${encodeURIComponent(q.rel)}`).then(setHz).catch(() => setHz(null)) }, [q?.rel])
-  if (!q) return null
   const done = (v: ProviderId | null) => { setQ(null); const r = pickResolve; pickResolve = null; r?.(v) }
+  useEsc(() => done(null), !!q)
+  if (!q) return null
   const model = MODELS.find((m) => m.v === (s.defaults.model || 'claude-fable-5-1'))?.t ?? s.defaults.model
   const guide = hz ? [hz.claudeMd ? 'CLAUDE.md' : null, hz.agentsMd ? 'AGENTS.md' : null].filter(Boolean).join(' · ') : ''
   // ⚠ «바꾸기» 는 **정말 바꿀 수 있는 줄에만** 붙인다. 권한 모드는 세션마다 정하는 것이라

@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { escPush } from './esc'
 
 /**
  * 떠 있는 것 — 팝업·메뉴를 **화면 맨 위(body)** 에 그린다 (2026-09-13 Dave: *«팝업이 짤리니깐»*).
@@ -28,25 +29,27 @@ export function Float({ at, onClose, children, className = 'menu', width = 200 }
     document.body.appendChild(el)
     return () => { el.remove() }
   }, [el])
+  const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
     // ⚠ 스크롤·리사이즈에는 닫는다 — 좌표를 열 때 고정했으므로 따라갈 수 없다
     // ⚠ 채팅의 자동 따라가기(O · data-autoscroll)가 만드는 scroll 로는 닫지 않는다 — 스트리밍 중에 연 트리 메뉴가 한 프레임 만에 사라졌다(실측)
-    const off = (e?: Event) => { const t = e?.target as Element | null; if (t && t !== (document as unknown as Element) && typeof t.closest === 'function' && t.closest('[data-autoscroll]')) return; onClose() }
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    // 🔴 이 예외는 **scroll 에만** 건다 (2026-11-13) — 종전에는 mousedown 에도 걸려서, 채팅 본문(늘 data-autoscroll)을 눌러서는 어느 메뉴도 안 닫혔다
+    // 🔴 **메뉴 자기 안의 scroll 로도 닫지 않는다** (2026-11-13 검토) — 화면보다 긴 메뉴(세션이 많은 세션 메뉴)는 안에서 스크롤하는데, 그 scroll 이 capture 로 여기까지 와서 메뉴를 닫았다
+    const off = (e?: Event) => { const t = e?.target as Element | null; if (e?.type === 'scroll' && t && t !== (document as unknown as Element) && typeof t.closest === 'function' && (t.closest('[data-autoscroll]') || (box.current && box.current.contains(t)))) return; onClose() }
+    const offEsc = escPush(onClose)
     window.addEventListener('scroll', off, true)
     window.addEventListener('resize', off)
-    window.addEventListener('keydown', key)
     // 바깥을 누르면 닫힌다. ⚠ 여는 클릭이 그대로 이어져 바로 닫히지 않게 다음 틀에서 붙인다
     const t = window.setTimeout(() => window.addEventListener('mousedown', off), 0)
     return () => {
       window.clearTimeout(t)
       window.removeEventListener('scroll', off, true); window.removeEventListener('resize', off)
-      window.removeEventListener('keydown', key); window.removeEventListener('mousedown', off)
+      offEsc(); window.removeEventListener('mousedown', off)
     }
   }, [onClose])
   // 🔴 **긴 메뉴는 위로 밀어 올린다** (M-3 · 2026-09-19 — 트리 메뉴에 «파일 복사» 가 붙자 아래로 잘렸다). 그린 뒤 높이를 재서
   //    바닥을 넘으면 그만큼 올리고, 그래도 화면보다 크면 안에서 스크롤한다. 좌표는 여는 순간 고정이므로 한 번만 잰다.
-  const box = useRef<HTMLDivElement>(null); const [lift, setLift] = useState(0)
+  const [lift, setLift] = useState(0)
   // ⚠ useEffect 라야 한다 — 포털 그릇은 위의 useEffect 가 body 에 붙이므로, layout effect 시점엔 아직 문서 밖이라 크기가 0 이다
   useEffect(() => { setLift(0); const b = box.current; if (!b) return; const r = b.getBoundingClientRect(); const over = r.bottom - (window.innerHeight - 8); if (over > 0) setLift(Math.min(over, Math.max(0, r.top - 8))) }, [at.x, at.y, at.up])
   if (!el) return null

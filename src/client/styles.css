@@ -2,14 +2,14 @@
 :root { --bg:#141414; --bg2:#181818; --sb:#111111; --line:#232323; --line2:#2c2c2c; --box:#1c1c1c; --sel:#222222; --hover:#1a1a1a; --w:#ededed; --t:#d6d6d6; --t2:#9a9a9a; --t3:#666666; --run:#e08850; --hold:#4aa8c7; --wait:#e2a33b; --done:#4fbf87; --err:#e5534b; --ui:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',system-ui,sans-serif; --mono:'JetBrains Mono','SF Mono',Menlo,monospace; --hh:44px;
   --glassA:rgba(20,20,20,.70); --glassB:rgba(28,28,28,.68); --hair:rgba(255,255,255,.07); --blur:blur(22px) saturate(1.4); --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
   /* 페이드·단색 유리 — 라이트 테마에서 통째로 갈린다 */
-  --fade0:rgba(20,20,20,0); --fadeA:rgba(20,20,20,.88); --fadeB:rgba(24,24,24,.96); --solid:#1a1a1a; --hover0:rgba(26,26,26,0); --shadow:rgba(0,0,0,.45); --onAccent:#111 }
+  --fade0:rgba(20,20,20,0); --fadeA:rgba(20,20,20,.88); --fadeB:rgba(24,24,24,.96); --solid:#1a1a1a; --hover0:rgba(26,26,26,0); --shadow:rgba(0,0,0,.45); --onAccent:#111; color-scheme:dark }
 /* 라이트 테마 (2026-09-13) — 같은 구조, 색만 뒤집는다. 어느 쪽인지는 JS 가 data-theme 으로 정한다(시스템·라이트·다크) */
 :root[data-theme="light"] {
   --bg:#ffffff; --bg2:#f4f4f5; --sb:#f6f6f7; --line:#e4e4e6; --line2:#d6d6d9; --box:#efeff1; --sel:#e6e6e9; --hover:#f1f1f3;
   --w:#111111; --t:#2e2e2e; --t2:#5f5f5f; --t3:#8a8a8a;
   --run:#c2662f; --hold:#2b7f9c; --wait:#a07208; --done:#2f9e6b; --err:#c93b2e;
   --glassA:rgba(255,255,255,.72); --glassB:rgba(255,255,255,.80); --hair:rgba(0,0,0,.10);
-  --fade0:rgba(255,255,255,0); --fadeA:rgba(255,255,255,.88); --fadeB:rgba(244,244,245,.96); --solid:#efeff1; --hover0:rgba(241,241,243,0); --shadow:rgba(0,0,0,.14); --onAccent:#ffffff }
+  --fade0:rgba(255,255,255,0); --fadeA:rgba(255,255,255,.88); --fadeB:rgba(244,244,245,.96); --solid:#efeff1; --hover0:rgba(241,241,243,0); --shadow:rgba(0,0,0,.14); --onAccent:#ffffff; color-scheme:light }
 * { box-sizing:border-box; touch-action:manipulation }
 html,body { height:100%; margin:0; background:var(--bg); overflow:hidden; overscroll-behavior:none }   /* P-4 · 문서는 절대 스크롤되지 않는다 — 스크롤되는 것은 채팅 목록 하나뿐 */
 #root { position:fixed; inset:0; margin:0; background:var(--bg); color:var(--t); font-family:var(--ui); font-size:13.5px; line-height:1.65; -webkit-font-smoothing:antialiased; overflow-x:hidden; overscroll-behavior:none; -webkit-text-size-adjust:100% }
@@ -144,9 +144,9 @@ b,strong { color:var(--w); font-weight:600 }
 .msheet .foot { display:flex; align-items:center; gap:8px; padding:2px 18px 0; font-size:12.5px; color:var(--t3) }
 /* ⚠ 판 글자가 길어도 **한 줄**로 둔다 — 넘치면 말줄임. 줄이 늘면 새로고침 단추가 화면 밖으로 밀린다(실측) */
 .msheet .foot .tx { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-.msheet .foot .lnk { margin-left:auto; color:var(--run); font-size:12.5px }
+.msheet .foot .lnk { margin-left:auto; color:var(--run); font-size:12.5px; white-space:nowrap; flex:none }
 .msheet .foot .lnk:disabled { color:var(--t3) }
-.cpop .hint .lnk { color:var(--run) }
+.cpop .hint .lnk { color:var(--run); white-space:nowrap; flex:none }
 .app.phone:not(.kb) .chat-foot { transition:bottom .2s ease-out }
 /* 「최근으로」 단추도 같이 올라온다 — 안 올리면 탭이 덮어 누를 수가 없다(실측) */
 .app.phone .tobot { bottom:calc(var(--footh) + 14px + var(--tablift)) }
@@ -405,7 +405,7 @@ b,strong { color:var(--w); font-weight:600 }
 .cpop { max-height:min(420px, 60vh, var(--popmax, 100vh)) }
 .cpop .h { font-size:10.5px; color:var(--t3); padding:5px 10px 2px } .cpop hr { border:0; border-top:1px solid var(--line); margin:4px 0; width:100% }
 .prow2 { display:flex; align-items:center; gap:10px; padding:6px 10px; border-radius:6px; width:100%; min-height:32px; color:var(--t) } .prow2:hover, .prow2.on { background:var(--sel) } .prow2 .t { flex:1; min-width:0; display:flex; flex-direction:column } .prow2 .t b { font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .prow2 .t small { font-size:11.5px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .prow2 .k { font-family:var(--mono); font-size:11px; color:var(--t3); flex:none } .prow2 .p { font-size:11.5px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
-.cpop .hint { display:flex; gap:12px; padding:7px 10px 3px; font-size:11px; color:var(--t3); border-top:1px solid var(--line); margin-top:4px } .cpop .hint .sp { flex:1 }
+.cpop .hint { display:flex; gap:12px; padding:7px 10px 3px; font-size:11px; color:var(--t3); border-top:1px solid var(--line); margin-top:4px; word-break:keep-all } .cpop .hint .sp { flex:1 }
 .effort { padding:6px 10px 4px; display:flex; flex-direction:column; gap:6px } .effort .top { display:flex; align-items:center; gap:10px } .effort .top b { font-size:14px } .effort .lbl { display:flex; justify-content:space-between; font-size:12px; color:var(--t2) } .effort .steps { display:flex; justify-content:space-between; font-size:10.5px; color:var(--t3); padding:0 2px }
 .effort input[type=range] { -webkit-appearance:none; appearance:none; width:100%; height:28px; border-radius:14px; background:linear-gradient(90deg, var(--line2), var(--box)); outline:0; margin:0 } .effort input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:22px; height:22px; border-radius:11px; background:var(--w); border:0; cursor:pointer } .effort input[type=range]::-moz-range-thumb { width:22px; height:22px; border-radius:11px; background:var(--w); border:0 }
 .ctxpop .big { display:flex; align-items:center; gap:12px; padding:8px 10px 4px } .ctxpop .big b { font-size:14px } .ctxpop .big small { display:block; font-size:12px; color:var(--t3) }
@@ -453,7 +453,7 @@ b,strong { color:var(--w); font-weight:600 }
 /* 할 일 2.0 (V15) — 목록은 제목 한 줄. 설명은 더블클릭(폰은 탭)으로 펼칠 때만. 편집은 한 칸에 «제목: 설명» */
 .tsec { display:flex; align-items:center; gap:6px; height:26px; padding:0 14px; margin-top:4px; width:100%; font-size:11px; color:var(--t3) } .tsec:hover { color:var(--t2) } .tsec .c { color:var(--t3) }
 .todo { position:relative; display:flex; gap:9px; align-items:flex-start; padding:6px 14px 6px 16px; width:100%; border-radius:6px; cursor:default } .todo:hover { background:var(--hover) } .todo.on { background:var(--hover) }
-.todo .bd { flex:1; min-width:0; display:flex; flex-direction:column }
+.todo .tdb { flex:1; min-width:0; display:flex; flex-direction:column }
 .todo .tt { font-size:13px; color:var(--w); font-weight:500; line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
 .todo.on .tt { cursor:text }
 .todo .dsc { font-size:11.5px; color:var(--t2); line-height:1.55; margin-top:4px; white-space:pre-wrap; word-break:break-word; cursor:text }
@@ -536,7 +536,7 @@ b,strong { color:var(--w); font-weight:600 }
 .ptodo.done .ring { background:var(--done); border-color:var(--done) }
 .ptodo .ring { padding:0; position:relative } .ptodo .ring svg { transform:none }
 .ptodo .ring::before { content:''; position:absolute; inset:-12px }   /* 보이는 동그라미는 22px 그대로, 누르는 칸만 42px — 빗나가면 행이 펼쳐졌다(2026-09-25 디자인 검수 · Codex 지적) */   /* ⚠ 컨텍스트 게이지의 `.ring svg { rotate(-90deg) }` 가 여기까지 걸려 완료 체크가 «›» 로 누웠다 (2026-09-25 디자인 검수) */
-.ptodo .bd { flex:1; min-width:0 }
+.ptodo .tdb { flex:1; min-width:0 }
 .ptodo .tt { font-size:15.5px; line-height:1.35; color:var(--w); font-weight:500; overflow-wrap:anywhere }
 .ptodo.done .tt { color:var(--t3); text-decoration:line-through }
 /* ⚠ 이름이 겹치면 조용히 깨진다 — `.sub` 는 이미 채팅의 서브에이전트 줄이 쓰고 있고 그건 세로 배치다.
@@ -578,7 +578,7 @@ b,strong { color:var(--w); font-weight:600 }
 /* ── 모달 · 대화상자 ── */
 .backdrop { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:40 }
 .modal { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); width:min(640px,calc(100% - 24px)); max-height:calc(100% - 24px); background:var(--sb); border:1px solid var(--line2); border-radius:12px; box-shadow:0 24px 60px rgba(0,0,0,.6); display:flex; flex-direction:column; overflow:hidden; z-index:42 }
-.modal.ask { z-index:90 } .modal.ask + .backdrop, .modal.ask ~ .backdrop { z-index:89 } .askin { width:100%; background:var(--bg); border:1px solid var(--line2); border-radius:8px; padding:9px 12px; font-size:14px; color:var(--w); outline:0 } .askin:focus { border-color:var(--t3) }
+.modal.ask, .modal.conf { z-index:90 } .backdrop:has(+ .modal.ask), .backdrop:has(+ .modal.conf) { z-index:89 } /* 묻기·확인창은 늘 맨 위 — 어둠막이 아래 창·시트(41~61)를 덮어야 그쪽 단추가 안 눌린다 (2026-11-13) */ .askin { width:100%; background:var(--bg); border:1px solid var(--line2); border-radius:8px; padding:9px 12px; font-size:14px; color:var(--w); outline:0 } .askin:focus { border-color:var(--t3) }
 .modal-h { display:flex; align-items:flex-start; gap:12px; padding:16px 18px 10px } .modal-h .t { display:flex; flex-direction:column; gap:2px; flex:1 } .modal-h .t b { font-weight:600; color:var(--w); font-size:15px } .modal-h .t small { color:var(--t3); font-size:12px }
 .modal-b { overflow:auto; padding:0 10px 8px; display:flex; flex-direction:column; gap:1px } .modal-f { display:flex; align-items:center; gap:10px; padding:12px 18px 16px; border-top:1px solid var(--line); flex-wrap:wrap } .modal-f .sp { flex:1 }
 .sheet { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); width:min(820px,calc(100% - 24px)); height:min(640px,calc(100% - 24px)); background:var(--sb); border:1px solid var(--line2); border-radius:12px; box-shadow:0 24px 60px rgba(0,0,0,.6); display:flex; flex-direction:column; z-index:41; overflow:hidden }
@@ -765,7 +765,7 @@ b,strong { color:var(--w); font-weight:600 }
 
 /* ── 에이전트 고르기 (V24) — 누구와 일할지 + 어떤 환경으로 뜨는지 ────────────── */
 .modal.apick { width:min(560px,calc(100% - 24px)); padding:16px; gap:14px; z-index:92 }
-.modal.apick + .backdrop, .modal.apick ~ .backdrop { z-index:91 }
+.backdrop:has(+ .modal.apick) { z-index:91 }
 .ap-h { display:flex; align-items:flex-start; gap:11px }
 .ap-h .t { flex:1; min-width:0; display:flex; flex-direction:column; gap:3px }
 .ap-h .t b { font-size:16px; font-weight:600; color:var(--w) }
@@ -913,6 +913,8 @@ b,strong { color:var(--w); font-weight:600 }
   .setr { flex-direction:column; gap:8px; align-items:stretch }
   .setr .c { max-width:100%; flex-wrap:wrap }
   .sin { width:100% }
+  .setp input:not([type=checkbox]):not([type=radio]):not([type=range]), .setp select, .setp textarea { font-size:16px }
+  .setp .sin.tm { width:156px } .setp .ssel.sm { max-width:132px }
   .hrow { flex-wrap:wrap; gap:8px 10px } .hrow .tx { flex-basis:100% }
 }
 
@@ -1450,12 +1452,12 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .rtrow .pick .sub { color:var(--t3); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100% }
 .rtrow .rtacts { display:flex; gap:1px; opacity:0 } .rtrow:hover .rtacts, .rtrow.on .rtacts { opacity:1 }
 @media (hover: none) { .rtrow .rtacts { opacity:1 } }   /* CF-4 · 폰엔 hover 가 없다 — 켜기·돌려보기 단추가 안 보였다 */
-.rtwarn { display:inline-flex; align-items:center; gap:3px; color:var(--error); font-size:10.5px; border:1px solid var(--error); border-radius:5px; padding:0 4px }
+.rtwarn { display:inline-flex; align-items:center; gap:3px; color:var(--err); font-size:10.5px; border:1px solid var(--err); border-radius:5px; padding:0 4px }
 .rtpre { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px }
 .preset.sm { padding:4px 9px; font-size:11.5px; min-width:0 }
-.rtnext { color:var(--t2); font-size:11.5px; margin-top:6px; display:block } .rtnext .dim { color:var(--faint); margin-left:6px }
-.rterr { color:var(--error); font-size:11.5px; margin-top:6px; display:block }
-.rtrow .pick .sub .err { color:var(--error) }
+.rtnext { color:var(--t2); font-size:11.5px; margin-top:6px; display:block } .rtnext .dim { color:var(--t3); margin-left:6px }
+.rterr { color:var(--err); font-size:11.5px; margin-top:6px; display:block }
+.rtrow .pick .sub .err { color:var(--err) }
 
 /* ── AB · 기다림을 보이게 (2026-09-23 Dave 「B안」) ─────────────────────────────────────────
    🔴 **대기 줄은 말풍선이 아니다.** 점선 테두리 · 옅은 청록 · 복사/되돌리기 없음 —
@@ -1606,14 +1608,14 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .akb { flex:none; margin-left:6px; font-size:9.5px; letter-spacing:.02em; color:var(--t3); border:1px solid var(--line2); border-radius:4px; padding:0 4px; line-height:14px }
 .menu.duem button.on { color:var(--w) }
 .menu.duem { min-width:220px } .menu.duem .dpick { display:flex; align-items:center; gap:8px; padding:6px 10px; font-size:13px; color:var(--t); cursor:pointer }
-.menu.duem .dpick input { background:transparent; color:var(--t2); border:1px solid var(--line2); border-radius:6px; padding:2px 4px; font:inherit; font-size:12px; color-scheme:dark }
+.menu.duem .dpick input { background:transparent; color:var(--t2); border:1px solid var(--line2); border-radius:6px; padding:2px 4px; font:inherit; font-size:12px }
 .fdue .seg { flex-wrap:wrap } .fdue .dpick { position:relative; display:inline-flex; align-items:center } .fdue .dpick input { position:absolute; inset:0; opacity:0 }
 .fdue .clr { color:var(--err) } .fdue .dueread { display:block; width:100%; color:var(--done); font-size:12px; margin-top:6px }
 /* CK-3 · 봇 제안 칸 — 정식 목록 위에 따로 */
 .tprops { margin:2px 8px 8px; border:1px dashed var(--line2); border-radius:8px; padding-bottom:4px }
 .tprops .tsec.ph { cursor:default } .tprops .tsec .why { font-size:10.5px; color:var(--t3) } .tprops .tsec .sp { flex:1 }
 .tprop { display:flex; gap:8px; align-items:center; padding:5px 10px 5px 12px }
-.tprop .bd { flex:1; min-width:0 } .tprop .tt { font-size:13px; color:var(--t); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.tprop .tdb { flex:1; min-width:0 } .tprop .tt { font-size:13px; color:var(--t); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
 .tprop .dsub { font-size:11px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
 .tprop.stale .tt { color:var(--t2) } .tprops .pstale { margin:2px 0 0 } .tprops .pstale span:last-child { font-size:11.5px; color:var(--t3) }
 .tprop .pacts { display:flex; gap:4px; flex:none } .tprop .pacts button { font-size:11.5px; padding:3px 7px; border-radius:5px; color:var(--t2); background:var(--sel) }
@@ -1753,9 +1755,9 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .brg-row .fb { transition:scale .14s cubic-bezier(.34,1.3,.64,1) } .brg-row:hover .fb { scale:1.45 } .brg-row.m:hover .fb { scale:1 }
 @media (prefers-reduced-motion: reduce) { .brg-row .fb { transition:none } .brg-row:hover .fb { scale:1.2 } }
 .brg-card b { display:flex; align-items:center; gap:7px }
-.brg-row .pill, .brg-letter .pill, .brg-prow .pill { font-size:10px; padding:1px 6px; border-radius:9px; background:var(--box); color:var(--t2); flex:none; white-space:nowrap }
-.brg-row .pill.u, .brg-letter .pill.u { background:color-mix(in srgb, var(--wait) 22%, transparent); color:var(--wait) }
-.brg-row .pill.e, .brg-letter .pill.e, .brg-prow .pill.e { background:color-mix(in srgb, var(--err) 22%, transparent); color:var(--err) }
+.brg-pill { font-size:10px; padding:1px 6px; border-radius:9px; background:var(--box); color:var(--t2); flex:none; white-space:nowrap }
+.brg-pill.u { background:color-mix(in srgb, var(--wait) 22%, transparent); color:var(--wait) }
+.brg-pill.e { background:color-mix(in srgb, var(--err) 22%, transparent); color:var(--err) }
 .brg-thread { display:flex; flex-direction:column; min-width:0; flex:1 }
 .brg-head { gap:8px } .brg-head .ttl { flex:none } .brg-head .brg-meta { font-size:12px; color:var(--t3); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:0 1 auto }
 .brg-letters { flex:1; overflow:auto; padding:16px 20px 8px }
@@ -1862,12 +1864,12 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .modal.rt .rth { display:flex; align-items:center; gap:10px; margin-bottom:6px; font-size:13px } .modal.rt .rth b { color:var(--w) }
 .modal.rt .seg { display:inline-flex; border:1px solid var(--line2); border-radius:8px; overflow:hidden } .modal.rt .seg button { padding:2px 10px; font-size:12px; color:var(--t2) } .modal.rt .seg button.on { background:var(--sel); color:var(--w) }
 .modal.rt .legend { margin-left:auto; display:flex; align-items:center; gap:4px; font-size:11px; color:var(--t3) } .modal.rt .legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-left:8px }
-.modal.rt .l1 { background:color-mix(in srgb, var(--accent) 30%, transparent) } .modal.rt .l3 { background:var(--wait) } .modal.rt .l5 { background:var(--err) }
-.modal.rt .rtrow { display:flex; align-items:center; height:22px; border-top:1px solid var(--line) } .modal.rt .rtrow.axis { border-top:0; height:18px }
-.modal.rt .rtrow .lab { width:170px; flex:none; font-size:11.5px; color:var(--t2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:8px }
-.modal.rt .rtrow .tr { position:relative; flex:1; min-width:0; height:100% }
-.modal.rt .rtrow.axis .tr span { position:absolute; top:2px; font-size:10.5px; color:var(--t3); font-family:var(--mono) }
-.modal.rt .rtrow .tr i { position:absolute; top:6px; height:10px; border-radius:2px; min-width:2px } .modal.rt .rtrow.load .tr i { top:3px; height:15px }
+.modal.rt .l1 { background:color-mix(in srgb, var(--w) 30%, transparent) } .modal.rt .l3 { background:var(--wait) } .modal.rt .l5 { background:var(--err) }
+.modal.rt .rtln { display:flex; align-items:center; gap:2px; padding-right:4px; height:22px; border-top:1px solid var(--line) } .modal.rt .rtln.axis { border-top:0; height:18px }
+.modal.rt .rtln .lab { width:170px; flex:none; font-size:11.5px; color:var(--t2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:8px }
+.modal.rt .rtln .tr { position:relative; flex:1; min-width:0; height:100% }
+.modal.rt .rtln.axis .tr span { position:absolute; top:2px; font-size:10.5px; color:var(--t3); font-family:var(--mono) }
+.modal.rt .rtln .tr i { position:absolute; top:6px; height:10px; border-radius:2px; min-width:2px } .modal.rt .rtln.load .tr i { top:3px; height:15px }
 .modal.rt .blk.plan { border:1px dashed var(--t3); background:transparent } .modal.rt .blk.r-ok { background:var(--done) } .modal.rt .blk.r-skip { background:var(--t3) }
 .modal.rt .blk.r-fail, .modal.rt .blk.r-timeout { background:var(--err) } .modal.rt .blk.r-unknown { background:var(--wait) }
 .modal.rt .now { position:absolute; top:0; bottom:0; width:1px; background:var(--w); opacity:.5 }
@@ -1888,7 +1890,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .modal.rt .rtr .why { min-width:0; color:var(--t2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap } .modal.rt .rtr .dave { color:var(--wait); font-style:normal; font-weight:600 }
 .modal.rt .rtr .wh, .modal.rt .rtr .nx { color:var(--t2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
 .modal.rt .dots { display:flex; align-items:center; gap:3px; min-width:0 } .modal.rt .dots i { width:8px; height:8px; border-radius:50%; flex:none; background:var(--done) }
-.modal.rt .d-skip { background:var(--t3) !important } .modal.rt .d-fail, .modal.rt .d-timeout { background:var(--err) !important } .modal.rt .d-unknown { background:var(--wait) !important } .modal.rt .dots i.c { box-shadow:0 0 0 1.5px var(--accent) }
+.modal.rt .d-skip { background:var(--t3) !important } .modal.rt .d-fail, .modal.rt .d-timeout { background:var(--err) !important } .modal.rt .d-unknown { background:var(--wait) !important } .modal.rt .dots i.c { box-shadow:0 0 0 1.5px var(--w) }
 .modal.rt .dots .avg { margin-left:4px; font-size:11px; color:var(--t3); white-space:nowrap }
 .modal.rt .acts { display:flex; gap:5px; justify-content:flex-end; flex-wrap:wrap } .modal.rt .acts .btn { height:26px; padding:0 9px; font-size:12px }
 .modal.rt .exp { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:0 8px 8px 16px; padding:8px 10px; border:1px solid var(--line2); border-radius:9px; background:var(--bg); font-size:12px }
@@ -1897,7 +1899,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .modal.rt .exp .none { color:var(--t3) }
 @media (max-width: 767px) {
   .modal.board.rt { width:auto; height:auto }
-  .modal.rt .rtrow .lab { width:44px }
+  .modal.rt .rtln .lab { width:44px }
   .modal.rt .rtr .row { grid-template-columns:minmax(0,1fr); gap:3px; padding:10px 8px }
   .modal.rt .rtr .why { white-space:normal } .modal.rt .acts { justify-content:flex-start; margin-top:4px } .modal.rt .acts .btn { height:34px; font-size:13.5px }
   .modal.rt .exp { grid-template-columns:minmax(0,1fr); margin:0 4px 8px } .modal.rt .exp td { white-space:normal }

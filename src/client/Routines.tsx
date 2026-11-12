@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useEsc } from './esc'
 import { api } from './api'
 import { useStore } from './store'
 import { Icon } from './FolderBot'
@@ -40,7 +41,7 @@ export function Routines({ onClose, go, openSheet, say, phone }: { onClose: () =
   const load = () => { void api<Board>('/routines/overview').then(setB).catch((e) => say((e as Error).message)) }
   useEffect(() => { load(); const t = window.setInterval(load, 30_000); return () => window.clearInterval(t) }, [])
   useEffect(() => { load() }, [s.bots])   // 루틴이 바뀌면 봇 목록이 다시 온다
-  useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k) }, [onClose])
+  useEsc(onClose)
 
   const key = (r: { botId: string; name: string }) => `${r.botId}::${r.name}`
   const problems = b ? b.counts.fail + b.counts.missed + b.counts.unknown : 0
@@ -72,7 +73,7 @@ export function Routines({ onClose, go, openSheet, say, phone }: { onClose: () =
   const warnHours = b ? [...new Set(b.today.slots.map((v, i) => (v >= LOAD_WARN ? Math.floor(i / 6) : -1)).filter((h) => h >= 0))] : []
   const pct = (t: number) => `${((t - (b?.today.dayStart ?? 0)) / 864_000).toFixed(3)}%`
   const wpct = (ms: number) => `${Math.max(ms / 864_000, 0.25).toFixed(3)}%`
-  const strip = b ? <div className="rtrow load"><span className="lab">몰림</span><div className="tr">{b.today.slots.map((n, i) => n ? <i key={i} className={lvl(n)} style={{ left: `${(i / 1.44).toFixed(3)}%`, width: `${(1 / 1.44).toFixed(3)}%` }} title={`${p2(Math.floor(i / 6))}:${p2((i % 6) * 10)} · ${n}개 동시`} /> : null)}<b className="now" style={{ left: pct(b.now) }} /></div></div> : null
+  const strip = b ? <div className="rtln load"><span className="lab">몰림</span><div className="tr">{b.today.slots.map((n, i) => n ? <i key={i} className={lvl(n)} style={{ left: `${(i / 1.44).toFixed(3)}%`, width: `${(1 / 1.44).toFixed(3)}%` }} title={`${p2(Math.floor(i / 6))}:${p2((i % 6) * 10)} · ${n}개 동시`} /> : null)}<b className="now" style={{ left: pct(b.now) }} /></div></div> : null
   const byBot = b ? [...new Set(b.today.blocks.map((x) => x.botId))] : []
   const nameOf = (id: string) => b?.routines.find((r) => r.botId === id)?.bot ?? id
 
@@ -87,9 +88,9 @@ export function Routines({ onClose, go, openSheet, say, phone }: { onClose: () =
             <span className="legend"><i className="l1" />1~2개<i className="l3" />{LOAD_WARN}개 이상<i className="l5" />{LOAD_BAD}개 이상</span>
           </div>
           {tab === 'today' || phone ? <div className="rttl">
-            <div className="rtrow axis"><span className="lab" /><div className="tr">{[0, 3, 6, 9, 12, 15, 18, 21].map((h) => <span key={h} style={{ left: `${h / 0.24}%` }}>{p2(h)}</span>)}</div></div>
+            <div className="rtln axis"><span className="lab" /><div className="tr">{[0, 3, 6, 9, 12, 15, 18, 21].map((h) => <span key={h} style={{ left: `${h / 0.24}%` }}>{p2(h)}</span>)}</div></div>
             {strip}
-            {phone ? null : byBot.map((id) => <div key={id} className="rtrow"><span className="lab" title={nameOf(id)}>{nameOf(id)}</span><div className="tr">
+            {phone ? null : byBot.map((id) => <div key={id} className="rtln"><span className="lab" title={nameOf(id)}>{nameOf(id)}</span><div className="tr">
               {b.today.blocks.filter((x) => x.botId === id).map((x, i) => <i key={i} className={`blk ${x.result ? `r-${x.result}` : 'plan'}`} style={{ left: pct(x.start), width: wpct(x.ms) }} title={`${x.name} · ${hm(x.start)}${x.result ? ` · ${RES[x.result]}` : ' · 예정'}`} />)}
               <b className="now" style={{ left: pct(b.now) }} /></div></div>)}
           </div> : <div className="rtweek">

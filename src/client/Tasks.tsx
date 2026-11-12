@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useEsc } from './esc'
 import type { ChatItem } from '../core/types'
 import { TASK_KIND_LABEL, TASK_STATUS_LABEL, canStopTask, groupTasks, taskTook, type BgTask } from '../core/bgTasks'
 import { mdPlain } from '../core/mdPlain'
@@ -105,6 +106,7 @@ export function TaskSec({ sid, open, tog, say }: { sid?: string; open: boolean; 
 /** 폰 · 바닥 시트. 진행 줄의 단추로 연다 */
 export function TaskSheet({ sid, tasks, openIds, onOpen, onClose, say }: { sid: string; tasks: BgTask[]; openIds: Set<string>; onOpen: (itemId: string) => void; onClose: () => void; say: (m: string) => void }) {
   const run = tasks.filter((t) => t.status === 'run').length
+  useEsc(onClose)
   return <>
     <div className="backdrop" onClick={onClose} />
     <div className="tsheet bgsheet" role="dialog" aria-label="뒤에서 도는 일">

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useEsc } from './esc'
 import { api } from './api'
 import { fmtTime } from './store'
 import { freshness, type HostStat, type LocalStat } from '../core/localOpen'
@@ -111,8 +112,9 @@ export function askLocalOpen(a: Ask): Promise<Choice> {
 export function LocalOpenHost() {
   const [a, setA] = useState<Ask | null>(null)
   useEffect(() => { askSet = setA; return () => { askSet = null } }, [])
-  if (!a) return null
   const done = (c: Choice) => { setA(null); const r = askResolve; askResolve = null; r?.(c) }
+  useEsc(() => done(null), !!a)
+  if (!a) return null
   return <>
     <div className="backdrop" onClick={() => done(null)} />
     <div className="modal conf lopen" style={{ width: 'min(520px,calc(100% - 24px))' }}>

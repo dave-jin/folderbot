@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useEsc } from './esc'
 import { createPortal } from 'react-dom'
 import { Icon } from './FolderBot'
 import { askName } from './Sheets'
@@ -19,6 +20,7 @@ export function StemManager({ map, op, close, onPick, phone }: {
   onPick: (id: string) => void
   phone?: boolean
 }) {
+  useEsc(close)
   const byId = useMemo(() => new Map(map.nodes.map((n) => [n.id, n])), [map])
   const [open, setOpen] = useState<string | null>(null)   // 처음엔 접어 둔다 — 줄기 목록을 한눈에(폰도)
   const [drag, setDrag] = useState<string | null>(null)
@@ -143,7 +145,7 @@ function FolderPick({ map, st, past, onPick }: { map: LinkMap; st: Stem; past: b
     .sort((a, b) => Number(a.stem !== undefined) - Number(b.stem !== undefined) || a.label.localeCompare(b.label)).slice(0, 8)
   if (!on) return <button className="smg-chip add" onClick={() => setOn(true)}><Icon n="plus" size={10} />{past ? '보관 폴더 넣기' : '폴더 넣기'}</button>
   return <div className="smg-pick">
-    <input className="smg-in" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={past ? '보관 폴더 이름' : '폴더 이름'} onKeyDown={(e) => { if (e.key === 'Escape') setOn(false); if (e.key === 'Enter' && hits[0]) { onPick(hits[0].id); setOn(false) } }} />
+    <input className="smg-in" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={past ? '보관 폴더 이름' : '폴더 이름'} onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); setOn(false) } if (e.key === 'Enter' && hits[0]) { onPick(hits[0].id); setOn(false) } }} />
     <div className="list">{hits.length ? hits.map((n) => <button key={n.id} onClick={() => { onPick(n.id); setOn(false); setQ('') }}><b>{n.label}</b><span>{ddText(n, map.today)}{n.stem !== undefined ? ` · 지금 «${map.stems[n.stem].name}»` : ' · 줄기 밖'}</span></button>) : <span className="m">맞는 폴더가 없어요</span>}</div>
     <button className="btn sm g" onClick={() => setOn(false)}>닫기</button>
   </div>
