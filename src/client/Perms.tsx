@@ -47,7 +47,7 @@ export function PermGate({ items, onDone, refresh }: { items: PermRow[]; onDone:
   const ack = async (id: PermRow['id'], v: boolean) => { await b?.ack(id, v); await refresh(); setMsg(v ? '알림 준비 끝' : '시스템 설정 › 알림에서 Folder Bot 을 허용으로 바꿔 주세요') }
   const test = async () => { const r = await b?.test(); setTested(true); setMsg(r?.ok ? '방금 알림을 보냈어요 — 오른쪽 위에 보였나요?' : '이 시스템에서는 알림을 보낼 수 없어요') }
   return <div className="pair perm-gate"><div className="box" style={{ width: 'min(640px,100%)', alignItems: 'stretch', textAlign: 'left' }}>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><FolderBot color="#e08850" size={32} mood="wait" /><b style={{ fontSize: 18, color: 'var(--w)' }}>Folder Bot 이 일하려면 권한이 필요해요</b></div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><FolderBot color="#e08850" size={32} mood="wait" /><b style={{ fontSize: 17, color: 'var(--w)' }}>Folder Bot 이 일하려면 권한이 필요해요</b></div>
     <div style={{ color: 'var(--t2)' }}>지금 한 번에 켜 두면 쓰는 중에 다시 묻지 않습니다. macOS 가 앱마다 따로 묻는 것이라 Folder Bot 이 대신 켤 수는 없어요 — 설정 창을 열어 드릴게요.</div>
     <div className="perm-rows">
       {items.map((p) => { const m = META[p.id]; const done = p.status === 'granted'; return <div key={p.id} className={`perm-row ${p.status}`}>
@@ -72,7 +72,7 @@ export function PermGate({ items, onDone, refresh }: { items: PermRow[]; onDone:
     <AgentConn />
     {msg ? <div className="hint">{msg}</div> : null}
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-      <span style={{ color: 'var(--t3)', fontSize: 12.5 }}>{ok ? '권한이 모두 확인됐어요' : '필수 권한을 켜면 계속할 수 있어요'}</span><span style={{ flex: 1 }} />
+      <span style={{ color: 'var(--t3)', fontSize: 13 }}>{ok ? '권한이 모두 확인됐어요' : '필수 권한을 켜면 계속할 수 있어요'}</span><span style={{ flex: 1 }} />
       {!anyRequired && !ok ? <button className="btn" onClick={onDone}>나중에</button> : null}
       <button className="btn on" disabled={!ok} onClick={onDone}>계속</button>
     </div>

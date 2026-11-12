@@ -196,7 +196,7 @@ export function ContextStrip({ go, open, compact, openRoutines }: { go: Go; open
   const sum = folded ? foldSum(groupsOf(b, waiting).groups) : null
   const head = <div className="cx-h">
     <button className="cx-fold" onClick={() => fold(!folded)} aria-expanded={!folded} aria-label={folded ? '상황판 펼치기' : '상황판 접기'}>
-      <Icon n="chevd" size={10} color="var(--t3)" style={{ transform: folded ? 'rotate(-90deg)' : undefined, transition: 'transform .15s' }} /><b>상황판</b>
+      <Icon n="chevd" size={10} color="var(--t3)" style={{ transform: folded ? 'rotate(-90deg)' : undefined, transition: 'transform var(--t-fast) var(--ease)' }} /><b>상황판</b>
       {note ? <span className="cx-note">{note}</span> : <span className="cx-sum">{folded ? sum : b && !noFile(b) ? hm(b.at) : null}</span>}
     </button>
     <button className="ib cx-open" onClick={() => open()} aria-label="상황판 열기" title="상황판 열기"><Icon n="open" size={12} /></button>

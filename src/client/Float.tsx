@@ -53,7 +53,7 @@ export function Float({ at, onClose, children, className = 'menu', width = 200 }
   // ⚠ useEffect 라야 한다 — 포털 그릇은 위의 useEffect 가 body 에 붙이므로, layout effect 시점엔 아직 문서 밖이라 크기가 0 이다
   useEffect(() => { setLift(0); const b = box.current; if (!b) return; const r = b.getBoundingClientRect(); const over = r.bottom - (window.innerHeight - 8); if (over > 0) setLift(Math.min(over, Math.max(0, r.top - 8))) }, [at.x, at.y, at.up])
   if (!el) return null
-  const style: React.CSSProperties = { position: 'fixed', zIndex: 200, minWidth: width, maxWidth: 'min(320px, 92vw)', maxHeight: 'calc(100vh - 16px)', overflowY: 'auto' }
+  const style: React.CSSProperties = { position: 'fixed', zIndex: 'var(--z-menu)', minWidth: width, maxWidth: 'min(320px, 92vw)', maxHeight: 'calc(100vh - 16px)', overflowY: 'auto' }
   if (at.right) style.right = Math.max(8, window.innerWidth - at.x)
   else style.left = Math.min(at.x, Math.max(8, window.innerWidth - width - 8))
   if (at.up) style.bottom = Math.max(8, window.innerHeight - at.y)

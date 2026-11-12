@@ -378,7 +378,7 @@ export function FolderPicker({ onClose, onStarted, pick }: { onClose: () => void
       <div className="search"><Icon n="search" size={14} /><input placeholder="폴더 이름으로 찾기 — 치면 트리가 펼쳐지며 걸러져요" value={q} onChange={(e) => setQ(e.target.value)} autoFocus /></div>
       <div className="fl">{([['all', '전체'], ['active', '활성만'], ['free', '봇 없는 폴더만']] as const).map(([k, t]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{t}</button>)}<span className="hint">↑↓ 이동 · → 펼침 · ← 접음 · ⏎ {pick ? '고르기' : '시작'}</span></div>
       <div className="modal-b" style={{ flex: 1 }} ref={listRef}>
-        {rows.map(({ n, depth, kind }) => kind === 'new' ? (newIn === n.rel.replace(NEW_MARK, '') ? <div key={n.rel} className="newbox" style={{ marginLeft: 18 + depth * 16 }}><div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5 }}><Icon n="fplus" size={14} />새 폴더 만들기</div><input className="nm" autoFocus placeholder="이름" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void create(); if (e.key === 'Escape') { e.preventDefault(); setNewIn(null) } }} /><div className="pv"><Icon n="chev" size={12} /><span className="mono">{newIn}/{preview(newIn, newName || '이름')}</span><span>· 하네스 설치 · 바로 시작</span></div></div>
+        {rows.map(({ n, depth, kind }) => kind === 'new' ? (newIn === n.rel.replace(NEW_MARK, '') ? <div key={n.rel} className="newbox" style={{ marginLeft: 18 + depth * 16 }}><div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}><Icon n="fplus" size={14} />새 폴더 만들기</div><input className="nm" autoFocus placeholder="이름" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void create(); if (e.key === 'Escape') { e.preventDefault(); setNewIn(null) } }} /><div className="pv"><Icon n="chev" size={12} /><span className="mono">{newIn}/{preview(newIn, newName || '이름')}</span><span>· 하네스 설치 · 바로 시작</span></div></div>
             : <button key={n.rel} className="trow" style={{ ['--pad' as string]: `${18 + depth * 16 + 19}px`, color: 'var(--t2)' }} onClick={() => { setNewIn(n.rel.replace(NEW_MARK, '')); setNewName('') }}><Icon n="fplus" size={13} color="var(--t3)" /><span className="n">새 폴더 만들기</span></button>)
           : <button key={n.rel} data-rel={n.rel} className={`trow dir ${sel === n.rel ? 'on' : ''}`} style={{ ['--pad' as string]: `${18 + depth * 16}px`, minHeight: 32, opacity: topRole(n.rel) === 'archive' ? .7 : 1 }} onClick={() => setSel(n.rel)} onDoubleClick={() => (isSection(n) ? toggle(n.rel) : pick ? void runPick(n.rel) : n.botId || botOfRel(n.rel) ? onStarted(botOfRel(n.rel)!) : void start(n.rel))} title={n.rel}>
             <span className="cv" onClick={(e) => { e.stopPropagation(); toggle(n.rel) }} style={{ width: 14, padding: 4, margin: -4 }}>{q ? null : <Icon n={exp.has(n.rel) ? 'chevd' : 'chev'} size={10} />}</span><Icon n="folder" size={13} color="var(--t2)" />
@@ -402,7 +402,7 @@ export function Onboarding() {
   const [preset, setPreset] = useState<'para' | 'johnny-decimal' | 'custom'>('para'); const [busy, setBusy] = useState(false)
   const go = async () => { setBusy(true); try { await api('/rules/install', { body: { preset } }); await refresh() } finally { setBusy(false) } }
   return <div className="pair"><div className="box" style={{ width: 'min(760px,100%)', alignItems: 'stretch', textAlign: 'left' }}>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><FolderBot color="#e08850" size={32} /><b style={{ fontSize: 18, color: 'var(--w)' }}>폴더 규칙을 고르세요</b></div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><FolderBot color="#e08850" size={32} /><b style={{ fontSize: 17, color: 'var(--w)' }}>폴더 규칙을 고르세요</b></div>
     <div style={{ color: 'var(--t2)' }}>루트 <span className="mono">{s.root}</span>. 오케스트레이터가 이 규칙으로 후보를 찾고 Inbox 를 정리해요. 루트 <span className="mono">CLAUDE.md</span> 에 절로 설치되고 언제든 직접 고칠 수 있어요.</div>
     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
       <button className={`preset ${preset === 'para' ? 'on' : ''}`} onClick={() => setPreset('para')}><b><Icon n="folder" size={15} color={preset === 'para' ? 'var(--w)' : 'var(--t3)'} />PARA</b><small>Projects · Area · Resources · Archive. Inbox 는 정리 상자.</small></button>
@@ -423,7 +423,7 @@ export function Pairing({ onDone }: { onDone: () => void }) {
   }
   return <div className="pair"><div className="box">
     <FolderBot color="#e08850" size={72} />
-    <b style={{ fontSize: 20, color: 'var(--w)' }}>Folder Bot</b>
+    <b style={{ fontSize: 22, color: 'var(--w)' }}>Folder Bot</b>
     <div style={{ color: 'var(--t2)' }}>호스트 맥의 메뉴바 폴더봇 › 페어링 코드, 또는 호스트 터미널에 보이는 6자리 코드를 넣으세요.</div>
     <input inputMode="numeric" placeholder="000 000" value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void go() }} autoFocus />
     {err ? <div className="err">{err}</div> : null}
