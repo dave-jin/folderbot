@@ -373,7 +373,7 @@ function BridgeWizard({ onDone }: { onDone: () => void }) {
       <label className="brg-f">편지를 받을 봇<select value={bot} onChange={(e) => setBot(e.target.value)}>{bots.map((x) => <option key={x.id} value={x.id}>{x.displayName || x.name}{x.orchestrator ? ' (관제)' : ''}</option>)}</select></label>
       <div className="brg-f">신뢰 수준<div className="seg">{(['read', 'propose', 'act'] as Trust[]).map((x) => <button key={x} className={trust === x ? 'on' : ''} onClick={() => setTrust(x)}>{x}</button>)}</div><small>{TRUST_T[trust]} · 어느 수준이든 편지가 시작한 턴에서는 폴더 생성·이동·은퇴를 못 해요</small></div>
       {preset === 'grok-bot' ? <label className="brg-f">끊김 감지 <small>이만큼 상대 커서가 안 바뀌면 «끊김»</small><input className="mono" value={every} onChange={(e) => setEvery(e.target.value)} placeholder="150m" /></label> : null}
-      {preset !== 'generic-file' ? <label className="brg-chk"><input type="checkbox" checked={wake} onChange={(e) => setWake(e.target.checked)} />급한 편지에 상대 깨우기(웹훅) <small>주소·키는 ~/.config/secrets/folderbot-bridge-{id || '<id>'}.env 에 직접 둬요</small></label> : null}
+      {preset !== 'generic-file' ? <label className="brg-chk"><input type="checkbox" className="chk" checked={wake} onChange={(e) => setWake(e.target.checked)} />급한 편지에 상대 깨우기(웹훅) <small>주소·키는 ~/.config/secrets/folderbot-bridge-{id || '<id>'}.env 에 직접 둬요</small></label> : null}
       {preset === 'webhook' ? <div className="brg-note">들어오는 웹훅을 켜요 — 토큰은 호스트 맥의 <span className="mono">~/.config/secrets/folderbot-bridge-{id || '<id>'}-in.env</span> 에 <span className="mono">TOKEN=…</span>(16자 이상 · 0600)으로 직접 만들어요. 같은 tailnet 에서만 받아요.</div> : null}
       {problems.length ? <div className="brg-err">{problems.join(' · ')}</div> : null}
       {err ? <div className="brg-err">{err}</div> : null}

@@ -269,14 +269,15 @@ export function ContextPage({ onClose, go, goTodo, openRoutines, at, phone, open
   const mismatch = b && b.period !== period ? `${b.host} 판은 ${PERIOD_KO[b.period]}만 있어요` : ''
   const missing = b ? b.sources.filter((x) => !x.ok && x.name !== '주인 맥 판') : []
 
-  return <><div className="backdrop" onClick={onClose} /><div className={`modal board cx ${phone ? 'phone' : ''}`} role="dialog" aria-label="상황판">
+  return <><div className="backdrop" onClick={onClose} /><div className={`modal board cx sz-l ${phone ? 'phone' : ''}`} aria-modal="true" role="dialog" aria-label="상황판">
     <div className="grip" />
     {goal ? <GoalView key={`${goal.bot}`} at={goal} back={() => setGoal(null)} onClose={onClose} go={go} goTodo={goTodo} phone={phone} openDoc={openDoc} owner={owner} />
       : <>
         <div className="modal-h"><div className="t"><b>상황판</b><span className="cnt">{b ? `${owner === false ? `${b.host} 판 · ` : ''}${hm(b.at)} 정리` : '불러오는 중…'}{note ? ` · ${note}` : ''}</span></div>
-          <span className="seg cx-seg cx-tab">{([['goal', '목표'], ['link', '연결']] as const).map(([k, t]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{t}</button>)}<button onClick={openRoutines} title="루틴 관리">루틴</button></span>
+          <span className="seg cx-seg cx-tab">{([['goal', '목표'], ['link', '연결']] as const).map(([k, t]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{t}</button>)}</span>
           {tab === 'goal' ? <span className="seg cx-seg">{(['today', 'week', 'away'] as Period[]).map((p) => <button key={p} className={period === p ? 'on' : ''} onClick={() => setPeriod(p)} title={p === 'away' ? awaySub : undefined}>{PERIOD_KO[p]}</button>)}</span> : null}
-          <button className="ib" onClick={onClose} title="닫기 ⎋" aria-label="닫기"><Icon n="x" size={14} /></button></div>
+          <button className="btn sm cx-rt" onClick={openRoutines} title="루틴 관리"><Icon n="clock" size={12} />루틴</button>
+          <button className="ib mx" onClick={onClose} title="닫기 ⎋" aria-label="닫기"><Icon n="x" size={14} /></button></div>
         {tab === 'link' ? <div className="bbody cx-body lm-body"><LinksView phone={phone} go={go} openDoc={openDoc} say={setNote} /></div> : <div className="bbody cx-body">
           {period === 'away' && awaySub ? <div className="cx-sub">{awaySub}</div> : null}
           {mismatch ? <div className="cx-sub warn">{mismatch}</div> : null}
@@ -355,7 +356,7 @@ function GoalView({ at, back, onClose, go, goTodo, phone, openDoc, owner }: {
   return <>
     <div className="modal-h cx-gvh"><button className="ib" onClick={back} title="상황판으로" aria-label="상황판으로"><Icon n="back" size={14} /></button>
       <div className="t"><b>{name}</b><span className="cnt">{g ? `${g.goal} · ${dueKo(g.due)}` : '불러오는 중…'}{note ? ` · ${note}` : ''}</span></div>
-      <button className="ib" onClick={onClose} title="닫기 ⎋" aria-label="닫기"><Icon n="x" size={14} /></button></div>
+      <button className="ib mx" onClick={onClose} title="닫기 ⎋" aria-label="닫기"><Icon n="x" size={14} /></button></div>
     <div className={`cx-three ${phone ? 'phone' : ''}`}>
       <section className="cx-col cx-tasks">
         <div className="cx-ch"><b>작업</b><span className="m">{owner === false ? '고치기는 주인 맥에서' : 'AI 가 묶음 · 틀리면 끌어서 옮김'}</span></div>

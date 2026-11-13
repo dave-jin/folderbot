@@ -5,6 +5,7 @@ import type { Bot, NotifyEvent, RoutineDef } from '../core/types'
 import { notePlain } from '../core/mdPlain'
 import { api, pushWhyText, setToken, subscribePush, type PushWhy } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
+import { Modal, ModalX, Seg } from './Modal'
 import { hitRange, rank } from '../core/search'
 import { WHEN_EXAMPLES, describeCron, formatNext, nextRunOf, onceAt, parseWhen } from '../core/when'
 import { candidatePaths } from '../core/paths'
@@ -376,10 +377,10 @@ export function FolderPicker({ onClose, onStarted, pick }: { onClose: () => void
 
   return <>
     <div className="backdrop" onClick={onClose} />
-    <div className="modal pk" style={{ height: 'min(720px, calc(100% - 24px))' }} onKeyDown={onKey} tabIndex={-1}>
-      <div className="modal-h"><FolderBot color="#e08850" size={40} /><div className="t">{pick ? <><b>{pick.title}</b><small>{pick.sub}</small></> : <><b>에이전트와 함께 일할 폴더를 선택하세요</b><small>PARA 어디든 됩니다 — 접었다 펴서 고르세요 · 활성 폴더가 먼저 · 새 폴더는 그 자리에서</small></>}</div><button className="ib" onClick={onClose}><Icon n="x" size={14} /></button></div>
+    <div className="modal pk sz-m" role="dialog" aria-modal="true" style={{ height: 'min(720px, calc(100% - 24px))' }} onKeyDown={onKey} tabIndex={-1}>
+      <div className="modal-h"><FolderBot color="#e08850" size={40} /><div className="t">{pick ? <><b>{pick.title}</b><small>{pick.sub}</small></> : <><b>에이전트와 함께 일할 폴더를 선택하세요</b><small>PARA 어디든 됩니다 — 접었다 펴서 고르세요 · 활성 폴더가 먼저 · 새 폴더는 그 자리에서</small></>}</div><ModalX onClose={onClose} /></div>
       <div className="search"><Icon n="search" size={14} /><input placeholder="폴더 이름으로 찾기 — 치면 트리가 펼쳐지며 걸러져요" value={q} onChange={(e) => setQ(e.target.value)} autoFocus /></div>
-      <div className="fl">{([['all', '전체'], ['active', '활성만'], ['free', '봇 없는 폴더만']] as const).map(([k, t]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{t}</button>)}<span className="hint">↑↓ 이동 · → 펼침 · ← 접음 · ⏎ {pick ? '고르기' : '시작'}</span></div>
+      <div className="fl"><Seg cls="pkseg" label="폴더 거르기" value={filter} options={[['all', '전체'], ['active', '활성만'], ['free', '봇 없는 폴더만']] as const} onChange={setFilter} /><span className="hint">↑↓ 이동 · → 펼침 · ← 접음 · ⏎ {pick ? '고르기' : '시작'}</span></div>
       <div className="modal-b" style={{ flex: 1 }} ref={listRef}>
         {rows.map(({ n, depth, kind }) => kind === 'new' ? (newIn === n.rel.replace(NEW_MARK, '') ? <div key={n.rel} className="newbox" style={{ marginLeft: 18 + depth * 16 }}><div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}><Icon n="fplus" size={14} />새 폴더 만들기</div><input className="nm" autoFocus placeholder="이름" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void create(); if (e.key === 'Escape') { e.preventDefault(); setNewIn(null) } }} /><div className="pv"><Icon n="chev" size={12} /><span className="mono">{newIn}/{preview(newIn, newName || '이름')}</span><span>· 하네스 설치 · 바로 시작</span></div></div>
             : <button key={n.rel} className="trow" style={{ ['--pad' as string]: `${18 + depth * 16 + 19}px`, color: 'var(--t2)' }} onClick={() => { setNewIn(n.rel.replace(NEW_MARK, '')); setNewName('') }}><Icon n="fplus" size={13} color="var(--t3)" /><span className="n">새 폴더 만들기</span></button>)
@@ -441,22 +442,17 @@ export function NotifyCenter({ onClose, onJump }: { onClose: () => void; onJump:
   const [pushOn, setPushOn] = useState<PushWhy | null>(null)
   const [testMsg, setTestMsg] = useState('')
   const list = s.notifications.filter((n) => !only || n.kind === 'awaiting')
-  useEsc(onClose)
   const botOf = (id: string) => s.bots.find((b) => b.id === id)
   const readAll = async () => { await api('/read-all', { body: {} }); await refresh() }   // BL · 알림 + 모든 봇의 세션
   const enablePush = async () => { setPushOn(await subscribePush(s.vapidPublic, navigator.userAgent.slice(0, 30))) }
-  return <>
-    <div className="backdrop" onClick={onClose} />
-    <div className="modal nmodal" style={{ width: 'min(480px,calc(100% - 24px))' }}>
-      <div className="modal-h"><div className="t"><b>알림</b><small>모든 봇 · 한 기기에서 처리하면 다른 기기에서도 사라져요</small></div><button className={`btn ${only ? 'primary' : ''}`} onClick={() => setOnly(!only)}>확인 대기 {s.notifications.filter((n) => n.kind === 'awaiting' && !n.read).length}</button><button className="ib" onClick={onClose}><Icon n="x" size={14} /></button></div>
-      {/* ⛔ 높이를 여기서 인라인으로 묶지 않는다 — 폰에서 `.modal-b { flex:1 }` 을 «55vh» 가 이겨
-          목록이 화면 중간에서 끊기고 그 아래가 통째로 비었다(2026-09-13 Dave). 상한은 데스크톱 전용 규칙으로. */}
-      <div className="modal-b">
-        {list.length ? list.map((n) => { const b = botOf(n.botId); return <button key={n.id} className={`nrow ${n.read ? '' : 'unread'}`} onClick={() => onJump(n)}><FolderBot color={b?.color ?? '#e08850'} size={28} mood={n.kind === 'awaiting' ? 'wait' : n.kind === 'done' ? 'done' : n.kind === 'error' ? 'error' : 'idle'} /><div className="t"><div className="l1"><b>{n.title}</b><time>{fmtTime(n.t)}</time></div><div className="l2">{notePlain(n)}</div></div></button> }) : <div className="empty">알림이 없어요</div>}
-      </div>
-      <div className="modal-f"><button className="btn" onClick={readAll}>모두 읽음</button><span className="sp" /><button className="btn" onClick={enablePush}>{pushOn ? pushWhyText[pushOn] : '이 기기에 푸시 켜기'}</button><button className="btn" onClick={async () => { try { const r = await api<{ subs: number; mine: boolean }>('/push/test', { body: {} }); setTestMsg(r.subs ? (r.mine ? '보냈어요' : `보냈어요 · 이 기기는 구독 없음(${r.subs}대)`) : '구독한 기기가 없어요') } catch (e) { setTestMsg((e as Error).message) } }}>{testMsg || '푸시 테스트'}</button></div>
-    </div>
-  </>
+  const waitN = s.notifications.filter((n) => n.kind === 'awaiting' && !n.read).length
+  /* 거르기는 거르기 줄의 세그먼트로 (2026-11-13 · 부품 넷) — 종전에는 머리줄의 단추 하나가 눌린 채 흰 단추가 됐다(주 행동처럼 보였다) */
+  return <Modal size="s" cls="nmodal" title="알림" sub="모든 봇 · 한 기기에서 처리하면 다른 기기에서도 사라져요" onClose={onClose}
+    bar={<Seg cls="nseg" label="알림 거르기" value={only ? 'wait' : 'all'} options={[['all', '전체'], ['wait', `확인 대기 ${waitN}`]] as const} onChange={(v) => setOnly(v === 'wait')} />}
+    foot={<><button className="btn" onClick={readAll}>모두 읽음</button><span className="sp" /><button className="btn" onClick={enablePush}>{pushOn ? pushWhyText[pushOn] : '이 기기에 푸시 켜기'}</button><button className="btn" onClick={async () => { try { const r = await api<{ subs: number; mine: boolean }>('/push/test', { body: {} }); setTestMsg(r.subs ? (r.mine ? '보냈어요' : `보냈어요 · 이 기기는 구독 없음(${r.subs}대)`) : '구독한 기기가 없어요') } catch (e) { setTestMsg((e as Error).message) } }}>{testMsg || '푸시 테스트'}</button></>}>
+    {/* ⛔ 목록 높이를 인라인으로 묶지 않는다 — 폰에서 `.modal-b { flex:1 }` 을 «55vh» 가 이겨 목록이 화면 중간에서 끊겼다(2026-09-13 Dave). 상한은 데스크톱 전용 규칙으로 */}
+    {list.length ? list.map((n) => { const b = botOf(n.botId); return <button key={n.id} className={`nrow ${n.read ? '' : 'unread'}`} onClick={() => onJump(n)}><FolderBot color={b?.color ?? '#e08850'} size={28} mood={n.kind === 'awaiting' ? 'wait' : n.kind === 'done' ? 'done' : n.kind === 'error' ? 'error' : 'idle'} /><div className="t"><div className="l1"><b>{n.title}</b><time>{fmtTime(n.t)}</time></div><div className="l2">{notePlain(n)}</div></div></button> }) : <div className="empty">알림이 없어요</div>}
+  </Modal>
 }
 
 /* ── 루틴 시트 ─────────────────────────────────────────────────────────── */
@@ -467,8 +463,7 @@ export function NotifyCenter({ onClose, onJump }: { onClose: () => void; onJump:
  */
 export function RoutineSheet({ bot, onClose, draft, pick }: { bot: Bot; onClose: () => void; draft?: RoutineDef; pick?: string }) {
   const { refresh } = useStore()
-  /** CF-4 · 폰에서는 목록을 위·편집 칸을 아래로 쌓는다 — 옆으로 두면 374px 시트에 편집 칸이 92px 만 남았다(2026-10-12 실측) */
-  const phone = useIsPhone()
+  /* CF-4 · 폰에서는 목록을 위·편집 칸을 아래로 쌓는다(`styles.css` `.modal.rted` 의 폰 규칙) — 옆으로 두면 374px 에 편집 칸이 92px 만 남았다(2026-10-12 실측) */
   /** 화면은 **사람 말**(`when`)을 들고 있고, cron 은 저장할 때 한 번 만들어진다 — 사람에게 cron 을 보여 주지 않는다 */
   type Row = RoutineDef & { when: string }
   const toRow = (r: RoutineDef): Row => ({ ...r, when: describeCron(r.cron) })
@@ -509,7 +504,6 @@ export function RoutineSheet({ bot, onClose, draft, pick }: { bot: Bot; onClose:
     if (JSON.stringify(list) !== saved.current && !(await askConfirm({ title: '고친 내용을 버릴까요?', body: '저장하지 않은 루틴 변경이 있어요. 닫으면 사라져요.', ok: '버리고 닫기' }))) return
     onClose()
   }
-  useEsc(() => void softClose())
   const save = async () => {
     setBusy(true)
     try { await put(); await refresh(); return true }
@@ -527,12 +521,19 @@ export function RoutineSheet({ bot, onClose, draft, pick }: { bot: Bot; onClose:
   }
 
   const PRESETS = ['매일 아침 9시', '매일 저녁 8시', '평일 오전', '매주 월요일']
-  return <>
-    <div className="backdrop" onClick={() => void softClose()} />
-    <div className="sheet" style={{ ['--sheet-w' as string]: '52%' }}>
-      <div className="sheet-h"><span className="tab"><Icon n="clock" size={13} color="var(--w)" />루틴 · {bot.name}</span><span className="acts"><button className="btn" onClick={onClose}>취소</button><button className="btn primary" disabled={busy || bad > 0} title={bad ? '주기를 못 읽는 줄이 있어요' : ''} onClick={saveClose}>저장</button></span></div>
-      <div style={{ display: 'flex', flexDirection: phone ? 'column' : 'row', flex: 1, minHeight: 0 }}>
-        <div className="rtlist" style={{ ...(phone ? { maxHeight: '34vh', flexShrink: 0, borderBottom: '1px solid var(--line2)' } : { width: 240, borderRight: '1px solid var(--line2)' }), padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 2, overflow: 'auto' }}>
+  const path = `${bot.rel || '.claude/routines.yml'}/.bot.yml`
+  /** 지우기 — 목록에서만 빠진다. [저장] 을 눌러야 파일에서 지워지고, [취소] 하면 돌아온다(그래서 묻지 않는다). 데스크톱은 발 왼쪽, 폰은 본문 맨 아래(저장 옆에 두면 잘못 누른다 — 목업) */
+  const del = (where: 'foot' | 'body') => cur ? <button className={`btn danger rtdel in-${where}`} data-rt="del" onClick={() => { setList(list.filter((_, k) => k !== i)); setI(0) }}>이 루틴 지우기</button> : null
+  /** ⏎ 로 저장 — **한 줄 칸(이름 · 언제)에서만.** 여러 줄 칸의 ⏎ 는 줄바꿈이고, 한글을 맺는 ⏎(조합 중)는 저장이 아니다 */
+  const onKey = (e: { key: string; nativeEvent: { isComposing: boolean }; target: EventTarget; preventDefault: () => void }) => {
+    if (e.key !== 'Enter' || e.nativeEvent.isComposing || busy || bad > 0 || !(e.target instanceof HTMLInputElement)) return
+    e.preventDefault(); void saveClose()
+  }
+  return <Modal size="m" cls="rted" title={`루틴 · ${bot.name}`} raw onClose={() => void softClose()}
+    sub={<span title={path}>{list.length}개 · 정본은 .bot.yml<span className="wide"> — 에디터로 고쳐도 몇 초 안에 따라와요</span></span>}
+    foot={<>{del('foot')}<span className="sp" /><button className="btn" data-rt="cancel" onClick={onClose}>취소<span className="kh">esc</span></button><button className="btn primary" data-rt="save" disabled={busy || bad > 0} title={bad ? '주기를 못 읽는 줄이 있어요' : ''} onClick={saveClose}>저장<span className="kh">⏎</span></button></>}>
+      <div className="rted-in" onKeyDown={onKey}>
+        <div className="rtlist">
           {list.map((r, k) => {
             const v = read(r); const next = v.ok ? nextRunOf(v.cron) : null
             const off = r.enabled === false
@@ -549,9 +550,8 @@ export function RoutineSheet({ bot, onClose, draft, pick }: { bot: Bot; onClose:
             </div>
           })}
           <button className="srow" onClick={() => { setList([...list, { name: '새 루틴', cron: '0 9 * * *', when: '매일 아침 9시', prompt: '', approve: 'always', push: true }]); setI(list.length) }}><Icon n="plus" size={12} />새 루틴</button>
-          {cur ? <button className="srow" style={{ color: 'var(--err)', marginTop: 'auto' }} onClick={() => { setList(list.filter((_, k) => k !== i)); setI(0) }}><Icon n="x" size={12} />이 루틴 삭제</button> : null}
         </div>
-        <div className="sheet-b" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className="rtform">
           {cur ? <>
             <div className="field"><label>이름</label><input value={cur.name} onChange={(e) => upd({ name: e.target.value })} /></div>
             {/* AA-3 · 언제 — 사람 말로 넣는다. cron 식은 아래 상세에만 작게 */}
@@ -570,17 +570,17 @@ export function RoutineSheet({ bot, onClose, draft, pick }: { bot: Bot; onClose:
               <textarea rows={5} value={cur.prompt} placeholder="무엇을 확인하고, 변화가 없으면 어떻게 할지까지 적어 주세요" onChange={(e) => upd({ prompt: e.target.value })} />
               <small style={{ color: 'var(--t3)' }}>힌트 — 「어제 이후 바뀐 파일을 훑고 todo.md 에 남은 일을 정리해 줘. 바뀐 게 없으면 «변화 없음» 한 줄만.」</small>
             </div>
-            <div className="field"><label>끝나면 폰으로 한 줄 푸시</label><select value={cur.push === false ? 'off' : 'on'} onChange={(e) => upd({ push: e.target.value === 'on' })}><option value="on">켬</option><option value="off">끔</option></select></div>
+            <div className="field"><label>끝나면 폰으로 한 줄 푸시</label><Seg cls="rtpush" label="끝나면 폰으로 한 줄 푸시" value={cur.push === false ? 'off' : 'on'} options={[['on', '켬'], ['off', '끔']] as const} onChange={(v) => upd({ push: v === 'on' })} /></div>
             {/* 🔴 always 가 bypassPermissions 라는 사실을 모르고 고르면 안 된다 (AA-4) · EB · auto 는 `--permission-mode auto`(기본값은 그대로 always — Dave 결정 대기) */}
-            <div className="field"><label>승인 수준 · 사람이 없을 때</label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{([['always', '묻지 않고 바로 한다', '기본값 · 사람이 없어도 끝까지 돈다 (모든 확인을 건너뜀)'], ['auto', '자동 — Claude 가 판단', '권한을 Claude 가 판단 · 물어 오면 정한 시간 뒤 거절'], ['folder', '이 폴더 안에서만 쓴다', 'todo.md·노트 갱신까지 스스로'], ['readonly', '계획만 세운다', '파일을 쓰지 않아요']] as const).map(([v, t, sub]) => <button key={v} data-approve={v} className={`preset ${(cur.approve ?? 'always') === v ? 'on' : ''}`} style={{ padding: '10px 12px', minWidth: 150 }} onClick={() => upd({ approve: v })}><b style={{ fontSize: 12 }}>{t}</b><small>{sub}</small></button>)}</div></div>
+            <div className="field"><label>승인 수준 · 사람이 없을 때</label><div className="apgrid">{([['always', '묻지 않고 바로 한다', '기본값 · 사람이 없어도 끝까지 돈다 (모든 확인을 건너뜀)'], ['auto', '자동 — Claude 가 판단', '권한을 Claude 가 판단 · 물어 오면 정한 시간 뒤 거절'], ['folder', '이 폴더 안에서만 쓴다', 'todo.md·노트 갱신까지 스스로'], ['readonly', '계획만 세운다', '파일을 쓰지 않아요']] as const).map(([v, t, sub]) => <button key={v} data-approve={v} className={`preset ${(cur.approve ?? 'always') === v ? 'on' : ''}`} onClick={() => upd({ approve: v })}><b>{t}</b><small>{sub}</small></button>)}</div></div>
             {cur.lastError ? <div className="rterr" style={{ border: '1px solid var(--err)', borderRadius: 8, padding: '8px 10px' }}><b>이 루틴은 지금 안 걸려 있어요</b><br />{cur.lastError}</div> : null}
             {ran ? <div className="rtnext" style={{ border: '1px solid var(--line2)', borderRadius: 8, padding: '8px 10px' }}>{ran}</div> : null}
-          </> : <div className="empty">루틴이 없어요. 왼쪽에서 추가하세요.</div>}
+            <small className="rtnote">루틴 세션은 봇당 동시 상한(4)에 포함돼요</small>
+            {del('body')}
+          </> : <div className="empty">루틴이 없어요. «새 루틴» 으로 추가하세요.</div>}
         </div>
       </div>
-      <div className="sheet-f"><span>정본은 <span className="mono">{bot.rel || '.claude/routines.yml'}/.bot.yml</span> — 에디터로 고쳐도 몇 초 안에 따라와요</span><span style={{ marginLeft: 'auto', color: 'var(--t3)' }}>루틴 세션은 봇당 동시 상한(4)에 포함돼요</span></div>
-    </div>
-  </>
+  </Modal>
 }
 
 export { Settings } from './Settings'
@@ -643,7 +643,7 @@ export function ConfirmHost() {
     <div className="modal conf" style={{ width: 'min(520px,calc(100% - 24px))' }}>
       <div className="modal-h"><div className="t"><b>{c.title}</b></div><button className="ib" onClick={() => done(false)} aria-label="닫기" title="닫기 ⎋"><Icon n="x" size={13} /></button></div>
       <div className="modal-b" style={{ padding: '2px 22px 6px' }}><p className="cbody">{c.body}</p>
-        {c.remember ? <label className="cskip"><input type="checkbox" checked={skip} onChange={(e) => setSkip(e.target.checked)} /><span>다시 묻지 않기</span></label> : null}
+        {c.remember ? <label className="cskip"><input type="checkbox" className="chk" checked={skip} onChange={(e) => setSkip(e.target.checked)} /><span>다시 묻지 않기</span></label> : null}
       </div>
       <div className="modal-f"><span className="sp" /><button className="btn" data-conf="cancel" autoFocus={!!c.danger} onClick={() => done(false)}>취소</button><button className={c.danger ? 'btn danger' : 'btn primary'} data-conf="ok" autoFocus={!c.danger} onClick={() => done(true)}>{c.ok}</button></div>
     </div>

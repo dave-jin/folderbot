@@ -427,7 +427,7 @@ export async function ebPerm({ base, root, data, claudeCfg, botId, botAbs, br, c
         if (phone) { await pg.tap('.tabbar [data-tab="files"]'); await wait(500) }
         const kv = () => pg.evaluate(() => { const b = [...document.querySelectorAll('.panel button.kv')].find((e) => /EB 화면 루틴/.test(e.textContent ?? '')); if (b) b.click(); return !!b })
         if (!(await kv())) { await pg.evaluate(() => { const h = [...document.querySelectorAll('.panel .sech')].find((e) => /루틴/.test(e.textContent ?? '')); h?.click() }); await wait(300); must(await kv(), '패널에 루틴 줄이 없다') }
-        await pg.waitForSelector('.sheet [data-approve="auto"]', { timeout: 5000 }); await wait(300)
+        await pg.waitForSelector('.modal.rted [data-approve="auto"]', { timeout: 5000 }); await wait(300)
         const b = await pg.evaluate(() => { const list = [...document.querySelectorAll('[data-approve]')].map((e) => ({ v: e.dataset.approve, on: e.classList.contains('on'), t: e.querySelector('b')?.textContent ?? '', r: Math.round(e.getBoundingClientRect().right), w: Math.round(e.getBoundingClientRect().width) })); document.querySelector('[data-approve="auto"]').scrollIntoView({ block: 'center' }); return { list, sw: document.documentElement.scrollWidth, vw: innerWidth } })
         must(JSON.stringify(b.list.map((e) => e.v)) === JSON.stringify(['always', 'auto', 'folder', 'readonly']) && b.list.find((e) => e.v === (phone ? 'auto' : 'always')).on && b.list.filter((e) => e.on).length === 1 && /자동/.test(b.list.find((e) => e.v === 'auto').t), '선택지(데스크톱은 기본 «바로», 폰은 데스크톱이 저장한 «자동») ' + JSON.stringify(b.list))
         if (phone) { await pg.tap('[data-approve="folder"]'); await wait(200) }
@@ -436,9 +436,9 @@ export async function ebPerm({ base, root, data, claudeCfg, botId, botAbs, br, c
         must(await pg.evaluate(() => document.querySelector('[data-approve="auto"]').classList.contains('on')), '«자동» 이 안 골라졌다')
         await shot(pg, `u9-${phone ? '폰' : '데스크톱'}-루틴-승인-자동`)
         if (!phone) {
-          await pg.click('.sheet .sheet-h .btn.primary')
+          await pg.click('.modal.rted [data-rt="save"]')
           await until(async () => (await api(`/bots/${botId}/routines`)).find((r) => r.name === 'EB 화면 루틴')?.approve === 'auto', '저장 뒤 approve: auto', 5000)
-        } else await pg.evaluate(() => { const c = [...document.querySelectorAll('.sheet .sheet-h button')].find((x) => /취소/.test(x.textContent ?? '')); c?.click() })
+        } else await pg.evaluate(() => { const c = [...document.querySelectorAll('.modal.rted .modal-f button')].find((x) => /취소/.test(x.textContent ?? '')); c?.click() })
         await wait(300)
       }
       must(!D.errs.length && !P.errs.length, '화면 오류 ' + [...D.errs, ...P.errs].join(' | '))

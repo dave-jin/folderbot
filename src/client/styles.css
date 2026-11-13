@@ -474,7 +474,7 @@ b,strong { color:var(--w); font-weight:600 }
 .todo .dsc { font-size:12px; color:var(--t2); line-height:1.55; margin-top:4px; white-space:pre-wrap; word-break:break-word; cursor:text }
 .todo .byb { display:inline-flex; margin-left:5px; vertical-align:-1px; color:var(--t3) }
 .todo.done .tt { color:var(--t3); font-weight:400; text-decoration:line-through } .todo.done .bx { background:var(--t3); border-color:var(--t3); color:var(--onAccent) }
-.todo .bx { width:15px; height:15px; border:1.5px solid var(--line2); border-radius:6px; flex:none; margin-top:1px; display:inline-flex; align-items:center; justify-content:center } .todo .bx:hover { border-color:var(--t2) }
+.todo .bx { width:16px; height:16px; border:1.5px solid var(--line2); border-radius:4px; flex:none; margin-top:1px; display:inline-flex; align-items:center; justify-content:center } .todo .bx:hover { border-color:var(--t2) }
 .todo .bx.ghost { border-color:var(--line) } .todo .bx.dash { border-style:dashed }
 .todo .mk { flex:none; display:inline-flex; align-items:center; margin-top:3px; color:var(--t3) }
 .todo .tools { position:absolute; right:8px; top:4px; display:flex; gap:2px; visibility:hidden; padding-left:14px; border-radius:6px; background:linear-gradient(90deg, var(--hover0), var(--hover) 30%) }
@@ -596,10 +596,26 @@ b,strong { color:var(--w); font-weight:600 }
 .modal.ask, .modal.conf { z-index:var(--z-alert) } .backdrop:has(+ .modal.ask), .backdrop:has(+ .modal.conf) { z-index:calc(var(--z-alert) - 1) } /* 묻기·확인창은 늘 맨 위 — 어둠막이 아래 창·시트(41~61)를 덮어야 그쪽 단추가 안 눌린다 (2026-11-13) */ .askin { width:100%; background:var(--bg); border:1px solid var(--line2); border-radius:8px; padding:9px 12px; font-size:13px; color:var(--w); outline:0 } .askin:focus { border-color:var(--t3) }
 .modal-h { display:flex; align-items:flex-start; gap:12px; padding:16px 18px 10px } .modal-h .t { display:flex; flex-direction:column; gap:2px; flex:1 } .modal-h .t b { font-weight:600; color:var(--w); font-size:15px } .modal-h .t small { color:var(--t3); font-size:12px }
 .modal-b { overflow:auto; padding:0 10px 8px; display:flex; flex-direction:column; gap:1px } .modal-f { display:flex; align-items:center; gap:10px; padding:12px 18px 16px; border-top:1px solid var(--line); flex-wrap:wrap } .modal-f .sp { flex:1 }
-.sheet { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); width:min(820px,calc(100% - 24px)); height:min(640px,calc(100% - 24px)); background:var(--sb); border:1px solid var(--line2); border-radius:12px; box-shadow:var(--sh-3); display:flex; flex-direction:column; z-index:calc(var(--z-modal) + 1); overflow:hidden }
-.sheet-h { display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--line); min-height:48px; font-size:13px } .sheet-h .tab { margin:0; border:0; color:var(--w); font-style:normal; height:auto } .sheet-h .acts { margin-left:auto; display:flex; align-items:center; gap:8px }
-.sheet-b { flex:1; overflow:auto; padding:16px 20px; font-size:13px }
-.sheet-f { display:flex; align-items:center; gap:10px; padding:10px 14px; border-top:1px solid var(--line); color:var(--t3); font-size:12px; flex-wrap:wrap }
+/* ── 창의 한 틀 (2026-11-13 · 부품 넷 둘째 묶음 · `Modal.tsx`) ──
+   폭은 셋뿐이다 — 작게 480 · 보통 720 · 넓게 1080. 창마다 폭을 새로 짓지 않는다(`test/unit/partsRules.test.ts` 가 `.modal.<이름> { width }` 를 잡는다).
+   머리줄 오른쪽 위 ✕(`.mx`) · 거르기 줄(`.modal-bar`) · 본문 · 발(`.modal-f` — 주 행동은 오른쪽 끝). 폰에서는 창이 화면을 다 쓰고 ✕ 가 44px 자리다 */
+:root { --mw-s:480px; --mw-m:720px; --mw-l:1080px }
+.modal.sz-s { width:min(var(--mw-s), calc(100% - 24px)) } .modal.sz-m { width:min(var(--mw-m), calc(100% - 24px)) } .modal.sz-l { width:min(var(--mw-l), calc(100% - 24px)) }
+.modal-h .mx { margin:-3px -6px 0 0 }
+.chk { appearance:none; -webkit-appearance:none; width:16px; height:16px; margin:0; flex:none; border:1.5px solid var(--t3); border-radius:4px; background:transparent; display:inline-grid; place-content:center; cursor:pointer; vertical-align:middle }
+.chk:checked { background:var(--w); border-color:var(--w) } .chk:checked::after { content:''; width:8px; height:4px; border-left:2px solid var(--onAccent); border-bottom:2px solid var(--onAccent); transform:translateY(-1px) rotate(-45deg) }
+.chk:disabled { opacity:.35; cursor:default } .chk:focus-visible { outline:1px solid var(--t2); outline-offset:2px }
+.modal-h .t b { display:flex; align-items:center; gap:6px }
+.sdot { width:8px; height:8px; border-radius:50%; flex:none; display:inline-block; background:var(--t3) } .sdot.s-fail { background:var(--err) } .sdot.s-missed { background:transparent; border:2px solid var(--err) } .sdot.s-unknown { background:var(--wait) } .sdot.s-ok { background:var(--done) } .sdot.s-finished { background:transparent; border:1.5px solid var(--t3) }
+.modal-bar { display:flex; align-items:center; gap:8px; padding:0 18px 10px; flex:none; flex-wrap:wrap } .modal-bar .sp { flex:1 }
+.modal-f .btn .kh { font-family:var(--mono); font-size:11px; color:var(--t3); border:1px solid var(--line2); border-radius:4px; padding:0 4px; margin-left:6px; line-height:15px } .modal-f .btn.primary .kh { color:inherit; border-color:currentColor; opacity:.55 }
+/* 루틴 편집 — 왼쪽 목록 · 오른쪽 칸. [취소][저장] 은 발 오른쪽 끝, 지우기는 발 왼쪽의 빨간 테두리 단추(폰은 본문 맨 아래 — 저장 옆에 두면 잘못 누른다) */
+.modal.rted { height:min(640px, calc(100% - 24px)) }
+.modal.rted .rted-in { display:flex; flex:1; min-height:0 }
+.modal.rted .rtlist { width:240px; flex:none; border-right:1px solid var(--line); padding:4px 8px 12px; display:flex; flex-direction:column; gap:2px; overflow:auto }
+.modal.rted .rtform { flex:1; min-width:0; overflow:auto; padding:4px 20px 16px; display:flex; flex-direction:column; gap:14px; font-size:13px } .modal.rted .rtform > * { flex-shrink:0 }
+.modal.rted .apgrid { display:grid; grid-template-columns:1fr 1fr; gap:8px } .modal.rted .apgrid .preset { min-width:0; padding:10px 12px } .modal.rted .apgrid .preset b { font-size:12px }
+.modal.rted .rtnote { color:var(--t3); font-size:12px } .modal.rted .rtdel.in-body { display:none } .modal.rted .field .seg { align-self:flex-start }
 .search { margin:0 18px 10px; display:flex; align-items:center; gap:8px; border:1px solid var(--line2); border-radius:6px; padding:6px 10px; color:var(--t3) } .search input { flex:1; background:none; border:0; outline:0; color:var(--t) }
 .prow { display:flex; align-items:center; gap:10px; padding:7px 10px 7px 18px; border-radius:6px; font-size:13px; width:100%; min-height:36px } .prow:hover { background:var(--hover) } .prow.sel { background:var(--sel) } .prow .n { flex:1; color:var(--t); white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .prow.muted .n { color:var(--t3) } .prow .b { font-size:11px; color:var(--t3); display:flex; align-items:center; gap:4px } .prow time { font-size:11px; color:var(--t3); width:52px; text-align:right }
 .newrow { display:flex; align-items:center; gap:10px; padding:6px 10px 6px 18px; border-radius:6px; font-size:13px; color:var(--t2); width:100%; min-height:32px } .newrow:hover { color:var(--w) }
@@ -646,7 +662,7 @@ b,strong { color:var(--w); font-weight:600 }
 /* 알림 — 데스크톱에서만 목록에 상한을 둔다. 폰은 `.modal-b { flex:1 }` 로 아래까지 채우고
    버튼 줄이 화면 맨 아래(안전 영역 위)에 붙는다. */
 @media (min-width: 768px) { .nmodal .modal-b { max-height:55vh } }
-.pk .fl { display:flex; gap:6px; padding:0 18px 8px; font-size:12px; color:var(--t3); align-items:center } .pk .fl button { padding:2px 8px; border-radius:8px; color:var(--t3) } .pk .fl button.on { background:var(--sel); color:var(--w) } .pk .fl .hint { margin-left:auto } .pk .modal-b { padding:0 10px 8px } .pk .trow.dir .n { color:var(--t) } .pk .crumb { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; text-align:right; font-size:12px; color:var(--t3); direction:rtl } .pk .crumb > span { direction:ltr; unicode-bidi:isolate } .pk .crumb b { color:var(--t) }
+.pk .fl { display:flex; gap:6px; padding:0 18px 8px; font-size:12px; color:var(--t3); align-items:center } .pk .fl .hint { margin-left:auto } .pk .modal-b { padding:0 10px 8px } .pk .trow.dir .n { color:var(--t) } .pk .crumb { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; text-align:right; font-size:12px; color:var(--t3); direction:rtl } .pk .crumb > span { direction:ltr; unicode-bidi:isolate } .pk .crumb b { color:var(--t) }
 .rbg { font-size:11px; border:1px solid var(--line2); border-radius:4px; padding:0 5px; white-space:nowrap }
 .field { display:flex; flex-direction:column; gap:5px } .field label { font-size:11px; color:var(--t3) } .field input,.field textarea,.field select { background:var(--bg); border:1px solid var(--line2); border-radius:6px; padding:8px 10px; outline:0; color:var(--t); width:100% }
 .offline { position:fixed; left:50%; top:calc(8px + var(--sat)); transform:translateX(-50%); background:var(--box); border:1px solid var(--line2); color:var(--wait); border-radius:8px; padding:5px 12px; font-size:12px; z-index:var(--z-banner) }
@@ -770,8 +786,14 @@ b,strong { color:var(--w); font-weight:600 }
   .dfoot { display:flex; flex:none; gap:10px; align-items:center; padding:8px 16px 10px }
   .app.phone.notabs .dfoot { padding-bottom:calc(var(--sab) + 10px) } .dfoot .talk { height:44px; padding:0 18px; border-radius:999px; background:var(--box); border:1px solid var(--hair); display:inline-flex; align-items:center; font-size:14px; color:var(--t); margin-left:auto }
   .todo .tools { display:none } .todo .mk { margin-top:4px } .todo .tt { font-size:16px } .todo .dsc { font-size:14px } .todo .ein { font-size:16px } .todo { padding:8px 84px 8px 18px } .pk .fl .hint { display:none }
-  .modal, .sheet { left:8px; right:8px; top:calc(var(--sat) + 8px); bottom:calc(var(--sab) + 8px); width:auto; height:auto; max-height:none; transform:none; border-radius:12px }
+  .modal { left:8px; right:8px; top:calc(var(--sat) + 8px); bottom:calc(var(--sab) + 8px); width:auto; height:auto; max-height:none; transform:none; border-radius:12px }
   .modal-b { flex:1; min-height:0 } .modal-h { padding-top:18px }
+  .modal.sz-s, .modal.sz-m, .modal.sz-l { width:auto }
+  .modal-h .mx { width:44px; height:44px; margin:-12px -12px -8px 0 } .modal-f .btn .kh { display:none } .modal-h .t .wide { display:none }
+  .modal.rted { height:auto; bottom:calc(max(var(--tablift, 0px), var(--sab)) + 8px) }
+  .modal.rted .rted-in { flex-direction:column } .modal.rted .rtlist { width:auto; max-height:34vh; border-right:0; border-bottom:1px solid var(--line); padding-bottom:8px } .modal.rted .rtform { padding:12px 16px 16px }
+  .modal.rted .modal-f { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px 12px 12px } .modal.rted .modal-f .sp, .modal.rted .rtdel.in-foot { display:none } .modal.rted .modal-f .btn { width:100%; height:44px; justify-content:center }
+  .modal.rted .rtdel.in-body { display:inline-flex; align-self:flex-start; height:40px } .modal.rted .rtpre .preset { flex:none; white-space:nowrap }
   .modal-f { margin-top:auto; padding-bottom:16px }
   /* 알림 버튼 줄 — 세 개가 들쭉날쭉 감기지 않게 두 칸 격자로 눕힌다 (칸을 꽉 채워 높이가 같다) */
   .nmodal .modal-f { display:grid; grid-template-columns:1fr 1fr; gap:8px }
@@ -816,7 +838,7 @@ b,strong { color:var(--w); font-weight:600 }
 }
 
 /* ── 설정 (V25) — 왼쪽 목차 · 한 줄은 늘 «제목 · 설명 · 조작» ─────────────── */
-.modal.setw { width:min(900px,calc(100% - 24px)); height:min(620px,calc(100% - 48px)); max-height:none; flex-direction:row; padding:0; background:var(--bg) }
+.modal.setw { height:min(620px,calc(100% - 48px)); max-height:none; flex-direction:row; padding:0; background:var(--bg) }
 .snav { width:214px; flex:none; background:var(--sb); border-right:1px solid var(--line); padding:10px 8px; display:flex; flex-direction:column; gap:2px; overflow:auto }
 .snav .nv { display:flex; align-items:center; gap:10px; height:34px; padding:0 11px; border-radius:8px; font-size:13px; color:var(--t2); text-align:left; cursor:pointer; background:none; border:0; width:100% }
 .snav .nv:hover { background:var(--hover) } .snav .nv.on { background:var(--sel); color:var(--w) }
@@ -873,7 +895,6 @@ b,strong { color:var(--w); font-weight:600 }
 /* 확인창 — 되돌리기 어려운 한 걸음 앞 (모델 바꾸기 등) */
 .modal.conf .cbody { margin:0; font-size:13px; line-height:1.65; color:var(--t2); white-space:pre-wrap; overflow-wrap:anywhere }
 .modal.conf .cskip { display:flex; align-items:center; gap:9px; margin:16px 0 2px; font-size:13px; color:var(--t2); cursor:pointer }
-.modal.conf .cskip input { width:17px; height:17px; accent-color:var(--t3) }
 /* 볼트 루트 고르기 — 줄 아래로 펼쳐지는 폴더 목록 (원격에는 Finder 가 없다) */
 .rootp { display:flex; flex-direction:column; gap:8px; padding:0 0 14px; border-bottom:1px solid var(--line) }
 .rootp .rp-h { display:flex; gap:8px } .rootp .rp-h .sin { flex:1; width:auto }
@@ -1364,7 +1385,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 
 /* 명령 팔레트 (Rondo 이식 D1) — 화면 위쪽 1/5 에 뜬다.
    ⚠ 가운데에 두면 목록이 길어질 때 위아래로 출렁인다 — 위를 고정하고 아래로만 자란다. */
-.modal.pal { width: min(620px, calc(100vw - 32px)); top:14vh; left:50%; transform:translateX(-50%); bottom:auto; max-height:66vh; display:flex; flex-direction:column; padding:0; overflow:hidden }
+.modal.pal { width:min(var(--mw-m), calc(100vw - 32px)); top:14vh; left:50%; transform:translateX(-50%); bottom:auto; max-height:66vh; display:flex; flex-direction:column; padding:0; overflow:hidden }
 .modal.pal .pq { display:flex; align-items:center; gap:9px; padding:12px 14px; border-bottom:1px solid var(--line) }
 .modal.pal .pq input { flex:1; min-width:0; background:none; border:0; outline:0; color:var(--w); font:inherit; font-size:15px }
 .modal.pal .pq input::placeholder { color:var(--t3) }
@@ -1619,7 +1640,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .nav .bd.kb { font-family:var(--mono); font-size:11px }
 
 /* ── 세션 정리 (2026-10-02 · 시안 B) — 넓은 창 · 거름 알약 · 표 · 잠긴 줄은 흐리게 · 되돌리기 띠 ── */
-.modal.clean { width:min(860px, calc(100% - 24px)); height:min(640px, calc(100% - 24px)) }
+.modal.clean { height:min(640px, calc(100% - 24px)) }
 .modal.clean .modal-h .cnt { font-size:12px; color:var(--t3) }
 /* EC · 세션 창 상태 탭 — 전체 · 내 답 기다림 · 일하는 중 · 안 읽음 · 쉼. 줄은 접히지 않고, 좁으면 옆으로 밀어 본다 */
 .modal.clean .stabs { display:flex; align-items:center; gap:4px; padding:0 18px 10px; flex:none; min-width:0; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch } .modal.clean .stabs::-webkit-scrollbar { display:none }
@@ -1732,14 +1753,11 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 
 /* ── CJ R2 · 전체 할 일 보드 · 폴더 현황 시트 — 맥은 가운데 창(세션 창 크기), 폰은 위 `.modal` 폰 규칙이 전체 높이 시트로 덮는다 ── */
 .modal > .grip { display:none }
-.modal.board, .modal.fsheet { width:min(720px, calc(100% - 24px)); height:min(680px, calc(100% - 24px)) }
-.modal.fsheet { width:min(520px, calc(100% - 24px)) }
+.modal.board, .modal.fsheet { height:min(680px, calc(100% - 24px)) }
 .modal.board .modal-h .cnt, .modal.fsheet .modal-h .cnt { font-size:12px; color:var(--t3) }
 .modal.board .bsearch { display:flex; align-items:center; gap:8px; margin:0 18px 8px; padding:0 10px; height:34px; border-radius:8px; background:var(--bg); border:1px solid var(--line2) }
 .modal.board .bsearch input { flex:1; min-width:0; background:transparent; border:0; outline:0; color:var(--w); font:inherit; font-size:13px }
 .modal.board .bbar { display:flex; gap:6px; padding:0 18px 10px }
-.modal.board .bbar .pill { font-size:12px; padding:3px 10px; border-radius:999px; background:var(--line2); color:var(--t2) }
-.modal.board .bbar .pill.on { background:var(--w); color:var(--onAccent, #111) }
 .modal.board .bbody, .modal.fsheet .bbody { flex:1; min-height:0; overflow:auto; padding:0 10px 12px }
 .modal.board .bempty { color:var(--t3); text-align:center; padding:28px 12px; font-size:13px; line-height:1.6 }
 .modal.board .bfold { margin-top:4px }
@@ -1933,7 +1951,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .rtline:hover { background:var(--hover) } .rtline .sp { flex:1 } .rtline .t { color:var(--w) } .rtline .ico { flex:none }
 .rtline .bad { font-size:12px; padding:2px 9px; border-radius:8px; background:color-mix(in srgb, var(--err) 22%, transparent); color:var(--err) } .rtline .all { font-size:13px; color:var(--t3) }
 .sbtiles .rtline { width:100%; margin:6px 0 0; height:34px; padding:0 9px; border-radius:12px; font-size:12px; gap:6px } .sbtiles .rtline .all { font-size:11px } .sbtiles .rtline .bad { font-size:11px; padding:1px 7px }
-.modal.board.rt { width:min(1080px, calc(100% - 24px)); height:min(820px, calc(100% - 24px)) }
+.modal.board.rt { height:min(820px, calc(100% - 24px)) }
 .modal.rt .rtbox { border:1px solid var(--line2); border-radius:12px; background:var(--box); padding:10px 12px; margin:0 8px 10px }
 .modal.rt .rth { display:flex; align-items:center; gap:10px; margin-bottom:6px; font-size:13px } .modal.rt .rth b { color:var(--w) }
 .modal.rt .seg { display:inline-flex; border:1px solid var(--line2); border-radius:8px; overflow:hidden } .modal.rt .seg button { padding:2px 10px; font-size:12px; color:var(--t2) } .modal.rt .seg button.on { background:var(--sel); color:var(--w) }
@@ -2038,7 +2056,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 @media (hover:none) { .cx-strip.mini .cx-it.k-stalled .cx-a { opacity:1 } }
 
 /* 상황판 페이지 — 축은 제목처럼 · 나설 곳은 한 목록 · 목표 카드는 같은 줄끼리 높이를 맞춘다 */
-.modal.board.cx { width:min(1180px, calc(100% - 24px)); height:min(860px, calc(100% - 24px)) }
+.modal.board.cx { height:min(860px, calc(100% - 24px)) }
 .modal.cx .modal-h { align-items:center } .modal.cx .cx-seg { flex:none }
 .modal.cx .cx-body { display:flex; flex-direction:column; gap:20px; padding:4px 24px 24px }
 .cx-strip.big { margin:0; gap:0 }
@@ -2114,7 +2132,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .opensheet .osx { justify-content:center; border-bottom:0 } .opensheet .osx .osl { align-items:center } .opensheet .osx b { color:var(--t2) }
 
 /* ── LM · 연결 지도 (2026-11-04 · 상황판 «연결») — 목업 03_디자인/2026-11-03_연결-지도-목업 ─────────── */
-.modal.cx .cx-tab { margin-right:auto; margin-left:12px }
+.modal.cx .cx-tab { margin-right:auto; margin-left:12px } .modal.cx .cx-rt { flex:none }
 .modal.cx .lm-body { padding:0 18px 18px; gap:0 }
 .lm { display:flex; flex-direction:column; gap:10px; min-height:100%; --lm-mention:#8a8a8a; --lm-relay:#5fa8ff; --lm-entity:#e2c35b; --lm-similar:#d0d0d0 }
 :root[data-theme="light"] .lm { --lm-mention:#9a9aa0; --lm-relay:#2f7fe0; --lm-entity:#b8901c; --lm-similar:#6a6a70 }

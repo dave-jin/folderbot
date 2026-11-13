@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useEsc } from './esc'
+import { Modal, Seg } from './Modal'
 import { api } from './api'
 import { askConfirm } from './Sheets'
 import { useStore } from './store'
@@ -17,7 +17,6 @@ import type { RoutineDef } from '../core/types'
  * ⚠ 폰은 시간표를 «오늘 몰림» 띠 하나로 줄이고, 단추는 펼친 줄에만 둔다.
  */
 const LABEL: Record<BoardState, string> = { fail: '실패', missed: '놓침', unknown: '결과 줄 없음', finished: '끝난 일회성', off: '꺼 둠', ok: '정상' }
-const DOT: Record<BoardState, string> = { fail: '🔴', missed: '🟠', unknown: '🟡', finished: '⚪', off: '⏸', ok: '🟢' }
 const HINT: Partial<Record<BoardState, string>> = { missed: '앱이 꺼져 있었고 보충 시간도 지났어요', unknown: '돌았지만 마지막 줄에 «결과: …» 를 안 남겼어요' }
 const RES: Record<RunRow['result'], string> = { ok: '성공', skip: '건너뜀', fail: '실패', timeout: '시간 초과', unknown: '결과 없음' }
 const p2 = (n: number) => String(n).padStart(2, '0')
@@ -42,7 +41,6 @@ export function Routines({ onClose, go, openSheet, say, phone }: { onClose: () =
   const load = () => { void api<Board>('/routines/overview').then(setB).catch((e) => say((e as Error).message)) }
   useEffect(() => { load(); const t = window.setInterval(load, 30_000); return () => window.clearInterval(t) }, [])
   useEffect(() => { load() }, [s.bots])   // 루틴이 바뀌면 봇 목록이 다시 온다
-  useEsc(onClose)
 
   const key = (r: { botId: string; name: string }) => `${r.botId}::${r.name}`
   const problems = b ? b.counts.fail + b.counts.missed + b.counts.unknown : 0
@@ -78,9 +76,7 @@ export function Routines({ onClose, go, openSheet, say, phone }: { onClose: () =
   const byBot = b ? [...new Set(b.today.blocks.map((x) => x.botId))] : []
   const nameOf = (id: string) => b?.routines.find((r) => r.botId === id)?.bot ?? id
 
-  return <><div className="backdrop" onClick={onClose} /><div className="modal board rt" role="dialog" aria-label="루틴">
-    <div className="grip" />
-    <div className="modal-h"><div className="t"><b>⏰ 루틴</b><span className="cnt">{b ? `${b.total}개 · 폴더 ${b.folders}곳 · 문제 ${problems}` : '불러오는 중…'}</span></div><button className="ib" onClick={onClose} title="닫기 ⎋" aria-label="닫기"><Icon n="x" size={14} /></button></div>
+  return <Modal size="l" cls="board rt" grip raw label="루틴" title={<><Icon n="clock" size={14} />루틴</>} sub={b ? `${b.total}개 · 폴더 ${b.folders}곳 · 문제 ${problems}` : '불러오는 중…'} onClose={onClose}>
     <div className="bbody">
       {b ? <>
         <section className="rtbox">
@@ -105,15 +101,14 @@ export function Routines({ onClose, go, openSheet, say, phone }: { onClose: () =
         </section>
 
         <div className="bbar rtbar">
-          <button className={`pill ${onlyBad ? 'on' : ''}`} onClick={() => setOnlyBad(true)}>문제만 {problems}</button>
-          <button className={`pill ${onlyBad ? '' : 'on'}`} onClick={() => setOnlyBad(false)}>전체 {b.total}</button>
+          <Seg cls="rtseg" label="루틴 거르기" value={onlyBad ? 'bad' : 'all'} options={[['bad', `문제만 ${problems}`], ['all', `전체 ${b.total}`]] as const} onChange={(v) => setOnlyBad(v === 'bad')} />
           <select className="cfold" value={folder} onChange={(e) => setFolder(e.target.value)} aria-label="폴더"><option value="">폴더: 전체</option>{[...new Set(b.routines.map((r) => r.botId))].map((id) => <option key={id} value={id}>{nameOf(id)}</option>)}</select>
           <input className="rtq" value={q} onChange={(e) => setQ(e.target.value)} placeholder="루틴 찾기" aria-label="루틴 찾기" />
         </div>
         {b.noteMissing.length ? <div className="rtnote">CLAUDE.md 없음 — 이 폴더 봇은 루틴 변경을 모를 수 있어요: {b.noteMissing.map(nameOf).join(' · ')}</div> : null}
 
         {groups.map(([st, list]) => <div key={st} className="rtgrp" data-state={st}>
-          <div className="gh"><span>{DOT[st]}</span><b>{LABEL[st]}</b><span className="c">{list.length}</span>{HINT[st] ? <span className="h">— {HINT[st]}</span> : null}<span className="sp" />
+          <div className="gh">{st === 'off' ? <Icon n="pause" size={11} color="var(--t3)" /> : <i className={`sdot s-${st}`} aria-hidden="true" />}<b>{LABEL[st]}</b><span className="c">{list.length}</span>{HINT[st] ? <span className="h">— {HINT[st]}</span> : null}<span className="sp" />
             {st === 'finished' ? <button className="btn" disabled={!!busy} onClick={() => void sweepFinished()}>끝난 일회성 {list.length}개 정리</button> : null}</div>
           {list.map((r) => { const k = key(r), on = open === k; return <div key={k} className={`rtr ${on ? 'open' : ''}`} data-routine={r.name}>
             <div className="row" onClick={() => setOpen(on ? '' : k)}>
@@ -137,7 +132,7 @@ export function Routines({ onClose, go, openSheet, say, phone }: { onClose: () =
         {!groups.length ? <div className="bempty">{onlyBad ? '문제 있는 루틴이 없어요 — [전체] 를 누르면 다 보여요' : '걸린 루틴이 없어요'}</div> : null}
       </> : <div className="bempty">불러오는 중…</div>}
     </div>
-  </div></>
+  </Modal>
 }
 
 /** 홈·사이드바 네 칸 아래 한 줄 — 루틴 수와 문제 수 · 누르면 루틴 페이지 */

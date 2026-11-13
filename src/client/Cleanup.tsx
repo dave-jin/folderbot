@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useEsc } from './esc'
+import { Modal } from './Modal'
 import { CLEAN_DAYS, CLEAN_DEFAULT, CLEAN_FILTER_LABEL, cleanDaysOf, cleanMatch, cleanPreselect, dayWord, sessKind, sessLocked, type CleanFilter } from '../core/cleanup'
 import { STATE_LABEL, type SessionInfo } from '../core/types'
 import { SESS_TABS, tabCounts, tabMatch, type SessTab } from '../core/sessionTabs'
@@ -35,7 +35,6 @@ const ago = (t: number) => { const d = Math.floor((Date.now() - t) / DAY); if (d
 
 export function Cleanup({ onClose, say, manage = false, go }: { onClose: () => void; say: (m: string) => void; manage?: boolean; go?: (botId: string, sid?: string) => void }) {
   const { s } = useStore()
-  useEsc(onClose)
   const [on, setOn] = useState<CleanFilter[]>(manage ? ['all'] : CLEAN_DEFAULT)
   /** 세션 창은 «고르기» 를 누르기 전까지 아무것도 골라 두지 않는다 */
   const [auto, setAuto] = useState(!manage)
@@ -89,8 +88,7 @@ export function Cleanup({ onClose, say, manage = false, go }: { onClose: () => v
   const kindCls = (x: SessionInfo) => ({ 소통: 'k-comm', 채널: 'k-comm', 루틴: 'k-rt', 봇끼리: 'k-bot', 사람: 'k-me' })[sessKind(x)]
 
   const toggleRow = (id: string) => setPick((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n })
-  return <><div className="backdrop" onClick={onClose} /><div className={`modal clean ${manage ? 'manage' : ''}`} role="dialog" aria-label={manage ? '세션' : '세션 정리'}>
-    <div className="modal-h"><div className="t"><b>{manage ? '세션' : '세션 정리'}</b><span className="cnt">전체 {all.length}개 · 고른 것 {pick.size}개</span></div><button className="ib" onClick={onClose} title="닫기 ⎋"><Icon n="x" size={14} /></button></div>
+  return <Modal size="l" cls={`clean ${manage ? 'manage' : ''}`} raw title={manage ? '세션' : '세션 정리'} label={manage ? '세션' : '세션 정리'} sub={<>전체 {all.length}개 · 고른 것 {pick.size}개</>} onClose={onClose}>
     {/* EC · 상태 탭 — 개수는 아래 거름(알약·폴더)을 지난 줄 중에서 센다 */}
     <div className="stabs" role="tablist" aria-label="상태">
       {SESS_TABS.map((t) => <button key={t.k} role="tab" aria-selected={tab === t.k} data-tab={t.k} className={`stab ${tab === t.k ? 'on' : ''} ${t.k === 'wait' && counts.wait ? 'hot' : ''}`} onClick={() => setTab(t.k)}><span>{t.t}</span><span className="c">{counts[t.k]}</span></button>)}
@@ -109,12 +107,12 @@ export function Cleanup({ onClose, say, manage = false, go }: { onClose: () => v
     <div className="ctab">
       <table>
         <thead><tr>
-          <th className="ck" style={{ width: 30 }}><input type="checkbox" checked={allOn} disabled={!free.length} onChange={() => setPick(allOn ? new Set() : new Set(free.map((x) => x.id)))} aria-label="보이는 것 모두" /></th>
+          <th className="ck" style={{ width: 30 }}><input type="checkbox" className="chk" checked={allOn} disabled={!free.length} onChange={() => setPick(allOn ? new Set() : new Set(free.map((x) => x.id)))} aria-label="보이는 것 모두" /></th>
           <th>폴더</th><th>세션</th><th>종류</th><th>상태</th><th>마지막 활동</th><th className="allk" onClick={() => { if (free.length) setPick(allOn ? new Set() : new Set(free.map((x) => x.id))) }}>보이는 것 모두 고르기 · {shown.length}개</th>
         </tr></thead>
         <tbody>
           {shown.map((x) => { const lock = sessLocked(x); return <tr key={x.id} data-id={x.id} className={lock ? 'lock' : ''} title={manage ? '누르면 이 세션으로' : lock ? `지울 수 없어요 — ${lock}` : undefined} onClick={() => { if (manage && go) { onClose(); go(x.botId, x.id); return } if (lock) return; toggleRow(x.id) }}>
-            <td className="ck" onClick={(e) => { if (!manage) return; e.stopPropagation(); if (!lock) toggleRow(x.id) }} title={lock ? `지울 수 없어요 — ${lock}` : undefined}><input type="checkbox" checked={pick.has(x.id)} disabled={!!lock} readOnly /></td>
+            <td className="ck" onClick={(e) => { if (!manage) return; e.stopPropagation(); if (!lock) toggleRow(x.id) }} title={lock ? `지울 수 없어요 — ${lock}` : undefined}><input type="checkbox" className="chk" checked={pick.has(x.id)} disabled={!!lock} readOnly /></td>
             <td className="fd">{botName(x.botId)}</td><td className="sn">{x.name}</td>
             <td className="kd"><span className={`ktag ${kindCls(x)}`}>{sessKind(x)}</span></td>
             <td className={`st ${lock ? 'lk' : ''}`}>{lock ?? STATE_LABEL[x.state]}</td>
@@ -130,5 +128,5 @@ export function Cleanup({ onClose, say, manage = false, go }: { onClose: () => v
       <button className="btn danger" disabled={!pick.size || busy} onClick={() => void del()}>선택한 {pick.size}개 지우기</button>
     </div>
     {undo ? <div className="cundo" role="status">세션 {undo.ids.length}개를 지웠어요 <button onClick={() => void restore()}>되돌리기 (10초)</button></div> : null}
-  </div></>
+  </Modal>
 }

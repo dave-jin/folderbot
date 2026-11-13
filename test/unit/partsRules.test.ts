@@ -73,3 +73,53 @@ describe('단추 넷 — 변형은 정해진 낱말뿐', () => {
     expect(seg.slice(seg.indexOf('data-act="allow"'))).not.toMatch(/<button/)
   })
 })
+
+/**
+ * 창의 한 틀 (2026-11-13 · 부품 넷 둘째 묶음 · `src/client/Modal.tsx`).
+ * 11/12 리뷰에서 창 열 개의 폭이 열 가지(480~1180)였다. 폭은 셋(`--mw-s` 480 · `--mw-m` 720 · `--mw-l` 1080)으로 모았고,
+ * 어둠막 · ⎋ · ✕ 는 `Modal` 이 붙인다. 화면에서 «바깥 · ✕ 로 닫히는지» 는 `test/uxui-eight.mjs` M1 이 잰다.
+ */
+describe('창의 한 틀 — 폭은 셋, 닫는 길은 틀이 붙인다', () => {
+  it('폭 눈금은 480 · 720 · 1080 이다', () => {
+    expect(/--mw-s:480px; --mw-m:720px; --mw-l:1080px/.test(css)).toBe(true)
+    for (const k of ['s', 'm', 'l']) expect(css.includes(`.modal.sz-${k} { width:min(var(--mw-${k}), calc(100% - 24px)) }`), `sz-${k}`).toBe(true)
+  })
+  it('눈금 밖 폭을 가진 창은 알려진 예외뿐이다 — 새 창은 `Modal` 의 `size` 로 폭을 고른다', () => {
+    const found: string[] = []
+    // 화면 코드: <div className="modal 이름" style={{ width: 'min(NNNpx…' }}>
+    for (const { f, s } of files) for (const m of code(s).matchAll(/className=(?:"|\{`)modal([^"`]*)(?:"|`\})[^>]*?width: 'min\((\d+)px/g)) found.push(`${f}:${m[1].trim().split(/\s+/)[0] || '(이름 없음)'}:${m[2]}`)
+    // 스타일시트: .modal.이름 { … width:min(NNNpx … } / width:NNNpx  (폰 구간의 100% 는 폭 눈금이 아니다)
+    for (const m of css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(?:^|[}\s,])\.modal((?:\.[\w-]+)+)\s*\{([^}]*)\}/g)) { const w = /(?:^|[;\s])width:\s*(?:min\()?(\d+)px/.exec(m[2]); if (w) found.push(`styles.css:${m[1].split('.')[1]}:${w[1]}`) }
+    expect(found.sort()).toEqual([
+      'App.tsx:(이름 없음):560',      // 메시지에 붙일 파일 고르기 — 목록 한 칸짜리
+      'App.tsx:conf:520',             // 같은 이름의 파일이 여러 곳 — 확인창 계열
+      'Sheets.tsx:ask:420',           // 이름 묻기
+      'Sheets.tsx:conf:520',          // 확인창
+      'Sheets.tsx:dif:860',           // 바뀐 내용 보기 — 코드 두 단
+      'localOpen.tsx:conf:520',       // 동기화 중 확인창
+      'styles.css:apick:560',         // 에이전트 고르기 — 맨 위 층
+      'styles.css:keys:420',          // 단축키
+      'styles.css:smg:1080',          // 줄기 관리(= 넓게)
+    ].sort())
+  })
+  it('틀로 옮긴 창은 어둠막을 손으로 짓지 않는다', () => {
+    for (const f of ['Manage.tsx', 'Routines.tsx', 'Cleanup.tsx']) {
+      const s = code(files.find((x) => x.f === f)!.s)
+      expect(s.includes('className="backdrop"'), `${f} 에 손으로 지은 어둠막`).toBe(false)
+      expect(s.includes('<Modal '), `${f} 가 Modal 을 안 쓴다`).toBe(true)
+    }
+    const sheets = code(files.find((x) => x.f === 'Sheets.tsx')!.s)
+    expect(sheets.includes('cls="rted"') && sheets.includes('cls="nmodal"'), '루틴 편집 · 알림이 Modal 을 안 쓴다').toBe(true)
+    expect(/className="sheet(-[hbf])?"/.test(sheets), '옛 시트 틀(.sheet)이 남았다').toBe(false)
+  })
+  it('하나만 고르는 거르기는 세그먼트다 — 알약(`pill`)은 여럿을 함께 켜는 세션 창에만', () => {
+    const users = files.filter(({ s }) => /className=(?:"|\{`)pill\b/.test(code(s))).map((x) => x.f)
+    expect(users).toEqual(['Cleanup.tsx'])
+  })
+  it('체크는 한 모양(`.chk` — 네모 16 · 둥글기 4)이다', () => {
+    const bare: string[] = []
+    for (const { f, s } of files) for (const m of code(s).matchAll(/<input type="checkbox"([^>]*)>/g)) if (!/className="chk"/.test(m[1])) bare.push(f)
+    expect(bare).toEqual([])
+    expect(/\.chk \{ appearance:none;[^}]*width:16px; height:16px;[^}]*border-radius:4px/.test(css)).toBe(true)
+  })
+})

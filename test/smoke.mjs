@@ -2865,12 +2865,12 @@ try {
                   await wait(300)
                   await hp.evaluate(() => { const b = [...document.querySelectorAll('.panel button.kv')].find((x) => /루틴 (편집|추가)/.test(x.textContent ?? '')); b?.click() })
                   await wait(400)
-                  await hp.evaluate(() => { if (!document.querySelector('.sheet textarea')) { const n = [...document.querySelectorAll('.sheet button.srow')].find((x) => /새 루틴/.test(x.textContent ?? '')); n?.click() } })
+                  await hp.evaluate(() => { if (!document.querySelector('.modal.rted textarea')) { const n = [...document.querySelectorAll('.modal.rted button.srow')].find((x) => /새 루틴/.test(x.textContent ?? '')); n?.click() } })
                   await wait(300)
-                  const sw = await hp.evaluate(() => { const t = document.querySelector('.sheet textarea'); return { ta: t ? Math.round(t.getBoundingClientRect().width) : 0, vw: innerWidth } })
+                  const sw = await hp.evaluate(() => { const t = document.querySelector('.modal.rted textarea'); return { ta: t ? Math.round(t.getBoundingClientRect().width) : 0, vw: innerWidth } })
                   if (!sw.ta) fail('CF-4: 폰에서 루틴 시트의 편집 칸을 못 찾았다 — 검사가 헛돈다')
                   else if (sw.ta < sw.vw * 0.7) fail('🔴 CF-4: 폰 루틴 시트의 편집 칸이 너무 좁다 ' + JSON.stringify(sw))
-                  await hp.evaluate(() => { const c = [...document.querySelectorAll('.sheet .sheet-h button')].find((x) => /취소/.test(x.textContent ?? '')); c?.click() })
+                  await hp.evaluate(() => { const c = [...document.querySelectorAll('.modal.rted .modal-f button')].find((x) => /취소/.test(x.textContent ?? '')); c?.click() })
                   await wait(300)
                   ok(`CF-4 폰 루틴 시트 — 편집 칸 ${sw.ta}/${sw.vw}px`)
                 }
@@ -3516,7 +3516,7 @@ try {
           const first = await pg.$eval('.modal.rt .rtgrp', (g) => ({ st: g.getAttribute('data-state'), names: [...g.querySelectorAll('.rtr')].map((x) => x.getAttribute('data-routine')), dave: !!g.querySelector('.dave') }))
           if (first.st !== 'fail' || !first.names.includes('RB 실패 검사') || !first.dave) fail('🔴 RB-6: 실패 묶음이 맨 위에 안 왔다 · ' + JSON.stringify(first))
           const nBad = await pg.$$eval('.modal.rt .rtr', (r) => r.length)
-          await pg.click('.modal.rt .rtbar .pill:nth-child(2)'); await wait(200)
+          await pg.click('.modal.rt .rtbar .seg button:nth-child(2)'); await wait(200)
           const nAll = await pg.$$eval('.modal.rt .rtr', (r) => r.length)
           if (!(nAll > nBad)) fail(`RB-6: [전체] 가 [문제만] 보다 많아야 한다 · ${nBad} → ${nAll}`)
           const before = new Set((await api(`/bots/${cfo.id}/sessions`)).map((x) => x.id))
@@ -5621,7 +5621,7 @@ try {
           await pg.click('.cpop.plus .prow2:has-text("루틴으로 만들기")'); await wait(500)
           // AA-4(2026-09-22) 뒤로 폼은 **사람 말**을 들고 있고 cron 은 「다음 실행」 옆에 작게만 뜬다
           const sheet = await pg.evaluate(() => {
-            const s = document.querySelector('.sheet'); if (!s) return null
+            const s = document.querySelector('.modal.rted'); if (!s) return null
             const v = [...s.querySelectorAll('input')].map((x) => x.value)
             return { name: v[0] ?? '', when: v[1] ?? '', cron: s.querySelector('.rtnext .mono')?.textContent?.trim() ?? '', next: s.querySelector('.rtnext b')?.textContent ?? '', prompt: [...s.querySelectorAll('textarea')].map((x) => x.value).join(' ') }
           })
@@ -5632,7 +5632,7 @@ try {
           if (!/지난주 한 일 정리/.test(sheet.prompt)) fail('루틴: 시킬 일이 안 담겼다 ' + JSON.stringify(sheet))
           if (!/지난주/.test(sheet.name)) fail('루틴: 이름이 비었다 ' + JSON.stringify(sheet))
           // 저장하지 않고 닫으면 아무 일도 없어야 한다
-          await pg.click('.sheet-h .btn:has-text("취소")'); await wait(400)
+          await pg.click('.modal.rted [data-rt="cancel"]'); await wait(400)
           const after = (await api('/bots')).find((b) => b.id === bot.id)
           if ((after?.routines ?? []).some((r) => /지난주/.test(r.name))) fail('루틴: 안 눌렀는데 저장됐다')
           await pg.fill('.composer .cin', ''); await wait(200)

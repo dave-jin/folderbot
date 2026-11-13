@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useEsc } from './esc'
+import { ModalX } from './Modal'
 import type { HarnessItem, HarnessRow, PermissionMode } from '../core/types'
 import { AGENT_EFFORTS, CODEX_SANDBOX, DEFAULT_EFFORT, DEFAULT_MODEL, PROVIDER_LABEL, type Provider } from '../core/agents'
 import { copySay } from './clip'
@@ -111,7 +112,7 @@ export function Settings({ onClose, start }: { onClose: () => void; start?: SecI
   // ── 데스크톱: 왼쪽 목차 + 오른쪽 한 칸 ──
   return <>
     <div className="backdrop" onClick={onClose} />
-    <div className="modal setw">
+    <div className="modal setw sz-l" role="dialog" aria-modal="true" aria-label="설정">
       <div className="snav">
         <div className="sfind"><Icon n="search" size={13} color="var(--t3)" /><input placeholder="검색" value={q} onChange={(e) => setQ(e.target.value)} /></div>
         {q.trim()
@@ -120,7 +121,7 @@ export function Settings({ onClose, start }: { onClose: () => void; start?: SecI
         <span className="ver">Folder Bot v{s.version}</span>
       </div>
       <div className="spane">
-        <div className="sp-h"><b>{cur.label}</b>{cur.ref ? <span className="scp ref">보기만</span> : null}<button className="ib" onClick={onClose}><Icon n="x" size={14} /></button></div>
+        <div className="sp-h"><b>{cur.label}</b>{cur.ref ? <span className="scp ref">보기만</span> : null}<ModalX onClose={onClose} /></div>
         <div className="sp-b">{body}</div>
       </div>
     </div>
@@ -602,7 +603,7 @@ function ContextRows() {
   return <>
     <Group t="상황판" right={msg ? <span className="sv">{msg}</span> : undefined} />
     <Row t="상황판 요약 끄기" d={cfg.env ? '환경변수 FOLDERBOT_CONTEXT=0 으로 꺼져 있어요 — 여기 스위치와 상관없이 쉬어요.' : '끄면 세션이 끝나도 요약 카드를 만들지 않아요. 판은 마지막으로 만든 것을 그대로 보여 줘요.'} at="main">
-      <span className="seg">{([[false, '켜기'], [true, '끄기']] as const).map(([v, l]) => <button key={l} className={cfg.off === v ? 'on' : ''} onClick={() => { if (cfg.off !== v) void save({ off: v }) }}>{l}</button>)}</span>
+      <span className="seg">{([[false, '켬'], [true, '끔']] as const).map(([v, l]) => <button key={l} className={cfg.off === v ? 'on' : ''} onClick={() => { if (cfg.off !== v) void save({ off: v }) }}>{l}</button>)}</span>
     </Row>
     <Row t="하루 호출 상한" d="요약 모델을 하루에 이만큼까지만 불러요. 넘으면 다음 날까지 쉬어요. 비우면 500." at="main">
       <input className="bud" defaultValue={cfg.dailyCap ?? ''} placeholder="500" onBlur={(e) => setCap(e.target.value)} /><span className="unit">번</span>
@@ -645,7 +646,7 @@ function AkiflowPane() {
   return <>
     <p className="lead">레일에 선 폴더의 todo.md 줄 하나가 Akiflow 태스크 하나가 됩니다. 봇이 쓴 줄은 «🤖» 로 시작하고, 첫 줄에 출처 폴더가 붙어요. 봇의 제안은 [넣기] 한 것만 갑니다.</p>
     <Row t="동기화 상태" d={<>{st.mode === 'live' ? `켜짐 — 15분마다 맞춰요${st.routine ? '' : ' (루틴이 없어요 — 다시 켜 주세요)'}` : st.mode === 'preview' ? '미리보기 — 무엇을 할지 보여 주기만 해요. Akiflow 는 안 건드려요' : '꺼짐'} · 짝 {st.pairs}개 · 폴더 {st.folders}개{st.lastRun ? ` · 마지막 ${new Date(st.lastRun.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 성공 ${st.lastRun.ok} · 실패 ${st.lastRun.fail}` : ''}{msg ? ` · ${msg}` : ''}</>} at="main">
-      <span className="seg">{([['preview', '미리보기'], ['live', '켜기'], ['off', '끄기']] as const).map(([m, l]) => <button key={m} className={st.mode === m ? 'on' : ''} onClick={async () => { if (m === 'live' && st.mode !== 'live' && !(await askConfirm({ title: 'Akiflow 동기화를 켤까요?', body: `Akiflow 에 실제로 씁니다 — 지금 기준 만들기 ${c.create}건. 처음 회차는 Akiflow 를 먼저 읽어 제목이 같은 일은 «같은 일?» 로 묻고 붙잡아 두며, 나머지는 바로 만들어요.`, ok: '켜기' }))) return; void call('/akiflow/mode', { mode: m }, () => (m === 'live' ? '켰어요 — 오케스트레이터에 «Akiflow 동기화» 루틴이 생겼어요' : ''))
+      <span className="seg">{([['preview', '미리보기'], ['live', '켬'], ['off', '끔']] as const).map(([m, l]) => <button key={m} className={st.mode === m ? 'on' : ''} onClick={async () => { if (m === 'live' && st.mode !== 'live' && !(await askConfirm({ title: 'Akiflow 동기화를 켤까요?', body: `Akiflow 에 실제로 씁니다 — 지금 기준 만들기 ${c.create}건. 처음 회차는 Akiflow 를 먼저 읽어 제목이 같은 일은 «같은 일?» 로 묻고 붙잡아 두며, 나머지는 바로 만들어요.`, ok: '켜기' }))) return; void call('/akiflow/mode', { mode: m }, () => (m === 'live' ? '켰어요 — 오케스트레이터에 «Akiflow 동기화» 루틴이 생겼어요' : ''))
       }}>{l}</button>)}</span>
     </Row>
     <Row t="옛 봇 줄" d={st.legacyLeft ? `처음 볼 때 이미 있던 봇 줄 ${st.legacyLeft}개는 올리지 않아요. 제안 칸으로 돌리면 폴더마다 [넣기] 한 것만 Akiflow 로 갑니다.` : '남은 옛 봇 줄이 없어요.'} at="main">

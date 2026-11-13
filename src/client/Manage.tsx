@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useEsc } from './esc'
+import { Modal, Seg } from './Modal'
 import { botDueChip } from '../core/botName'
 import { dueChipOf, dueText } from '../core/due'
 import { BOARD_FILTER_LABEL, BOARD_PEEK, boardRows, folderGroup, type BoardFilter, type BoardItem, type FolderGroup } from '../core/home'
@@ -34,7 +34,6 @@ export function TodoBoard({ onClose, onTodo, say }: { onClose: () => void; onTod
   // 봇이 할 일을 고치면 알림이 오거나 파일이 바뀐다 — 열려 있는 동안 따라간다
   // ⚠ 할 일 프레임(`ev:'todo'`)·파일 바뀜도 따라간다 — 줄 번호가 밀린 채 체크하면 엉뚱한 줄이 끝난다(리뷰 10/16 · 호스트도 제목으로 한 번 더 막는다)
   useEffect(() => { if (!data) return; const t = window.setTimeout(() => void load(), 250); return () => window.clearTimeout(t) }, [s.notifications[0]?.id, s.todos, s.filesTick]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEsc(onClose)
   const oldHost = !!data && !data.items
   const rows = useMemo(() => (data?.items ? boardRows(s.bots, data.rows.map((r) => ({ botId: r.botId, items: r.items ?? [] })), filter, q) : []), [data, s.bots, filter, q])
   const meta = useMemo(() => new Map((data?.rows ?? []).map((r) => [r.botId, r])), [data])
@@ -45,11 +44,10 @@ export function TodoBoard({ onClose, onTodo, say }: { onClose: () => void; onTod
     try { await api(`/bots/${botId}/todo/toggle`, { body: { line: t.line, done: true, title: t.title } }); say(`«${t.title}» 완료`) } catch (e) { say((e as Error).message) } finally { await load(); setBusy('') }
   }
   const open = (botId: string) => { onClose(); onTodo(botId) }
-  return <><div className="backdrop" onClick={onClose} /><div className="modal board" role="dialog" aria-label="할 일">
-    <div className="grip" />
-    <div className="modal-h"><div className="t"><b>할 일</b><span className="cnt">{data ? `열린 ${data.open} · 폴더 ${folders}` : ''}</span></div><button className="ib" onClick={onClose} title="닫기 ⎋" aria-label="닫기"><Icon n="x" size={14} /></button></div>
+  /* 거르기는 하나만 켜지는 것이라 세그먼트로 (2026-11-13 · 부품 넷 «고르기») — 종전의 알약은 여럿을 함께 켜는 거르개(세션 정리)와 같은 모양이었다 */
+  return <Modal size="m" cls="board" grip raw title="할 일" sub={data ? `열린 ${data.open} · 폴더 ${folders}` : ''} onClose={onClose}>
     <div className="bsearch"><Icon n="search" size={14} color="var(--t3)" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="할 일 찾기" aria-label="할 일 찾기" />{q ? <button className="ib" onClick={() => setQ('')} aria-label="지우기"><Icon n="x" size={12} /></button> : null}</div>
-    <div className="bbar">{(Object.keys(BOARD_FILTER_LABEL) as BoardFilter[]).map((f) => <button key={f} className={`pill ${filter === f ? 'on' : ''}`} aria-pressed={filter === f} onClick={() => setFilter(f)}>{BOARD_FILTER_LABEL[f]}</button>)}</div>
+    <div className="modal-bar"><Seg cls="bseg" label="할 일 거르기" value={filter} options={(Object.keys(BOARD_FILTER_LABEL) as BoardFilter[]).map((f) => [f, BOARD_FILTER_LABEL[f]] as const)} onChange={setFilter} /></div>
     <div className="bbody">
       {err ? <div className="bempty">할 일을 못 읽었어요 — {err}</div> : null}
       {!data && !err ? <div className="bempty">읽는 중…</div> : null}
@@ -77,7 +75,7 @@ export function TodoBoard({ onClose, onTodo, say }: { onClose: () => void; onTod
         </div>
       })}
     </div>
-  </div></>
+  </Modal>
 }
 
 /**
@@ -88,7 +86,6 @@ export function TodoBoard({ onClose, onTodo, say }: { onClose: () => void; onTod
 const GROUP_LABEL: Record<FolderGroup, string> = { wait: '확인 대기', run: '일하는 중', rest: '쉬는 중', idle: '오래 쉼 · 14일 넘게' }
 export function FolderSheet({ rows, onClose, go, onPick }: { rows: { b: Bot; sum: { state: SessionInfo['state'] | null; text: string; t: number; mood: Mood; unread: boolean; recent: boolean } }[]; onClose: () => void; go: (botId: string, sid?: string) => void; onPick: () => void }) {
   const { s } = useStore()
-  useEsc(onClose)
   const groups = useMemo(() => {
     const g: Record<FolderGroup, typeof rows> = { wait: [], run: [], rest: [], idle: [] }
     for (const r of rows) if (!r.b.orchestrator) g[folderGroup(r.sum.state, r.sum.t)].push(r)
@@ -98,9 +95,7 @@ export function FolderSheet({ rows, onClose, go, onPick }: { rows: { b: Bot; sum
   const cands = s.candidates.filter((c) => !c.active).length
   // 처음엔 오래 쉼을 접어 둔다 — 대부분의 폴더가 여기 있어 위 묶음을 밀어낸다
   const [idleOpen, setIdleOpen] = useState(false)
-  return <><div className="backdrop" onClick={onClose} /><div className="modal fsheet" role="dialog" aria-label="폴더봇">
-    <div className="grip" />
-    <div className="modal-h"><div className="t"><b>폴더봇</b><span className="cnt">{n}개</span></div><button className="ib" onClick={onClose} title="닫기 ⎋" aria-label="닫기"><Icon n="x" size={14} /></button></div>
+  return <Modal size="s" cls="fsheet" grip raw title="폴더봇" sub={`${n}개`} onClose={onClose}>
     <div className="bbody">
       {(['wait', 'run', 'rest', 'idle'] as FolderGroup[]).map((k) => groups[k].length ? <div key={k} className={`fgrp g-${k}`}>
         <button className="gh" onClick={() => (k === 'idle' ? setIdleOpen((o) => !o) : undefined)} aria-expanded={k === 'idle' ? idleOpen : undefined}>{GROUP_LABEL[k]}<span className="c">{groups[k].length}</span>{k === 'idle' ? <Icon n={idleOpen ? 'chevd' : 'chev'} size={11} /> : null}</button>
@@ -112,5 +107,5 @@ export function FolderSheet({ rows, onClose, go, onPick }: { rows: { b: Bot; sum
       </div> : null)}
     </div>
     <div className="ffoot"><button className="btn" onClick={() => { onClose(); onPick() }}><Icon n="fplus" size={14} />폴더 선택 · 시작<span className="k">후보 {cands}</span></button></div>
-  </div></>
+  </Modal>
 }
