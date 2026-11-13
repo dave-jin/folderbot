@@ -41,7 +41,7 @@ const SKIP = [
  */
 /** 파일명만 적힌 것(«설명서.pdf») — 알려진 확장자로 끝나는 낱말. 폴더는 호스트가 찾는다(봇 폴더 → 참조 폴더 → 볼트) (G · 2026-09-19) */
 /** 알려진 확장자 — `BARE_RE` 와 「메일로 오인된 파일 이름」 판정이 **같은 목록**을 쓴다(두 벌이 되면 한쪽이 낡는다) */
-export const FILE_EXT = 'pdf|png|jpe?g|gif|webp|svg|md|txt|docx?|pptx?|xlsx?|hwp|csv|json|zip|mp4|mov|webm|m4v|mp3|m4a|wav|aac|ogg|key|numbers|pages|canvas'
+export const FILE_EXT = 'pdf|png|jpe?g|gif|webp|svg|md|txt|docx?|pptx?|xlsx?|hwp|csv|json|zip|mp4|mov|webm|m4v|mp3|m4a|wav|aac|ogg|key|numbers|pages|canvas|html'
 const BARE_RE = new RegExp(String.raw`(?<![\/\w.\-@])[^\s/\`"'()\[\]<>|:]{1,120}\.(?:${FILE_EXT})(?![\w.\-])`, 'gi')
 
 /**

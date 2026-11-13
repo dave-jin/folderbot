@@ -1176,6 +1176,59 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .md .mc-pdfb .tx { display:flex; flex-direction:column; gap:2px; min-width:0 } .md .mc-pdfb .tx b { color:var(--w); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap } .md .mc-pdfb .tx span { color:var(--t2); font-size:12px }
 .md li.mcli { list-style:none } .md ul.mclist, .md ol.mclist { padding-left:0 }
 .app.phone .md .mcard { width:100% } .app.phone .md .mc-pic { height:190px }
+/* 격리된 미니 창 (2026-11-13 · `mediaCards.ts` `mini`) — 봇이 만든 html 을 말풍선 안에서. 덮개와 틀의 높이가 같아 열어도 대화가 밀리지 않는다 */
+.md .mcard.mc-html { width:min(560px, 100%) }
+.md .mc-hbar { display:flex; align-items:center; gap:8px; padding:6px 10px; border-bottom:1px solid var(--line); font-size:11px; color:var(--t3); min-width:0 }
+.md .mc-hbar .dots { display:inline-flex; gap:4px; flex:none } .md .mc-hbar .dots i { display:block; width:8px; height:8px; border-radius:50%; background:var(--line2) }
+.md .mc-hbar .nm { color:var(--t); font-family:var(--mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 }
+.md .mc-hbar .lock { margin-left:auto; color:var(--done); white-space:nowrap; flex:none }
+.md .mc-hbox { height:280px; background:var(--bg2); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; padding:0 16px; text-align:center }
+.md .mc-hbox.mc-hon { display:block; padding:0; background:#fff }   /* 틀 안은 봇이 만든 문서다 — 바탕을 정하지 않은 html 은 흰 종이로 보인다(문서 창 html 보기와 같다) */
+.md .mc-run { border:1px solid var(--line2); border-radius:6px; padding:5px 14px; font-size:13px; font-family:inherit; color:var(--w); background:var(--sel); white-space:nowrap; cursor:pointer } .md .mc-run:hover { border-color:var(--t3) }
+.md .mc-hbox.mc-hbusy .mc-run { opacity:.5; cursor:default }
+.md .mc-hnote { font-size:12px; color:var(--t3) } .md .mc-hbox.mc-hbad .mc-hnote { color:var(--wait) }
+.md .mcard .mc-acts { display:inline-flex; align-items:center; gap:6px; flex:none } .md .mcard .mc-shut[hidden] { display:none }
+.md .mc-hframe { display:block; width:100%; height:100%; border:0; background:#fff }
+.app.phone .md .mc-hbox { height:240px } .app.phone .md .mc-run { min-height:40px; padding:0 18px }
+/* 그림으로 받는 답 (2026-11-13 · `visualBlocks.ts`) — 단계 · 안 비교 · 숫자. 값은 눈금에서 고르고 색은 상태 토큰만 쓴다(끝남 `--done` · 지금과 막대 `--hold` · 음수 `--err`) */
+.md .vblk { border:1px solid var(--line2); border-radius:12px; background:var(--box); width:min(560px, 100%); margin:8px 0 10px; overflow:hidden }
+.md .vb-hd { display:flex; align-items:center; gap:8px; padding:6px 10px; border-bottom:1px solid var(--line); font-size:12px; min-width:0 }
+.md .vb-hd b { color:var(--w); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 }
+.md .vb-hd .vb-m { color:var(--t3); font-size:11px; white-space:nowrap; flex:none } .md .vb-hd .vb-sp { flex:1 }
+.md .vb-tg { border:1px solid var(--line2); border-radius:6px; padding:1px 9px; font-size:12px; font-family:inherit; color:var(--t); background:var(--sel); white-space:nowrap; flex:none; cursor:pointer } .md .vb-tg:hover { color:var(--w); border-color:var(--t3) }
+.md .vb-bd { padding:12px }
+.md .vb-err { font-size:12px; color:var(--wait); margin:-4px 0 8px }
+/* 단계 — 다섯까지 가로 한 줄 · 넘으면 세로(`.tall`). 점과 점을 잇는 줄은 다음 단계로 가는 길이다 */
+.md .vb-st { display:flex; align-items:stretch }
+.md .vb-s { flex:1; min-width:0; position:relative; padding-right:6px }
+.md .vb-s::after { content:''; position:absolute; left:14px; right:0; top:6px; height:2px; background:var(--line2) } .md .vb-s:last-child::after { display:none }
+.md .vb-dot { display:block; width:14px; height:14px; border-radius:50%; border:2px solid var(--t3); background:var(--box); position:relative; z-index:1; flex:none }
+.md .vb-s.vb-done .vb-dot { background:var(--done); border-color:var(--done) } .md .vb-s.vb-done::after { background:var(--done) }
+.md .vb-s.vb-now .vb-dot { border-color:var(--hold); outline:3px solid color-mix(in srgb, var(--hold) 25%, transparent) }
+.md .vb-tx { display:block; margin-top:6px; min-width:0 } .md .vb-tx b { display:block; font-size:12px; font-weight:600; color:var(--w) } .md .vb-tx span { display:block; font-size:11px; color:var(--t2) }
+.md .vb-s.vb-todo .vb-tx b { color:var(--t2) }
+.md .vb-st.vb-tall { flex-direction:column } .md .vb-st.vb-tall .vb-s { display:flex; gap:10px; padding:0 0 12px } .md .vb-st.vb-tall .vb-s:last-child { padding-bottom:0 }
+.md .vb-st.vb-tall .vb-s::after { left:6px; right:auto; top:14px; bottom:0; width:2px; height:auto } .md .vb-st.vb-tall .vb-tx { margin-top:-3px }
+/* 안 비교 — 안마다 카드 · 추천은 테두리와 알약. 폰은 옆으로 넘긴다(다음 카드가 조금 보여 넘길 수 있음을 알린다) */
+.md .vb-cmp { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:8px } .md .vb-cmp[data-n="2"], .md .vb-cmp[data-n="4"] { grid-template-columns:repeat(2, minmax(0, 1fr)) }
+.md .vb-opt { border:1px solid var(--line2); border-radius:8px; padding:8px 10px; background:var(--bg2); min-width:0 } .md .vb-opt.vb-rec { border-color:var(--t2) }
+.md .vb-on { display:flex; align-items:center; gap:6px; flex-wrap:wrap } .md .vb-on b { font-size:13px; color:var(--w) }
+.md .vb-on em { font-style:normal; font-size:11px; color:var(--w); border:1px solid var(--t2); border-radius:999px; padding:0 6px; white-space:nowrap }
+.md .vb-k { display:block; font-size:11px; color:var(--t3); margin-top:6px } .md .vb-v { display:block; font-size:12px; color:var(--t) }
+.app.phone .md .vb-cmp { display:flex; overflow-x:auto; scroll-snap-type:x proximity; overscroll-behavior-x:contain } .app.phone .md .vb-opt { flex:0 0 72%; scroll-snap-align:start }
+/* 숫자 — 세로 막대(`.vb-cols`) 또는 가로 막대(`.vb-rows` · 값이 많거나 이름이 길 때). 길이는 가장 큰 절댓값 대비(`--p`) */
+.md .vb-cols { display:flex; align-items:stretch; gap:8px; height:150px }
+.md .vb-cols .vb-pt { flex:1; min-width:0; display:flex; flex-direction:column; align-items:center; gap:4px }
+.md .vb-cols .vb-track { flex:1; min-height:0; width:100%; max-width:64px; display:flex; align-items:flex-end }
+.md .vb-cols .vb-bar { display:block; width:100%; height:var(--p); min-height:2px; background:var(--hold); border-radius:4px }
+.md .vb-val { font-size:11px; color:var(--t); white-space:nowrap } .md .vb-lab { font-size:11px; color:var(--t2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; text-align:center }
+.md .vb-pt.vb-soft .vb-bar { opacity:.5 } .md .vb-pt.vb-neg .vb-bar { background:var(--err) }
+.md .vb-rows { display:grid; grid-template-columns:minmax(0, max-content) minmax(40px, 1fr) max-content; gap:6px 10px; align-items:center } .md .vb-rows .vb-pt { display:contents }
+.md .vb-rows .vb-track { display:block; height:10px; background:var(--bg2); border-radius:4px; overflow:hidden } .md .vb-rows .vb-bar { display:block; height:100%; width:var(--p); min-width:2px; background:var(--hold); border-radius:4px }
+.md .vb-rows .vb-lab { text-align:left; max-width:160px } .md .vb-rows .vb-val { text-align:right }
+/* 표로 보기 — 그림과 같은 값을 표로. 값을 그대로 읽거나 긁어 갈 때 */
+.md .vblk .vb-tbl { display:none; margin:0 } .md .vblk.vb-astbl .vb-tbl { display:block } .md .vblk.vb-astbl .vb-bd > :not(.vb-tbl) { display:none }
+.md .vb-tbl th { text-align:left }
 /* 질문에 답한 뒤 남는 요약 (2026-11-12 · `AskDone.tsx`) — 종전 «보냈어요» 한 줄 */
 .askdone { border:1px solid var(--line2); border-radius:12px; background:var(--box); width:min(560px, 100%); margin:4px 0 8px; font-size:13px; overflow:hidden }
 .askdone .hd { display:flex; align-items:center; gap:7px; width:100%; padding:6px 11px; border:0; border-bottom:1px solid var(--line); background:none; color:var(--t2); font:inherit; font-size:12px; text-align:left; cursor:pointer }

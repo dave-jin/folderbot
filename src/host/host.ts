@@ -2,6 +2,7 @@ import { AK_ROUTINE, AkiflowSync } from './akiflow'
 import { invalidateUsage } from './usage'
 import { planNow, refreshPlan } from './planUsage'
 import { DEVICE_RULES_MD, type ClientCtx } from '../core/clientCtx'
+import { VISUAL_RULES_MD } from '../core/visualBlocks'
 import { mdPlain } from '../core/mdPlain'   // 알림 미리보기는 글자만 — 마크다운 기호가 그대로 나왔다(2026-09-25)
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { execFile, execFileSync } from 'node:child_process'
@@ -262,6 +263,7 @@ export class Host {
     if (this.bridges?.cfg.peers.some((p) => p.enabled && (this.isDeliverTarget(p, bot) || p.maySend.includes(bot.id) || p.mayAsk.some((x) => askPatternHits(x, askBotOf(bot)))))) parts.push(LETTER_RULES_MD)
     parts.push(this.registry.todoRules() ?? TODO_RULES_PROMPT)   // CK-3 · 볼트 `todo-rules` 블록이 이긴다
     parts.push(DEVICE_RULES_MD)   // J-2 · 볼트 CLAUDE.md 에도 같은 글이 있지만, 옛 볼트에는 없으므로 시스템 프롬프트로도 준다
+    parts.push(VISUAL_RULES_MD)   // 그림으로 답하기(2026-11-13) — 순서 · 비교 · 숫자는 블록으로. 있는 볼트의 CLAUDE.md 는 건드리지 않으므로 시스템 프롬프트로 준다
     const lc = this.links?.card(bot.rel)   // LM · «이어진 폴더» 카드 — 세션 시작 때 받는다
     if (lc) parts.push(lc)
     const ctx = todoContext(bot.abs)

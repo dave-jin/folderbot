@@ -2,6 +2,10 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
+  <!-- 🔴 틀(iframe)은 이 호스트의 주소만 연다. 말풍선 안 «격리된 미니 창» 이 스스로 바깥 주소로 가는 것을 여기서 막는다 —
+       틀 안의 정책(`core/visualBlocks.MINI_CSP`)은 그 이동을 못 막고, 크롬은 자식 틀의 이동을 부모 문서의 정책으로 본다(2026-11-13 재현 · 스모크가 잰다).
+       ⛔ 지우거나 바깥 주소를 더하지 않는다. 문서 창의 html · PDF 보기는 이 호스트의 raw 주소라 그대로 열린다. -->
+  <meta http-equiv="Content-Security-Policy" content="frame-src 'self'" />
   <!-- ⛔ interactive-widget=resizes-content 를 넣지 마라 (2026-09-13 실사고 · 한 라운드 만에 되돌림).
        그걸 넣으면 iOS 26 이 레이아웃 뷰포트까지 줄이는데 100dvh 는 그만큼 안 줄어서, 루트가 화면보다
        커지고 **대화가 키보드 위로 안 올라온다**(Dave 3차 스크린샷). 키보드 높이는 App.tsx 의

@@ -14,6 +14,8 @@ import { renderMarkdown, renderStreaming } from './render'
 import { wikiNames } from '../core/wikilinks'
 import { token } from './api'
 import { loadKatex, renderMath, renderMermaid } from './mathmaid'
+import { renderVisualBlocks } from './visualBlocks'
+import { fenceOpen } from '../core/visualBlocks'
 import { decorateLinks } from './favicons'
 import { boxifyLinks, decorateCode, hoverLinks, hoverable } from './previews'
 import { cardify } from './mediaCards'
@@ -73,7 +75,7 @@ function decorate(root: HTMLElement, hits: PathHit[], open: (rel: string) => voi
   }
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     // K-2 · `code` 안은 걷지 않는다 — 통째로 경로인 코드 조각은 위에서 요소째 바꿨고, 나머지는 예시라 토막 내지 않는다(스크린샷 1236)
-    acceptNode: (n) => (n.parentElement?.closest('pre,code,a,.pchip,.wlink') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT)
+    acceptNode: (n) => (n.parentElement?.closest('pre,code,a,.pchip,.wlink,.vblk') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT)
   })
   const texts: Text[] = []
   for (let n = walker.nextNode(); n; n = walker.nextNode()) texts.push(n as Text)
@@ -112,7 +114,7 @@ function resolveWiki(root: HTMLElement, names: string[], ok: Record<string, { re
 
 /** 글 속 자리 표시 — `Md` 의 `chips` 가 이 글자를 찾아 그 자리에 노드를 세운다. 마크다운이 건드리지 않는 글자만 쓴다 */
 export const chipMark = (i: number) => `FBCHIP${i}X`
-export function Md({ text, streaming, botId, onPath, onDir, user, chips }: { text: string; streaming?: boolean; botId?: string; onPath?: (rel: string) => void; onDir?: (rel: string) => void; user?: boolean; chips?: ReactNode[] }) {
+export function Md({ text, streaming, botId, onPath, onDir, user, chips, visual }: { text: string; streaming?: boolean; botId?: string; onPath?: (rel: string) => void; onDir?: (rel: string) => void; user?: boolean; chips?: ReactNode[]; /** 그림 블록(```steps · compare · chart)을 카드로 그린다 — **봇 답에만** 켠다. 문서 창 · 캔버스 · 편지 · 내 말에서는 적힌 그대로(코드) 보인다 */ visual?: boolean }) {
   /**
    * 수식 (루프 10/10) — `$…$` 를 marked 보다 먼저 걷어 내고(core/math), KaTeX 가 오면 끼워 넣는다.
    * ⚠ KaTeX 가 아직 안 왔으면 원문 `$…$` 이 그대로 보인다 — 빈칸보다 낫다. 오면 다시 그린다.
@@ -147,9 +149,10 @@ export function Md({ text, streaming, botId, onPath, onDir, user, chips }: { tex
     boxifyLinks(el)
     decorateLinks(el)     // 링크 앞 파비콘 — 자리표시자를 먼저 놓고 도착하면 갈아 끼운다
     hoverLinks(el)        // 글 속 링크 — 오버하면 같은 미리보기 카드
+    if (!streaming && visual) renderVisualBlocks(el, { open: fenceOpen(text) })   // ```steps · compare · chart → 카드(2026-11-13) · 봇 답에만 · 답이 끝난 뒤에만 · 코드 머리줄을 달기 **전에** · 끊긴 답의 반쪽 블록은 그리지 않는다
     decorateCode(el, copyText)   // 코드 블록 — 언어 이름 · 복사 단추 (B3)
     if (!streaming) void renderMermaid(el).catch(() => {})   // ```mermaid → 그림 (루프 10/10) · 답이 끝난 뒤에만
-  }, [html, streaming])
+  }, [html, streaming, visual])
   /*
    * BM-1 · 내 말 속 파일 칩(AW) — 마크다운으로 그린 뒤 자리 표시(`chipMark`)를 찾아 그 자리에 칩을 세운다.
    * ⚠ 칩은 React 노드라 innerHTML 에 못 넣는다 — 자리마다 작은 루트를 하나씩 둔다(입력창 `InlineInput` 과 같은 방식).

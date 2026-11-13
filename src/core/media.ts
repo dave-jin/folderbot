@@ -6,16 +6,18 @@
  * 규칙(목업 «언제 카드로 펼치나»):
  *   ① **혼자 선 블록만** — 블록의 글이 파일 참조와 구분 글자뿐일 때. 문장 속 파일 이름은 칩 그대로(링크 박스와 같은 규칙).
  *   ② 그림은 이웃한 것끼리 **한 묶음**(갤러리)이고 묶음 하나가 카드 하나다. 영상·음성·PDF 는 하나가 카드 하나.
+ *      html 도 하나가 카드 하나다 — 격리된 미니 창(2026-11-13 · `client/mediaCards.mini` · 누를 때까지 받지도 돌리지도 않는다).
  *   ③ 답 하나에 카드는 `cap` 개까지 — 넘는 블록은 손대지 않는다(칩으로 남아 있어 눌러 열 수 있다). 카드가 답의 글을 밀어내면 안 된다.
  *   ④ 폴더 · 여러 곳에 걸린 이름 · 모르는 종류가 하나라도 섞인 블록은 통째로 둔다 — 반만 카드로 바꾸면 줄이 깨진다.
  */
-export type MediaKind = 'image' | 'video' | 'audio' | 'pdf'
+export type MediaKind = 'image' | 'video' | 'audio' | 'pdf' | 'html'
 
 const EXT: Record<string, MediaKind> = {
   png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', svg: 'image',
   mp4: 'video', mov: 'video', webm: 'video', m4v: 'video',
   mp3: 'audio', m4a: 'audio', wav: 'audio', aac: 'audio', ogg: 'audio',
-  pdf: 'pdf'
+  pdf: 'pdf',
+  html: 'html'   // ⚠ `.htm` 은 뺐다 — 호스트 `mime()` · `kindOf` 가 모르는 확장자라 문서 창에서 안 열린다
 }
 /** 확장자로만 본다 — 내용은 열어 보지 않는다(호스트 `kindOf` 와 같은 목록이어야 문서 창도 같은 것을 연다) */
 export function mediaKind(name: string): MediaKind | null {
@@ -32,7 +34,7 @@ export interface MediaBlock {
   next?: boolean
 }
 export interface MediaCard {
-  type: 'image' | 'gallery' | 'video' | 'audio' | 'pdf'
+  type: 'image' | 'gallery' | 'video' | 'audio' | 'pdf' | 'html'
   rels: string[]
   /** 이 카드가 놓일 블록(번호) */
   at: number

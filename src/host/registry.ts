@@ -10,6 +10,7 @@ import { OLD_AMBER, colorAllowed, isOrchLike, leastUsed } from '../core/botColor
 import { atomicWrite } from './paths'
 import { DEFAULT_TYPES, parseFolderName } from '../core/botName'
 import { DEVICE_RULES_MD } from '../core/clientCtx'
+import { VISUAL_RULES_MD } from '../core/visualBlocks'
 
 export const ORCH_ID = 'orch'
 const STATE_DIR = '.folderbot'
@@ -75,7 +76,7 @@ export class Registry extends EventEmitter {
     if (parseRules(existing)) {
       next = existing.replace(/```yaml\s+folder-rules[\s\S]*?```/, rulesSection(rules).match(/```yaml[\s\S]*```/)![0])
     } else {
-      const head = existing ? existing.replace(/\s*$/, '\n\n') : `# ${basename(this.root)}\n\n이 폴더는 Folder Bot 의 루트다. 각 하위 폴더가 봇 후보이고, 오케스트레이터가 이 파일의 규칙으로 정리한다.\n\n${DEVICE_RULES_MD}\n\n`
+      const head = existing ? existing.replace(/\s*$/, '\n\n') : `# ${basename(this.root)}\n\n이 폴더는 Folder Bot 의 루트다. 각 하위 폴더가 봇 후보이고, 오케스트레이터가 이 파일의 규칙으로 정리한다.\n\n${DEVICE_RULES_MD}\n\n${VISUAL_RULES_MD}\n\n`
       next = head + rulesSection(rules)
     }
     atomicWrite(f, next)

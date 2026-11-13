@@ -7,7 +7,9 @@
  */
 export function mdPlain(md: string): string {
   return md
-    .replace(/^\s*(```|~~~)[^\n]*$/gm, ' ')              // 펜스 **줄**만(언어 이름 포함) — ⚠ 줄 가운데 ``` 까지 펜스로 읽으면 줄 끝까지 지워진다 (리뷰 · Codex)
+    // 그림 블록(```steps · compare · chart — `core/visualBlocks`)은 화면에서 카드다. 알림에는 줄 글(`[x] 기획 | 10/28 …`) 대신 무엇의 그림인지만 남긴다
+    .replace(/^[ \t]*```(steps|compare|chart)[ \t]*\n([\s\S]*?)\n[ \t]*```[ \t]*$/gm, (_m, k: string, body: string) => { const t = /^\s*(?:title|제목)\s*[:：]\s*(.+)$/im.exec(body)?.[1]?.trim(); return `(${k === 'steps' ? '단계' : k === 'compare' ? '안 비교' : '숫자'} 그림${t ? ` · ${t}` : ''})` })
+    .replace(/^\s*(```|~~~)[^\n]*$/gm, ' ')            // 펜스 **줄**만(언어 이름 포함) — ⚠ 줄 가운데 ``` 까지 펜스로 읽으면 줄 끝까지 지워진다 (리뷰 · Codex)
     .replace(/```([^`\n]+)```/g, '$1')                   // 줄 안의 ```코드```
     .replace(/!\[([^\]]*)\]\((?:[^()\n]|\([^()\n]*\))*\)/g, '$1')   // 그림 → 대체 글
     .replace(/\[([^\]]+)\]\((?:[^()\n]|\([^()\n]*\))*\)/g, '$1')    // 링크 → 글 — ⚠ 주소 속 괄호 한 겹(`a_(b)`)까지 먹는다 (리뷰 · Codex)

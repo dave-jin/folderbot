@@ -1,4 +1,5 @@
 import { MEDIA_CAP, mediaKind, planCards, type MediaBlock, type MediaCard } from '../core/media'
+import { MINI_MAX, miniDoc, miniOutside } from '../core/visualBlocks'
 import { token } from './api'
 
 /**
@@ -51,6 +52,66 @@ function picture(botId: string, rel: string, open: (rel: string) => void, cls: s
   return b
 }
 
+/**
+ * 격리된 미니 창 (2026-11-13 · 시각화 채팅 둘째 묶음) — 봇이 자유롭게 만든 html 을 말풍선 안에서 연다.
+ *
+ * 🔴 **틀은 문서 창의 html 보기보다 좁다.** 파일 글을 머리말 토큰으로 받아 `srcdoc` 으로 넣는다 — 틀 안의 글은 제 주소에서 토큰을 읽을 수 없고
+ *    (`about:srcdoc`), 같은 출처도 아니라 볼트 · 부모 화면 · 저장소에 닿지 못한다. 거기에 «바깥 주소도 못 부른다» 는 정책을 맨 앞에 끼운다(`core/visualBlocks.miniDoc`).
+ *    틀이 스스로 바깥 주소로 **가는** 것은 앱 문서의 `frame-src 'self'` 가 막는다(`client/index.html` · 2026-11-13 독립 검토에서 재현).
+ * ⛔ `sandbox` 에 `allow-same-origin` · `allow-popups` · `allow-top-navigation` 을 더하지 않는다. `src=` 로 원본 주소를 넣지 않는다(주소에 토큰이 붙는다).
+ * 🔴 **누를 때까지 받지도 돌리지도 않는다** — 긴 대화를 열 때마다 봇이 만든 스크립트가 저절로 돌면 화면이 멈출 수 있다. 자리는 미리 잡아 둔다(열어도 높이가 그대로다).
+ */
+async function loadMini(botId: string, rel: string): Promise<{ text?: string; why?: string }> {
+  const big = '파일이 커서 여기서는 열지 않아요 — 문서 창에서 여세요'
+  try {
+    const r = await fetch(`/api/bots/${botId}/raw?rel=${encodeURIComponent(rel)}`, { headers: { authorization: `Bearer ${token()}` } })
+    if (!r.ok) return { why: '파일을 못 받았어요 — 문서 창에서 열어 보세요' }
+    if (Number(r.headers.get('content-length') ?? 0) > MINI_MAX) return { why: big }
+    const text = await r.text()
+    return text.length > MINI_MAX ? { why: big } : { text }
+  } catch { return { why: '파일을 못 받았어요 — 문서 창에서 열어 보세요' } }
+}
+function mini(botId: string, rel: string, open: (rel: string) => void): HTMLElement {
+  const name = baseName(rel); const dir = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : ''
+  const box = el('div', 'mcard mc-html'); box.dataset.mcard = 'html'
+  const bar = el('div', 'mc-hbar'); const dots = el('span', 'dots'); dots.innerHTML = '<i></i><i></i><i></i>'
+  const nm = el('span', 'nm', name); nm.title = rel
+  bar.append(dots, nm, el('span', 'lock', '격리됨 · 볼트와 화면에 못 닿아요'))
+  const body = el('div', 'mc-hbox')
+  const run = el('button', 'mc-run', '미니 창 열기'); run.type = 'button'; run.setAttribute('aria-label', `${name} 미니 창 열기`)
+  const idle = '누르면 이 자리에서 열려요'
+  const note = el('span', 'mc-hnote', idle)
+  const where = dir ? `${dir}/ 에 파일로 있어요` : '이 폴더에 파일로 있어요'
+  // 닫기 — 열린 틀을 걷고 덮개로 돌아간다(틀 안 스크립트도 같이 멈춘다). 열려 있을 때만 보인다
+  const shut = el('button', 'mc-open mc-shut', '닫기'); shut.type = 'button'; shut.title = '미니 창 닫기'; shut.hidden = true
+  const acts = el('span', 'mc-acts'); acts.append(shut, openBtn(rel, open))
+  const ft = footer(where, acts); const ftName = ft.querySelector<HTMLElement>('.nm')
+  const say = (t: string) => { if (ftName) { ftName.textContent = t; ftName.title = t } }
+  const close = (why: string, bad: boolean) => { body.replaceChildren(run, note); body.classList.remove('mc-hon', 'mc-hbusy'); body.classList.toggle('mc-hbad', bad); note.textContent = why; shut.hidden = true; say(where) }
+  shut.addEventListener('click', (e) => { e.preventDefault(); close(idle, false) })
+  run.addEventListener('click', (e) => {
+    e.preventDefault(); if (body.classList.contains('mc-hbusy')) return
+    body.classList.remove('mc-hbad'); body.classList.add('mc-hbusy'); note.textContent = '여는 중…'
+    void loadMini(botId, rel).then((got) => {
+      body.classList.remove('mc-hbusy')
+      if (got.text == null) { note.textContent = got.why ?? ''; body.classList.add('mc-hbad'); return }   // 단추는 남는다 — 다시 누르면 다시 받는다
+      const f = el('iframe', 'mc-hframe'); f.setAttribute('sandbox', 'allow-scripts'); f.setAttribute('referrerpolicy', 'no-referrer'); f.title = name; f.srcdoc = miniDoc(got.text)
+      /*
+       * 🔴 `srcdoc` 틀은 **한 번만** load 한다. 두 번째 load 는 틀이 다른 주소로 갔다는 뜻이다(링크 · `location.href` · `meta refresh`).
+       *    바깥 주소로 가는 것은 앱 문서의 `frame-src 'self'` 가 막지만(`client/index.html`), 막힌 틀에는 브라우저의 오류 쪽이 남는다 — 걷고 덮개로 돌아간다.
+       *    머리 줄에 «격리됨» 이 붙은 채로 남의 문서가 보이는 일이 없어야 한다.
+       */
+      let loads = 0
+      f.addEventListener('load', () => { if (++loads > 1) close('미니 창이 다른 주소로 가려 해서 닫았어요', true) })
+      body.replaceChildren(f); body.classList.add('mc-hon'); shut.hidden = false
+      if (miniOutside(got.text)) say('바깥 자료(글꼴 · 라이브러리 · 옆 파일)는 막혀 있어요 — 다 보려면 문서 창')
+    })
+  })
+  body.append(run, note)
+  box.append(bar, body, ft)
+  return box
+}
+
 function build(card: MediaCard, botId: string, open: (rel: string) => void): HTMLElement {
   const rel = card.rels[0]; const name = baseName(rel)
   const box = el('div', `mcard mc-${card.type}`); box.dataset.mcard = card.type
@@ -75,6 +136,7 @@ function build(card: MediaCard, botId: string, open: (rel: string) => void): HTM
     const a = el('audio'); a.controls = true; a.preload = 'none'; a.src = rawUrl(botId, rel)
     box.appendChild(a); box.appendChild(footer(name, openBtn(rel, open))); return box
   }
+  if (card.type === 'html') return mini(botId, rel, open)
   // PDF — 첫 쪽을 그리려면 답을 그릴 때 PDF 를 받아야 한다. 받지 않고 쪽 모양만 보인다(누르면 문서 창)
   const b = el('button', 'mc-pdfb'); b.type = 'button'; b.dataset.rel = rel
   const pg = el('span', 'mc-pg'); pg.innerHTML = '<i class="h"></i><i></i><i></i><i class="s"></i><i></i>'

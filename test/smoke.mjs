@@ -2378,6 +2378,105 @@ try {
             for (const n of ['mc-a.png', 'mc-b.png', 'mc-clip.mp4', 'mc-voice.m4a', 'mc-doc.pdf']) { rmSync(join(bot.abs, n), { force: true }) }
             ok('시각화 채팅 — 봇 답 HTML 은 허용 태그만(이벤트 속성 없음) · 미디어 카드(그림 묶음·영상·음성·PDF · 누를 때까지 안 받음 · 문장 속은 칩 · 폰 폭 안 · 카드가 붙어도 바닥 따라감) · `![](상대경로)` 그림 · 주석 안 보임 · 호스트 video/audio 종류와 206')
           }
+          /**
+           * 🔴 **시각화 채팅 둘째 묶음 «그림으로 받는 답»** (2026-11-13 · Dave 11/12 «다이어그램 형태로 보여주거나 … 보다 시각화된 커뮤니케이션»).
+           *  ① 블록 — 봇이 `steps` · `compare` · `chart` 울타리로 쓴 글이 카드가 된다. 모양이 다른 줄이 든 블록은 **코드 그대로** 두고 한 줄로 알린다(반만 읽어 그리지 않는다).
+           *  ② 표로 보기 — 단추를 누르면 같은 값이 표로 보이고 그림은 숨는다.
+           *  ③ 격리된 미니 창 — 한 줄에 혼자 선 html 은 카드가 되고, **누르기 전에는 틀이 없다**(받지도 돌리지도 않는다). 누르면 `sandbox="allow-scripts"` + `srcdoc` 틀에서 돈다.
+           *     틀 안의 스크립트는 제 주소에서 토큰을 못 읽고(`about:srcdoc`) · 부모 창을 못 만지고 · 저장소를 못 쓰고 · 호스트 API 를 못 부른다.
+           *  ④ 폰 폭(390)에서 카드가 화면 밖으로 안 나간다.
+           */
+          {
+            // 바깥 서버 — 미니 창이 스스로 «다른 주소» 로 갈 때 요청이 실제로 나가는지 센다(포트가 다르면 다른 출처다)
+            let outHits = 0
+            const outSrv = createServer((sock) => { outHits++; sock.on('error', () => {}); sock.end('HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-length: 7\r\nconnection: close\r\n\r\noutside') })
+            await new Promise((res) => outSrv.listen(0, '127.0.0.1', res))
+            const OUT = `http://127.0.0.1:${outSrv.address().port}/leak?d=1`
+            const MINI = '<!doctype html><html><body><p id="o">mini</p><script>var r={href:String(location.href),parent:"blocked",store:"blocked",net:"pending",csp:""};document.addEventListener("securitypolicyviolation",function(e){r.csp=e.effectiveDirective||e.violatedDirective});try{parent.__mini=1;r.parent="open"}catch(e){}try{localStorage.setItem("a","b");r.store="open"}catch(e){}function done(v){r.net=v;setTimeout(function(){parent.postMessage(r,"*")},60)}fetch("/api/health").then(function(){done("open")}).catch(function(){done("blocked")});addEventListener("message",function(e){if(e.data==="go")location.href=' + JSON.stringify(OUT) + '})</script></body></html>'
+            writeFileSync(join(bot.abs, 'vb-mini.html'), MINI)
+            const miniReq = []; const onMiniReq = (r) => { if (/raw\?rel=vb-mini/.test(r.url())) miniReq.push(r.url()) }; mp.on('request', onMiniReq)
+            await mp.evaluate(() => { window.__miniMsgs = []; window.__fviol = []; window.addEventListener('message', (e) => { if (e.data && typeof e.data === 'object' && 'net' in e.data) window.__miniMsgs.push(e.data) }); document.addEventListener('securitypolicyviolation', (e) => window.__fviol.push(e.violatedDirective + ' ' + e.blockedURI)) })
+            await api(`/sessions/${sidM}/send`, { text: '그림블록 보여 줘' })
+            const readVb = () => mp.evaluate(() => {
+              const m = [...document.querySelectorAll('.amsg .md')].pop(); if (!m || m.classList.contains('streaming') || !/그림블록 끝/.test(m.textContent ?? '')) return null
+              const vw = document.documentElement.clientWidth; const cards = [...m.querySelectorAll('.vblk')]
+              const st = m.querySelector('.vb-steps'); const cmp = m.querySelector('.vb-compare'); const ch = m.querySelector('.vb-chart'); const mini = m.querySelector('.mcard.mc-html')
+              const bars = [...(ch?.querySelectorAll('.vb-bar') ?? [])].map((b) => Math.round(b.getBoundingClientRect().height))
+              return {
+                kinds: cards.map((c) => c.dataset.vb), steps: [...(st?.querySelectorAll('.vb-s') ?? [])].map((s) => s.className.replace('vb-s ', '')), stMeta: st?.querySelector('.vb-hd .vb-m')?.textContent ?? '', stTitle: st?.querySelector('.vb-hd b')?.textContent ?? '',
+                opts: cmp?.querySelectorAll('.vb-opt').length ?? 0, rec: cmp?.querySelectorAll('.vb-opt.vb-rec').length ?? 0, bars, soft: ch?.querySelectorAll('.vb-pt.vb-soft').length ?? 0, chMeta: ch?.querySelector('.vb-hd .vb-m')?.textContent ?? '',
+                dots: [...(st?.querySelectorAll('.vb-s') ?? [])].map((x) => { const d = x.querySelector('.vb-dot').getBoundingClientRect(); const t = x.querySelector('.vb-tx').getBoundingClientRect(); return [Math.round(d.top), Math.round(t.left - d.left), Math.round(t.top - d.bottom)] }),
+                half: [...m.querySelectorAll('pre code.language-steps')].pop()?.textContent ?? '',
+                broken: m.querySelectorAll('pre code.language-steps').length, err: m.querySelectorAll('.vb-err').length, leftover: m.querySelectorAll('pre code.language-compare, pre code.language-chart').length,
+                over: [...cards, ...(mini ? [mini] : [])].map((c) => Math.round(c.getBoundingClientRect().right - vw)).filter((x) => x > 0), sw: document.documentElement.scrollWidth - vw,
+                mini: !!mini, frame: !!mini?.querySelector('iframe'), lock: mini?.querySelector('.lock')?.textContent ?? '', boxH: Math.round(mini?.querySelector('.mc-hbox')?.getBoundingClientRect().height ?? 0)
+              }
+            })
+            let vb = null
+            for (let i = 0; i < 50; i++) { vb = await readVb(); if (vb && vb.kinds.length >= 3 && vb.mini) break; await wait(200) }
+            if (!vb) fail('그림 블록: 스텁 답이 안 왔다(검사 전제 깨짐)')
+            else {
+              if (vb.kinds.join(',') !== 'steps,compare,chart') fail('🔴 그림 블록: 울타리 셋이 카드로 안 바뀌었다 ' + JSON.stringify(vb))
+              if (vb.steps.join(',') !== 'vb-done,vb-done,vb-now,vb-todo,vb-todo' || !/지금 3번째/.test(vb.stMeta) || vb.stTitle !== '강의 준비') fail('🔴 그림 블록: 단계 카드가 글과 다르다 ' + JSON.stringify({ s: vb.steps, m: vb.stMeta, t: vb.stTitle }))
+              // 다섯 단계가 한 줄에 같은 모양으로 — 점의 높이가 같고, 글은 점 **아래** 같은 자리에서 시작한다. ⚠ 상태 클래스가 전역 `.todo`(할 일 줄)와 겹쳐 «남음» 단계만 옆으로 밀린 적이 있다(2026-11-13 독립 검토 · 캡처)
+              if (vb.dots.length !== 5 || vb.dots.some((d) => Math.abs(d[0] - vb.dots[0][0]) > 1 || Math.abs(d[1]) > 1 || d[2] < 0)) fail('🔴 그림 블록: 단계의 점과 글이 한 줄로 서지 않는다(점 높이 · 글의 왼쪽 · 글이 점 아래) ' + JSON.stringify(vb.dots))
+              if (vb.opts !== 3 || vb.rec !== 1) fail('🔴 그림 블록: 안 비교가 3개 · 추천 1개가 아니다 ' + JSON.stringify({ o: vb.opts, r: vb.rec }))
+              if (vb.bars.length !== 5 || Math.max(...vb.bars) !== vb.bars[2] || !(vb.bars[4] < vb.bars[0]) || vb.bars[2] < 40 || vb.soft !== 2 || !/명/.test(vb.chMeta)) fail('🔴 그림 블록: 막대 길이가 값과 다르다(41 이 가장 길고 15 가 24 보다 짧아야 한다) ' + JSON.stringify({ b: vb.bars, s: vb.soft, m: vb.chMeta }))
+              // 코드로 남는 것은 둘이다 — 모양이 다른 줄이 든 블록(알림 한 줄)과, 답이 끊겨 울타리가 안 닫힌 반쪽 블록(알림 없음 · 카드도 아님)
+              if (vb.broken !== 2 || vb.err !== 1 || vb.leftover || !/끊긴 둘/.test(vb.half)) fail('🔴 그림 블록: 모양이 다른 줄이 든 블록은 코드로 남고 한 줄로 알려야 하고, 끊긴 답의 반쪽 블록은 그리지 않아야 한다 ' + JSON.stringify({ b: vb.broken, e: vb.err, l: vb.leftover, h: vb.half }))
+              if (vb.over.length || vb.sw > 0) fail('🔴 그림 블록: 폰 폭에서 카드가 화면 밖으로 나간다 ' + JSON.stringify({ o: vb.over, sw: vb.sw }))
+              if (!vb.mini || vb.frame) fail('🔴 미니 창: 혼자 선 html 이 카드가 아니거나, 누르기 전에 틀이 생겼다(받지도 돌리지도 않아야 한다) ' + JSON.stringify({ m: vb.mini, f: vb.frame }))
+              if (!/격리됨/.test(vb.lock)) fail('미니 창: «격리됨» 표시가 없다')
+              if (miniReq.length) fail('🔴 미니 창: 누르기 전에 파일을 받았다(요청 ' + miniReq.length + '건) — 누를 때까지 받지 않아야 한다')
+            }
+            await mp.evaluate(() => document.querySelector('.vblk')?.scrollIntoView({ block: 'start' })); await wait(200)
+            await mp.screenshot({ path: 'test/tmp/visual-blocks-phone.png' })
+            // ② 표로 보기 — 누르면 표가 보이고 카드 격자는 숨는다 · 다시 누르면 돌아온다
+            const tg = await mp.evaluate(() => { const c = document.querySelector('.vb-compare'); const b = c?.querySelector('.vb-tg'); if (!c || !b) return null; const vis = (s) => { const e = c.querySelector(s); return !!e && getComputedStyle(e).display !== 'none' }; const a = { grid: vis('.vb-cmp'), tbl: vis('.vb-tbl'), t: b.textContent }; b.click(); const z = { grid: vis('.vb-cmp'), tbl: vis('.vb-tbl'), t: b.textContent, cells: c.querySelectorAll('.vb-tbl tbody tr').length, head: [...c.querySelectorAll('.vb-tbl thead th')].map((x) => x.textContent) }; b.click(); return { a, z, back: vis('.vb-cmp') && !vis('.vb-tbl') } })
+            if (!tg || !tg.a.grid || tg.a.tbl || tg.z.grid || !tg.z.tbl || tg.z.cells !== 3 || tg.z.head.length !== 4 || !/추천/.test(tg.z.head[1] ?? '') || tg.a.t === tg.z.t || !tg.back) fail('🔴 그림 블록: «표로 보기» 가 그림과 표를 오가지 않는다 ' + JSON.stringify(tg))
+            // ③ 미니 창 — 눌러서 연다
+            await mp.evaluate(() => document.querySelector('.mcard.mc-html')?.scrollIntoView({ block: 'center' })); await wait(200)
+            const gap0 = await mp.evaluate(() => { const sc = document.querySelector('.chat-scroll'); return sc ? sc.scrollHeight : 0 })
+            await mp.click('.mcard.mc-html .mc-run')
+            let mn = null
+            for (let i = 0; i < 40; i++) { mn = await mp.evaluate(() => { const f = document.querySelector('.mcard.mc-html iframe'); if (!f || !window.__miniMsgs.length) return null; const sc = document.querySelector('.chat-scroll'); return { sandbox: f.getAttribute('sandbox'), src: f.getAttribute('src'), csp: /Content-Security-Policy/.test(f.srcdoc), early: f.srcdoc.indexOf('Content-Security-Policy') < f.srcdoc.indexOf('<script'), tok: /token=|Bearer/.test(f.srcdoc) || f.srcdoc.includes(localStorage.getItem('folderbot:token') || '\u0000'), ref: /name="referrer" content="no-referrer"/.test(f.srcdoc), shut: document.querySelector('.mcard.mc-html .mc-shut')?.hidden === false, msg: window.__miniMsgs[0], leak: window.__mini ?? 0, h: sc ? sc.scrollHeight : 0 } }); if (mn) break; await wait(150) }
+            if (!mn) fail('🔴 미니 창: 눌렀는데 틀이 안 열렸거나 틀 안 스크립트가 안 돌았다')
+            else {
+              if (mn.sandbox !== 'allow-scripts' || mn.src) fail('🔴 미니 창: 틀의 울타리가 넓어졌다(`sandbox` 는 allow-scripts 하나 · `src` 없음) ' + JSON.stringify({ s: mn.sandbox, src: mn.src }))
+              if (!mn.csp || !mn.early || mn.tok) fail('🔴 미니 창: 틀에 넣은 글에 정책이 없거나 스크립트보다 뒤에 있거나 토큰이 섞였다 ' + JSON.stringify({ c: mn.csp, e: mn.early, t: mn.tok }))
+              if (!mn.ref || !mn.shut) fail('미니 창: 틀에 넣은 글에 referrer 막음이 없거나, 열렸는데 «닫기» 가 안 보인다 ' + JSON.stringify({ r: mn.ref, s: mn.shut }))
+              if (miniReq.length !== 1 || /token=/.test(miniReq[0])) fail('🔴 미니 창: 파일을 한 번, 주소에 토큰 없이 받아야 한다 ' + JSON.stringify(miniReq.map((u) => u.replace(/token=[^&]+/, 'token=…'))))
+              if (mn.msg.href !== 'about:srcdoc') fail('🔴 미니 창: 틀의 주소가 원본 주소다(토큰이 주소에 실린다) ' + mn.msg.href)
+              if (mn.msg.parent !== 'blocked' || mn.leak) fail('🔴 미니 창: 틀 안 스크립트가 부모 창을 만졌다 ' + JSON.stringify(mn.msg))
+              if (mn.msg.store !== 'blocked') fail('🔴 미니 창: 틀 안 스크립트가 저장소를 쓴다(같은 출처로 열렸다)')
+              if (mn.msg.net !== 'blocked' || !/connect-src|default-src/.test(mn.msg.csp ?? '')) fail('🔴 미니 창: 틀 안 스크립트가 호스트 API 를 불렀다(정책이 안 걸렸다)')
+              if (Math.abs(mn.h - gap0) > 2) fail('미니 창: 열면서 대화 높이가 바뀌었다(' + gap0 + ' → ' + mn.h + ') — 덮개와 틀의 높이가 같아야 한다')
+            }
+            await mp.screenshot({ path: 'test/tmp/visual-mini-phone.png' })
+            // 데스크톱 폭 캡처(다크 · 라이트) — 눈으로 볼 자료다. 판정은 위에서 끝났다
+            { const vp = mp.viewportSize(); await mp.setViewportSize({ width: 1180, height: 900 }); await wait(500); await mp.evaluate(() => document.querySelector('.vblk')?.scrollIntoView({ block: 'start' })); await wait(200); await mp.screenshot({ path: 'test/tmp/visual-blocks-desktop.png' })
+              const th = await mp.evaluate(() => { const d = document.documentElement; const was = d.dataset.theme ?? ''; d.dataset.theme = 'light'; return was }); await wait(200); await mp.screenshot({ path: 'test/tmp/visual-blocks-desktop-light.png' })
+              if (vp) { await mp.setViewportSize(vp); await wait(300) } await mp.evaluate(() => document.querySelector('.vblk')?.scrollIntoView({ block: 'start' })); await wait(200); await mp.screenshot({ path: 'test/tmp/visual-blocks-phone-light.png' })
+              await mp.evaluate((was) => { const d = document.documentElement; if (was) d.dataset.theme = was; else delete d.dataset.theme }, th); await wait(150) }
+            // ④ 틀이 스스로 바깥 주소로 간다(`location.href`) — 요청이 나가면 안 되고(앱 문서의 `frame-src 'self'`), 틀은 걷혀 덮개로 돌아가야 한다
+            await mp.evaluate(() => { document.querySelector('.mcard.mc-html iframe')?.contentWindow?.postMessage('go', '*') })
+            let nav = null
+            for (let i = 0; i < 40; i++) { nav = await mp.evaluate(() => { const c = document.querySelector('.mcard.mc-html'); if (!c || c.querySelector('iframe')) return null; return { note: c.querySelector('.mc-hnote')?.textContent ?? '', run: !!c.querySelector('.mc-run'), bad: !!c.querySelector('.mc-hbox.mc-hbad'), shut: c.querySelector('.mc-shut')?.hidden === true, viol: window.__fviol } }); if (nav) break; await wait(150) }
+            await wait(300)
+            // 정책 위반 알림은 틀의 두 번째 `load` **바로 뒤**에 온다 — 틀이 걷힌 순간에 읽으면 아직 비어 있다(탐침으로 순서 확인 · 2026-11-13). 기다린 뒤 다시 읽는다
+            if (nav) nav.viol = await mp.evaluate(() => window.__fviol)
+            if (outHits) fail('🔴 미니 창: 틀이 바깥 주소로 갔다 — 요청 ' + outHits + '건이 나갔다(`client/index.html` 의 frame-src 가 빠졌다)')
+            if (!nav) fail('🔴 미니 창: 다른 주소로 가려는 틀을 걷지 않았다(머리 줄에 «격리됨» 이 붙은 채 남의 문서가 보인다)')
+            else if (!/다른 주소/.test(nav.note) || !nav.run || !nav.bad || !nav.shut || !nav.viol.some((v) => /^frame-src /.test(v))) fail('🔴 미니 창: 바깥으로 가려던 틀을 걷은 뒤의 모양이 다르다(알림 글 · 여는 단추 · 닫기 숨김 · frame-src 위반) ' + JSON.stringify(nav))
+            // 걷힌 뒤에도 다시 열 수 있고, «닫기» 로 걷을 수 있다
+            await mp.click('.mcard.mc-html .mc-run'); let re = false
+            for (let i = 0; i < 40; i++) { re = await mp.evaluate(() => !!document.querySelector('.mcard.mc-html iframe')); if (re) break; await wait(150) }
+            if (!re) fail('미니 창: 걷힌 뒤 다시 열리지 않는다')
+            else { await mp.click('.mcard.mc-html .mc-shut'); await wait(150); const shut = await mp.evaluate(() => { const c = document.querySelector('.mcard.mc-html'); return !!c && !c.querySelector('iframe') && !!c.querySelector('.mc-run') && !c.querySelector('.mc-hbox.mc-hbad') }); if (!shut) fail('미니 창: «닫기» 가 틀을 걷고 덮개로 돌아가지 않는다') }
+            mp.off('request', onMiniReq); outSrv.close()
+            rmSync(join(bot.abs, 'vb-mini.html'), { force: true })
+            ok('시각화 채팅 둘째 — 단계 · 안 비교 · 숫자 블록이 카드로(깨진 블록은 코드 + 한 줄) · 표로 보기 오감 · 폰 폭 안 · 미니 창은 누를 때까지 틀 없음 · 틀은 allow-scripts + srcdoc(주소에 토큰 없음 · 부모 · 저장소 · 호스트 API 에 못 닿음) · 틀이 바깥 주소로 못 감(요청 0건 · 걷힘 · 다시 열림 · 닫기) · 단계의 점이 한 줄 · 끊긴 답의 반쪽 블록은 코드')
+          }
           await mp.screenshot({ path: 'test/tmp/bm-phone.png' }); await mp.close(); await fetch(base + `/api/sessions/${sidM}`, { method: 'DELETE' })
           ok('BM 채팅 포맷 — 입력창 줄바꿈 보존 · 내 말 마크다운(굵게·목록) · HTML 은 글자 · ~ 하나는 글자 · @칩 제자리 · 내 말 링크 파비콘 · 코드블록 흔들림 0')
         }

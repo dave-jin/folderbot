@@ -28,6 +28,12 @@ describe('mdPlain — 알림 미리보기는 글자만', () => {
   it('위키링크는 별칭을, 없으면 이름을', () => {
     expect(mdPlain('[[문서|별칭]] 과 [[다른 문서]]')).toBe('별칭 과 다른 문서')
   })
+  it('그림 블록은 줄 글 대신 무엇의 그림인지만 — 알림에 `[x] 기획 | 10/28 …` 이 나가지 않는다 (2026-11-13)', () => {
+    expect(mdPlain('정리했어요.\n\n```steps\ntitle: 강의 준비\n[x] 기획 | 10/28 확정\n[>] 슬라이드\n```\n\n끝')).toBe('정리했어요. (단계 그림 · 강의 준비) 끝')
+    expect(mdPlain('```compare\n# A *\n준비: 2시간\n# B\n준비: 4시간\n```')).toBe('(안 비교 그림)')
+    expect(mdPlain('```chart\n제목: 회차별 신청\n1회: 24\n2회: 33\n```')).toBe('(숫자 그림 · 회차별 신청)')
+    expect(mdPlain('```js\nconst a = 1\n```')).toBe('const a = 1')   // 다른 코드는 종전대로 글자를 남긴다
+  })
   it('승인 대기 알림은 명령 원문 그대로 · 답 알림만 평문', () => {
     expect(notePlain({ kind: 'awaiting', body: 'Bash: rm -rf ~/tmp/* ~/x/*' })).toBe('Bash: rm -rf ~/tmp/* ~/x/*')
     expect(notePlain({ kind: 'error', body: '__init__.py 없음' })).toBe('__init__.py 없음')
