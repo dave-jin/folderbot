@@ -9,12 +9,12 @@ import { holdHeader, holdLine, holderOf, type Holder } from '../core/waiting'
 import { cliNeedsUpdate, cliVersionShort, cliUpdateLine } from '../core/cliUpdate'
 import { docKey, pendingDoc } from '../core/docReq'
 import { notePlain } from '../core/mdPlain'
-import { AskHost, ConfirmHost, DiffHost, FolderPicker, Md, NotifyCenter, chipMark, Onboarding, Pairing, RoutineSheet, Settings, preloadDirIndex, askConfirm, askName, deleteSession, showDiff, useToast, type Say } from './Sheets'
+import { AskHost, ConfirmHost, DiffHost, FolderPicker, Md, NotifyCenter, chipMark, Onboarding, Pairing, RoutineSheet, Settings, preloadDirIndex, askConfirm, askName, showDiff, useToast, type Say } from './Sheets'
 import { AgentPickHost, pickAgent } from './AgentPick'
 import type { SecId } from './Settings'
 import { VendorMark } from './Brand'
 import { ColorHost, pickColor } from './ColorPick'
-import { Float, anchorOf, type Anchor } from './Float'
+import { Float, type Anchor } from './Float'
 import { DocPane, preloadEditor, useDocs } from './Doc'
 import { Search } from './Search'
 import { Cleanup, savedCleanDays } from './Cleanup'
@@ -70,7 +70,8 @@ import { workLabel, workMood } from '../core/work'
 import { GLOBE, faviconNow, onFavicon } from './favicons'
 import { hoverable, hoverRef } from './previews'
 import { copySay } from './clip'
-import { SubDetail, TaskSheet, stopOneTask, subItemIds, useTasks } from './Tasks'
+import { SubDetail, TaskPop, TaskSheet, stopOneTask, subItemIds, useTasks } from './Tasks'
+import { SessionSheet, SessionStrip } from './SessionStrip'
 import { resultPreview } from '../core/bgTasks'
 import { STEER_WHY, steerVerdict } from '../core/steer'
 import { nextWaiting, waitingOrder } from '../core/sessionTabs'
@@ -805,10 +806,9 @@ function Main() {
   const openRpRef = useRef(openRp); openRpRef.current = openRp
   const narrowRef = useRef(narrow); narrowRef.current = narrow
   useEffect(() => {
-    const t = () => openRpRef.current('tasks')
     const d = () => { if (narrowRef.current) setView('chat') }
-    window.addEventListener('fb:tasks', t); window.addEventListener('fb:drill', d)
-    return () => { window.removeEventListener('fb:tasks', t); window.removeEventListener('fb:drill', d) }
+    window.addEventListener('fb:drill', d)
+    return () => { window.removeEventListener('fb:drill', d) }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   /**
    * 폴더 칩 → **트리에서 그 폴더를 편다** (2026-09-15 Dave: «채팅 본문에서 폴더 및 파일 칩»). 폴더는 읽을 글이
@@ -1151,10 +1151,7 @@ function Main() {
   const rpwrapEl = <div className="rpwrap" style={{ width: narrow ? '100%' : fit.rp, flex: 'none', display: 'flex', minWidth: 0 }}>{peerId ? <BridgeSide peerId={peerId} go={go} phone={phone} onBack={() => setView('chat')} onCollapse={closeRp} /> : <Panel bot={bot} sessions={sessions} sessionId={sessionId} go={go} onOpenFile={(rel, pin) => openInDocPane(rel, { pin })} onTalk={(t) => { setPrefill(t); if (phone) setView('chat') }} onAttach={(rel, dir) => addAttach({ rel, abs: `${bot.abs}/${rel}`, dir })} onMention={(rel) => { setMentionReq((m) => [...m, rel]); if (phone) setView('chat') }} onStartAt={startAt} onNewFolderAt={newFolderAt} touched={touched} filesTick={s.filesTick[bot.id]} secH={lay.secH} onSecH={(h) => setLay({ ...lay, secH: h })} onCollapse={closeRp} focusSec={focusSec} say={say} refresh={refresh} activeDoc={showDoc ? docs.active : null} onDragY={(on) => setDrag(on ? 'y' : '')} phone={phone} onBack={toList} only={phone ? panelTab : undefined} />}</div>
   const stripRightEl = peerId ? <div className="strip right"><button className="ib" onClick={() => openRp()} title="세션 · 편지함 펼치기 (⌘⇧B)"><Icon n="panelr" size={14} /></button></div> : <div className="strip right"><button className="ib" onClick={() => openRp()} title="패널 펼치기 (⌘⇧B)"><Icon n="panelr" size={14} /></button>
     {/* S-3 · 패널을 접어 둬도 **새 세션 +** 는 우측 상단에 남는다 (2026-09-21 Dave: «상시 노출») — 펼친 패널 「세션」 줄의 + 와 같은 일 */}
-    <button className="ib nsb" onClick={() => { void newSession(); openRp('sessions') }} title="새 세션 (⌘N)"><Icon n="plus" size={14} /><span className="fly"><b>새 세션</b><span>이 폴더에서</span></span></button><div className="gap" />
-        <button className="ib" onClick={() => openRp('sessions')}><Icon n="clock" size={14} />{sessions.some((x) => x.state === 'running') ? <span className="dot run" style={{ position: 'absolute', right: 2, top: 2 }} /> : null}<span className="fly"><b>세션</b><span>{sessions.length}개</span></span></button>
-        {/* EA · 접힌 패널에서도 «뒤에서 도는 일» 이 보인다 — 맡긴 일이 있는 세션에만 서고, 도는 수를 배지로 단다 */}
-        {(() => { const ts = (sessionId ? s.tasks[sessionId] : undefined) ?? []; if (!ts.length) return null; const run = ts.filter((t) => t.status === 'run').length; return <button className="ib bgstrip" onClick={() => openRp('tasks')} aria-label={`뒤에서 도는 일 · 도는 중 ${run}`}><Icon n="sub" size={14} />{run ? <span className="bd">{run}</span> : null}<span className="fly"><b>뒤에서 도는 일</b><span>{run ? `도는 중 ${run}` : `끝남 ${ts.length}`}</span></span></button> })()}
+    <button className="ib nsb" onClick={() => void newSession()} title="새 세션 (⌘N)"><Icon n="plus" size={14} /><span className="fly"><b>새 세션</b><span>이 폴더에서</span></span></button><div className="gap" />
         <button className="ib" onClick={() => openRp('todo')}><Icon n="list" size={14} />{(s.todos[bot.id] ?? []).filter((t) => !t.done).length ? <span className="bd">{(s.todos[bot.id] ?? []).filter((t) => !t.done).length}</span> : null}<span className="fly"><b>{bot.orchestrator ? 'Inbox' : '할 일'}</b><span>{bot.orchestrator ? `${s.inbox}개` : `미완료 ${(s.todos[bot.id] ?? []).filter((t) => !t.done).length}`}</span></span></button>
         <button className="ib" onClick={() => openRp('files')}><Icon n="folder" size={14} /><span className="fly"><b>파일</b><span>{bot.rel || '볼트'}</span></span></button>
         <button className="ib" onClick={() => openRp('routines')}><Icon n="cal" size={14} /><span className="fly"><b>루틴</b><span>{bot.routines.length}개</span></span></button>
@@ -1169,7 +1166,7 @@ function Main() {
       {stage === 'wide' ? <div className="divx" onPointerDown={sbOpen ? dragX('sb', 1) : undefined} onDoubleClick={() => setLay({ ...lay, sb: DEF.sb, sbOpen: true, sbPin: true })} /> : null}
 
       {/* ── 채팅 ── */}
-      {peerId ? <BridgeThread peerId={peerId} go={go} say={say} phone={phone} onBack={toList} onSide={narrow || !rpOpen ? () => openRp() : undefined} /> : <Chat bot={bot} sessions={sessions} cur={cur} items={items} loaded={!!sessionId && !!s.chats[sessionId]} phase={phase} ghost={phase === 'fade' ? ghost ?? undefined : undefined} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} sendReq={sendReq} onSendReq={() => setSendReq(null)} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} cardFocusReq={cardFocusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openInDocPane(rel, { pin })} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={toList} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} queue={queueFor(sessionId)} onQueue={(f) => { if (sessionId) onQueue(sessionId, f) }} onReveal={reveal} />}
+      {peerId ? <BridgeThread peerId={peerId} go={go} say={say} phone={phone} onBack={toList} onSide={narrow || !rpOpen ? () => openRp() : undefined} /> : <Chat bot={bot} go={go} sessions={sessions} cur={cur} items={items} loaded={!!sessionId && !!s.chats[sessionId]} phase={phase} ghost={phase === 'fade' ? ghost ?? undefined : undefined} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} sendReq={sendReq} onSendReq={() => setSendReq(null)} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} cardFocusReq={cardFocusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openInDocPane(rel, { pin })} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={toList} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} queue={queueFor(sessionId)} onQueue={(f) => { if (sessionId) onQueue(sessionId, f) }} onReveal={reveal} />}
 
       {/* ── 문서 열 (넓음만 흐름 안 · 중간·좁음은 오른쪽 서랍) ── */}
       {stage === 'wide' && showDoc && !peerId ? <><div className="divx" onPointerDown={dragX('doc', -1)} onDoubleClick={() => setLay({ ...lay, doc: DEF.doc })} />{docwrapEl}</> : null}
@@ -1526,9 +1523,9 @@ interface FileNode { rel: string; dir: boolean; mtime: number }
 // ⚠ 맥 파일 이름은 NFD 로 저장된다 — 비교 전에 양쪽을 NFC 로 맞추지 않으면 한글이 «아예» 안 걸린다(core/search 머리말)
 const fuzzy = (q: string, s: string): number => { if (!q) return 1; const t = norm(s); const nq = norm(q); if (t.includes(nq)) return t.startsWith(nq) ? 3 : 2; let i = 0; for (const c of t) if (c === nq[i]) i++; return i === nq.length ? 1 : 0 }
 
-function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pending, prefill, onPrefilled, sendReq, onSendReq, attachReq, onAttached, mentionReq, onMentioned, focusReq, cardFocusReq, onSession, onFile, docBadge, docTabs, docOn, onDocToggle, say, refreshAll, collapsed, onUncollapse, phone, onBack, onPanel, newSession, filesTick, queue, onQueue, onReveal }: { bot: Bot; sessions: SessionInfo[]; cur?: SessionInfo; items: ChatItem[]; loaded: boolean; /** CF · 대화 칸 단계(`core/loadPhase`) */ phase?: ChatPhase; /** CF ④ · 받는 동안 흐리게 남기는 옛 대화 — 그리기만(그 대화의 봇·세션으로 그린다 · 파일 칩이 새 폴더 기준으로 풀리지 않게) */ ghost?: { sid: string; items: ChatItem[]; bot: Bot }; pending: PermissionRequest[]; prefill: string; onPrefilled: () => void; sendReq: { botId: string; text: string; n: number } | null; onSendReq: () => void; attachReq: Att[]; onAttached: () => void; mentionReq: string[]; onMentioned: () => void; focusReq: number; /** EC · 이 세션의 승인·질문 카드에 초점을 두라(⌘J 로 뛰어왔다) */ cardFocusReq?: { sid: string; n: number } | null; onSession: (sid: string) => void; onFile: (rel: string, pin?: boolean) => void; docBadge: number; docTabs: string[]; docOn: boolean; onDocToggle: () => void; say: Say; refreshAll: () => Promise<void>; collapsed: boolean; onUncollapse: () => void; phone: boolean; onBack: () => void; onPanel: () => void; newSession: () => Promise<void>; filesTick?: number; queue: string[]; onQueue: (f: (q: string[]) => string[]) => void; onReveal: (rel: string) => void }) {
+function Chat({ bot, go, sessions, cur, items, loaded, phase = 'ready', ghost, pending, prefill, onPrefilled, sendReq, onSendReq, attachReq, onAttached, mentionReq, onMentioned, focusReq, cardFocusReq, onSession, onFile, docBadge, docTabs, docOn, onDocToggle, say, refreshAll, collapsed, onUncollapse, phone, onBack, onPanel, newSession, filesTick, queue, onQueue, onReveal }: { bot: Bot; go: (botId: string, sid?: string) => void; sessions: SessionInfo[]; cur?: SessionInfo; items: ChatItem[]; loaded: boolean; /** CF · 대화 칸 단계(`core/loadPhase`) */ phase?: ChatPhase; /** CF ④ · 받는 동안 흐리게 남기는 옛 대화 — 그리기만(그 대화의 봇·세션으로 그린다 · 파일 칩이 새 폴더 기준으로 풀리지 않게) */ ghost?: { sid: string; items: ChatItem[]; bot: Bot }; pending: PermissionRequest[]; prefill: string; onPrefilled: () => void; sendReq: { botId: string; text: string; n: number } | null; onSendReq: () => void; attachReq: Att[]; onAttached: () => void; mentionReq: string[]; onMentioned: () => void; focusReq: number; /** EC · 이 세션의 승인·질문 카드에 초점을 두라(⌘J 로 뛰어왔다) */ cardFocusReq?: { sid: string; n: number } | null; onSession: (sid: string) => void; onFile: (rel: string, pin?: boolean) => void; docBadge: number; docTabs: string[]; docOn: boolean; onDocToggle: () => void; say: Say; refreshAll: () => Promise<void>; collapsed: boolean; onUncollapse: () => void; phone: boolean; onBack: () => void; onPanel: () => void; newSession: () => Promise<void>; filesTick?: number; queue: string[]; onQueue: (f: (q: string[]) => string[]) => void; onReveal: (rel: string) => void }) {
   const { s } = useStore()
-  const [text, setText] = useState(''); const [caret, setCaret] = useState(0); const [sessMenu, setSessMenu] = useState<Anchor | null>(null); const sessDown = useRef(false); const [busy, setBusy] = useState(false)
+  const [text, setText] = useState(''); const [caret, setCaret] = useState(0); const [sessSheet, setSessSheet] = useState(false); const [busy, setBusy] = useState(false)
   const [attach, setAttach] = useState<Att[]>([]); const [pop, setPop] = useState<'' | 'plus' | 'mode' | 'model' | 'effort' | 'ctx'>(''); const [pickOpen, setPickOpen] = useState(false); const [uploading, setUploading] = useState(false)
   const [routineDraft, setRoutineDraft] = useState<RoutineDef | null>(null)
   /**
@@ -1608,12 +1605,19 @@ function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pendi
   const [drill, setDrill] = useState<string | null>(null)
   /**
    * EA · 이 세션의 맡긴 일(서브에이전트·뒤에서 도는 셸). 진행 줄의 단추가 여는 자리는 폭마다 다르다 —
-   * 폰은 바닥 시트(`TaskSheet`), 그 밖은 오른쪽 패널의 «뒤에서 도는 일» 절(`fb:tasks` → 패널).
+   * 폰은 바닥 시트(`TaskSheet`), 그 밖은 단추 자리에 뜨는 팝오버(`TaskPop`).
    */
   const tasks = useTasks(cur?.id)
   const taskRun = useMemo(() => tasks.filter((t) => t.status === 'run').length, [tasks])
   const [bgSheet, setBgSheet] = useState(false)
-  const openBg = () => { if (phone) setBgSheet(true); else window.dispatchEvent(new CustomEvent('fb:tasks')) }
+  const [bgPop, setBgPop] = useState<Anchor | null>(null); const bgDown = useRef(false); const bgPopOn = useRef(false); bgPopOn.current = !!bgPop
+  const openBg = () => {
+    if (phone) { setBgSheet(true); return }
+    const was = bgDown.current; bgDown.current = false
+    if (was || bgPopOn.current) { setBgPop(null); return }
+    const el = colRef.current?.querySelector('.live .bgo') as HTMLElement | null; if (!el) return
+    const r = el.getBoundingClientRect(); setBgPop({ x: r.left, y: r.top - 6, up: true })
+  }
   const subIds = useMemo(() => subItemIds(items), [items])
   // 패널의 [열기] — 같은 세션이면 그 서브에이전트를 열어 본다
   useEffect(() => { const f = (e: Event) => { const d = (e as CustomEvent).detail as { sid?: string; id?: string } | undefined; if (d?.id && d.sid === cur?.id) setDrill(d.id) }; window.addEventListener('fb:drill', f); return () => window.removeEventListener('fb:drill', f) }, [cur?.id])
@@ -2107,11 +2111,6 @@ function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pendi
   const mode: 'send' | 'queue' | 'stop' | 'off' = hasText ? (running || state === 'awaiting_input' ? 'queue' : 'send') : running ? 'stop' : 'off'
   const ctx = cur?.ctx; const pct = ctx ? Math.min(100, Math.round((ctx.used / ctx.window) * 100)) : 0
   if (collapsed) return <div className="strip" style={{ background: 'var(--bg)' }}><button className="ib" onClick={onUncollapse} title="대화 펼치기"><Icon n="sub" size={14} /></button><div className="gap" /><FolderBot color={bot.color} size={17} mood={moodOf(state, !!cur?.hibernated)} mono />{running ? <span className="pulse" style={{ marginTop: 8 }} /> : null}</div>
-  // 🔴 세션 단추는 누르기(mousedown)를 **삼키지 않는다** (2026-11-13 검토) — 삼키면 열려 있던 입력창 팝오버·다른 메뉴의 «바깥 누르기» 가 이 클릭을 못 들어 둘이 같이 뜬다.
-  //    «같은 단추로 닫기» 는 누르는 순간 열려 있었는지(`sessDown`)로 가린다: 메뉴의 바깥 누르기가 먼저 닫고, 뒤따르는 click 은 다시 열지 않는다. 키보드(⏎·Space · detail 0)는 상태로 바로 뒤집는다.
-  const sessMenuEl = sessMenu ? <Float at={sessMenu} onClose={() => setSessMenu(null)} className="menu sessm" width={220}><div style={{ display: 'contents' }} onClick={() => setSessMenu(null)}>{/* ⚠ 세션 이름 **오른쪽에** 회사 표식 (2026-09-13 Dave: «세션 뒤에는 모든 곳에 … 세션이름 우측에
-                  아이콘이 있어야 해»). 벤더는 폴더가 아니라 세션의 성질이라 세션이 보이는 곳마다 따라다녀야 한다 */}
-              {sessions.filter((x) => sessArea(x) === 'chat').map((x) => <button key={x.id} className={x.id === cur?.id ? 'on' : ''} onClick={() => onSession(x.id)}><span className={`dot ${stateDot(x.state)}`} /><span>{x.name}</span><VendorMark vendor={x.vendor} size={11} /><span style={{ flex: 1 }} /><span className="k">{x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span></button>)}{sessions.some((x) => sessArea(x) === 'auto') ? <><hr /><div className="mhead">자동화</div>{sessions.filter((x) => sessArea(x) === 'auto').map((x) => <button key={x.id} className={x.id === cur?.id ? 'on' : ''} onClick={() => onSession(x.id)}><span className={`dot ${stateDot(x.state)}`} /><span>{x.name}</span><VendorMark vendor={x.vendor} size={11} /><span style={{ flex: 1 }} /><span className="k">{x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span></button>)}</> : null}<hr /><button onClick={() => void newSession()}><Icon n="plus" size={12} /><span>새 세션</span></button>{cur ? <button onClick={async () => { const n = await askName('세션 이름', cur.name); if (n?.trim()) await api(`/sessions/${cur.id}/rename`, { body: { name: n.trim() } }) }}><Icon n="edit" size={12} /><span>이름 바꾸기</span></button> : null}{cur ? <button className="warn" onClick={() => { void deleteSession(cur, say, refreshAll, async () => { await refreshAll(); onSession(cur.id) }).catch((e) => say((e as Error).message)) }}><Icon n="x" size={12} /><span>세션 삭제</span></button> : null}</div></Float> : null
   /**
    * 🔴 **채팅에 쓴 한 줄을 그대로 루틴으로** (2026-09-13 Dave: «루틴을 폴더 채팅에서 바로 채팅으로 생성»).
    *    「매주 월요일 아침 9시에 지난주 정리해 줘」 라고 써 두고 + → 루틴으로 만들기 를 누르면
@@ -2254,7 +2253,7 @@ function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pendi
     if (!el) { col.style.removeProperty('--popmax'); return }
     const fit = () => {
       col.style.removeProperty('--popmax')
-      const hdr = col.querySelector('.chat-hdr') as HTMLElement | null
+      const hdr = (col.querySelector('.sstrip') ?? col.querySelector('.chat-hdr')) as HTMLElement | null
       const ceil = (hdr ? hdr.getBoundingClientRect().bottom : col.getBoundingClientRect().top) + 8
       const over = ceil - el.getBoundingClientRect().top
       if (over > 0) col.style.setProperty('--popmax', `${Math.max(160, el.offsetHeight - over)}px`)
@@ -2280,7 +2279,7 @@ function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pendi
   }
   // H · 쓸기는 App(.cols) 이 맡는다(세 칸 띠). 드릴인 중의 👉 만 여기서 먼저 받아 드릴에서 나온다 — preventDefault 하면 서랍은 안 열린다
   useEffect(() => { const f = (e: Event) => { if ((e as CustomEvent).detail === 'back' && drillSub) { e.preventDefault(); setDrill(null) } }; window.addEventListener('fb:nav', f); return () => window.removeEventListener('fb:nav', f) }, [drillSub])
-  return <div className="col chat" style={{ flex: 1 }} ref={colRef}
+  return <div className={`col chat ${!phone && !drillSub ? 'has-strip' : ''}`} style={{ flex: 1 }} ref={colRef}
     onDragEnter={(e) => { const k = dragKind(e.dataTransfer); if (!k) return; e.preventDefault(); dragN.current++; setDrop(k); setDropN(e.dataTransfer.items?.length ?? 0) }}
     onDragOver={(e) => { const k = dragKind(e.dataTransfer); if (!k) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
     onDragLeave={() => { if (!dragN.current) return; dragN.current -= 1; if (!dragN.current) setDrop('') }}
@@ -2290,16 +2289,18 @@ function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pendi
       {/* H-5 · 좁음 헤더 한 줄 — ☰(레일 서랍 · H 전까지는 봇 목록으로) · 표시 이름 · 작업 중 ●. ‹·폴더 아이콘은 없다(폴더는 독의 📄 · 쓸기) */}
       {phone ? <><button className="rb glassb hb-menu" onClick={drillSub ? () => setDrill(null) : onBack} title={drillSub ? '메인 대화로' : '봇 목록'}><Icon n={drillSub ? 'back' : 'list'} size={20} /></button>
         {/* 감싸는 span 은 헤더의 flex 아이템 — 폭이 내용에 의존하는데 알약이 그 100% − 118px 을 최대폭으로 삼아 스스로를 눌러 이름이 «2026-…» 로 잘렸다(2026-09-13 Dave). 알약 최대폭은 감싸는 칸의 100%, 칸이 남는 공간을 받는다 */}
-        <span className="hname" style={{ position: 'relative' }}><button className="hnb" onMouseDown={() => { sessDown.current = !!sessMenu }} onClick={(e) => { const was = e.detail === 0 ? !!sessMenu : sessDown.current; setSessMenu(was ? null : anchorOf(e.currentTarget, { gap: 6 })) }} title={cur?.name ?? '세션'}>{drillSub ? <b className="dn">{drillSub.name}</b> : <BotName b={bot} chip={false} />}{chatHolder === 'other' ? <span className="dot hold" title="남을 기다리는 중" /> : running ? <span className="dot run" title="작업 중" /> : state === 'awaiting_input' ? <span className="dot wait" /> : null}</button>{sessMenuEl}</span>
+        <span className="hname"><button className="hnb" aria-haspopup="dialog" onClick={() => setSessSheet(true)} title={cur?.name ?? '세션'}><span className="h2">{drillSub ? <b className="dn">{drillSub.name}</b> : <BotName b={bot} chip={false} />}<small className="hs">{chatHolder === 'other' ? <span className="dot hold" title="남을 기다리는 중" /> : running ? <span className="dot run" title="작업 중" /> : state === 'awaiting_input' ? <span className="dot wait" /> : null}<span className="sn">{cur?.name ?? '새 대화'}</span><Icon n="chevd" size={9} /></small></span></button></span>
         <span className="sp" /><SyncDot /></>
         : drillSub ? <><button className="ib" onClick={() => setDrill(null)} title="메인 대화로"><Icon n="back" size={14} /></button><span style={{ color: 'var(--t3)' }}>/</span><span className="ttl">{drillSub.name}</span>{drillSub.status === 'run' ? <span className="spin run" /> : <Icon n={drillSub.status === 'error' ? 'x' : 'check'} size={11} color={drillSub.status === 'error' ? 'var(--err)' : 'var(--done)'} />}<span style={{ color: 'var(--t3)', fontSize: 12, whiteSpace: 'nowrap' }}>도구 {drillSub.tools}</span><span className="sp" /></>
           : <><FolderBot color={bot.color} size={16} mood={moodOf(state, !!cur?.hibernated, chatHolder)} mono /><span className="ttl" title={bot.name}><Mid s={bot.displayName} /></span><VendorMark vendor={cur?.vendor} size={12} />
             {/* AB · 헤더 한 줄 — 레일·대기 줄과 **같은 값**에서 나온다 */}
             {chatHolder === 'other' ? <span className="hstate"><i />{holdHeader(chatHolder, cur?.inflight, cur?.bg ?? 0)}</span> : null}
-            <span style={{ position: 'relative', flex: 'none' }}><button className="hsess" onMouseDown={() => { sessDown.current = !!sessMenu }} onClick={(e) => { const was = e.detail === 0 ? !!sessMenu : sessDown.current; setSessMenu(was ? null : anchorOf(e.currentTarget, { gap: 6 })) }} style={{ color: 'var(--t3)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}>{cur?.name ?? '새 대화'} <Icon n="chevd" size={10} /></button>{sessMenuEl}</span>
             <span className={`dot ${stateDot(state)}`} /><span className="sp" /><SyncDot />
             <div className="acts"><button className={`ib ${docOn ? 'on' : ''}`} onClick={onDocToggle} title="문서 열 (⌘⇧D)"><Icon n="doc" size={14} />{!docOn && docBadge ? <span className="bd">{docBadge}</span> : null}</button></div></>}
     </div>
+    {!phone && !drillSub ? <SessionStrip bot={bot} sessions={sessions} sessionId={cur?.id} go={go} say={say} /> : null}
+    {sessSheet ? <SessionSheet bot={bot} sessions={sessions} sessionId={cur?.id} go={go} say={say} onClose={() => setSessSheet(false)} /> : null}
+    {bgPop && cur ? <TaskPop at={bgPop} sid={cur.id} tasks={tasks} openIds={subIds} onOpen={(id) => { setBgPop(null); setDrill(id) }} onClose={() => setBgPop(null)} say={say} /> : null}
     {routineDraft ? <RoutineSheet bot={bot} draft={routineDraft} onClose={() => setRoutineDraft(null)} /> : null}
     {/* Q-2 (2026-09-19 Dave: «이전처럼 라운드 칩이 더 좋았다 · 바로 위 질문이 항상 상단 고정 · 더 올리면 그 이전 질문») — N-2 의 흐름 안 헤더(.qhdr)는 폐기. 폰·데스크톱 모두 유리 알약 하나, 탭하면 그 질문으로 */}
     {pinnedItem && !drill && !ghost ? <button className="pinq glassb" onClick={() => { const sc = scRef.current; const el = sc?.querySelector<HTMLElement>(`.umsg[data-id="${CSS.escape(pinnedItem.id)}"]`); if (!sc || !el) return; /* 알약 바로 아래에 질문이 오게 — 맨 위에 붙이면 알약(그 앞 질문)이 첫 줄을 가린다 */ sc.scrollTo({ top: sc.scrollTop + (el.getBoundingClientRect().top - sc.getBoundingClientRect().top) - (phone ? 56 : 48), behavior: 'smooth' }) }} title="이 질문으로">{pinnedItem.text}</button> : null}
@@ -2324,7 +2325,7 @@ function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pendi
         {cur?.stopped && !running && state !== 'awaiting_input' && !drill ? <div className="stopln" role="status"><Icon n="stop" size={10} /><span>응답을 멈췄어요</span>{lastUser ? <><button onClick={fixPrompt}>프롬프트 고치기</button><button onClick={() => void retryStopped()}>다시 시도</button></> : null}{stoppedFiles.length ? <div className="files sfiles"><span className="fl">멈추기 전에 고친 파일 — 되돌리지 않았어요</span>{stoppedFiles.map((p) => <span key={p} className="fpair"><FileChip abs={p} botAbs={bot.abs} botId={bot.id} onClick={() => onFile(p)} /><DiffBtn abs={p} onOpen={() => onFile(p)} /></span>)}</div> : null}</div> : null}
         {/* O · 본문과 상태 줄 사이는 8px 고정 — 남는 공간은 상태 줄 **뒤**로 보낸다(종전엔 스페이서가 앞에 있어 큰 빈 공간이 생겼다) */}
         {/* AB · 🔴 턴이 끝나도 `bg` 가 남아 있으면 대기 줄은 남는다 — 사라지는 순간이 「끝났나?」의 정체였다 */}
-        {cur && (running || state === 'awaiting_input' || (cur.bg ?? 0) > 0 || taskRun > 0) ? <Live cur={cur} state={state} color={bot.color} onStop={running || state === 'awaiting_input' ? stopNow : undefined} hint={!touch && !pending.some((p) => !p.ask)   /* EC · 승인 카드가 걸린 동안의 ⎋ 는 카드 거부다 — 멈추기 단추에 «esc» 를 달지 않는다 */} bgN={taskRun} onOpenBg={openBg} onGrow={() => { if (atBottomRef.current) followBottom() }} /> : null}
+        {cur && (running || state === 'awaiting_input' || (cur.bg ?? 0) > 0 || taskRun > 0) ? <Live cur={cur} state={state} color={bot.color} onStop={running || state === 'awaiting_input' ? stopNow : undefined} hint={!touch && !pending.some((p) => !p.ask)   /* EC · 승인 카드가 걸린 동안의 ⎋ 는 카드 거부다 — 멈추기 단추에 «esc» 를 달지 않는다 */} bgN={taskRun} onOpenBg={openBg} onBgDown={() => { bgDown.current = bgPopOn.current }} onGrow={() => { if (atBottomRef.current) followBottom() }} /> : null}
         {/* AJ · CLI 가 낡았을 때만 뜬다 — 누르면 호스트에서 바로 올린다 */}
         {cliOld ? <div className="live cliold">
           <Icon n="warn" size={14} color="var(--wait)" />
@@ -2487,7 +2488,7 @@ function QueueRow({ n, text, who, onSave, onDrop, onNow, onSteer, steerWhy }: { 
  * 🔴 **턴이 끝나도 남이 일하면 남아 있는다**(`bg`) — 종전에는 그 순간 이 줄이 통째로 사라져 「끝났나?」가 됐다.
  * 🔴 **2분이 넘으면 화면이 먼저 «가도 된다» 고 말한다** — 기다림에서 가장 필요한 한 마디다.
  */
-function Live({ cur, state, color, onOpenBg, onStop, hint, bgN = 0, onGrow }: { cur: SessionInfo; state: string; color: string; onOpenBg?: () => void; onStop?: () => void; hint?: boolean; /** EA · 지금 도는 맡긴 일 수 — 0 보다 크면 «뒤에서 도는 일 N» 단추가 선다 */ bgN?: number; /** EA · 이 줄이 키가 컸다(좁은 폭에서 단추가 다음 줄로 내려감) — 대화가 맨 아래를 따라가게 */ onGrow?: () => void }) {
+function Live({ cur, state, color, onOpenBg, onBgDown, onStop, hint, bgN = 0, onGrow }: { cur: SessionInfo; state: string; color: string; onOpenBg?: () => void; onBgDown?: () => void; onStop?: () => void; hint?: boolean; /** EA · 지금 도는 맡긴 일 수 — 0 보다 크면 «뒤에서 도는 일 N» 단추가 선다 */ bgN?: number; /** EA · 이 줄이 키가 컸다(좁은 폭에서 단추가 다음 줄로 내려감) — 대화가 맨 아래를 따라가게 */ onGrow?: () => void }) {
   /**
    * EA · 단추가 하나 늘어, 좁은 폭에서는 이 줄이 두세 줄로 접힌다(`.live:has(.bgo)`). 줄이 커지는 순간 아래쪽이 입력칸 뒤로 숨으므로
    * (폰 실측 · 2분 넘은 대기 줄) 키가 커지면 부모에게 알려 맨 아래를 따라가게 한다. 작아질 때는 알리지 않는다.
@@ -2504,7 +2505,7 @@ function Live({ cur, state, color, onOpenBg, onStop, hint, bgN = 0, onGrow }: { 
    *    이제 맡긴 일이 도는 동안에는 어느 상태의 진행 줄에도 이 단추가 서고, 누르면 목록이 열린다(폰은 바닥 시트 · 그 밖은 오른쪽 패널).
    * ⚠ 클래스는 `.hact` 가 아니라 `.bgo` 다 — 대기 줄의 [알림 켜기] 와 헷갈리지 않게(스모크가 `.hact` 의 글을 읽는다).
    */
-  const bgEl = bgN > 0 && onOpenBg ? <button className="bgo" onMouseDown={(e) => e.preventDefault()} onClick={onOpenBg} title="뒤에서 도는 일 보기 · 하나씩 멈추기" aria-label={`뒤에서 도는 일 ${bgN}개 보기`}><Icon n="sub" size={11} /><span className="w">뒤에서 도는 일</span><span className="sh">뒤에서</span><b>{bgN}</b></button> : null
+  const bgEl = bgN > 0 && onOpenBg ? <button className="bgo" onMouseDown={(e) => { e.preventDefault(); onBgDown?.() }} onClick={onOpenBg} title="뒤에서 도는 일 보기 · 하나씩 멈추기" aria-label={`뒤에서 도는 일 ${bgN}개 보기`}><Icon n="sub" size={11} /><span className="w">뒤에서 도는 일</span><span className="sh">뒤에서</span><b>{bgN}</b></button> : null
   const [, tick] = useState(0)
   const from = cur.turnStartedAt ?? cur.inflight?.since ?? cur.lastActivity ?? Date.now()
   const holder = holderOf(state as SessionState, cur.inflight, Date.now(), cur.bg ?? 0)

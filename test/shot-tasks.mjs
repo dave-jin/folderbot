@@ -1,7 +1,7 @@
 /**
  * EA · 뒤에서 도는 일 — 눈으로 보는 캡처 (2026-11-11 Dave «전체 모두 직접 화면을 보고 캡처해서»).
  * 픽스처 볼트 · 스텁 CLI 로 호스트를 띄우고, 봇이 서브에이전트 둘과 셸 하나를 뒤에서 돌리게 한 뒤(«맡긴일 뒤에서»)
- * 데스크톱(오른쪽 패널의 절 · 접힌 패널의 아이콘) · 폰(진행 줄 → 바닥 시트)을 찍는다. 이어서 긴 결과를 돌려주는
+ * 데스크톱(진행 줄 → 그 위에 뜨는 목록 — 2026-11-13 세션 줄 뒤로 오른쪽 패널의 절이 아니다) · 폰(진행 줄 → 바닥 시트)을 찍는다. 이어서 긴 결과를 돌려주는
  * 서브에이전트(«맡긴일 긴결과»)의 카드 · 열어 보는 화면(결과 전문 · 쓴 글 보기)을 두 판 다 찍는다.
  * ⚠ 실 앱·실 볼트·`~/.claude` 를 건드리지 않는다 — 스텁이 쓰는 기록 파일도 임시 폴더(`CLAUDE_CONFIG_DIR`)로 간다.
  *
@@ -75,17 +75,19 @@ try {
   const dp = await br.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 })
   await dp.addInitScript(init, THEME)
   await dp.goto(`${base}/#bot=${bot.id}&s=${s1.sessionId}`); await dp.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(900)
-  await dp.waitForSelector('.panel .bgsec .bgt', { timeout: 8000 })
-  await shot(dp, '01-데스크톱-패널-뒤에서-도는-일')
-  await dp.click('.bgsec .bgt-h.fin'); await wait(300)
-  await shot(dp, '02-데스크톱-패널-끝남-펼침')
-  console.log('  넘침(패널):', JSON.stringify(await leaks(dp, '.bgsec .bgt')), JSON.stringify(await leaks(dp, '.live')))
-  // 패널을 접으면 아이콘 열에 배지가 남는다
+  // 세션 줄(2026-11-13) — 오른쪽 패널의 «뒤에서 도는 일» 절과 접힌 패널 띠의 단추는 없어졌다. 진행 줄의 단추가 그 위에 목록(`.spop.bgpop`)을 띄운다
+  await dp.waitForSelector('.live .bgo', { timeout: 8000 })
+  await shot(dp, '01-데스크톱-진행-줄')
+  await dp.click('.live .bgo'); await dp.waitForSelector('.spop.bgpop .bgt', { timeout: 5000 }); await wait(400)
+  await shot(dp, '02-데스크톱-진행-줄에서-열기')
+  await dp.click('.spop.bgpop .bgt-h.fin'); await wait(300)
+  await shot(dp, '03-데스크톱-목록-끝남-펼침')
+  console.log('  넘침(목록):', JSON.stringify(await leaks(dp, '.spop.bgpop .bgt')), JSON.stringify(await leaks(dp, '.live')))
+  await dp.keyboard.press('Escape'); await wait(300)
+  // 패널을 접어도 진행 줄의 단추는 그대로 선다
   await dp.click('.panel .hdr .ib.on'); await wait(400)
-  await dp.hover('.strip.right .bgstrip'); await wait(250)
-  await shot(dp, '03-데스크톱-접힌-패널-아이콘')
-  await dp.click('.live .bgo'); await wait(500)
-  await shot(dp, '04-데스크톱-진행-줄에서-열기')
+  await shot(dp, '04-데스크톱-접힌-패널')
+  await dp.keyboard.press('Meta+Shift+B'); await dp.waitForSelector('.panel', { timeout: 4000 }); await wait(400)   // 다음 캡처(하네스 절)는 펼친 패널에서 찍는다
   // 하네스 절의 에이전트 정의
   await dp.click('.panel .sech:has-text("명령 · 스킬")'); await wait(900)
   await dp.evaluate(() => document.querySelector('.panel .hsec')?.scrollIntoView({ block: 'end' })); await wait(200)

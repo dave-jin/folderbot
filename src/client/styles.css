@@ -94,7 +94,7 @@ b,strong { color:var(--w); font-weight:600 }
   box-shadow:var(--sh-1); touch-action:none; transition:translate var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease) }
 .dock.dragging { transition:none; cursor:grabbing; opacity:.92; box-shadow:var(--sh-2) }
 .dock .db { position:relative; width:40px; height:40px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; color:var(--t2) } .dock .db:hover { background:var(--sel); color:var(--w) } .dock .db.dim { opacity:.35 } .dock .db:disabled { pointer-events:none }
-.dock .db .bd { position:absolute; right:-1px; top:-1px; min-width:16px; height:16px; padding:0 4px; border-radius:8px; background:var(--run); color:#fff; font-size:11px; line-height:16px; text-align:center }
+.dock .db .bd { position:absolute; right:-1px; top:-1px; min-width:16px; height:16px; padding:0 4px; border-radius:8px; background:var(--t); color:var(--onAccent); font-weight:700; font-size:11px; line-height:16px; text-align:center }
 /* 잡는 곳 — 맨 위 손잡이. 여기서 시작한 끌기가 가장 자연스럽다(단추 위에서 끌어도 된다) */
 .dock .grip { height:14px; display:flex; align-items:center; justify-content:center; cursor:grab } .dock .grip i { width:18px; height:3px; border-radius:2px; background:var(--t3); display:block }
 .dock.sm { right:8px; padding:4px; gap:2px } .dock.sm .db { width:44px; height:44px }   /* 폰은 손가락 크기 44px */
@@ -118,7 +118,7 @@ b,strong { color:var(--w); font-weight:600 }
   color:var(--t3); font-size:11px; line-height:1 }
 .tabbar .tb.on { color:var(--w) }
 .tabbar .tb.dim { opacity:.35 } .tabbar .tb:disabled { pointer-events:none }
-.tabbar .tb .bd { position:absolute; left:50%; margin-left:4px; top:6px; min-width:15px; height:15px; padding:0 4px; border-radius:8px; background:var(--run); color:#fff; font-size:11px; line-height:15px; text-align:center }
+.tabbar .tb .bd { position:absolute; left:50%; margin-left:4px; top:6px; min-width:15px; height:15px; padding:0 4px; border-radius:8px; background:var(--t); color:var(--onAccent); font-weight:700; font-size:11px; line-height:15px; text-align:center }
 @media (prefers-reduced-transparency: reduce) { .tabbar { background:var(--sb); backdrop-filter:none } }
 /* 탭이 가리지 않게 입력칸과 서랍이 그만큼 올라온다 */
 /* ⚠ **키보드가 올라온 동안에는 `bottom` 을 전환하지 않는다.** 키보드는 시각 뷰포트에 화면을 다시 붙이는데(P-4),
@@ -239,8 +239,8 @@ b,strong { color:var(--w); font-weight:600 }
 /* 채팅 외양은 **cursor 스타일**로 되돌렸다 (2026-09-13 Dave: «이전 스타일이 더 나»).
    ⛔ 「A · 문서처럼」의 26px 리듬 · 오른쪽 정렬 · 58ch · 머리줄 · 턴 경계선은 전부 되돌렸다.
    ✅ 남긴 것은 **기계 접기(.mach)** 와 **문서 링크칩(.pchip)** 둘뿐이다 — Dave 가 콕 집어 원한 것. */
-.chat-body { display:flex; flex-direction:column; gap:16px; padding:calc(var(--hh) + 22px) 24px calc(var(--footh) + 12px + var(--settle, 0px)); width:100%; max-width:760px; align-self:center; flex:1 }
-.pinq { position:absolute; top:calc(var(--hh) + 10px); left:50%; translate:-50% 0; width:calc(100% - 48px); max-width:712px; z-index:4; border:1px solid var(--hair); border-radius:8px; padding:8px 14px; color:var(--w); font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:var(--sh-1); cursor:pointer; animation:fadein var(--t-mid) var(--ease) }
+.chat-body { display:flex; flex-direction:column; gap:16px; padding:calc(var(--hh) + var(--sstrip, 0px) + 22px) 24px calc(var(--footh) + 12px + var(--settle, 0px)); width:100%; max-width:760px; align-self:center; flex:1 }
+.pinq { position:absolute; top:calc(var(--hh) + var(--sstrip, 0px) + 10px); left:50%; translate:-50% 0; width:calc(100% - 48px); max-width:712px; z-index:4; border:1px solid var(--hair); border-radius:8px; padding:8px 14px; color:var(--w); font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:var(--sh-1); cursor:pointer; animation:fadein var(--t-mid) var(--ease) }
 /* ⛔ 등장 애니메이션(4px 떠오르기)을 쓰지 않는다 — 글이 흘러드는 동안 다시 돌면 «다가가면 도망가는» 단추가 된다 */
 /* 🔴 가운데 맞춤은 `translate`(독립 속성)로 — `transform` 으로 두면 `.rb:active { transform:scale(.96) }` 이 **덮어써**
    누르는 순간 -50% 가 사라지고 단추가 오른쪽으로 반 폭 튄다(2026-09-17 Dave 폰 실측 · CLAUDE.md §5 «translate·scale 은 독립 속성»). */
@@ -348,7 +348,7 @@ b,strong { color:var(--w); font-weight:600 }
 /* 컴포저 — 위 글 · 아래 한 줄(모드 · + | 모델 · 노력 · 링 · 보내기) */
 .composer { width:100%; max-width:712px; display:flex; flex-direction:column; gap:6px; border:1px solid var(--hair); border-radius:12px; padding:10px 12px 8px; position:relative; box-shadow:var(--sh-2) } .composer:focus-within { border-color:rgba(255,255,255,.14) }
 /* ── 놓을 자리는 채팅 열 전체 (2026-09-15) — 점선 + 안내 카드. pointer-events 를 끊어 놓기·떠남이 열에 그대로 닿게 */
-.dropzone { position:absolute; left:12px; right:12px; top:calc(var(--hh) + 12px); bottom:12px; border:1.5px dashed var(--run); border-radius:12px; background:rgba(224,136,80,.06); display:flex; align-items:center; justify-content:center; z-index:9; pointer-events:none }
+.dropzone { position:absolute; left:12px; right:12px; top:calc(var(--hh) + var(--sstrip, 0px) + 12px); bottom:12px; border:1.5px dashed var(--run); border-radius:12px; background:rgba(224,136,80,.06); display:flex; align-items:center; justify-content:center; z-index:9; pointer-events:none }
 .dropzone .card { display:flex; flex-direction:column; align-items:center; gap:8px; padding:22px 28px; border-radius:12px; background:var(--bg); border:1px solid var(--line2); box-shadow:var(--sh-2); text-align:center; max-width:80% }
 .dropzone .card b { font-size:15px; color:var(--w) } .dropzone .card small { font-size:13px; color:var(--t2); line-height:1.6 } .dropzone .card .n { font-size:12px; color:var(--run) }
 /* ── 파일 칩 B안 — 이름 + 폴더 표식 + 툴팁 */
@@ -919,7 +919,7 @@ b,strong { color:var(--w); font-weight:600 }
 .scp.folder { background:color-mix(in srgb,var(--run) 16%,transparent); color:var(--run) }
 /* 2026-09-17 설정 1안 — 범위 배지: [메인]=호스트에 저장(모든 기기) · [이 기기]=이 브라우저에만. 제목 옆에 작게 */
 .setr .t .scp, .lead .scp { margin-left:7px; height:17px; padding:0 6px; font-size:11px; vertical-align:1px; font-weight:500 }
-.scp.at-main { background:color-mix(in srgb,#7aa2f7 14%,transparent); color:#7aa2f7 }
+.scp.at-main { background:transparent; color:var(--done); border:1px solid rgba(79,191,135,.35) }
 .scp.at-dev { background:color-mix(in srgb,var(--t3) 18%,transparent); color:var(--t2) }
 .scp.ref { background:color-mix(in srgb,var(--t3) 18%,transparent); color:var(--t2); margin-left:8px }
 /* 참고 칸(보기만)은 목차에서 한 톤 옅고 위에 선 하나로 갈린다 */
@@ -2307,3 +2307,37 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
   .drill-r .dr-none, .drill-r .dr-run { font-size:14px } .drill-r .stopb { height:34px; padding:0 12px; font-size:14px; border:0; background:var(--box); border-radius:8px }
   .drill-w .wbtn { height:38px; padding:0 14px; font-size:14px; border-radius:12px } .drill-w .rld { min-height:32px; font-size:14px } .drill-w .meta .cut { font-size:13px }
 }
+
+/* ── 세션 줄 (2026-11-13 Dave 카드 · 가안 «가운데는 대화, 오른쪽은 폴더») ───────────────────────────────
+   채팅 머리줄 아래 한 줄. 넘치면 들어가는 만큼만 세우고 나머지는 «＋N» 단추의 목록으로 보낸다(`SessionStrip.tsx` · `core/stripFit`).
+   줄 높이(34)는 `--sstrip` 로 채팅 본문 · 고정 질문 · 놓기 자리가 같이 읽는다 — 줄이 없으면(폰 · 서브에이전트를 열어 보는 중) 0 이다. */
+.col.chat.has-strip { --sstrip:34px }
+.col.chat.has-strip .chat-hdr::after { display:none }
+.sstrip { position:absolute; left:0; right:0; top:var(--hh); height:34px; z-index:4; display:flex; align-items:center; gap:2px; padding:0 8px; background:var(--bg); border-bottom:1px solid var(--hair); min-width:0 }
+.sstrip::after { content:''; position:absolute; left:0; right:0; top:100%; height:28px; background:linear-gradient(180deg, var(--bg), var(--fade0)); pointer-events:none }
+.sstrip .gap { flex:1; min-width:0 }
+.stab { position:relative; flex:none; display:flex; align-items:center; gap:6px; max-width:168px; height:26px; padding:0 10px; border-radius:6px; font-size:13px; color:var(--t2); white-space:nowrap }
+.stab:hover { background:var(--hover); color:var(--t) } .stab.on { background:var(--sel); color:var(--w) }
+.stab .n { min-width:0; overflow:hidden; text-overflow:ellipsis } .stab.unread .n { color:var(--w); font-weight:600 }
+.stab .m { font-size:11px; color:var(--t3); font-family:var(--mono); flex:none } .stab .dot { flex:none }
+.stab .del { position:absolute; right:3px; top:3px; width:20px; height:20px; border-radius:6px; display:none; align-items:center; justify-content:center; color:var(--t3); background:var(--hover) }
+.stab.on .del { background:var(--sel) } .stab:hover .del { display:inline-flex } .stab .del:hover { color:var(--err) }
+.stab.edit { padding:0 4px; background:var(--sel) } .stab.edit .rin { width:150px; background:var(--bg2); border:1px solid var(--line2); border-radius:6px; height:22px; padding:0 6px; color:var(--w); font-size:13px; font-family:inherit; outline:0 }
+.stab.asklift { background:color-mix(in srgb, var(--run) 10%, transparent); color:var(--w) } .stab.asklift.answered { background:color-mix(in srgb, var(--done) 12%, transparent) }
+.splus { flex:none; width:26px; height:26px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; color:var(--t2) } .splus:hover { background:var(--hover); color:var(--w) }
+.smore { flex:none; display:inline-flex; align-items:center; gap:6px; height:26px; padding:0 9px; border:1px solid var(--line2); border-radius:6px; font-size:12px; color:var(--t); white-space:nowrap } .smore:hover, .smore.on { background:var(--sel); color:var(--w) }
+/* 폭을 재는 줄 — 보이지 않고 자리도 없다. 가로 넘침을 만들면 폭 검사(`fit.mjs`)가 빨강이다 */
+.smeas { position:absolute; left:0; top:0; width:0; height:0; overflow:hidden; visibility:hidden; pointer-events:none } .smeas > div { display:inline-flex; align-items:center; width:max-content }
+/* 뜨는 목록 — «＋N» 의 세션 목록 · 진행 줄의 «뒤에서 도는 일». 줄은 `.srow` · `.bgtasks` 를 그대로 쓴다 */
+.spop { background:var(--box); border:1px solid var(--line2); border-radius:8px; box-shadow:var(--sh-2); padding:5px 0; display:flex; flex-direction:column; gap:1px; font-size:13px }
+.spop .shr, .tsheet.sesssheet .shr { border:0; border-top:1px solid var(--line); margin:4px 0; width:100%; flex:none }
+.spop.bgpop { padding:6px 0 }
+/* 폰 — 줄을 세우지 않는다. 머리줄 단추가 세션 이름을 보이고 누르면 바닥 시트 */
+.app.phone .chat-hdr .hnb .h2 { display:flex; flex-direction:column; align-items:flex-start; min-width:0; line-height:1.2 }
+.app.phone .chat-hdr .hnb .hs { display:flex; align-items:center; gap:5px; max-width:100%; min-width:0; font-size:12px; font-weight:400; color:var(--t2) }
+.app.phone .chat-hdr .hnb .hs .sn { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.tsheet.sesssheet { padding:10px 0 calc(var(--sab) + 12px); max-height:72dvh }
+.tsheet.sesssheet .ssh { display:flex; align-items:center; gap:8px; padding:0 6px 4px 18px; flex:none } .tsheet.sesssheet .ssh b { font-size:16px; color:var(--w) } .tsheet.sesssheet .ssh .c { flex:1; font-size:14px; color:var(--t3) } .tsheet.sesssheet .ssh .mx { width:44px; height:44px }
+.tsheet.sesssheet .ssb { overflow-y:auto; min-height:0; display:flex; flex-direction:column; gap:1px } .tsheet.sesssheet .ssf { flex:none; border-top:1px solid var(--line); padding-top:4px }
+.tsheet.sesssheet .srow { min-height:44px; font-size:16px; padding:4px 10px; flex:none } .tsheet.sesssheet .srow .m { font-size:12px } .tsheet.sesssheet .srow .ren, .tsheet.sesssheet .srow .del { opacity:1; width:32px; height:32px }
+.tsheet.sesssheet .srow.autoh .n, .tsheet.sesssheet .srow.sadd .n { font-size:14px } .tsheet.sesssheet .srow.edit .rin { height:32px; font-size:16px }

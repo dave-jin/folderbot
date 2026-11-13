@@ -7,13 +7,16 @@ import { api } from './api'
 import { Icon } from './FolderBot'
 import { Md } from './Sheets'
 import { fmtElapsed, useStore } from './store'
+import { Float, type Anchor } from './Float'
 
 /**
  * EA · **뒤에서 도는 일** (2026-11-11 Dave 승인 «맡긴 에이전트를 보고 멈춘다»).
  *
  * 봇이 맡긴 서브에이전트와 뒤에서 도는 셸을 세션마다 한 목록으로 보인다 — 「도는 중 N」 · 「끝남 N」.
  * 줄마다 [열기](에이전트 → 대화의 열어 보는 화면)와 [멈추기](도는 것만 · 그 작업 하나만)가 있다.
- * 같은 목록을 두 자리에서 쓴다: 데스크톱은 오른쪽 패널의 한 절(`TaskSec`), 폰은 바닥 시트(`TaskSheet`).
+ * 같은 목록을 두 자리에서 쓴다: 데스크톱은 진행 줄 위의 팝오버(`TaskPop`), 폰은 바닥 시트(`TaskSheet`).
+ * 둘 다 입력칸 위 진행 줄의 «뒤에서 도는 일 N» 단추가 연다 (2026-11-12 Dave «뒤에서 도는 일은 각 세션 채팅에서 보이는게 낫지 않아?»
+ * — 11/13 가안에서 오른쪽 패널의 절을 없앴다). 끝난 일은 대화 안의 서브에이전트 줄에서 다시 연다.
  *
  * 🔴 **폰에는 올리기(hover)가 없다** — 단추는 늘 보인다. 줄을 눌러야만 되는 일은 없다.
  * ⚠ 목록의 정본은 호스트다(`core/bgTasks` · `session.ts`). 화면은 받아 그리기만 하고, 멈춘 뒤의 상태도 호스트가 보내는 줄로 바뀐다.
@@ -90,17 +93,8 @@ export function subItemIds(items: readonly ChatItem[] | undefined): Set<string> 
   return out
 }
 
-/** 데스크톱 · 오른쪽 패널의 한 절. 맡긴 일이 한 번도 없던 세션에는 절 자체를 세우지 않는다(패널에 빈 머리줄을 늘리지 않는다) */
-export function TaskSec({ sid, open, tog, say }: { sid?: string; open: boolean; tog: () => void; say: (m: string) => void }) {
-  const { s } = useStore()
-  const tasks = useTasks(sid)
-  const openIds = useMemo(() => subItemIds(sid ? s.chats[sid] : undefined), [sid, sid ? s.chats[sid] : undefined])
-  if (!sid || !tasks.length) return null
-  const run = tasks.filter((t) => t.status === 'run').length
-  return <div className="sec fix bgsec">
-    <button className="sech" onClick={tog}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>뒤에서 도는 일</span>{run ? <span className="c bgc" title={`도는 중 ${run}`}>{run}</span> : <span className="c">{tasks.length}</span>}{run ? <span className="dot run" /> : null}</button>
-    {open ? <div className="secb bgsb"><TaskList sid={sid} tasks={tasks} openIds={openIds} onOpen={(id) => window.dispatchEvent(new CustomEvent('fb:drill', { detail: { sid, id } }))} say={say} /></div> : null}
-  </div>
+export function TaskPop({ at, sid, tasks, openIds, onOpen, onClose, say }: { at: Anchor; sid: string; tasks: BgTask[]; openIds: Set<string>; onOpen: (itemId: string) => void; onClose: () => void; say: (m: string) => void }) {
+  return <Float at={at} onClose={onClose} className="spop bgpop" width={320}><div className="bgsb"><TaskList sid={sid} tasks={tasks} openIds={openIds} onOpen={onOpen} say={say} /></div></Float>
 }
 
 /** 폰 · 바닥 시트. 진행 줄의 단추로 연다 */

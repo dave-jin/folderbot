@@ -4,7 +4,7 @@
  * 11/12 UX/UI 리뷰가 찾은 **실제 고장**을 화면에서 잰다(볼트 `06_리뷰/2026-11-12_UXUI-리뷰_FolderBot-전체.md`).
  *   U1 창은 ⎋ 로 닫힌다 — 알림 · 세션 · 폴더봇 · 할 일 · 설정 · 단축키 · 찾기 · 폴더 선택 · 루틴 · 루틴 편집
  *   U2 창 위에 뜬 것이 있으면 ⎋ 는 **위의 것 하나만** 닫는다 · 루틴 편집은 고친 것이 있으면 닫기 전에 묻는다
- *   U3 채팅 머리줄의 세션 메뉴 — ⎋ · 바깥 누르기 · 같은 단추로 닫힌다 · 다른 창 뒤에 남지 않는다
+ *   U3 세션 줄의 목록(«자동화 N ▾» · «＋N ▾» — 2026-11-13 전에는 채팅 머리줄의 세션 메뉴) — ⎋ · 바깥 누르기 · 같은 단추로 닫힌다 · 다른 창 뒤에 남지 않는다
  *   U4 모델 팝오버 — «새로고침» 이 한 줄 · 적힌 숫자 키로 모델이 바뀐다
  *   U5 색 — 다크/라이트가 `color-scheme` 을 정한다 · 루틴 지우기는 빨강 · 루틴 창 «1~2개» 칸에 바탕이 있다
  *   U6 폰 설정 — 보이는 입력칸의 글자가 16px 이상(iOS 는 그보다 작으면 초점에서 화면을 확대한다)
@@ -47,6 +47,14 @@ export async function uxuiEight({ br, check, port = 7481, shots = '' }) {
     await api(`/bots/${bot.id}/routines`, { routines: [{ name: '아침 정리', cron: '0 9 * * *', prompt: '훑어 줘' }] }, 'PUT')
     const s1 = await api(`/bots/${bot.id}/sessions`, { name: '첫 세션' }); await api(`/bots/${bot.id}/sessions`, { name: '둘째 세션' })
     if (!br) return
+    // 세션 줄(2026-11-13) — 세션 목록을 여는 단추(`.sstrip > .smore`)는 가려진 탭이나 자동화 세션이 있을 때만 선다(U3).
+    // 루틴 세션을 하나 만들어 «자동화 1 ▾» 를 세우고, 그 턴이 끝난 뒤에 화면을 연다(도는 중이면 다른 검사의 화면이 흔들린다)
+    const isAuto = (x) => !x.adopted && !!(x.comm || x.exComm || x.channel || x.exChannel || x.routine || x.delegated)
+    await api(`/bots/${bot.id}/routines/run`, { name: '아침 정리' })
+    let autoS = null
+    for (let i = 0; i < 80 && !autoS; i++) { autoS = (await api(`/bots/${bot.id}/sessions`)).find(isAuto) ?? null; if (!autoS) await wait(150) }
+    must(autoS, '검사 전제 깨짐 — 루틴 세션이 안 생겼다')
+    for (let i = 0; i < 100; i++) { const x = (await api(`/bots/${bot.id}/sessions`)).find((y) => y.id === autoS.id); if (x && x.state !== 'running') break; await wait(150) }
 
     // ── 데스크톱 ───────────────────────────────────────────────────────────────
     const pg = await br.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
@@ -110,45 +118,67 @@ export async function uxuiEight({ br, check, port = 7481, shots = '' }) {
       must((await api(`/bots/${bot.id}/routines`))[0].prompt === '훑어 줘', '버렸는데 저장됐다')
     })
 
-    await check('U3 세션 메뉴 — ⎋ · 바깥 누르기 · 같은 단추로 닫힌다 · 다른 창 뒤에 남지 않는다', async () => {
-      const btn = '.chat-hdr .hsess'
-      must(await pg.$(btn), '채팅 머리줄에 세션 단추가 없다 — 검사 전제')
-      const open = async () => { await pg.click(btn); await pg.waitForSelector('.menu.sessm', { timeout: 2000 }); await wait(150) }   // ⚠ 메뉴는 여는 클릭이 바로 닫지 않게 다음 틀에 바깥 누르기를 듣는다 — 그 전에 누르면 헛준다
+    // 세션 줄(2026-11-13 Dave 카드) — 머리줄의 세션 이름 ▾(`.hsess`)와 그 메뉴는 없어졌다. 세션은 머리줄 아래 줄의 탭이고,
+    // 목록을 여는 단추는 줄 오른쪽 끝의 `.sstrip > .smore`(«자동화 N ▾» · 탭이 넘치면 «＋N ▾»), 목록은 `.spop.sessm` 이다.
+    await check('U3 세션 줄의 목록 — ⎋ · 바깥 누르기 · 같은 단추로 닫힌다 · 다른 창 뒤에 남지 않는다', async () => {
+      const btn = '.sstrip > .smore', menu = '.spop.sessm'
+      must(await pg.$(btn), '세션 줄 오른쪽 끝에 목록 단추(«자동화 N»)가 없다 — 검사 전제')
+      const open = async () => { await pg.click(btn); await pg.waitForSelector(menu, { timeout: 2000 }); await wait(200) }   // ⚠ 목록은 여는 클릭이 바로 닫지 않게 한 박자 뒤부터 바깥 누르기를 듣는다 — 그 전에 누르면 헛준다
+      const onName = () => pg.evaluate(() => document.querySelector('.sstrip > .stab.on .n')?.textContent ?? '')
+      // 세션은 줄의 탭으로 서 있고, 목록에는 탭이 아닌 것(자동화 묶음)이 있다
+      const names = await pg.$$eval('.sstrip > .stab .n', (b) => b.map((x) => x.textContent))
+      must(names.some((n) => /첫 세션/.test(n)) && names.some((n) => /둘째 세션/.test(n)), '세션 줄에 세션이 없다 ' + JSON.stringify(names))
       await open()
-      const names = await pg.$$eval('.menu.sessm button', (b) => b.map((x) => x.textContent))
-      must(names.some((n) => /첫 세션/.test(n)) && names.some((n) => /둘째 세션/.test(n)), '세션 메뉴에 세션이 없다 ' + JSON.stringify(names))
-      await esc(); must(await gone('.menu.sessm'), '⎋ 로 안 닫혔다')
-      await open(); await pg.mouse.click(700, 500); must(await gone('.menu.sessm'), '바깥을 눌러도 안 닫혔다')
-      await open(); await pg.click(btn); await wait(200); must(!(await pg.$('.menu.sessm')), '같은 단추를 다시 눌렀는데 안 닫혔다(닫혔다 다시 열렸다)')
+      must(await pg.$(`${menu} .srow.autoh`), '세션 목록에 «자동화» 묶음이 없다')
+      await esc(); must(await gone(menu), '⎋ 로 안 닫혔다')
+      await open(); await pg.mouse.click(700, 500); must(await gone(menu), '바깥을 눌러도 안 닫혔다')
+      await open(); await pg.click(btn); await wait(200); must(!(await pg.$(menu)), '같은 단추를 다시 눌렀는데 안 닫혔다(닫혔다 다시 열렸다)')
       await open(); await pg.click('.sbtiles .t-note'); await pg.waitForSelector('.modal.nmodal', { timeout: 3000 })
-      must(!(await pg.$('.menu.sessm')), '알림 창을 열었는데 세션 메뉴가 뒤에 남았다')
+      must(!(await pg.$(menu)), '알림 창을 열었는데 세션 목록이 뒤에 남았다')
       await esc(); must(await gone('.modal.nmodal'), '알림 창이 안 닫혔다')
-      // 메뉴에서 세션을 고르면 그 세션으로 간다(회귀)
-      await open(); await pg.click('.menu.sessm button:has-text("둘째 세션")'); await wait(400)
-      must(/둘째 세션/.test(await pg.$eval(btn, (b) => b.textContent)), '메뉴에서 고른 세션으로 안 갔다')
-      // 입력창 팝오버를 연 채 세션 단추를 누르면 팝오버는 닫힌다 — 단추가 누르기를 삼키면 둘이 같이 뜬다(11/13 검토)
+      // 목록에서 세션을 고르면 그 세션으로 간다(회귀) — 목록에 든 것은 자동화 세션이다. 묶음을 펼쳐 고른다
+      await open(); await pg.click(`${menu} .srow.autoh`); await pg.waitForSelector(`${menu} .srow.auto[data-sid="${autoS.id}"]`, { timeout: 2000 })
+      await pg.click(`${menu} .srow.auto[data-sid="${autoS.id}"]`); await wait(400)
+      must((await pg.evaluate(() => location.hash)).includes(autoS.id), '목록에서 고른 세션으로 안 갔다')
+      must(await gone(menu), '세션을 골랐는데 목록이 안 닫혔다')
+      // 줄의 탭을 눌러 채팅 세션으로 돌아온다
+      await pg.click('.sstrip > .stab:has(.n:text-is("둘째 세션"))'); await wait(400)
+      must(/둘째 세션/.test(await onName()), '탭에서 고른 세션으로 안 갔다')
+      await open(); await pg.click(`${menu} .srow.autoh`); await wait(150); await esc(); must(await gone(menu), '세션 목록이 ⎋ 로 안 닫혔다')   // 펼친 «자동화» 묶음의 접힘 기억을 원래대로
+      // 입력창 팝오버를 연 채 목록 단추를 누르면 팝오버는 닫힌다 — 단추가 누르기를 삼키면 둘이 같이 뜬다(11/13 검토)
       const anyPop = (await pg.evaluateHandle(() => [...document.querySelectorAll('.composer .cbtn')].find((b) => b.getAttribute('title') === '모델') ?? null)).asElement()
       must(anyPop, '입력창에 모델 단추가 없다 — 검사 전제')
       await anyPop.click(); await pg.waitForSelector('.cpop', { timeout: 2000 })
-      await open(); must(await gone('.cpop', 600), '세션 단추를 눌렀는데 입력창 팝오버가 남아 메뉴와 같이 떴다')
-      await esc(); must(await gone('.menu.sessm'), '세션 메뉴가 ⎋ 로 안 닫혔다')
-      // 메뉴가 화면보다 길면 안에서 스크롤된다 — 그 스크롤로 메뉴가 닫히면 아래쪽 세션을 못 고른다(11/13 검토)
+      await open(); must(await gone('.cpop', 600), '세션 목록 단추를 눌렀는데 입력창 팝오버가 남아 목록과 같이 떴다')
+      await esc(); must(await gone(menu), '세션 목록이 ⎋ 로 안 닫혔다')
+      // 목록이 화면보다 길면 안에서 스크롤된다 — 그 스크롤로 목록이 닫히면 아래쪽 세션을 못 고른다(11/13 검토)
+      // 탭이 넘쳐야 목록이 길어진다 — 세션을 열둘 더 만들어 «＋N» 을 세우고, 재고 나서 지운다
+      const extra = []
+      for (const n of ['요약 PRD 를 읽고 정리', '릴리스 노트 초안 쓰기', '가격표 비교와 추천', '화면 캡처 정리하기', '디자인 리뷰 반영하기', '폰 푸시 점검하기', '질문 답변 정리하기', '회의록 초안 다듬기', '견적서 항목 맞추기', '공지문 문안 고치기', '설문 결과 훑어보기', '다음 주 일정 맞추기']) extra.push(await api(`/bots/${bot.id}/sessions`, { name: n }))
+      let more = ''; for (let t = 0; t < 5000 && !/^＋\d+/.test(more); t += 100) { await wait(100); more = await pg.evaluate((q) => document.querySelector(q)?.textContent ?? '', btn) }
+      must(/^＋\d+/.test(more), '세션을 열둘 더 만들었는데 «＋N» 이 안 섰다 — 검사 전제 · ' + more)
       let scrolled = null
-      for (const h of [260, 200, 150, 110]) {
-        await pg.setViewportSize({ width: 1440, height: h }); await wait(250); await open()
-        const can = await pg.$eval('.menu.sessm', (m) => m.scrollHeight - m.clientHeight)
-        if (can > 8) {
-          const r = await pg.$eval('.menu.sessm', (m) => { const b = m.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 } })
-          await pg.mouse.move(r.x, r.y); await pg.mouse.wheel(0, 40); await wait(300)
-          scrolled = (await pg.$('.menu.sessm')) ? await pg.$eval('.menu.sessm', (m) => m.scrollTop) : -1
-          break
+      try {
+        for (const h of [260, 200, 150, 110]) {
+          await pg.setViewportSize({ width: 1440, height: h }); await wait(250); await open()
+          const can = await pg.$eval(menu, (m) => m.scrollHeight - m.clientHeight)
+          if (can > 8) {
+            const r = await pg.$eval(menu, (m) => { const b = m.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 } })
+            await pg.mouse.move(r.x, r.y); await pg.mouse.wheel(0, 40); await wait(300)
+            scrolled = (await pg.$(menu)) ? await pg.$eval(menu, (m) => m.scrollTop) : -1
+            break
+          }
+          await esc(); await gone(menu)
         }
-        await esc(); await gone('.menu.sessm')
+        if (await pg.$(menu)) { await esc(); await gone(menu) }
+      } finally {
+        await pg.setViewportSize({ width: 1440, height: 900 }); await wait(300)
+        for (const x of extra) await api(`/sessions/${x.id}`, undefined, 'DELETE').catch(() => {})
+        for (let t = 0; t < 5000 && (await pg.$$('.sstrip > .stab')).length !== 2; t += 100) await wait(100)
       }
-      if (await pg.$('.menu.sessm')) { await esc(); await gone('.menu.sessm') }
-      await pg.setViewportSize({ width: 1440, height: 900 }); await wait(300)
-      must(scrolled !== null, '세션 메뉴가 화면을 넘치는 높이를 못 만들었다 — 검사 전제')
-      must(scrolled > 0, scrolled < 0 ? '세션 메뉴 안에서 스크롤하자 메뉴가 닫혔다' : '세션 메뉴 안이 스크롤되지 않았다')
+      must(scrolled !== null, '세션 목록이 화면을 넘치는 높이를 못 만들었다 — 검사 전제')
+      must(scrolled > 0, scrolled < 0 ? '세션 목록 안에서 스크롤하자 목록이 닫혔다' : '세션 목록 안이 스크롤되지 않았다')
+      must(/둘째 세션/.test(await onName()) && (await pg.$$('.sstrip > .stab')).length === 2, '더 만든 세션을 지운 뒤 세션 줄이 원래대로 안 돌아왔다(검사 전제) ' + JSON.stringify(await pg.$$eval('.sstrip > .stab .n', (b) => b.map((x) => x.textContent))))
     })
 
     await check('U4 모델 팝오버 — «새로고침» 한 줄 · 적힌 숫자 키로 모델이 바뀐다', async () => {
@@ -196,9 +226,10 @@ export async function uxuiEight({ br, check, port = 7481, shots = '' }) {
     })
 
     await check('U7 묻기 창의 어둠막이 아래 창 위에 선다', async () => {
-      const btn = '.chat-hdr .hsess'
-      await pg.click(btn); await pg.waitForSelector('.menu.sessm', { timeout: 2000 })
-      await pg.click('.menu.sessm button:has-text("이름 바꾸기")'); await pg.waitForSelector('.modal.ask', { timeout: 2000 })
+      // 세션 줄(2026-11-13) — 세션 메뉴의 «이름 바꾸기»(묻기 창)는 없어졌다(탭을 두 번 눌러 그 자리에서 고친다). 묻기 창은 패널 「명령 · 스킬」 머리의 ＋(새 슬래시 명령)로 연다
+      const btn = '.panel .sech:has-text("명령 · 스킬") .nsb'
+      must(await pg.$(btn), '패널 「명령 · 스킬」 머리에 ＋(새 슬래시 명령)가 없다 — 검사 전제')
+      await pg.click(btn); await pg.waitForSelector('.modal.ask', { timeout: 2000 })
       const z = await pg.evaluate(() => { const m = document.querySelector('.modal.ask'); const b = m?.previousElementSibling; return { modal: Number(getComputedStyle(m).zIndex), back: b?.classList.contains('backdrop') ? Number(getComputedStyle(b).zIndex) : -1, plain: 42 } })
       must(z.back > z.plain && z.back < z.modal, '묻기 창의 어둠막이 보통 창(42)보다 아래다 ' + JSON.stringify(z))
       await esc(); must(await gone('.modal.ask'), '묻기 창이 ⎋ 로 안 닫혔다(입력칸에 초점)')

@@ -148,26 +148,29 @@ export async function eaTasks({ base, root, claudeCfg, botId, botAbs, br, check,
     const goto = async (pg, sid) => { await pg.goto(`${base}/#bot=${botId}&s=${sid}`); await pg.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(500) }
     const rowsOf = (pg, scope) => pg.evaluate((sc) => [...document.querySelectorAll(`${sc} .bgt`)].map((e) => ({ id: e.dataset.task, st: e.dataset.status, nm: e.querySelector('.nm')?.textContent ?? '', tx: e.querySelector('.st')?.textContent ?? '', stop: !!e.querySelector('.stopb'), open: !!e.querySelector('.openb') })), scope)
     const U = { d: null, T: null, C: null }
-    await check('U1 데스크톱 — 오른쪽 패널 «뒤에서 도는 일» 절에 도는 중 3 · 배지 3 · 줄마다 [멈추기], 에이전트엔 [열기]', async () => {
+    await check('U1 데스크톱 — 진행 줄의 단추가 여는 목록에 도는 중 3 · 배지 3 · 줄마다 [멈추기], 에이전트엔 [열기] (오른쪽 패널에는 그 칸이 없다)', async () => {
       U.T = await three('맡긴일 뒤에서 돌려 줘', 'EA 화면')
       await until(async () => (await chatOf(U.T.sid)).info.state !== 'running', '턴 끝')
       U.d = await page(false); const pg = U.d.pg; await goto(pg, U.T.sid)
-      await pg.waitForSelector('.panel .bgsec .bgt', { timeout: 6000 })
-      const rows = await rowsOf(pg, '.panel .bgsec'); must(rows.length === 3 && rows.every((r) => r.st === 'run' && r.stop), '줄 ' + JSON.stringify(rows))
+      must(!(await pg.$('.panel .bgsec')), '오른쪽 패널에 «뒤에서 도는 일» 칸이 남았다')
+      await pg.waitForSelector('.live .bgo', { timeout: 6000 }); await pg.click('.live .bgo')
+      await pg.waitForSelector('.spop.bgpop .bgt', { timeout: 4000 })
+      const rows = await rowsOf(pg, '.spop.bgpop'); must(rows.length === 3 && rows.every((r) => r.st === 'run' && r.stop), '줄 ' + JSON.stringify(rows))
       must(rows.find((r) => /로그 훑기/.test(r.nm))?.open && !rows.find((r) => /개발 서버/.test(r.nm))?.open, '[열기] 는 에이전트 줄에만 ' + JSON.stringify(rows))
       must(/도구 1/.test(rows.find((r) => /로그 훑기/.test(r.nm)).tx) && /Explore/.test(rows.find((r) => /로그 훑기/.test(r.nm)).tx), '상태 줄 ' + JSON.stringify(rows[0]))
-      const head = await pg.evaluate(() => ({ c: document.querySelector('.bgsec .sech .c')?.textContent, dot: !!document.querySelector('.bgsec .sech .dot.run'), groups: [...document.querySelectorAll('.bgsec .bgt-h')].map((e) => e.textContent) }))
-      must(head.c === '3' && head.dot && /도는 중\s*3/.test(head.groups[0] ?? ''), '머리줄 ' + JSON.stringify(head))
+      const head = await pg.evaluate(() => ({ c: document.querySelector('.live .bgo b')?.textContent, groups: [...document.querySelectorAll('.spop.bgpop .bgt-h')].map((e) => e.textContent) }))
+      must(head.c === '3' && /도는 중\s*3/.test(head.groups[0] ?? ''), '머리줄 ' + JSON.stringify(head))
       await shot(pg, 'u1-데스크톱-패널')
     })
-    await check('U2 진행 줄의 «뒤에서 도는 일 N» 단추가 그 절을 연다 — 접힌 패널의 아이콘에도 배지(종전 [그 봇 보기] 는 한 번도 안 떴다)', async () => {
+    await check('U2 진행 줄의 «뒤에서 도는 일 N» 단추 — 같은 단추 · ⎋ 로 닫히고 다시 열린다 · 접힌 패널 띠에는 그 단추가 없다', async () => {
       const pg = U.d.pg
-      await pg.click('.panel .hdr .ib.on'); await wait(400)
-      must(!(await pg.$('.panel .bgsec')), '패널이 안 접혔다')
-      const strip = await pg.evaluate(() => document.querySelector('.strip.right .bgstrip .bd')?.textContent ?? null); must(strip === '3', '접힌 패널 아이콘의 배지 ' + strip)
+      must(!(await pg.$('.strip.right .bgstrip')), '접힌 패널 띠에 «뒤에서 도는 일» 단추가 남았다')
       const btn = await pg.evaluate(() => { const b = document.querySelector('.live .bgo'); return b ? { t: b.textContent, n: b.querySelector('b')?.textContent } : null })
       must(btn && btn.n === '3' && /뒤에서 도는 일/.test(btn.t), '진행 줄 단추 ' + JSON.stringify(btn))
-      await pg.click('.live .bgo'); await pg.waitForSelector('.panel .bgsec .bgt', { timeout: 4000 })
+      await pg.click('.live .bgo'); await wait(300); must(!(await pg.$('.spop.bgpop')), '같은 단추로 안 닫힌다')
+      await wait(350); await pg.click('.live .bgo'); await pg.waitForSelector('.spop.bgpop .bgt', { timeout: 4000 })
+      await pg.keyboard.press('Escape'); await wait(250); must(!(await pg.$('.spop.bgpop')), '⎋ 로 안 닫힌다')
+      await pg.click('.live .bgo'); await pg.waitForSelector('.spop.bgpop .bgt', { timeout: 4000 })
     })
     await check('U3 다시 붙으면 목록이 맞는다 — 프레임을 놓친 사이 멈춘 줄이, 다시 붙을 때 «멈춤» 으로', async () => {
       const pg = U.d.pg
@@ -175,25 +178,26 @@ export async function eaTasks({ base, root, claudeCfg, botId, botAbs, br, check,
       await api(`/sessions/${U.T.sid}/tasks/${U.T.sh.taskId}/stop`, {})
       await until(async () => (await tasksOf(U.T.sid)).find((x) => x.id === U.T.sh.id).status === 'stopped', '호스트에서는 멈춤')
       await wait(400)
-      must((await rowsOf(pg, '.panel .bgsec')).filter((r) => r.st === 'run').length === 3, '프레임을 막았는데 화면이 바뀌었다(검사 전제가 깨졌다)')
+      must((await rowsOf(pg, '.spop.bgpop')).filter((r) => r.st === 'run').length === 3, '프레임을 막았는데 화면이 바뀌었다(검사 전제가 깨졌다)')
       await pg.evaluate(() => { window.__fbHoldFrames = false; window.dispatchEvent(new Event('online')) })
-      await until(async () => { const r = await rowsOf(pg, '.panel .bgsec'); return r.filter((x) => x.st === 'run').length === 2 }, '다시 붙은 뒤 도는 중 2')
-      must((await pg.evaluate(() => document.querySelector('.bgsec .sech .c')?.textContent)) === '2', '배지가 안 줄었다')
+      await until(async () => { const r = await rowsOf(pg, '.spop.bgpop'); return r.filter((x) => x.st === 'run').length === 2 }, '다시 붙은 뒤 도는 중 2')
+      must((await pg.evaluate(() => document.querySelector('.live .bgo b')?.textContent)) === '2', '배지가 안 줄었다')
     })
-    await check('U4 패널 줄의 [멈추기] — 턴이 끝난 뒤에도 그 에이전트 하나만 멈추고 «끝남» 묶음으로 간다', async () => {
+    await check('U4 목록 줄의 [멈추기] — 턴이 끝난 뒤에도 그 에이전트 하나만 멈추고 «끝남» 묶음으로 간다', async () => {
       const pg = U.d.pg
       must((await chatOf(U.T.sid)).info.state !== 'running', '턴이 끝난 상태여야 재는 검사다')
-      await pg.click(`.panel .bgsec .bgt[data-task="${U.T.a.id}"] .stopb`)
+      await pg.click(`.spop.bgpop .bgt[data-task="${U.T.a.id}"] .stopb`)
       await until(async () => (await tasksOf(U.T.sid)).find((x) => x.id === U.T.a.id).status === 'stopped', '호스트에서 멈춤')
-      await until(async () => (await rowsOf(pg, '.panel .bgsec')).filter((x) => x.st === 'run').length === 1, '화면에 도는 중 1')
-      await pg.click('.bgsec .bgt-h.fin'); await wait(250)
-      const rows = await rowsOf(pg, '.panel .bgsec'); const a = rows.find((r) => r.id === U.T.a.id)
+      await until(async () => (await rowsOf(pg, '.spop.bgpop')).filter((x) => x.st === 'run').length === 1, '화면에 도는 중 1')
+      await pg.click('.spop.bgpop .bgt-h.fin'); await wait(250)
+      const rows = await rowsOf(pg, '.spop.bgpop'); const a = rows.find((r) => r.id === U.T.a.id)
       must(a?.st === 'stopped' && /멈춤/.test(a.tx) && !a.stop && a.open, '멈춘 줄 ' + JSON.stringify(rows))
       must(rows.find((r) => r.id === U.T.b.id)?.st === 'run', '다른 에이전트까지 멈췄다')
       await shot(pg, 'u4-데스크톱-하나-멈춤')
     })
     await check('U5 대화 속 카드의 [멈추기] — 턴이 끝난 뒤(진행 줄에 턴 멈추기가 없는 때)에도 카드에서 멈춘다', async () => {
       const pg = U.d.pg
+      await pg.keyboard.press('Escape'); await wait(250); must(!(await pg.$('.spop.bgpop')), '목록이 ⎋ 로 안 닫힌다')   // 열어 둔 목록이 카드를 가린다 — 닫고 누른다
       const card = `.chat-body .sub[data-sub="t_${U.T.b.toolUseId}"]`
       must(!(await pg.$('.live .stop')), '턴이 끝났는데 턴 멈추기가 있다(검사 전제)')
       await pg.click(`${card} .sstop`)

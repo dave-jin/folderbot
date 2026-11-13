@@ -66,6 +66,13 @@ const MAC = process.platform === 'darwin'
 const K = { end: MAC ? 'Meta+ArrowRight' : 'End', docEnd: MAC ? 'Meta+ArrowDown' : 'Control+End', selEnd: MAC ? 'Shift+Meta+ArrowRight' : 'Shift+End', selHome: MAC ? 'Shift+Meta+ArrowLeft' : 'Shift+Home' }
 const fail = (m) => { console.error('✗', m); console.error(hostLog); host.kill(); process.exit(1) }
 const ok = (m) => console.log('✓', m)
+/**
+ * 세션 줄 (2026-11-13 Dave 카드) — 세션 목록은 오른쪽 패널의 «세션» 절이 아니라 채팅 머리줄 아래의 줄(`.sstrip`)이다.
+ * 탭 수 = 줄에 선 탭 + «＋N» 에 가려진 탭(자동화 세션은 탭이 아니다). 줄이 없으면 -1.
+ */
+const stripTabs = (pg) => pg.evaluate(() => { const el = document.querySelector('.sstrip'); if (!el) return -1; const m = /^＋(\d+)/.exec(el.querySelector(':scope > .smore')?.textContent ?? ''); return el.querySelectorAll(':scope > .stab:not(.sempty)').length + (m ? Number(m[1]) : 0) })
+/** 세션 줄의 탭 ✕ 는 올려야 선다(`.stab:hover .del`) — 올리고 누른다 */
+const tabDel = async (pg, tab) => { await pg.hover(tab); await pg.click(`${tab} .del`) }
 /** 폰 — 채팅에서 왼쪽으로 쓸어 폴더 패널로 (H-5 뒤 헤더에 폴더 단추가 없다) */
 /** Z-2(2026-09-22) · 폴더로 **들어가는** 문은 독이다 — 쓸기는 «뒤로/앞으로» 뿐이라 👈 로는 폴더가 안 열린다 */
 /**
@@ -2941,11 +2948,10 @@ try {
               pane = await paneOf()
               if (pane.ttl !== '할 일') fail('🔴 AD: 「할 일」 탭이 「폴더」 탭과 같은 화면이다 ' + JSON.stringify(pane))
               if (pane.tree) fail('🔴 AD: 「할 일」 탭에 파일 트리가 보인다 — 둘이 똑같으면 의미가 없다 ' + JSON.stringify(pane))
-              // 🔴 AG(2026-09-24 Dave) · 세션은 **할 일 위에** 같이 보인다 — AD 에서 통째로 사라졌던 것을 되돌렸다
-              if (!pane.secs.includes('세션')) fail('🔴 AG: 「할 일」 탭에 세션 목록이 없다 ' + JSON.stringify(pane))
-              const sessTop = await hp.evaluate(() => { const ss = document.querySelector('.drawer.right .sech'); const secs = [...document.querySelectorAll('.drawer.right .sech')].map((x) => x.textContent?.trim().slice(0, 4)); const rows = document.querySelectorAll('.drawer.right .srow').length; return { first: ss?.textContent?.trim().slice(0, 4) ?? null, secs, rows } })
-              if (!/세션/.test(sessTop.first ?? '')) fail('🔴 AG: 세션이 할 일보다 위에 있어야 한다 ' + JSON.stringify(sessTop))
-              if (!sessTop.rows) fail('AG: 세션 줄이 하나도 안 보인다 ' + JSON.stringify(sessTop))
+              // 🔴 세션 줄(2026-11-13 Dave 카드) · 9/24 AG «세션은 할 일 위에 같이 보인다» 를 뒤집었다 — 폰의 세션 목록은 「할 일」 탭이 아니라
+              //    채팅 머리줄의 세션 이름 → 바닥 시트에 있다(«세션 줄이 보인다» 는 아래 채팅 화면에서 시트로 잰다)
+              const sessTop = await hp.evaluate(() => { const secs = [...document.querySelectorAll('.drawer.right .sech')].map((x) => x.textContent?.trim().slice(0, 4)); const rows = document.querySelectorAll('.drawer.right .srow').length; return { secs, rows } })
+              if (pane.secs.includes('세션') || sessTop.rows) fail('🔴 세션 줄: 「할 일」 탭에 세션 목록이 남아 있다(폰은 머리줄 → 시트) ' + JSON.stringify({ pane, sessTop }))
               if (pane.foot) fail('AD: 지우기·은퇴는 할 일 탭에는 없어야 한다 ' + JSON.stringify(pane))
               if (pane.on !== 'todo') fail('AD: 탭 표시가 «할 일» 이어야 한다 ' + JSON.stringify(pane))
 
@@ -2975,6 +2981,14 @@ try {
               await hp.keyboard.press('Escape'); await wait(400)
               if ((await view()) !== 'doc') fail('🔴 AH: 문서에서 목록을 닫았더니 문서로 안 돌아왔다 ' + (await view()))
               await tapNav(hp, 'chat'); await wait(350)
+              /** 🔴 세션 줄 · 폰의 세션 목록은 채팅 머리줄의 세션 이름을 누르면 뜨는 바닥 시트다 — 9/24 AG «세션 줄이 하나도 안 보인다» 를 여기로 옮겨 잰다 */
+              {
+                await hp.click('.chat-hdr .hnb'); await hp.waitForSelector('.tsheet.sesssheet', { timeout: 3000 }).catch(() => {}); await wait(350)
+                const sh = await hp.evaluate(() => ({ sheet: !!document.querySelector('.tsheet.sesssheet'), rows: document.querySelectorAll('.tsheet.sesssheet .srow[data-sid]').length }))
+                if (!sh.sheet || !sh.rows) fail('🔴 AG: 폰에서 세션 줄이 하나도 안 보인다(머리줄 → 바닥 시트) ' + JSON.stringify(sh))
+                await hp.click('.tsheet.sesssheet .mx'); await wait(350)
+                if (await hp.$('.tsheet.sesssheet')) fail('세션 시트: 닫기 단추로 안 닫혔다 — 뒤 검사가 시트에 가린다(검사 전제)')
+              }
 
               /** 🔴 AD · 문서 탭은 **비어 있어도 눌린다** — 흐린 단추는 「고장」 으로 읽힌다 */
               await hp.evaluate(() => { const b = document.querySelector('.tabbar [data-tab="doc"]'); if (b?.disabled) throw new Error('문서 탭이 disabled 다') })
@@ -3051,24 +3065,25 @@ try {
         {
           await pg.mouse.move(700, 700)   // 어디에도 안 올려 둔 상태
           await wait(200)
-          const ns = await pg.evaluate(() => { const b = [...document.querySelectorAll('.rpwrap .sech')].find((x) => /세션/.test(x.textContent ?? ''))?.querySelector('.ib[title="새 세션"]'); if (!b) return null; const st = getComputedStyle(b); const r = b.getBoundingClientRect(); return { op: Number(st.opacity), vis: st.visibility, w: r.width, h: r.height } })
+          // 세션 줄(2026-11-13) — 절 머리의 ＋ 와 목록 끝의 «＋ 새 세션»(BG)은 세션 줄 마지막 탭 뒤의 ＋(`.sstrip > .splus`) 하나가 됐다
+          const ns = await pg.evaluate(() => { const b = document.querySelector('.sstrip > .splus'); if (!b) return null; const st = getComputedStyle(b); const r = b.getBoundingClientRect(); return { op: Number(st.opacity), vis: st.visibility, w: r.width, h: r.height } })
           if (!ns) fail('새 세션 +: 단추가 없다')
           if (ns.op < 1 || ns.vis !== 'visible' || ns.w < 8 || ns.h < 8) fail('🔴 새 세션 +: 마우스를 안 올리면 안 보인다 ' + JSON.stringify(ns))
-          // BG · 목록 끝에도 «＋ 새 세션» — 마지막 세션 줄 바로 아래 · 누르면 세션이 하나 는다 (2026-09-27 Dave · 스크린샷_1721)
+          // BG · 목록 끝에도 ＋ — 마지막 세션 탭 바로 뒤 · 누르면 세션이 하나 는다 (2026-09-27 Dave · 스크린샷_1721)
           {
             const hashBg = await pg.evaluate(() => location.hash)
-            const row = await pg.evaluate(() => { const b = document.querySelector('.rpwrap .secb .srow.sadd'); if (!b) return null; const rows = [...b.parentElement.querySelectorAll('.srow')]; const st = getComputedStyle(b); return { last: rows[rows.length - 1] === b, text: b.textContent, op: Number(st.opacity), h: Math.round(b.getBoundingClientRect().height) } })
-            if (!row) fail('BG: 세션 목록 끝에 «＋ 새 세션» 줄이 없다')
+            const row = await pg.evaluate(() => { const b = document.querySelector('.sstrip > .splus'); if (!b) return null; const tabs = [...b.parentElement.querySelectorAll(':scope > .stab')]; const st = getComputedStyle(b); return { last: !!tabs.length && b.previousElementSibling === tabs[tabs.length - 1], text: `${b.getAttribute('aria-label') ?? ''} ${b.getAttribute('title') ?? ''}`, op: Number(st.opacity), h: Math.round(b.getBoundingClientRect().height) } })
+            if (!row) fail('BG: 세션 줄 끝에 ＋(새 세션) 단추가 없다')
             else {
-              if (!row.last || !/새 세션/.test(row.text) || row.op < 1 || row.h < 20) fail('BG: «＋ 새 세션» 줄이 목록 끝에 제대로 안 보인다 ' + JSON.stringify(row))
+              if (!row.last || !/새 세션/.test(row.text) || row.op < 1 || row.h < 20) fail('BG: ＋(새 세션) 단추가 마지막 탭 뒤에 제대로 안 보인다 ' + JSON.stringify(row))
               const n0 = (await api(`/bots/${bot.id}/sessions`)).length
-              await pg.click('.rpwrap .secb .srow.sadd'); await wait(900)
+              await pg.click('.sstrip > .splus'); await wait(900)
               const n1 = (await api(`/bots/${bot.id}/sessions`)).length
               if (n1 !== n0 + 1) fail('BG: 목록 끝 ＋ 를 눌렀는데 세션이 안 늘었다 ' + n0 + '→' + n1)
               const madeBg = (await api(`/bots/${bot.id}/sessions`)).find((x) => !x.lastReplyAt && x.id !== (new URLSearchParams(hashBg.slice(1)).get('s')))
               if (madeBg) await fetch(base + `/api/sessions/${madeBg.id}`, { method: 'DELETE' })
               await pg.evaluate((h) => { location.hash = h }, hashBg); await wait(700)
-              ok('BG 세션 목록 끝 «＋ 새 세션» — 마지막 줄 아래 · 누르면 세션이 는다')
+              ok('BG 세션 줄 끝 ＋(새 세션) — 마지막 탭 뒤 · 누르면 세션이 는다')
             }
           }
           // 🔴 CC · 세션 목록은 채팅만 · 자동화 세션은 접힌 «자동화» 줄 아래 · 열면 입력창 위에 어디로 가는지 한 줄 (2026-10-12 Dave)
@@ -3083,21 +3098,29 @@ try {
               const chatN = tgt.xs.filter((x) => !isAuto(x)).length, autoN = tgt.xs.filter(isAuto).length
               const firstChat = tgt.xs.find((x) => !isAuto(x))
               await pg.evaluate((id) => { location.hash = `bot=${id}` }, tgt.b.id); await wait(800)
-              const v = await pg.evaluate(() => { const sec = document.querySelector('.rpwrap .secb'); const h = [...document.querySelectorAll('.rpwrap .sech')].find((x) => /세션/.test(x.textContent ?? '')); return { count: h?.querySelector('.c')?.textContent, autoh: sec?.querySelector('.srow.autoh')?.textContent ?? null, autoRows: sec?.querySelectorAll('.srow.auto').length ?? -1, hash: location.hash } })
-              if (v.count !== String(chatN)) fail('🔴 CC: 세션 절 숫자가 채팅 세션 수가 아니다 ' + JSON.stringify({ v, chatN }))
+              // 세션 줄(2026-11-13) — 채팅 세션은 줄의 탭(넘치면 «＋N» 목록)이고, 자동화 세션은 오른쪽 끝 단추(`.sstrip > .smore`)가 여는 목록 안 «자동화» 묶음에 접혀 있다.
+              //    종전 패널 «세션» 절의 숫자 배지는 없어졌다 — «세션 목록은 채팅만» 은 탭 수(보이는 것 + 가려진 것)로 잰다
+              if (!(await pg.$('.sstrip > .smore'))) fail('🔴 CC: 자동화 세션이 있는데 세션 줄 오른쪽 끝 단추(«자동화 N» · «＋N»)가 없다')
+              const sessPop = async () => { if (!(await pg.$('.spop.sessm'))) { await pg.click('.sstrip > .smore'); await pg.waitForSelector('.spop.sessm', { timeout: 3000 }) } await wait(200) }
+              const tabsN = await stripTabs(pg)
+              await sessPop()
+              const v = await pg.evaluate(() => { const pop = document.querySelector('.spop.sessm'); return { more: document.querySelector('.sstrip > .smore')?.textContent ?? null, tabs: [...document.querySelectorAll('.sstrip > .stab .n')].map((x) => x.textContent), autoh: pop?.querySelector('.srow.autoh')?.textContent ?? null, autoRows: pop?.querySelectorAll('.srow.auto').length ?? -1, hash: location.hash } })
+              if (tabsN !== chatN) fail('🔴 CC: 세션 줄의 탭 수가 채팅 세션 수가 아니다(자동화 세션이 탭으로 섰나) ' + JSON.stringify({ tabsN, v, chatN }))
               if (!v.autoh || !v.autoh.includes(String(autoN))) fail('🔴 CC: «자동화 N» 줄이 없다 ' + JSON.stringify(v))
               // 채팅이 있으면 접힌 채로 · 채팅이 없어 자동화 세션이 열렸으면(CM) 보고 있는 세션이 자동화라 펼쳐 보인다
               if (v.autoRows !== (firstChat ? 0 : autoN)) fail('🔴 CC: «자동화» 줄 접힘이 맞지 않다(채팅이 있으면 접힘 · 자동화 세션을 보고 있으면 펼침) ' + JSON.stringify({ v, firstChat: !!firstChat }))
               // CM(2026-10-16) 뒤로 «처음 열 세션» 은 `openSessionOf` 가 정한다 — 채팅이 하나라도 있으면 자동화 세션으로 들어가지 않는다
               if (firstChat && tgt.xs.some((x) => isAuto(x) && v.hash.includes(x.id))) fail('🔴 CC: 채팅 세션이 있는데 처음 연 세션이 자동화 세션이다 ' + JSON.stringify({ hash: v.hash, firstChat: firstChat?.id }))
-              await pg.click('.rpwrap .secb .srow.autoh'); await wait(400)
-              const opened = await pg.evaluate(() => [...document.querySelectorAll('.rpwrap .secb .srow.auto')].map((r) => r.querySelector('.ak')?.textContent ?? ''))
+              await pg.click('.spop.sessm .srow.autoh'); await wait(400)
+              const opened = await pg.evaluate(() => [...document.querySelectorAll('.spop.sessm .srow.auto')].map((r) => r.querySelector('.ak')?.textContent ?? ''))
               if (opened.length !== autoN || opened.some((k) => !/^(소통|채널|루틴|봇끼리)$/.test(k))) fail('CC: 펼친 자동화 줄 수·종류 표시가 안 맞다 ' + JSON.stringify({ opened, autoN }))
-              await pg.click('.rpwrap .secb .srow.auto'); await wait(600)
+              await pg.click('.spop.sessm .srow.auto'); await wait(600)   // 고르면 목록은 닫힌다
               const note = await pg.evaluate(() => document.querySelector('.autonote')?.textContent ?? '')
               if (!/세션이에요 — 여기에 쓰면/.test(note)) fail('🔴 CC: 자동화 세션을 열었는데 입력창 위 안내가 없다 · ' + note)
-              await pg.click('.rpwrap .secb .srow.autoh'); await wait(200)   // 접힘 기억을 원래대로
-              await pg.screenshot({ path: 'test/tmp/cc-auto-area.png' })
+              await sessPop(); await pg.screenshot({ path: 'test/tmp/cc-auto-area.png' })
+              await pg.click('.spop.sessm .srow.autoh'); await wait(200)   // 접힘 기억을 원래대로
+              await pg.keyboard.press('Escape'); await wait(250)
+              if (await pg.$('.spop.sessm')) fail('CC: 세션 목록이 ⎋ 로 안 닫혔다 — 뒤 검사가 목록에 가린다(검사 전제)')
               await pg.evaluate((h) => { location.hash = h }, hashCc); await wait(700)
               ok(`CC 세션 목록 — 채팅 ${chatN}개만 · «자동화 ${autoN}» 접힘 · 펼치면 종류 표시 · 열면 «${note}»`)
             }
@@ -3117,7 +3140,7 @@ try {
               await gate; return rt.continue()
             })
             const t0 = Date.now()
-            await pg.click('.rpwrap .secb .srow.sadd')
+            await pg.click('.sstrip > .splus')
             await pg.waitForFunction((prev) => { const x = new URLSearchParams(location.hash.slice(1)).get('s'); return !!x && x !== prev }, prevBo, { timeout: 2500 }).catch(() => null)
             const dt = Date.now() - t0; const sidBo = await sOf()
             if (!sidBo || sidBo === prevBo || dt > 600) { release(); fail(`BO: 만들기 답을 붙잡았더니 새 세션 화면이 바로 안 열렸다 (${dt}ms · s=${sidBo})`) }
@@ -3131,7 +3154,7 @@ try {
             let got = null
             for (let i = 0; i < 40 && !got; i++) { await wait(150); try { got = (await api(`/sessions/${sidBo}/chat`)).items.find((x) => x.kind === 'user' && /BO 첫 말/.test(x.text)) } catch { /* 아직 */ } }
             if (!got) fail('BO: 만들기가 풀린 뒤 첫 말이 그 세션에 안 들어갔다')
-            const rows = await pg.$$eval('.rpwrap .secb .srow', (r) => r.length)
+            const rows = await stripTabs(pg)
             const list = await api(`/bots/${bot.id}/sessions`)
             if (list.filter((x) => x.id === sidBo).length !== 1) fail('BO: 새 세션이 호스트에 하나가 아니다')
             // 같은 id 를 또 보내면 있는 것을 돌려준다 · 남의 봇 id·이상한 형식은 거절
@@ -3141,10 +3164,10 @@ try {
             if (bad.status !== 400) fail('BO: 이상한 형식의 id 를 받았다 ' + bad.status)
             // 실패 — 임시 세션을 걷고 원래 보던 세션으로 돌아온다
             mode = 'fail'; const errMark = errs.length
-            await pg.click('.rpwrap .secb .srow.sadd')
+            await pg.click('.sstrip > .splus')
             let back = null
             for (let i = 0; i < 20; i++) { await wait(100); back = await sOf(); if (back === sidBo) break }
-            const ghostLeft = await pg.$$eval('.rpwrap .secb .srow', (r) => r.length)
+            const ghostLeft = await stripTabs(pg)
             if (back !== sidBo || ghostLeft !== rows) fail(`BO: 만들기가 실패했는데 원래 세션으로 안 돌아왔거나 임시 세션이 남았다 (s=${back} · 줄 ${rows}→${ghostLeft})`)
             // ⚠ 일부러 낸 500 은 크롬이 콘솔에 «Failed to load resource» 로 찍는다 — 그 줄만 걷고, 그새 난 다른 오류는 남긴다
             const induced = errs.splice(errMark); errs.push(...induced.filter((e) => !/status of 500/.test(e)))
@@ -3191,8 +3214,11 @@ try {
           if (nAfter !== nBefore + 1) fail('S-3: 띠의 + 를 눌렀는데 세션이 안 늘었다 ' + nBefore + '→' + nAfter)
           const made = (await api(`/bots/${bot.id}/sessions`)).find((x) => !x.lastReplyAt && x.id !== (new URLSearchParams(hashBeforeNs.slice(1)).get('s')))
           if (made) await fetch(base + `/api/sessions/${made.id}`, { method: 'DELETE' })
+          // ⚠ 세션 줄(2026-11-13) 뒤로 띠의 + 는 패널을 펴지 않는다(세션이 패널에 없다) — 내가 접은 패널은 내가 다시 편다(뒤 검사들이 펼친 패널을 전제한다)
+          if (!(await pg.$('.rpwrap'))) { await pg.keyboard.press('Meta+Shift+B'); await wait(400) }
+          if (!(await pg.$('.rpwrap'))) fail('S-3: 접은 오른쪽 패널을 ⌘⇧B 로 다시 못 폈다(검사 전제)')
           await pg.evaluate((h) => { location.hash = h }, hashBeforeNs); await wait(700)
-          ok('새 세션 + 는 상시 노출 — 펼친 패널의 「세션」 줄 · 접힌 오른쪽 띠 둘 다')
+          ok('새 세션 + 는 상시 노출 — 세션 줄의 ＋ · 접힌 오른쪽 띠 둘 다')
         }
         /**
          * 🔴 **S · 읽은 답과 안 읽은 답을 가른다** (2026-09-21 Dave: *«답변이 완료된 것 중에 내가 읽은 것과 읽지 않은
@@ -4881,7 +4907,7 @@ try {
             if (await pg.$('.modal .nrow')) fail('알림 점프: 줄을 눌렀는데 목록이 안 닫혔다')
             const where = await pg.evaluate(() => Object.fromEntries(new URLSearchParams(location.hash.slice(1))))
             if (where.s !== two.id) fail('알림 점프: 폴더만 열리고 세션은 안 열렸다 · ' + JSON.stringify(where))
-            const head = await pg.textContent('.chat-hdr')
+            const head = await pg.evaluate(() => document.querySelector('.sstrip > .stab.on .n')?.textContent ?? '')   // 세션 줄(2026-11-13) — 데스크톱 머리줄에는 세션 이름이 없다 · 지금 보는 세션은 줄의 켜진 탭이다
             if (!/알림 대상/.test(head ?? '')) fail('알림 점프: 화면이 그 세션을 안 보여 준다 · ' + JSON.stringify(head))
             await api(`/sessions/${two.id}`, undefined, 'DELETE')
             await pg.evaluate((h) => { location.hash = h }, backHash); await wait(600)
@@ -4900,13 +4926,17 @@ try {
             await api(`/sessions/${late.id}/send`, { text: '되읊어: 늦게 온 답' }); await wait(1200)
             await pg.evaluate((h) => { window.__fbNavVia = Date.now(); history.replaceState(null, '', '#' + h); dispatchEvent(new HashChangeEvent('hashchange')) }, `bot=${bot.id}&s=${late.id}`)
             await wait(900)
-            const head = await pg.textContent('.chat-hdr')
+            const head = await pg.evaluate(() => document.querySelector('.sstrip > .stab.on .n')?.textContent ?? '')   // 세션 줄(2026-11-13) — 데스크톱 머리줄에는 세션 이름이 없다 · 지금 보는 세션은 줄의 켜진 탭이다
             await pg.evaluate(() => { window.__fbHoldFrames = false })
             if (!/늦게 온 세션/.test(head ?? '')) fail('BH 알림 점프: 화면 목록에 없던 세션인데 첫 세션으로 떨어졌다 · ' + JSON.stringify(head))
             await api(`/sessions/${late.id}`, undefined, 'DELETE')
             // orch_ask 로 생긴 오케스트레이터 «🤝 소통» 세션은 — CC(2026-10-12) 부터 — 채팅 목록이 아니라 접힌 «자동화» 줄 아래에 선다 · 처음 열리는 세션도 아니다
             await pg.evaluate(() => { location.hash = 'bot=orch' }); await wait(900)
-            const orchView = await pg.evaluate(() => ({ chat: [...document.querySelectorAll('.rpwrap .srow:not(.auto):not(.autoh):not(.sadd) .n')].map((x) => x.textContent), autoh: !!document.querySelector('.rpwrap .srow.autoh'), hash: location.hash }))
+            // 세션 줄(2026-11-13) — 채팅 목록 = 줄의 탭 + «＋N» 에 가려진 줄 · «자동화» 줄은 오른쪽 끝 단추(`.sstrip > .smore`)가 여는 목록 안에 있다
+            if (await pg.$('.sstrip > .smore')) { await pg.click('.sstrip > .smore'); await pg.waitForSelector('.spop.sessm', { timeout: 3000 }).catch(() => {}); await wait(200) }
+            const orchView = await pg.evaluate(() => ({ strip: !!document.querySelector('.sstrip'), chat: [...document.querySelectorAll('.sstrip > .stab .n, .spop.sessm .srow[data-sid]:not(.auto) .n')].map((x) => x.textContent), autoh: !!document.querySelector('.spop.sessm .srow.autoh'), hash: location.hash }))
+            if (await pg.$('.spop.sessm')) { await pg.keyboard.press('Escape'); await wait(250) }
+            if (!orchView.strip) fail('소통 세션: 오케스트레이터 화면에 세션 줄이 없다 — 검사가 헛돈다 ' + JSON.stringify(orchView))
             if (orchView.chat.includes('🤝 소통') || !orchView.autoh) fail('소통 세션: 오케스트레이터 «🤝 소통» 이 채팅 목록에 섞였거나 «자동화» 줄이 없다 ' + JSON.stringify(orchView))
             const orchComm = (await api('/bots/orch/sessions')).find((x) => x.comm)
             if (orchComm && orchView.hash.includes(orchComm.id)) fail('소통 세션: 오케스트레이터를 열었는데 «🤝 소통» 이 처음 열렸다 ' + JSON.stringify(orchView))
@@ -5490,22 +5520,22 @@ try {
           if (bad.length) fail('명령 · 스킬: 줄이 깨졌다(아이콘·이름·범위가 한 줄이 아니거나 붙어 있다) ' + JSON.stringify(bad))
           await pg.click('.panel .sech:has-text("명령 · 스킬")'); await wait(300)
         }
-        // 세션 삭제 버튼 — 행에 있고, 누르면 **묻지 않고** 사라지고 10초 되돌리기가 선다(2026-11-13 Dave 카드 «바로 지우고 되돌리기»). 원래 보던 세션은 건드리지 않는다
-        const keep = (await pg.textContent('.panel .srow.on .n')).trim()
-        const rows0 = (await pg.$$('.panel .srow')).length
-        await pg.click('.panel .sech:has-text("세션") .tools .ib') // 지울 세션 하나 더 만든다 — 생길 때까지(포화된 맥에서 1초를 넘긴다)
-        for (let i = 0; i < 40 && (await pg.$$('.panel .srow')).length <= rows0; i++) await wait(150)
-        const names = await pg.$$eval('.panel .srow .n', (r) => r.map((x) => x.textContent.trim()))
+        // 세션 삭제 버튼 — 세션 줄의 탭에 있고(2026-11-13 · 종전 패널 «세션» 절의 행 · 올리면 ✕), 누르면 **묻지 않고** 사라지고 10초 되돌리기가 선다(2026-11-13 Dave 카드 «바로 지우고 되돌리기»). 원래 보던 세션은 건드리지 않는다
+        const keep = (await pg.textContent('.sstrip > .stab.on .n')).trim()
+        const rows0 = await stripTabs(pg)
+        await pg.click('.sstrip > .splus') // 지울 세션 하나 더 만든다 — 생길 때까지(포화된 맥에서 1초를 넘긴다) · 세션 줄(2026-11-13)의 ＋
+        for (let i = 0; i < 40 && (await stripTabs(pg)) <= rows0; i++) await wait(150)
+        const names = await pg.$$eval('.sstrip > .stab .n', (r) => r.map((x) => x.textContent.trim()))
         const victim = names.find((n) => n !== keep)
         if (!victim) fail('세션 삭제 UI: 지울 세션이 안 생김 ' + JSON.stringify(names))
-        const row = `.panel .srow:has(.n:text-is("${victim}"))`
+        const row = `.sstrip > .stab:has(.n:text-is("${victim}"))`
         if (!(await pg.$(`${row} .del`))) fail('세션 삭제 UI: 삭제 버튼 없음')
         {
           // 🔴 브라우저 기본 확인창은 어디서도 뜨지 않는다 — 뜨면 받아 주되 센다(안 받으면 검사가 멈춘다)
           let natives = 0; const onDlg = (d) => { natives++; void d.dismiss() }; pg.on('dialog', onDlg)
           const gone = async (want) => { for (let i = 0; i < 40; i++) { if (!!(await pg.$(row)) !== want) return true; await wait(100) } return false }
           // ① 쉬는 세션 — 묻지 않고 지운다 · 토스트에 «되돌리기 (10초)»
-          await pg.click(`${row} .del`)
+          await tabDel(pg, row)
           if (!(await gone(true))) fail('🔴 세션 삭제 UI: 눌렀는데 안 지워졌다(확인창이 막았나) · ' + victim + ' · 앱 확인창 ' + !!(await pg.$('.modal.conf')))
           if (await pg.$('.modal.conf')) fail('🔴 세션 삭제 UI: 쉬는 세션인데 확인창이 떴다 — 묻지 않고 지운 뒤 되돌리기를 준다')
           const tact = await pg.$('.toast [data-toast-act]')
@@ -5514,9 +5544,9 @@ try {
           await tact.click()
           if (!(await gone(false))) fail('🔴 세션 삭제 UI: 되돌리기를 눌렀는데 세션이 안 돌아왔다 · ' + victim)
           // ③ 다시 지운다 — 원래 보던 세션은 그대로
-          await pg.click(`${row} .del`)
+          await tabDel(pg, row)
           if (!(await gone(true))) fail('세션 삭제 UI: 되살린 세션이 다시 안 지워진다 · ' + victim)
-          const back = await pg.$$eval('.panel .srow .n', (r) => r.map((x) => x.textContent.trim()))
+          const back = await pg.$$eval('.sstrip > .stab .n', (r) => r.map((x) => x.textContent.trim()))
           if (!back.includes(keep)) fail('세션 삭제 UI: 남겨야 할 세션이 사라졌다 ' + JSON.stringify({ keep, back }))
           const hb = await pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('bot'))
           {
@@ -5544,9 +5574,9 @@ try {
           await api(`/sessions/${busyS.id}/send`, { text: '승인이 필요한 일 해 줘' })
           let bst = ''; for (let i = 0; i < 60; i++) { bst = ((await api(`/bots/${hb}/sessions`)).find((x) => x.id === busyS.id) ?? {}).state; if (bst === 'awaiting_input') break; await wait(250) }
           if (bst !== 'awaiting_input') fail('세션 삭제 UI: 승인 대기 세션을 못 만들었다(검사 전제) · ' + bst)
-          const brow = '.panel .srow:has(.n:text-is("도는 세션 지우기"))'
-          await pg.waitForSelector(`${brow} .del`, { timeout: 5000 })
-          await pg.click(`${brow} .del`); await wait(400)
+          const brow = '.sstrip > .stab:has(.n:text-is("도는 세션 지우기"))'
+          await pg.waitForSelector(brow, { timeout: 5000 })
+          await tabDel(pg, brow); await wait(400)
           const cf = await pg.evaluate(() => { const m = document.querySelector('.modal.conf'); if (!m) return null; const okb = m.querySelector('[data-conf="ok"]'); return { danger: okb?.classList.contains('danger'), primary: okb?.classList.contains('primary'), focus: document.activeElement?.getAttribute('data-conf'), x: !!m.querySelector('.modal-h .ib') } })
           if (!cf) fail('🔴 세션 삭제 UI: 턴이 걸린 세션인데 묻지 않고 지웠다 — 끊긴 턴은 되살릴 수 없다')
           if (!cf.danger || cf.primary || cf.focus !== 'cancel' || !cf.x) fail('🔴 확인창: 지우는 일인데 빨간 테두리 단추가 아니거나 초점이 [취소] 가 아니거나 ✕ 가 없다 · ' + JSON.stringify(cf))
@@ -5566,7 +5596,7 @@ try {
           await pg.keyboard.press('Enter'); await wait(400)   // ⏎ 는 [취소] 에 있다 — 지워지면 안 된다
           if (await pg.$('.modal.conf')) fail('확인창: ⏎ 로 [취소] 가 안 눌렸다')
           if (!(await pg.$(brow))) fail('🔴 확인창: ⏎ 를 눌렀더니 지워졌다 — 지우는 일에 ⏎ 를 묶지 않는다')
-          await pg.click(`${brow} .del`); await pg.waitForSelector('.modal.conf [data-conf="ok"]', { timeout: 3000 }); await pg.click('.modal.conf [data-conf="ok"]')
+          await tabDel(pg, brow); await pg.waitForSelector('.modal.conf [data-conf="ok"]', { timeout: 3000 }); await pg.click('.modal.conf [data-conf="ok"]')
           for (let i = 0; i < 40 && (await pg.$(brow)); i++) await wait(100)
           if (await pg.$(brow)) fail('세션 삭제 UI: 확인창에서 [지우기] 를 눌렀는데 안 지워졌다')
           pg.off('dialog', onDlg)
@@ -5585,7 +5615,7 @@ try {
           ok('부품 넷 · 지우기 확인 — 쉬는 세션은 묻지 않고 지우고 되돌리기로 돌아옴 · 파일 휴지통도 묻지 않고 되돌리기로 제자리 · 턴이 걸린 세션만 앱 확인창(빨간 테두리 · 초점 [취소] · ⏎ 로 안 지워짐 · ✕) · 브라우저 기본 확인창 0번 · 폰 폭에서도 창과 토스트가 화면 안')
           for (let i = 0; i < 30 && (await pg.$('.toast')); i++) await wait(400)   // 10초 토스트가 뒤 검사의 화면을 가리지 않게
         }
-        await pg.click(`.panel .srow:has(.n:text-is("${keep}"))`); await wait(1000)
+        await pg.click(`.sstrip > .stab:has(.n:text-is("${keep}"))`); await wait(1000)
         await pg.click('.col.side.left .nav:has-text("폴더 선택")'); await pg.waitForSelector('.pk [data-rel]', { timeout: 5000 }); await wait(300)
 
         // 🔴 **라이트 테마에서 글자가 배경에 묻히지 않는다** (2026-09-13 Dave: «여기서 시작 이 안 보여»)
@@ -5754,30 +5784,33 @@ try {
              *    이제 연필은 없고(두 번 누르기), X 와 시각은 줄 위에 겹쳐 뜬다(할 일 줄 .tools 와 같은 방식).
              */
             {
+              // 세션 줄(2026-11-13) — 세션 줄은 패널의 행이 아니라 채팅 머리줄 아래의 탭이다. 탭에는 연필이 없고 ✕ 는 올렸을 때만 탭 위에 겹쳐 선다(안 보일 때 칸을 안 잡는다)
+              const TAB = '.sstrip > .stab:not(.edit):not(.sempty)'
               await pg.mouse.move(2, 2); await wait(250)
-              const g = await pg.evaluate(() => {
-                const row = document.querySelector('.srow:not(.sadd):not(.autoh):not(.edit)'); if (!row) return null
-                const ren = row.querySelector('.ren'), del = row.querySelector('.del'), m = row.querySelector('.m')
+              const g = await pg.evaluate((q) => {
+                const row = document.querySelector(q); if (!row) return null
+                const ren = row.querySelector('.ren'), del = row.querySelector('.del'); const ds = del ? getComputedStyle(del) : null
+                const last = [...row.children].filter((c) => !c.classList.contains('del') && c.getBoundingClientRect().width > 0).pop()
                 const tr = [...document.querySelectorAll('.trow:not(.dir):not(.trefadd)')].find((x) => x.querySelector('time'))
-                return { ren: ren ? getComputedStyle(ren).display : 'none', delPos: del ? getComputedStyle(del).position : '', delOp: del ? getComputedStyle(del).opacity : '', gap: m ? Math.round(row.getBoundingClientRect().right - m.getBoundingClientRect().right) : -1, tpos: tr ? getComputedStyle(tr.querySelector('time')).position : 'none' }
-              })
-              if (!g) fail('오른쪽 빈칸: 세션 줄이 없다')
+                return { ren: ren ? getComputedStyle(ren).display : 'none', delPos: ds ? ds.position : '', delShown: !!ds && ds.display !== 'none' && ds.visibility !== 'hidden' && ds.opacity !== '0', gap: last ? Math.round(row.getBoundingClientRect().right - last.getBoundingClientRect().right) : -1, tpos: tr ? getComputedStyle(tr.querySelector('time')).position : 'none' }
+              }, TAB)
+              if (!g) fail('오른쪽 빈칸: 세션 줄에 탭이 없다')
               else {
-                if (g.ren !== 'none') fail('🔴 오른쪽 빈칸: 세션 줄에 연필이 아직 있다(이름 바꾸기는 두 번 누르기) · ' + JSON.stringify(g))
-                if (g.delPos !== 'absolute' || g.delOp !== '0') fail('🔴 오른쪽 빈칸: X 가 손을 안 올려도 칸을 잡거나 보인다 · ' + JSON.stringify(g))
-                if (g.gap > 16) fail('🔴 오른쪽 빈칸: 세션 줄 시각·절전 글자 오른쪽이 비어 있다 · ' + JSON.stringify(g))
+                if (g.ren !== 'none') fail('🔴 오른쪽 빈칸: 세션 탭에 연필이 아직 있다(이름 바꾸기는 두 번 누르기) · ' + JSON.stringify(g))
+                if (g.delPos !== 'absolute' || g.delShown) fail('🔴 오른쪽 빈칸: X 가 손을 안 올려도 칸을 잡거나 보인다 · ' + JSON.stringify(g))
+                if (g.gap > 16) fail('🔴 오른쪽 빈칸: 세션 탭의 이름·경과 글자 오른쪽이 비어 있다 · ' + JSON.stringify(g))
                 if (g.tpos !== 'none' && g.tpos !== 'absolute') fail('🔴 오른쪽 빈칸: 파일 줄의 시각이 안 보일 때도 칸을 잡는다 · ' + JSON.stringify(g))
-                await pg.hover('.srow:not(.sadd):not(.autoh):not(.edit)'); await wait(300)
-                const op = await pg.$eval('.srow:not(.sadd):not(.autoh):not(.edit) .del', (d) => getComputedStyle(d).opacity)
+                await pg.hover(TAB); await wait(300)
+                const op = await pg.$eval(`${TAB} .del`, (d) => { const c = getComputedStyle(d); return c.display === 'none' || c.visibility === 'hidden' ? '0' : c.opacity })
                 if (op !== '1') fail('🔴 오른쪽 빈칸: 손을 올렸는데 X 가 안 뜬다 · opacity ' + op)
                 ok('세션·파일 줄 오른쪽 빈칸 없음 — X·시각은 손을 올리면 겹쳐 뜬다')
               }
             }
-            await pg.hover('.srow'); await pg.dblclick('.srow')
-            await pg.waitForSelector('.srow.edit .rin', { timeout: 4000 })
-            await pg.fill('.srow.edit .rin', '내가 고친 제목')
+            await pg.hover('.sstrip > .stab'); await pg.dblclick('.sstrip > .stab')
+            await pg.waitForSelector('.sstrip .stab.edit .rin', { timeout: 4000 })
+            await pg.fill('.sstrip .stab.edit .rin', '내가 고친 제목')
             await pg.keyboard.press('Enter'); await wait(700)
-            const names = await pg.$$eval('.srow .n', (r) => r.map((x) => x.textContent))
+            const names = await pg.$$eval('.sstrip > .stab .n', (r) => r.map((x) => x.textContent))
             if (!names.includes('내가 고친 제목')) fail('제목 고치기: 화면에 안 남았다 · ' + JSON.stringify(names))
             const hostNames = (await api(`/bots/${bot.id}/sessions`)).map((x) => x.name)
             if (!hostNames.includes('내가 고친 제목')) fail('제목 고치기: 호스트에 안 남았다 · ' + JSON.stringify(hostNames))
@@ -5920,8 +5953,9 @@ try {
           const ring = await pg.evaluate(() => { const e = document.querySelector('.brow'); e.focus(); const c = getComputedStyle(e); return { style: c.outlineStyle, w: c.outlineWidth, color: c.outlineColor } })
           if (ring.style === 'auto') fail('초점 테두리: 시스템 강조색 네모가 그대로다 ' + JSON.stringify(ring))
           if (ring.style !== 'none' && ring.w !== '1px') fail('초점 테두리: 우리 선이 1px 가 아니다 ' + JSON.stringify(ring))
-          const marks = await pg.evaluate(() => ({ menu: document.querySelectorAll('.menu .vmk').length, side: document.querySelectorAll('.srow .vmk').length, rows: document.querySelectorAll('.srow').length }))
-          if (marks.rows && marks.side && marks.side !== marks.rows) fail('회사 표식: 우측 세션 목록에 빠진 줄이 있다 ' + JSON.stringify(marks))
+          // 세션 줄(2026-11-13) — 세션 목록은 채팅 머리줄 아래의 탭이다(종전 패널의 `.srow`)
+          const marks = await pg.evaluate(() => ({ menu: document.querySelectorAll('.menu .vmk').length, side: document.querySelectorAll('.sstrip > .stab .vmk').length, rows: document.querySelectorAll('.sstrip > .stab:not(.edit):not(.sempty)').length }))
+          if (marks.rows && marks.side && marks.side !== marks.rows) fail('회사 표식: 세션 줄에 표식이 빠진 탭이 있다 ' + JSON.stringify(marks))
           ok('주황 초점 네모 없음 · 회사 표식은 세션 줄마다')
         }
         /**
@@ -7524,7 +7558,7 @@ try {
         await lp.route(`**/api/bots/${cfo.id}/todo*`, async (rt) => { await held; await rt.continue().catch(() => {}) })
         await lp.goto(base + `/#bot=${from.bid}&s=${from.sid}`)
         await lp.waitForSelector('.chat-body .umsg', { timeout: 8000 }).catch(() => {}); await wait(900)
-        const look = () => lp.evaluate(() => ({ ghost: document.querySelectorAll('.chat-body .cghost .umsg').length, inert: !!document.querySelector('.chat-body .cghost[inert]'), skel: !!document.querySelector('.chat-body .cskel'), umsg: document.querySelectorAll('.chat-body .umsg').length, hdr: document.querySelector('.chat-hdr')?.textContent ?? '', tskel: !!document.querySelector('.rpwrap .tskel'), tnone: /할 일이 없어요/.test(document.querySelector('.rpwrap')?.textContent ?? '') }))
+        const look = () => lp.evaluate(() => ({ ghost: document.querySelectorAll('.chat-body .cghost .umsg').length, inert: !!document.querySelector('.chat-body .cghost[inert]'), skel: !!document.querySelector('.chat-body .cskel'), umsg: document.querySelectorAll('.chat-body .umsg').length, hdr: document.querySelector('.sstrip > .stab.on .n')?.textContent ?? '', tskel: !!document.querySelector('.rpwrap .tskel'), tnone: /할 일이 없어요/.test(document.querySelector('.rpwrap')?.textContent ?? '') }))
         await lp.evaluate((h) => { location.hash = h }, `bot=${cfo.id}&s=${nb.id}`); await wait(150)
         const a = await look()
         if (!a.ghost || !a.inert || a.skel) fail('🔴 CF ④: 봇을 바꾼 직후(0.4초 안) 옛 대화가 흐리게 남지 않았다(칸이 비었다) ' + JSON.stringify(a))
@@ -7542,7 +7576,7 @@ try {
         let aborted = 0
         await lp.route(`**/api/sessions/${nb2.id}/chat*`, async (rt) => { if (!aborted++) await rt.abort(); else await rt.continue().catch(() => {}) })
         await lp.evaluate((h) => { location.hash = h }, `bot=${cfo.id}&s=${nb2.id}`)
-        let retried = false; for (let i = 0; i < 40 && !retried; i++) { await wait(100); retried = aborted >= 2 && !(await lp.$('.chat-body .cskel')) && /CF 다시 받기/.test((await lp.textContent('.chat-hdr')) ?? '') }
+        let retried = false; for (let i = 0; i < 40 && !retried; i++) { await wait(100); retried = aborted >= 2 && !(await lp.$('.chat-body .cskel')) && /CF 다시 받기/.test(await lp.evaluate(() => document.querySelector('.sstrip > .stab.on .n')?.textContent ?? '')) }
         if (!retried) fail('🔴 CF ②: 대화 받기가 한 번 실패하자 다시 받지 않고 회색 줄이 남았다 · ' + JSON.stringify({ aborted, skel: !!(await lp.$('.chat-body .cskel')) }))
         await lp.unroute(`**/api/sessions/${nb2.id}/chat*`)
         // ⑤ — 상태 받기를 붙잡고 줄을 다시 붙이면(«online» = 즉시 재접속) 0.4초 뒤 «맞추는 중» · 풀면 사라진다
@@ -7676,7 +7710,17 @@ try {
       const { uxuiEight } = await import('./uxui-eight.mjs')
       const names = []
       await uxuiEight({ br, shots: 'test/tmp', check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 고장 여덟 · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } names.push(name.split(' ')[0]) } })
-      ok(`고장 여덟 — 창 아홉과 루틴 편집이 ⎋ 로 닫힌다 · 겹치면 위의 것만 · 고친 루틴은 닫기 전에 묻는다 · 세션 메뉴(⎋·바깥·같은 단추) · 모델 숫자 키 · «새로고침» 한 줄 · color-scheme · 폰 설정 입력칸 16px · 묻기 창 어둠막 [${names.join(' ')}]`)
+      ok(`고장 여덟 — 창 아홉과 루틴 편집이 ⎋ 로 닫힌다 · 겹치면 위의 것만 · 고친 루틴은 닫기 전에 묻는다 · 세션 줄의 목록(⎋·바깥·같은 단추) · 모델 숫자 키 · «새로고침» 한 줄 · color-scheme · 폰 설정 입력칸 16px · 묻기 창 어둠막 [${names.join(' ')}]`)
+    }
+    /**
+     * 세션 줄 (2026-11-13 Dave 카드 · 가안) — 세션은 채팅 머리줄 아래 한 줄 · 넘치면 «＋N» 목록 · 폰은 머리줄의 세션 이름과 바닥 시트.
+     * 검사 본문(`test/session-strip.mjs`)이 제 호스트를 따로 띄운다.
+     */
+    {
+      const { sessionStrip } = await import('./session-strip.mjs')
+      const names = []
+      await sessionStrip({ br, shots: 'test/tmp', check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 세션 줄 · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } names.push(name.split(' ')[0]) } })
+      ok(`세션 줄 — 탭이 한 줄에 · 그 자리에서 이름 고치기와 지우고 되돌리기 · 자동화는 목록 안에 · 넘치면 «＋N» · 좁아도 한 줄 · 폰은 머리줄과 바닥 시트 [${names.join(' ')}]`)
     }
     await br.close(); ok('ui renders (desktop · phone) → test/tmp/*.png')
   } catch (e) { try { await globalThis.__br?.close() } catch {} if (/executablePath|Executable doesn't exist|Cannot find (module|package) 'playwright/.test(String(e.message))) console.log('(화면 검사 건너뜀 — 브라우저 없음:', e.message.split('\n')[0], ')'); else fail('ui: ' + e.stack.split('\n').slice(0, 4).join(' | ')) }

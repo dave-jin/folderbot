@@ -2,7 +2,6 @@ import { pickColor } from './ColorPick'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useEsc } from './esc'
 import type { AgentDef, Bot, HarnessDetail, HarnessItem, SessionInfo, TodoItem } from '../core/types'
-import { TaskSec } from './Tasks'
 import { copyImageWhy, copySay } from './clip'
 import { copyFiles } from './fileCopy'
 import { copyIntent } from '../core/copyIntent'
@@ -10,19 +9,13 @@ import { api } from './api'
 import { isDoneSection, orderItems, orderSections, peekDone, staleProposal } from '../core/todo'
 import { dueChipOf, dueText, quickDues, splitDue, bareDayAsk } from '../core/due'
 import { sessionUnread } from '../core/unread'
-import { autoKind, sessArea } from '../core/autoArea'
-import { askBadge, askLabel, askLifted } from '../core/askMark'
-import { askOpened, useAskNow, useAskPrefs } from './askUi'
 import { ACT_COLOR, ACT_ICON, ACT_LABEL, LONG, actOf, buzz, slotOf, useSwipeCfg, type SwipeAct } from './swipe'
 import { HOLD_MS, decide, dropIndex } from './gesture'
 import { FolderBot, Icon, Mid } from './FolderBot'
-import { FolderPicker, RoutineSheet, askConfirm, askName, deleteSession, type Say } from './Sheets'
+import { FolderPicker, RoutineSheet, askConfirm, askName, type Say } from './Sheets'
 import { describeCron, onceDone } from '../core/when'
-import { startSession } from './newSession'
-import { refreshModels } from './consts'
-import { Mark, VendorMark, useProviders } from './Brand'
+import { Mark } from './Brand'
 import { Float, anchorOf, type Anchor } from './Float'
-import { PROVIDER_LABEL, type ProviderId } from '../core/agents'
 
 /** 클립보드에 «그림 그대로» 넣을 수 있는 것들 */
 const IMG_RE = /\.(png|jpe?g|gif|webp|bmp|avif)$/i
@@ -54,111 +47,11 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
   // 아이콘 열에서 누른 섹션은 펼쳐진 채로 온다
   useEffect(() => { if (focusSec) setOpen((o) => ({ ...o, [focusSec.sec]: true })) }, [focusSec?.n])
   const [routines, setRoutines] = useState<boolean | string>(false); const [menu, setMenu] = useState<Anchor | null>(null)
-  /**
-   * 새 세션 — 🔴 **누가 맡을지(Claude / ChatGPT)는 세션마다 고른다.** 벤더는 폴더가 아니라 세션의 성질이라
-   *    한 폴더에 둘이 섞여 산다(그래서 표식도 폴더 레일이 아니라 이 목록에 붙는다).
-   * ⚠ 깔린 에이전트가 하나면 묻지 않는다 — 고를 게 없는데 묻는 건 문턱만 하나 더 만드는 것이다.
-   */
-  const provs = useProviders()
-  const [pick, setPick] = useState<Anchor | null>(null)
-  const newSession = async (vendor?: ProviderId) => {
-    setPick(null)
-    // BO · 누르는 순간 그 세션으로 간다 — 만들기는 뒤에서, 실패하면 되돌리고 알린다(`newSession.ts`)
-    // ⚠ 새 세션마다 모델 상태를 다시 본다 (2026-09-15 Dave) — 만들기가 끝난 뒤에
-    startSession({ bot, name: `세션 ${sessions.filter((x) => sessArea(x) === 'chat').length + 1}`, vendor: vendor ?? provs[0]?.id, defaults: s.defaults, dispatch, go, prev: sessionId, say, after: () => void refreshModels() })
-  }
-  /**
-   * 🔴 **제목은 그 자리에서 고친다** (2026-09-15 Dave: «채팅 제목이 수정되게도 해줘»).
-   *    종전의 길은 위 메뉴의 `prompt()` 하나였는데 — **Electron 에는 `prompt()` 가 없다**(조용히 아무 일도
-   *    안 난다). 앱에서 «수정이 안 되는» 것처럼 보였던 이유다.
-   * ⚠ 줄은 `<button>` 이라 그 안에 입력칸을 넣을 수 없다 — 고치는 동안에는 **줄을 통째로** 입력칸으로 바꾼다.
-   */
-  const [ren, setRen] = useState<{ id: string; v: string } | null>(null)
-  const saveRen = async () => {
-    const r = ren; if (!r) return
-    setRen(null)
-    const name = r.v.trim()
-    const was = sessions.find((x) => x.id === r.id)
-    if (!name || !was || name === was.name) return
-    try { await api(`/sessions/${r.id}/rename`, { body: { name } }) } catch (e) { say((e as Error).message) }
-  }
   const todos = (s.todos[bot.id] ?? [])
-  /**
-   * CC · **채팅과 자동화를 나눈다** (2026-10-12 Dave: *«기존 채널 소통과 분리해서 표시해줘. 내가 가급적 사용하지 않도록»*).
-   * 위에는 사람이 쓰는 채팅 세션만, 그 아래 접힌 «자동화» 줄에 소통·채널·루틴·봇끼리 세션을 둔다(기본 접힘 · 봇마다 기억).
-   * 접혀 있어도 도는 중·답 기다림이면 점이 켜지고, 지금 보고 있는 세션이 자동화 쪽이면 펼쳐 보인다. 판정은 `core/autoArea`.
-   */
-  /**
-   * DB · **ask 세션은 맨 위로** (2026-10-25 Dave «계획대로 두 자리») — 바깥 상대가 묻는 중이거나 방금(10분 안) 답한 세션은
-   * 자동화 묶음에서 꺼내 채팅 위에 올린다. 답한 뒤 10분이 지나거나 Dave 가 열면 원래 자리로 돌아간다. 판정은 `core/askMark`.
-   * 3안(설정에서 켬) — 올리지 않을 때도 묻는 동안 «자동화» 를 저절로 펼치고 그 세션에 줄을 긋는다.
-   */
-  const [ap] = useAskPrefs()
-  const askNow = useAskNow(sessions.some((x) => x.asks?.length))
-  const lifted = ap.lift ? askLifted(sessions, askNow) : []
-  const liftedIds = new Set(lifted.map((x) => x.s.id))
-  const chat = sessions.filter((x) => sessArea(x) === 'chat' && !liftedIds.has(x.id))
-  const auto = sessions.filter((x) => sessArea(x) === 'auto' && !liftedIds.has(x.id))
-  const askHl = ap.expand ? new Set(auto.filter((x) => askBadge(x, askNow)?.state === 'asking').map((x) => x.id)) : new Set<string>()
-  // 지금 보는 세션이 자동화면 펼쳐 보인다 — 그래도 머리 줄을 누르면 접힌다(`shut` · 그 세션을 보는 동안만). 종전엔 눌러도 안 접히고 저장값만 몰래 뒤집혔다
-  // DB 3안 · 묻는 중인 자동화 세션이 있어도 펼친다 — 접으면 그 묶음(보는 세션 + 묻는 세션들)이 바뀔 때까지 접힌 채로
-  const viewingAuto = auto.some((x) => x.id === sessionId)
-  const forced = viewingAuto || askHl.size > 0
-  const shutKey = `${viewingAuto ? sessionId : ''}|${[...askHl].join(',')}`
-  const [shut, setShut] = useState<string | null>(null)
-  const autoOpen = !!open.auto || (forced && shut !== shutKey)
-  const togAuto = () => { if (autoOpen) { setOpen((o) => ({ ...o, auto: false })); if (forced) setShut(shutKey) } else { setOpen((o) => ({ ...o, auto: true })); setShut(null) } }
-  const liftRow = ({ s: x, b }: (typeof lifted)[number]) => <button key={x.id} data-sid={x.id} className={`srow asklift ${b.state} ${x.id === sessionId ? 'on' : ''}`} onClick={() => { if (b.state === 'answered') askOpened(x.id); go(bot.id, x.id) }}><span className={`dot ${b.state === 'asking' ? (x.state === 'awaiting_input' ? 'wait' : 'run') : b.err ? 'err' : 'unread'}`} style={{ marginTop: 6 }} /><span className="n">{askLabel(b, askNow)}<small>{x.name}</small></span><span className="m">{fmtTime(b.state === 'asking' ? b.at : b.doneAt ?? b.at)}</span></button>
-  const autoDot = auto.some((x) => x.state === 'awaiting_input') ? 'wait' : auto.some((x) => x.state === 'running') ? 'run' : ''
-  const row = (x: SessionInfo) => ren?.id === x.id
-          ? <div key={x.id} className="srow edit"><span className="dot none" /><input autoFocus className="rin" value={ren.v} onChange={(e) => setRen({ id: x.id, v: e.target.value })}
-              onFocus={(e) => e.currentTarget.select()} onBlur={() => void saveRen()}
-              onKeyDown={(e) => { if (e.nativeEvent.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); void saveRen() } else if (e.key === 'Escape') { e.preventDefault(); setRen(null) } }} /></div>
-          : <button key={x.id} className={`srow ${x.id === sessionId ? 'on' : ''} ${sessionUnread(x.lastReplyAt, x.readAt) ? 'unread' : ''} ${autoKind(x) ? 'auto' : ''} ${askHl.has(x.id) ? 'askhl' : ''}`} onClick={() => go(bot.id, x.id)} onDoubleClick={(e) => { e.stopPropagation(); setRen({ id: x.id, v: x.name }) }}>{/* AV · 봇 줄의 더블링이 «어느 세션 때문인지» 여기서 보인다 — 종전엔 아무 표시가 없어 다 읽은 줄 알았다 */}<span className={`dot ${x.state === 'running' ? 'run' : x.state === 'awaiting_input' ? 'wait' : x.state === 'error' ? 'err' : sessionUnread(x.lastReplyAt, x.readAt) ? 'unread' : 'none'}`} /><span className="n">{x.name}</span>{autoKind(x) ? <span className="ak">{autoKind(x)}</span> : null}<VendorMark vendor={x.vendor} size={11} /><span className="m">{x.state === 'running' ? <Elapsed from={x.turnStartedAt} /> : x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span><span className="ib ren" title="이름 바꾸기 (두 번 누르기)" onClick={(e) => { e.stopPropagation(); setRen({ id: x.id, v: x.name }) }}><Icon n="edit" size={11} /></span><span className="ib del" title="세션 삭제" onClick={(e) => { e.stopPropagation(); void delSession(x) }}><Icon n="x" size={11} /></span></button>
-  /**
-   * 세션 삭제 — 워커를 내리고 기록을 지운다. **묻지 않고 지운 뒤 10초 되돌리기**(2026-11-13 Dave 카드 «바로 지우고 되돌리기» · `deleteSession`).
-   * 턴이 돌고 있는 세션만 확인창으로 묻는다 — 끊긴 턴은 되살릴 수 없다.
-   * 지운 게 지금 보고 있는 세션이면 남은 첫 세션으로 옮긴다(없으면 세션 없는 상태로).
-   * ⚠ 호스트는 파일에 «지웠다» 표식을 남긴다 — 부팅 때 그 표식을 건너뛰지 않으면 되살아난다(session.ts 생성자).
-   */
-  const delSession = async (x: SessionInfo) => {
-    const wasCur = x.id === sessionId
-    try {
-      await deleteSession(x, say, () => {
-        const left = sessions.filter((y) => y.id !== x.id && sessArea(y) === 'chat')
-        if (wasCur) go(bot.id, left[0]?.id)
-      }, () => { if (wasCur) go(bot.id, x.id) })
-    } catch (e) { say((e as Error).message) }
-  }
-  const dragY = (k: 'sessions' | 'todo') => (e: React.PointerEvent) => { e.preventDefault(); onDragY(true); const y0 = e.clientY; const h0 = secH[k]; const panel = (e.currentTarget as HTMLElement).closest('.panel'); const room = panel ? panel.getBoundingClientRect().height - (secH.sessions + secH.todo - h0) - 260 : 420; /* 파일 트리 160 + 헤더·루틴·푸터 100 는 남긴다 */ const cap = Math.max(56, Math.min(420, room)); const mv = (ev: PointerEvent) => onSecH({ ...secH, [k]: Math.max(56, Math.min(cap, h0 + ev.clientY - y0)) }); const up = () => { onDragY(false); window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up) }; window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up) }
+  const dragY = (k: 'sessions' | 'todo') => (e: React.PointerEvent) => { e.preventDefault(); onDragY(true); const y0 = e.clientY; const h0 = secH[k]; const panel = (e.currentTarget as HTMLElement).closest('.panel'); const room = panel ? panel.getBoundingClientRect().height - 0 - 260 : 420; /* 파일 트리 160 + 헤더·루틴·푸터 100 는 남긴다 */ const cap = Math.max(56, Math.min(420, room)); const mv = (ev: PointerEvent) => onSecH({ ...secH, [k]: Math.max(56, Math.min(cap, h0 + ev.clientY - y0)) }); const up = () => { onDragY(false); window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up) }; window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up) }
   return <div className="col side panel" style={{ width: '100%' }}>
     <div className="hdr">{phone ? <button className="rb glassb" onClick={onBack} title="봇 목록"><Icon n="list" size={20} /></button> : null}<span className="ttl">{only === 'todo' ? '할 일' : only === 'files' ? '폴더' : bot.orchestrator ? '이 볼트에서' : '이 폴더에서'}</span><span className="sp" />{!phone ? <div className="acts"><button className="ib on" onClick={onCollapse} title="패널 접기 (⌘⇧B)"><Icon n="panelr" size={14} /></button></div> : null}</div>
-    {/**
-      * AG · **세션은 「할 일」 탭 위에 같이 산다** (2026-09-24 Dave: *«세션 리스트는 할 일 위에 두고, 세션과 할 일 둘 다
-      * 보여줘서 여러 개의 세션이 보일 수 있게»*). AD 에서 폰의 패널을 쪼개며 세션이 통째로 사라졌던 것을 되돌린다 —
-      * 「폴더」 탭에는 여전히 없다(거기는 파일만 본다).
-      */}
-    {only === 'files' ? null : <div className="sec fix" style={{ height: secH.sessions }}>
-      <button className="sech" onClick={() => tog('sessions')}><Icon n={secOn('sessions') ? 'chevd' : 'chev'} size={9} /><span>세션</span><span className="c">{sessions.filter((x) => sessArea(x) === 'chat').length}</span><span className="tools on"><span className="ib nsb" title="새 세션" onClick={(e) => { e.stopPropagation(); if (provs.length > 1) { setPick(anchorOf(e.currentTarget as HTMLElement)); setOpen((o) => ({ ...o, sessions: true })) } else void newSession() }}><Icon n="plus" size={12} /></span></span></button>
-      {secOn('sessions') ? <div className="secb" style={{ padding: '0 0 6px' }}>{lifted.map(liftRow)}{chat.map(row)}
-        {/* 🔴 **세션이 없을 때도 여기서 시작한다** (2026-09-13 Dave). 종전 「메시지를 보내면 생겨요」 는
-            **막다른 안내**였다 — 누가 이 폴더를 맡을지(Claude / ChatGPT) 고를 자리가 어디에도 없었다.
-            ⚠ 깔린 에이전트가 하나면 묻지 않는다 — 고를 게 없는데 묻는 건 문턱만 하나 더 만드는 것이다. */}
-        {/* BG · **목록 끝에도 ＋** (2026-09-27 Dave · 스크린샷_1721: «플러스 버튼이 세션 한단에도 + 로 나와 있으면 어떨까»).
-            머리의 ＋ 는 절 머리를 훑어야 보이고 폭이 좁으면 작다 — 방금 본 세션 줄 바로 아래에서 이어 누르게 한다.
-            파일 트리 끝 «참조 폴더 더하기»(BC) 와 같은 말투·모양이다(흐린 글 · 새 색 없음). 머리 ＋ 와 똑같이 움직인다 */}
-        {chat.length ? <button className="srow sadd" onClick={(e) => { if (provs.length > 1) setPick(anchorOf(e.currentTarget as HTMLElement)); else void newSession() }}><Icon n="plus" size={11} color="var(--t3)" /><span className="n">새 세션</span></button> : null}
-        {!chat.length ? <button className="kv sempty" onClick={(e) => { if (provs.length > 1) setPick(anchorOf(e.currentTarget as HTMLElement)); else void newSession() }}><Icon n="plus" size={11} /><span>{provs.length > 1 ? 'Claude 나 ChatGPT 로 시작' : '세션 시작'}</span></button> : null}
-        {auto.length ? <button className="srow autoh" onClick={togAuto} title="소통·연결 채널·루틴처럼 봇이 스스로 쓰는 세션 — 오래된 것은 저절로 정리돼요"><Icon n={autoOpen ? 'chevd' : 'chev'} size={9} color="var(--t3)" /><span className="n">자동화</span>{autoDot ? <span className={`dot ${autoDot}`} /> : null}<span className="m">{auto.length}</span></button> : null}
-        {auto.length && autoOpen ? auto.map(row) : null}
-        {pick ? <Float at={pick} onClose={() => setPick(null)}>{provs.map((pv) => <button key={pv.id} onClick={() => void newSession(pv.id)}><Mark id={pv.id} size={14} /><span>{PROVIDER_LABEL[pv.id]}</span></button>)}<hr /><button onClick={() => setPick(null)}><span>취소</span></button></Float> : null}</div> : null}
-    </div>}
-    {only === 'files' ? null : <div className="divy" onPointerDown={dragY('sessions')} onDoubleClick={() => onSecH({ ...secH, sessions: 112 })} />}
-    {/**
-      * EA · **뒤에서 도는 일** (2026-11-11 Dave 승인) — 지금 보는 세션이 맡긴 서브에이전트·셸. 세션 바로 아래에 둔다(세션에 딸린 것이라).
-      * 맡긴 일이 한 번도 없던 세션에는 절이 안 선다. 폰은 탭(`only`)이 아니라 진행 줄의 바닥 시트로 본다(`Tasks.tsx`).
-      */}
-    {only ? null : <TaskSec sid={sessionId} open={open.tasks !== false} tog={() => setOpen({ ...open, tasks: open.tasks === false })} say={say} />}
+    {/* 세션은 채팅 머리줄 아래의 세션 줄로 갔다 (2026-11-13 Dave 카드 · 가안) — `SessionStrip.tsx`. 뒤에서 도는 일은 진행 줄의 팝오버(`Tasks.tsx`) */}
     {/* 할 일 / Inbox — `only='todo'` 면 이 절 하나가 화면을 다 쓴다 */}
     {only === 'files' ? null : <div className={only === 'todo' ? 'sec grow' : 'sec fix'} style={!only && open.todo ? { height: secH.todo } : undefined}>
       {bot.orchestrator ? <InboxSec open={secOn('todo')} tog={() => tog('todo')} onSend={onTalk} /> : <TodoSec bot={bot} items={todos} loading={!s.todos[bot.id]} open={secOn('todo')} tog={() => tog('todo')} onDelegate={(t) => onTalk(`${t.title}${t.desc ? ` — ${t.desc}` : ''}`)} onOpenFile={onOpenFile} reload={() => loadTodo(bot.id)} phone={phone} />}
