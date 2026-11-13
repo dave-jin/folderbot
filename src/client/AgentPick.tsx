@@ -79,7 +79,7 @@ export function AgentPickHost() {
       <div className="ap-f">
         <span className="sp" />
         <button className="btn" onClick={() => done(null)}>취소</button>
-        <button className="btn on" onClick={() => done(sel)}><Mark id={sel} size={14} />{PROVIDER_LABEL[sel]} 로 시작</button>
+        <button className="btn primary" onClick={() => done(sel)}><Mark id={sel} size={14} />{PROVIDER_LABEL[sel]} 로 시작</button>
       </div>
     </div>
   </>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useEsc } from './esc'
 import { api } from './api'
+import { askConfirm } from './Sheets'
 import { useStore } from './store'
 import { Icon } from './FolderBot'
 import type { Board } from '../host/routineBoard'
@@ -60,10 +61,10 @@ export function Routines({ onClose, go, openSheet, say, phone }: { onClose: () =
   }
   const run = async (r: BoardRoutine) => { setBusy(`run:${key(r)}`); try { await api(`/bots/${r.botId}/routines/run`, { method: 'POST', body: { name: r.name } }); say(`«${r.name}» 을 지금 돌렸어요`); window.setTimeout(load, 1500) } catch (e) { say((e as Error).message) } finally { setBusy('') } }
   const toggle = (r: BoardRoutine) => mutate(r.botId, r.enabled ? `«${r.name}» 을 껐어요` : `«${r.name}» 을 켰어요`, (l) => l.map((x) => (x.name === r.name ? { ...x, enabled: !r.enabled } : x)))
-  const remove = (r: BoardRoutine) => { if (window.confirm(`«${r.bot}» 의 «${r.name}» 루틴을 지울까요?`)) void mutate(r.botId, `«${r.name}» 을 지웠어요`, (l) => l.filter((x) => x.name !== r.name)) }
+  const remove = async (r: BoardRoutine) => { if (await askConfirm({ title: `«${r.name}» 루틴을 지울까요?`, body: `«${r.bot}» 의 루틴이에요. 지우면 되돌릴 수 없어요.`, ok: '지우기', danger: true })) void mutate(r.botId, `«${r.name}» 을 지웠어요`, (l) => l.filter((x) => x.name !== r.name)) }
   const sweepFinished = async () => {
     const done = (b?.routines ?? []).filter((r) => r.state === 'finished')
-    if (!done.length || !window.confirm(`끝난 일회성 루틴 ${done.length}개를 지울까요?\n\n${done.map((r) => `· ${r.bot} · ${r.name}`).join('\n')}`)) return
+    if (!done.length || !(await askConfirm({ title: `끝난 일회성 루틴 ${done.length}개를 지울까요?`, body: done.map((r) => `· ${r.bot} · ${r.name}`).join('\n'), ok: '지우기', danger: true }))) return
     for (const id of [...new Set(done.map((r) => r.botId))]) await mutate(id, `끝난 일회성 ${done.length}개를 지웠어요`, (l) => l.filter((x) => !done.some((d) => d.botId === id && d.name === x.name)))
   }
   const sg = b?.suggest, sgKey = sg ? `${sg.botId}::${sg.name}::${sg.to}` : ''

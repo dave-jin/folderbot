@@ -16,7 +16,7 @@ import { askOpened, useAskNow, useAskPrefs } from './askUi'
 import { ACT_COLOR, ACT_ICON, ACT_LABEL, LONG, actOf, buzz, slotOf, useSwipeCfg, type SwipeAct } from './swipe'
 import { HOLD_MS, decide, dropIndex } from './gesture'
 import { FolderBot, Icon, Mid } from './FolderBot'
-import { FolderPicker, RoutineSheet, askName } from './Sheets'
+import { FolderPicker, RoutineSheet, askConfirm, askName, deleteSession, type Say } from './Sheets'
 import { describeCron, onceDone } from '../core/when'
 import { startSession } from './newSession'
 import { refreshModels } from './consts'
@@ -40,7 +40,7 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
    * 똑같은 메뉴가 나오는데 그러면 의미가 없잖아»*). `only` 를 주면 그 절 하나만 꽉 채워 보인다 —
    * 세션·명령·스킬·루틴은 폰에서 볼 일이 없어 뺀다(데스크톱은 종전 그대로 전부 보인다).
    */
-  only?: 'todo' | 'files'; touched: string[]; filesTick?: number; secH: SecH; onSecH: (h: SecH) => void; onCollapse: () => void; say: (m: string) => void; refresh: () => Promise<void>; activeDoc: string | null; onDragY: (on: boolean) => void; focusSec?: { sec: string; n: number } | null }) {
+  only?: 'todo' | 'files'; touched: string[]; filesTick?: number; secH: SecH; onSecH: (h: SecH) => void; onCollapse: () => void; say: Say; refresh: () => Promise<void>; activeDoc: string | null; onDragY: (on: boolean) => void; focusSec?: { sec: string; n: number } | null }) {
   const { s, loadTodo, dispatch } = useStore()
   const [open, setOpen] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem(`fb:secs:${bot.id}`) ?? '') } catch { return { sessions: true, todo: true, files: true, routines: false } } })   // ⚠ `tasks`(뒤에서 도는 일)는 여기 없어도 펼친 채로 시작한다 — 아래 `open.tasks !== false`
   useEffect(() => { try { setOpen(JSON.parse(localStorage.getItem(`fb:secs:${bot.id}`) ?? '')) } catch { setOpen({ sessions: true, todo: true, files: true, routines: false }) } }, [bot.id])
@@ -116,18 +116,18 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
               onKeyDown={(e) => { if (e.nativeEvent.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); void saveRen() } else if (e.key === 'Escape') { e.preventDefault(); setRen(null) } }} /></div>
           : <button key={x.id} className={`srow ${x.id === sessionId ? 'on' : ''} ${sessionUnread(x.lastReplyAt, x.readAt) ? 'unread' : ''} ${autoKind(x) ? 'auto' : ''} ${askHl.has(x.id) ? 'askhl' : ''}`} onClick={() => go(bot.id, x.id)} onDoubleClick={(e) => { e.stopPropagation(); setRen({ id: x.id, v: x.name }) }}>{/* AV · 봇 줄의 더블링이 «어느 세션 때문인지» 여기서 보인다 — 종전엔 아무 표시가 없어 다 읽은 줄 알았다 */}<span className={`dot ${x.state === 'running' ? 'run' : x.state === 'awaiting_input' ? 'wait' : x.state === 'error' ? 'err' : sessionUnread(x.lastReplyAt, x.readAt) ? 'unread' : 'none'}`} /><span className="n">{x.name}</span>{autoKind(x) ? <span className="ak">{autoKind(x)}</span> : null}<VendorMark vendor={x.vendor} size={11} /><span className="m">{x.state === 'running' ? <Elapsed from={x.turnStartedAt} /> : x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span><span className="ib ren" title="이름 바꾸기 (두 번 누르기)" onClick={(e) => { e.stopPropagation(); setRen({ id: x.id, v: x.name }) }}><Icon n="edit" size={11} /></span><span className="ib del" title="세션 삭제" onClick={(e) => { e.stopPropagation(); void delSession(x) }}><Icon n="x" size={11} /></span></button>
   /**
-   * 세션 삭제 — 워커를 내리고 기록을 지운다. 되돌릴 수 없으니 한 번 묻는다.
+   * 세션 삭제 — 워커를 내리고 기록을 지운다. **묻지 않고 지운 뒤 10초 되돌리기**(2026-11-13 Dave 카드 «바로 지우고 되돌리기» · `deleteSession`).
+   * 턴이 돌고 있는 세션만 확인창으로 묻는다 — 끊긴 턴은 되살릴 수 없다.
    * 지운 게 지금 보고 있는 세션이면 남은 첫 세션으로 옮긴다(없으면 세션 없는 상태로).
    * ⚠ 호스트는 파일에 «지웠다» 표식을 남긴다 — 부팅 때 그 표식을 건너뛰지 않으면 되살아난다(session.ts 생성자).
    */
   const delSession = async (x: SessionInfo) => {
-    const warn = x.state === 'running' ? '\n\n지금 돌고 있는 턴이 중단돼요.' : ''
-    if (!confirm(`«${x.name}» 세션을 지울까요?${warn}\n\n대화 기록이 사라지고 되돌릴 수 없어요.`)) return
+    const wasCur = x.id === sessionId
     try {
-      await api(`/sessions/${x.id}`, { method: 'DELETE' })
-      const left = sessions.filter((y) => y.id !== x.id && sessArea(y) === 'chat')
-      if (x.id === sessionId) go(bot.id, left[0]?.id)
-      say(`«${x.name}» 세션을 지웠어요`)
+      await deleteSession(x, say, () => {
+        const left = sessions.filter((y) => y.id !== x.id && sessArea(y) === 'chat')
+        if (wasCur) go(bot.id, left[0]?.id)
+      }, () => { if (wasCur) go(bot.id, x.id) })
     } catch (e) { say((e as Error).message) }
   }
   const dragY = (k: 'sessions' | 'todo') => (e: React.PointerEvent) => { e.preventDefault(); onDragY(true); const y0 = e.clientY; const h0 = secH[k]; const panel = (e.currentTarget as HTMLElement).closest('.panel'); const room = panel ? panel.getBoundingClientRect().height - (secH.sessions + secH.todo - h0) - 260 : 420; /* 파일 트리 160 + 헤더·루틴·푸터 100 는 남긴다 */ const cap = Math.max(56, Math.min(420, room)); const mv = (ev: PointerEvent) => onSecH({ ...secH, [k]: Math.max(56, Math.min(cap, h0 + ev.clientY - y0)) }); const up = () => { onDragY(false); window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up) }; window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up) }
@@ -187,7 +187,7 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
     </div>}
     {/* AD · 「지우기 · 은퇴」는 **폴더 탭 아래에만 작게** 남긴다 (2026-09-23 Dave) — 할 일 탭에는 없다 */}
     {only === 'todo' ? null : <div className={`pfoot ${only ? 'sm' : ''}`}><button style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'inherit' }} onClick={(e) => setMenu(menu ? null : anchorOf(e.currentTarget as HTMLElement, { gap: 6 }))}><Icon n="more" size={12} />이 봇{bot.orchestrator ? '' : ' · 색 · 지우기 · 은퇴'}</button>
-      {menu && !bot.orchestrator ? <Float at={menu} onClose={() => setMenu(null)}><div onClick={() => setMenu(null)} style={{ display: 'contents' }}>{sessions.some((x) => sessionUnread(x.lastReplyAt, x.readAt)) ? <button onClick={async () => { const r = await api<{ read: number }>(`/bots/${bot.id}/read-all`, { body: {} }); say(r.read ? `${r.read}개 세션을 읽음으로 했어요` : '안 읽은 세션이 없어요') }}><Icon n="check" size={13} /><span>모두 읽음</span></button> : null}<button onClick={() => pickColor(bot)}><span className="csdot" style={{ background: bot.color }} /><span style={{ flex: 1 }}>색 바꾸기</span></button><button onClick={async () => { await api(`/bots/${bot.id}/stop`, { body: {} }); say(`${bot.name} 을 레일에서 덜어냈어요`); await refresh(); go('orch') }}><Icon n="x" size={13} /><span style={{ flex: 1 }}>지우기 (연결 해지)</span><span className="k">폴더 유지</span></button><button className="warn" onClick={async () => { if (!confirm(`${bot.name} 을 Archive 로 옮기고 은퇴시킬까요? 세션 기록은 보관돼요.`)) return; try { await api(`/bots/${bot.id}/retire`, { body: {} }); say('옮기고 은퇴했어요'); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="archive" size={13} /><span style={{ flex: 1 }}>Archive 로 이동 (은퇴)</span></button></div></Float> : null}
+      {menu && !bot.orchestrator ? <Float at={menu} onClose={() => setMenu(null)}><div onClick={() => setMenu(null)} style={{ display: 'contents' }}>{sessions.some((x) => sessionUnread(x.lastReplyAt, x.readAt)) ? <button onClick={async () => { const r = await api<{ read: number }>(`/bots/${bot.id}/read-all`, { body: {} }); say(r.read ? `${r.read}개 세션을 읽음으로 했어요` : '안 읽은 세션이 없어요') }}><Icon n="check" size={13} /><span>모두 읽음</span></button> : null}<button onClick={() => pickColor(bot)}><span className="csdot" style={{ background: bot.color }} /><span style={{ flex: 1 }}>색 바꾸기</span></button><button onClick={async () => { await api(`/bots/${bot.id}/stop`, { body: {} }); say(`${bot.name} 을 레일에서 덜어냈어요`); await refresh(); go('orch') }}><Icon n="x" size={13} /><span style={{ flex: 1 }}>지우기 (연결 해지)</span><span className="k">폴더 유지</span></button><button className="warn" onClick={async () => { if (!(await askConfirm({ title: `${bot.name} 봇을 은퇴시킬까요?`, body: '폴더를 Archive 로 옮기고 봇을 쉬게 합니다. 세션 기록은 보관돼요.', ok: '은퇴', danger: true }))) return; try { await api(`/bots/${bot.id}/retire`, { body: {} }); say('옮기고 은퇴했어요'); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="archive" size={13} /><span style={{ flex: 1 }}>Archive 로 이동 (은퇴)</span></button></div></Float> : null}
       {menu && bot.orchestrator ? <Float at={menu} onClose={() => setMenu(null)}><div onClick={() => setMenu(null)} style={{ display: 'contents' }}>{sessions.some((x) => sessionUnread(x.lastReplyAt, x.readAt)) ? <button onClick={async () => { const r = await api<{ read: number }>(`/bots/${bot.id}/read-all`, { body: {} }); say(r.read ? `${r.read}개 세션을 읽음으로 했어요` : '안 읽은 세션이 없어요') }}><Icon n="check" size={13} /><span>모두 읽음</span></button> : null}<button onClick={() => onTalk('지금 뭐 돌고 있어? 봇별로 한 줄씩.')}><Icon n="sub" size={13} /><span>현황 물어보기</span></button></div></Float> : null}
     </div>}
     {routines ? <RoutineSheet bot={bot} pick={typeof routines === 'string' ? routines : undefined} onClose={() => setRoutines(false)} /> : null}
@@ -203,7 +203,7 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
  */
 const SCOPE_T: Record<HarnessItem['scope'], string> = { folder: '이 폴더', root: '볼트', user: '사용자', builtin: '내장' }
 interface CmdRow { name: string; desc: string; scope: 'folder' | 'root' | 'user'; rel: string | null }
-function HarnessSec({ bot, open, tog, onOpenFile, say, filesTick }: { bot: Bot; open: boolean; tog: () => void; onOpenFile: (rel: string) => void; say: (m: string) => void; filesTick?: number }) {
+function HarnessSec({ bot, open, tog, onOpenFile, say, filesTick }: { bot: Bot; open: boolean; tog: () => void; onOpenFile: (rel: string) => void; say: Say; filesTick?: number }) {
   const [hz, setHz] = useState<HarnessDetail | null>(null)
   const [cmds, setCmds] = useState<CmdRow[] | null>(null)
   /** EA · 이 봇이 부를 수 있는 에이전트 정의(`.claude/agents`) — 폴더 것과 사용자 것. 읽기만 한다 */
@@ -563,7 +563,7 @@ function TodoSec({ bot, items, loading = false, open, tog, onDelegate, onOpenFil
     </div></> : null}
     {esheet ? <><div className="backdrop" onClick={() => setESheet(null)} /><div className="tsheet esheet">
       <div className="grip" />
-      <div className="eh2"><b>{esheet.line < 0 ? '새 할 일' : '할 일 고치기'}</b>{esheet.line >= 0 ? <button className="del" onClick={() => { const t = items.find((x) => x.line === esheet.line); setESheet(null); if (t && confirm(`«${t.title}» 을 지울까요?`)) void remove(t) }}>삭제</button> : null}</div>
+      <div className="eh2"><b>{esheet.line < 0 ? '새 할 일' : '할 일 고치기'}</b>{esheet.line >= 0 ? <button className="del" onClick={() => { const t = items.find((x) => x.line === esheet.line); setESheet(null); if (t) void remove(t) }}>삭제</button> : null}</div>
       <label className="fld"><span>제목</span><input autoFocus value={esheet.title} placeholder="무엇을 할까요" onChange={(e) => setESheet({ ...esheet, title: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') void saveSheet() }} /></label>
       <label className="fld"><span>상세</span><textarea rows={3} value={esheet.desc} placeholder="없어도 됩니다" onChange={(e) => setESheet({ ...esheet, desc: e.target.value })} /></label>
       {/* CK-1 · 마감 — 바깥에서 정해진 날만. 제목 끝에 «내일» 이라고 써도 된다 */}
@@ -606,7 +606,7 @@ function edgeScroll(from: HTMLElement, y: number): void {
   else if (y > r.bottom - EDGE_PX) el.scrollTop += Math.ceil((y - (r.bottom - EDGE_PX)) / 3)
 }
 
-function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFolderAt, touched, tick, say, active }: { bot: Bot; phone?: boolean; open: boolean; tog: () => void; onOpen: (rel: string, pin?: boolean) => void; onAttach: (rel: string, dir?: boolean) => void; onMention: (rel: string) => void; onStartAt: (vaultRel: string, botId?: string) => void; onNewFolderAt: (vaultRel: string) => void; touched: string[]; tick?: number; say: (m: string) => void; active: string | null }) {
+function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, onNewFolderAt, touched, tick, say, active }: { bot: Bot; phone?: boolean; open: boolean; tog: () => void; onOpen: (rel: string, pin?: boolean) => void; onAttach: (rel: string, dir?: boolean) => void; onMention: (rel: string) => void; onStartAt: (vaultRel: string, botId?: string) => void; onNewFolderAt: (vaultRel: string) => void; touched: string[]; tick?: number; say: Say; active: string | null }) {
   const [dirs, setDirs] = useState<Record<string, Node[]>>({})
   const refRootsRef = useRef<string[]>([])   // 참조 폴더의 봇 기준 rel — loadDir 이 먼저 정의돼서 ref 로 넘긴다
   const [exp, setExp] = useState<Set<string>>(() => { try { return new Set(JSON.parse(localStorage.getItem(`fb:tree:${bot.id}`) ?? '[""]')) } catch { return new Set(['']) } })
@@ -786,11 +786,20 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
   const toTrash = async (n: Node) => {
     const rels = targets(n)
     const what = rels.length > 1 ? `${rels.length}개` : n.name
-    if (!confirm(`${what} 를 휴지통으로 옮길까요?\n\n볼트 안 .folderbot/trash 로 갑니다 — ⌘Z 로 되돌릴 수 있어요.`)) return
+    // 묻지 않는다 — 볼트 안 `.folderbot/trash` 로 옮길 뿐이라 되돌릴 수 있다(2026-11-13 «지우기 확인 규칙»). 토스트의 되돌리기와 ⌘Z 가 같은 스냅샷을 무른다(폰에는 ⌘Z 가 없다)
     try {
       const r = await api<{ to: string[]; failed: string[] }>(`/bots/${bot.id}/trash`, { body: { rels } })
       setSel(new Set())
-      say(r.failed.length ? `${r.to.length}개 옮기고 ${r.failed.length}개는 못 옮겼어요` : `${what} 를 휴지통으로`)
+      const back = async () => {
+        try {
+          const list = await api<{ t: number; op: string; from: string; to: string }[]>('/undo')
+          const hits = list.filter((e) => r.to.includes(e.to))
+          for (const e of hits) await api('/undo', { body: { t: e.t } })
+          say(hits.length ? `되돌렸어요 — ${hits.length > 1 ? `${hits.length}개` : hits[0].from.split('/').pop()}` : '되돌릴 게 없어요')
+          refreshOpen()
+        } catch (e2) { say((e2 as Error).message) }
+      }
+      say(r.failed.length ? `${r.to.length}개 옮기고 ${r.failed.length}개는 못 옮겼어요` : `${what} 를 휴지통으로 옮겼어요`, r.to.length ? { label: '되돌리기', run: back } : undefined)
       refreshOpen()
     } catch (e) { say((e as Error).message) }
   }

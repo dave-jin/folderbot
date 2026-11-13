@@ -120,7 +120,7 @@ export function LocalOpenHost() {
     <div className="modal conf lopen" style={{ width: 'min(520px,calc(100% - 24px))' }}>
       <div className="modal-h"><div className="t"><b>동기화 중 — {a.name}</b></div></div>
       <div className="modal-b" style={{ padding: '2px 22px 6px' }}><p className="cbody">호스트 {fmtTime(a.hostAt)} · 내 기기 {a.localAt ? fmtTime(a.localAt) : '없음'}. 이 기기의 사본이 호스트와 달라요. 도착하면 자동으로 열어 드릴까요?</p></div>
-      <div className="modal-f"><button className="btn" onClick={() => done('download')}>호스트에서 받기</button><button className="btn" onClick={() => done('force')}>그래도 열기</button><span className="sp" /><button className="btn" onClick={() => done(null)}>취소</button><button className="btn on" autoFocus onClick={() => done('wait')}>기다렸다 열기</button></div>
+      <div className="modal-f"><button className="btn" onClick={() => done('download')}>호스트에서 받기</button><button className="btn" onClick={() => done('force')}>그래도 열기</button><span className="sp" /><button className="btn" onClick={() => done(null)}>취소</button><button className="btn primary" autoFocus onClick={() => done('wait')}>기다렸다 열기</button></div>
     </div>
   </>
 }

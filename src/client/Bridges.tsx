@@ -319,7 +319,7 @@ export function BridgesPane() {
     <Row t="지금 연결" d={b?.peers.length ? '레일의 «연결» 절에도 보여요. 누르면 편지 스레드가 열려요' : '아직 연결이 없어요 — 바깥 에이전트(클라우드 비서·스크립트·자동화)와 편지 파일로 대화하는 길이에요'} />
     {b?.peers.map((p) => <div className="brg-prow" key={p.id} data-peer={p.id}><PeerIcon p={p} size={24} /><span className="n"><b>{p.name}</b><small>{p.mailbox} · trust {p.trust}{p.host ? ` · ${p.host}` : ''}</small></span>{p.stale ? <span className="brg-pill e">끊김</span> : null}</div>)}
     {b?.errors.length ? <div className="brg-err">⚠ .claude/bridges.yml — {b.errors.join(' · ')}</div> : null}
-    <Row t="새 연결 만들기" d="세 단계 — 상대 종류 → 우편함 자리·권한 → 만들기. 우편함 폴더와 README 를 만들고, 상대에게 줄 한 줄을 알려 드려요"><button className="btn on" onClick={() => setWiz(true)}>만들기</button></Row>
+    <Row t="새 연결 만들기" d="세 단계 — 상대 종류 → 우편함 자리·권한 → 만들기. 우편함 폴더와 README 를 만들고, 상대에게 줄 한 줄을 알려 드려요"><button className="btn primary" onClick={() => setWiz(true)}>만들기</button></Row>
   </>
 }
 
@@ -361,7 +361,7 @@ function BridgeWizard({ onDone }: { onDone: () => void }) {
     {head}
     {step === 1 ? <>
       {PRESETS.map((p) => <button key={p.id} data-preset={p.id} className={`brg-card ${preset === p.id ? 'on' : ''}`} onClick={() => pick(p.id)}><b><FolderBot shape="bubble" color={peerColor(p.peerId)} size={18} />{p.title}</b><span className="s">{p.sub}</span></button>)}
-      <div className="brg-btns"><button className="btn ghost" onClick={onDone}>취소</button><button className="btn on" onClick={() => { if (!id) setId(freeId(ps.peerId, taken.ids)); setStep(2) }}>다음</button></div>
+      <div className="brg-btns"><button className="btn ghost" onClick={onDone}>취소</button><button className="btn primary" onClick={() => { if (!id) setId(freeId(ps.peerId, taken.ids)); setStep(2) }}>다음</button></div>
     </> : null}
     {step === 2 ? <>
       <div className="brg-fields">
@@ -377,13 +377,13 @@ function BridgeWizard({ onDone }: { onDone: () => void }) {
       {preset === 'webhook' ? <div className="brg-note">들어오는 웹훅을 켜요 — 토큰은 호스트 맥의 <span className="mono">~/.config/secrets/folderbot-bridge-{id || '<id>'}-in.env</span> 에 <span className="mono">TOKEN=…</span>(16자 이상 · 0600)으로 직접 만들어요. 같은 tailnet 에서만 받아요.</div> : null}
       {problems.length ? <div className="brg-err">{problems.join(' · ')}</div> : null}
       {err ? <div className="brg-err">{err}</div> : null}
-      <div className="brg-btns"><button className="btn ghost" onClick={() => setStep(1)}>이전</button><button className="btn on" disabled={!!problems.length || busy} onClick={() => void create()}>{busy ? '만드는 중…' : '만들기'}</button></div>
+      <div className="brg-btns"><button className="btn ghost" onClick={() => setStep(1)}>이전</button><button className="btn primary" disabled={!!problems.length || busy} onClick={() => void create()}>{busy ? '만드는 중…' : '만들기'}</button></div>
     </> : null}
     {step === 3 && done ? <>
       <div className="brg-f">상대에게 이 한 줄을 주세요<div className="brg-copy mono">{done.line}</div></div>
       <div className="brg-note">만들었어요 — 우편함 폴더 {done.created.length || 0}개{done.readmeKept ? ' · README 는 이미 있던 것을 그대로 뒀어요' : ' · README(FBMF v1 + 이 상대용 예시)'} · {done.configFile} 에 한 줄</div>
       {err ? <div className="brg-err">{err}</div> : null}
-      <div className="brg-btns"><button className="btn ghost" onClick={() => void copySay(done.line, say, '복사했어요 — 상대에게 붙여 넣으세요')}><Icon n="copy" size={12} /> 한 줄 복사</button><button className="btn on" onClick={onDone}>닫기</button></div>
+      <div className="brg-btns"><button className="btn ghost" onClick={() => void copySay(done.line, say, '복사했어요 — 상대에게 붙여 넣으세요')}><Icon n="copy" size={12} /> 한 줄 복사</button><button className="btn primary" onClick={onDone}>닫기</button></div>
     </> : null}
   </div>
 }

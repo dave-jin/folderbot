@@ -9,7 +9,7 @@ import { holdHeader, holdLine, holderOf, type Holder } from '../core/waiting'
 import { cliNeedsUpdate, cliVersionShort, cliUpdateLine } from '../core/cliUpdate'
 import { docKey, pendingDoc } from '../core/docReq'
 import { notePlain } from '../core/mdPlain'
-import { AskHost, ConfirmHost, DiffHost, FolderPicker, Md, NotifyCenter, chipMark, Onboarding, Pairing, RoutineSheet, Settings, preloadDirIndex, askConfirm, askName, showDiff, useToast } from './Sheets'
+import { AskHost, ConfirmHost, DiffHost, FolderPicker, Md, NotifyCenter, chipMark, Onboarding, Pairing, RoutineSheet, Settings, preloadDirIndex, askConfirm, askName, deleteSession, showDiff, useToast, type Say } from './Sheets'
 import { AgentPickHost, pickAgent } from './AgentPick'
 import type { SecId } from './Settings'
 import { VendorMark } from './Brand'
@@ -266,7 +266,7 @@ const isDesktop = typeof desk !== 'undefined'
  *    셸(updater.js)은 이제 어느 모드에서도 스스로 적용하지 않는다. 다 받으면 이 훅이 **버전 칩 위 팝업**을 한 번
  *    연다(`ask`) — 누르는 건 사람이다. 「나중에」 하면 칩만 초록으로 남고, 칩을 누르면 같은 팝업이 다시 뜬다.
  */
-function useUpdate(say: (m: string) => void): [UpdState | null, () => void, () => void, string, (v: string) => void, (on: boolean) => void] {
+function useUpdate(say: Say): [UpdState | null, () => void, () => void, string, (v: string) => void, (on: boolean) => void] {
   const [st, setSt] = useState<UpdState | null>(null)
   const [ask, setAsk] = useState('')          // 팝업을 열어 둘 버전 — '' 이면 닫힘
   const readyRef = useRef('')
@@ -306,7 +306,7 @@ function UpdateAsk({ st, onApply, onLater, onDawn, anchor = '.sb-foot .bd.upd' }
     {st.dawn ? <div className="dawn-on" data-dawn={st.dawn.at}><span className="dot hold" />새벽 {dawnText(st.dawn.at)} 에 적용 예약{st.dawn.note ? <small> · {st.dawn.note}</small> : null}</div> : null}
     <div className="btns"><button className="btn ghost" onClick={onLater}>나중에</button>
       {onDawn ? <button className="btn ghost dawn-b" onClick={() => onDawn(!st.dawn)} title="4시에 도는 세션·30분 안 루틴이 있으면 30분씩 미뤄요(5시 넘으면 다음 날)">{st.dawn ? '새벽 예약 취소' : '새벽 4시에 적용'}</button> : null}
-      {onApply ? <button className="btn on" onClick={onApply}>지금 재시작해서 적용</button> : null}</div>
+      {onApply ? <button className="btn primary" onClick={onApply}>지금 재시작해서 적용</button> : null}</div>
   </div>
 }
 function UpdateChip({ version, st, onCheck, onApply }: { version: string; st: UpdState | null; onCheck: () => void; onApply: () => void }) {
@@ -322,7 +322,7 @@ function UpdateChip({ version, st, onCheck, onApply }: { version: string; st: Up
  * BX · 원격 화면(폰 아닌 브라우저 · 맥북 원격 앱)에서 **호스트 맥의** 받아 둔 업데이트 — «새벽 4시에 적용» 만 건다(목업 ③A «원격에서도 누를 수 있다»).
  * «지금 적용» 은 호스트 맥 화면에서만 — 원격에서 누르면 보고 있던 화면째 끊긴다. 셸 없는 호스트(터미널)는 404 라 아무것도 안 그린다.
  */
-function HostUpdateChip({ say }: { say: (m: string) => void }) {
+function HostUpdateChip({ say }: { say: Say }) {
   const [st, setSt] = useState<UpdState | null>(null)
   const [open, setOpen] = useState(false)
   useEffect(() => {
@@ -457,7 +457,7 @@ function Main() {
   const [setSec, setSetSec] = useState<SecId | undefined>(undefined)
   useEffect(() => { const f = (e: Event) => { setSetSec((e as CustomEvent).detail as SecId); setModal('settings') }; window.addEventListener('fb:settings', f); return () => window.removeEventListener('fb:settings', f) }, [])
   const [drag, setDrag] = useState<'' | 'x' | 'y'>('')
-  const [toast, say] = useToast()
+  const [toast, say, clearToast] = useToast()
   const [prefill, setPrefill] = useState('')
   /** CJ · 폰 알약에서 «오케스트레이터에게 보내기» — 그 봇의 대화가 화면에 선 뒤 한 번 보낸다(Chat 이 `botId` 를 맞춰 보고 보낸다) */
   const [sendReq, setSendReq] = useState<{ botId: string; text: string; n: number } | null>(null)
@@ -974,7 +974,7 @@ function Main() {
 
   const hovRow = hov ? stripBots.find((x) => x.b.id === hov.id) : undefined
   // 트리 우클릭 «여기서 에이전트 시작» · «새 폴더 만들기 → 시작» — 볼트 상대 경로로
-  const startAt = async (rel: string, botId?: string) => { if (botId) { go(botId); return } if (!bot.orchestrator && !confirm(`상위 봇 ${bot.name} 와 폴더가 겹쳐요. 그래도 여기서 시작할까요?`)) return; const provider = await pickAgent(rel); if (!provider) return; try { const b = await api<Bot>('/bots/start', { body: { rel, provider } }); await refresh(); go(b.id); say(`${b.name} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
+  const startAt = async (rel: string, botId?: string) => { if (botId) { go(botId); return } if (!bot.orchestrator && !(await askConfirm({ title: '폴더가 겹쳐요', body: `상위 봇 ${bot.name} 와 폴더가 겹쳐요. 그래도 여기서 시작할까요?`, ok: '여기서 시작' }))) return; const provider = await pickAgent(rel); if (!provider) return; try { const b = await api<Bot>('/bots/start', { body: { rel, provider } }); await refresh(); go(b.id); say(`${b.name} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
   const newFolderAt = async (parent: string) => { const name = await askName(`${parent || '볼트'} 안에 만들 폴더 이름`); if (!name?.trim()) return; const provider = await pickAgent(`${parent ? parent + '/' : ''}${name.trim()}`); if (!provider) return; try { const r = await api<{ rel: string; bot: Bot }>('/folders', { body: { section: parent, name: name.trim(), start: true, provider } }); await refresh(); go(r.bot.id); say(`${r.rel} 에서 시작했어요`) } catch (e) { say((e as Error).message) } }
   // BO · 누르는 순간 그 세션으로 간다 — 만들기는 뒤에서(`newSession.ts`). ⛔ 여기서 호스트 답이나 /state 를 기다리지 않는다
   const newSession = async () => { startSession({ bot, name: `세션 ${sessions.filter((x) => sessArea(x) === 'chat').length + 1}`, defaults: s.defaults, dispatch, go, prev: sessionId, say, after: () => void refreshModels() }) }
@@ -1122,7 +1122,7 @@ function Main() {
           {s.bots.find((x) => x.id === railCtx.id)?.orderedBy === 'user' ? <button className="unfix" onClick={async () => { try { await api('/bots/unfix', { body: { id: railCtx.id } }); say('순서 고정을 풀었어요 — 오케스트레이터가 옮길 수 있어요'); await refresh() } catch (e) { say((e as Error).message) } }}><Icon n="sort" size={13} /><span style={{ flex: 1 }}>순서 고정 해제</span><span className="k">끌어 놓은 자리</span></button> : null}
           <button onClick={() => { const b = s.bots.find((x) => x.id === railCtx.id); if (b) pickColor(b) }}><span className="csdot" style={{ background: s.bots.find((x) => x.id === railCtx.id)?.color }} /><span style={{ flex: 1 }}>색 바꾸기</span></button>
           <button onClick={async () => { try { await api(`/bots/${railCtx.id}/stop`, { body: {} }); say(`${railCtx.name} 을 레일에서 덜어냈어요 — 폴더는 그대로예요`); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="x" size={13} /><span style={{ flex: 1 }}>지우기 (연결 해지)</span><span className="k">폴더 유지</span></button>
-          <button onClick={async () => { if (!confirm(`${railCtx.name} 을 Archive 로 옮기고 은퇴시킬까요? 세션 기록은 보관돼요.`)) return; try { const r = await api<{ to: string }>(`/bots/${railCtx.id}/retire`, { body: {} }); say(`${r.to} 로 은퇴`); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="archive" size={13} /><span style={{ flex: 1 }}>은퇴 (Archive 로)</span></button>
+          <button onClick={async () => { const c = railCtx; if (!(await askConfirm({ title: `${c.name} 봇을 은퇴시킬까요?`, body: '폴더를 Archive 로 옮기고 봇을 쉬게 합니다. 세션 기록은 보관돼요.', ok: '은퇴', danger: true }))) return; try { const r = await api<{ to: string }>(`/bots/${c.id}/retire`, { body: {} }); say(`${r.to} 로 은퇴`); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="archive" size={13} /><span style={{ flex: 1 }}>은퇴 (Archive 로)</span></button>
         </div></Float> : null}
         {/* ⛔ 맥에서는 사용량을 앱 안에 안 그린다 — **메뉴바에서만** 본다 (2026-09-13 Dave: «맥에서는 그냥 메뉴바 안에서만 이게 보이면 좋겠어»).
             폰은 첫 화면 위 스트립 하나로 남는다. 두 표면 다 있으면 같은 숫자가 두 번 보이고 아래 줄이 또 비좁아진다. */}
@@ -1235,7 +1235,8 @@ function Main() {
     </div></> : null}
     <DiffHost />
     <AgentPickHost />
-    {toast ? <div className="toast">{toast}</div> : null}
+    {/* 토스트 — 단추가 달리면(«되돌리기») 그 시간 동안 남는다. 단추를 누르면 토스트를 걷고 그 일을 한다. 글 쪽을 누르면 걷기만 한다(폰에서 입력칸을 10초 가리지 않게) */}
+    {toast.msg ? <div className="toast" role="status" onClick={clearToast}><span>{toast.msg}</span>{toast.act ? <button className="tact" data-toast-act onClick={(e) => { e.stopPropagation(); const a = toast.act; clearToast(); void a?.run() }}>{toast.act.label}</button> : null}</div> : null}
     <CopyProgressHost />
   </div>
 }
@@ -1390,7 +1391,7 @@ function BotName({ b, chip = true }: { b: Bot; chip?: boolean }) {
   return <span ref={ref} className="bname" title={b.name}><b className="dn">{b.displayName}</b>{b.kind && !hideTag ? <span className="tag">{b.kind}</span> : null}{due ? <span className={`due ${due.tone}`} title={due.line ? `할 일 마감 — ${b.name}` : undefined}>{due.text}</span> : null}</span>
 }
 
-function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, prefetch, onPeer, openCtx }: { /** 맥락 상황판 열기 */ openCtx: (g?: { bot: string; task?: string }) => void; /** BQ-9 · 연결 상대를 누르면 편지 스레드 */ onPeer?: (p: PeerView) => void; prefetch: (botId: string) => void; railSort: RailSort; setRailSort: (k: RailSort) => void; rows: Row[]; bot: Bot; go: (b: string, sid?: string) => void; setModal: (m: ModalKey) => void; waiting: number; onAsk: (text?: string) => void; say: (m: string) => void }) {
+function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, prefetch, onPeer, openCtx }: { /** 맥락 상황판 열기 */ openCtx: (g?: { bot: string; task?: string }) => void; /** BQ-9 · 연결 상대를 누르면 편지 스레드 */ onPeer?: (p: PeerView) => void; prefetch: (botId: string) => void; railSort: RailSort; setRailSort: (k: RailSort) => void; rows: Row[]; bot: Bot; go: (b: string, sid?: string) => void; setModal: (m: ModalKey) => void; waiting: number; onAsk: (text?: string) => void; say: Say }) {
   const usage = useUsage() // 폰 홈 맨 위 — 한 줄 띠. 누르면 카드가 시트로 올라온다
   const [uSheet, setUSheet] = useState(false)
   useEsc(() => setUSheet(false), uSheet)
@@ -1525,7 +1526,7 @@ interface FileNode { rel: string; dir: boolean; mtime: number }
 // ⚠ 맥 파일 이름은 NFD 로 저장된다 — 비교 전에 양쪽을 NFC 로 맞추지 않으면 한글이 «아예» 안 걸린다(core/search 머리말)
 const fuzzy = (q: string, s: string): number => { if (!q) return 1; const t = norm(s); const nq = norm(q); if (t.includes(nq)) return t.startsWith(nq) ? 3 : 2; let i = 0; for (const c of t) if (c === nq[i]) i++; return i === nq.length ? 1 : 0 }
 
-function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pending, prefill, onPrefilled, sendReq, onSendReq, attachReq, onAttached, mentionReq, onMentioned, focusReq, cardFocusReq, onSession, onFile, docBadge, docTabs, docOn, onDocToggle, say, refreshAll, collapsed, onUncollapse, phone, onBack, onPanel, newSession, filesTick, queue, onQueue, onReveal }: { bot: Bot; sessions: SessionInfo[]; cur?: SessionInfo; items: ChatItem[]; loaded: boolean; /** CF · 대화 칸 단계(`core/loadPhase`) */ phase?: ChatPhase; /** CF ④ · 받는 동안 흐리게 남기는 옛 대화 — 그리기만(그 대화의 봇·세션으로 그린다 · 파일 칩이 새 폴더 기준으로 풀리지 않게) */ ghost?: { sid: string; items: ChatItem[]; bot: Bot }; pending: PermissionRequest[]; prefill: string; onPrefilled: () => void; sendReq: { botId: string; text: string; n: number } | null; onSendReq: () => void; attachReq: Att[]; onAttached: () => void; mentionReq: string[]; onMentioned: () => void; focusReq: number; /** EC · 이 세션의 승인·질문 카드에 초점을 두라(⌘J 로 뛰어왔다) */ cardFocusReq?: { sid: string; n: number } | null; onSession: (sid: string) => void; onFile: (rel: string, pin?: boolean) => void; docBadge: number; docTabs: string[]; docOn: boolean; onDocToggle: () => void; say: (m: string) => void; refreshAll: () => Promise<void>; collapsed: boolean; onUncollapse: () => void; phone: boolean; onBack: () => void; onPanel: () => void; newSession: () => Promise<void>; filesTick?: number; queue: string[]; onQueue: (f: (q: string[]) => string[]) => void; onReveal: (rel: string) => void }) {
+function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pending, prefill, onPrefilled, sendReq, onSendReq, attachReq, onAttached, mentionReq, onMentioned, focusReq, cardFocusReq, onSession, onFile, docBadge, docTabs, docOn, onDocToggle, say, refreshAll, collapsed, onUncollapse, phone, onBack, onPanel, newSession, filesTick, queue, onQueue, onReveal }: { bot: Bot; sessions: SessionInfo[]; cur?: SessionInfo; items: ChatItem[]; loaded: boolean; /** CF · 대화 칸 단계(`core/loadPhase`) */ phase?: ChatPhase; /** CF ④ · 받는 동안 흐리게 남기는 옛 대화 — 그리기만(그 대화의 봇·세션으로 그린다 · 파일 칩이 새 폴더 기준으로 풀리지 않게) */ ghost?: { sid: string; items: ChatItem[]; bot: Bot }; pending: PermissionRequest[]; prefill: string; onPrefilled: () => void; sendReq: { botId: string; text: string; n: number } | null; onSendReq: () => void; attachReq: Att[]; onAttached: () => void; mentionReq: string[]; onMentioned: () => void; focusReq: number; /** EC · 이 세션의 승인·질문 카드에 초점을 두라(⌘J 로 뛰어왔다) */ cardFocusReq?: { sid: string; n: number } | null; onSession: (sid: string) => void; onFile: (rel: string, pin?: boolean) => void; docBadge: number; docTabs: string[]; docOn: boolean; onDocToggle: () => void; say: Say; refreshAll: () => Promise<void>; collapsed: boolean; onUncollapse: () => void; phone: boolean; onBack: () => void; onPanel: () => void; newSession: () => Promise<void>; filesTick?: number; queue: string[]; onQueue: (f: (q: string[]) => string[]) => void; onReveal: (rel: string) => void }) {
   const { s } = useStore()
   const [text, setText] = useState(''); const [caret, setCaret] = useState(0); const [sessMenu, setSessMenu] = useState<Anchor | null>(null); const sessDown = useRef(false); const [busy, setBusy] = useState(false)
   const [attach, setAttach] = useState<Att[]>([]); const [pop, setPop] = useState<'' | 'plus' | 'mode' | 'model' | 'effort' | 'ctx'>(''); const [pickOpen, setPickOpen] = useState(false); const [uploading, setUploading] = useState(false)
@@ -2110,7 +2111,7 @@ function Chat({ bot, sessions, cur, items, loaded, phase = 'ready', ghost, pendi
   //    «같은 단추로 닫기» 는 누르는 순간 열려 있었는지(`sessDown`)로 가린다: 메뉴의 바깥 누르기가 먼저 닫고, 뒤따르는 click 은 다시 열지 않는다. 키보드(⏎·Space · detail 0)는 상태로 바로 뒤집는다.
   const sessMenuEl = sessMenu ? <Float at={sessMenu} onClose={() => setSessMenu(null)} className="menu sessm" width={220}><div style={{ display: 'contents' }} onClick={() => setSessMenu(null)}>{/* ⚠ 세션 이름 **오른쪽에** 회사 표식 (2026-09-13 Dave: «세션 뒤에는 모든 곳에 … 세션이름 우측에
                   아이콘이 있어야 해»). 벤더는 폴더가 아니라 세션의 성질이라 세션이 보이는 곳마다 따라다녀야 한다 */}
-              {sessions.filter((x) => sessArea(x) === 'chat').map((x) => <button key={x.id} className={x.id === cur?.id ? 'on' : ''} onClick={() => onSession(x.id)}><span className={`dot ${stateDot(x.state)}`} /><span>{x.name}</span><VendorMark vendor={x.vendor} size={11} /><span style={{ flex: 1 }} /><span className="k">{x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span></button>)}{sessions.some((x) => sessArea(x) === 'auto') ? <><hr /><div className="mhead">자동화</div>{sessions.filter((x) => sessArea(x) === 'auto').map((x) => <button key={x.id} className={x.id === cur?.id ? 'on' : ''} onClick={() => onSession(x.id)}><span className={`dot ${stateDot(x.state)}`} /><span>{x.name}</span><VendorMark vendor={x.vendor} size={11} /><span style={{ flex: 1 }} /><span className="k">{x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span></button>)}</> : null}<hr /><button onClick={() => void newSession()}><Icon n="plus" size={12} /><span>새 세션</span></button>{cur ? <button onClick={async () => { const n = await askName('세션 이름', cur.name); if (n?.trim()) await api(`/sessions/${cur.id}/rename`, { body: { name: n.trim() } }) }}><Icon n="edit" size={12} /><span>이름 바꾸기</span></button> : null}{cur ? <button className="warn" onClick={async () => { if (confirm('이 세션 기록을 지울까요?')) { await api(`/sessions/${cur.id}`, { method: 'DELETE' }); await refreshAll() } }}><Icon n="x" size={12} /><span>세션 삭제</span></button> : null}</div></Float> : null
+              {sessions.filter((x) => sessArea(x) === 'chat').map((x) => <button key={x.id} className={x.id === cur?.id ? 'on' : ''} onClick={() => onSession(x.id)}><span className={`dot ${stateDot(x.state)}`} /><span>{x.name}</span><VendorMark vendor={x.vendor} size={11} /><span style={{ flex: 1 }} /><span className="k">{x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span></button>)}{sessions.some((x) => sessArea(x) === 'auto') ? <><hr /><div className="mhead">자동화</div>{sessions.filter((x) => sessArea(x) === 'auto').map((x) => <button key={x.id} className={x.id === cur?.id ? 'on' : ''} onClick={() => onSession(x.id)}><span className={`dot ${stateDot(x.state)}`} /><span>{x.name}</span><VendorMark vendor={x.vendor} size={11} /><span style={{ flex: 1 }} /><span className="k">{x.hibernated ? '절전' : fmtTime(x.lastActivity)}</span></button>)}</> : null}<hr /><button onClick={() => void newSession()}><Icon n="plus" size={12} /><span>새 세션</span></button>{cur ? <button onClick={async () => { const n = await askName('세션 이름', cur.name); if (n?.trim()) await api(`/sessions/${cur.id}/rename`, { body: { name: n.trim() } }) }}><Icon n="edit" size={12} /><span>이름 바꾸기</span></button> : null}{cur ? <button className="warn" onClick={() => { void deleteSession(cur, say, refreshAll, async () => { await refreshAll(); onSession(cur.id) }).catch((e) => say((e as Error).message)) }}><Icon n="x" size={12} /><span>세션 삭제</span></button> : null}</div></Float> : null
   /**
    * 🔴 **채팅에 쓴 한 줄을 그대로 루틴으로** (2026-09-13 Dave: «루틴을 폴더 채팅에서 바로 채팅으로 생성»).
    *    「매주 월요일 아침 9시에 지난주 정리해 줘」 라고 써 두고 + → 루틴으로 만들기 를 누르면
@@ -2575,7 +2576,7 @@ const ANCHORED = new Map<string, { at: number; id: string | null }>()
 /** 어느 세션의 줄인가 — 「전후 diff」 가 «전» 을 찾을 때 쓴다. 줄마다 prop 으로 내리면 ToolLine·Item 셋을 다 바꿔야 한다 */
 const SidCtx = createContext<{ sid: string; botId: string }>({ sid: '', botId: '' })
 /** EA · 서브에이전트 카드의 [멈추기] — 그 작업 하나만 멈춘다. 답이 올 때까지 다시 못 누른다 */
-function SubStop({ sid, taskId, name, say }: { sid: string; taskId: string; name: string; say: (m: string) => void }) {
+function SubStop({ sid, taskId, name, say }: { sid: string; taskId: string; name: string; say: Say }) {
   const [busy, setBusy] = useState(false)
   return <button className="sstop" disabled={busy} title="이 작업 하나만 멈춰요" aria-label="이 작업 멈추기" onClick={async () => { setBusy(true); await stopOneTask(sid, taskId, say, name); setBusy(false) }}><Icon n="stop" size={8} /><span className="w">{busy ? '멈추는 중' : '멈추기'}</span></button>
 }
@@ -2583,7 +2584,7 @@ function DiffBtn({ abs, onOpen }: { abs: string; onOpen: () => void }) {
   const { sid, botId } = useContext(SidCtx)
   return <button type="button" className="dchip" title="전후 비교" onClick={() => showDiff({ botId, sid, abs, onOpen })}><Icon n="diff" size={11} /></button>
 }
-function Item({ it, bot, items, onFile, onReveal, onDrill, state, say, isLastAssistant, isLastUser, userRef, onRetry }: { it: ChatItem; bot: Bot; items: ChatItem[]; onFile: (p: string) => void; onReveal: (rel: string) => void; onDrill: (id: string) => void; state: string; say: (m: string) => void; isLastAssistant: boolean; isLastUser: boolean; userRef: React.MutableRefObject<HTMLDivElement | null>; onRetry?: () => void }) {
+function Item({ it, bot, items, onFile, onReveal, onDrill, state, say, isLastAssistant, isLastUser, userRef, onRetry }: { it: ChatItem; bot: Bot; items: ChatItem[]; onFile: (p: string) => void; onReveal: (rel: string) => void; onDrill: (id: string) => void; state: string; say: Say; isLastAssistant: boolean; isLastUser: boolean; userRef: React.MutableRefObject<HTMLDivElement | null>; onRetry?: () => void }) {
   const [open, setOpen] = useState(false)
   const { sid } = useContext(SidCtx)
   switch (it.kind) {
@@ -2792,8 +2793,11 @@ function PermCard({ p, sid, keys }: { p: PermissionRequest; sid: string; keys?: 
     e.preventDefault(); e.stopPropagation(); if (!busy) void act({ allow: true }, 'permission')
   }
   return <div className="card" data-req={p.requestId} data-kind="perm" tabIndex={-1} onKeyDown={onCardKey}><div className="lab">권한 · {p.displayName}</div><div className="q">{human}</div><div className="cmd">{cmd}</div>
-    {err ? <div className="meta perr" role="alert">{err}</div> : null}<div className="btns"><button className="btn primary" data-act="allow" disabled={busy} onClick={() => act({ allow: true }, 'permission')}>허용</button>{p.suggestions.length ? <button className="btn" disabled={busy} title={rulesLabel(p.suggestions)} onClick={() => act({ allow: true, always: true }, 'permission')}>이 세션에서 항상 허용</button> : null}<button className="btn ghost" data-act="deny" disabled={busy} onClick={() => act({ allow: false }, 'permission')}>거부</button>
+    {err ? <div className="meta perr" role="alert">{err}</div> : null}{/* 🔴 [허용] 은 **오른쪽 끝** (2026-11-13 Dave 카드 «오른쪽 끝으로» · 부품 넷) — 창의 발 · 질문 카드와 같은 자리. 종전에는 왼쪽 첫 자리였다. ⏎ 허용 · ⎋ 거부는 그대로.
+        순서: [거부] 키 안내 … [이 세션에서 항상 허용] [허용] */}
+    <div className="btns perm-btns"><button className="btn ghost" data-act="deny" disabled={busy} onClick={() => act({ allow: false }, 'permission')}>거부</button>
       {/* 키 안내 — 카드에 초점이 있으면 «↩ 허용 · ⎋ 거부», 없으면 ↩ 는 입력칸의 것이라 «⌘J 로 초점 · ⎋ 거부» 만 말한다 */}
-      {keys ? <span className="pkeys" aria-hidden="true"><span className="pk-on">↩ 허용 · ⎋ 거부</span><span className="pk-off">⌘J 초점 · ⎋ 거부</span></span> : null}</div>
+      {keys ? <span className="pkeys" aria-hidden="true"><span className="pk-on">↩ 허용 · ⎋ 거부</span><span className="pk-off">⌘J 초점 · ⎋ 거부</span></span> : null}<span className="sp" />
+      {p.suggestions.length ? <button className="btn" disabled={busy} title={rulesLabel(p.suggestions)} onClick={() => act({ allow: true, always: true }, 'permission')}>이 세션에서 항상 허용</button> : null}<button className="btn primary" data-act="allow" disabled={busy} onClick={() => act({ allow: true }, 'permission')}>허용</button></div>
     {p.suggestions.length ? <div className="meta rule">항상 허용 = {rulesLabel(p.suggestions) || '이 도구'}</div> : null}</div>
 }

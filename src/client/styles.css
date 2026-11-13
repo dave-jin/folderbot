@@ -50,6 +50,9 @@ b,strong { color:var(--w); font-weight:600 }
    ⛔ hover 도 `#fff` 로 박지 않는다. 라이트에서 흰 배경 + 흰 글자가 된다 — 투명도로 민다. */
 .btn.primary { background:var(--w); color:var(--onAccent); border-color:var(--w); font-weight:600 } .btn.primary:hover { opacity:.86 }
 .btn.ghost { border-color:transparent; color:var(--t3) } .btn.ghost:hover { color:var(--t2) }
+/* 단추 넷 (2026-11-13 · UX/UI 정리 «부품 넷») — 주 행동 `primary`(흰 채움 · 한 화면에 하나) · 보조(기본) · 글자 `ghost` · 지우기 `danger`. 작은 자리에는 `sm` 을 덧붙인다.
+   ⛔ `btn on` 을 주 행동에 쓰지 않는다(켜진 상태는 `.seg button.on` · `.ib.on` 이 말한다) — `test/unit/partsRules.test.ts` */
+.btn.sm { min-height:24px; padding:2px 9px; font-size:12px }
 .btn:disabled { opacity:.45; cursor:default }
 .chip { vertical-align:middle; display:inline-flex; align-items:center; gap:5px; font-family:var(--mono); font-size:12px; color:var(--t2); border:1px solid var(--line2); border-radius:6px; padding:1px 7px; max-width:100%; cursor:pointer } .chip:hover { color:var(--w); border-color:var(--t3) } .chip span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .hdr { height:var(--hh); flex:none; display:flex; align-items:center; gap:8px; padding:0 14px; border-bottom:1px solid var(--line); font-size:13px; min-width:0 } .hdr .ttl { color:var(--w); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 } .hdr .sp { flex:1 } .hdr .acts { display:flex; gap:2px; flex:none }
@@ -394,6 +397,8 @@ b,strong { color:var(--w); font-weight:600 }
 .card[data-req] { outline:0 }
 .card[data-req]:focus { outline:1px solid var(--wait); outline-offset:8px; border-radius:6px }
 .card .pkeys { margin-left:auto; font-size:11px; color:var(--t3); white-space:nowrap }
+.card .perm-btns { flex-wrap:nowrap } .card .perm-btns .btn { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.card .perm-btns .pkeys { margin-left:0; flex:0 1000 auto; min-width:0; overflow:hidden; text-overflow:ellipsis } .card .perm-btns .sp { flex:1; min-width:0 }   /* 줄이 좁으면(문서 창을 연 채팅 칸) 키 안내가 먼저 줄어든다 — [허용] 이 다음 줄로 밀리지 않게 */   /* 승인 카드 — [거부] 키 안내 … [항상 허용] [허용]. [허용] 이 오른쪽 끝(2026-11-13 Dave) */
 .card .pkeys .pk-on { display:none; color:var(--t2) }
 .card[data-kind="perm"]:focus .pkeys .pk-on { display:inline }
 .card[data-kind="perm"]:focus .pkeys .pk-off { display:none }
@@ -605,6 +610,9 @@ b,strong { color:var(--w); font-weight:600 }
 .perm-gate .perm-rows { display:flex; flex-direction:column; gap:10px } .perm-row { border:1px solid var(--line); border-radius:8px; padding:12px 14px; background:var(--bg2); display:flex; flex-direction:column; gap:8px } .perm-row.granted { opacity:.75 } .perm-row .ph { display:flex; align-items:center; gap:8px; color:var(--w) } .perm-row .tag { font-size:11px; color:var(--t3); border:1px solid var(--line2); border-radius:4px; padding:0 5px } .perm-row .badge { margin-left:auto; font-size:12px; color:var(--t3) } .perm-row .badge.granted { color:var(--done) } .perm-row .badge.missing { color:var(--err) } .perm-row .why { margin:0; color:var(--t2); font-size:13px } .perm-row .how { margin:0; padding-left:18px; color:var(--t3); font-size:12px; line-height:1.6 } .perm-row .acts { display:flex; gap:6px; flex-wrap:wrap } .perm-gate .hint { font-size:13px; color:var(--wait) } .btn.on { background:var(--sel); color:var(--w) } .btn:disabled { opacity:.45; cursor:default }
 .pair input { width:100%; background:var(--box); border:1px solid var(--line2); border-radius:8px; padding:14px; font-size:22px; letter-spacing:.3em; text-align:center; outline:0; font-family:var(--mono) } .pair .err { color:var(--err); font-size:13px }
 .toast { position:fixed; left:50%; bottom:calc(24px + var(--sab)); transform:translateX(-50%); background:var(--box); border:1px solid var(--line2); border-radius:8px; padding:8px 14px; font-size:13px; z-index:var(--z-over); box-shadow:var(--sh-2) }
+/* 폭은 글 길이대로(max-content) — `left:50%` 만 두면 줄일 수 있는 폭이 화면 절반이라 폰에서 글이 세 줄로 접혔다. 폰에서는 하단 탭 위에 선다(10초짜리 «되돌리기» 가 탭을 가리지 않게). 누르면 걷힌다 */
+.toast { display:flex; align-items:center; gap:12px; width:max-content; max-width:calc(100% - 24px); cursor:pointer } .app.phone .toast { bottom:calc(max(var(--tablift), var(--sab)) + 12px) } .app.phone:not(.kb) .toast { transition:bottom var(--t-mid) var(--ease) }   /* 🔴 입력칸(`.chat-foot`)과 같은 전환 — 초점이 빠져 탭이 돌아올 때 토스트만 한 번에 56px 튀어 오르면 손가락 밑(첨부 칩의 ✕)을 덮어 그 누름을 삼킨다(스모크 N-3 이 잡았다) */
+.toast .tact { color:var(--run); font-weight:600; white-space:nowrap; flex:none }   /* 토스트의 단추 — «되돌리기». 세션 정리의 `.cundo` 와 같은 색 */
 /* ── 폰 폴더 고르기 (V17 B안) — 한 단계씩 들어간다. 이름이 폭을 전부 쓰고 오른쪽엔 꺾쇠뿐 ── */
 .pk.phone { inset:0; width:100%; height:100%; max-height:none; border-radius:0; display:flex; flex-direction:column }
 .pk.phone .ph-h { display:flex; align-items:center; gap:8px; padding:calc(var(--sat) + 10px) 12px 6px; flex:none }
@@ -770,6 +778,9 @@ b,strong { color:var(--w); font-weight:600 }
   .nmodal .modal-f .sp { display:none }
   .nmodal .modal-f .btn { width:100%; height:40px; justify-content:center }
   .modal.ask { top:calc(var(--sat) + 40px); bottom:auto; height:auto; left:12px; right:12px }
+  /* 확인창(부품 넷 · 목업 «지우기 확인») — 폰에서는 아래에 붙은 시트. 두 줄짜리 물음이 화면을 다 덮지 않고, 두 단추가 반씩 선다 */
+  .modal.conf { top:auto; height:auto; width:auto !important; max-height:calc(100% - var(--sat) - var(--sab) - 16px) }
+  .modal.conf .modal-f { display:grid; grid-template-columns:1fr 1fr; gap:8px } .modal.conf .modal-f .sp { display:none } .modal.conf .modal-f .btn { width:100%; height:44px; justify-content:center }
   .menu.ctx { left:16px !important; right:16px; top:auto !important; bottom:calc(var(--sab) + 16px); border-radius:12px; padding:8px } .menu.ctx button { min-height:48px; font-size:16px; padding:8px 14px; border-radius:8px }
 }
 
@@ -796,12 +807,12 @@ b,strong { color:var(--w); font-weight:600 }
 .ap-env .er .k { width:52px; color:var(--t3); flex:none }
 .ap-env .er .v { flex:1; min-width:0; color:var(--t2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px }
 .ap-f { display:flex; align-items:center; gap:9px } .ap-f .sp { flex:1 }
-.ap-f .btn.on { background:var(--w); color:var(--bg); font-weight:600; display:inline-flex; align-items:center; gap:7px }
+.ap-f .btn.primary { background:var(--w); color:var(--bg); font-weight:600; display:inline-flex; align-items:center; gap:7px }
 @media (max-width:767px) {
   .modal.apick { width:calc(100% - 16px); padding:14px; gap:12px }
   .ap-cards { flex-direction:column }
   .ap-c .ds { min-height:0 }
-  .ap-f .btn.on { flex:1; justify-content:center; height:44px }
+  .ap-f .btn.primary { flex:1; justify-content:center; height:44px }
 }
 
 /* ── 설정 (V25) — 왼쪽 목차 · 한 줄은 늘 «제목 · 설명 · 조작» ─────────────── */
@@ -860,7 +871,7 @@ b,strong { color:var(--w); font-weight:600 }
 /* 작은 타일(64px)은 아이콘+제목+부제목이 1~2px 넘쳤다 — 그동안 부제목 아랫단이 조용히 잘렸고, 줄로 묶자 제목이 눌렸다. 제목은 줄지 않게 하고 여백을 1px 씩 뺀다 */
 .mcards button .n, .mcards button > .sub, .mcards button .subrow { flex:none } .sbtiles .mcards button { padding:7px 9px; gap:1px } .sbtiles .mcards button .n { line-height:1.25 }
 /* 확인창 — 되돌리기 어려운 한 걸음 앞 (모델 바꾸기 등) */
-.modal.conf .cbody { margin:0; font-size:13px; line-height:1.65; color:var(--t2) }
+.modal.conf .cbody { margin:0; font-size:13px; line-height:1.65; color:var(--t2); white-space:pre-wrap; overflow-wrap:anywhere }
 .modal.conf .cskip { display:flex; align-items:center; gap:9px; margin:16px 0 2px; font-size:13px; color:var(--t2); cursor:pointer }
 .modal.conf .cskip input { width:17px; height:17px; accent-color:var(--t3) }
 /* 볼트 루트 고르기 — 줄 아래로 펼쳐지는 폴더 목록 (원격에는 Finder 가 없다) */
@@ -1682,7 +1693,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .tprop .dsub { font-size:11px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
 .tprop.stale .tt { color:var(--t2) } .tprops .pstale { margin:2px 0 0 } .tprops .pstale span:last-child { font-size:12px; color:var(--t3) }
 .tprop .pacts { display:flex; gap:4px; flex:none } .tprop .pacts button { font-size:12px; padding:3px 7px; border-radius:6px; color:var(--t2); background:var(--sel) }
-.tprop .pacts .ok { color:#111; background:var(--done) } .tprop .pacts .no { color:var(--t3); background:transparent }
+.tprop .pacts .ok { color:var(--onAccent); background:var(--w); font-weight:600 }   /* [넣기] — 주 행동은 흰 단추(2026-11-13 · 종전 초록) */ .tprop .pacts .no { color:var(--t3); background:transparent }
 .app.phone .tprop .tt { font-size:15px } .app.phone .tprop .pacts button { font-size:13px; padding:6px 9px }
 
 /* CL-1 · 멈춘 자리 줄 · 대기 붙잡힘 (멈추기 단추는 2026-10-19 부터 진행 줄 `.live .stop` 하나) */

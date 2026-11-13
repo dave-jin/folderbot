@@ -302,7 +302,7 @@ export function FolderPicker({ onClose, onStarted, pick }: { onClose: () => void
   const start = async (rel: string) => {
     if (busy) return
     const role = topRole(rel)
-    if (role === 'archive' && !confirm('보관(Archive) 폴더예요. 그래도 여기서 봇을 시작할까요?')) return
+    if (role === 'archive' && !(await askConfirm({ title: '보관(Archive) 폴더예요', body: '그래도 여기서 봇을 시작할까요?', ok: '여기서 시작' }))) return
     setBusy(true); setErr('')
     try { const provider = await pickAgent(rel); if (!provider) return; const bot = await api<Bot>('/bots/start', { body: { rel, provider } }); await refresh(); onStarted(bot) } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
@@ -604,9 +604,9 @@ export function AskHost() {
   return <>
     <div className="backdrop" onClick={() => done(null)} />
     <div className="modal ask" style={{ width: 'min(420px,calc(100% - 24px))' }}>
-      <div className="modal-h"><div className="t"><b>{q.title}</b></div></div>
+      <div className="modal-h"><div className="t"><b>{q.title}</b></div><button className="ib" onClick={() => done(null)} aria-label="닫기" title="닫기 ⎋"><Icon n="x" size={13} /></button></div>
       <div className="modal-b" style={{ padding: '4px 18px 12px' }}><input className="askin" autoFocus value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') done(v.trim() || null) }} onFocus={(e) => { const i = e.currentTarget; const dot = i.value.lastIndexOf('.'); i.setSelectionRange(0, dot > 0 ? dot : i.value.length) }} /></div>
-      <div className="modal-f"><span className="sp" /><button className="btn" onClick={() => done(null)}>취소 (⎋)</button><button className="btn on" onClick={() => done(v.trim() || null)}>확인 (⏎)</button></div>
+      <div className="modal-f"><span className="sp" /><button className="btn" onClick={() => done(null)}>취소 (⎋)</button><button className="btn primary" onClick={() => done(v.trim() || null)}>확인 (⏎)</button></div>
     </div>
   </>
 }
@@ -614,13 +614,17 @@ export function AskHost() {
 /**
  * 🔴 **되돌리기 어려운 한 걸음 앞의 확인창** — 지금은 «모델 바꾸기» 가 쓴다 (2026-09-15 Dave 지정 문안).
  *
- * ⚠ `confirm()` 을 안 쓰는 이유는 **Electron 에 없어서가 아니라**(그건 있다) 「다시 묻지 않기」를
+ * ⚠ 브라우저 기본 확인창을 안 쓰는 이유는 **Electron 에 없어서가 아니라**(그건 있다) 「다시 묻지 않기」를
  *   달 수 없어서다. 같은 질문을 매번 받는 확인창은 곧 아무도 안 읽는 확인창이 된다.
  * ⚠ 「다시 묻지 않기」는 **이 기기**에 적힌다(localStorage) — 물어볼지 말지는 취향이라 기기마다 다르다.
+ *
+ * 🔴 **지우기 확인 규칙** (2026-11-13 · UX/UI 정리 «부품 넷») — 되돌릴 수 있으면 묻지 않고 지운 뒤 되돌리기를 준다(`say(글, { label, run })`).
+ *   되돌릴 수 없으면 이 창으로 묻는다. 브라우저 기본 `confirm()` 은 쓰지 않는다(`test/unit/partsRules.test.ts`).
+ *   지우는 일이면 `danger: true` — 주 단추 자리에 빨간 테두리 단추가 서고 **⏎ 를 묶지 않는다**(초점은 [취소]). 손이 먼저 나가 지우는 일이 없게.
  */
 let confSet: ((c: Conf | null) => void) | null = null
 let confResolve: ((v: boolean) => void) | null = null
-interface Conf { title: string; body: string; ok: string; remember?: string }
+interface Conf { title: string; body: string; ok: string; remember?: string; /** 지우는 일 — 빨간 테두리 단추 · ⏎ 를 묶지 않는다 */ danger?: boolean }
 export function askConfirm(c: Conf): Promise<boolean> {
   if (c.remember) { try { if (localStorage.getItem(c.remember) === '0') return Promise.resolve(true) } catch { /* */ } }
   return new Promise((res) => { confResolve?.(false); confResolve = res; if (confSet) confSet(c); else { confResolve = null; res(window.confirm(`${c.title}\n\n${c.body}`)) } })
@@ -637,11 +641,11 @@ export function ConfirmHost() {
   return <>
     <div className="backdrop" onClick={() => done(false)} />
     <div className="modal conf" style={{ width: 'min(520px,calc(100% - 24px))' }}>
-      <div className="modal-h"><div className="t"><b>{c.title}</b></div></div>
+      <div className="modal-h"><div className="t"><b>{c.title}</b></div><button className="ib" onClick={() => done(false)} aria-label="닫기" title="닫기 ⎋"><Icon n="x" size={13} /></button></div>
       <div className="modal-b" style={{ padding: '2px 22px 6px' }}><p className="cbody">{c.body}</p>
         {c.remember ? <label className="cskip"><input type="checkbox" checked={skip} onChange={(e) => setSkip(e.target.checked)} /><span>다시 묻지 않기</span></label> : null}
       </div>
-      <div className="modal-f"><span className="sp" /><button className="btn" onClick={() => done(false)}>취소</button><button className="btn on" autoFocus onClick={() => done(true)}>{c.ok}</button></div>
+      <div className="modal-f"><span className="sp" /><button className="btn" data-conf="cancel" autoFocus={!!c.danger} onClick={() => done(false)}>취소</button><button className={c.danger ? 'btn danger' : 'btn primary'} data-conf="ok" autoFocus={!c.danger} onClick={() => done(true)}>{c.ok}</button></div>
     </div>
   </>
 }
@@ -687,12 +691,38 @@ function DiffSheet({ req, onClose }: { req: DiffReq; onClose: () => void }) {
     <div className="modal dif" style={{ width: 'min(860px,calc(100% - 24px))', height: 'min(720px,calc(100% - 24px))' }}>
       <div className="modal-h"><div className="t"><b>{name}</b><small>{d?.rel ?? ''}{d && !d.known ? '' : d?.before === null ? ' · 새 파일' : ''}</small></div>{stat ? <span className="dstat"><span style={{ color: 'var(--done)' }}>+{stat.add}</span> <span style={{ color: 'var(--err)' }}>−{stat.del}</span></span> : null}<button className="ib" onClick={onClose}><Icon n="x" size={14} /></button></div>
       <div className="modal-b" style={{ flex: 1, padding: '0 0 8px' }}>{body}</div>
-      <div className="modal-f"><span style={{ color: 'var(--t3)', fontSize: 12 }}>이 턴이 손대기 전 ↔ 지금 디스크</span><span className="sp" />{req.onOpen ? <button className="btn" onClick={() => { req.onOpen?.(req.abs); onClose() }}>문서 열기</button> : null}<button className="btn on" onClick={onClose}>닫기 (⎋)</button></div>
+      <div className="modal-f"><span style={{ color: 'var(--t3)', fontSize: 12 }}>이 턴이 손대기 전 ↔ 지금 디스크</span><span className="sp" />{req.onOpen ? <button className="btn" onClick={() => { req.onOpen?.(req.abs); onClose() }}>문서 열기</button> : null}<button className="btn primary" onClick={onClose}>닫기 (⎋)</button></div>
     </div>
   </>
 }
 
-export function useToast(): [string, (m: string) => void] {
-  const [msg, setMsg] = useState(''); const t = useRef<number | undefined>(undefined)
-  return [msg, (m: string) => { setMsg(m); window.clearTimeout(t.current); t.current = window.setTimeout(() => setMsg(''), 2600) }]
+/**
+ * 세션 하나 지우기 — **묻지 않고 지운 뒤 10초 되돌리기** (2026-11-13 Dave 카드 «바로 지우고 되돌리기»).
+ * 호스트는 «지웠다» 표식만 남기므로 `POST /sessions/restore` 로 대화 기록째 돌아온다(세션 정리 창과 같은 길).
+ * ⚠ 턴이 돌고 있거나 내 답을 기다리는 세션은 지우면 그 턴이 끊기고 **그것은 되살릴 수 없다** — 이때만 확인창으로 묻는다.
+ * @param after 지운 직후(보던 세션이면 다른 세션으로 옮기기) @param restored 되살린 직후 @returns 지웠으면 true
+ */
+export async function deleteSession(x: { id: string; name: string; state: string }, say: Say, after?: () => void | Promise<void>, restored?: () => void | Promise<void>): Promise<boolean> {
+  if (x.state === 'running' || x.state === 'awaiting_input') {
+    if (!(await askConfirm({ title: `«${x.name}» 세션을 지울까요?`, body: '지금 돌고 있는 턴이 중단돼요. 세션은 10초 안에 되돌릴 수 있지만 끊긴 턴은 돌아오지 않아요.', ok: '지우기', danger: true }))) return false
+  }
+  await api(`/sessions/${x.id}`, { method: 'DELETE' })
+  await after?.()
+  say(`«${x.name}» 세션을 지웠어요`, { label: '되돌리기 (10초)', ms: 10000, run: async () => {
+    try {
+      const r = await api<{ restored: string[] }>('/sessions/restore', { body: { ids: [x.id] } })
+      if (r.restored.length) { await restored?.(); say(`«${x.name}» 세션을 되살렸어요`) } else say('되살리지 못했어요')
+    } catch (e) { say((e as Error).message) }
+  } })
+  return true
+}
+
+/** 토스트에 다는 단추 하나 — «되돌리기» 처럼 방금 한 일을 무르는 길. 단추가 있으면 `ms`(기본 10초) 동안 남는다 */
+export interface ToastAct { label: string; run: () => void | Promise<void>; ms?: number }
+export type Say = (m: string, act?: ToastAct) => void
+export interface ToastState { msg: string; act?: ToastAct }
+export function useToast(): [ToastState, Say, () => void] {
+  const [st, setSt] = useState<ToastState>({ msg: '' }); const t = useRef<number | undefined>(undefined)
+  const clear = () => { window.clearTimeout(t.current); setSt({ msg: '' }) }
+  return [st, (m: string, act?: ToastAct) => { setSt({ msg: m, act }); window.clearTimeout(t.current); t.current = window.setTimeout(() => setSt({ msg: '' }), act ? act.ms ?? 10000 : 2600) }, clear]
 }

@@ -46,7 +46,7 @@ export function StemManager({ map, op, close, onPick, phone }: {
     <div className="backdrop smg-bd" onClick={close} />
     <div className={`modal smg${phone ? ' phone' : ''}`} role="dialog" aria-label="줄기 관리">
       <div className="modal-h"><div className="t"><b>줄기 관리</b><small>{map.stems.length}개 · 고정 {fixed}{map.managed ? '' : ' · 아직 봇이 계산한 그대로 — 손대면 그때부터 고정돼요'}</small></div>
-        <button className="btn p sm" onClick={() => void create()}><Icon n="plus" size={12} />새 줄기</button>
+        <button className="btn primary sm" onClick={() => void create()}><Icon n="plus" size={12} />새 줄기</button>
         <button className="ib" onClick={close} aria-label="닫기"><Icon n="x" size={14} /></button></div>
       <div className="modal-b smg-b">
         <div className="smg-main">
@@ -55,7 +55,7 @@ export function StemManager({ map, op, close, onPick, phone }: {
             drag={{ on: drag === st.key, start: () => setDrag(st.key), end: () => setDrag(null), drop: () => drop(st.key) }} />)}
           {map.proposals.map((p) => <div key={p.id} className="smg-row prop">
             <span className="dotc dash" /><div className="nm"><b>{p.name}</b><span className="lm-tag new">봇 제안</span><span className="l">{p.line ? `${p.line} · ` : ''}{p.folders.map(L).join(', ')}</span></div>
-            <span className="ac"><button className="btn p sm" onClick={() => void op({ op: 'accept', proposal: p.id }, `«${p.name}» 줄기를 받았어요`)}>받기</button><button className="btn sm" onClick={() => void op({ op: 'drop', proposal: p.id }, '제안을 버렸어요')}>버리기</button></span>
+            <span className="ac"><button className="btn primary sm" onClick={() => void op({ op: 'accept', proposal: p.id }, `«${p.name}» 줄기를 받았어요`)}>받기</button><button className="btn sm" onClick={() => void op({ op: 'drop', proposal: p.id }, '제안을 버렸어요')}>버리기</button></span>
           </div>)}
           <div className="smg-foot"><span className="m">줄기 밖 {loose.length}{loose.length ? ` — ${loose.slice(0, 6).map((n) => n.label).join(', ')}${loose.length > 6 ? ' …' : ''}` : ''}{map.hubs.length ? ` · 허브 ${map.hubs.length}는 늘 밖` : ''}</span>
             <ResetBtn onReset={() => void op({ op: 'reset' }, '줄기를 모두 봇 계산으로 되돌렸어요')} /></div>
@@ -71,7 +71,7 @@ export function StemManager({ map, op, close, onPick, phone }: {
             {bots.length ? bots.map((p) => <div key={p.folder} className="li">
               <div><button className="lk" onClick={() => { onPick(p.folder); close() }}>{L(p.folder)}</button>{byId.get(p.folder)?.past ? <span className="lm-tag past">보관</span> : null} → <b>{map.stems[p.stem]?.name}</b></div>
               <div className="why">{p.how === 'ai' ? p.why : `선으로 — ${p.why}`}</div>
-              <div className="acts"><MoveSel map={map} cur={map.stems[p.stem]?.key} onMove={(k) => void op({ op: 'add', stem: k, folder: p.folder }, '옮겼어요')} /><button className="btn sm g" onClick={() => void op({ op: 'out', folder: p.folder }, '줄기 밖으로 뺐어요')}>빼기</button></div>
+              <div className="acts"><MoveSel map={map} cur={map.stems[p.stem]?.key} onMove={(k) => void op({ op: 'add', stem: k, folder: p.folder }, '옮겼어요')} /><button className="btn ghost sm" onClick={() => void op({ op: 'out', folder: p.folder }, '줄기 밖으로 뺐어요')}>빼기</button></div>
             </div>) : <div className="m">아직 없어요 — 주인 맥이 판단하면 여기 쌓여요</div>}
           </div>
         </div>
@@ -82,8 +82,8 @@ export function StemManager({ map, op, close, onPick, phone }: {
 
 function ResetBtn({ onReset }: { onReset: () => void }) {
   const [sure, setSure] = useState(false)
-  return sure ? <span className="ac"><button className="btn sm danger" onClick={() => { setSure(false); onReset() }}>정말 되돌리기</button><button className="btn sm g" onClick={() => setSure(false)}>취소</button></span>
-    : <button className="btn sm g" onClick={() => setSure(true)}>모두 봇 계산으로 되돌리기</button>
+  return sure ? <span className="ac"><button className="btn danger sm" onClick={() => { setSure(false); onReset() }}>정말 되돌리기</button><button className="btn ghost sm" onClick={() => setSure(false)}>취소</button></span>
+    : <button className="btn ghost sm" onClick={() => setSure(true)}>모두 봇 계산으로 되돌리기</button>
 }
 
 function MoveSel({ map, cur, onMove }: { map: LinkMap; cur?: string; onMove: (key: string) => void }) {
@@ -118,14 +118,14 @@ function StemRow({ st, i, n, map, byId, open, setOpen, op, move, phone, onPick, 
         <button className="l" onClick={() => void reline()} title="한 줄 고치기">{st.line || '이 줄기가 하는 일 한 줄 — 눌러서 적기'}</button></div>
       <button className="cnt" onClick={() => setOpen(!open)} aria-expanded={open}>지금 {st.members.length}<i> · 지난 일 {st.past.length}</i><Icon n={open ? 'chevd' : 'chev'} size={11} /></button>
       <span className="ac"><button className="btn sm" onClick={() => setMerge(merge ? null : { into: map.stems.find((s) => s.key !== st.key)?.key ?? '', name: '' })}>합치기</button>
-        {sure ? <button className="btn sm danger" onClick={() => { setSure(false); void op({ op: 'delete', stem: st.key }, `«${st.name}» 줄기를 지웠어요 — 폴더들은 봇이 다시 나눠요`) }}>정말 지우기</button>
-          : <button className="btn sm danger" onClick={() => { setSure(true); window.setTimeout(() => setSure(false), 4000) }}>지우기</button>}</span>
+        {sure ? <button className="btn danger sm" onClick={() => { setSure(false); void op({ op: 'delete', stem: st.key }, `«${st.name}» 줄기를 지웠어요 — 폴더들은 봇이 다시 나눠요`) }}>정말 지우기</button>
+          : <button className="btn danger sm" onClick={() => { setSure(true); window.setTimeout(() => setSure(false), 4000) }}>지우기</button>}</span>
     </div>
     {merge ? <div className="smg-merge"><b>{st.name}</b> 을 어느 줄기에 합칠까요?
       <div className="row"><select className="smg-sel" value={merge.into} onChange={(e) => setMerge({ ...merge, into: e.target.value })} aria-label="합칠 줄기">{map.stems.filter((s) => s.key !== st.key).map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}</select>
         <input className="smg-in" value={merge.name} placeholder={`합친 이름(비우면 «${map.stems.find((s) => s.key === merge.into)?.name ?? ''}»)`} onChange={(e) => setMerge({ ...merge, name: e.target.value })} />
-        <span className="sp" /><button className="btn sm g" onClick={() => setMerge(null)}>취소</button>
-        <button className="btn sm p" disabled={!merge.into} onClick={() => { const m = merge; setMerge(null); void op({ op: 'merge', from: st.key, into: m.into, ...(m.name.trim() ? { name: m.name.trim() } : {}) }, '줄기를 합쳤어요') }}>합치기</button></div></div> : null}
+        <span className="sp" /><button className="btn ghost sm" onClick={() => setMerge(null)}>취소</button>
+        <button className="btn primary sm" disabled={!merge.into} onClick={() => { const m = merge; setMerge(null); void op({ op: 'merge', from: st.key, into: m.into, ...(m.name.trim() ? { name: m.name.trim() } : {}) }, '줄기를 합쳤어요') }}>합치기</button></div></div> : null}
     {open ? <div className="smg-exp">
       <div className="h">지금 폴더 — × 로 빼면 «줄기 밖» 으로 가고, 봇이 다시 넣지 않아요</div>
       <div className="chips">{st.members.map(chip)}<FolderPick map={map} st={st} past={false} onPick={(id) => void op({ op: 'add', stem: st.key, folder: id }, `${byId.get(id)?.label} 을 넣었어요`)} /></div>
@@ -147,6 +147,6 @@ function FolderPick({ map, st, past, onPick }: { map: LinkMap; st: Stem; past: b
   return <div className="smg-pick">
     <input className="smg-in" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={past ? '보관 폴더 이름' : '폴더 이름'} onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); setOn(false) } if (e.key === 'Enter' && hits[0]) { onPick(hits[0].id); setOn(false) } }} />
     <div className="list">{hits.length ? hits.map((n) => <button key={n.id} onClick={() => { onPick(n.id); setOn(false); setQ('') }}><b>{n.label}</b><span>{ddText(n, map.today)}{n.stem !== undefined ? ` · 지금 «${map.stems[n.stem].name}»` : ' · 줄기 밖'}</span></button>) : <span className="m">맞는 폴더가 없어요</span>}</div>
-    <button className="btn sm g" onClick={() => setOn(false)}>닫기</button>
+    <button className="btn ghost sm" onClick={() => setOn(false)}>닫기</button>
   </div>
 }

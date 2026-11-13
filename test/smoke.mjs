@@ -1163,11 +1163,11 @@ try {
         if (!(await pg.$('.setr[data-t="지금 연결"]')) || !(await pg.$('.brg-prow[data-peer="auto"]'))) fail('BQ-10: 설정 › 연결 에 지금 연결 목록이 없다')
         await pg.click('.setr[data-t="새 연결 만들기"] .btn')
         await pg.click('.brg-card[data-preset="generic-file"]')
-        await pg.click('.brg-wiz .btn.on:has-text("다음")')
+        await pg.click('.brg-wiz .btn.primary:has-text("다음")')
         await pg.waitForSelector('.brg-wiz[data-step="2"]')
         const mbv = await pg.inputValue('.brg-wiz .brg-f input.mono')
         if (mbv !== '3. Area/파일 상대/싱크') fail('🔴 BQ-10: 추천 우편함이 Area 칸 아래 «이름/싱크» 가 아니다 · ' + mbv)
-        await pg.click('.brg-wiz .btn.on:has-text("만들기")')
+        await pg.click('.brg-wiz .btn.primary:has-text("만들기")')
         await pg.waitForSelector('.brg-wiz[data-step="3"] .brg-copy', { timeout: 5000 }).catch(() => fail('🔴 BQ-10: 만들기 뒤 «상대에게 줄 한 줄» 이 안 나왔다'))
         const line = await pg.textContent('.brg-copy')
         if (line !== '3. Area/파일 상대/싱크/README.md 를 읽고 그대로 따라 해 줘.') fail('BQ-10: 한 줄이 목업 문구와 다르다 · ' + line)
@@ -1558,11 +1558,11 @@ try {
           // 🔴 **첫 화면에서 에이전트 연결까지** (2026-09-13 Dave) — 권한을 다 켜도 에이전트가 안 붙어
           //    있으면 앱은 아무것도 못 한다. ⛔ 다만 여기서 **막지는 않는다**(로그인은 터미널의 일이다).
           if (!/Claude Code/.test(gt) || !/Codex/.test(gt)) fail('첫 화면에 에이전트 연결 줄이 없다: ' + gt.slice(0, 300))
-          if (!(await pg2.$('.perm-gate button.on[disabled]'))) fail('ui perm gate continue should be disabled')
+          if (!(await pg2.$('.perm-gate button.btn.primary[disabled]'))) fail('ui perm gate continue should be disabled')
           await pg2.click('.perm-gate button:has-text("테스트 알림 보내기")'); await pg2.click('.perm-gate button:has-text("보였어요")'); await wait(200)
           await pg2.evaluate(() => { window.__perm = window.__perm.map((p) => p.id === 'full-disk' ? { ...p, status: 'granted' } : p) }); await pg2.click('.perm-gate button:has-text("다시 확인")'); await wait(300)
-          if (await pg2.$('.perm-gate button.on[disabled]')) { await pg2.screenshot({ path: 'test/tmp/desktop-perms-fail.png' }); fail('ui perm gate continue still disabled · ' + (await pg2.evaluate(() => JSON.stringify(window.__perm))) + ' · ' + (await pg2.textContent('.perm-gate')).slice(0, 400)) }
-          await pg2.screenshot({ path: 'test/tmp/desktop-perms.png' }); await pg2.click('.perm-gate button.on'); await wait(300); if (await pg2.$('.perm-gate')) fail('ui perm gate did not close')
+          if (await pg2.$('.perm-gate button.btn.primary[disabled]')) { await pg2.screenshot({ path: 'test/tmp/desktop-perms-fail.png' }); fail('ui perm gate continue still disabled · ' + (await pg2.evaluate(() => JSON.stringify(window.__perm))) + ' · ' + (await pg2.textContent('.perm-gate')).slice(0, 400)) }
+          await pg2.screenshot({ path: 'test/tmp/desktop-perms.png' }); await pg2.click('.perm-gate button.btn.primary:has-text("계속")'); await wait(300); if (await pg2.$('.perm-gate')) fail('ui perm gate did not close')
           await pg2.close()
           /**
            * 🔴 **업데이트는 받아만 두고, 적용은 묻는다** (2026-09-15 Dave: «자동업데이트 하지말고 다운로드가
@@ -1588,7 +1588,7 @@ try {
             if ((await pg4.evaluate(() => window.__applied)) !== 0) fail('🔴 업데이트 팝업: 「나중에」 인데 적용됐다')
             await pg4.click('.sb-foot .bd.upd'); await wait(300)
             if (!(await pg4.$('.updask'))) fail('업데이트 팝업: 칩을 눌렀는데 다시 안 묻는다')
-            await pg4.click('.updask .btn.on'); await wait(300)
+            await pg4.click('.updask .btn.primary'); await wait(300)
             if ((await pg4.evaluate(() => window.__applied)) !== 1) fail('업데이트 팝업: 「적용」 을 눌렀는데 apply 가 안 불렸다')
             await pg4.close()
             ok('업데이트 — 받아 두고 칩 위 팝업으로 묻는다 · 나중에는 나중에 · 적용은 사람이')
@@ -1687,7 +1687,7 @@ try {
           if (!(await calls()).some((c) => c[0] === 'detect' && c[1] === root)) fail('E 온보딩: 호스트 루트로 detect 를 부르지 않았다 ' + JSON.stringify(await calls()))
           await rp.click('.perm-gate .lpick .cand.best'); await wait(400)
           const st1 = await rp.evaluate(() => window.__local.settings); if (st1.openMode !== 'sync' || st1.vaultLocal !== CANDS[0].path) fail('E 온보딩: 고르면 sync + 경로 ' + JSON.stringify(st1))
-          await rp.click('.perm-gate button.btn.on:has-text("계속")'); await wait(500)
+          await rp.click('.perm-gate button.btn.primary:has-text("계속")'); await wait(500)
           if (await rp.$('.perm-gate')) fail('E 온보딩: 고른 뒤 계속이 안 된다')
           await rp.waitForSelector('.col.chat .hdr', { timeout: 10000 }); await wait(400)
           if (!/원격 · macbook/.test((await rp.textContent('.mr.remote').catch(() => '')) ?? '')) fail('E: 이 화면은 «원격 · macbook» 이어야 한다')
@@ -2068,7 +2068,7 @@ try {
               if (remote) { const of = window.fetch.bind(window); window.fetch = (u, o = {}) => { const h = new Headers(o.headers || {}); h.set('x-fb-as', 'macbook'); return of(u, { ...o, headers: h }) } }
             }, remote)
             await p.goto(base + `/#bot=${bot.id}`); await p.waitForSelector('.panel .trow', { timeout: 15000 }); await wait(600)
-            if (await p.$('.perm-gate')) { await p.click('.perm-gate button.btn.on:has-text("계속")').catch(() => {}); await wait(400) }
+            if (await p.$('.perm-gate')) { await p.click('.perm-gate button.btn.primary:has-text("계속")').catch(() => {}); await wait(400) }
             return p
           }
           const calls = (p) => p.evaluate(() => window.__local.calls)
@@ -2475,6 +2475,33 @@ try {
             else { await mp.click('.mcard.mc-html .mc-shut'); await wait(150); const shut = await mp.evaluate(() => { const c = document.querySelector('.mcard.mc-html'); return !!c && !c.querySelector('iframe') && !!c.querySelector('.mc-run') && !c.querySelector('.mc-hbox.mc-hbad') }); if (!shut) fail('미니 창: «닫기» 가 틀을 걷고 덮개로 돌아가지 않는다') }
             mp.off('request', onMiniReq); outSrv.close()
             rmSync(join(bot.abs, 'vb-mini.html'), { force: true })
+            /**
+             * 🔴 **부품 넷 · 승인 카드 (폰)** (2026-11-13 Dave 카드 «오른쪽 끝으로») — 폰(390)에서도 [거부] 가 왼쪽, [허용] 이 오른쪽 끝이고 줄이 화면 밖으로 안 나간다.
+             * 누르면 실제로 풀린다(자리를 옮기다 단추가 죽지 않았는지).
+             */
+            {
+              const holdP = await api(`/bots/${bot.id}/sessions`, { name: '폰 승인 카드' })
+              await api(`/sessions/${holdP.id}/send`, { text: '승인이 필요한 일 해 줘' })
+              await mp.evaluate((h) => { location.hash = h }, `#bot=${bot.id}&s=${holdP.id}`)
+              await mp.waitForSelector('.card[data-kind="perm"] .btns [data-act="allow"]', { timeout: 15000 }); await wait(300)
+              const pp = await mp.evaluate(() => {
+                const c = document.querySelector('.card[data-kind="perm"] .btns')
+                const bs = [...c.querySelectorAll('button')].map((b) => { const r = b.getBoundingClientRect(); return { act: b.dataset.act ?? '', l: Math.round(r.left), r: Math.round(r.right), t: Math.round(r.top), h: Math.round(r.height) } })
+                return { bs, right: Math.round(c.getBoundingClientRect().right), vw: innerWidth, over: document.documentElement.scrollWidth - innerWidth }
+              })
+              await mp.screenshot({ path: 'test/tmp/parts-perm-phone.png' })
+              const alP = pp.bs.find((b) => b.act === 'allow'), dnP = pp.bs.find((b) => b.act === 'deny')
+              if (!alP || !dnP) fail('🔴 승인 카드(폰): [허용] · [거부] 가 없다 · ' + JSON.stringify(pp))
+              if (pp.bs[0].act !== 'deny' || pp.bs[pp.bs.length - 1].act !== 'allow' || dnP.l >= alP.l || pp.right - alP.r > 2 || alP.r > pp.vw || pp.over > 0) fail('🔴 승인 카드(폰): [허용] 이 오른쪽 끝이 아니거나 줄이 화면 밖으로 나간다 · ' + JSON.stringify(pp))
+              if (pp.bs.some((b) => b.t !== alP.t)) fail('🔴 승인 카드(폰): 단추가 두 줄로 접혔다 · ' + JSON.stringify(pp))
+              await mp.click('.card[data-kind="perm"] [data-act="allow"]')
+              let stP = 'awaiting_input'
+              for (let i = 0; i < 60; i++) { stP = ((await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === holdP.id) ?? {}).state; if (stP !== 'awaiting_input') break; await wait(250) }
+              if (stP === 'awaiting_input') fail('🔴 승인 카드(폰): [허용] 을 눌렀는데 그대로 기다린다')
+              await fetch(base + `/api/sessions/${holdP.id}`, { method: 'DELETE' })
+              await mp.evaluate((h) => { location.hash = h }, `#bot=${bot.id}&s=${sidM}`); await wait(400)
+              ok('부품 넷 · 승인 카드(폰) — [거부] 왼쪽 · [허용] 오른쪽 끝 · 한 줄 · 화면 안 · 누르면 풀림')
+            }
             ok('시각화 채팅 둘째 — 단계 · 안 비교 · 숫자 블록이 카드로(깨진 블록은 코드 + 한 줄) · 표로 보기 오감 · 폰 폭 안 · 미니 창은 누를 때까지 틀 없음 · 틀은 allow-scripts + srcdoc(주소에 토큰 없음 · 부모 · 저장소 · 호스트 API 에 못 닿음) · 틀이 바깥 주소로 못 감(요청 0건 · 걷힘 · 다시 열림 · 닫기) · 단계의 점이 한 줄 · 끊긴 답의 반쪽 블록은 코드')
           }
           await mp.screenshot({ path: 'test/tmp/bm-phone.png' }); await mp.close(); await fetch(base + `/api/sessions/${sidM}`, { method: 'DELETE' })
@@ -2581,7 +2608,7 @@ try {
             window.folderbotDesktop = { version: 'qa', perms: { list: async () => [], open: async () => ({ ok: true }), ack: async () => [], reset: async () => [], test: async () => ({ ok: true }), relaunch: () => {}, onChange: () => () => {} }, local: { settings: async () => ({ ...L.settings }), set: async (p) => { Object.assign(L.settings, p); return { ...L.settings } }, detect: async () => [], stat: async () => ({ exists: false }), open: async () => '', reveal: async () => '', wait: async () => true, download: async (u, h, rel) => '/cache/' + rel, icloud: async () => true, pick: async () => '' } }
             const of = window.fetch.bind(window); window.fetch = (u, o = {}) => { const h = new Headers(o.headers || {}); h.set('x-fb-as', 'macbook'); return of(u, { ...o, headers: h }) } })
           await rj.goto(base + `/#bot=${bot.id}&s=${sidJ}`); await rj.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(600)
-          if (await rj.$('.perm-gate')) { await rj.click('.perm-gate button.btn.on:has-text("계속")').catch(() => {}); await wait(400) }
+          if (await rj.$('.perm-gate')) { await rj.click('.perm-gate button.btn.primary:has-text("계속")').catch(() => {}); await wait(400) }
           await rj.click('.composer .cin'); await rj.keyboard.type('기기확인'); await rj.keyboard.press('Enter'); await wait(1200)
           chatJ = await api(`/sessions/${sidJ}/chat`); const remReply = chatJ.items.filter((i) => i.kind === 'assistant').pop()?.text ?? ''
           for (const w of ['origin="remote"', 'device="macbook"', 'tier="desktop"', 'canOpenOnDevice="true"', 'openMode="sync"']) if (!remReply.includes(w)) fail('J-1 원격: ' + w + ' 가 없다 · ' + remReply)
@@ -4601,6 +4628,23 @@ try {
               await pg.click(`.sbtiles .cx-it[data-sid="${hold.id}"] .cx-reply`); await wait(500)
               const h = await pg.evaluate(() => { const q = new URLSearchParams(location.hash.slice(1)); return { bot: q.get('bot'), s: q.get('s') } })
               if (h.bot !== bot.id || h.s !== hold.id) fail('🔴 상황판 띠: [답하기] 가 그 세션 대화를 안 열었다 · ' + JSON.stringify(h))
+              // 🔴 부품 넷 (2026-11-13 Dave 카드 «오른쪽 끝으로») — 승인 카드의 [허용] 은 줄의 **오른쪽 끝**, [거부] 가 왼쪽 첫 자리. 종전에는 [허용] 이 왼쪽 끝이었다
+              {
+                let pc = null
+                for (let i = 0; i < 40 && !pc; i++) {
+                  pc = await pg.evaluate(() => {
+                    const c = document.querySelector('.card[data-kind="perm"] .btns'); if (!c) return null
+                    const bs = [...c.querySelectorAll('button')].map((b) => { const r = b.getBoundingClientRect(); return { act: b.dataset.act ?? '', l: Math.round(r.left), r: Math.round(r.right), primary: b.classList.contains('primary') } })
+                    return { bs, right: Math.round(c.getBoundingClientRect().right) }
+                  })
+                  if (!pc) await wait(150)
+                }
+                if (!pc) fail('🔴 승인 카드: [답하기] 로 연 대화에 승인 카드가 없다')
+                await pg.screenshot({ path: 'test/tmp/parts-perm-desktop.png' })
+                const al = pc.bs.find((b) => b.act === 'allow'), dn = pc.bs.find((b) => b.act === 'deny')
+                if (!al || !dn || !al.primary) fail('🔴 승인 카드: [허용](흰 주 단추) · [거부] 가 없다 · ' + JSON.stringify(pc))
+                if (pc.bs[0].act !== 'deny' || pc.bs[pc.bs.length - 1].act !== 'allow' || pc.bs.some((b) => b !== al && b.r > al.l) || pc.right - al.r > 2) fail('🔴 승인 카드: [허용] 이 줄의 오른쪽 끝이 아니다(2026-11-13 Dave «오른쪽 끝으로») · ' + JSON.stringify(pc))
+              }
               await pg.click(`.sbtiles .cx-it[data-sid="${hold.id}"] .cx-allow`)
               let st = 'awaiting_input'
               for (let i = 0; i < 60; i++) { st = await stOf(hold.id); if (st !== 'awaiting_input') break; await wait(250) }
@@ -4748,7 +4792,7 @@ try {
             if ((await modelNow()) !== was) fail('모델 확인창: 취소했는데 바뀌었다 · ' + JSON.stringify([was, await modelNow()]))
             await pickModel(target)
             await pg.waitForSelector('.modal.conf', { timeout: 5000 })
-            await pg.click('.modal.conf .modal-f .btn.on')
+            await pg.click('.modal.conf .modal-f [data-conf="ok"]')
             let after = was
             for (let i = 0; i < 40; i++) { after = await modelNow(); if (after !== was) break; await wait(250) }
             if (after === was) fail('모델 확인창: 눌렀는데 안 바뀌었다 · ' + JSON.stringify(after))
@@ -5446,7 +5490,7 @@ try {
           if (bad.length) fail('명령 · 스킬: 줄이 깨졌다(아이콘·이름·범위가 한 줄이 아니거나 붙어 있다) ' + JSON.stringify(bad))
           await pg.click('.panel .sech:has-text("명령 · 스킬")'); await wait(300)
         }
-        // 세션 삭제 버튼 — 행에 있고, 누르면 한 번 묻고, 목록에서 사라진다. 원래 보던 세션은 건드리지 않는다
+        // 세션 삭제 버튼 — 행에 있고, 누르면 **묻지 않고** 사라지고 10초 되돌리기가 선다(2026-11-13 Dave 카드 «바로 지우고 되돌리기»). 원래 보던 세션은 건드리지 않는다
         const keep = (await pg.textContent('.panel .srow.on .n')).trim()
         const rows0 = (await pg.$$('.panel .srow')).length
         await pg.click('.panel .sech:has-text("세션") .tools .ib') // 지울 세션 하나 더 만든다 — 생길 때까지(포화된 맥에서 1초를 넘긴다)
@@ -5456,14 +5500,91 @@ try {
         if (!victim) fail('세션 삭제 UI: 지울 세션이 안 생김 ' + JSON.stringify(names))
         const row = `.panel .srow:has(.n:text-is("${victim}"))`
         if (!(await pg.$(`${row} .del`))) fail('세션 삭제 UI: 삭제 버튼 없음')
-        pg.once('dialog', (d) => d.dismiss())          // 취소하면 안 지운다
-        await pg.click(`${row} .del`); await wait(700)
-        if (!(await pg.$(row))) fail('세션 삭제 UI: 취소했는데 지워졌다')
-        pg.once('dialog', (d) => d.accept())
-        await pg.click(`${row} .del`); await wait(1200)
-        if (await pg.$(row)) fail('세션 삭제 UI: 확인했는데 안 지워졌다 · ' + victim)
-        const back = await pg.$$eval('.panel .srow .n', (r) => r.map((x) => x.textContent.trim()))
-        if (!back.includes(keep)) fail('세션 삭제 UI: 남겨야 할 세션이 사라졌다 ' + JSON.stringify({ keep, back }))
+        {
+          // 🔴 브라우저 기본 확인창은 어디서도 뜨지 않는다 — 뜨면 받아 주되 센다(안 받으면 검사가 멈춘다)
+          let natives = 0; const onDlg = (d) => { natives++; void d.dismiss() }; pg.on('dialog', onDlg)
+          const gone = async (want) => { for (let i = 0; i < 40; i++) { if (!!(await pg.$(row)) !== want) return true; await wait(100) } return false }
+          // ① 쉬는 세션 — 묻지 않고 지운다 · 토스트에 «되돌리기 (10초)»
+          await pg.click(`${row} .del`)
+          if (!(await gone(true))) fail('🔴 세션 삭제 UI: 눌렀는데 안 지워졌다(확인창이 막았나) · ' + victim + ' · 앱 확인창 ' + !!(await pg.$('.modal.conf')))
+          if (await pg.$('.modal.conf')) fail('🔴 세션 삭제 UI: 쉬는 세션인데 확인창이 떴다 — 묻지 않고 지운 뒤 되돌리기를 준다')
+          const tact = await pg.$('.toast [data-toast-act]')
+          if (!tact || !/되돌리기/.test(await tact.textContent())) fail('🔴 세션 삭제 UI: 지운 뒤 «되돌리기» 토스트가 없다 · ' + (await pg.textContent('.toast').catch(() => '(토스트 없음)')))
+          // ② 되돌리기 — 대화 기록째 돌아온다
+          await tact.click()
+          if (!(await gone(false))) fail('🔴 세션 삭제 UI: 되돌리기를 눌렀는데 세션이 안 돌아왔다 · ' + victim)
+          // ③ 다시 지운다 — 원래 보던 세션은 그대로
+          await pg.click(`${row} .del`)
+          if (!(await gone(true))) fail('세션 삭제 UI: 되살린 세션이 다시 안 지워진다 · ' + victim)
+          const back = await pg.$$eval('.panel .srow .n', (r) => r.map((x) => x.textContent.trim()))
+          if (!back.includes(keep)) fail('세션 삭제 UI: 남겨야 할 세션이 사라졌다 ' + JSON.stringify({ keep, back }))
+          const hb = await pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('bot'))
+          {
+            // ⑤ 파일 휴지통 — 묻지 않고 옮기고, 토스트의 «되돌리기» 로 제자리에 돌아온다(폰에는 ⌘Z 가 없다)
+            const hbAbs = (await api('/bots')).find((b) => b.id === hb)?.abs
+            if (!hbAbs) fail('휴지통 UI: 보고 있는 봇의 폴더를 못 찾았다(검사 전제) · ' + hb)
+            const tf = join(hbAbs, 'parts-trash.txt'); writeFileSync(tf, 'x')
+            const seen = () => pg.evaluate(() => [...document.querySelectorAll('.panel .trow')].some((x) => /parts-trash\.txt/.test(x.textContent ?? '')))
+            let trow = false
+            for (let i = 0; i < 40 && !trow; i++) { trow = await seen(); if (!trow) await wait(250) }
+            if (!trow) fail('휴지통 UI: 새 파일이 트리에 안 보인다(검사 전제)')
+            await pg.evaluate(() => { const b = [...document.querySelectorAll('.panel .trow')].find((x) => /parts-trash\.txt/.test(x.textContent ?? '')); const r = b.getBoundingClientRect(); b.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: r.left + 20, clientY: r.top + 5 })) }); await wait(300)
+            await pg.click('.menu.ctx button:has-text("휴지통으로")')
+            for (let i = 0; i < 40 && existsSync(tf); i++) await wait(100)
+            if (existsSync(tf)) fail('🔴 휴지통 UI: 눌렀는데 파일이 그대로다(확인창이 막았나) · 앱 확인창 ' + !!(await pg.$('.modal.conf')))
+            const tu = await pg.$('.toast [data-toast-act]')
+            if (!tu || !/되돌리기/.test(await tu.textContent())) fail('🔴 휴지통 UI: 치운 뒤 «되돌리기» 토스트가 없다 · ' + (await pg.textContent('.toast').catch(() => '(토스트 없음)')))
+            await tu.click()
+            for (let i = 0; i < 40 && !existsSync(tf); i++) await wait(100)
+            if (!existsSync(tf)) fail('🔴 휴지통 UI: 되돌리기를 눌렀는데 파일이 제자리에 안 돌아왔다')
+            rmSync(tf, { force: true })
+          }
+          // ④ 턴이 걸려 있는 세션(승인 대기) — 이때만 앱 확인창으로 묻는다. 지우는 일이라 빨간 테두리 단추 · 초점은 [취소]
+          const busyS = await api(`/bots/${hb}/sessions`, { name: '도는 세션 지우기' })
+          await api(`/sessions/${busyS.id}/send`, { text: '승인이 필요한 일 해 줘' })
+          let bst = ''; for (let i = 0; i < 60; i++) { bst = ((await api(`/bots/${hb}/sessions`)).find((x) => x.id === busyS.id) ?? {}).state; if (bst === 'awaiting_input') break; await wait(250) }
+          if (bst !== 'awaiting_input') fail('세션 삭제 UI: 승인 대기 세션을 못 만들었다(검사 전제) · ' + bst)
+          const brow = '.panel .srow:has(.n:text-is("도는 세션 지우기"))'
+          await pg.waitForSelector(`${brow} .del`, { timeout: 5000 })
+          await pg.click(`${brow} .del`); await wait(400)
+          const cf = await pg.evaluate(() => { const m = document.querySelector('.modal.conf'); if (!m) return null; const okb = m.querySelector('[data-conf="ok"]'); return { danger: okb?.classList.contains('danger'), primary: okb?.classList.contains('primary'), focus: document.activeElement?.getAttribute('data-conf'), x: !!m.querySelector('.modal-h .ib') } })
+          if (!cf) fail('🔴 세션 삭제 UI: 턴이 걸린 세션인데 묻지 않고 지웠다 — 끊긴 턴은 되살릴 수 없다')
+          if (!cf.danger || cf.primary || cf.focus !== 'cancel' || !cf.x) fail('🔴 확인창: 지우는 일인데 빨간 테두리 단추가 아니거나 초점이 [취소] 가 아니거나 ✕ 가 없다 · ' + JSON.stringify(cf))
+          await pg.screenshot({ path: 'test/tmp/parts-confirm-desktop.png' })
+          {
+            // 폰 폭(390)에서도 확인창이 화면 안에 서고 두 단추가 다 보인다 — 창의 폰 규칙은 미디어 쿼리라 폭만 줄여 잰다
+            const vp0 = pg.viewportSize(); await pg.setViewportSize({ width: 390, height: 844 }); await wait(500)
+            const ph = await pg.evaluate(() => { const m = document.querySelector('.modal.conf'); if (!m) return null; const r = m.getBoundingClientRect(); const bs = [...m.querySelectorAll('.modal-f .btn')].map((b) => { const q = b.getBoundingClientRect(); return { l: Math.round(q.left), r: Math.round(q.right), b: Math.round(q.bottom), h: Math.round(q.height) } }); return { l: Math.round(r.left), r: Math.round(r.right), t: Math.round(r.top), b: Math.round(r.bottom), bs, vw: innerWidth, vh: innerHeight } })
+            await pg.screenshot({ path: 'test/tmp/parts-confirm-phone.png' })
+            await pg.setViewportSize(vp0); await wait(500)
+            if (!ph || ph.l < 0 || ph.r > ph.vw || ph.b > ph.vh || ph.bs.length !== 2 || ph.bs.some((b) => b.l < ph.l || b.r > ph.r || b.b > ph.b)) fail('🔴 확인창(폰 폭): 창이나 단추가 화면 밖으로 나간다 · ' + JSON.stringify(ph))
+            if (ph.t < ph.vh / 2) fail('🔴 확인창(폰 폭): 두 줄짜리 물음이 화면을 다 덮는다 — 아래에 붙은 시트여야 한다(목업) · ' + JSON.stringify(ph))
+            if (Math.abs((ph.bs[0].r - ph.bs[0].l) - (ph.bs[1].r - ph.bs[1].l)) > 2 || ph.bs.some((b) => b.h < 40)) fail('🔴 확인창(폰 폭): 두 단추가 반씩 서지 않거나 낮다(40 미만) · ' + JSON.stringify(ph.bs))
+            if (!(await pg.$('.modal.conf'))) fail('확인창: 폭을 바꿨더니 창이 사라졌다')
+            await pg.focus('.modal.conf [data-conf="cancel"]')
+          }
+          await pg.keyboard.press('Enter'); await wait(400)   // ⏎ 는 [취소] 에 있다 — 지워지면 안 된다
+          if (await pg.$('.modal.conf')) fail('확인창: ⏎ 로 [취소] 가 안 눌렸다')
+          if (!(await pg.$(brow))) fail('🔴 확인창: ⏎ 를 눌렀더니 지워졌다 — 지우는 일에 ⏎ 를 묶지 않는다')
+          await pg.click(`${brow} .del`); await pg.waitForSelector('.modal.conf [data-conf="ok"]', { timeout: 3000 }); await pg.click('.modal.conf [data-conf="ok"]')
+          for (let i = 0; i < 40 && (await pg.$(brow)); i++) await wait(100)
+          if (await pg.$(brow)) fail('세션 삭제 UI: 확인창에서 [지우기] 를 눌렀는데 안 지워졌다')
+          pg.off('dialog', onDlg)
+          if (natives) fail('🔴 브라우저 기본 확인창이 떴다(' + natives + '번) — 앱 확인창이나 되돌리기로 바꿨어야 한다')
+          {
+            // 되돌리기 토스트 — 데스크톱 · 폰 폭에서 화면 안에 서고 단추가 잘리지 않는다
+            const tb = () => pg.evaluate(() => { const t = document.querySelector('.toast'); const a = t?.querySelector('[data-toast-act]'); if (!t || !a) return null; const r = t.getBoundingClientRect(), q = a.getBoundingClientRect(); return { l: Math.round(r.left), r: Math.round(r.right), al: Math.round(q.left), ar: Math.round(q.right), vw: innerWidth, lines: Math.round(q.height), h: Math.round(r.height), b: Math.round(r.bottom), tab: Math.round(document.querySelector('.tabbar')?.getBoundingClientRect().top ?? -1) } })
+            const td = await tb(); await pg.screenshot({ path: 'test/tmp/parts-undo-toast-desktop.png' })
+            const vp0 = pg.viewportSize(); await pg.setViewportSize({ width: 390, height: 844 }); await wait(500)
+            const tp = await tb(); await pg.screenshot({ path: 'test/tmp/parts-undo-toast-phone.png' })
+            await pg.setViewportSize(vp0); await wait(500)
+            for (const [w, t] of [['데스크톱', td], ['폰 폭', tp]]) if (!t || t.l < 0 || t.r > t.vw || t.ar > t.r || t.al < t.l || t.lines > 30) fail(`🔴 되돌리기 토스트(${w}): 없거나 화면 밖으로 나가거나 단추가 접혔다 · ` + JSON.stringify(t))
+            for (const [w, t] of [['데스크톱', td], ['폰 폭', tp]]) if (t.h > 48) fail(`🔴 되돌리기 토스트(${w}): 글이 여러 줄로 접혔다(높이 ${t.h}) · ` + JSON.stringify(t))
+            if (tp.tab < 0 || tp.b > tp.tab) fail('🔴 되돌리기 토스트(폰 폭): 하단 탭을 가린다(10초 동안 탭을 못 누른다) · ' + JSON.stringify(tp))
+          }
+          ok('부품 넷 · 지우기 확인 — 쉬는 세션은 묻지 않고 지우고 되돌리기로 돌아옴 · 파일 휴지통도 묻지 않고 되돌리기로 제자리 · 턴이 걸린 세션만 앱 확인창(빨간 테두리 · 초점 [취소] · ⏎ 로 안 지워짐 · ✕) · 브라우저 기본 확인창 0번 · 폰 폭에서도 창과 토스트가 화면 안')
+          for (let i = 0; i < 30 && (await pg.$('.toast')); i++) await wait(400)   // 10초 토스트가 뒤 검사의 화면을 가리지 않게
+        }
         await pg.click(`.panel .srow:has(.n:text-is("${keep}"))`); await wait(1000)
         await pg.click('.col.side.left .nav:has-text("폴더 선택")'); await pg.waitForSelector('.pk [data-rel]', { timeout: 5000 }); await wait(300)
 
@@ -6282,6 +6403,11 @@ try {
           if (!/- \[ \] 제안검사 하나: 약 5분 · 첫 행동: 열기 <!-- bot:proposed \d{4}-\d{2}-\d{2} -->/.test(md)) fail('CK-3: 제안 줄 표식이 틀렸다\n' + md)
           const pv = await pg.evaluate(() => ({ props: [...document.querySelectorAll('.tprops .tprop .tt')].map((x) => x.textContent), inList: [...document.querySelectorAll('.todo .tt')].some((x) => x.textContent.includes('제안검사')) }))
           if (pv.props.length !== 2 || pv.inList) fail('🔴 CK-3: 제안이 «제안» 칸에만 따로 떠야 한다 ' + JSON.stringify(pv))
+          {
+            // 부품 넷 — [넣기] 는 흰 주 단추(종전 초록). 테마의 `--w` 와 같은 바탕이어야 한다
+            const okBg = await pg.evaluate(() => { const b = document.querySelector('.tprop button.ok'); const t = document.createElement('i'); t.style.background = 'var(--w)'; document.body.appendChild(t); const w = getComputedStyle(t).backgroundColor; t.remove(); return { b: b ? getComputedStyle(b).backgroundColor : '', w } })
+            if (!okBg.b || okBg.b !== okBg.w) fail('🔴 할 일 제안: [넣기] 가 흰 주 단추가 아니다 · ' + JSON.stringify(okBg))
+          }
           await pg.click('.tprop:has-text("제안검사 하나") button.ok'); await wait(700)
           await pg.click('.tprop:has-text("제안검사 둘") button.no'); await wait(700)
           md = readFileSync(todoF, 'utf8')

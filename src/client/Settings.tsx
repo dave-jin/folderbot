@@ -17,6 +17,7 @@ import { EFFORTS, MODES, modeLabel, modelsFor, moreModelsFor, setFoundModels } f
 import { norm } from '../core/search'
 import { dueText } from '../core/due'
 import { BridgesPane } from './Bridges'
+import { askConfirm } from './Sheets'
 
 /**
  * 설정 — 2026-09-17 «1안» (Dave: «설정 메뉴가 엉망진창임 … 종류별로 정리가 필요함»).
@@ -272,6 +273,8 @@ function RootRow() {
     catch (e) { setMsg((e as Error).message) }
   }
   const apply = async (p: string) => {
+    // 되돌리기 어려운 일 — 호스트가 통째로 다시 선다. 종전에는 묻지 않았다(2026-11-13 «지우기 확인 규칙»)
+    if (!(await askConfirm({ title: '볼트 루트를 바꿀까요?', body: `${p}\n\n바꾸면 호스트가 그 폴더로 다시 섭니다.`, ok: '바꾸기', danger: true }))) return
     setBusy(true); setMsg('바꾸는 중…')
     try {
       const r = await api<{ root: string; restarting: boolean; same?: boolean }>('/root', { body: { path: p } })
@@ -385,14 +388,14 @@ function DevicesPane() {
     </Row> : null}
     {!s.device.main && localBridge() ? <LocalOpenRows /> : null}
     <Group t="연결된 기기" />
-    {s.devices.map((d) => <Row key={d.id} t={d.name} d={`마지막 접속 ${fmtTime(d.lastSeen)}`}><button className="btn ghost" onClick={() => api('/devices/revoke', { body: { id: d.id } }).then(refresh)}>끊기</button></Row>)}
+    {s.devices.map((d) => <Row key={d.id} t={d.name} d={`마지막 접속 ${fmtTime(d.lastSeen)}`}><button className="btn ghost" data-revoke={d.id} onClick={async () => { if (await askConfirm({ title: `«${d.name}» 의 연결을 끊을까요?`, body: '그 기기에서 다시 쓰려면 페어링 코드로 다시 붙어야 해요.', ok: '끊기', danger: true })) await api('/devices/revoke', { body: { id: d.id } }).then(refresh) }}>끊기</button></Row>)}
     {!s.devices.length ? <Row t="연결된 기기" d="아직 붙은 기기가 없어요." /> : null}
     {/* ⛔ 페어링은 루프백에서만 열린다(호스트가 그렇게 막는다) — 원격에서는 줄 자체를 안 그린다 */}
     {isLocal ? <Row t="새 기기 연결" d="폰이나 다른 맥에서 이 코드를 넣으면 붙어요 (2분)." at="main">
       {pair ? <span className="pcode mono">{pair.code}</span> : null}<button className="btn" onClick={async () => setPair(await api('/pairing', { body: {} }))}>페어링 코드</button>
     </Row> : null}
     <Row t="이 기기 로그아웃" d="이 기기의 연결을 끊습니다. 다시 붙으려면 페어링 코드가 필요해요." danger at="dev">
-      <button className="btn danger" onClick={() => { setToken(''); location.reload() }}>로그아웃</button>
+      <button className="btn danger" onClick={async () => { if (await askConfirm({ title: '이 기기에서 로그아웃할까요?', body: '다시 붙으려면 페어링 코드가 필요해요.', ok: '로그아웃', danger: true })) { setToken(''); location.reload() } }}>로그아웃</button>
     </Row>
   </>
 }
@@ -449,7 +452,7 @@ function ClaudePane() {
       <span className="sv" style={{ color: s.auth.mode === 'token' ? 'var(--wait)' : 'var(--done)' }}>{s.auth.mode === 'token' ? '장기 토큰' : '키체인 로그인'}</span>
     </Row>
     <Row t="Claude Code 로그인" d={loginD}>
-      <button className="btn on" disabled={busy || !main} onClick={() => void openLogin()}>터미널에서 로그인</button>
+      <button className="btn" disabled={busy || !main} onClick={() => void openLogin()}>터미널에서 로그인</button>
     </Row>
     <Row t="장기 토큰" d={<>키체인 로그인을 못 읽는 상황(헤드리스·SSH)이면 씁니다. 터미널에 <span className="mono">claude setup-token</span> 을 치고 나온 토큰을 넣으세요 (1년). ⚠ 토큰 모드에선 claude.ai 커넥터가 안 붙어요.</>} at="main">
       <input className="sin mono" placeholder="sk-ant-oat01-…" value={tok} onChange={(e) => setTok(e.target.value)} />
@@ -473,7 +476,7 @@ function ClaudePane() {
       <button className="btn" disabled={busy} onClick={async () => { setBusy(true); try { const r = await api<{ text: string }>('/auth/diagnose'); setDiag(r.text) } catch (e) { setDiag((e as Error).message) } finally { setBusy(false) } }}>진단</button>
       {diag ? <button className="btn ghost" onClick={() => void copySay(diag, setMsg, '진단을 복사했어요')}>복사</button> : null}
     </Row>
-    {s.auth.mode === 'token' ? <Row t="토큰 지우기" d="키체인 로그인 모드로 돌아갑니다." danger at="main"><button className="btn danger" disabled={busy} onClick={() => saveT('')}>지우기</button></Row> : null}
+    {s.auth.mode === 'token' ? <Row t="토큰 지우기" d="키체인 로그인 모드로 돌아갑니다." danger at="main"><button className="btn danger" disabled={busy} onClick={async () => { if (await askConfirm({ title: '장기 토큰을 지울까요?', body: '키체인 로그인 모드로 돌아갑니다. 다시 쓰려면 토큰을 새로 넣어야 해요.', ok: '지우기', danger: true })) void saveT('') }}>지우기</button></Row> : null}
   </>
 }
 
@@ -508,7 +511,7 @@ function CodexPane() {
       <span className="sv" style={{ color: cxAuth?.ok ? 'var(--done)' : 'var(--wait)' }}>{cxAuth?.ok ? (cxAuth.how === 'key' ? '키' : '로그인') : '안 됨'}</span>
     </Row>
     <Row t="Codex 로그인" d={cxLoginD}>
-      <button className="btn on" disabled={busy || !main} onClick={() => void openLogin()}>터미널에서 로그인</button>
+      <button className="btn" disabled={busy || !main} onClick={() => void openLogin()}>터미널에서 로그인</button>
     </Row>
     <Row t="OpenAI API 키" d="키체인·브라우저 로그인을 못 쓰는 문맥(헤드리스·SSH)의 대안입니다. 워커 환경에만 넣고 ~/.codex 설정 파일은 건드리지 않아요." at="main">
       <input className="sin mono" type="password" placeholder="sk-…" value={cxKey} onChange={(e) => setCxKey(e.target.value)} />
@@ -642,11 +645,11 @@ function AkiflowPane() {
   return <>
     <p className="lead">레일에 선 폴더의 todo.md 줄 하나가 Akiflow 태스크 하나가 됩니다. 봇이 쓴 줄은 «🤖» 로 시작하고, 첫 줄에 출처 폴더가 붙어요. 봇의 제안은 [넣기] 한 것만 갑니다.</p>
     <Row t="동기화 상태" d={<>{st.mode === 'live' ? `켜짐 — 15분마다 맞춰요${st.routine ? '' : ' (루틴이 없어요 — 다시 켜 주세요)'}` : st.mode === 'preview' ? '미리보기 — 무엇을 할지 보여 주기만 해요. Akiflow 는 안 건드려요' : '꺼짐'} · 짝 {st.pairs}개 · 폴더 {st.folders}개{st.lastRun ? ` · 마지막 ${new Date(st.lastRun.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 성공 ${st.lastRun.ok} · 실패 ${st.lastRun.fail}` : ''}{msg ? ` · ${msg}` : ''}</>} at="main">
-      <span className="seg">{([['preview', '미리보기'], ['live', '켜기'], ['off', '끄기']] as const).map(([m, l]) => <button key={m} className={st.mode === m ? 'on' : ''} onClick={() => { if (m === 'live' && st.mode !== 'live' && !confirm(`Akiflow 에 실제로 씁니다 — 지금 기준 만들기 ${c.create}건. 처음 회차는 Akiflow 를 먼저 읽어 제목이 같은 일은 «같은 일?» 로 묻고 붙잡아 두며, 나머지는 바로 만들어요. 켤까요?`)) return; void call('/akiflow/mode', { mode: m }, () => (m === 'live' ? '켰어요 — 오케스트레이터에 «Akiflow 동기화» 루틴이 생겼어요' : ''))
+      <span className="seg">{([['preview', '미리보기'], ['live', '켜기'], ['off', '끄기']] as const).map(([m, l]) => <button key={m} className={st.mode === m ? 'on' : ''} onClick={async () => { if (m === 'live' && st.mode !== 'live' && !(await askConfirm({ title: 'Akiflow 동기화를 켤까요?', body: `Akiflow 에 실제로 씁니다 — 지금 기준 만들기 ${c.create}건. 처음 회차는 Akiflow 를 먼저 읽어 제목이 같은 일은 «같은 일?» 로 묻고 붙잡아 두며, 나머지는 바로 만들어요.`, ok: '켜기' }))) return; void call('/akiflow/mode', { mode: m }, () => (m === 'live' ? '켰어요 — 오케스트레이터에 «Akiflow 동기화» 루틴이 생겼어요' : ''))
       }}>{l}</button>)}</span>
     </Row>
     <Row t="옛 봇 줄" d={st.legacyLeft ? `처음 볼 때 이미 있던 봇 줄 ${st.legacyLeft}개는 올리지 않아요. 제안 칸으로 돌리면 폴더마다 [넣기] 한 것만 Akiflow 로 갑니다.` : '남은 옛 봇 줄이 없어요.'} at="main">
-      {st.legacyLeft ? <button className="btn" onClick={() => { if (confirm(`옛 봇 줄 ${st.legacyLeft}개를 «제안» 으로 돌릴까요? 각 폴더 todo.md 의 표식만 바뀌고 줄은 지우지 않아요.`)) void call('/akiflow/legacy', {}, (r) => `${r.moved ?? 0}줄을 제안으로 돌렸어요`) }}>제안으로 돌리기</button> : null}
+      {st.legacyLeft ? <button className="btn" onClick={async () => { if (await askConfirm({ title: `옛 봇 줄 ${st.legacyLeft}개를 «제안» 으로 돌릴까요?`, body: '각 폴더 todo.md 의 표식만 바뀌고 줄은 지우지 않아요.', ok: '제안으로 돌리기' })) void call('/akiflow/legacy', {}, (r) => `${r.moved ?? 0}줄을 제안으로 돌렸어요`) }}>제안으로 돌리기</button> : null}
     </Row>
     <div className="akprev">
       <div className="akh">이번에 할 일 — 만들기 {c.create} · 고치기 {c.update} · 완료 {c.complete}{c.delete ? ` · 지우기 ${c.delete}` : ''}{st.proposed ? ` · 제안 ${st.proposed}(안 감)` : ''}{st.held ? ` · 같은 일 확인 대기 ${st.held}` : ''}</div>

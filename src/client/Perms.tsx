@@ -62,7 +62,7 @@ export function PermGate({ items, onDone, refresh }: { items: PermRow[]; onDone:
               {p.status === 'missing' ? <button className="btn" onClick={() => b?.relaunch()} title="macOS 는 이미 뜬 앱에 새 권한을 적용하지 않아요">켰는데도 꺼짐 — 다시 시작</button> : null}
             </> : <>
               <button className="btn" onClick={() => void test()}>테스트 알림 보내기</button>
-              {tested || p.status === 'missing' ? <><button className="btn on" onClick={() => void ack(p.id, true)}>보였어요</button><button className="btn" onClick={() => void ack(p.id, false)}>안 보여요</button></> : null}
+              {tested || p.status === 'missing' ? <><button className="btn primary" onClick={() => void ack(p.id, true)}>보였어요</button><button className="btn" onClick={() => void ack(p.id, false)}>안 보여요</button></> : null}
               <button className="btn" onClick={() => void openPane(p.id)}>시스템 설정 열기 ↗</button>
             </>}
           </div>}
@@ -74,7 +74,7 @@ export function PermGate({ items, onDone, refresh }: { items: PermRow[]; onDone:
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
       <span style={{ color: 'var(--t3)', fontSize: 13 }}>{ok ? '권한이 모두 확인됐어요' : '필수 권한을 켜면 계속할 수 있어요'}</span><span style={{ flex: 1 }} />
       {!anyRequired && !ok ? <button className="btn" onClick={onDone}>나중에</button> : null}
-      <button className="btn on" disabled={!ok} onClick={onDone}>계속</button>
+      <button className="btn primary" disabled={!ok} onClick={onDone}>계속</button>
     </div>
   </div></div>
 }
@@ -120,7 +120,7 @@ function AgentConn() {
         <ol className="how">{(!has('claude')
           ? ['터미널에서 Claude Code 를 설치하세요', '설치 뒤 [연결 확인]']
           : ['터미널에서 claude 를 치고 /login', '브라우저에서 로그인을 마치세요', '이 창으로 돌아와 [연결 확인]']).map((h, i) => <li key={i}>{h}</li>)}</ol>
-        <div className="acts">{has('claude') && s.device.main ? <button className="btn on" disabled={busy} onClick={() => void login('claude')}>터미널에서 로그인</button> : null}<button className="btn" disabled={busy} onClick={() => void act('claude')}>연결 확인</button></div>
+        <div className="acts">{has('claude') && s.device.main ? <button className="btn primary" disabled={busy} onClick={() => void login('claude')}>터미널에서 로그인</button> : null}<button className="btn" disabled={busy} onClick={() => void act('claude')}>연결 확인</button></div>
       </> : null}
     </div>
     <div className={`perm-row ${cx?.ok ? 'granted' : 'unknown'}`}>
@@ -128,7 +128,7 @@ function AgentConn() {
       {has('codex') && !cx?.ok ? <>
         <p className="why">Codex 는 없어도 됩니다 — 있으면 세션마다 Claude 와 골라 쓸 수 있어요.</p>
         <ol className="how">{['터미널에서 codex login', '또는 설정 › 에이전트에 OpenAI API 키를 넣으세요', '이 창으로 돌아와 [연결 확인]'].map((h, i) => <li key={i}>{h}</li>)}</ol>
-        <div className="acts">{s.device.main ? <button className="btn on" disabled={busy} onClick={() => void login('codex')}>터미널에서 로그인</button> : null}<button className="btn" disabled={busy} onClick={() => void act('codex')}>연결 확인</button></div>
+        <div className="acts">{s.device.main ? <button className="btn primary" disabled={busy} onClick={() => void login('codex')}>터미널에서 로그인</button> : null}<button className="btn" disabled={busy} onClick={() => void act('codex')}>연결 확인</button></div>
       </> : null}
     </div>
     {msg ? <div className="hint">{msg}</div> : null}

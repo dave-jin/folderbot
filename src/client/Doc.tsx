@@ -420,7 +420,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
       /* 영상·음성 (2026-11-12) — 종전에는 «미리보기 없음» 이었다. 원본 응답이 조각(Range)을 주므로 넘겨 보기가 된다 · 폰은 `playsInline` 이 없으면 전체 화면으로 튄다 */
       : doc.kind === 'video' ? <div className="dbody mediabody"><video key={raw(rel)} className="dvideo" src={raw(rel)} controls playsInline preload="metadata" /></div>
       : doc.kind === 'audio' ? <div className="dbody mediabody"><div className="daudio"><span className="nm">{name}</span><audio key={raw(rel)} src={raw(rel)} controls preload="metadata" /></div></div>
-      : <div className="empty nopv">미리보기 없음 · {name} · {doc.size} bytes<button className="btn on" onClick={openHere}>외부에서 열기 ↗</button><a href={raw(rel)} target="_blank" rel="noreferrer" className="btn">새 창에서 열기</a></div>}
+      : <div className="empty nopv">미리보기 없음 · {name} · {doc.size} bytes<button className="btn primary" onClick={openHere}>외부에서 열기 ↗</button><a href={raw(rel)} target="_blank" rel="noreferrer" className="btn">새 창에서 열기</a></div>}
     {phone && rel ? <div className="dfoot">{sibs.length > 1 ? <><button className="rb" title="이전 문서" onClick={() => docs.replace(sibs[(idx - 1 + sibs.length) % sibs.length])}><Icon n="up" size={18} /></button><span className="pos">{idx + 1} / {sibs.length}</span><button className="rb" title="다음 문서" onClick={() => docs.replace(sibs[(idx + 1) % sibs.length])}><Icon n="chevd" size={18} /></button></> : null}<button className="talk" onClick={() => onAttach(rel)}>봇에게 이 문서로 말하기</button></div> : null}
   </div>
 }

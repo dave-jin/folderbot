@@ -99,7 +99,7 @@ export async function uxuiEight({ br, check, port = 7481, shots = '' }) {
       // 바깥 누르기도 같은 길 — 묻는다 → «버리고 닫기»
       await pg.mouse.click(8, 450)
       await pg.waitForSelector('.modal.conf', { timeout: 2000 }).catch(() => { throw new Error('고친 것이 있는데 바깥 누르기가 묻지 않았다') })
-      await pg.click('.modal.conf .modal-f .btn.on')
+      await pg.click('.modal.conf .modal-f [data-conf="ok"]')
       must(await gone('.sheet .sheet-h'), '«버리고 닫기» 뒤에도 루틴 편집이 남았다')
       must((await api(`/bots/${bot.id}/routines`))[0].prompt === '훑어 줘', '버렸는데 저장됐다')
     })
@@ -161,7 +161,7 @@ export async function uxuiEight({ br, check, port = 7481, shots = '' }) {
       const target = rows.findIndex((r) => !r.on && /^[1-9]$/.test(r.k))
       must(target >= 0, '숫자가 적힌 다른 모델 줄이 없다 — 검사 전제 ' + JSON.stringify(rows))
       await blur(); await pg.keyboard.press(rows[target].k); await wait(300)
-      if (await pg.$('.modal.conf')) { await pg.click('.modal.conf .modal-f .btn.on'); await wait(300) }
+      if (await pg.$('.modal.conf')) { await pg.click('.modal.conf .modal-f [data-conf="ok"]'); await wait(300) }
       let after = before; for (let i = 0; i < 20 && after === before; i++) { await wait(100); after = (await modelBtn.textContent()).trim() }
       must(after !== before, `숫자 키 ${rows[target].k} 를 눌렀는데 모델이 그대로다(${before})`)
       // 팝오버만 떠 있을 때의 ⎋ 는 종전대로 팝오버를 닫는다(회귀)

@@ -430,6 +430,6 @@ function ChatBox({ bot, name, task, cont, brief, go }: { bot: string; name: stri
     <textarea className="cx-in" value={text} placeholder="이어서 말하기…" onChange={(e) => setText(e.target.value)}
       onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send() } }} />
     {err ? <div className="cx-err">{err}</div> : null}
-    <div className="cx-send"><span className="k">⌘↵</span><button className="btn on" disabled={busy || !text.trim()} onClick={() => void send()}><Icon n="send" size={12} />{busy ? '보내는 중…' : '보내기'}</button></div>
+    <div className="cx-send"><span className="k">⌘↵</span><button className="btn primary" disabled={busy || !text.trim()} onClick={() => void send()}><Icon n="send" size={12} />{busy ? '보내는 중…' : '보내기'}</button></div>
   </section>
 }

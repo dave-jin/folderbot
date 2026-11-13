@@ -576,7 +576,9 @@ export class Registry extends EventEmitter {
     mkdirSync(dir, { recursive: true })
     // ⚠ 시각은 **한 번만** 잰다 — 파일 이름과 안의 `t` 가 다른 밀리초에 찍히면 `undo(t)` 가 «스냅샷이 없어요» 로
     //   실패한다(2026-09-15 QA 에서 드물게 났다). 같은 값이어야 되돌리기가 그 파일을 찾는다.
-    const t = Date.now()
+    // 🔴 같은 밀리초에 두 번 불리면(여럿을 한꺼번에 치울 때) 앞 스냅샷을 덮어 그 파일은 되돌릴 수 없게 된다 — 빈 번호까지 미룬다 (2026-11-13 · 휴지통을 묻지 않게 되면서 되돌리기가 유일한 안전망이다)
+    let t = Date.now()
+    while (existsSync(join(dir, `${t}.json`))) t++
     writeFileSync(join(dir, `${t}.json`), JSON.stringify({ t, ...entry }))
   }
   undoList(): { t: number; op: string; from: string; to: string }[] {

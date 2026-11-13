@@ -302,7 +302,7 @@ function NodeDetail({ map, n, color, onPick, close, stemMove, act, bot, go, open
     </select>{n.byBot ? <span className="lm-tag bot" title={n.byBot === 'ai' ? '주인 맥 모델이 줄기 목록에 맞춰 넣었어요 — 옮기면 그때부터 Dave 것' : '이 줄기 폴더들과 선이 가장 많이 닿아요 — 모델이 곧 다시 봐요'}>봇이 넣음</span> : null}</span>)}
     {reuse.map((r) => <div key={r.from + r.act} className="ru"><div><b>♻ {byId.get(r.from)?.label}</b> · {r.what} <span className={`lm-tag ${r.fact ? 'fact' : 'guess'}`}>{r.fact ? '사실' : '봇 추측'}</span></div>
       {r.files.map((f) => <div key={f} className="ff"><code>{f}</code><button className="btn sm" onClick={() => openFile(r.from, f)}>열기</button></div>)}
-      <button className="btn p sm" onClick={() => act(r)}>{r.act === 'ref' ? '참조 폴더로 묶기' : '이 폴더 봇에게 알려 주기'}</button></div>)}
+      <button className="btn primary sm" onClick={() => act(r)}>{r.act === 'ref' ? '참조 폴더로 묶기' : '이 폴더 봇에게 알려 주기'}</button></div>)}
     {past.length ? <><div className="xh">지난 일에서 가져다 쓸 것 <span className="m">보관 폴더 {past.length}</span></div>
       {past.map((p) => <div key={p.id} className="pst"><div className="t"><button className="lk" onClick={() => onPick(p.id)}><b>{p.label}</b></button><span className="lm-tag past">{p.dd}</span>{p.guess ? <span className="lm-tag guess">봇 추측</span> : null}</div>
         <div className="w">{p.why}</div>
