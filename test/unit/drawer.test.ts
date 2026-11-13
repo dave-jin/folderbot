@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { EDGE_PX, canStartSwipe, dragProgress, fromLeftEdge, lockOf, scrollableEats, stageOf, swipeVerdict } from '../../src/core/drawer'
 describe('H · 반응형 3단계 + 세 칸 띠', () => {
   it('단계는 창 폭으로만 — 1400 넓음 · 900 중간 · 500 좁음 · 경계 1200/768', () => {
@@ -41,5 +43,32 @@ describe('AH · 쓸기는 맨 왼쪽 가장자리에서만 (2026-09-24 Dave)', (
     expect(fromLeftEdge(EDGE_PX)).toBe(true)
     expect(fromLeftEdge(EDGE_PX + 1)).toBe(false)
     expect(fromLeftEdge(200)).toBe(false)   // 할 일·폴더의 쓸리는 행이 사는 자리 — 여기서 다투면 안 된다
+  })
+})
+
+/**
+ * 폰의 폴더 목록은 화면 전체를 덮는다 (2026-11-13 Dave: «모바일에서 현재 사이드 슬라이딩 방식으로 나오는
+ * 폴더블 리스트를 그냥 전체로 보이게 해줘» · 목업 «가 — 전체 폭»).
+ * 86% 로 되돌리면 오른쪽에 대화 화면이 다시 비친다. 중간 폭(띠 52px 옆 280px)은 그대로다.
+ * 실제 렌더에서의 폭은 스모크(«AD: 왼쪽 서랍 = 봇 목록(홈)»)가 잰다.
+ */
+describe('폰의 폴더 목록은 전체 폭 (2026-11-13 Dave)', () => {
+  const css = readFileSync(resolve(__dirname, '../../src/client/styles.css'), 'utf8')
+  const app = readFileSync(resolve(__dirname, '../../src/client/App.tsx'), 'utf8')
+  const phone = (() => { const i = css.indexOf('@media (max-width: 767px) {'); expect(i).toBeGreaterThan(-1); return css.slice(i, css.indexOf('\n}', i)) })()
+  it('좁음 단계의 왼쪽 서랍 폭은 100% 다', () => {
+    const m = phone.match(/\n\s*\.drawer\.left\s*\{\s*width:([^;}]+)[;}]/)
+    expect(m?.[1].trim()).toBe('100%')
+  })
+  it('중간 폭의 왼쪽 서랍은 그대로 280px 이다', () => {
+    expect(css).toMatch(/\.app\.smid \.drawer\.left \{ left:52px; width:280px \}/)
+  })
+  it('쓸어 여는 동안 폭을 못 재면 폰에서는 화면 폭을 쓴다(85% 가 아니다)', () => {
+    const line = app.split('\n').find((l) => l.includes('const paintDrag = ')) ?? ''
+    expect(line).toContain('window.innerWidth * (phone ? 1 : 0.85)')
+  })
+  it('홈의 폴더 줄은 어느 폴더인지 표식을 단다 — 목록에서 있던 폴더로 돌아가는 길을 스모크가 실제로 누른다', () => {
+    const line = app.split('\n').find((l) => l.includes('const row = <button key={b.id} className={`mrow ')) ?? ''
+    expect(line).toContain('data-bot={b.id}')
   })
 })

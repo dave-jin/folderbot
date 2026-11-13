@@ -694,7 +694,7 @@ b,strong { color:var(--w); font-weight:600 }
   /* H · 좁음: 흐름 안에는 채팅 한 칸뿐. 홈(봇 목록)·문서·패널은 서랍(.drawer)으로 덮인다 — 밀지 않는다 */
   .cols > .col.chat { width:100% !important; flex:1 !important }
   .drawer > .mhome { display:flex !important }
-  .drawer.left { width:86% }
+  .drawer.left { width:100% } /* 폰의 폴더 목록은 화면을 다 덮는다(2026-11-13 Dave «그냥 전체로 보이게»). 86% 로 되돌리면 대화 화면이 옆에 비친다. 돌아가는 길은 목록에서 그 폴더 누르기 · ⎋ */
   .drawer.right { width:100% }
   html,body,#root { background:var(--bg) }
   .app { background:var(--bg) } /* 그라디언트를 두면 헤더(단색)와 만나는 자리에 선이 생긴다 */

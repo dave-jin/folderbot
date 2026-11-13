@@ -894,7 +894,7 @@ function Main() {
   const [dragSide, setDragSide] = useState<'' | 'left' | 'right'>('')
   const leftRef = useRef<HTMLDivElement>(null); const rightRef = useRef<HTMLDivElement>(null); const scrimRef = useRef<HTMLDivElement>(null); const colsRef = useRef<HTMLDivElement>(null)
   const drawerEl = (side: 'left' | 'right') => (side === 'left' ? leftRef.current : rightRef.current)
-  const paintDrag = (side: 'left' | 'right', dx: number, opening: boolean) => { const el = drawerEl(side); if (!el) return; const p = dragProgress(opening, side, dx, el.clientWidth || window.innerWidth * 0.85); el.style.transition = 'none'; el.style.transform = `translateX(${side === 'left' ? -(1 - p) * 100 : (1 - p) * 100}%)`; if (scrimRef.current) { scrimRef.current.style.transition = 'none'; scrimRef.current.style.opacity = String(p) } }
+  const paintDrag = (side: 'left' | 'right', dx: number, opening: boolean) => { const el = drawerEl(side); if (!el) return; const p = dragProgress(opening, side, dx, el.clientWidth || window.innerWidth * (phone ? 1 : 0.85)); el.style.transition = 'none'; el.style.transform = `translateX(${side === 'left' ? -(1 - p) * 100 : (1 - p) * 100}%)`; if (scrimRef.current) { scrimRef.current.style.transition = 'none'; scrimRef.current.style.opacity = String(p) } }
   const settle = (side: 'left' | 'right') => { requestAnimationFrame(() => { const el = drawerEl(side); if (el) { el.style.transition = ''; el.style.transform = '' } if (scrimRef.current) { scrimRef.current.style.transition = ''; scrimRef.current.style.opacity = '' } }); window.setTimeout(() => setDragSide(''), 260) }
   const swDown = (e: React.PointerEvent) => {
     if (!phone || e.button !== 0 || gref.current) return
@@ -1456,7 +1456,7 @@ function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, 
       {rows.map(([sec, list]) => <div key={sec}>
         <div className="secl">{sec}</div>
         {list.map(({ b, sum }) => {
-          const row = <button key={b.id} className={`mrow ${sum.unread ? 'unread' : ''}`} onPointerDown={() => prefetch(b.id)} onClick={() => go(b.id)}><span className="av"><FolderBot color={b.color} size={46} mood={sum.mood} unread={sum.unread} recent={sum.recent} mono /></span><span className="t"><span className="l1"><BotName b={b} chip={false} />{b.due || b.todoDue ? (() => { const d = botDueChip(b); return d ? <span className={`due ${d.tone}`} title={d.line ? '할 일 마감' : undefined}>{d.text}</span> : null })() : <time>{fmtTime(sum.t)}</time>}</span><span className="l2">{sum.text}</span></span></button>
+          const row = <button key={b.id} className={`mrow ${sum.unread ? 'unread' : ''}`} data-bot={b.id} onPointerDown={() => prefetch(b.id)} onClick={() => go(b.id)}><span className="av"><FolderBot color={b.color} size={46} mood={sum.mood} unread={sum.unread} recent={sum.recent} mono /></span><span className="t"><span className="l1"><BotName b={b} chip={false} />{b.due || b.todoDue ? (() => { const d = botDueChip(b); return d ? <span className={`due ${d.tone}`} title={d.line ? '할 일 마감' : undefined}>{d.text}</span> : null })() : <time>{fmtTime(sum.t)}</time>}</span><span className="l2">{sum.text}</span></span></button>
           // 관제(오케스트레이터)는 고정·지우기·은퇴의 대상이 아니다 — 쓸리지 않는다
           return b.orchestrator ? row : <SwipeRow key={b.id} cfg={FOLDER_SWIPE} labelFor={(a) => (a === 'pin' && b.pinned ? '고정 풀기' : undefined)} onAct={(a) => void folderAct(b, a)}>{row}</SwipeRow>
         })}

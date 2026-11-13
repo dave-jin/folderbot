@@ -2764,7 +2764,9 @@ try {
               if ((await view()) !== 'list') { await drag(8, 500, 260, 505); await wait(400) }
               if ((await view()) !== 'list') fail('AI: 봇 목록을 다시 못 열었다 ' + (await view()))
               const dl = await hp.evaluate(() => { const d = document.querySelector('.drawer.left'); return { open: d?.classList.contains('open'), home: !!d?.querySelector('.mhome'), rows: d?.querySelectorAll('.mrow').length ?? 0, w: d?.getBoundingClientRect().width, scrim: !!document.querySelector('.scrim') } })
-              if (!dl.open || !dl.home || dl.rows < 2 || dl.w > 500 * 0.9 || !dl.scrim) fail('AD: 왼쪽 서랍 = 봇 목록(홈) ' + JSON.stringify(dl))
+              // 폰의 폴더 목록은 화면을 다 덮는다(2026-11-13 Dave «그냥 전체로 보이게» · 목업 «가») — 오른쪽 끝도 목록이라 뒤의 대화 화면이 안 비친다
+              { const edge = await hp.evaluate(() => !!document.elementFromPoint(window.innerWidth - 2, 400)?.closest('.drawer.left')); if (!edge) fail('🔴 AD: 폰 목록의 오른쪽 끝에 뒤 화면이 비친다(전체 폭이 아니다)') }
+              if (!dl.open || !dl.home || dl.rows < 2 || Math.abs(dl.w - 500) > 1 || !dl.scrim) fail('AD: 왼쪽 서랍 = 봇 목록(홈) ' + JSON.stringify(dl))
               /**
                * 🔴 **AQ · 목록은 «맨 위 레이어» 로 덮고, 뒤 화면은 제자리에 선다** (2026-09-24 Dave · IMG_2124:
                *    *«폴더보드 자체가 레이어상 더 위에 있어야 … 리스트 부분만 와야 하는데 뒤에 배경이 같이 따라오거든»*).
@@ -2785,9 +2787,10 @@ try {
               }
               await hp.screenshot({ path: 'test/tmp/h-narrow-left.png' })
               // 🔴 👈 는 아예 없다 — 무엇을 해도 아무 일이 없어야 한다
-              await drag(470, 500, 250, 505); if ((await view()) !== 'list') fail('🔴 AD: 👈 가 아직 살아 있다 ' + (await view()))
-              await hp.evaluate(() => { document.querySelector('.scrim')?.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 480, clientY: 400 })) }); await wait(350)
-              if ((await view()) !== 'chat') fail('AD: 어두워진 채팅 탭 → 채팅 ' + (await view()))
+              await drag(470, 30, 250, 35); if ((await view()) !== 'list') fail('🔴 AD: 👈 가 아직 살아 있다 ' + (await view()))
+              // 돌아가는 길 = 목록에서 지금 폴더 줄 누르기. 전체 폭이 되어 누를 어둠막 띠가 없다(2026-11-13)
+              await hp.click(`.drawer.left .mrow[data-bot="${bot.id}"]`); await wait(450)
+              { const back = await hp.evaluate(() => ({ view: document.querySelector('.app').dataset.view, bot: new URLSearchParams(location.hash.slice(1)).get('bot') })); if (back.view !== 'chat' || back.bot !== bot.id) fail('AD: 목록에서 지금 폴더 줄 → 그 대화 ' + JSON.stringify(back)) }
               await drag(380, 500, 150, 505); if ((await view()) !== 'chat') fail('🔴 AD: 채팅에서 👈 가 뭔가를 열었다 ' + (await view()))
 
               /** AD · 하단 탭이 화면을 가른다 — 「할 일」과 「폴더」는 **다른 화면**이다 */
@@ -2880,9 +2883,9 @@ try {
               if (new Set(icons).size !== 1) fail('🔴 AG: 좌상단 버튼이 화면마다 다르다 ' + JSON.stringify(icons))
               await tapNav(hp, 'chat'); await wait(350)
               await hp.screenshot({ path: 'test/tmp/ad-phone.png' })
-              // ☰ 로도 레일 · 어두워진 채팅(스크림) 탭 → 닫힘
+              // ☰ 로도 레일 · ⎋ → 닫힘(좁힌 맥 창의 길 — 전체 폭이라 어둠막 띠는 없다)
               await hp.click('.chat-hdr .hb-menu'); await wait(400); if ((await view()) !== 'list') fail('H 좁음: ☰ → 레일')
-              await hp.evaluate(() => { document.querySelector('.scrim')?.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 480, clientY: 400 })) }); await wait(350); if ((await view()) !== 'chat') fail('H 좁음: 어두워진 채팅 탭 → 닫힘')
+              await hp.keyboard.press('Escape'); await wait(350); if ((await view()) !== 'chat') fail('H 좁음: ⎋ → 목록 닫힘 ' + (await view()))
               /**
                * 🔴 **S-2 · 맥 알림 배너를 눌렀을 때** (2026-09-21 Dave: «알림 버튼을 클릭했을 때 해당 세션으로 이동하는 문제»).
                *    셸(`desktop/main.js` 의 `navigate`)은 `location.hash` 만 놓는다 — 앱 안의 벨처럼 화면을 바꿔 주지 않는다.
@@ -6361,8 +6364,8 @@ try {
             if (await listOpen()) fail('DT: 느리게 두 번 눌렀는데 봇 목록이 열렸다')
             await vpg.click('.tabbar [data-tab="chat"]', { delay: 0 }); await wait(120); await vpg.click('.tabbar [data-tab="chat"]', { delay: 0 }); await wait(600)
             if (!(await listOpen())) fail('DT: 채팅 탭을 두 번 연달아 눌렀는데 봇 목록이 안 열렸다 ' + await vpg.evaluate(() => document.querySelector('.app').dataset.view))
-            await vpg.evaluate(() => document.querySelector('.scrim')?.click()); await wait(600)
-            if (await listOpen()) fail('DT: 덮개를 눌러도 봇 목록이 안 닫힌다')
+            await vpg.keyboard.press('Escape'); await wait(600)
+            if (await listOpen()) fail('DT: ⎋ 를 눌러도 봇 목록이 안 닫힌다')
           }
 
           /**
