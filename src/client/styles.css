@@ -533,13 +533,6 @@ b,strong { color:var(--w); font-weight:600 }
 .ucard .un b { color:var(--t2); font-weight:500 }
 .ucard.sm { padding:12px 13px } .ucard.sm .uf b { font-size:13px }
 /* 폰 첫 화면 — 한 줄 띠 (2026-09-13 Dave: 카드가 너무 크다). 누르면 카드가 시트로 올라온다 */
-.ustrip { display:flex; align-items:center; gap:9px; width:100%; height:38px; padding:0 12px; border-radius:12px; background:var(--bg2); border:1px solid var(--line); color:var(--t3); font-size:13px }
-.ustrip:active { background:var(--sel) }
-.ustrip b { font-size:15px; font-family:var(--mono); font-weight:700 }
-.ustrip .lb { margin-left:-4px }
-.ustrip .bar { flex:1; min-width:30px; height:7px; border-radius:4px; background:var(--line); overflow:hidden }
-.ustrip .bar > span { display:block; height:7px; border-radius:4px }
-.ustrip .rs { white-space:nowrap; color:var(--t3) }
 .tsheet.usheet { padding:10px 14px calc(var(--sab) + 16px) }
 /* 상태바 칩 */
 /* 상태바에서 띄우는 카드 */
@@ -710,7 +703,7 @@ b,strong { color:var(--w); font-weight:600 }
 @media (prefers-reduced-motion: reduce) { .pulse,.pulse::after,.glow,.spin,.fb-work,.fb *,.fb .badge,.live.run .tx,.skel,.md.streaming > :last-child::after,.pinq,.tobot { animation:none } }
 
 /* ── 폰 — 탭바 없음. 홈 → 대화 → 폴더 → 문서를 밀어 넣는다. 큰 글자 · 둥근 44pt 버튼 · 떠 있는 알약 ── */
-.mhome, .mtop, .mfoot, .mpill, .mrow, .mcards, .cchips { display:none }
+.mhome, .mtop, .mfoot, .mpill, .mrow, .cchips { display:none }
 @media (max-width: 767px) {
   html,body,#root { font-size:15px }
   input,textarea,select { font-size:16px }
@@ -732,7 +725,6 @@ b,strong { color:var(--w); font-weight:600 }
   .mscroll { flex:1; overflow-y:auto; overflow-x:hidden; padding-bottom:calc(var(--sab) + 84px); -webkit-overflow-scrolling:touch }
   .mtitle { padding:22px 18px 2px; font-size:30px; font-weight:600; color:var(--w); letter-spacing:-.3px }
   .msub { padding:0 18px 14px; font-size:14px; color:var(--t2); display:flex; align-items:center; gap:8px }
-  .mcards { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:0 16px 6px } .mcards button { height:118px; border-radius:12px; background:var(--bg2); border:1px solid var(--line); padding:16px 16px 14px; display:flex; flex-direction:column; justify-content:space-between; align-items:flex-start } .mcards button .n { font-size:17px; color:var(--w); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100% } .mcards button .n span { color:var(--t3); margin-left:4px }
   .mhome .secl { font-size:13px; padding:14px 18px 2px }
   .mrow { display:flex; align-items:center; gap:14px; padding:11px 18px; min-height:70px; width:100% } .mrow:active { background:var(--sel) } .mrow .av { position:relative; flex:none } .mrow .av .dot { position:absolute; right:-1px; bottom:-1px; width:12px; height:12px; border:2px solid var(--bg); box-sizing:content-box } .mrow .t { flex:1; min-width:0; display:flex; flex-direction:column } .mrow .l1 { display:flex; align-items:baseline; gap:8px } .mrow .l1 b { font-size:17px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 } .mrow .l1 .vmk { flex:none; align-self:center } .mrow .l1 time { margin-left:auto; font-size:13px; color:var(--t3); flex:none } .mrow .l2 { display:block; font-size:14px; color:var(--t2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
   .mrow.unread .l1 b { font-weight:700; color:var(--w) } .mrow.unread .l2 { color:var(--t) }   /* S · 안 읽은 답 — 굵은 제목 + 밝은 미리보기 */
@@ -867,30 +859,6 @@ b,strong { color:var(--w); font-weight:600 }
 .sv { font-size:13px; color:var(--t2); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .unit { font-size:12px; color:var(--t3) }
 .pcode { font-size:22px; letter-spacing:.18em; color:var(--w) }
-/* 액션 4칸 — 폰 홈과 맥 레일 맨 위가 같은 컴포넌트를 쓴다(맥은 .mini) */
-.sbtiles { padding:6px 8px 2px }
-/* ⚠ 아래쪽에 «폰 아닌 화면에서는 .mcards 를 숨긴다» 는 줄이 있다 — 레일 것은 **더 센 선택자**로 살린다
-   (순서로 이기려 들면 규칙 하나 옮길 때마다 조용히 사라진다) */
-.sbtiles .mcards { display:grid; grid-template-columns:1fr 1fr; gap:6px }
-.mcards button { position:relative; text-align:left; overflow:hidden }
-.mcards button .sub { display:block; /* ⚠ 채팅 서브에이전트의 전역 `.sub { display:flex }` 가 걸려 말줄임표가 안 먹었다 */ font-size:12px; color:var(--t3); line-height:1.4; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-.mcards button .act { position:absolute; right:10px; bottom:10px; height:22px; padding:0 9px; border-radius:8px; background:var(--box); color:var(--t2); font-size:12px; display:inline-flex; align-items:center; cursor:pointer }
-.mcards button .act:hover { background:var(--hover); color:var(--w) }
-.mcards button.hot { border-color:color-mix(in srgb,var(--wait) 45%,transparent) }
-.sbtiles .mcards button { height:64px; border-radius:12px; background:var(--bg2); border:1px solid var(--line); padding:8px 9px; display:flex; flex-direction:column; justify-content:space-between; align-items:flex-start; gap:2px }
-.sbtiles .mcards button:hover { background:var(--hover) }
-.sbtiles .mcards button .n { font-size:12px; color:var(--w); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100% }
-.sbtiles .mcards button .n span { color:var(--t3); margin-left:4px }
-.sbtiles .mcards button .sub { font-size:11px }
-.sbtiles .mcards button .act { right:6px; bottom:6px; height:18px; padding:0 6px; font-size:11px }
-/* 부제목과 칸 안 단추는 **한 줄에 나란히** 선다 — 단추가 떠 있던 시절에는 부제목이 그 밑으로 들어가 말줄임표까지 가려졌다
-   («제품_Rondo · As»). 단추 폭이 글자마다 달라 여백 어림으로는 못 막는다 (2026-09-25 디자인 검수) */
-.mcards button .subrow { display:flex; align-items:center; gap:6px; width:100%; min-width:0 }
-.mcards button .subrow .sub { flex:1; min-width:0 }
-.mcards button .subrow .act { position:static; flex:none; margin:-3px -4px -3px 0 }   /* 위아래 음수 여백 — 단추가 줄을 키우면 위 제목이 눌린다 */
-.sbtiles .mcards button .subrow .act { margin:-2px -3px -2px 0 }
-/* 작은 타일(64px)은 아이콘+제목+부제목이 1~2px 넘쳤다 — 그동안 부제목 아랫단이 조용히 잘렸고, 줄로 묶자 제목이 눌렸다. 제목은 줄지 않게 하고 여백을 1px 씩 뺀다 */
-.mcards button .n, .mcards button > .sub, .mcards button .subrow { flex:none } .sbtiles .mcards button { padding:7px 9px; gap:1px } .sbtiles .mcards button .n { line-height:1.25 }
 /* 확인창 — 되돌리기 어려운 한 걸음 앞 (모델 바꾸기 등) */
 .modal.conf .cbody { margin:0; font-size:13px; line-height:1.65; color:var(--t2); white-space:pre-wrap; overflow-wrap:anywhere }
 .modal.conf .cskip { display:flex; align-items:center; gap:9px; margin:16px 0 2px; font-size:13px; color:var(--t2); cursor:pointer }
@@ -1299,13 +1267,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 /* ⚠ **작고 오른쪽에 붙는 알약 셋**이다 — 목록의 주인공은 폴더지 정렬 갈래가 아니다.
    ⛔ `flex:1` 로 폭을 삼등분하지 마라: 전역 `button{text-align:left}` 과 겹쳐 «큰 빈 블록 + 왼쪽
       구석 글자» 가 된다(2026-09-13 Dave: *«소팅 화면 디자인이 왜 이래»*). */
-.sortbar { display:flex; justify-content:flex-end; align-items:center; gap:3px; padding:6px 10px 2px }
-.sortbar .lb { margin-right:auto; font-size:11px; color:var(--t3) }
-.sortbar button { flex:none; padding:2px 9px; border-radius:999px; font-size:11px; line-height:1.6; text-align:center; color:var(--t3); background:none; border:0 }
-.sortbar button:hover { color:var(--t); background:var(--hover) }
-.sortbar button.on { background:var(--sel); color:var(--w) }
 /* AZ · 폰 홈의 정렬 — 손가락 크기(높이 36)·섹션 제목과 같은 들여쓰기. 레일과 같은 부품이라 모양은 여기서만 키운다 */
-.mhome .sortbar { padding:10px 16px 2px; gap:6px } .mhome .sortbar .lb { font-size:13px } .mhome .sortbar button { font-size:14px; min-height:36px; padding:0 14px }
 .brow.dsrc { opacity:.4 }
 .brow.dover { box-shadow:inset 0 2px 0 var(--run) }
 
@@ -1741,14 +1703,6 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .akcard b { color:var(--w); width:100% } .akcard span { color:var(--t2) } .akcard .sp { flex:1 } .akcard button { font-size:12px; padding:3px 9px; border-radius:6px; background:var(--sel); color:var(--w) }
 
 /* ── CJ · 홈 네 칸 = 관리 입구 넷 (2026-10-16 · 목업 03_디자인/2026-10-16_홈-네-칸-목업 ①) — 큰 숫자 + 이름. 확인 대기면 알림 칸이 주황 ── */
-.mcards.big4 button .n { display:block; color:var(--t2) }   /* ⚠ flex 면 긴 이름에 말줄임표가 안 선다 — 블록 + 숫자 오른쪽 여백 */
-.mcards.big4 button .n .big { margin-right:6px }
-.mcards.big4 button .n .big { font-size:22px; font-weight:600; color:var(--w); line-height:1; font-variant-numeric:tabular-nums; letter-spacing:-.3px }
-.mcards.big4 button.hot .n .big { color:var(--wait) } .mcards.big4 button.hot .n { color:var(--wait) }
-.mcards.big4 button .sub em { font-style:normal; color:var(--run) }
-.sbtiles .mcards.big4 button .n { font-size:12px; line-height:1.15 } .sbtiles .mcards.big4 button .n .big { margin-right:5px }
-.sbtiles .mcards.big4 button .n .big { font-size:15px }
-.sbtiles .mcards.big4 button { height:68px }
 
 /* ── CJ R2 · 전체 할 일 보드 · 폴더 현황 시트 — 맥은 가운데 창(세션 창 크기), 폰은 위 `.modal` 폰 규칙이 전체 높이 시트로 덮는다 ── */
 .modal > .grip { display:none }
@@ -1946,10 +1900,6 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 
 /* ── RB-6 · 루틴 관리 페이지 (2026-10-30 · 목업 03_디자인/2026-10-30_루틴-관리-목업) ── */
 /* 2026-11-01 Dave «한쪽으로 치우쳐져서 안 예뻐» — 버튼에 width:auto 를 주면 글자 폭만큼 줄어 왼쪽에 붙었다. 네 칸 아래 한 줄을 꽉 채우고 칸과 같은 테두리·모서리로 맞춘다 */
-.rtline { display:flex; align-items:center; gap:8px; width:calc(100% - 32px); margin:0 16px 10px; padding:0 16px; height:52px; border-radius:12px; background:var(--bg2); border:1px solid var(--line); color:var(--t); font-size:15px; text-align:left }
-.rtline:hover { background:var(--hover) } .rtline .sp { flex:1 } .rtline .t { color:var(--w) } .rtline .ico { flex:none }
-.rtline .bad { font-size:12px; padding:2px 9px; border-radius:8px; background:color-mix(in srgb, var(--err) 22%, transparent); color:var(--err) } .rtline .all { font-size:13px; color:var(--t3) }
-.sbtiles .rtline { width:100%; margin:6px 0 0; height:34px; padding:0 9px; border-radius:12px; font-size:12px; gap:6px } .sbtiles .rtline .all { font-size:11px } .sbtiles .rtline .bad { font-size:11px; padding:1px 7px }
 .modal.board.rt { height:min(820px, calc(100% - 24px)) }
 .modal.rt .rtbox { border:1px solid var(--line2); border-radius:12px; background:var(--box); padding:10px 12px; margin:0 8px 10px }
 .modal.rt .rth { display:flex; align-items:center; gap:10px; margin-bottom:6px; font-size:13px } .modal.rt .rth b { color:var(--w) }
@@ -2033,14 +1983,6 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 
 /* 홈 띠(맥 레일 mini · 폰 홈) — 머리줄 = 접기/펴기 + ↗ 열기. 펼쳐도 상자 없이 줄만 */
 .cx-strip { margin:0 16px 10px; display:flex; flex-direction:column; min-width:0 }
-.cx-strip .cx-h { display:flex; align-items:center; gap:2px; min-width:0 }
-.cx-strip .cx-fold { flex:1; min-width:0; display:flex; align-items:center; gap:6px; height:30px; padding:0 6px; border-radius:8px; text-align:left; font-size:12px; color:var(--t3) }
-.cx-strip .cx-fold:hover { background:var(--hover) } .cx-strip .cx-fold b { color:var(--t); font-weight:600; flex:none }
-.cx-strip .cx-sum { margin-left:auto; font-size:12px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0 } .cx-strip .cx-sum .hot { color:var(--wait) }
-.cx-strip .cx-fold .cx-note { margin-left:auto }
-.cx-strip .cx-open { width:24px; height:24px; flex:none; color:var(--t3) } .cx-strip .cx-open:hover { color:var(--w) }
-.cx-sbody { padding:2px 6px 6px 22px; min-width:0 }
-.cx-strip .cx-axis b { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; font-size:13px; line-height:1.5; font-weight:500; color:var(--w); margin:2px 0 4px }
 .cx-gl { display:flex; gap:6px; font-size:11px; color:var(--t3); margin:8px 0 2px } .cx-gl .c { color:var(--t2) }
 .cx-strip:not(.big) .cx-it { display:flex; align-items:center; gap:8px; min-height:28px; padding:0 6px; margin:0 -6px; border-radius:8px; font-size:12px; min-width:0 }
 .cx-strip:not(.big) .cx-it:hover { background:var(--hover) }
@@ -2048,11 +1990,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .cx-strip:not(.big) .cx-it .cx-w, .cx-strip:not(.big) .cx-it .cx-tm { display:none }
 .cx-strip:not(.big) .cx-it .cx-a { display:flex; gap:4px; flex:none } .cx-strip:not(.big) .cx-it .cx-a .btn { min-height:20px; padding:0 7px; font-size:11px; border-radius:6px }
 /* 하다 만 일 [이어서] 는 줄에 마우스를 올리거나 키보드로 닿을 때만 — 줄마다 단추가 서면 레일이 단추 벽이 된다. 답 기다림 단추는 늘 보인다 */
-.cx-strip.mini .cx-it.k-stalled .cx-a { opacity:0 } .cx-strip.mini .cx-it.k-stalled:hover .cx-a, .cx-strip.mini .cx-it.k-stalled:focus-within .cx-a { opacity:1 }
-.sbtiles .cx-strip, .cx-strip.mini { margin:0 0 6px }
 /* 레일 아래 폴더 목록을 밀어내지 않게 — 펼친 몸통은 화면 높이의 3분의 1 안에서 안쪽으로 스크롤한다 */
-.sbtiles .cx-strip .cx-sbody { max-height:34vh; overflow:auto; overscroll-behavior:contain }
-@media (hover:none) { .cx-strip.mini .cx-it.k-stalled .cx-a { opacity:1 } }
 
 /* 상황판 페이지 — 축은 제목처럼 · 나설 곳은 한 목록 · 목표 카드는 같은 줄끼리 높이를 맞춘다 */
 .modal.board.cx { height:min(860px, calc(100% - 24px)) }
@@ -2370,3 +2308,32 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .spop.rtpop .kv { padding:4px 12px } .spop.rtpop .kv .rwhen { flex:none; font-size:11px; color:var(--t3) }
 .spop.cmdpop { padding:4px 0 } .spop.cmdpop .ph { display:flex; align-items:center; gap:6px; padding:2px 6px 2px 12px; font-size:12px; color:var(--t3); flex:none } .spop.cmdpop .ph .sp { flex:1 }
 .spop.cmdpop .hsec { padding:0 0 2px; max-height:min(46vh, 420px) } .spop.cmdpop .hz, .spop.cmdpop .kv { padding:4px 12px }
+/* ── 왼쪽 목록 A안 (2026-11-14 · 11/12 Dave 카드 «A안») — 내 답을 기다림 띠 → 봇 목록 → 상황판 한 줄 → 숫자 줄 ── */
+/* «내 답을 기다림» 띠 — 있을 때만 선다. 앰버 테두리 한 겹, 줄은 상황판 띠의 줄(.cx-it)을 그대로 쓴다 */
+.cx-strip.wband { flex:none; margin:8px 8px 0; padding:0 10px 6px; border:1px solid color-mix(in srgb, var(--wait) 45%, transparent); border-radius:8px }
+.cx-strip.wband .cx-gl { align-items:center; margin:7px 0 2px; color:var(--wait) } .cx-strip.wband .cx-gl .c { color:var(--wait) } .cx-strip.wband .cx-gl .cx-note { margin-left:auto; font-size:11px }
+/* 목록 머리 — «폴더 N»(폴더 현황) · 정렬 단추 하나 */
+.lhead { display:flex; align-items:center; gap:6px; flex:none; min-width:0; padding:8px 10px 0 12px } .lhead .sp { flex:1 }
+.lhead .lf { font-size:11px; color:var(--t3); padding:2px 8px; margin-left:-8px; border-radius:6px; white-space:nowrap } .lhead .lf b { font-weight:500; color:var(--t2) } .lhead .lf:hover { color:var(--t); background:var(--hover) }
+.sortb { display:inline-flex; align-items:center; gap:4px; flex:none; padding:2px 8px; border-radius:999px; font-size:11px; line-height:1.6; color:var(--t2); white-space:nowrap } .sortb .lb { color:var(--t3) } .sortb:hover, .sortb.on { color:var(--w); background:var(--hover) }
+.menu.sortm button { align-items:flex-start } .menu.sortm .t { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; text-align:left } .menu.sortm .t b { font-weight:500; color:var(--t) } .menu.sortm button.on .t b { color:var(--w) }
+.menu.sortm .t small { font-size:11px; line-height:1.4; color:var(--t3); white-space:normal } .menu.sortm button > svg { flex:none; margin-top:3px }
+/* 목록 아래 — 상황판 한 줄 + 숫자 줄. 숫자는 «내가 볼 것» 만: 0 이면 흐린 그림 */
+.sbtiles { flex:none; border-top:1px solid var(--line) }
+.cx-line { display:flex; align-items:center; gap:8px; width:100%; height:32px; padding:0 14px; min-width:0; font-size:12px; color:var(--t3) } .cx-line:hover { background:var(--hover) }
+.cx-line b { flex:none; font-weight:500; color:var(--t2) } .cx-line .s { flex:1; min-width:0; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .cx-line:not(.calm) .s { color:var(--t2) } .cx-line > svg { flex:none }
+.numrow { display:flex; align-items:stretch; gap:2px; padding:2px 6px 4px; border-top:1px solid var(--line) } .sbtiles > .numrow:first-child, .mbar > .numrow:first-child { border-top:0 }
+.ncell { flex:1; min-width:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; height:44px; border-radius:8px; color:var(--t3) } .ncell:hover { background:var(--hover); color:var(--t) }
+.ncell .v { height:18px; display:inline-flex; align-items:center; justify-content:center } .ncell .v b { font-size:15px; font-weight:600; line-height:1; color:var(--w); font-variant-numeric:tabular-nums }
+.ncell .l { font-size:11px; line-height:1.2; white-space:nowrap } .ncell.has .l { color:var(--t2) } .ncell.bad .v b, .ncell.bad .v svg { color:var(--err) }
+/* 폰 홈 — 아래 묶음(상황판 한 줄 + 숫자 줄)은 화면 바닥에 서고, «폴더 찾기» 알약은 그 위에 뜬다. 찾는 중에는 묶음이 접혀 알약이 바닥으로 내려온다 */
+.mbot { display:none }
+.mhome .mbot { display:block; position:relative; flex:none; z-index:6 }
+.mhome .mbot .mpill { bottom:calc(100% + 6px) } .mhome .mbot.find .mpill { bottom:calc(var(--sab) + 6px) }
+.mhome .mbar { border-top:1px solid var(--line); padding-bottom:var(--sab); background:var(--bg) } .mhome:has(.mbar)::after { height:230px }
+.mhome .cx-line { height:40px; padding:0 18px; font-size:14px }
+.mhome .numrow { padding:2px 8px 4px } .mhome .ncell { height:52px } .mhome .ncell .v { height:22px } .mhome .ncell .v b { font-size:17px } .mhome .ncell .l { font-size:12px }
+.mhome .lhead { padding:8px 14px 0 18px } .mhome .lhead .lf { font-size:14px; min-height:36px } .mhome .sortb { font-size:14px; min-height:36px; padding:0 12px }
+.mhome .cx-strip.wband { margin:2px 16px 8px; padding:2px 12px 8px } .mhome .cx-strip.wband .cx-gl { font-size:12px; margin-top:8px }
+.mhome .cx-strip.wband .cx-it { min-height:44px; font-size:16px } .mhome .cx-strip.wband .cx-it .cx-f small { font-size:14px } .mhome .cx-strip.wband .cx-it .cx-a .btn { min-height:32px; padding:0 12px; font-size:14px; border-radius:8px }
+.mhome .cx-strip.wband .cx-more { font-size:14px; min-height:32px }

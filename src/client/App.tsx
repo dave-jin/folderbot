@@ -14,13 +14,12 @@ import { AgentPickHost, pickAgent } from './AgentPick'
 import type { SecId } from './Settings'
 import { VendorMark } from './Brand'
 import { ColorHost, pickColor } from './ColorPick'
-import { Float, type Anchor } from './Float'
+import { Float, anchorOf, type Anchor } from './Float'
 import { DocPane, preloadEditor, useDocs } from './Doc'
 import { Search } from './Search'
-import { Cleanup, savedCleanDays } from './Cleanup'
-import { Routines, RoutineLine } from './Routines'
-import { ContextStrip, ContextPage } from './Context'
-import { cleanableCount } from '../core/cleanup'
+import { Cleanup } from './Cleanup'
+import { Routines, useRoutineCounts } from './Routines'
+import { WaitBand, ContextLine, ContextPage } from './Context'
 import { findFolders, pillEnter, weekTodo } from '../core/home'
 import { FolderSheet, TodoBoard } from './Manage'
 import { Elapsed, Panel } from './Panel'
@@ -39,7 +38,7 @@ import { attachRoom } from '../core/attach'
 import { applyViewport, planViewport } from '../core/viewport'
 import { canStartSwipe, dragProgress, fromLeftEdge, lockOf, scrollableEats, stageOf, swipeVerdict } from '../core/drawer'
 import { curOf, dismiss, goTo, navInit, type Nav, type Page } from '../core/navstack'
-import { botUnread, openAnchor, shouldMarkRead, MOOD_RANK, recentDone, type BotMood } from '../core/unread'
+import { botUnread, openAnchor, shouldMarkRead, unreadCount, MOOD_RANK, recentDone, type BotMood } from '../core/unread'
 import { autoKind, openSessionOf, sessArea, takeoverMode } from '../core/autoArea'
 import { askBadge } from '../core/askMark'
 import { AskChip, AskStrip, askOpened } from './askUi'
@@ -56,7 +55,7 @@ import { BridgeRail, BridgeSide, BridgeThread } from './Bridges'
 import type { PeerView } from '../core/bridgeView'
 import { botRelOf } from '../core/paths'
 import { ICON_PX, useIconSize, useTheme } from './theme'
-import { UsageCard, UsageStrip, useUsage } from './Usage'
+import { UsageCard, colorLeft, useUsage } from './Usage'
 import { PermGate, usePerms } from './Perms'
 import { Palette } from './Palette'
 import { startSession } from './newSession'
@@ -1079,18 +1078,17 @@ function Main() {
   const sidebarEl = <div className="col side left" style={{ width: stage === 'wide' ? fit.sb : undefined }}>
         <div className="hdr"><FolderBot color="#e08850" size={16} mood={waiting ? 'wait' : 'idle'} mono /><span className="ttl">Folder Bot</span><span className="sp" /><AskChip go={go} /><div className="acts"><button className="ib" onClick={closeSb} title="목록 접기 (⌘B)"><Icon n="panel" size={14} /></button></div></div>
         <div style={{ padding: '10px 8px 0' }}>
-          {/* 🔴 검색은 맨 위 (2026-10-02 Dave · 시안 A). CJ (2026-10-16) — «알림»·«세션 정리» 줄은 네 칸(알림 · 세션)이 흡수했다.
-              같은 숫자가 두 번 보이지 않게 뺐다. ⌘⇧U · 명령 팔레트 · 접힌 레일 띠의 종은 남는다(기획안 §2-5) */}
+          {/* 🔴 검색은 맨 위 (2026-10-02 Dave · 시안 A). «알림»·«세션 정리»(10/16) · «설정»(11/14 A안) 줄은 목록 아래 숫자 줄의 칸이 됐다.
+              같은 입구를 두 번 두지 않는다. ⌘⇧U · 명령 팔레트 · 접힌 레일 띠의 종은 남는다 */}
           <button className="nav nsearch" onClick={() => setModal('search')}><Icon n="search" size={14} /><span>검색</span><span className="bd kb">⌘K</span></button>
           <button className="nav" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span>폴더 선택 · 시작</span><span className="bd">후보 {s.candidates.filter((c) => !c.active).length}</span></button>
-          <button className="nav" onClick={() => setModal('settings')}><Icon n="gear" size={14} /><span>설정</span></button>
         </div>
-        {/* 🔴 **폰과 같은 네 칸을 레일 맨 위에** (2026-09-15 Dave: «이 메뉴가 데스크탑 화면에서도 좌측
-            상단에 있으면 좋겠어»). 같은 컴포넌트를 `compact` 로 쓴다 — 두 화면이 갈리지 않게. */}
-        {/* 🔴 맥락 상황판 띠 — 네 칸 **위** (2026-11-01 Dave «홈 맨 위»). 사이드바에 «상황판» 줄은 따로 두지 않는다(11/1 결정) */}
-        <div className="sbtiles"><ContextStrip go={go} open={openCtx} openRoutines={() => setModal('routines')} compact /><ActionTiles setModal={setModal} modal={modal} compact /><RoutineLine onOpen={() => setModal('routines')} /></div>
-        {/* 정렬 갈래 — 마감일(2026-10-01 «이름» 대체) · 사용자(끌어 놓기, 구 «직접») · 상태. ⚠ 끌어 놓으면 «사용자» 로 알아서 넘어간다 */}
-        <SortBar k={railSort} set={setRailSort} />
+        {/* 🔴 **왼쪽 목록 A안** (2026-11-12 Dave 카드 «A안» · 11/13 «이대로 만든다») — 봇 목록이 가장 큰 자리를 쓴다.
+            위에는 «내 답을 기다림» 띠만(있을 때만). 종전에 여기 서던 상황판 띠(11/1 «홈 맨 위»)와 네 칸(9/15 «좌측 상단에» · 10/16)은
+            목록 **아래** 상황판 한 줄과 숫자 줄로 내려갔다(`.sbtiles`). 폰 홈도 같은 순서다(`Home`) */}
+        <WaitBand go={go} open={openCtx} compact />
+        {/* 목록 머리 — «폴더 N»(폴더 현황) · 정렬 단추 하나. 갈래는 마감일(2026-10-01 «이름» 대체) · 사용자(끌어 놓기, 구 «직접») · 상태. ⚠ 끌어 놓으면 «사용자» 로 알아서 넘어간다 */}
+        <ListHead n={s.bots.filter((b) => !b.orchestrator).length} onFolders={() => setModal('folders')} k={railSort} set={setRailSort} />
         <div className="sb-list">
           {/* DB · 바깥 상대(할일이)가 묻는 중·방금 답한 세션 — 봇 섹션보다 위에 한 번만 보면 찾게 */}
           <AskStrip go={go} />
@@ -1126,6 +1124,7 @@ function Main() {
         </div></Float> : null}
         {/* ⛔ 맥에서는 사용량을 앱 안에 안 그린다 — **메뉴바에서만** 본다 (2026-09-13 Dave: «맥에서는 그냥 메뉴바 안에서만 이게 보이면 좋겠어»).
             폰은 첫 화면 위 스트립 하나로 남는다. 두 표면 다 있으면 같은 숫자가 두 번 보이고 아래 줄이 또 비좁아진다. */}
+        <div className="sbtiles"><ContextLine open={openCtx} /><NumRow setModal={setModal} /></div>
         <div className="sb-foot two">
           <div className="r2"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} /><span className="hn">{s.hostName}</span><MrBadge />{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<UpdateChip version={s.version} st={upd} onCheck={updCheck} onApply={() => { if (upd?.staged?.ready) setUpdAsk(upd.staged.version) }} />{updAsk && upd ? <UpdateAsk st={upd} onApply={updApply} onLater={() => setUpdAsk('')} onDawn={desk?.update?.dawn ? updDawn : undefined} /> : null}{!s.device.main ? <HostUpdateChip say={say} /> : null}</div>
         </div>
@@ -1272,9 +1271,25 @@ const RAIL_SORT_KEY = 'fb:railsort'
 // AZ (2026-09-25 Dave) · «직접» → «사용자» — 사람이 끌어다 놓은 차례라는 뜻이 이름에 드러나게. 값(`manual`)은 그대로 둔다(저장된 선택이 안 풀린다)
 const RAIL_SORT_LABEL: Record<RailSort, string> = { due: '마감일', manual: '사용자', state: '상태' }
 const RAIL_SORT_HINT: Record<RailSort, string> = { due: '마감이 가까운 것부터 (폴더명 날짜 · 지난 마감이 맨 위 · 날짜 없는 폴더는 뒤)', manual: '끌어다 놓은 차례 (볼트에 남아요)', state: '확인 대기 → 일하는 중 → 대기 → 문제 → 끝남 → 유휴' }
-/** 정렬 갈래 단추 — 레일(맥)과 폰 홈이 **같은 부품**을 쓴다. 두 벌이면 한쪽 라벨만 바뀐다 */
-function SortBar({ k: cur, set }: { k: RailSort; set: (k: RailSort) => void }) {
-  return <div className="sortbar" role="group" aria-label="정렬"><span className="lb">정렬</span>{(Object.keys(RAIL_SORT_LABEL) as RailSort[]).map((k) => <button key={k} className={cur === k ? 'on' : ''} aria-pressed={cur === k} onClick={() => set(k)} title={RAIL_SORT_HINT[k]}>{RAIL_SORT_LABEL[k]}</button>)}</div>
+/**
+ * 봇 목록의 머리 — 왼쪽에 «폴더 N»(폴더 현황), 오른쪽에 정렬 단추 하나 (왼쪽 목록 A안 · 2026-11-12 Dave 카드).
+ * 🔴 정렬 갈래 셋(마감일 · 사용자 · 상태)은 그대로다 — 늘 서 있던 단추 셋을 **단추 하나 + 메뉴**로 접었을 뿐이다(목록이 한 줄 더 쓴다).
+ *    레일(맥)과 폰 홈이 **같은 부품**을 쓴다(9/25 «모바일에서도 데스크톱처럼 정렬 버튼»). 두 벌이면 한쪽 라벨만 바뀐다.
+ * ⚠ 종전 네 칸의 «폴더봇» 칸(10/16)이 없어져서, 폴더 현황 창은 여기 «폴더 N» 이 연다.
+ */
+function ListHead({ n, onFolders, k: cur, set }: { n: number; onFolders: () => void; k: RailSort; set: (k: RailSort) => void }) {
+  const [menu, setMenu] = useState<Anchor | null>(null); const down = useRef(false)
+  return <div className="lhead" role="group" aria-label="폴더 목록">
+    <button className="lf" onClick={onFolders} title="폴더 현황 — 일하는 중 · 답 대기 · 후보" aria-label={`폴더 ${n}`}>폴더 <b>{n}</b></button>
+    <span className="sp" />
+    <button className={`sortb ${menu ? 'on' : ''}`} aria-haspopup="menu" aria-expanded={!!menu} aria-label={`정렬 — ${RAIL_SORT_LABEL[cur]}`} title={RAIL_SORT_HINT[cur]}
+      onMouseDown={() => { down.current = !!menu }} onClick={(e) => { const was = e.detail === 0 ? !!menu : down.current; setMenu(was ? null : anchorOf(e.currentTarget, { right: true, gap: 4 })) }}>
+      <span className="lb">정렬</span>{RAIL_SORT_LABEL[cur]}<Icon n="chevd" size={9} /></button>
+    {menu ? <Float at={menu} onClose={() => setMenu(null)} className="menu sortm" width={236}>
+      {(Object.keys(RAIL_SORT_LABEL) as RailSort[]).map((k) => <button key={k} role="menuitemradio" aria-checked={cur === k} className={cur === k ? 'on' : ''} data-sort={k} onClick={() => { set(k); setMenu(null) }}>
+        <span className="t"><b>{RAIL_SORT_LABEL[k]}</b><small>{RAIL_SORT_HINT[k]}</small></span>{cur === k ? <Icon n="check" size={12} /> : null}</button>)}
+    </Float> : null}
+  </div>
 }
 /** ⚠ 값은 `moodOf` 의 갈래 그대로다 — 한쪽만 늘리면 새 상태가 조용히 맨 뒤로 간다 */
 
@@ -1301,63 +1316,48 @@ function botSummary(bot: Bot, sessions: SessionInfo[], notif: NotifyEvent[]) {
 }
 
 /**
- * 🔴 **CJ · 네 칸 = 관리 입구 넷** (2026-10-16 Dave: *«이 영역은 거의 사용이 안되고 있어 — 폴더봇 수 · 세션 수 · 읽지 않은 알림 수 · 할 일은 누르면 전체가 한눈에»* · «전부 추천대로»).
- *    기획안 `01_기획/2026-10-16_기획_홈-네-칸-재설계와-폰-폴더-찾기.md` · 목업 `03_디자인/2026-10-16_홈-네-칸-목업` ①.
+ * 🔴 **숫자 줄 = 관리 입구 한 줄** (왼쪽 목록 A안 · 2026-11-12 Dave 카드 «A안» · 11/13 «이대로 만든다»).
+ *    기획서 `01_기획/2026-11-12_기획_UXUI-정리-네-걸음과-오른쪽-패널.md` 「라. 순서와 말」 · 목업 `03_디자인/2026-11-12_UXUI-정리-목업/` 01 · 02.
  *
- * 왜 바꿨나 — 9/15 의 넷(확인 대기·일하는 중·할 일·마지막 결과)은 **대부분의 시간에 «0 · 없음»** 이었다(스크린샷_1058).
- * 9/15 원칙(«세는 곳이 아니라 하는 곳»)의 뜻은 지킨다 — 숫자마다 **누르면 바로 관리 창**이 열린다:
- *   ① 폴더봇 — 레일에 선 폴더 수 · 작은 줄 «일하는 중 N · 후보 M» → 폴더 현황 시트
- *   ② 세션 — 모든 세션 수 · «정리할 만한 것 N» → 세션 창(종전 레일 «세션 정리» 를 흡수)
- *   ③ 알림 — 읽지 않은 수 → 알림 창(레일 «알림»·폰 위쪽 종을 흡수). 작은 줄은 **마지막 결과 한 줄**뿐이다.
- *      🔴 2026-11-01 맥락 상황판 — 확인 대기 수와 [답하기] 는 위 띠의 «내 답을 기다림» 으로 옮겼다(원천이 같아 하나로 · 설계 §8).
- *      종전엔 대기가 생기면 이 칸이 주황 «확인 대기» 로 바뀌고 칸 안에서 [허용]·[답하기] 를 띄웠다(2026-10-16 CJ).
- *   ④ 할 일 — **마감 7일 안 폴더의 열린 할 일 수**(결정 ① ⓒ · 볼트 전체 수는 보드 안에서만) → 전체 할 일 보드
- * [중단] 은 칸에서 뺐다(결정 ② — 중단은 대화 안 단추가 제자리).
- * ⚠ 폰·맥이 **같은 컴포넌트**를 쓴다(맥은 레일 맨 위 `compact`). 둘이 갈리면 설명이 두 벌이 된다. 판정은 `core/home`.
+ * 왜 바꿨나 — 10/16 의 네 칸(폴더봇 · 세션 · 알림 · 할 일)과 루틴 줄이 봇 목록 **위**에 서서, 답 대기가 둘이면 900px 창에서
+ * 봇이 다섯 줄 중 두 줄만 보였고 폰 서랍은 첫 화면에 봇이 한 줄도 없었다(11/12 리뷰). 같은 입구를 목록 **아래** 한 줄로 내렸다.
+ * 10/16 의 뜻(«세는 곳이 아니라 하는 곳» — 숫자마다 누르면 바로 관리 창)은 그대로다:
+ *   ① 세션 — **안 읽은** 세션 수(채팅 세션만) → 세션 창
+ *   ② 알림 — 읽지 않은 수 → 알림 창
+ *   ③ 할 일 — 마감 7일 안 폴더의 열린 할 일 수(10/16 결정 ① ⓒ 그대로 · 볼트 전체 수는 보드 안에서만) → 전체 할 일 보드
+ *   ④ 루틴 — **문제** 수(실패 · 놓침 · 모름) → 루틴 창
+ *   ⑤ 맥: 설정 / 폰: 사용량(남은 %) → 사용량 시트. 폰의 설정은 머리줄 ⚙ 가 그대로 연다(10/16)
+ * 🔴 **숫자는 모두 «내가 볼 것»** 이다. 0 이면 숫자 대신 흐린 그림만 선다 — «0» 이 다섯 칸에 서 있으면 볼 것이 있는 칸이 묻힌다.
+ * ⚠ 타일의 둘째 줄 설명(«정리할 것 없음» 등)은 없어졌다(A안의 대가 · 목업에 적은 대로). 폴더 현황 창은 목록 머리의 «폴더 N» 이 연다.
+ * ⚠ 폰·맥이 **같은 컴포넌트**를 쓴다. 판정은 `core/home` · `core/unread`.
  */
 /** 창 — CJ 로 «sessions»(세션 창) · «board»(할 일 보드) · «folders»(폴더 현황) 가 늘었다. «cleanup» 은 셸 메뉴의 옛 «세션 정리» 길 */
 type ModalKey = 'picker' | 'notify' | 'settings' | 'keys' | 'palette' | 'search' | 'cleanup' | 'sessions' | 'board' | 'folders' | 'routines' | 'context'
 interface TodoAgg { open: number; rows: { botId: string; name: string; open: number; proposed?: number; next: { line: number; title: string } | null }[] }
-function ActionTiles({ setModal, compact, modal }: { setModal: (m: ModalKey) => void; compact?: boolean; modal?: ModalKey | null }) {
+function NumRow({ setModal, phone, usage, onUsage }: { setModal: (m: ModalKey) => void; phone?: boolean; /** 폰 — 사용량 칸(남은 %). 없으면 칸을 안 그린다 */ usage?: { left: number } | null; onUsage?: () => void }) {
   const { s } = useStore()
   const [todo, setTodo] = useState<TodoAgg | null>(null)
   const load = () => { void api<TodoAgg>('/todos').then(setTodo).catch(() => { /* 없으면 숫자 없이 */ }) }
   useEffect(() => { load(); const t = window.setInterval(load, 60_000); return () => window.clearInterval(t) }, [])
   // 봇이 할 일을 고치면 알림이 오거나 파일이 바뀐다 — 그때 한 번 더 받아 온다
   useEffect(() => { load() }, [s.notifications[0]?.id, s.bots.length])
+  const rt = useRoutineCounts()
   const all = useMemo(() => Object.values(s.sessionsByBot).flat(), [s.sessionsByBot])
-  const waiting = all.filter((x) => x.state === 'awaiting_input')
-  const running = all.filter((x) => x.state === 'running')
-  const folders = s.bots.filter((b) => !b.orchestrator)
-  const cands = s.candidates.filter((c) => !c.active).length
+  const unreadSess = useMemo(() => unreadCount(all.filter((x) => sessArea(x) === 'chat')), [all])
   const unread = s.notifications.filter((n) => !n.read).length
-  const cleanable = useMemo(() => cleanableCount(all, Date.now(), savedCleanDays()), [all, modal, Math.floor(Date.now() / 60_000)])   // modal — 세션 창에서 «안 쓴 지» 를 바꾸고 닫으면 바로 따라간다   // eslint-disable-line react-hooks/exhaustive-deps
   const wk = useMemo(() => weekTodo(s.bots, todo?.rows ?? []), [s.bots, todo])
-  const last = s.notifications.find((n) => n.kind === 'done' || n.kind === 'routine' || n.kind === 'error')
-  const nameOf = (id?: string) => { const b = s.bots.find((x) => x.id === id); return b ? (b.displayName || b.name) : '' }
-  const sz = compact ? 15 : 20
-  const nearChip = wk.nearest ? botDueChip(wk.nearest) : null
-  return <div className={`mcards big4 ${compact ? 'mini' : ''}`}>
-    <button className="t-fold" onClick={() => setModal('folders')} aria-label={`폴더봇 ${folders.length}`}>
-      <Icon n="folder" size={sz} color="var(--t3)" />
-      <span className="n"><b className="big">{folders.length}</b>폴더봇</span>
-      <span className="sub">{running.length ? <em>일하는 중 {running.length}</em> : null}{running.length ? ' · ' : null}{waiting.length ? `확인 대기 ${waiting.length}` : `후보 ${cands}`}</span>
-    </button>
-    <button className="t-sess" onClick={() => setModal('sessions')} aria-label={`세션 ${all.length}`}>
-      <Icon n="clock" size={sz} color="var(--t3)" />
-      <span className="n"><b className="big">{all.length}</b>세션</span>
-      <span className="sub">{cleanable ? `정리할 만한 것 ${cleanable}` : '정리할 것 없음'}</span>
-    </button>
-    <button className="t-note" onClick={() => setModal('notify')} aria-label={`알림 ${unread}`}>
-      <Icon n="bell" size={sz} color={last?.kind === 'error' ? 'var(--err)' : 'var(--t3)'} />
-      <span className="n"><b className="big">{unread}</b>알림</span>
-      <span className="sub">{last ? `${nameOf(last.botId)} · ${notePlain(last)}` : '아직 없어요'}</span>
-    </button>
-    <button className="t-todo" onClick={() => setModal('board')} aria-label={`할 일 ${wk.n}`}>
-      <Icon n="check" size={sz} color={wk.n ? '#7fb0ff' : 'var(--t3)'} />
-      <span className="n"><b className="big">{wk.n}</b>할 일</span>
-      <span className="sub">{wk.nearest ? <>이번 주 마감 · {wk.nearest.displayName || wk.nearest.name}{nearChip ? ` ${nearChip.text}` : ''}</> : todo ? `이번 주 마감 없음 · 전체 ${todo.open}` : ''}</span>
-    </button>
+  const lastErr = s.notifications.find((n) => !n.read)?.kind === 'error'
+  const cell = (cls: string, n: number, label: string, icon: Parameters<typeof Icon>[0]['n'], on: () => void, tip: string, tone = '') =>
+    <button className={`ncell ${cls} ${n ? 'has' : ''} ${tone}`} onClick={on} aria-label={n ? `${label} ${n}` : label} title={tip}>
+      <span className="v">{n ? <b>{n}</b> : <Icon n={icon} size={phone ? 18 : 14} />}</span><span className="l">{label}</span></button>
+  return <div className={`numrow ${phone ? 'ph' : ''}`} role="group" aria-label="바로 가기">
+    {cell('t-sess', unreadSess, '세션', 'clock', () => setModal('sessions'), unreadSess ? `안 읽은 세션 ${unreadSess} — 세션 창 열기` : '세션 창 열기 — 안 읽은 세션 없음')}
+    {cell('t-note', unread, '알림', 'bell', () => setModal('notify'), unread ? `읽지 않은 알림 ${unread}` : '알림 — 읽지 않은 것 없음', lastErr ? 'bad' : '')}
+    {cell('t-todo', wk.n, '할 일', 'check', () => setModal('board'), wk.n ? `이번 주 마감 폴더의 열린 할 일 ${wk.n}${todo ? ` · 전체 ${todo.open}` : ''}` : todo ? `이번 주 마감 없음 · 전체 ${todo.open}` : '할 일 보드 열기')}
+    {cell('t-rt', rt?.bad ?? 0, '루틴', 'cal', () => setModal('routines'), rt ? (rt.bad ? `문제 있는 루틴 ${rt.bad} · 전체 ${rt.total}개` : `루틴 ${rt.total}개 — 문제 없음`) : '루틴 창 열기', rt?.bad ? 'bad' : '')}
+    {phone
+      ? (usage && onUsage ? <button className="ncell t-use has" onClick={onUsage} aria-label={`사용량 ${usage.left}% 남음`} title="사용량 열기"><span className="v"><b style={{ color: colorLeft(usage.left) }}>{usage.left}%</b></span><span className="l">남음</span></button> : null)
+      : <button className="ncell t-set" onClick={() => setModal('settings')} aria-label="설정" title="설정"><span className="v"><Icon n="gear" size={14} /></span><span className="l">설정</span></button>}
   </div>
 }
 
@@ -1444,12 +1444,9 @@ function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, 
       <div className="mtitle">Folder Bot<AskChip go={go} /></div>
       {/* CJ · 봇·후보 수는 폴더봇 칸이 말한다 — 같은 숫자를 두 번 안 쓴다 */}
       <div className="msub"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} style={{ width: 7, height: 7 }} />{s.hostName}<MrBadge /></div>
-      {usage && usage.tools.length ? <div style={{ padding: '0 16px 12px' }}><UsageStrip u={usage} onOpen={() => setUSheet(true)} /></div> : null}
-      <ContextStrip go={go} open={openCtx} openRoutines={() => setModal('routines')} />
-      <ActionTiles setModal={setModal} />
-      <RoutineLine onOpen={() => setModal('routines')} />
+      <WaitBand go={go} open={openCtx} />
       {/* AZ (2026-09-25 Dave: «모바일에서도 데스크톱처럼 정렬 버튼») — 레일과 **같은 값**(`fb:railsort`)을 쓴다. 폰에서 고르면 맥 레일도 그 차례다(이 기기 기준) */}
-      <SortBar k={railSort} set={setRailSort} />
+      <ListHead n={s.bots.filter((b) => !b.orchestrator).length} onFolders={() => setModal('folders')} k={railSort} set={setRailSort} />
       <AskStrip go={go} phone />
       {rows.map(([sec, list]) => <div key={sec}>
         <div className="secl">{sec}</div>
@@ -1467,6 +1464,7 @@ function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, 
       <div className="ti">{fsheet.name}</div>
       {([['pin', fsheet.pinned ? '고정 풀기' : '맨 위에 고정'], ...(fsheet.orderedBy === 'user' ? [['unfix', '순서 고정 해제 — 끌어 놓은 자리']] : []), ['color', '색 바꾸기'], ['unlink', '지우기 (연결 해지) — 폴더는 그대로'], ['retire', '은퇴 (Archive 로)']] as [SwipeAct, string][]).map(([a, l]) => <button key={a} onClick={() => { const b = fsheet; setFsheet(null); void folderAct(b, a) }}><Icon n={ACT_ICON[a] as 'edit'} size={16} />{l}</button>)}
     </div></> : null}
+    <div className={`mbot ${q === null ? '' : 'find'}`}>
     {q === null
       ? <button className="mpill glassb" onClick={() => { setQ(''); requestAnimationFrame(() => qRef.current?.focus()) }} aria-label="폴더 찾기 · 시키기"><span className="pl"><Icon n="search" size={20} /></span><span className="tx">폴더 찾기 · 시키기…</span><Icon n="sub" size={20} color="var(--t2)" /></button>
       : <div className="mpill glassb edit"><span className="pl"><Icon n="search" size={20} /></span>
@@ -1475,6 +1473,8 @@ function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, 
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); enter() } else if (e.key === 'Escape') closeFind() }}
           onBlur={() => { if (!(qRef.current?.value ?? '').trim()) setQ(null) }} />
         <button className="x" onPointerDown={(e) => e.preventDefault()} onClick={closeFind} aria-label="찾기 닫기"><Icon n="x" size={16} /></button></div>}
+      {q === null ? <div className="mbar"><ContextLine open={openCtx} /><NumRow setModal={setModal} phone usage={usage && usage.tools.length ? usage : null} onUsage={() => setUSheet(true)} /></div> : null}
+    </div>
   {uSheet && usage ? <><div className="backdrop" onClick={() => setUSheet(false)} /><div className="tsheet usheet"><div className="grip" /><UsageCard u={usage} /></div></> : null}</div>
 }
 

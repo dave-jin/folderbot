@@ -67,17 +67,19 @@ export async function uxuiEight({ br, check, port = 7481, shots = '' }) {
     const gone = async (sel, ms = 1500) => { for (let t = 0; t < ms; t += 50) { if (!(await pg.$(sel))) return true; await wait(50) } return false }
     const esc = async () => { await pg.keyboard.press('Escape'); await wait(120) }
 
+    // 왼쪽 목록 A안(2026-11-14) — 창을 여는 자리가 옮겨졌다: 네 칸(`.sbtiles .t-*`) → 숫자 줄(`.side.left .numrow .t-*`) ·
+    // 폴더봇 칸(`.t-fold`) → 목록 머리의 «폴더 N»(`.lhead .lf`) · 루틴 줄(`.rtline`) → 숫자 줄의 `.t-rt` · 상황판 띠의 ↗(`.cx-open`) → 상황판 한 줄(`.cx-line`)
     await check('U1 창은 ⎋ 로 닫힌다 — 초점이 입력칸 밖이어도', async () => {
       const wins = [
-        ['알림', () => pg.click('.sbtiles .t-note'), '.modal.nmodal'],
-        ['세션', () => pg.click('.sbtiles .t-sess'), '.modal.clean'],
-        ['폴더봇', () => pg.click('.sbtiles .t-fold'), '.modal.fsheet'],
-        ['할 일', () => pg.click('.sbtiles .t-todo'), '.modal.board'],
+        ['알림', () => pg.click('.side.left .numrow .t-note'), '.modal.nmodal'],
+        ['세션', () => pg.click('.side.left .numrow .t-sess'), '.modal.clean'],
+        ['폴더봇', () => pg.click('.side.left .lhead .lf'), '.modal.fsheet'],
+        ['할 일', () => pg.click('.side.left .numrow .t-todo'), '.modal.board'],
         ['설정', () => pg.keyboard.press('Meta+,'), '.modal.setw'],
         ['단축키', () => pg.keyboard.press('Meta+/'), '.modal.keys'],
         ['찾기', () => pg.click('.nav.nsearch'), '.modal.pal.srch'],
         ['폴더 선택', () => pg.keyboard.press('Meta+Shift+N'), '.modal.pk'],
-        ['루틴', () => pg.click('.rtline'), '.modal.rt']
+        ['루틴', () => pg.click('.side.left .numrow .t-rt'), '.modal.rt']
       ]
       const stuck = []
       for (const [name, open, sel] of wins) {
@@ -134,7 +136,7 @@ export async function uxuiEight({ br, check, port = 7481, shots = '' }) {
       await esc(); must(await gone(menu), '⎋ 로 안 닫혔다')
       await open(); await pg.mouse.click(700, 500); must(await gone(menu), '바깥을 눌러도 안 닫혔다')
       await open(); await pg.click(btn); await wait(200); must(!(await pg.$(menu)), '같은 단추를 다시 눌렀는데 안 닫혔다(닫혔다 다시 열렸다)')
-      await open(); await pg.click('.sbtiles .t-note'); await pg.waitForSelector('.modal.nmodal', { timeout: 3000 })
+      await open(); await pg.click('.side.left .numrow .t-note'); await pg.waitForSelector('.modal.nmodal', { timeout: 3000 })
       must(!(await pg.$(menu)), '알림 창을 열었는데 세션 목록이 뒤에 남았다')
       await esc(); must(await gone('.modal.nmodal'), '알림 창이 안 닫혔다')
       // 목록에서 세션을 고르면 그 세션으로 간다(회귀) — 목록에 든 것은 자동화 세션이다. 묶음을 펼쳐 고른다
@@ -214,7 +216,7 @@ export async function uxuiEight({ br, check, port = 7481, shots = '' }) {
       must(del, '루틴 편집에 지우기 단추가 없다 — 검사 전제')
       must(del.got === del.want, `루틴 지우기 단추가 빨강이 아니다 ${JSON.stringify(del)}`)
       await blur(); await esc(); must(await gone('.modal.rted .modal-h'), '루틴 편집이 안 닫혔다')
-      await pg.click('.rtline'); await pg.waitForSelector('.modal.rt', { timeout: 3000 }); await wait(300)
+      await pg.click('.side.left .numrow .t-rt'); await pg.waitForSelector('.modal.rt', { timeout: 3000 }); await wait(300)
       const l1 = await pg.evaluate(() => { const i = document.querySelector('.modal.rt .legend .l1'); return i ? getComputedStyle(i).backgroundColor : null })
       must(l1 && l1 !== 'rgba(0, 0, 0, 0)' && l1 !== 'transparent', `루틴 창 범례 «1~2개» 칸에 바탕이 없다(${l1})`)
       await blur(); await esc(); must(await gone('.modal.rt'), '루틴 창이 안 닫혔다')
@@ -241,16 +243,16 @@ export async function uxuiEight({ br, check, port = 7481, shots = '' }) {
     // 창 열 개는 폭이 셋(480 · 720 · 1080) 중 하나이고, 닫는 길이 셋(⎋ 는 U1 · 바깥 누르기 · 오른쪽 위 ✕)이다.
     // 찾기는 ✕ 없이 둔다(팔레트는 ⎋ 가 관례 — 기획서의 예외).
     const FRAME = [
-      ['알림', () => pg.click('.sbtiles .t-note'), '.modal.nmodal', 480],
-      ['폴더봇', () => pg.click('.sbtiles .t-fold'), '.modal.fsheet', 480],
+      ['알림', () => pg.click('.side.left .numrow .t-note'), '.modal.nmodal', 480],
+      ['폴더봇', () => pg.click('.side.left .lhead .lf'), '.modal.fsheet', 480],
       ['찾기', () => pg.click('.nav.nsearch'), '.modal.pal.srch', 720, 'noX'],
       ['폴더 선택', () => pg.keyboard.press('Meta+Shift+N'), '.modal.pk', 720],
-      ['할 일', () => pg.click('.sbtiles .t-todo'), '.modal.board:not(.rt):not(.cx)', 720],
+      ['할 일', () => pg.click('.side.left .numrow .t-todo'), '.modal.board:not(.rt):not(.cx)', 720],
       ['루틴 편집', () => openRoutineEdit(), '.modal.rted', 720],
-      ['세션', () => pg.click('.sbtiles .t-sess'), '.modal.clean', 1080],
+      ['세션', () => pg.click('.side.left .numrow .t-sess'), '.modal.clean', 1080],
       ['설정', () => pg.keyboard.press('Meta+,'), '.modal.setw', 1080],
-      ['루틴', () => pg.click('.rtline'), '.modal.rt', 1080],
-      ['상황판', () => pg.click('.cx-open'), '.modal.cx', 1080]
+      ['루틴', () => pg.click('.side.left .numrow .t-rt'), '.modal.rt', 1080],
+      ['상황판', () => pg.click('.side.left .cx-line'), '.modal.cx', 1080]
     ]
     await check('M1 창의 한 틀 — 폭은 480 · 720 · 1080 중 하나 · 바깥 누르기와 ✕ 로도 닫힌다', async () => {
       const bad = []
@@ -323,23 +325,23 @@ export async function uxuiEight({ br, check, port = 7481, shots = '' }) {
         if (shots) await pg.screenshot({ path: join(shots, `parts2-${name.replace(/\s/g, '')}-desktop.png`) })
         await esc(); await gone(sel)
       }
-      await segOf('알림', () => pg.click('.sbtiles .t-note'), '.modal.nmodal', '.modal-bar .seg', 2)
-      await segOf('할일', () => pg.click('.sbtiles .t-todo'), '.modal.board:not(.rt):not(.cx)', '.modal-bar .seg', 3)
+      await segOf('알림', () => pg.click('.side.left .numrow .t-note'), '.modal.nmodal', '.modal-bar .seg', 2)
+      await segOf('할일', () => pg.click('.side.left .numrow .t-todo'), '.modal.board:not(.rt):not(.cx)', '.modal-bar .seg', 3)
       await segOf('폴더선택', () => pg.keyboard.press('Meta+Shift+N'), '.modal.pk', '.fl .seg', 3)
       // 세션 창의 체크
-      await pg.click('.sbtiles .t-sess'); await pg.waitForSelector('.modal.clean', { timeout: 3000 }); await wait(300)
+      await pg.click('.side.left .numrow .t-sess'); await pg.waitForSelector('.modal.clean', { timeout: 3000 }); await wait(300)
       const ck = await pg.evaluate(() => [...document.querySelectorAll('.modal.clean input[type=checkbox]')].slice(0, 3).map((c) => { const st = getComputedStyle(c); return { w: st.width, h: st.height, r: st.borderTopLeftRadius, ap: st.appearance || st.webkitAppearance, cls: c.className } }))
       if (!ck.length || ck.some((c) => c.w !== '16px' || c.h !== '16px' || c.r !== '4px' || c.ap !== 'none')) bad.push('세션 창의 체크가 네모 16 · 둥글기 4 가 아니다 ' + JSON.stringify(ck[0] ?? null))
       if (shots) await pg.screenshot({ path: join(shots, 'parts2-세션-desktop.png') })
       await esc(); await gone('.modal.clean')
       // 루틴 창
-      await pg.click('.rtline'); await pg.waitForSelector('.modal.rt .rtbar .seg', { timeout: 4000 }); await pg.click('.modal.rt .rtbar .seg button:nth-child(2)'); await pg.waitForSelector('.modal.rt .gh', { timeout: 4000 }); await wait(300)
+      await pg.click('.side.left .numrow .t-rt'); await pg.waitForSelector('.modal.rt .rtbar .seg', { timeout: 4000 }); await pg.click('.modal.rt .rtbar .seg button:nth-child(2)'); await pg.waitForSelector('.modal.rt .gh', { timeout: 4000 }); await wait(300)
       const rt = await pg.evaluate(() => { const m = document.querySelector('.modal.rt'); return { emoji: /[\u{1F534}\u{1F7E0}-\u{1F7E2}\u{26AA}\u{23F0}\u{23F8}]/u.test(m.textContent ?? ''), dots: m.querySelectorAll('.gh .sdot, .gh svg').length, heads: m.querySelectorAll('.gh').length, icon: !!m.querySelector('.modal-h .t b svg'), title: m.querySelector('.modal-h .t b')?.textContent ?? '' } })
       if (rt.emoji || !rt.icon || rt.title !== '루틴' || rt.dots < rt.heads || !rt.heads) bad.push('루틴 창에 이모지가 남았거나 상태 점이 없다 ' + JSON.stringify(rt))
       if (shots) await pg.screenshot({ path: join(shots, 'parts2-루틴-desktop.png') })
       await esc(); await gone('.modal.rt')
       // 상황판
-      await pg.click('.cx-open'); await pg.waitForSelector('.modal.cx .cx-tab', { timeout: 4000 }); await wait(300)
+      await pg.click('.side.left .cx-line'); await pg.waitForSelector('.modal.cx .cx-tab', { timeout: 4000 }); await wait(300)
       const cx = await pg.evaluate(() => { const m = document.querySelector('.modal.cx'); return { tabs: [...m.querySelectorAll('.cx-tab button')].map((b) => b.textContent), rt: !!m.querySelector('.modal-h .btn.cx-rt') } })
       if (cx.tabs.includes('루틴') || cx.tabs.length !== 2 || !cx.rt) bad.push('상황판의 «루틴» 이 아직 탭 줄에 있다 ' + JSON.stringify(cx))
       if (shots) await pg.screenshot({ path: join(shots, 'parts2-상황판-desktop.png') })
@@ -416,9 +418,10 @@ export async function uxuiEight({ br, check, port = 7481, shots = '' }) {
         const p2 = await br.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
         try {
         await p2.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
-        await p2.goto(base + '/'); await p2.waitForSelector('.mhome .mcards .t-note', { timeout: 10000 }); await wait(400)
-        for (const [name, tile, sel] of [['알림', '.t-note', '.modal.nmodal'], ['할일', '.t-todo', '.modal.board'], ['세션', '.t-sess', '.modal.clean'], ['폴더봇', '.t-fold', '.modal.fsheet']]) {
-          await p2.click('.mhome .mcards ' + tile)
+        // 왼쪽 목록 A안(2026-11-14) — 폰 홈의 네 칸(`.mhome .mcards`)은 바닥 숫자 줄(`.mhome .numrow`)이 됐고, 폴더 현황 창은 목록 머리의 «폴더 N»(`.lhead .lf`)이 연다
+        await p2.goto(base + '/'); await p2.waitForSelector('.mhome .numrow .t-note', { timeout: 10000 }); await wait(400)
+        for (const [name, tile, sel] of [['알림', '.numrow .t-note', '.modal.nmodal'], ['할일', '.numrow .t-todo', '.modal.board'], ['세션', '.numrow .t-sess', '.modal.clean'], ['폴더봇', '.lhead .lf', '.modal.fsheet']]) {
+          await p2.click('.mhome ' + tile)
           try { await p2.waitForSelector(sel, { timeout: 4000 }) } catch { badp.push(`${name}: 창이 안 열렸다`); continue }
           await wait(350)
           const g = await p2.evaluate((q) => {

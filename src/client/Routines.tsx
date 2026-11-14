@@ -135,12 +135,12 @@ export function Routines({ onClose, go, openSheet, say, phone }: { onClose: () =
   </Modal>
 }
 
-/** 홈·사이드바 네 칸 아래 한 줄 — 루틴 수와 문제 수 · 누르면 루틴 페이지 */
-export function RoutineLine({ onOpen }: { onOpen: () => void }) {
+/** 루틴 수와 문제 수(실패 · 놓침 · 모름) — 왼쪽 목록 아래 숫자 줄의 «루틴» 칸이 쓴다. 2분마다, 그리고 봇 목록이 바뀌면 다시 읽는다 */
+export function useRoutineCounts(): { total: number; bad: number } | null {
   const { s } = useStore()
   const [c, setC] = useState<{ total: number; bad: number } | null>(null)
   const load = () => { void api<Board>('/routines/overview').then((b) => setC({ total: b.total, bad: b.counts.fail + b.counts.missed + b.counts.unknown })).catch(() => { /* 숫자 없이 */ }) }
   useEffect(() => { load(); const t = window.setInterval(load, 120_000); return () => window.clearInterval(t) }, [])
   useEffect(() => { load() }, [s.bots])
-  return <button className="rtline" onClick={onOpen} aria-label="루틴"><Icon n="cal" size={14} color="var(--t3)" /><span className="t">루틴</span>{c ? <span className="all">{c.total}개</span> : null}<span className="sp" />{c?.bad ? <span className="bad">문제 {c.bad}</span> : null}<Icon n="chev" size={9} color="var(--t3)" /></button>
+  return c
 }

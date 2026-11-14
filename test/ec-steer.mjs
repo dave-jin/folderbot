@@ -220,7 +220,7 @@ export async function ecSteer({ base, data, botId, br, check, shots }) {
       must(JSON.stringify(KEYS_ROW(await keysOf(pg)))?.includes('⌘J'), '단축키 표(⌘/)에 ⌘J 가 없다')
       const order = await waitingIds(); must(order.includes(a.id) && order.includes(b.id) && order.includes(K.card), '검사 전제 — 기다리는 세션 셋 ' + JSON.stringify(order))
       // 띠 «내 답을 기다림» 의 줄(위 셋까지)과 같은 차례다
-      const strip = await pg.$$eval('.sbtiles .cx-strip .cx-it[data-kind="waiting"]', (r) => r.map((x) => x.dataset.sid))
+      const strip = await pg.$$eval('.side.left .wband .cx-it[data-kind="waiting"]', (r) => r.map((x) => x.dataset.sid))
       must(strip.length >= 1 && JSON.stringify(strip) === JSON.stringify(order.slice(0, strip.length)), '띠의 줄과 차례가 다르다 ' + JSON.stringify({ strip, order }))
       // 한 바퀴 — 보던 세션은 목록에 없으니 맨 앞부터, 그다음은 차례대로, 끝이면 처음으로
       let cur = home.id; const seen = []
@@ -296,7 +296,7 @@ export async function ecSteer({ base, data, botId, br, check, shots }) {
       const r = await newSession('EC 탭 일하는중'); await say(r.id, '느린일 길게 EC-U8'); await running(r.id)
       const un = await newSession('EC 탭 안읽음'); await say(un.id, '되읊어: 안 읽은 답 EC-U8'); await stateIs(un.id, 'done')
       const home = await newSession('EC 탭 쉼'); await goto(pg, home.id)
-      await pg.click('.sbtiles .mcards .t-sess'); await pg.waitForSelector('.modal.clean.manage .stabs', { timeout: 4000 })
+      await pg.click('.side.left .numrow .t-sess'); await pg.waitForSelector('.modal.clean.manage .stabs', { timeout: 4000 })
       const tabs = () => pg.$$eval('.modal.clean .stabs .stab', (bs) => bs.map((b) => ({ k: b.dataset.tab, t: b.querySelector('span')?.textContent ?? '', c: Number(b.querySelector('.c')?.textContent), on: b.classList.contains('on'), sel: b.getAttribute('aria-selected') })))
       const rowIds = () => pg.$$eval('.modal.clean tbody tr[data-id]', (r) => r.map((x) => x.dataset.id))
       const t0 = await tabs()
@@ -324,7 +324,7 @@ export async function ecSteer({ base, data, botId, br, check, shots }) {
       if (await pg.$$eval('.modal.clean tbody input:checked', (x) => x.length)) await pg.click('.modal.clean thead th.ck input')
       // 다시 열면 «전체»
       await pg.click('.modal.clean .stab[data-tab="work"]'); await pg.click('.modal.clean .modal-h .ib'); await wait(250)
-      await pg.click('.sbtiles .mcards .t-sess'); await pg.waitForSelector('.modal.clean.manage .stabs', { timeout: 4000 })
+      await pg.click('.side.left .numrow .t-sess'); await pg.waitForSelector('.modal.clean.manage .stabs', { timeout: 4000 })
       must((await tabs()).find((x) => x.on)?.k === 'all', '고른 탭을 기억했다(늘 «전체» 로 연다)')
       await pg.click('.modal.clean .modal-h .ib'); await wait(200)
       K.tabWait = w.id; K.tabRun = r.id
@@ -353,12 +353,12 @@ export async function ecSteer({ base, data, botId, br, check, shots }) {
     })
     await check('P2 폰 — 띠 «내 답을 기다림» 의 [답하기] 가 그 기다리는 세션으로 간다 · 카드에 키 안내는 없다', async () => {
       const pg = P.pg
-      const home = await newSession('EC 폰 홈'); await phoneHome(pg, home.id); await pg.waitForSelector('.mhome .cx-strip', { timeout: 6000 })
-      if (await pg.$('.mhome .cx-strip.folded')) { await pg.tap('.mhome .cx-strip .cx-fold'); await wait(300) }
+      // 왼쪽 목록 A안(2026-11-14) — 상황판 띠(`.cx-strip` · 접고 펴기)는 «내 답을 기다림» 띠(`.cx-strip.wband`)만 남았다. 접힘이 없어져서 «접혀 있으면 편다» 걸음은 지웠다
+      const home = await newSession('EC 폰 홈'); await phoneHome(pg, home.id); await pg.waitForSelector('.mhome .wband', { timeout: 6000 })
       const order = await waitingIds(); must(order.includes(K.tabWait), '검사 전제 — 기다리는 세션이 있어야 한다')
-      const rows = await pg.$$eval('.mhome .cx-strip .cx-it[data-kind="waiting"]', (r) => r.map((x) => ({ sid: x.dataset.sid, btn: !!x.querySelector('.cx-reply'), h: Math.round(x.querySelector('.cx-reply')?.getBoundingClientRect().height ?? 0) })))
+      const rows = await pg.$$eval('.mhome .wband .cx-it[data-kind="waiting"]', (r) => r.map((x) => ({ sid: x.dataset.sid, btn: !!x.querySelector('.cx-reply'), h: Math.round(x.querySelector('.cx-reply')?.getBoundingClientRect().height ?? 0) })))
       must(rows.length >= 1 && JSON.stringify(rows.map((x) => x.sid)) === JSON.stringify(order.slice(0, rows.length)) && rows.every((x) => x.btn), '띠의 줄 ' + JSON.stringify({ rows, order }))
-      await pg.tap(`.mhome .cx-strip .cx-it[data-sid="${rows[0].sid}"] .cx-reply`)
+      await pg.tap(`.mhome .wband .cx-it[data-sid="${rows[0].sid}"] .cx-reply`)
       await until(async () => (await sidOf(pg)) === rows[0].sid, '[답하기] → 그 세션', 5000)
       await pg.waitForSelector('.card[data-req]', { timeout: 5000 })
       must(!(await pg.$('.card .pkeys')), '폰 카드에 키 안내가 있다')
@@ -367,7 +367,7 @@ export async function ecSteer({ base, data, botId, br, check, shots }) {
     await check('P3 폰 — 세션 창의 탭 다섯이 한 줄(안 접힘) · 넘치면 옆으로 밀린다 · 화면은 옆으로 안 샌다 · 눌러서 거른다', async () => {
       const pg = P.pg
       const home = await newSession('EC 폰 홈 2'); await phoneHome(pg, home.id)
-      await pg.tap('.mhome .mcards .t-sess'); await pg.waitForSelector('.modal.clean.manage .stabs', { timeout: 4000 }); await wait(300)
+      await pg.tap('.mhome .numrow .t-sess'); await pg.waitForSelector('.modal.clean.manage .stabs', { timeout: 4000 }); await wait(300)
       const m = await pg.evaluate(() => { const st = document.querySelector('.modal.clean .stabs'); const r = st.getBoundingClientRect(); const bs = [...st.querySelectorAll('.stab')].map((b) => b.getBoundingClientRect()); return { n: bs.length, tops: [...new Set(bs.map((b) => Math.round(b.top)))].length, minH: Math.min(...bs.map((b) => Math.round(b.height))), right: Math.round(r.right), left: Math.round(r.left), scrollW: st.scrollWidth, clientW: st.clientWidth, ov: getComputedStyle(st).overflowX, sw: document.documentElement.scrollWidth, modalSW: document.querySelector('.modal.clean').scrollWidth, modalW: Math.round(document.querySelector('.modal.clean').getBoundingClientRect().width), lastR: Math.round(bs[bs.length - 1].right) } })
       must(m.n === 5 && m.tops === 1 && m.minH >= 34 && m.left >= 0 && m.right <= 390 && m.sw <= 390 && m.modalSW <= m.modalW + 1 && (m.ov === 'auto' || m.ov === 'scroll'), '폰 탭 치수 ' + JSON.stringify(m))
       await shot(pg, 'p3-폰-세션창-탭')

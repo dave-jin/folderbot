@@ -399,7 +399,8 @@ export async function ebPerm({ base, root, data, claudeCfg, botId, botAbs, br, c
     })
     await check('U8 설정 › 세션 · 사용량 — «승인 시간 초과» 줄(데스크톱 · 폰) · 고르면 호스트에 저장된다 / 설정 › Claude 의 기본 권한 목록도 다섯', async () => {
       const pg = D.pg; await goto(pg, K.ui)
-      await pg.click('.col.side.left .nav:has-text("설정")'); await pg.waitForSelector('.modal.setw', { timeout: 5000 }); await pg.click('.snav .nv:has-text("세션 · 사용량")'); await pg.waitForSelector('select[data-approval-timeout]', { timeout: 4000 })
+      // 왼쪽 목록 A안(2026-11-14) — 레일의 «설정» 줄(`.nav`)은 숫자 줄의 `.t-set` 칸이 됐다
+      await pg.click('.side.left .numrow .t-set'); await pg.waitForSelector('.modal.setw', { timeout: 5000 }); await pg.click('.snav .nv:has-text("세션 · 사용량")'); await pg.waitForSelector('select[data-approval-timeout]', { timeout: 4000 })
       const row = await pg.evaluate(() => { const sel = document.querySelector('select[data-approval-timeout]'); const r = sel.closest('.setr'); return { v: sel.value, opts: [...sel.options].map((o) => o.textContent), t: r?.querySelector('.tx')?.textContent ?? '', inBox: sel.getBoundingClientRect().right <= r.getBoundingClientRect().right + 1 } })
       must(row.v === '0' && JSON.stringify(row.opts) === JSON.stringify(['5분', '10분', '30분', '1시간', '끄기 — 끝까지 기다림']) && /승인 시간 초과/.test(row.t) && /내가 보낸 턴은 끝까지/.test(row.t) && row.inBox, '설정 줄 ' + JSON.stringify(row))
       await shot(pg, 'u8-데스크톱-설정-승인-시간-초과')

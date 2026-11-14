@@ -14,7 +14,9 @@ import { LinksView } from './Links'
 /**
  * 🔴 맥락 상황판 — 화면 (2026-11-01 · «맥락 상황판» 1단계 Task 8).
  *    설계 `2. Area/제품_FolderBot/01_기획/2026-11-01_기획_맥락-상황판.md` §4·§8 · 목업 `03_디자인/2026-11-01_맥락-상황판-목업/` ①②.
- *  - `ContextStrip` — 홈 맨 위 띠(맥 레일 `compact` · 폰 홈). 축 한 줄 → 나설 곳 세 덩이 → 누르면 상황판.
+ *  - `WaitBand` — 왼쪽 목록 맨 위의 «내 답을 기다림» 띠(맥 레일 `compact` · 폰 홈). 있을 때만 선다.
+ *  - `ContextLine` — 봇 목록 아래 «상황판 · 하다 만 일 N · 어긋난 루틴 N ›» 한 줄. 누르면 상황판.
+ *    (2026-11-14 왼쪽 목록 A안 — 종전의 홈 맨 위 띠 `ContextStrip` 을 이 둘로 갈랐다)
  *  - `ContextPage` — 기간 셋 · 큰 띠 · 목표 카드 · 조용한 목표 · 목표 펼치기(작업 · 이야기 · 채팅).
  * ⚠ 값은 모두 `/api/context/*` 가 준다 — 화면은 계산하지 않는다. 숫자는 «외 N» · 칩 수 · tally 만 쓴다(퍼센트 없음).
  * ⚠ 주인이 아닌 맥은 볼트 `board.json` 을 그대로 받는다 — 기간을 골라도 판의 `period` 가 다르면 그 사실을 적는다.
@@ -33,7 +35,6 @@ const EV_KO = { file: '파일 근거', commit: '커밋 근거', letter: '편지 
 const GROUPS: { k: keyof Board['step']; t: string }[] = [{ k: 'waiting', t: '내 답을 기다림' }, { k: 'stalled', t: '하다 만 일' }, { k: 'routine', t: '어긋난 루틴' }]
 /** 범례 — 뜻을 가진 색은 둘(초록 끝남 · 앰버 내 차례). 하다 멈춤과 내 답 대기는 같은 «내 차례» 색이라 범례에서 한 칸이다 */
 const LEGEND: { k: string; t: string }[] = [{ k: 'done', t: '끝남' }, { k: 'claimed', t: '끝났다고 함' }, { k: 'running', t: '하는 중' }, { k: 'waiting', t: '내 차례' }, { k: 'todo', t: '아직' }]
-const FOLD_KEY = 'fb.cx.fold'
 const p2 = (n: number) => String(n).padStart(2, '0')
 const hm = (t: number) => { const d = new Date(t); return `${p2(d.getHours())}:${p2(d.getMinutes())}` }
 const when = (t: number) => (new Date(t).toDateString() === new Date().toDateString() ? hm(t) : `${new Date(t).getMonth() + 1}/${new Date(t).getDate()} ${hm(t)}`)
@@ -120,88 +121,71 @@ function groupsOf(b: Board | null, waiting: StepGroup): { board: Board | null; g
   return { board, groups: GROUPS.map((g) => ({ ...g, v: g.k === 'waiting' ? waiting : board ? board.step[g.k] : { rows: [], more: 0 } })).filter((g) => g.v.rows.length) }
 }
 
-/** 띠 본체 — 홈 띠(mini · 접고 펴기)와 상황판 페이지(big)가 같은 원천을 쓴다. 상자는 한 겹 — 덩이는 제목 + 가는 줄로만 나눈다 */
-function StripView({ b, owner, waiting, a, compact, big, head, folded }: {
-  b: Board | null; owner: boolean | null; waiting: StepGroup; a: Acts; compact?: boolean; big?: boolean; head?: ReactNode; folded?: boolean
-}) {
+/** 띠 본체 — 상황판 페이지의 큰 띠. 상자는 한 겹 — 덩이는 제목 + 가는 줄로만 나눈다 */
+function StripView({ b, waiting, a }: { b: Board | null; waiting: StepGroup; a: Acts }) {
   const { board, groups } = groupsOf(b, waiting)
   const total = board ? board.goals.length + board.quiet.length : 0
   const calm = board ? <div className="cx-calm"><i />{total ? `목표 ${total}개 모두 잘 도는 중` : '아직 정리된 목표가 없어요'}</div> : null
   const none = b && noFile(b) ? <div className="cx-calm none">아직 주인 맥 판 없음<span>주인 맥이 판을 한 번 쓰면 여기에 보여요</span></div> : null
-  if (big) {
-    const rows = groups.flatMap((g) => g.v.rows)
-    const more = groups.reduce((n, g) => n + g.v.more, 0)
-    return <div className="cx-strip big">
-      {board ? <div className="cx-hero">{board.axis ? <b>{board.axis.text}</b> : null}<span className="s"><span><em>끝남</em> {board.tally.done}</span><span><em>하다 만</em> {board.tally.stalled}</span><span><em>새로 생김</em> {board.tally.added}</span></span></div> : null}
-      {none}
-      {rows.length ? <section className="cx-need">
-        <div className="cx-st"><b>지금 나설 곳</b><span className="m">내 답이 필요한 것 먼저 · 그다음 하다 만 일</span></div>
-        <div className="cx-list">{rows.map((r, i) => <StepItem key={`${r.kind}:${r.botId}:${r.taskId ?? r.sessionId ?? r.routine ?? i}`} r={r} a={a} />)}</div>
-        {more ? <span className="cx-more">외 {more} — 아래 목표 카드에 있어요</span> : null}
-      </section> : calm}
-    </div>
-  }
-  return <div className={`cx-strip ${compact ? 'mini' : ''} ${folded ? 'folded' : ''}`}>
-    {head}
-    {folded ? null : <div className="cx-sbody">
-      {board?.axis ? <div className="cx-axis"><b>{board.axis.text}</b></div> : null}
-      {none}
-      {groups.length ? groups.map((g) => <div key={g.k} className={`cx-grp k-${g.k}`}>
-        <div className="cx-gl">{g.t}<span className="c">{g.v.rows.length + g.v.more}</span></div>
-        {g.v.rows.map((r, i) => <StepItem key={`${r.botId}:${r.taskId ?? r.sessionId ?? r.routine ?? i}`} r={r} a={a} mini />)}
-        {g.v.more ? (board ? <button className="cx-more" onClick={() => a.open()}>외 {g.v.more} — 상황판에서</button> : <span className="cx-more">외 {g.v.more}</span>) : null}
-      </div>) : calm}
-    </div>}
+  const rows = groups.flatMap((g) => g.v.rows)
+  const more = groups.reduce((n, g) => n + g.v.more, 0)
+  return <div className="cx-strip big">
+    {board ? <div className="cx-hero">{board.axis ? <b>{board.axis.text}</b> : null}<span className="s"><span><em>끝남</em> {board.tally.done}</span><span><em>하다 만</em> {board.tally.stalled}</span><span><em>새로 생김</em> {board.tally.added}</span></span></div> : null}
+    {none}
+    {rows.length ? <section className="cx-need">
+      <div className="cx-st"><b>지금 나설 곳</b><span className="m">내 답이 필요한 것 먼저 · 그다음 하다 만 일</span></div>
+      <div className="cx-list">{rows.map((r, i) => <StepItem key={`${r.kind}:${r.botId}:${r.taskId ?? r.sessionId ?? r.routine ?? i}`} r={r} a={a} />)}</div>
+      {more ? <span className="cx-more">외 {more} — 아래 목표 카드에 있어요</span> : null}
+    </section> : calm}
   </div>
-}
-
-/** 접힌 머리줄의 요약 — «답 N» 만 앰버, 나머지는 회색 글자(압박 숫자를 색 배지로 세우지 않는다) */
-function foldSum(groups: Grp[]): ReactNode {
-  const n = (k: Grp['k']) => { const g = groups.find((x) => x.k === k); return g ? g.v.rows.length + g.v.more : 0 }
-  const parts: ReactNode[] = []
-  if (n('waiting')) parts.push(<span key="w" className="hot">답 {n('waiting')}</span>)
-  if (n('stalled')) parts.push(<span key="s">하다 만 {n('stalled')}</span>)
-  if (n('routine')) parts.push(<span key="r">루틴 {n('routine')}</span>)
-  return parts.length ? parts.flatMap((x, i) => (i ? [<span key={`d${i}`}> · </span>, x] : [x])) : null
 }
 
 /**
- * 홈 맨 위 띠 — 60초마다, 그리고 세션 상태가 바뀌면 다시 읽는다. 판을 못 읽고 기다리는 세션도 없으면(옛 호스트) 아무것도 안 그린다.
- * 🔴 2026-11-02 Dave — 머리줄을 누르면 접고 펴고(맥마다 기억 · `fb.cx.fold`), ↗ 는 상황판을 연다.
- *    처음엔 펼침. 접어 두어도 «내 답을 기다림» 에 **새** 세션이 생기면 저절로 펼친다 — 답할 것을 놓치지 않게.
+ * «내 답을 기다림» 띠 — 왼쪽 목록 맨 위(찾기 · 폴더 선택 바로 아래), 기다리는 세션이 있을 때만 선다.
+ *
+ * 🔴 **왼쪽 목록 A안** (2026-11-12 Dave 카드 «A안» · 11/13 «이대로 만든다»): 봇 목록이 가장 큰 자리를 쓰고, 그 위에는
+ *    «지금 내가 답해야 하는 것» 만 남긴다. 종전의 상황판 띠(11/1 «홈 맨 위» · 11/2 접고 펴기)는 세 덩이 — 내 답을 기다림 ·
+ *    하다 만 일 · 어긋난 루틴 — 을 다 세워서, 답 대기가 둘이면 900px 창에서 봇이 다섯 줄 중 두 줄만 보였다(11/12 리뷰).
+ *    하다 만 일과 어긋난 루틴은 목록 아래 «상황판» 한 줄(`ContextLine`)의 숫자로 내려갔고, 누르면 상황판이 열린다.
+ * 🔴 판을 못 읽어도(옛 호스트 · 판 파일 없음 · 오류) 이 띠는 선다 — 확인 대기가 화면에서 사라지면 안 된다(이 맥의 세션 목록에서 짓는다).
+ * ⚠ 최대 세 줄(`STEP_ROWS`). 넘으면 «외 N — 상황판에서». 줄의 [허용] · [답하기] 는 종전과 같은 문이다.
  */
-export function ContextStrip({ go, open, compact, openRoutines }: { go: Go; open: Open; compact?: boolean; openRoutines?: () => void }) {
-  const [b, setB] = useState<Board | null>(null)
-  const [st, setSt] = useState<Status | null>(null)
-  const [note, setNote] = useState('')
-  const [folded, setFolded] = useState(() => { try { return localStorage.getItem(FOLD_KEY) === '1' } catch { return false } })
-  const fold = (v: boolean) => { setFolded(v); try { if (v) localStorage.setItem(FOLD_KEY, '1'); else localStorage.removeItem(FOLD_KEY) } catch { /* 저장 못 해도 화면은 따른다 */ } }
+export function WaitBand({ go, open, compact }: { go: Go; open: Open; compact?: boolean }) {
   const waiting = useLocalWaiting()
+  const [note, setNote] = useState('')
   const { allow, busy } = useAllow(setNote)
-  const load = () => { void api<Board>('/context/board?period=today').then(setB).catch(() => setB(null)); void api<Status>('/context/status').then(setSt).catch(() => {}) }
+  useEffect(() => { if (!note) return; const t = window.setTimeout(() => setNote(''), 4000); return () => window.clearTimeout(t) }, [note])
+  if (!waiting.rows.length) return null
+  const a: Acts = { go, open, snooze: () => { /* 이 띠에는 «하다 만 일» 줄이 없다 */ }, allow, busy }
+  return <div className={`cx-strip wband ${compact ? 'mini' : ''}`} role="group" aria-label="내 답을 기다림">
+    <div className="cx-grp k-waiting">
+      <div className="cx-gl">내 답을 기다림<span className="c">{waiting.rows.length + waiting.more}</span>{note ? <span className="cx-note">{note}</span> : null}</div>
+      {waiting.rows.map((r, i) => <StepItem key={`${r.botId}:${r.sessionId ?? i}`} r={r} a={a} mini />)}
+      {waiting.more ? <button className="cx-more" onClick={() => open()}>외 {waiting.more} — 상황판에서</button> : null}
+    </div>
+  </div>
+}
+
+/**
+ * 상황판 한 줄 — 봇 목록 아래. «상황판 · 하다 만 일 4 · 어긋난 루틴 1 ›» 을 누르면 상황판이 열린다(왼쪽 목록 A안 · 2026-11-12).
+ * 60초마다, 그리고 세션 상태가 바뀌면 다시 읽는다. 판을 못 읽어도(옛 호스트 · 오류) 줄은 선다 — 숫자 없이 «상황판 ›» 만.
+ * ⚠ 숫자는 회색 글자다 — 압박 숫자를 색 배지로 세우지 않는다(11/2). «내 답을 기다림» 은 위 띠가 말하므로 여기서 또 세지 않는다.
+ */
+export function ContextLine({ open }: { open: Open }) {
+  const [b, setB] = useState<Board | null>(null)
+  const load = () => { void api<Board>('/context/board?period=today').then(setB).catch(() => setB(null)) }
   useEffect(() => { load(); const t = window.setInterval(load, 60_000); return () => window.clearInterval(t) }, [])
   const sig = useStateSig(); const first = useRef(true)
   useEffect(() => { if (first.current) { first.current = false; return } const t = window.setTimeout(load, 1500); return () => window.clearTimeout(t) }, [sig])
-  useEffect(() => { if (!note) return; const t = window.setTimeout(() => setNote(''), 4000); return () => window.clearTimeout(t) }, [note])
-  // 새로 생긴 «내 답을 기다림» — 이 화면을 연 뒤에 처음 보는 세션 id 가 있으면 펼친다(연 순간 이미 있던 것은 접힌 머리줄의 «답 N» 이 알린다)
-  const seenWait = useRef<Set<string> | null>(null)
-  const waitIds = waiting.rows.map((r) => r.sessionId ?? '').filter(Boolean).join('|')
-  useEffect(() => {
-    const ids = waitIds ? waitIds.split('|') : []
-    if (seenWait.current && ids.some((id) => !seenWait.current!.has(id)) && folded) fold(false)
-    seenWait.current = new Set([...(seenWait.current ?? []), ...ids])
-  }, [waitIds])   // eslint-disable-line react-hooks/exhaustive-deps
-  const snooze = async (r: StepRow) => { try { await api('/context/snooze', { body: { bot: r.botId, task: r.taskId } }); setNote('7일 동안 여기서 뺐어요'); load() } catch (e) { setNote(errMsg(e)) } }
-  if (!b && !waiting.rows.length) return null
-  const sum = folded ? foldSum(groupsOf(b, waiting).groups) : null
-  const head = <div className="cx-h">
-    <button className="cx-fold" onClick={() => fold(!folded)} aria-expanded={!folded} aria-label={folded ? '상황판 펼치기' : '상황판 접기'}>
-      <Icon n="chevd" size={10} color="var(--t3)" style={{ transform: folded ? 'rotate(-90deg)' : undefined, transition: 'transform var(--t-fast) var(--ease)' }} /><b>상황판</b>
-      {note ? <span className="cx-note">{note}</span> : <span className="cx-sum">{folded ? sum : b && !noFile(b) ? hm(b.at) : null}</span>}
-    </button>
-    <button className="ib cx-open" onClick={() => open()} aria-label="상황판 열기" title="상황판 열기"><Icon n="open" size={12} /></button>
-  </div>
-  return <StripView b={b} owner={st ? st.owner : null} waiting={waiting} a={{ go, open, openRoutines, snooze: (r) => void snooze(r), allow, busy }} compact={compact} head={head} folded={folded} />
+  const board = b && !noFile(b) ? b : null
+  const n = (k: 'stalled' | 'routine') => (board ? board.step[k].rows.length + board.step[k].more : 0)
+  const parts = [n('stalled') ? `하다 만 일 ${n('stalled')}` : '', n('routine') ? `어긋난 루틴 ${n('routine')}` : ''].filter(Boolean)
+  const total = board ? board.goals.length + board.quiet.length : 0
+  // 판을 못 읽어도(옛 호스트 · 오류) 줄은 선다 — 숫자 없이 «상황판 ›» 만. 상황판 창을 여는 길이 사라지면 안 된다
+  const text = !b ? '' : !board ? '아직 주인 맥 판 없음' : parts.length ? parts.join(' · ') : total ? `목표 ${total}개 모두 잘 도는 중` : '아직 정리된 목표가 없어요'
+  return <button className={`cx-line ${parts.length ? '' : 'calm'}`} onClick={() => open()} aria-label="상황판 열기" title="상황판 열기">
+    <b>상황판</b><span className="s">{text}</span><Icon n="chev" size={10} color="var(--t3)" />
+  </button>
 }
 
 /* ── 상황판 페이지 ───────────────────────────────────────────────────────── */
@@ -282,7 +266,7 @@ export function ContextPage({ onClose, go, goTodo, openRoutines, at, phone, open
           {period === 'away' && awaySub ? <div className="cx-sub">{awaySub}</div> : null}
           {mismatch ? <div className="cx-sub warn">{mismatch}</div> : null}
           {b ? <>
-            <StripView b={b} owner={owner} waiting={waiting} a={{ go, open, openRoutines, snooze: (r) => void snooze(r), allow, busy }} big />
+            <StripView b={b} waiting={waiting} a={{ go, open, openRoutines, snooze: (r) => void snooze(r), allow, busy }} />
             {b.goals.length ? <section className="cx-goals">
               <div className="cx-gh cx-st"><b>목표</b><span className="m">문제 있는 목표 먼저 · 그다음 마감 가까운 순</span>
                 <span className="cx-leg">{LEGEND.map((x) => <span key={x.k}><i className={`st-${x.k}`} />{x.t}</span>)}</span></div>

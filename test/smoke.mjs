@@ -67,6 +67,15 @@ const K = { end: MAC ? 'Meta+ArrowRight' : 'End', docEnd: MAC ? 'Meta+ArrowDown'
 const fail = (m) => { console.error('✗', m); console.error(hostLog); host.kill(); process.exit(1) }
 const ok = (m) => console.log('✓', m)
 /**
+ * 왼쪽 목록 A안(2026-11-14) — 정렬 단추 셋(`.sortbar button`)이 단추 하나(`.lhead .sortb`) + 메뉴(`.menu.sortm`)가 됐다.
+ * `scope` 는 맥 레일이면 `.side.left`, 폰 홈이면 `.mhome`. 메뉴는 뜬 직후 한 박자 뒤부터 누른다(여는 클릭이 바로 닫지 않게).
+ */
+const sortBtn = (scope) => `${scope} .lhead .sortb`
+const sortOpen = async (page, scope) => { await page.click(sortBtn(scope)); await page.waitForSelector('.menu.sortm button', { timeout: 3000 }); await wait(250) }
+const sortPick = async (page, scope, k) => { await sortOpen(page, scope); await page.click(`.menu.sortm button[data-sort="${k}"]`); await page.waitForSelector('.menu.sortm', { state: 'detached', timeout: 3000 }) }
+/** 정렬 단추에 보이는 지금 값 — 단추 글자는 «정렬» + 값이다 */
+const sortNow = (page, scope) => page.evaluate((q) => (document.querySelector(q)?.textContent ?? '').replace(/^정렬/, '').trim(), sortBtn(scope))
+/**
  * 세션 줄 (2026-11-13 Dave 카드) — 세션 목록은 오른쪽 패널의 «세션» 절이 아니라 채팅 머리줄 아래의 줄(`.sstrip`)이다.
  * 탭 수 = 줄에 선 탭 + «＋N» 에 가려진 탭(자동화 세션은 탭이 아니다). 줄이 없으면 -1.
  */
@@ -1165,7 +1174,7 @@ try {
         await pg.click('.sb-list .brow[data-id="orch"]')
         await pg.waitForSelector('.brg-thread', { state: 'detached', timeout: 3000 }).catch(() => fail('BQ-9: 봇을 눌렀는데 스레드가 안 닫혔다'))
         // 설정 › 연결 — 마법사 세 단계
-        await pg.click('.nav:has-text("설정")')
+        await pg.click('.side.left .numrow .t-set')   // 왼쪽 목록 A안(2026-11-14) — 레일의 «설정» 줄(`.nav`)은 숫자 줄의 `.t-set` 칸이 됐다
         await pg.click('.snav .nv:has-text("연결")')
         if (!(await pg.$('.setr[data-t="지금 연결"]')) || !(await pg.$('.brg-prow[data-peer="auto"]'))) fail('BQ-10: 설정 › 연결 에 지금 연결 목록이 없다')
         await pg.click('.setr[data-t="새 연결 만들기"] .btn')
@@ -1610,7 +1619,9 @@ try {
         const dueKey = (n) => { const m = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?_./.exec(n ?? ''); if (!m) return null; const y = +m[1], mo = m[2] ? +m[2] : 12, d = m[3] ? +m[3] : new Date(y, mo, 0).getDate(); return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}` }
         const byDueName = (a, b) => { const ka = dueKey(a), kb = dueKey(b); if (ka !== kb) return ka === null ? 1 : kb === null ? -1 : ka < kb ? -1 : 1; const pa = (/^\d{4}(-\d{2})?(-\d{2})?_/.exec(a) ?? [])[0]?.length ?? 0, pb = (/^\d{4}(-\d{2})?(-\d{2})?_/.exec(b) ?? [])[0]?.length ?? 0; if (pa !== pb) return pb - pa; return a.localeCompare(b, 'ko', { numeric: true, sensitivity: 'base' }) }
         for (const o of order) { const d = [...o.n].sort(byDueName); if (JSON.stringify(o.n) !== JSON.stringify(d)) fail(`ui row order in ${o.s}: ${o.n.join(' | ')}`) }
-        if (!(await pg.$$eval('.sortbar button', (bs) => bs.map((b) => b.textContent))).includes('마감일')) fail('정렬 갈래에 «마감일» 이 없다')
+        // 왼쪽 목록 A안(2026-11-14) — 정렬 갈래는 목록 머리의 단추가 띄우는 메뉴 안에 있다(종전 `.sortbar button`)
+        { await sortOpen(pg, '.side.left'); const opts = await pg.$$eval('.menu.sortm button b', (bs) => bs.map((b) => b.textContent)); await pg.click(sortBtn('.side.left')); await pg.waitForSelector('.menu.sortm', { state: 'detached', timeout: 3000 }).catch(() => fail('정렬 메뉴가 같은 단추로 안 닫힌다'))
+          if (!opts.includes('마감일')) fail('정렬 갈래에 «마감일» 이 없다 · ' + JSON.stringify(opts)) }
         // NFD 파일명이 자모 분리 없이 합쳐져 보인다
         const nfdName = await pg.$$eval('.panel .trow .n', (els) => els.map((e) => e.textContent).find((t) => t && t.includes('_MAP_'))); if (!nfdName || nfdName !== nfdName.normalize('NFC') || !/전체구조/.test(nfdName)) fail('ui NFD name: ' + JSON.stringify(nfdName))
         // 트리 이름은 가운데 말줄임 — 꼬리(.mt)가 남아 있다 (레일은 F 로 «제목 끝 자르기» 가 됐다)
@@ -3540,11 +3551,15 @@ try {
           const t0 = new Date(Date.now() - 3600_000)
           appendFileSync(rf, JSON.stringify({ ts: t0.toISOString(), host: 'smoke', event: 'start', botId: cfo.id, routine: 'RB 실패 검사', run: 'rb-smoke-1' }) + '\n' + JSON.stringify({ ts: new Date(t0.getTime() + 60_000).toISOString(), host: 'smoke', event: 'end', botId: cfo.id, routine: 'RB 실패 검사', run: 'rb-smoke-1', ok: false, result: 'fail', reason: '검사용 로그인 필요', ms: 60_000 }) + '\n')
           await wait(400)
-          await pg.waitForSelector('.rtline', { timeout: 4000 }).catch(() => fail('🔴 RB-6: 네 칸 아래 «⏰ 루틴» 줄이 없다'))
-          // 🔴 (2026-11-01 Dave «루틴도 한쪽으로 치우쳐져서 안 예뻐») — 버튼 width:auto 가 글자 폭만큼 줄어 왼쪽에 붙었다. 네 칸의 왼쪽 끝·오른쪽 끝과 맞아야 한다
-          const rtFit = async (page) => page.$eval('.rtline', (b) => { const tiles = [...(b.parentElement?.querySelectorAll('.mcards > button') ?? [])].map((x) => x.getBoundingClientRect()); const r = b.getBoundingClientRect(); return tiles.length ? { l: Math.round(r.left - Math.min(...tiles.map((t) => t.left))), r: Math.round(Math.max(...tiles.map((t) => t.right)) - r.right) } : null })
-          { const f = await rtFit(pg); if (f && (Math.abs(f.l) > 1 || Math.abs(f.r) > 1)) fail('🔴 RB-6: «루틴» 줄이 네 칸 폭과 안 맞는다(치우침) · ' + JSON.stringify(f)) }
-          await pg.click('.rtline'); await pg.waitForSelector('.modal.rt .rtgrp', { timeout: 6000 }).catch(() => fail('🔴 RB-6: «루틴» 줄을 눌렀는데 루틴 페이지가 안 열린다'))
+          // 왼쪽 목록 A안(2026-11-14) — 네 칸 아래 «⏰ 루틴» 줄(`.rtline`)은 숫자 줄의 «루틴» 칸(`.numrow .t-rt`)이 됐다
+          const rtCell = (phone) => `${phone ? '.mhome' : '.side.left'} .numrow .t-rt`
+          await pg.waitForSelector(rtCell(false), { timeout: 4000 }).catch(() => fail('🔴 RB-6: 숫자 줄에 «루틴» 칸이 없다'))
+          // 🔴 (2026-11-01 Dave «루틴도 한쪽으로 치우쳐져서 안 예뻐») — 버튼 width:auto 가 글자 폭만큼 줄어 왼쪽에 붙었다.
+          //    왼쪽 목록 A안(2026-11-14) — 뜻이 바뀐 단언: 종전에는 «루틴 줄의 양 끝이 네 칸의 양 끝과 맞는다» 를 쟀다. 줄이 칸이 됐으므로
+          //    «루틴 칸이 숫자 줄의 다른 칸과 같은 폭 · 같은 높이로 한 줄에 선다(혼자 줄거나 치우치지 않는다)» 를 잰다
+          const rtFit = async (page, phone) => page.$eval(rtCell(phone), (b) => { const cells = [...b.parentElement.querySelectorAll('.ncell')].map((x) => x.getBoundingClientRect()); const r = b.getBoundingClientRect(); return { n: cells.length, dw: Math.round(Math.max(...cells.map((c) => Math.abs(c.width - r.width)))), dt: Math.round(Math.max(...cells.map((c) => Math.abs(c.top - r.top)))), dh: Math.round(Math.max(...cells.map((c) => Math.abs(c.height - r.height)))) } })
+          { const f = await rtFit(pg, false); if (f.n < 4 || f.dw > 1 || f.dt > 1 || f.dh > 1) fail('🔴 RB-6: «루틴» 칸이 숫자 줄의 다른 칸과 폭 · 자리가 안 맞는다(치우침) · ' + JSON.stringify(f)) }
+          await pg.click(rtCell(false)); await pg.waitForSelector('.modal.rt .rtgrp', { timeout: 6000 }).catch(() => fail('🔴 RB-6: «루틴» 칸을 눌렀는데 루틴 페이지가 안 열린다'))
           const first = await pg.$eval('.modal.rt .rtgrp', (g) => ({ st: g.getAttribute('data-state'), names: [...g.querySelectorAll('.rtr')].map((x) => x.getAttribute('data-routine')), dave: !!g.querySelector('.dave') }))
           if (first.st !== 'fail' || !first.names.includes('RB 실패 검사') || !first.dave) fail('🔴 RB-6: 실패 묶음이 맨 위에 안 왔다 · ' + JSON.stringify(first))
           const nBad = await pg.$$eval('.modal.rt .rtr', (r) => r.length)
@@ -3559,9 +3574,10 @@ try {
           for (const vp of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
             const sp3 = await br.newPage({ viewport: vp, deviceScaleFactor: 1, hasTouch: vp.width < 500, isMobile: vp.width < 500 })
             await sp3.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
-            await sp3.goto(base + '/'); await sp3.waitForSelector('.rtline', { timeout: 8000 }).catch(() => fail(`RB-6(${vp.width}): «⏰ 루틴» 줄이 없다`))
-            { const f = await rtFit(sp3); if (f && (Math.abs(f.l) > 1 || Math.abs(f.r) > 1)) fail(`🔴 RB-6(${vp.width}): «루틴» 줄이 네 칸 폭과 안 맞는다 · ` + JSON.stringify(f)) }
-            await sp3.click('.rtline'); await sp3.waitForSelector('.modal.rt .rtgrp', { timeout: 6000 })
+            const ph3 = vp.width < 500
+            await sp3.goto(base + '/'); await sp3.waitForSelector(rtCell(ph3), { timeout: 8000 }).catch(() => fail(`RB-6(${vp.width}): 숫자 줄에 «루틴» 칸이 없다`))
+            { const f = await rtFit(sp3, ph3); if (f.n < 4 || f.dw > 1 || f.dt > 1 || f.dh > 1) fail(`🔴 RB-6(${vp.width}): «루틴» 칸이 숫자 줄의 다른 칸과 폭 · 자리가 안 맞는다 · ` + JSON.stringify(f)) }
+            await sp3.click(rtCell(ph3)); await sp3.waitForSelector('.modal.rt .rtgrp', { timeout: 6000 })
             const m = await sp3.evaluate(() => { const r = document.querySelector('.modal.rt').getBoundingClientRect(); return { W: innerWidth, sw: document.scrollingElement.scrollWidth, l: r.left, r: r.right, over: [...document.querySelectorAll('.modal.rt .btn')].filter((b) => { const q = b.getBoundingClientRect(); return q.width && (q.right > innerWidth + 1 || q.left < -1) }).length } })
             if (m.sw > m.W + 1 || m.l < -1 || m.r > m.W + 1 || m.over) fail(`🔴 RB-6(${vp.width}): 루틴 페이지가 화면 밖으로 넘친다 · ` + JSON.stringify(m))
             await sp3.screenshot({ path: `test/tmp/rb6-${vp.width}.png` })
@@ -3569,7 +3585,7 @@ try {
           }
           await putRt(was)
           for (const x of made) await api(`/sessions/${x.id}`, undefined, 'DELETE').catch(() => {})
-          ok('RB-6 루틴 페이지 — «⏰ 루틴» 줄로 연다 · 실패 묶음이 맨 위(Dave 할 일) · [전체] > [문제만] · [지금 돌리기] 가 루틴 세션 · 폰·맥 폭에서 안 넘침')
+          ok('RB-6 루틴 페이지 — 숫자 줄의 «루틴» 칸으로 연다 · 실패 묶음이 맨 위(Dave 할 일) · [전체] > [문제만] · [지금 돌리기] 가 루틴 세션 · 폰·맥 폭에서 안 넘침')
         }
         /**
          * 🔴 **세션 정리** (2026-10-02 Dave · 시안 B) — 모든 폴더의 세션 한 표 · 잠긴 줄은 못 고른다 · 지우고 10초 되돌리기.
@@ -3579,7 +3595,7 @@ try {
         {
           const tmp = await api(`/bots/${cfo.id}/sessions`, { name: '정리 검사용' })
           const backC = await pg.evaluate(() => location.hash)
-          await pg.click('.sbtiles .mcards .t-sess'); await pg.waitForSelector('.modal.clean.manage', { timeout: 3000 }).catch(() => {})
+          await pg.click('.side.left .numrow .t-sess'); await pg.waitForSelector('.modal.clean.manage', { timeout: 3000 }).catch(() => {})   // 왼쪽 목록 A안(2026-11-14) — 네 칸의 «세션» 칸 → 숫자 줄의 «세션» 칸
           if (!(await pg.$('.modal.clean.manage'))) fail('🔴 세션 창: 홈 «세션» 칸으로 안 열린다')
           if (await pg.$$eval('.modal.clean tbody input:checked', (r) => r.length)) fail('🔴 세션 창: 처음 열었는데 골라진 줄이 있다(«고르기» 를 눌러야 고른다)')
           {
@@ -3722,7 +3738,7 @@ try {
         await pg.keyboard.press('Escape'); await pg.evaluate(() => document.querySelectorAll('.backdrop').forEach((b) => b.click())); await wait(300)
         const iconOf = () => pg.evaluate(() => { const el = document.querySelector('.brow .fb'); return { w: el.getBoundingClientRect().width, attr: Number(el.getAttribute('width')) } })
         const before = await iconOf()
-        await pg.click('.col.side.left .nav:has-text("설정")'); await pg.waitForSelector('.modal.setw', { timeout: 4000 }); await wait(300)
+        await pg.click('.side.left .numrow .t-set'); await pg.waitForSelector('.modal.setw', { timeout: 4000 }); await wait(300)   // 왼쪽 목록 A안(2026-11-14) — 레일의 «설정» 줄 → 숫자 줄의 `.t-set` 칸
         // 설정 V25 — 왼쪽 목차 · 한 화면에 한 가지 (2026-09-13 Dave 승인)
         {
           const navs = await pg.$$eval('.snav .nv', (ns) => ns.map((n) => n.textContent.trim()))
@@ -4640,10 +4656,13 @@ try {
            *    (원천이 같아 하나로 · 설계 §8 · Ruling 22). 알림 칸은 마지막 결과 한 줄만. 줄은 **이 맥의 세션**으로 짓는다(Ruling 21).
            */
           {
-            const labels = await pg.$$eval('.sbtiles .mcards button .n', (r) => r.map((x) => x.textContent ?? ''))
-            for (const want of ['폴더봇', '세션', '알림', '할 일']) if (!labels.some((l) => l.includes(want))) fail(`레일 4칸: «${want}» 칸이 없다 · ` + JSON.stringify(labels))
+            // 왼쪽 목록 A안(2026-11-14) — 네 칸(`.sbtiles .mcards`)은 봇 목록 아래 숫자 줄(`.numrow .ncell`)이 됐고, «폴더봇» 칸은 목록 머리의 «폴더 N»(`.lhead .lf`)이 됐다.
+            //    상황판 띠는 «내 답을 기다림» 띠(`.side.left .wband`)만 남았고, 판 상태 글(«아직 주인 맥 판 없음» 등)은 목록 아래 상황판 한 줄(`.cx-line .s`)이 말한다
+            const labels = await pg.$$eval('.side.left .numrow .ncell .l', (r) => r.map((x) => x.textContent ?? ''))
+            for (const want of ['세션', '알림', '할 일']) if (!labels.some((l) => l.includes(want))) fail(`레일 숫자 줄: «${want}» 칸이 없다 · ` + JSON.stringify(labels))
+            { const lf = (await pg.textContent('.side.left .lhead .lf').catch(() => null)) ?? ''; if (!/폴더\s*\d+/.test(lf)) fail('레일 목록 머리: «폴더 N» 이 없다 · ' + JSON.stringify(lf)) }
             const dnR = (await api('/bots')).find((b) => b.id === bot.id)?.displayName ?? '제품_Rondo'
-            const rowOf = (sid) => pg.evaluate((sid) => { const r = document.querySelector(`.sbtiles .cx-strip .cx-it[data-kind="waiting"][data-sid="${sid}"]`); return r ? { f: r.querySelector('.cx-f')?.textContent ?? '', acts: [...r.querySelectorAll('.cx-a .btn')].map((b) => b.textContent ?? ''), strip: r.closest('.cx-strip')?.textContent ?? '' } : null }, sid)
+            const rowOf = (sid) => pg.evaluate((sid) => { const r = document.querySelector(`.side.left .wband .cx-it[data-kind="waiting"][data-sid="${sid}"]`); return r ? { f: r.querySelector('.cx-f')?.textContent ?? '', acts: [...r.querySelectorAll('.cx-a .btn')].map((b) => b.textContent ?? ''), line: document.querySelector('.side.left .cx-line .s')?.textContent ?? '' } : null }, sid)
             const waitRow = async (sid) => { for (let i = 0; i < 60; i++) { const r = await rowOf(sid); if (r) return r; await wait(250) } return null }
             const stOf = async (sid) => ((await api(`/bots/${bot.id}/sessions`)).find((x) => x.id === sid) ?? {}).state
             // ① 승인 대기 — 띠 줄의 [답하기] 는 그 대화를 열고, [허용] 은 그 자리에서 푼다
@@ -4654,10 +4673,10 @@ try {
             else {
               if (!row.f.includes(dnR)) fail('상황판 띠: 어느 폴더가 묻는지 안 보인다 · ' + JSON.stringify([row.f, dnR]))
               if (!row.acts.includes('허용') || !row.acts.includes('답하기')) fail('🔴 상황판 띠: 승인 대기 줄에 [허용]·[답하기] 가 다 없다 · ' + JSON.stringify(row.acts))
-              if (await pg.$('.sbtiles .mcards button.hot')) fail('🔴 상황판: 확인 대기가 알림 칸에도 또 선다 — 띠와 두 번 보인다')
-              if (!/알림/.test(await pg.textContent('.sbtiles .mcards .t-note .n') ?? '')) fail('상황판: 확인 대기가 생기자 알림 칸 이름이 바뀌었다')
+              if (await pg.$('.side.left .numrow .ncell.hot')) fail('🔴 상황판: 확인 대기가 알림 칸에도 또 선다 — 띠와 두 번 보인다')
+              if ((await pg.textContent('.side.left .numrow .t-note .l') ?? '') !== '알림') fail('상황판: 확인 대기가 생기자 알림 칸 이름이 바뀌었다')
               const hashWas = await pg.evaluate(() => location.hash)
-              await pg.click(`.sbtiles .cx-it[data-sid="${hold.id}"] .cx-reply`); await wait(500)
+              await pg.click(`.side.left .wband .cx-it[data-sid="${hold.id}"] .cx-reply`); await wait(500)
               const h = await pg.evaluate(() => { const q = new URLSearchParams(location.hash.slice(1)); return { bot: q.get('bot'), s: q.get('s') } })
               if (h.bot !== bot.id || h.s !== hold.id) fail('🔴 상황판 띠: [답하기] 가 그 세션 대화를 안 열었다 · ' + JSON.stringify(h))
               // 🔴 부품 넷 (2026-11-13 Dave 카드 «오른쪽 끝으로») — 승인 카드의 [허용] 은 줄의 **오른쪽 끝**, [거부] 가 왼쪽 첫 자리. 종전에는 [허용] 이 왼쪽 끝이었다
@@ -4677,7 +4696,7 @@ try {
                 if (!al || !dn || !al.primary) fail('🔴 승인 카드: [허용](흰 주 단추) · [거부] 가 없다 · ' + JSON.stringify(pc))
                 if (pc.bs[0].act !== 'deny' || pc.bs[pc.bs.length - 1].act !== 'allow' || pc.bs.some((b) => b !== al && b.r > al.l) || pc.right - al.r > 2) fail('🔴 승인 카드: [허용] 이 줄의 오른쪽 끝이 아니다(2026-11-13 Dave «오른쪽 끝으로») · ' + JSON.stringify(pc))
               }
-              await pg.click(`.sbtiles .cx-it[data-sid="${hold.id}"] .cx-allow`)
+              await pg.click(`.side.left .wband .cx-it[data-sid="${hold.id}"] .cx-allow`)
               let st = 'awaiting_input'
               for (let i = 0; i < 60; i++) { st = await stOf(hold.id); if (st !== 'awaiting_input') break; await wait(250) }
               if (st === 'awaiting_input') fail('🔴 상황판 띠: [허용] 을 눌렀는데 그대로 기다린다')
@@ -4692,8 +4711,9 @@ try {
               const hold2 = await api(`/bots/${bot.id}/sessions`, { name: '주인 아님 대기' })
               await api(`/sessions/${hold2.id}/send`, { text: '승인이 필요한 일 해 줘' })
               const r2 = await waitRow(hold2.id)
-              let strip = r2?.strip ?? ''
-              for (let i = 0; i < 40 && !/아직 주인 맥 판 없음/.test(strip); i++) { await wait(250); strip = (await rowOf(hold2.id))?.strip ?? '' }
+              // 왼쪽 목록 A안(2026-11-14) — «아직 주인 맥 판 없음» 은 띠가 아니라 목록 아래 상황판 한 줄(`.cx-line .s`)에 선다
+              let strip = r2?.line ?? ''
+              for (let i = 0; i < 40 && !/아직 주인 맥 판 없음/.test(strip); i++) { await wait(250); strip = (await rowOf(hold2.id))?.line ?? '' }
               if (!r2) fail('🔴 Ruling 21: 주인 아닌 맥·판 파일 없음에서 이 맥의 확인 대기가 띠에 안 선다')
               else {
                 if (!/아직 주인 맥 판 없음/.test(strip)) fail('Ruling 21: 판 파일이 없는데 «아직 주인 맥 판 없음» 이 안 보인다 · ' + strip.slice(0, 200))
@@ -4719,18 +4739,28 @@ try {
             const dueEndT = (d) => !d || d.precision === 'none' || !d.date ? null : d.precision === 'day' ? d.date.slice(0, 10) : d.precision === 'month' ? (() => { const [y, m] = d.date.split('-').map(Number); return `${y}-${p2(m)}-${p2(new Date(y, m, 0).getDate())}` })() : `${d.date.slice(0, 4)}-12-31`
             const keyT = (b) => { const f = dueEndT(b.due), t = b.todoDue ?? null; return f === null ? t : t === null ? f : t < f ? t : f }
             const want = async () => {
-              const bots = await api('/bots'); let sess = 0; for (const b of bots) sess += (await api(`/bots/${b.id}/sessions`)).length
+              // 왼쪽 목록 A안(2026-11-14) — 뜻이 바뀐 숫자: 세션 = **안 읽은 채팅 세션 수**(종전: 모든 세션 수) · 루틴 = **문제 수**(실패 · 놓침 · 모름 — 종전 루틴 줄의 수는 재지 않았다).
+              //    알림(읽지 않은 수) · 할 일(마감 7일 안 폴더의 열린 수) · 폴더 수는 그대로다. 판정은 `test/left-rail.mjs` 의 `hostNums` 와 같다
+              const bots = await api('/bots'); let sess = 0
+              for (const b of bots) for (const x of await api(`/bots/${b.id}/sessions`)) if (!(!x.adopted && (x.comm || x.exComm || x.channel || x.exChannel || x.routine || x.delegated)) && (x.lastReplyAt ?? 0) > (x.readAt ?? 0)) sess++
               const now = new Date(); const edge = ymdL(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7))
               const todos = await api('/todos')
               const wk = todos.rows.filter((r) => { const b = bots.find((x) => x.id === r.botId); const k = b && keyT(b); return r.open > 0 && k && k <= edge }).reduce((a, r) => a + r.open, 0)
-              return { fold: String(bots.filter((b) => !b.orchestrator).length), sess: String(sess), note: String((await api('/notifications')).filter((n) => !n.read).length), todo: String(wk), all: todos.open }
+              const rt = await api('/routines/overview')
+              return { fold: String(bots.filter((b) => !b.orchestrator).length), sess: String(sess), note: String((await api('/notifications')).filter((n) => !n.read).length), todo: String(wk), rt: String(rt.counts.fail + rt.counts.missed + rt.counts.unknown), all: todos.open }
             }
-            const got = () => pg.evaluate(() => Object.fromEntries([...document.querySelectorAll('.sbtiles .mcards button')].map((b) => [(b.className.match(/t-(\w+)/) ?? [])[1], b.querySelector('.big')?.textContent ?? ''])))
+            // 칸의 숫자는 `.ncell .v b` 다. 🔴 0 이면 `b` 가 없고 그림(`.v svg`)만 선다 — 그때만 '0' 으로 읽는다(숫자도 그림도 없으면 '' 이라 호스트의 0 과도 안 맞는다)
+            const got = () => pg.evaluate(() => ({
+              ...Object.fromEntries([...document.querySelectorAll('.side.left .numrow .ncell')].map((b) => [(b.className.match(/t-(\w+)/) ?? [])[1], b.querySelector('.v b')?.textContent ?? (b.querySelector('.v svg') ? '0' : '')])),
+              fold: document.querySelector('.side.left .lhead .lf b')?.textContent ?? ''
+            }))
+            const sameN = (g, w) => g.fold === w.fold && g.sess === w.sess && g.note === w.note && g.todo === w.todo && g.rt === w.rt
             // 앞 검사들이 API 로 바로 읽음 처리·세션 지우기를 해서 화면 저장소가 호스트보다 뒤처져 있다 — 새로 받은 판끼리 견준다
-            await pg.reload(); await pg.waitForSelector('.sbtiles .mcards .t-todo', { timeout: 8000 }); await wait(800)
+            await pg.reload(); await pg.waitForSelector('.side.left .numrow .t-todo', { timeout: 8000 }); await wait(800)
             let w = null, g = null
-            for (let i = 0; i < 30; i++) { w = await want(); g = await got(); if (g.fold === w.fold && g.sess === w.sess && g.note === w.note && g.todo === w.todo) break; await wait(300) }
-            if (g.fold !== w.fold || g.sess !== w.sess || g.note !== w.note || g.todo !== w.todo) fail('🔴 CJ 네 칸: 칸 숫자가 호스트와 다르다 · ' + JSON.stringify({ got: g, want: w }))
+            for (let i = 0; i < 30; i++) { w = await want(); g = await got(); if (sameN(g, w)) break; await wait(300) }
+            if (!sameN(g, w)) fail('🔴 CJ 숫자 줄: 칸 숫자가 호스트와 다르다 · ' + JSON.stringify({ got: g, want: w }))
+            if (g.set !== '0') fail('CJ 숫자 줄: «설정» 칸에 숫자가 섰거나 그림이 없다 · ' + JSON.stringify(g))
             const navs = await pg.$$eval('.col.side.left .nav > span:nth-child(2)', (r) => r.map((x) => x.textContent))
             if (navs.includes('알림') || navs.includes('세션 정리')) fail('🔴 CJ: 레일에 «알림»·«세션 정리» 줄이 남았다(칸과 같은 숫자가 두 번) · ' + JSON.stringify(navs))
             // 할 일 보드 — 검사용 줄 하나를 더해 찾고, 칸으로 끝내고, 줄을 눌러 그 폴더로
@@ -4740,7 +4770,7 @@ try {
               const r409 = await fetch(base + '/api/bots/' + bot.id + '/todo/toggle', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ line: l0.line, done: true, title: '다른 줄' }) })
               if (r409.status !== 409 || (await api(`/bots/${bot.id}/todo`)).find((t) => t.title === '보드 검사용 줄')?.done) fail('🔴 CJ 보드: 제목이 다른데 그 줄 번호를 끝냈다 · ' + r409.status)
             }
-            await pg.click('.sbtiles .mcards .t-todo'); await pg.waitForSelector('.modal.board .bfold', { timeout: 6000 }).catch(() => {})
+            await pg.click('.side.left .numrow .t-todo'); await pg.waitForSelector('.modal.board .bfold', { timeout: 6000 }).catch(() => {})
             if (!(await pg.$('.modal.board .bfold'))) fail('🔴 CJ 보드: 할 일 칸을 눌렀는데 보드(폴더 묶음)가 안 열린다 · ' + await pg.evaluate(() => document.querySelector('.modal.board')?.textContent?.slice(0, 200)))
             const cnt = await pg.textContent('.modal.board .modal-h .cnt'); const allN = (await api('/todos')).open
             if (!cnt?.includes(`열린 ${allN}`)) fail('CJ 보드: 머리의 «열린 N» 이 호스트와 다르다 · ' + JSON.stringify([cnt, allN]))
@@ -4761,15 +4791,15 @@ try {
             if (await pg.$('.modal.board') || hB !== bot.id) fail('CJ 보드: 줄을 눌렀는데 그 폴더로 안 갔다 · ' + JSON.stringify(hB))
             await pg.evaluate((x) => { location.hash = x }, backB); await wait(400)
             // 폴더봇 칸 → 현황 시트 — 폴더 수만큼 줄(오래 쉼은 접혀 있어 묶음 머리의 수로 센다) · 줄을 누르면 그 대화
-            await pg.click('.sbtiles .mcards .t-fold'); await pg.waitForSelector('.modal.fsheet', { timeout: 4000 }).catch(() => {})
-            if (!(await pg.$('.modal.fsheet'))) fail('🔴 CJ: 폴더봇 칸을 눌렀는데 현황 시트가 안 열린다')
+            await pg.click('.side.left .lhead .lf'); await pg.waitForSelector('.modal.fsheet', { timeout: 4000 }).catch(() => {})   // 왼쪽 목록 A안(2026-11-14) — 폴더봇 칸(`.t-fold`) → 목록 머리의 «폴더 N»
+            if (!(await pg.$('.modal.fsheet'))) fail('🔴 CJ: 목록 머리의 «폴더 N» 을 눌렀는데 현황 시트가 안 열린다')
             const sumG = await pg.$$eval('.modal.fsheet .gh .c', (r) => r.reduce((a, x) => a + Number(x.textContent), 0))
             if (String(sumG) !== w.fold) fail('CJ 현황 시트: 묶음 수의 합이 폴더봇 수와 다르다 · ' + JSON.stringify([sumG, w.fold]))
             if (await pg.$('.modal.fsheet .act, .modal.fsheet [aria-label="중단"]')) fail('CJ 현황 시트: [중단] 은 두지 않기로 했다(결정 ②)')
             await pg.keyboard.press('Escape'); await wait(200)
             if (await pg.$('.modal.fsheet')) fail('CJ 현황 시트: ⎋ 로 안 닫힌다')
             await (await pg.$('.sbtiles')).screenshot({ path: 'test/tmp/cj-tiles-rail.png' })
-            ok('CJ 네 칸 — 숫자가 호스트와 같다(할 일 = 마감 7일 안) · 레일 «알림»·«세션 정리» 줄 없음 · 보드 검색·칸으로 완료·줄로 그 폴더 · 현황 시트')
+            ok('CJ 숫자 줄 — 숫자가 호스트와 같다(세션 = 안 읽은 채팅 세션 · 알림 = 안 읽은 알림 · 할 일 = 마감 7일 안 · 루틴 = 문제 수 · 0 이면 그림만) · 레일 «알림»·«세션 정리» 줄 없음 · 보드 검색·칸으로 완료·줄로 그 폴더 · 현황 시트')
           }
           /**
            * 🔴 **모델 목록 — 첫 목록은 짧게, 「더 많은 모델」에 옛 판** (2026-09-15 Dave 스크린샷).
@@ -4982,12 +5012,14 @@ try {
               if (r2.status !== 400) fail('🔴 호스트: 질문이 아닌 id 에도 답을 받아 줬다(허용 가드 우회) · ' + r2.status)
               ok('질문에는 [허용] 이 없다 — 상황판 띠는 [답하기] · 호스트는 질문에 온 허용을 400 으로 거절')
               // 🔴 타일 부제목은 말줄임표로 끝나고 단추 밑으로 안 들어간다 · 제목은 안 눌린다 (2026-09-25 디자인 검수)
-              const tl = await pg.evaluate(() => [...document.querySelectorAll('.mcards button')].map((b) => {
-                const s = b.querySelector('.sub'), a = b.querySelector('.act'), n = b.querySelector('.n')
-                return { disp: getComputedStyle(s).display, over: a ? s.getBoundingClientRect().right - a.getBoundingClientRect().left : -1, nH: n.getBoundingClientRect().height, fs: parseFloat(getComputedStyle(n).fontSize), subCut: s.getBoundingClientRect().bottom - b.getBoundingClientRect().bottom }
+              //    왼쪽 목록 A안(2026-11-14) — 타일의 둘째 줄(`.sub`)과 타일 안 단추(`.act`)가 화면에서 없어져 «부제목이 단추 밑으로 · 부제목이 타일 밖으로» 두 단언은 지웠다.
+              //    남은 것: 숫자 줄 칸의 이름(`.l`)이 눌리지 않고(높이 ≥ 글자 크기) 칸 밖으로 잘려 나가지 않는다
+              const tl = await pg.evaluate(() => [...document.querySelectorAll('.side.left .numrow .ncell')].map((b) => {
+                const n = b.querySelector('.l'), v = b.querySelector('.v'), r = b.getBoundingClientRect()
+                return { k: b.className, nH: n.getBoundingClientRect().height, fs: parseFloat(getComputedStyle(n).fontSize), cut: n.getBoundingClientRect().bottom - r.bottom, top: r.top - v.getBoundingClientRect().top, wide: n.getBoundingClientRect().width - r.width }
               }))
-              const badT = tl.filter((t) => t.disp === 'flex' || t.over > 0.5 || t.nH < t.fs || t.subCut > 0.5)
-              if (!tl.length || badT.length) fail('🔴 상태 타일: 부제목이 단추 밑으로 들어가거나(말줄임표 없음) 제목·부제목이 눌린다 · ' + JSON.stringify(tl))
+              const badT = tl.filter((t) => t.nH < t.fs || t.cut > 0.5 || t.top > 0.5 || t.wide > 0.5)
+              if (!tl.length || badT.length) fail('🔴 숫자 줄: 칸의 이름이 눌리거나 칸 밖으로 잘린다 · ' + JSON.stringify(tl))
             }
             const ins = await pg.$$('.card .opt input')
             if (ins.length < 2) fail('질문 카드: 「기타」 칸이 질문 수만큼 없다 · ' + ins.length)
@@ -5455,7 +5487,7 @@ try {
           const lp = await br.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
           await lp.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark'); localStorage.setItem('fb.cx.tab', 'link') })
           await lp.goto(base + '/'); await lp.waitForSelector('.app', { timeout: 15000 }); await wait(800)
-          await lp.click('.cx-h button[aria-label="상황판 열기"]'); await lp.waitForSelector('.lm', { timeout: 8000 }); await wait(800)
+          await lp.click('.side.left .cx-line'); await lp.waitForSelector('.lm', { timeout: 8000 }); await wait(800)   // 왼쪽 목록 A안(2026-11-14) — 상황판 띠 머리의 ↗(`.cx-h`) → 목록 아래 상황판 한 줄(`.cx-line`)
           if (!(await lp.$('.cx-tab button.on:has-text("연결")'))) fail('LM 화면: 상황판에 «연결» 이 안 켜졌다')
           if ((await lp.textContent('.lm-bar .seg button.on')) !== '흐름') fail('LM 화면: 기본 보기가 «흐름» 이 아니다')
           await lp.waitForSelector('.lm-svg .lm-p, .lm-svg .lm-a', { timeout: 8000 })
@@ -5488,7 +5520,7 @@ try {
           const pp = await br.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 })
           await pp.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark'); localStorage.setItem('fb.cx.tab', 'link') })
           await pp.goto(base + '/'); await pp.waitForSelector('.app', { timeout: 15000 }); await wait(800)
-          await pp.click('.cx-h button[aria-label="상황판 열기"] >> visible=true'); await pp.waitForSelector('.lm', { timeout: 8000 }); await wait(600)
+          await pp.click('.mhome .mbar .cx-line'); await pp.waitForSelector('.lm', { timeout: 8000 }); await wait(600)   // 왼쪽 목록 A안(2026-11-14) — 폰 홈 바닥 묶음의 상황판 한 줄
           await pp.click('.lm-bar .seg button:has-text("지도")'); await wait(400)
           await pp.click('.lm-bar2 .lm-chip:has-text("줄기 관리")'); await pp.waitForSelector('.modal.smg', { timeout: 5000 }); await wait(300)
           const box = await pp.$eval('.modal.smg', (el) => { const r = el.getBoundingClientRect(); return { l: r.left, r: r.right, w: innerWidth } })
@@ -5976,10 +6008,11 @@ try {
           const secsOf = () => pg.evaluate(() => [...document.querySelectorAll('.sb-list .secl')].map((e) => e.textContent))
           const namesOf = () => pg.evaluate(() => [...document.querySelectorAll('.sb-list .brow .n')].map((e) => e.textContent))
           const before = await secsOf()
-          if (!(await pg.$('.sortbar'))) fail('레일: 정렬 갈래 막대가 없다')
-          await pg.click('.sortbar button:has-text("상태")'); await wait(300)
+          // 왼쪽 목록 A안(2026-11-14) — 정렬 갈래 막대(`.sortbar`)는 목록 머리의 정렬 단추 하나(`.lhead .sortb`) + 메뉴가 됐다. 고르기는 `sortPick` 이 한다
+          if (!(await pg.$(sortBtn('.side.left')))) fail('레일: 목록 머리에 정렬 단추가 없다')
+          await sortPick(pg, '.side.left', 'state'); await wait(300)
           if (JSON.stringify(await secsOf()) !== JSON.stringify(before)) fail('상태 정렬이 PARA 섹션을 흩었다 · ' + JSON.stringify(await secsOf()))
-          await pg.click('.sortbar button:has-text("마감일")'); await wait(300)
+          await sortPick(pg, '.side.left', 'due'); await wait(300)
           // 끌어 놓기는 API 로 잰다 — 화면 드래그는 붙였다 떼는 타이밍이 기기마다 달라 조용히 무른 검사가 된다
           const ids = (await api('/bots')).filter((b) => !b.orchestrator).map((b) => b.id)
           if (ids.length >= 2) {
@@ -6005,7 +6038,7 @@ try {
               const bad = await call({ order: [rels[0], '2. Projects/없는폴더'] })
               if (!bad.isError || !/없는폴더/.test(bad.content[0].text)) fail('A: 없는 rel 이 섞였는데 실패하지 않았다 ' + JSON.stringify(bad))
               if (JSON.stringify((await api('/bots')).filter((b) => !b.orchestrator).map((b) => b.id)) !== JSON.stringify(ids)) fail('A: 실패했는데 순서가 바뀌었다')
-              await pg.click('.sortbar button:has-text("마감일")'); await wait(200)
+              await sortPick(pg, '.side.left', 'due'); await wait(200)
               const rev = [...rels].reverse()
               const r1 = await call({ order: rev }); if (r1.isError) fail('A: bots_reorder ' + r1.content[0].text)
               const got = (await api('/bots')).filter((b) => !b.orchestrator)
@@ -6015,7 +6048,7 @@ try {
               const bl = JSON.parse((await mcp('tools/call', { name: 'bots_list', arguments: {} })).result.content[0].text).filter((b) => b.rel)
               if (bl.some((b, i) => b.order !== i) || bl[1].orderedBy !== 'user' || bl[0].orderedBy !== 'orchestrator') fail('A: bots_list order/orderedBy ' + JSON.stringify(bl.map((b) => [b.order, b.orderedBy])))
               await wait(600)
-              const sortOn = await pg.evaluate(() => document.querySelector('.sortbar button.on')?.textContent)
+              const sortOn = await sortNow(pg, '.side.left')
               if (sortOn !== '사용자') fail('A: 재정렬이 왔는데 정렬이 «사용자»(구 «직접») 로 안 바뀌었다 · ' + sortOn)
               const shown = await pg.evaluate(() => [...document.querySelectorAll('.sb-list .brow')].map((e) => e.dataset.id || e.getAttribute('data-id')).filter(Boolean))
               // 레일은 섹션(PARA)을 지키므로 **섹션 안의 상대 차례**만 본다
@@ -6034,10 +6067,10 @@ try {
               ok('A bots_reorder — 없는 rel 실패·그대로 · 끌어 놓은 자리 유지 · bots_list order/orderedBy · 정렬 «직접» 자동 · 순서 고정 해제 · restore')
             }
           }
-          await pg.click('.sortbar button:has-text("사용자")'); await wait(400)
+          await sortPick(pg, '.side.left', 'manual'); await wait(400)
           if (!(await namesOf()).length) fail('직접 정렬: 목록이 비었다')
           if (JSON.stringify(await secsOf()) !== JSON.stringify(before)) fail('직접 정렬이 PARA 섹션을 흩었다')
-          await pg.click('.sortbar button:has-text("마감일")'); await wait(300)
+          await sortPick(pg, '.side.left', 'due'); await wait(300)
           ok('레일 차례 — 마감일 · 직접(볼트에 남음) · 상태 · PARA 섹션은 그대로')
         }
         // 🔴 **레일 우클릭 — 지우기(연결 해지) · 은퇴** (2026-09-13 Dave 정정)
@@ -6915,8 +6948,10 @@ try {
           const wasName = ((await api('/bots')).find((b) => b.id === wasBot) ?? {}).name ?? ''
           const back = await pg.$('.chat-hdr .rb')
           if (back) { await back.click(); await wait(600) }
-          const labels = await pg.$$eval('.mhome .mcards button .n', (r) => r.map((x) => x.textContent ?? ''))
-          for (const want of ['폴더봇', '세션', '알림', '할 일']) if (!labels.some((l) => l.includes(want))) fail(`폰 홈 4칸: «${want}» 가 없다 · ` + JSON.stringify(labels))
+          // 왼쪽 목록 A안(2026-11-14) — 폰 홈의 네 칸(`.mhome .mcards`)은 바닥 묶음(`.mhome .mbar`)의 숫자 줄이 됐고, «폴더봇» 칸은 목록 머리의 «폴더 N» 이 됐다
+          const labels = await pg.$$eval('.mhome .mbar .numrow .ncell .l', (r) => r.map((x) => x.textContent ?? ''))
+          for (const want of ['세션', '알림', '할 일']) if (!labels.some((l) => l.includes(want))) fail(`폰 홈 숫자 줄: «${want}» 가 없다 · ` + JSON.stringify(labels))
+          { const lf = (await pg.textContent('.mhome .lhead .lf').catch(() => null)) ?? ''; if (!/폴더\s*\d+/.test(lf)) fail('폰 홈 목록 머리: «폴더 N» 이 없다 · ' + JSON.stringify(lf)) }
           /**
            * 🔴 **CJ · 폰 알약 = 폴더 찾기** (2026-10-16 Dave · 결정 ③ A안) — 조합 중인 «재ㅁ» 에 재무 폴더 한 줄 · 엔터는 맨 위 폴더로 ·
            *    맞는 폴더가 없으면 «오케스트레이터에게 보내기» 가 맨 위에 서고 엔터가 곧 보내기. 위쪽 종은 빠졌다(알림 칸과 같은 숫자).
@@ -6926,7 +6961,8 @@ try {
             const cfoB = (await api('/bots')).find((b) => b.name === '재무_CFO')
             await pg.click('.mhome .mpill'); await pg.waitForSelector('.mhome .mpill.edit input', { timeout: 3000 }).catch(() => {})
             if (!(await pg.$('.mhome .mpill.edit input'))) fail('🔴 CJ 폰 알약: 눌렀는데 입력칸이 안 된다')
-            if (await pg.$('.mhome .mcards')) fail('CJ 폰 알약: 찾는 동안 네 칸이 안 접혔다')
+            // 왼쪽 목록 A안(2026-11-14) — «네 칸이 접힌다» 는 «바닥 묶음(`.mbar`)이 접힌다» 가 됐다. «내 답을 기다림» 띠와 목록 머리도 함께 접힌다
+            { const left = await pg.evaluate(() => ['.mbar', '.wband', '.lhead'].filter((q) => document.querySelector('.mhome ' + q))); if (left.length) fail('CJ 폰 알약: 찾는 동안 바닥 묶음 · 띠 · 목록 머리가 안 접혔다 · ' + JSON.stringify(left)) }
             await pg.keyboard.type('재ㅁ'); await wait(300)
             const hitsP = await pg.$$eval('.mhome .mfind .mrow', (r) => r.map((x) => x.dataset.bot))
             if (hitsP.length !== 1 || hitsP[0] !== cfoB.id) fail('🔴 CJ 폰 알약: «재ㅁ» 에 재무 폴더 한 줄이 아니다 · ' + JSON.stringify(hitsP))
@@ -6957,7 +6993,7 @@ try {
             const now = await pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('bot'))
             if (now !== wasBot) fail('폰 홈 4칸: 검사 뒤 원래 폴더로 안 돌아왔다 · ' + JSON.stringify([wasBot, now]))
           }
-          ok('폰 홈 4칸도 같은 것 — 폴더봇 · 세션 · 알림 · 할 일')
+          ok('폰 홈 숫자 줄도 같은 것 — 세션 · 알림 · 할 일 · 목록 머리에 «폴더 N»')
           /**
            * 🔴 **폰도 껐다 켜면 마지막 화면이다** (2026-09-17 Dave: «모바일에서 화면으로 들어가면 마지막 화면이 저장이 안되네»).
            *    폴더는 돌아오는데 화면이 «목록» 에 남던 것 — 대화 화면으로 함께 돌아와야 한다.
@@ -7098,7 +7134,7 @@ try {
         if (Math.abs(stuck.rootH - stuck.ih) > 2 || stuck.ih - stuck.compBottom > 24 + 56) fail('phone: stale visual viewport left a bottom gap ' + JSON.stringify(stuck))
         // ⚠ 키보드가 올라와 있으면 헤더는 일부러 숨는다(`.app.kb .chat-hdr{display:none}`) — 누르기 전에 확실히 내린다
         await pg.evaluate(() => { window.__kb(0); document.activeElement?.blur?.(); window.visualViewport?.dispatchEvent(new Event('resize')) }); await wait(400)
-        await pg.click('.chat-hdr .rb'); await wait(300); if (!(await pg.$('.mhome .mcards')) || (await pg.$$eval('.mrow', (r) => r.length)) < 3) fail('phone: home cards/rows'); await pg.screenshot({ path: 'test/tmp/phone-home.png' })
+        await pg.click('.chat-hdr .rb'); await wait(300); if (!(await pg.$('.mhome .mbar .numrow .ncell')) || (await pg.$$eval('.mrow', (r) => r.length)) < 3) fail('phone: home cards/rows'); await pg.screenshot({ path: 'test/tmp/phone-home.png' })
         if (!(await pg.$('.mrow .l1 .bname .dn'))) fail('phone: home row names should use the derived display name')
         /**
          * 🔴 **폰 홈 폴더 행 쓸기** (2026-09-18 Dave: «모바일 화면에서 todo 처럼 슬라이딩으로 기본값 고정해서 만들어줘»)
@@ -7109,14 +7145,20 @@ try {
           const rowSel = '.mhome .swwrap .swrow'
           // 🔴 AZ · 폰 홈에도 정렬 단추 — 마감일(2026-10-01 «이름» 대체) · 사용자 · 상태(레일과 같은 값). 누르면 켜짐이 옮고, 맥 레일과 같은 저장값을 쓴다 (2026-09-25 Dave)
           {
-            const sb = await pg.$$eval('.mhome .sortbar button', (b) => b.map((x) => ({ t: x.textContent, on: x.classList.contains('on'), h: x.getBoundingClientRect().height })))
-            if (sb.map((x) => x.t).join() !== '마감일,사용자,상태') fail('🔴 폰 홈: 정렬 단추가 없거나 라벨이 다르다 · ' + JSON.stringify(sb))
-            if (sb.some((x) => x.h < 32)) fail('폰 홈: 정렬 단추가 손가락에 작다 · ' + JSON.stringify(sb))
+            // 왼쪽 목록 A안(2026-11-14) — 단추 셋(`.mhome .sortbar button`)이 단추 하나(`.mhome .lhead .sortb`) + 메뉴(`.menu.sortm`)가 됐다.
+            //    라벨 셋 · 손가락 크기(32px↑) · 켜진 것 하나는 메뉴의 줄에서 재고, 정렬 단추 자신의 크기도 함께 잰다
             const was = await pg.evaluate(() => localStorage.getItem('fb:railsort'))
-            await pg.evaluate(() => [...document.querySelectorAll('.mhome .sortbar button')].find((x) => x.textContent === '상태').click()); await wait(250)
-            const st = await pg.evaluate(() => ({ on: document.querySelector('.mhome .sortbar button.on')?.textContent, saved: localStorage.getItem('fb:railsort') }))
+            if (!(await pg.$(sortBtn('.mhome')))) fail('🔴 폰 홈: 목록 머리에 정렬 단추가 없다')
+            const sbH = await pg.$eval(sortBtn('.mhome'), (b) => b.getBoundingClientRect().height)
+            await sortOpen(pg, '.mhome')
+            const sb = await pg.$$eval('.menu.sortm button', (b) => b.map((x) => ({ t: x.querySelector('b')?.textContent, k: x.dataset.sort, on: x.getAttribute('aria-checked') === 'true', h: x.getBoundingClientRect().height })))
+            if (sb.map((x) => x.t).join() !== '마감일,사용자,상태') fail('🔴 폰 홈: 정렬 메뉴가 없거나 라벨이 다르다 · ' + JSON.stringify(sb))
+            if (sbH < 32 || sb.some((x) => x.h < 32)) fail('폰 홈: 정렬 단추 · 메뉴 줄이 손가락에 작다 · ' + JSON.stringify({ sbH, sb }))
+            if (sb.filter((x) => x.on).length !== 1 || sb.find((x) => x.on).k !== (was || 'due')) fail('폰 홈: 정렬 메뉴에서 켜진 줄이 저장값과 다르다 · ' + JSON.stringify({ was, sb }))
+            await pg.click('.menu.sortm button[data-sort="state"]'); await pg.waitForSelector('.menu.sortm', { state: 'detached', timeout: 3000 }).catch(() => fail('폰 홈: 정렬을 골랐는데 메뉴가 남았다')); await wait(250)
+            const st = { on: await sortNow(pg, '.mhome'), saved: await pg.evaluate(() => localStorage.getItem('fb:railsort')) }
             if (st.on !== '상태' || st.saved !== 'state') fail('폰 홈: 「상태」 를 눌렀는데 안 바뀐다 · ' + JSON.stringify(st))
-            await pg.evaluate((w) => [...document.querySelectorAll('.mhome .sortbar button')].find((x) => x.textContent === ({ due: '마감일', manual: '사용자', state: '상태' })[w || 'due']).click(), was); await wait(250)
+            await sortPick(pg, '.mhome', was || 'due'); await wait(250)
           }
           // 🔴 밀 수 있는 행도 서랍과 같은 바탕 — 종전에는 그 행들만 다른 색 띠로 떠 보였다(라이트에서 흰 띠 · 2026-09-25 디자인 검수)
           {
@@ -7180,7 +7222,7 @@ try {
         }
         // 알림 — 버튼 줄이 화면 맨 아래에 붙는다 (2026-09-13 Dave: «하단 메뉴가 맨 아래에 · 여백 조정»)
         {
-          await pg.click('.mhome .mcards .t-note'); await pg.waitForSelector('.nmodal', { timeout: 4000 }); await wait(400)   // CJ · 종 단추가 빠졌다 — 알림 칸이 입구(확인 대기여도 몸통은 알림 센터)
+          await pg.click('.mhome .numrow .t-note'); await pg.waitForSelector('.nmodal', { timeout: 4000 }); await wait(400)   // CJ · 종 단추가 빠졌다 — 알림 칸이 입구(확인 대기여도 몸통은 알림 센터)
           const nf = await pg.evaluate(() => {
             const m = document.querySelector('.nmodal').getBoundingClientRect()
             const f = document.querySelector('.nmodal .modal-f').getBoundingClientRect()
@@ -7381,14 +7423,18 @@ try {
         await pg.evaluate(() => localStorage.removeItem('fb:last'))
         await pg.goto(base + '/'); await pg.waitForSelector('.mhome .mtop', { timeout: 15000 }); await wait(800)
         // 폰 첫 화면은 **한 줄 띠** 다 — 카드는 누를 때만 (2026-09-13 Dave: «너무 커»)
-        if (!(await pg.$('.mhome .ustrip'))) fail('사용량: 폰 홈에 한 줄 띠가 없다')
-        if (await pg.$('.mhome .ucard')) fail('사용량: 폰 홈에 카드가 그대로 있다(띠여야 한다)')
-        const pu = await pg.evaluate(() => { const st = document.querySelector('.mhome .ustrip'); const r = st.getBoundingClientRect(); return { right: r.right, iw: innerWidth, h: r.height, barW: st.querySelector('.bar').getBoundingClientRect().width } })
-        if (pu.right > pu.iw + 1) fail('사용량: 폰 띠가 화면을 넘는다 ' + JSON.stringify(pu))
-        if (pu.h > 44) fail('사용량: 폰 띠가 너무 높다 ' + JSON.stringify(pu))
-        if (pu.barW < 30) fail('사용량: 폰 띠의 막대가 안 보인다 ' + JSON.stringify(pu))
-        await pg.click('.mhome .ustrip'); await wait(500)
-        if (!(await pg.$('.tsheet.usheet .ucard .ubar'))) fail('사용량: 띠를 눌러도 카드 시트가 안 뜬다')
+        // 왼쪽 목록 A안(2026-11-14) — 위쪽 사용량 띠(`.mhome .ustrip`)는 바닥 숫자 줄의 «NN% 남음» 칸(`.numrow .t-use`)이 됐다. 누르면 같은 시트(`.tsheet.usheet`)가 뜬다.
+        //    뜻이 바뀐 단언: «띠가 44px 보다 높지 않다» → «사용량 칸이 숫자 줄의 다른 칸보다 크지 않다(같은 높이 · 같은 폭)» — 칸은 손가락 자리라 44px 이상이 맞다(`left-rail.mjs` L7).
+        //    지운 단언: «띠의 막대(`.bar`)가 30px 이상 보인다» — 막대가 화면에서 없어졌다(막대는 시트의 카드 `.ubar` 에 남아 아래에서 잰다). 대신 칸의 글자가 «NN%» · «남음» 인지 잰다
+        const useCell = '.mhome .numrow .t-use'
+        if (!(await pg.$(useCell))) fail('사용량: 폰 홈 숫자 줄에 «NN% 남음» 칸이 없다')
+        if (await pg.$('.mhome .ucard')) fail('사용량: 폰 홈에 카드가 그대로 있다(칸이어야 한다)')
+        const pu = await pg.evaluate((q) => { const st = document.querySelector(q); const r = st.getBoundingClientRect(); const others = [...st.parentElement.querySelectorAll('.ncell')].filter((c) => c !== st).map((c) => c.getBoundingClientRect()); return { right: r.right, left: r.left, iw: innerWidth, h: r.height, w: r.width, oh: Math.max(...others.map((o) => o.height)), ow: Math.max(...others.map((o) => o.width)), n: st.querySelector('.v b')?.textContent ?? '', l: st.querySelector('.l')?.textContent ?? '', aria: st.getAttribute('aria-label') ?? '' } }, useCell)
+        if (pu.right > pu.iw + 1 || pu.left < -1) fail('사용량: 폰 사용량 칸이 화면을 넘는다 ' + JSON.stringify(pu))
+        if (pu.h > pu.oh + 1 || pu.w > pu.ow + 1) fail('사용량: 폰 사용량 칸이 숫자 줄의 다른 칸보다 크다 ' + JSON.stringify(pu))
+        if (!/^\d{1,3}%$/.test(pu.n) || pu.l !== '남음' || !/^사용량 \d{1,3}% 남음$/.test(pu.aria)) fail('사용량: 폰 사용량 칸의 글자가 «NN% 남음» 이 아니다 ' + JSON.stringify(pu))
+        await pg.click(useCell); await wait(500)
+        if (!(await pg.$('.tsheet.usheet .ucard .ubar'))) fail('사용량: 칸을 눌러도 카드 시트가 안 뜬다')
         await pg.screenshot({ path: 'test/tmp/phone-usage-sheet.png' })
         await pg.evaluate(() => document.querySelector('.backdrop').click()); await wait(400)
         await pg.screenshot({ path: 'test/tmp/phone-usage.png' })
@@ -7402,7 +7448,7 @@ try {
           await api(`/sessions/${sL.id}/send`, { text: '되읊어: 한 번 더' })   // 턴이 끝나면 캐시가 비워진다
           let ub = null; for (let i = 0; i < 60 && !ub; i++) { await wait(500); const uu = await api('/usage'); ub = (uu.byBot || []).find((b) => b.botId === bot.id) || null }
           if (!ub || ub.tokens < 3000) fail('L: 턴이 끝났는데 봇별 내역에 이 봇이 없다 ' + JSON.stringify(ub))
-          let rows = []; for (let i = 0; i < 20 && !rows.some((n) => /제품_Rondo|Rondo/.test(n)); i++) { await wait(500); if (!(await pg.$('.tsheet.usheet'))) { await pg.click('.mhome .ustrip'); await wait(400) } rows = await pg.$$eval('.tsheet.usheet .ucard .ub .n', (r) => r.map((x) => x.textContent)) }
+          let rows = []; for (let i = 0; i < 20 && !rows.some((n) => /제품_Rondo|Rondo/.test(n)); i++) { await wait(500); if (!(await pg.$('.tsheet.usheet'))) { await pg.click(useCell); await wait(400) } rows = await pg.$$eval('.tsheet.usheet .ucard .ub .n', (r) => r.map((x) => x.textContent)) }
           if (!rows.some((n) => /제품_Rondo|Rondo/.test(n))) fail('L: 카드에 봇별 줄이 없다(턴 끝 신호로 다시 물어야 한다) ' + JSON.stringify(rows))
           // BD · 실제 한도를 받았으면 카드의 기준 줄은 «실제 한도» 이고, 달러 대신 5시간·이번 주 % 가 보인다
           const un = (await pg.textContent('.tsheet.usheet .ucard .un')) ?? ''
@@ -7420,8 +7466,10 @@ try {
           const v = await pg.evaluate(() => {
             const bad = []
             for (const el of document.querySelectorAll('.mhome *')) { const r = el.getBoundingClientRect(); if (r.width > 0 && (r.right > innerWidth + 1 || r.left < -1)) bad.push((el.className || el.tagName) + ' ' + Math.round(r.left) + '..' + Math.round(r.right)) }
-            const st = document.querySelector('.mhome .ustrip')
-            return { bad: bad.slice(0, 4), scrollW: document.documentElement.scrollWidth, iw: innerWidth, cardBg: st ? getComputedStyle(st).backgroundColor : '', pc: st ? getComputedStyle(st.querySelector('b')).color : '', bodyBg: getComputedStyle(document.body).backgroundColor }
+            // 왼쪽 목록 A안(2026-11-14) — 사용량 띠(`.ustrip`) → 숫자 줄의 `.t-use` 칸. 칸에는 제 바탕이 없어(투명) 글자가 실제로 얹힌 바탕(가장 가까운 불투명 조상)과 견준다
+            const st = document.querySelector('.mhome .numrow .t-use')
+            const bgOf = (el) => { for (let e = el; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor; const m = c.match(/[\d.]+/g) ?? []; if (m.length < 4 || Number(m[3]) > 0.5) return c } return getComputedStyle(document.body).backgroundColor }
+            return { bad: bad.slice(0, 4), scrollW: document.documentElement.scrollWidth, iw: innerWidth, cardBg: st ? bgOf(st) : '', pc: st ? getComputedStyle(st.querySelector('.v b')).color : '', bodyBg: getComputedStyle(document.body).backgroundColor }
           })
           if (v.bad.length) fail(`폰 ${th}: 가로로 넘치는 것 ` + JSON.stringify(v.bad))
           if (v.scrollW > v.iw + 1) fail(`폰 ${th}: 가로 스크롤이 생긴다 ` + JSON.stringify(v))
@@ -7745,6 +7793,16 @@ try {
       const names = []
       await rightPanel({ br, shots: 'test/tmp', check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 오른쪽 패널 · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } names.push(name.split(' ')[0]) } })
       ok(`오른쪽 패널 — 개요는 폴더에 있는 것만 · state.md 가 없어도 선다 · 할 일 칸은 45% 까지 «＋N 더» · 도구 막대가 루틴·명령·스킬·⋯ 를 띄운다 · 폰 폴더 탭은 개요부터 · 오케스트레이터는 개요 없음 [${names.join(' ')}]`)
+    }
+    /**
+     * 왼쪽 목록 A안 (2026-11-12 Dave 카드 «A안» · 가안 셋째 묶음) — 내 답을 기다림 띠 → 봇 목록 → 상황판 한 줄 → 숫자 줄.
+     * 검사 본문(`test/left-rail.mjs`)이 제 호스트를 따로 띄운다.
+     */
+    {
+      const { leftRail } = await import('./left-rail.mjs')
+      const names = []
+      await leftRail({ br, shots: 'test/tmp', check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 왼쪽 목록 · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } names.push(name.split(' ')[0]) } })
+      ok(`왼쪽 목록 — 봇 목록이 가장 큰 자리 · 답 대기는 위 띠에(세 줄까지) · 숫자 줄은 «내가 볼 것» 만 · 정렬은 단추 하나 · 폰 홈 바닥에 상황판 한 줄과 숫자 줄 [${names.join(' ')}]`)
     }
     await br.close(); ok('ui renders (desktop · phone) → test/tmp/*.png')
   } catch (e) { try { await globalThis.__br?.close() } catch {} if (/executablePath|Executable doesn't exist|Cannot find (module|package) 'playwright/.test(String(e.message))) console.log('(화면 검사 건너뜀 — 브라우저 없음:', e.message.split('\n')[0], ')'); else fail('ui: ' + e.stack.split('\n').slice(0, 4).join(' | ')) }
