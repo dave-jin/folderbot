@@ -23,7 +23,7 @@ import { ContextStrip, ContextPage } from './Context'
 import { cleanableCount } from '../core/cleanup'
 import { findFolders, pillEnter, weekTodo } from '../core/home'
 import { FolderSheet, TodoBoard } from './Manage'
-import { Elapsed, Panel, type SecH } from './Panel'
+import { Elapsed, Panel } from './Panel'
 import { machSummary } from '../core/chat'
 import { buildRows, type ChatRow } from '../core/chatRows'
 import { splitAttach } from '../core/attach'
@@ -207,14 +207,14 @@ export function App() {
   return <Main />
 }
 
-interface Layout { sb: number; rp: number; doc: number; sbOpen: boolean; rpOpen: boolean; sbPin: boolean; rpPin: boolean; secH: SecH }
+interface Layout { sb: number; rp: number; doc: number; sbOpen: boolean; rpOpen: boolean; sbPin: boolean; rpPin: boolean }
 /** EC · ⎋ 로 승인 카드를 거부한 뒤 이만큼은 ⎋ 를 버린다(연달아 누른 ⎋ 가 턴까지 멈추지 않게) */
 const ESC_AFTER_DENY_MS = 700
 /** 대화 열 최소 폭 — 이 아래면 글이 한 글자씩 접혀 화면이 망가진다 (2026-09-13 Dave 스크린샷: 대화 열 ~100px) */
 const CHAT_MIN = 360
 const DOC_MIN = 380, SIDE_MIN = 200, STRIP_W = 45
 function useWinW(): number { const [w, setW] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1440)); useEffect(() => { const f = () => setW(window.innerWidth); window.addEventListener('resize', f); return () => window.removeEventListener('resize', f) }, []); return w }
-const DEF: Layout = { sb: 250, rp: 290, doc: 520, sbOpen: true, rpOpen: true, sbPin: false, rpPin: false, secH: { sessions: 120, todo: 128 } }
+const DEF: Layout = { sb: 250, rp: 290, doc: 520, sbOpen: true, rpOpen: true, sbPin: false, rpPin: false }
 interface UpdState { lastCheck: number; current: string; staged: { version: string; ready: boolean; progress: number; notes: string } | null; downloading: boolean; checking: boolean; lastError: string; deferred: boolean; busy: number; host: boolean; /** BX · «새벽 4시에 적용» 예약 — 시각 · 미룬 까닭 */ dawn?: { at: number; note: string } | null }
 /**
  * 단축키 표 — 🔴 **여기가 정본이고 ⌘/ 가 이걸 그대로 보여 준다.**
@@ -457,7 +457,7 @@ function Main() {
   // «설정의 그 칸을 열어 줘» — 에이전트 고르기 화면의 «바꾸기» 가 이걸 쏜다 (V24)
   const [setSec, setSetSec] = useState<SecId | undefined>(undefined)
   useEffect(() => { const f = (e: Event) => { setSetSec((e as CustomEvent).detail as SecId); setModal('settings') }; window.addEventListener('fb:settings', f); return () => window.removeEventListener('fb:settings', f) }, [])
-  const [drag, setDrag] = useState<'' | 'x' | 'y'>('')
+  const [drag, setDrag] = useState<'' | 'x'>('')
   const [toast, say, clearToast] = useToast()
   const [prefill, setPrefill] = useState('')
   /** CJ · 폰 알약에서 «오케스트레이터에게 보내기» — 그 봇의 대화가 화면에 선 뒤 한 번 보낸다(Chat 이 `botId` 를 맞춰 보고 보낸다) */
@@ -1148,7 +1148,7 @@ function Main() {
         <button className="btn" onClick={() => { setPanelTab('files'); setView('panel') }}>폴더 열기</button></div>
     </div>
   </div>
-  const rpwrapEl = <div className="rpwrap" style={{ width: narrow ? '100%' : fit.rp, flex: 'none', display: 'flex', minWidth: 0 }}>{peerId ? <BridgeSide peerId={peerId} go={go} phone={phone} onBack={() => setView('chat')} onCollapse={closeRp} /> : <Panel bot={bot} sessions={sessions} sessionId={sessionId} go={go} onOpenFile={(rel, pin) => openInDocPane(rel, { pin })} onTalk={(t) => { setPrefill(t); if (phone) setView('chat') }} onAttach={(rel, dir) => addAttach({ rel, abs: `${bot.abs}/${rel}`, dir })} onMention={(rel) => { setMentionReq((m) => [...m, rel]); if (phone) setView('chat') }} onStartAt={startAt} onNewFolderAt={newFolderAt} touched={touched} filesTick={s.filesTick[bot.id]} secH={lay.secH} onSecH={(h) => setLay({ ...lay, secH: h })} onCollapse={closeRp} focusSec={focusSec} say={say} refresh={refresh} activeDoc={showDoc ? docs.active : null} onDragY={(on) => setDrag(on ? 'y' : '')} phone={phone} onBack={toList} only={phone ? panelTab : undefined} />}</div>
+  const rpwrapEl = <div className="rpwrap" style={{ width: narrow ? '100%' : fit.rp, flex: 'none', display: 'flex', minWidth: 0 }}>{peerId ? <BridgeSide peerId={peerId} go={go} phone={phone} onBack={() => setView('chat')} onCollapse={closeRp} /> : <Panel bot={bot} sessions={sessions} sessionId={sessionId} go={go} onOpenFile={(rel, pin) => openInDocPane(rel, { pin })} onTalk={(t) => { setPrefill(t); if (phone) setView('chat') }} onAttach={(rel, dir) => addAttach({ rel, abs: `${bot.abs}/${rel}`, dir })} onMention={(rel) => { setMentionReq((m) => [...m, rel]); if (phone) setView('chat') }} onStartAt={startAt} onNewFolderAt={newFolderAt} touched={touched} filesTick={s.filesTick[bot.id]} onCollapse={closeRp} focusSec={focusSec} say={say} refresh={refresh} activeDoc={showDoc ? docs.active : null} phone={phone} onBack={toList} only={phone ? panelTab : undefined} />}</div>
   const stripRightEl = peerId ? <div className="strip right"><button className="ib" onClick={() => openRp()} title="세션 · 편지함 펼치기 (⌘⇧B)"><Icon n="panelr" size={14} /></button></div> : <div className="strip right"><button className="ib" onClick={() => openRp()} title="패널 펼치기 (⌘⇧B)"><Icon n="panelr" size={14} /></button>
     {/* S-3 · 패널을 접어 둬도 **새 세션 +** 는 우측 상단에 남는다 (2026-09-21 Dave: «상시 노출») — 펼친 패널 「세션」 줄의 + 와 같은 일 */}
     <button className="ib nsb" onClick={() => void newSession()} title="새 세션 (⌘N)"><Icon n="plus" size={14} /><span className="fly"><b>새 세션</b><span>이 폴더에서</span></span></button><div className="gap" />
@@ -1156,7 +1156,7 @@ function Main() {
         <button className="ib" onClick={() => openRp('files')}><Icon n="folder" size={14} /><span className="fly"><b>파일</b><span>{bot.rel || '볼트'}</span></span></button>
         <button className="ib" onClick={() => openRp('routines')}><Icon n="cal" size={14} /><span className="fly"><b>루틴</b><span>{bot.routines.length}개</span></span></button>
       </div>
-  return <div className={`app ${isDesktop ? 'desktop' : ''} ${phone ? 'phone' : ''} ${mid ? 'smid' : ''} ${kb ? 'kb' : ''} ${drag === 'x' ? 'dragx' : drag === 'y' ? 'dragy' : ''} ${phone && !tabsHere ? 'notabs' : ''}`} data-view={view === 'doc' && !showDoc && !phone ? 'panel' : view} data-nav={`${nav.stack.join('>')}${nav.fwd.length ? ' |' + [...nav.fwd].reverse().join('>') : ''}`}>
+  return <div className={`app ${isDesktop ? 'desktop' : ''} ${phone ? 'phone' : ''} ${mid ? 'smid' : ''} ${kb ? 'kb' : ''} ${drag === 'x' ? 'dragx' : ''} ${phone && !tabsHere ? 'notabs' : ''}`} data-view={view === 'doc' && !showDoc && !phone ? 'panel' : view} data-nav={`${nav.stack.join('>')}${nav.fwd.length ? ' |' + [...nav.fwd].reverse().join('>') : ''}`}>
     {s.online === 'off' ? <div className="offline">{s.hostName || '호스트'} 와 다시 연결하는 중…</div> : null}
     {s.auth.verdict === 'unreadable' || s.auth.verdict === 'loggedout' ? <div className="banner"><span className="dot wait" /><span><b>{s.hostName} 에서 Claude 로그인이 필요해요.</b> 호스트 맥에서 <span className="mono">claude</span> → <span className="mono">/login</span>, 또는 설정 › Claude 토큰. 보낸 지시는 대기열에 두었다가 복구되면 이어서 해요.</span><span style={{ marginLeft: 'auto' }} /><button className="btn" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button></div> : null}
     <div className={`cols ${dragSide ? 'dragging' : ''}`} ref={colsRef} onPointerDown={swDown} onPointerMove={swMove} onPointerUp={swUp} onPointerCancel={swCancel}>

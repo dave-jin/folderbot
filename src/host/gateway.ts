@@ -721,6 +721,7 @@ export class Gateway {
         } catch (e) { return json(400, { error: (e as Error).message }) }
       }
       if (sub === 'slash') { const sid = url.searchParams.get('sid') ?? ''; const v = sid ? h.sessions.get(sid)?.vendor : undefined; return json(200, slashCommands(bot.abs, reg.root, h.sessions.slashList(sid || undefined), v === 'codex' ? 'codex' : 'claude')) }
+      if (sub === 'overview' && m === 'GET') return json(200, h.overview(bot))
       if (sub === 'todo' && m === 'GET') return json(200, h.todo(bot))
       if (sub === 'todo' && seg[4] === 'toggle' && m === 'POST') { const b = await body()
         // CJ 보드 · 줄 번호는 다른 손(봇·Akiflow·다른 기기)이 파일을 고치면 밀린다 — 제목을 같이 보내면 맞을 때만 고친다(엉뚱한 줄을 끝내지 않는다)

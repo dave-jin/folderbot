@@ -2863,14 +2863,16 @@ try {
                 if (cb.h < 30) fail('🔴 AR: 코드 복사 단추가 손가락으로 누르기엔 작다(보이는 크기 30px + 누를 넓이 44px 계약) ' + JSON.stringify(cb))
                 // 폴더 탭에 루틴이 있나
                 const ft = await hp.$('.tabbar [data-tab="files"]'); if (ft) { await ft.click(); await wait(600) }
-                const rt = await hp.evaluate(() => [...document.querySelectorAll('.panel .sech')].map((x) => (x.textContent ?? '').trim()))
-                if (!rt.some((t) => /루틴/.test(t))) fail('🔴 AR: 폰 「폴더」 탭에 루틴이 없다 ' + JSON.stringify(rt))
+                // 오른쪽 패널(2026-11-14) — 루틴은 절이 아니라 도구 막대의 단추다. 누르면 목록이 뜬다
+                const rt = await hp.evaluate(() => [...document.querySelectorAll('.panel .ptools .tb')].map((x) => (x.textContent ?? '').trim()))
+                if (!rt.some((t) => /^루틴/.test(t))) fail('🔴 AR: 폰 「폴더」 탭에 루틴이 없다 ' + JSON.stringify(rt))
                 /* 🔴 CF-4 · 폰 루틴 시트는 편집 칸이 화면 폭을 쓴다 (2026-10-12 Dave: «루틴은 모바일에서 안 보여»).
                       종전엔 목록 240px 가 옆에 붙어 374px 시트에 편집 칸이 92px — 단추 글자가 세로로 꺾였다 */
                 {
-                  await hp.evaluate(() => { const h = [...document.querySelectorAll('.panel .sech')].find((x) => /루틴/.test(x.textContent ?? '')); if (h && !h.querySelector('[data-n="chevd"]') && !h.nextElementSibling) h.click() })
-                  await wait(300)
-                  await hp.evaluate(() => { const b = [...document.querySelectorAll('.panel button.kv')].find((x) => /루틴 (편집|추가)/.test(x.textContent ?? '')); b?.click() })
+                  await hp.click('.panel .ptools .tb.rt')
+                  await hp.waitForSelector('.spop.rtpop button.kv', { timeout: 3000 }); await wait(300)
+                  const rtBtn = await hp.evaluate(() => { const b = [...document.querySelectorAll('.spop.rtpop button.kv')].find((x) => /루틴 (편집|추가)/.test(x.textContent ?? '')); b?.click(); return !!b })
+                  if (!rtBtn) fail('CF-4: 도구 막대의 루틴 목록에 «루틴 편집/추가» 가 없다 — 검사가 헛돈다')
                   await wait(400)
                   await hp.evaluate(() => { if (!document.querySelector('.modal.rted textarea')) { const n = [...document.querySelectorAll('.modal.rted button.srow')].find((x) => /새 루틴/.test(x.textContent ?? '')); n?.click() } })
                   await wait(300)
@@ -2882,7 +2884,7 @@ try {
                   ok(`CF-4 폰 루틴 시트 — 편집 칸 ${sw.ta}/${sw.vw}px`)
                 }
                 const td = await hp.$('.tabbar [data-tab="todo"]'); if (td) { await td.click(); await wait(600) }
-                const rt2 = await hp.evaluate(() => [...document.querySelectorAll('.panel .sech')].map((x) => (x.textContent ?? '').trim()))
+                const rt2 = await hp.evaluate(() => [...document.querySelectorAll('.panel .sech, .panel .ptools .tb')].map((x) => (x.textContent ?? '').trim()))
                 if (rt2.some((t) => /루틴/.test(t))) fail('🔴 AR: 「할 일」 탭에는 루틴이 없어야 한다(그 탭은 지금 할 일만) ' + JSON.stringify(rt2))
                 if (home) { await home.click(); await wait(500) }
                 ok(`AR 폰 — 코드 복사 단추 보임·누를 수 있음(${cb.h}px) · 폴더 탭에 루틴 · 할 일 탭에는 없음`)
@@ -2934,6 +2936,8 @@ try {
                 secs: [...document.querySelectorAll('.drawer.right .sech span:not(.c):not(.tools):not(.sp)')].map((x) => x.textContent?.trim()).filter(Boolean),
                 tree: !!document.querySelector('.drawer.right .trow'),
                 foot: !!document.querySelector('.drawer.right .pfoot'),
+                bar: [...document.querySelectorAll('.drawer.right .ptools .tb')].map((x) => (x.textContent ?? '').trim().replace(/\s*\d+$/, '') || x.getAttribute('aria-label')),
+                ov: !!document.querySelector('.drawer.right .ovw'),
                 on: document.querySelector('.tabbar .tb.on')?.dataset.tab ?? null,
               }))
               let pane = await paneOf()
@@ -2941,7 +2945,9 @@ try {
               /* 🔴 **AR 에서 「루틴」은 뺐다** (2026-09-24 Dave 가 AD 결정을 뒤집었다: *«폴더 섹션에 모바일에서도
                     루틴 메뉴 추가해줘»*). 루틴이 **도는지 보고 손보는 일**은 오히려 폰에서 더 자주 생긴다.
                  ⚠ 세션·명령·스킬은 그대로 뺀다 — 그것들은 만들고 고치는 자리가 데스크톱이다. */
-              for (const bad of ['세션', '명령 · 스킬']) if (pane.secs.includes(bad)) fail(`🔴 AD: 「폴더」 탭에 «${bad}» 이 남아 있다 · ` + JSON.stringify(pane))
+              for (const bad of ['세션', '명령 · 스킬']) if (pane.secs.includes(bad) || pane.bar.includes(bad)) fail(`🔴 AD: 「폴더」 탭에 «${bad}» 이 남아 있다 · ` + JSON.stringify(pane))
+              // 오른쪽 패널(2026-11-14) — 폰 「폴더」 탭은 개요 · 파일 · 도구 막대(루틴 · ⋯)
+              if (!pane.ov || JSON.stringify(pane.bar) !== JSON.stringify(['루틴', '이 봇'])) fail('오른쪽 패널: 폰 「폴더」 탭에 개요나 도구 막대(루틴 · ⋯)가 없다 · ' + JSON.stringify(pane))
               if (!pane.foot) fail('AD: 지우기·은퇴 줄은 폴더 탭 아래에 남아야 한다 ' + JSON.stringify(pane))
               if (pane.on !== 'files') fail('AD: 탭 표시가 «폴더» 여야 한다 ' + JSON.stringify(pane))
               await tapNav(hp, 'todo'); await wait(450)
@@ -2952,7 +2958,7 @@ try {
               //    채팅 머리줄의 세션 이름 → 바닥 시트에 있다(«세션 줄이 보인다» 는 아래 채팅 화면에서 시트로 잰다)
               const sessTop = await hp.evaluate(() => { const secs = [...document.querySelectorAll('.drawer.right .sech')].map((x) => x.textContent?.trim().slice(0, 4)); const rows = document.querySelectorAll('.drawer.right .srow').length; return { secs, rows } })
               if (pane.secs.includes('세션') || sessTop.rows) fail('🔴 세션 줄: 「할 일」 탭에 세션 목록이 남아 있다(폰은 머리줄 → 시트) ' + JSON.stringify({ pane, sessTop }))
-              if (pane.foot) fail('AD: 지우기·은퇴는 할 일 탭에는 없어야 한다 ' + JSON.stringify(pane))
+              if (pane.foot || pane.bar.length || pane.ov) fail('AD: 지우기·은퇴(도구 막대)와 개요는 할 일 탭에는 없어야 한다 ' + JSON.stringify(pane))
               if (pane.on !== 'todo') fail('AD: 탭 표시가 «할 일» 이어야 한다 ' + JSON.stringify(pane))
 
               /** 🔴 AD · 모든 화면의 좌상단 = 봇 목록 (화면마다 다른 데로 가지 않는다) */
@@ -5503,9 +5509,10 @@ try {
         //    클래스만 붙이고 CSS 를 안 써서 아이콘이 한 줄, 이름·범위가 붙어 흘렀다
         //    ⚠ V(09-22) 에서 「지침 · 하네스」와 「슬래시 명령」이 한 칸(명령 · 스킬)으로 합쳐졌다
         {
-          await pg.click('.panel .sech:has-text("명령 · 스킬")'); await wait(900)
+          // 오른쪽 패널(2026-11-14) — 「명령 · 스킬」 절은 도구 막대의 단추가 됐다. 누르면 같은 목록(`.hsec.cmds`)이 뜬다
+          await pg.click('.panel .ptools .tb.cmd'); await pg.waitForSelector('.spop.cmdpop .hsec.cmds', { timeout: 3000 }); await wait(900)
           const hz = await pg.evaluate(() => {
-            const rows = [...document.querySelectorAll('.panel .hz')]
+            const rows = [...document.querySelectorAll('.spop.cmdpop .hz')]
             if (!rows.length) return null
             return rows.slice(0, 6).map((r) => {
               const rb = r.getBoundingClientRect()
@@ -5518,7 +5525,8 @@ try {
           if (!hz) fail('명령 · 스킬: 줄이 하나도 없다')
           const bad = hz.filter((r) => r.h > 44 || !r.sameLine || r.gap < 2)
           if (bad.length) fail('명령 · 스킬: 줄이 깨졌다(아이콘·이름·범위가 한 줄이 아니거나 붙어 있다) ' + JSON.stringify(bad))
-          await pg.click('.panel .sech:has-text("명령 · 스킬")'); await wait(300)
+          await pg.click('.panel .ptools .tb.cmd'); await wait(300)
+          if (await pg.$('.spop.cmdpop')) fail('명령 · 스킬: 같은 단추를 다시 눌러도 목록이 안 닫힌다')
         }
         // 세션 삭제 버튼 — 세션 줄의 탭에 있고(2026-11-13 · 종전 패널 «세션» 절의 행 · 올리면 ✕), 누르면 **묻지 않고** 사라지고 10초 되돌리기가 선다(2026-11-13 Dave 카드 «바로 지우고 되돌리기»). 원래 보던 세션은 건드리지 않는다
         const keep = (await pg.textContent('.sstrip > .stab.on .n')).trim()
@@ -6544,14 +6552,17 @@ try {
         {
           await pg.fill('.composer .cin', ''); await wait(200)
           // V (09-22 Dave) · 「지침·하네스」와 「슬래시 명령」이 **한 칸**(명령 · 스킬)으로 합쳐졌다 — 명령·스킬·커넥터를 한 목록에서 본다
-          const hdr = pg.locator('.sech', { hasText: '명령 · 스킬' })
-          if (!(await hdr.count())) fail('명령·스킬: 패널에 절이 없다')
-          if (!(await pg.$('.hsec.cmds'))) { await hdr.click(); await wait(500) }
+          // 오른쪽 패널(2026-11-14) — 절이 아니라 도구 막대의 단추. 목록은 뜨는 창(`.spop.cmdpop`) 안의 같은 `.hsec.cmds`
+          const hdr = pg.locator('.panel .ptools .tb.cmd')
+          if (!(await hdr.count())) fail('명령·스킬: 패널 도구 막대에 단추가 없다')
+          const openCmds = async () => { if (!(await pg.$('.spop.cmdpop .hsec.cmds'))) { await hdr.click(); await pg.waitForSelector('.spop.cmdpop .hsec.cmds .hz', { timeout: 3000 }); await wait(500) } }
+          await openCmds()
           const list = await pg.evaluate(() => [...document.querySelectorAll('.hsec.cmds .hz')].map((r) => r.textContent ?? ''))
           if (!list.some((r) => /\/status/.test(r) && /볼트/.test(r))) fail('슬래시 명령: 루트의 /status 가 «볼트» 로 안 보인다 ' + JSON.stringify(list))
           // 같은 목록에 스킬·커넥터도 함께 선다 (한 공간에서 본다)
           if (!list.some((r) => /스킬 ·/.test(r))) fail('V: 같은 목록에 스킬이 안 보인다 ' + JSON.stringify(list))
-          await hdr.locator('.nsb').click(); await pg.waitForSelector('.modal.ask input', { timeout: 3000 })
+          await pg.click('.spop.cmdpop .ph .nsb'); await pg.waitForSelector('.modal.ask input', { timeout: 3000 })
+          if (await pg.$('.spop.cmdpop')) fail('명령·스킬: ＋ 를 눌러 묻기 창이 떴는데 목록이 남아 있다')
           await pg.fill('.modal.ask input', 'hello-bot'); await pg.keyboard.press('Enter'); await wait(900)
           const cmdAbs = join(root, '3. Area/제품_Rondo/.claude/commands/hello-bot.md')
           if (!existsSync(cmdAbs)) fail('슬래시 명령: 파일이 안 생겼다 ' + cmdAbs)
@@ -6559,8 +6570,11 @@ try {
           await pg.waitForSelector('.doc .dbody', { timeout: 5000 })
           const tabTxt = await pg.evaluate(() => [...document.querySelectorAll('.doc .tab')].map((t) => t.textContent ?? '').join(' | '))
           if (!/hello-bot/.test(tabTxt)) fail('슬래시 명령: 만든 파일이 문서 열에 안 열렸다 ' + tabTxt)
+          await openCmds()
           const list2 = await pg.evaluate(() => [...document.querySelectorAll('.hsec.cmds .hz')].map((r) => r.textContent ?? ''))
           if (!list2.some((r) => /\/hello-bot/.test(r) && /이 폴더/.test(r))) fail('슬래시 명령: 만든 것이 목록에 «이 폴더» 로 안 선다 ' + JSON.stringify(list2))
+          await pg.keyboard.press('Escape'); await wait(250)
+          if (await pg.$('.spop.cmdpop')) fail('명령·스킬: ⎋ 로 목록이 안 닫힌다')
           // 같은 이름·틀린 이름은 거절 (⚠ API 로 잰다 — 화면에서 400 을 받으면 크롬이 콘솔에 오류를 찍어 «page errors» 에 걸린다)
           try { await api(`/bots/${bot.id}/commands`, { name: 'hello-bot', scope: 'folder' }); fail('슬래시 명령: 같은 이름을 거절하지 않는다') } catch (e) { if (!/이미 있어요/.test(e.message)) fail('슬래시 명령: 거절 이유가 다르다 ' + e.message) }
           try { await api(`/bots/${bot.id}/commands`, { name: '한글 이름', scope: 'folder' }); fail('슬래시 명령: 부를 수 없는 이름을 받았다') } catch (e) { if (!/영문/.test(e.message)) fail('슬래시 명령: 이름 거절 이유가 다르다 ' + e.message) }
@@ -6632,19 +6646,19 @@ try {
            * 모바일에서 보고 쓸 일이 없으니 제외»*. 그 계약(V-4)은 **중간 폭에서** 잰다(V-2 의 독과 같은 처방).
            */
           await tapNav(vpg, 'files'); await wait(800)
-          if (await vpg.$('.hsec.cmds')) fail('🔴 AD: 폰 「폴더」 탭에 명령 · 스킬이 남아 있다')
+          if (await vpg.$('.hsec.cmds') || await vpg.$('.ptools .tb.cmd')) fail('🔴 AD: 폰 「폴더」 탭에 명령 · 스킬이 남아 있다')
           const vc = await br.newPage({ viewport: { width: 900, height: 800 }, deviceScaleFactor: 1 })
           await vc.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
           await vc.goto(base + `/#bot=${bot.id}`); await vc.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(700)
           await tapNav(vc, 'files'); await wait(700)
-          const vSech = vc.locator('.sech', { hasText: '명령 · 스킬' })
-          if (!(await vSech.count())) fail('V-4: 중간 폭 패널에 「명령 · 스킬」 절이 없다')
-          if (!(await vc.$('.hsec.cmds'))) { await vSech.click(); await wait(600) }
+          const vSech = vc.locator('.panel .ptools .tb.cmd')
+          if (!(await vSech.count())) fail('V-4: 중간 폭 패널 도구 막대에 「명령 · 스킬」 이 없다')
+          if (!(await vc.$('.hsec.cmds'))) { await vSech.click(); await vc.waitForSelector('.spop.cmdpop .hsec.cmds', { timeout: 3000 }); await wait(600) }
 
           /* V-1 · 🔴 **글씨는 가로로만 눕는다.** 칸이 좁으면 한글은 글자 단위로 감겨 「명/령」 처럼 **세로 기둥**이 된다.
              판정은 «글씨가 있는 버튼의 높이가 두 줄을 넘지 않는가» — 세로로 서면 글자 수만큼 높아진다. */
           const tall = await vpg.evaluate(() => {
-            const sel = '.ib, .btn, .nb, .rb, .cbtn, .tab, .hz.more, .dock .db, .dfoot .talk, .sech, .seg button, .snav .nv'
+            const sel = '.ib, .btn, .nb, .rb, .cbtn, .tab, .hz.more, .dock .db, .dfoot .talk, .sech, .seg button, .snav .nv, .ptools .tb'
             const bad = []
             for (const el of document.querySelectorAll(sel)) {
               if (!el.getBoundingClientRect().width) continue
@@ -7721,6 +7735,16 @@ try {
       const names = []
       await sessionStrip({ br, shots: 'test/tmp', check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 세션 줄 · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } names.push(name.split(' ')[0]) } })
       ok(`세션 줄 — 탭이 한 줄에 · 그 자리에서 이름 고치기와 지우고 되돌리기 · 자동화는 목록 안에 · 넘치면 «＋N» · 좁아도 한 줄 · 폰은 머리줄과 바닥 시트 [${names.join(' ')}]`)
+    }
+    /**
+     * 오른쪽 패널 (2026-11-13 Dave 카드 «이대로 만든다» · 가안 둘째 묶음) — 개요 · 할 일 · 파일 + 도구 막대(루틴 · 명령·스킬 · ⋯).
+     * 검사 본문(`test/right-panel.mjs`)이 제 호스트를 따로 띄운다.
+     */
+    {
+      const { rightPanel } = await import('./right-panel.mjs')
+      const names = []
+      await rightPanel({ br, shots: 'test/tmp', check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 오른쪽 패널 · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } names.push(name.split(' ')[0]) } })
+      ok(`오른쪽 패널 — 개요는 폴더에 있는 것만 · state.md 가 없어도 선다 · 할 일 칸은 45% 까지 «＋N 더» · 도구 막대가 루틴·명령·스킬·⋯ 를 띄운다 · 폰 폴더 탭은 개요부터 · 오케스트레이터는 개요 없음 [${names.join(' ')}]`)
     }
     await br.close(); ok('ui renders (desktop · phone) → test/tmp/*.png')
   } catch (e) { try { await globalThis.__br?.close() } catch {} if (/executablePath|Executable doesn't exist|Cannot find (module|package) 'playwright/.test(String(e.message))) console.log('(화면 검사 건너뜀 — 브라우저 없음:', e.message.split('\n')[0], ')'); else fail('ui: ' + e.stack.split('\n').slice(0, 4).join(' | ')) }

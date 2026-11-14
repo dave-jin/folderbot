@@ -68,7 +68,7 @@ b,strong { color:var(--w); font-weight:600 }
 
 /* ── 앱 뼈대 ── */
 .app { height:100%; display:flex; flex-direction:column; overflow:hidden }
-.app.dragx { user-select:none; cursor:col-resize } .app.dragy { user-select:none; cursor:row-resize }
+.app.dragx { user-select:none; cursor:col-resize }
 .banner { display:flex; align-items:center; gap:10px; padding:8px 16px; border-bottom:1px solid var(--line); color:var(--t2); font-size:13px; background:var(--sb) }
 .cols { flex:1; display:flex; min-height:0; position:relative }
 /* ── H · 반응형 3단계 (2026-09-19 Dave 시안 확정) — 중간·좁음의 양쪽 패널은 채팅을 **밀지 않고 덮는다**. 채팅 폭은 안 변하고 어두워질 뿐 ── */
@@ -167,7 +167,7 @@ b,strong { color:var(--w); font-weight:600 }
 .app.smid .cols > .col.chat { min-width:0 }
 .col { display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--bg) } .col.side { background:var(--sb); flex:none }
 .divx { width:1px; flex:none; background:var(--line); position:relative; cursor:col-resize; z-index:2 } .divx::before { content:''; position:absolute; left:-4px; right:-4px; top:0; bottom:0 } .divx:hover { background:var(--run); box-shadow:0 0 0 1px color-mix(in srgb, var(--run) 30%, transparent) }
-.divy { height:1px; flex:none; background:var(--line); position:relative; cursor:row-resize; z-index:2 } .divy::before { content:''; position:absolute; top:-4px; bottom:-4px; left:0; right:0 } .divy:hover { background:var(--run); box-shadow:0 0 0 1px color-mix(in srgb, var(--run) 30%, transparent) }
+.divy { height:1px; flex:none; background:var(--line) }
 .strip { width:44px; flex:none; background:var(--sb); display:flex; flex-direction:column; align-items:center; gap:4px; padding-top:10px }
 .strip .bot { position:relative; width:28px; height:28px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center } .strip .bot.on { background:var(--sel) } .strip .bot .dot { position:absolute; right:3px; bottom:3px; width:5px; height:5px; border:1.5px solid var(--sb); box-sizing:content-box }
 .strip .gap { height:8px }
@@ -774,7 +774,6 @@ b,strong { color:var(--w); font-weight:600 }
   .sech { font-size:13px; padding:12px 18px 6px; min-height:36px } .sech .tools { opacity:1 } .sech .tools .ib.mdb { width:auto; padding:0 10px; height:34px } .sech .tools .ib.mdb span { display:inline }
   .trow { min-height:46px; font-size:16px; gap:12px; padding-left:calc(var(--pad,14px) + 6px) } .trefmore { opacity:1; width:32px; height:32px } .trow time { visibility:visible; font-size:13px } .trow .cv { width:13px }
   .srow { min-height:44px; font-size:15px; margin:0 10px } .srow .del, .srow .ren { opacity:1; width:30px; height:30px } .srow.edit .rin { height:30px; font-size:15px } .kv { font-size:14px; min-height:36px }
-  .sec.fix[style] { height:auto !important; max-height:240px }
   .pfoot { padding:10px 18px calc(var(--sab) + 12px); font-size:14px }
   .doc .tabs { display:none } .dtb { padding:0 18px; height:38px; font-size:13px }
   .dbody { padding:16px 18px } .dbody .md { font-size:16px; line-height:1.7 }
@@ -2341,3 +2340,33 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .tsheet.sesssheet .ssb { overflow-y:auto; min-height:0; display:flex; flex-direction:column; gap:1px } .tsheet.sesssheet .ssf { flex:none; border-top:1px solid var(--line); padding-top:4px }
 .tsheet.sesssheet .srow { min-height:44px; font-size:16px; padding:4px 10px; flex:none } .tsheet.sesssheet .srow .m { font-size:12px } .tsheet.sesssheet .srow .ren, .tsheet.sesssheet .srow .del { opacity:1; width:32px; height:32px }
 .tsheet.sesssheet .srow.autoh .n, .tsheet.sesssheet .srow.sadd .n { font-size:14px } .tsheet.sesssheet .srow.edit .rin { height:32px; font-size:16px }
+
+/* ── 오른쪽 패널 — 개요 · 할 일 · 파일 + 도구 막대 (2026-11-14 · 가안 둘째 묶음 · 목업 «평소») ── */
+/* 개요 — 이 폴더가 어디까지 왔나. 줄마다 폴더에 있는 것을 그대로 옮긴다 */
+.ovw { flex:none; margin:10px 10px 6px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--box); display:flex; flex-direction:column; align-items:flex-start; gap:6px; min-width:0 }
+.ovw .oh { font-size:11px; color:var(--t3) }
+.ovw .og { font-size:13px; line-height:1.45; color:var(--t); text-align:left; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere } .ovw .og:hover { color:var(--w) }
+.ovw .onone { font-size:12px; line-height:1.45; color:var(--t2); text-align:left } .ovw .onone:hover { color:var(--t) }
+.ovw .om, .ovw .or { display:flex; flex-wrap:wrap; align-items:center; gap:2px 5px; font-size:12px; color:var(--t3); min-width:0; max-width:100% }
+.ovw .om b { color:var(--t); font-weight:600 } .ovw .om .past { color:var(--err) }
+.ovw .om button, .ovw .or button { color:var(--t2); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap } .ovw .om button:hover, .ovw .or button:hover { color:var(--w) }
+.ovw .os { font-size:11px; color:var(--t3) } .ovw .tskel { padding:2px 0; width:100% }
+/* 할 일 칸 — 내용만큼, 접힌 채로는 패널의 45% 까지(px 는 `ClampSec` 이 잰다). 잘리면 아래를 흐리고 «＋N 더» */
+.sec.tclamp { flex:0 1 auto; position:relative } .panel > .sec.grow { min-height:160px }
+.sec.tclamp:not(.all) > .secb { overflow:hidden }
+.sec.tclamp.cut > .secb { -webkit-mask-image:linear-gradient(to bottom, #000 calc(100% - 44px), transparent); mask-image:linear-gradient(to bottom, #000 calc(100% - 44px), transparent) }
+.tmore { position:absolute; right:10px; bottom:6px; z-index:1; height:22px; padding:0 9px; border:1px solid var(--line2); border-radius:999px; background:var(--box); font-size:12px; color:var(--t2) } .tmore:hover { color:var(--w) }
+.tless { flex:none; align-self:flex-end; margin:2px 10px 6px; height:22px; padding:0 9px; font-size:12px; color:var(--t3) } .tless:hover { color:var(--t) }
+/* 도구 막대 — 루틴 N · 명령 · 스킬 · ⋯. 드물게 쓰는 것이라 한 줄로 내려 두고, 누르면 그 내용이 뜬다 */
+.pfoot.ptools { padding:5px 8px calc(var(--sab) + 5px); gap:2px; color:var(--t2) }
+.ptools .tb { display:inline-flex; align-items:center; gap:5px; flex:none; height:26px; padding:0 8px; border-radius:6px; font-size:12px; color:var(--t2); white-space:nowrap } .ptools .tb:hover, .ptools .tb.on { background:var(--hover); color:var(--w) }
+.ptools .tb b { font-weight:600; color:var(--t) } .ptools .tb b.bad { color:var(--err) }
+.ptools .sp { flex:1 } .ptools .tb.more { width:26px; padding:0; justify-content:center }
+.pfoot.ptools.sm { padding:2px 8px; opacity:1 }
+.app.phone .ptools .tb { height:44px; padding:0 12px; font-size:14px } .app.phone .ptools .tb.more { width:44px; padding:0 }
+.app.phone .ovw { margin:10px 10px 8px; padding:12px 14px; gap:8px } .app.phone .ovw .og { font-size:16px } .app.phone .ovw .onone, .app.phone .ovw .om, .app.phone .ovw .or { font-size:14px } .app.phone .ovw .oh, .app.phone .ovw .os { font-size:12px }
+.app.phone .ovw .om button, .app.phone .ovw .or button { min-height:32px; display:inline-flex; align-items:center } .app.phone .ovw .om, .app.phone .ovw .or { gap:0 6px }
+.spop.rtpop { width:260px } .spop.cmdpop { width:300px }
+.spop.rtpop .kv { padding:4px 12px } .spop.rtpop .kv .rwhen { flex:none; font-size:11px; color:var(--t3) }
+.spop.cmdpop { padding:4px 0 } .spop.cmdpop .ph { display:flex; align-items:center; gap:6px; padding:2px 6px 2px 12px; font-size:12px; color:var(--t3); flex:none } .spop.cmdpop .ph .sp { flex:1 }
+.spop.cmdpop .hsec { padding:0 0 2px; max-height:min(46vh, 420px) } .spop.cmdpop .hz, .spop.cmdpop .kv { padding:4px 12px }

@@ -425,8 +425,10 @@ export async function ebPerm({ base, root, data, claudeCfg, botId, botAbs, br, c
       for (const [x, phone] of [[D, false], [P, true]]) {
         const pg = x.pg; await pg.goto(`${base}/#bot=${botId}&s=${K.ui}`); await pg.reload(); await pg.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(400)
         if (phone) { await pg.tap('.tabbar [data-tab="files"]'); await wait(500) }
-        const kv = () => pg.evaluate(() => { const b = [...document.querySelectorAll('.panel button.kv')].find((e) => /EB 화면 루틴/.test(e.textContent ?? '')); if (b) b.click(); return !!b })
-        if (!(await kv())) { await pg.evaluate(() => { const h = [...document.querySelectorAll('.panel .sech')].find((e) => /루틴/.test(e.textContent ?? '')); h?.click() }); await wait(300); must(await kv(), '패널에 루틴 줄이 없다') }
+        // 오른쪽 패널(2026-11-14) — 루틴 줄은 패널 도구 막대의 «루틴 N» 단추가 여는 목록에 있다
+        await pg.click('.panel .ptools .tb.rt'); await pg.waitForSelector('.spop.rtpop button.kv', { timeout: 3000 }); await wait(300)
+        const kv = () => pg.evaluate(() => { const b = [...document.querySelectorAll('.spop.rtpop button.kv')].find((e) => /EB 화면 루틴/.test(e.textContent ?? '')); if (b) b.click(); return !!b })
+        must(await kv(), '도구 막대의 루틴 목록에 루틴 줄이 없다')
         await pg.waitForSelector('.modal.rted [data-approve="auto"]', { timeout: 5000 }); await wait(300)
         const b = await pg.evaluate(() => { const list = [...document.querySelectorAll('[data-approve]')].map((e) => ({ v: e.dataset.approve, on: e.classList.contains('on'), t: e.querySelector('b')?.textContent ?? '', r: Math.round(e.getBoundingClientRect().right), w: Math.round(e.getBoundingClientRect().width) })); document.querySelector('[data-approve="auto"]').scrollIntoView({ block: 'center' }); return { list, sw: document.documentElement.scrollWidth, vw: innerWidth } })
         must(JSON.stringify(b.list.map((e) => e.v)) === JSON.stringify(['always', 'auto', 'folder', 'readonly']) && b.list.find((e) => e.v === (phone ? 'auto' : 'always')).on && b.list.filter((e) => e.on).length === 1 && /자동/.test(b.list.find((e) => e.v === 'auto').t), '선택지(데스크톱은 기본 «바로», 폰은 데스크톱이 저장한 «자동») ' + JSON.stringify(b.list))

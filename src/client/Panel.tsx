@@ -9,6 +9,7 @@ import { api } from './api'
 import { isDoneSection, orderItems, orderSections, peekDone, staleProposal } from '../core/todo'
 import { dueChipOf, dueText, quickDues, splitDue, bareDayAsk } from '../core/due'
 import { sessionUnread } from '../core/unread'
+import type { Overview } from '../core/overview'
 import { ACT_COLOR, ACT_ICON, ACT_LABEL, LONG, actOf, buzz, slotOf, useSwipeCfg, type SwipeAct } from './swipe'
 import { HOLD_MS, decide, dropIndex } from './gesture'
 import { FolderBot, Icon, Mid } from './FolderBot'
@@ -23,72 +24,173 @@ import { scoreName } from '../core/search'
 import { fmtElapsed, fmtTime, useStore } from './store'
 import { localBridge, openOnThisDevice } from './localOpen'
 
-export interface SecH { sessions: number; todo: number }
 interface Node { name: string; rel: string; dir: boolean; mtime: number; size?: number; harness?: boolean; botId?: string }
 
-/** 오른쪽 패널 — 세션 · 할 일(Inbox) · 파일(실제 트리) · 루틴. 섹션 사이 선이 드래그 핸들 */
-export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAttach, onMention, onStartAt, onNewFolderAt, touched, filesTick, secH, onSecH, onCollapse, say, refresh, activeDoc, onDragY, focusSec, phone, onBack, only }: { bot: Bot; sessions: SessionInfo[]; sessionId?: string; go: (b: string, sid?: string) => void; onOpenFile: (rel: string, pin?: boolean) => void; onTalk: (t: string) => void; onAttach: (rel: string, dir?: boolean) => void; onMention: (rel: string) => void; onStartAt: (vaultRel: string, botId?: string) => void; onNewFolderAt: (vaultRel: string) => void; phone?: boolean; onBack?: () => void;
+/** 도구 막대가 여는 것 — 루틴 · 명령·스킬 · ⋯(이 봇) */
+type ToolPop = { k: 'rt' | 'cmd' | 'more'; at: Anchor }
+/** 할 일 칸은 접힌 채로 패널 높이의 이만큼까지만 쓴다 — 넘치면 «＋N 더» */
+const TODO_CAP = 0.45
+
+/**
+ * 오른쪽 패널 — «이 폴더에서»: 개요 · 할 일(Inbox) · 파일(실제 트리) + 도구 막대(루틴 · 명령·스킬 · ⋯).
+ *
+ * 🔴 **가운데는 대화, 오른쪽은 폴더** (2026-11-12 Dave «가안» · 11/13 카드 «이대로 만든다»). 세션은 채팅 머리줄 아래의
+ *    세션 줄(`SessionStrip.tsx`)로, 뒤에서 도는 일은 진행 줄의 팝오버(`Tasks.tsx`)로 갔다.
+ * 🔴 **칸 높이를 손으로 맞추지 않는다** — 종전에는 할 일 칸이 고정 높이(끌어서 조절)여서 잘린 줄이 표시 없이 숨었다(11/12 리뷰).
+ *    이제 할 일 칸은 내용만큼, 최대 패널의 45% 까지 쓰고 잘리면 «＋N 더» 로 말한다. 파일 칸이 남는 높이를 쓴다.
+ * 🔴 **드물게 쓰는 것은 아래 도구 막대로** — 종전의 «명령 · 스킬» 절 · «루틴» 절 · 발의 «이 봇» 줄. 누르면 그 내용이 뜬다.
+ */
+export function Panel({ bot, sessions, go, onOpenFile, onTalk, onAttach, onMention, onStartAt, onNewFolderAt, touched, filesTick, onCollapse, say, refresh, activeDoc, focusSec, phone, onBack, only }: { bot: Bot; sessions: SessionInfo[]; sessionId?: string; go: (b: string, sid?: string) => void; onOpenFile: (rel: string, pin?: boolean) => void; onTalk: (t: string) => void; onAttach: (rel: string, dir?: boolean) => void; onMention: (rel: string) => void; onStartAt: (vaultRel: string, botId?: string) => void; onNewFolderAt: (vaultRel: string) => void; phone?: boolean; onBack?: () => void;
   /**
    * AD · **폰의 「할 일」 탭과 「폴더」 탭은 다른 화면이다** (2026-09-23 Dave: *«투두랑 폴더를 클릭했을 때 사실상
-   * 똑같은 메뉴가 나오는데 그러면 의미가 없잖아»*). `only` 를 주면 그 절 하나만 꽉 채워 보인다 —
-   * 세션·명령·스킬·루틴은 폰에서 볼 일이 없어 뺀다(데스크톱은 종전 그대로 전부 보인다).
+   * 똑같은 메뉴가 나오는데 그러면 의미가 없잖아»*). `only` 를 주면 그 화면만 보인다 —
+   * 「할 일」 탭은 할 일 하나, 「폴더」 탭은 개요 · 파일 · 도구 막대(루틴 · ⋯). 명령·스킬은 폰에서 볼 일이 없어 뺀다(9/23).
    */
-  only?: 'todo' | 'files'; touched: string[]; filesTick?: number; secH: SecH; onSecH: (h: SecH) => void; onCollapse: () => void; say: Say; refresh: () => Promise<void>; activeDoc: string | null; onDragY: (on: boolean) => void; focusSec?: { sec: string; n: number } | null }) {
-  const { s, loadTodo, dispatch } = useStore()
-  const [open, setOpen] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem(`fb:secs:${bot.id}`) ?? '') } catch { return { sessions: true, todo: true, files: true, routines: false } } })   // ⚠ `tasks`(뒤에서 도는 일)는 여기 없어도 펼친 채로 시작한다 — 아래 `open.tasks !== false`
-  useEffect(() => { try { setOpen(JSON.parse(localStorage.getItem(`fb:secs:${bot.id}`) ?? '')) } catch { setOpen({ sessions: true, todo: true, files: true, routines: false }) } }, [bot.id])
+  only?: 'todo' | 'files'; touched: string[]; filesTick?: number; onCollapse: () => void; say: Say; refresh: () => Promise<void>; activeDoc: string | null; focusSec?: { sec: string; n: number } | null }) {
+  const { s, loadTodo } = useStore()
+  const [open, setOpen] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem(`fb:secs:${bot.id}`) ?? '') } catch { return { todo: true, files: true } } })
+  useEffect(() => { try { setOpen(JSON.parse(localStorage.getItem(`fb:secs:${bot.id}`) ?? '')) } catch { setOpen({ todo: true, files: true }) } }, [bot.id])
   useEffect(() => { localStorage.setItem(`fb:secs:${bot.id}`, JSON.stringify(open)) }, [open, bot.id])
   const tog = (k: string) => setOpen({ ...open, [k]: !open[k] })
-  /**
-   * AG · **탭이 곧 그 절이면 늘 펼쳐져 있다** — 접는 손잡이(∨)와 실제로 보이는 것이 **같은 값**을 쓴다.
-   * 「할 일」 탭의 세션은 접을 수 있되 기본이 펼침이다(여러 세션이 보여야 한다는 것이 이 탭의 요점이라).
-   */
-  const secOn = (k: 'sessions' | 'todo' | 'files') => (only === k ? true : only === 'todo' && k === 'sessions' ? open.sessions !== false : !!open[k])
+  /** AG · **탭이 곧 그 절이면 늘 펼쳐져 있다** — 접는 손잡이(∨)와 실제로 보이는 것이 **같은 값**을 쓴다 */
+  const secOn = (k: 'todo' | 'files') => (only === k ? true : !!open[k])
   // 아이콘 열에서 누른 섹션은 펼쳐진 채로 온다
   useEffect(() => { if (focusSec) setOpen((o) => ({ ...o, [focusSec.sec]: true })) }, [focusSec?.n])
-  const [routines, setRoutines] = useState<boolean | string>(false); const [menu, setMenu] = useState<Anchor | null>(null)
+  const [routines, setRoutines] = useState<boolean | string>(false)
+  /** 도구 막대의 뜨는 것은 한 번에 하나 — 같은 단추를 다시 누르면 닫힌다(누르는 순간 열려 있었는지로 가린다 · 바깥 누르기가 먼저 닫기 때문) */
+  const [pop, setPop] = useState<ToolPop | null>(null); const popDown = useRef('')
+  const tb = (k: ToolPop['k'], right = false) => ({ onMouseDown: () => { popDown.current = pop?.k ?? '' }, onClick: (e: React.MouseEvent<HTMLButtonElement>) => { const was = (e.detail === 0 ? pop?.k ?? '' : popDown.current) === k; setPop(was ? null : { k, at: anchorOf(e.currentTarget, { right, gap: 6 }) }) } })
+  useEffect(() => { setPop(null) }, [bot.id])
   const todos = (s.todos[bot.id] ?? [])
-  const dragY = (k: 'sessions' | 'todo') => (e: React.PointerEvent) => { e.preventDefault(); onDragY(true); const y0 = e.clientY; const h0 = secH[k]; const panel = (e.currentTarget as HTMLElement).closest('.panel'); const room = panel ? panel.getBoundingClientRect().height - 0 - 260 : 420; /* 파일 트리 160 + 헤더·루틴·푸터 100 는 남긴다 */ const cap = Math.max(56, Math.min(420, room)); const mv = (ev: PointerEvent) => onSecH({ ...secH, [k]: Math.max(56, Math.min(cap, h0 + ev.clientY - y0)) }); const up = () => { onDragY(false); window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up) }; window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up) }
+  const rtBad = bot.routines.some((r) => r.lastError && r.enabled !== false)
+  const unreadAny = sessions.some((x) => sessionUnread(x.lastReplyAt, x.readAt))
+  const readAll = async () => { const r = await api<{ read: number }>(`/bots/${bot.id}/read-all`, { body: {} }); say(r.read ? `${r.read}개 세션을 읽음으로 했어요` : '안 읽은 세션이 없어요') }
   return <div className="col side panel" style={{ width: '100%' }}>
     <div className="hdr">{phone ? <button className="rb glassb" onClick={onBack} title="봇 목록"><Icon n="list" size={20} /></button> : null}<span className="ttl">{only === 'todo' ? '할 일' : only === 'files' ? '폴더' : bot.orchestrator ? '이 볼트에서' : '이 폴더에서'}</span><span className="sp" />{!phone ? <div className="acts"><button className="ib on" onClick={onCollapse} title="패널 접기 (⌘⇧B)"><Icon n="panelr" size={14} /></button></div> : null}</div>
-    {/* 세션은 채팅 머리줄 아래의 세션 줄로 갔다 (2026-11-13 Dave 카드 · 가안) — `SessionStrip.tsx`. 뒤에서 도는 일은 진행 줄의 팝오버(`Tasks.tsx`) */}
-    {/* 할 일 / Inbox — `only='todo'` 면 이 절 하나가 화면을 다 쓴다 */}
-    {only === 'files' ? null : <div className={only === 'todo' ? 'sec grow' : 'sec fix'} style={!only && open.todo ? { height: secH.todo } : undefined}>
+    {/* 개요 — 이 폴더가 어디까지 왔나. 오케스트레이터(«이 볼트에서»)는 자리를 비운다(볼트 요약을 둘지는 미정) · 폰 「할 일」 탭에는 없다 */}
+    {!bot.orchestrator && only !== 'todo' ? <OverviewCard bot={bot} sessions={sessions} todos={todos} filesTick={filesTick} onOpenFile={onOpenFile} onTalk={onTalk} go={go} showTodo={() => setOpen((o) => ({ ...o, todo: true }))} /> : null}
+    {/* 할 일 / Inbox — `only='todo'` 면 이 절 하나가 화면을 다 쓴다. 그 밖에는 내용만큼(최대 45%) · 잘리면 «＋N 더» */}
+    {only === 'files' ? null : <ClampSec clamp={!only && secOn('todo')} all={!!open.todoAll} setAll={(v) => setOpen((o) => ({ ...o, todoAll: v }))} grow={only === 'todo'}>
       {bot.orchestrator ? <InboxSec open={secOn('todo')} tog={() => tog('todo')} onSend={onTalk} /> : <TodoSec bot={bot} items={todos} loading={!s.todos[bot.id]} open={secOn('todo')} tog={() => tog('todo')} onDelegate={(t) => onTalk(`${t.title}${t.desc ? ` — ${t.desc}` : ''}`)} onOpenFile={onOpenFile} reload={() => loadTodo(bot.id)} phone={phone} />}
-    </div>}
-    {only ? null : <div className="divy" onPointerDown={dragY('todo')} onDoubleClick={() => onSecH({ ...secH, todo: 84 })} />}
-    {/* 파일 — `only='files'` 면 이 절 하나가 화면을 다 쓴다 */}
+    </ClampSec>}
+    {only ? null : <div className="divy" />}
+    {/* 파일 — 남는 높이를 다 쓴다 */}
     {only === 'todo' ? null : <div className="sec grow">
       <Tree bot={bot} phone={phone} open={secOn('files')} tog={() => tog('files')} onOpen={onOpenFile} onAttach={onAttach} onMention={onMention} onStartAt={onStartAt} onNewFolderAt={onNewFolderAt} touched={touched} tick={filesTick} say={say} active={activeDoc} />
     </div>}
-    {only ? null : <div className="divy" style={{ cursor: 'default' }} />}
-    {/* 지침 · 하네스 — 폴더에 딸린 것의 집 (V25). 설정의 «하네스» 칸은 훑는 표일 뿐이다 */}
-    {/* V (2026-09-22 Dave: «커맨드랑 스킬을 따로 구분하지 말고 한 공간에서 한 번에») — 지침·스킬·커넥터·슬래시 명령이 한 칸이다 */}
-    {!bot.orchestrator && !only ? <div className="sec fix">
-      <HarnessSec bot={bot} open={!!open.harness} tog={() => tog('harness')} onOpenFile={onOpenFile} say={say} filesTick={filesTick} />
-    </div> : null}
-    {only ? null : <div className="divy" style={{ cursor: 'default' }} />}
     {/**
-     * 🔴 **AR · 루틴은 폰의 「폴더」 탭에도 있다** (2026-09-24 Dave: *«폴더 섹션에 모바일에서도 루틴 메뉴 추가해줘»*).
-     *    종전에는 폰에서 통째로 감췄다 — 「만들고 고치는 자리는 데스크톱과 채팅」이라고 봤기 때문인데,
-     *    **루틴이 도는지 보고 손보는 일**은 폰에서 더 자주 생긴다(집 밖에서 «아침 브리핑 왜 안 왔지»).
-     * ⚠ 「할 일」 탭에는 여전히 두지 않는다 — 그 탭은 **지금 내가 할 일** 하나만 담는 자리다(AD 계약).
+     * 도구 막대 — 루틴 N · 명령 · 스킬 · ⋯(이 봇).
+     * 🔴 **AR · 루틴은 폰의 「폴더」 탭에도 있다** (2026-09-24 Dave: *«폴더 섹션에 모바일에서도 루틴 메뉴 추가해줘»*) — 「할 일」 탭에는 두지 않는다(그 탭은 지금 내가 할 일만 · AD).
+     * 🔴 **명령 · 스킬은 폰에서 뺀다** (2026-09-23 Dave: *«하네스나 스킬 같은 건 모바일에서 보고 쓸 일이 없으니 제외»*) — 11/13 목업의 폰 그림에는 있었지만 날짜를 박아 정한 쪽을 따랐다.
+     * 🔴 **AD · 「지우기 · 은퇴」는 폴더 탭 아래에만 작게** (2026-09-23 Dave) — ⋯ 안에 있다.
      */}
-    {only === 'todo' ? null : <div className="sec fix">
-      <button className="sech" onClick={() => tog('routines')}><Icon n={open.routines ? 'chevd' : 'chev'} size={9} /><span>루틴</span><span className="c">{bot.routines.length}</span></button>
-      {open.routines ? <div style={{ padding: '0 0 6px' }}>{/* CF-4 · 줄을 누르면 그 루틴이 골라진 채 열린다 · cron 원문 대신 사람 말 */}{bot.routines.map((r) => <button key={r.name} className="kv" onClick={() => setRoutines(r.name)}><Icon n="clock" size={12} color={r.lastError ? 'var(--err)' : 'var(--t3)'} /><span className="n">{r.name}</span><span style={{ fontSize: 11, color: r.enabled === false ? 'var(--t3)' : 'var(--t3)' }}>{r.enabled === false ? '꺼짐' : `${describeCron(r.cron)}${onceDone(r.cron) ? (r.lastError ? ' · 놓침' : ' · 끝남') : ''}`}</span></button>)}<button className="kv" onClick={() => setRoutines(true)}><Icon n="plus" size={12} /><span className="n">{bot.routines.length ? '루틴 편집' : '루틴 추가'}</span></button></div> : null}
+    {only === 'todo' ? null : <div className={`pfoot ptools ${only ? 'sm' : ''}`}>
+      <button className={`tb rt ${pop?.k === 'rt' ? 'on' : ''}`} title="이 폴더의 루틴" {...tb('rt')}>루틴 <b className={rtBad ? 'bad' : ''}>{bot.routines.length}</b></button>
+      {!bot.orchestrator && !only ? <button className={`tb cmd ${pop?.k === 'cmd' ? 'on' : ''}`} title="이 폴더에서 쓸 수 있는 명령 · 에이전트 · 스킬 · 커넥터" {...tb('cmd')}>명령 · 스킬</button> : null}
+      <span className="sp" />
+      <button className={`tb more ${pop?.k === 'more' ? 'on' : ''}`} title={bot.orchestrator ? '이 봇 — 모두 읽음 · 현황 묻기' : '이 봇 — 모두 읽음 · 색 · 빼기 · 은퇴'} aria-label="이 봇" {...tb('more', true)}><Icon n="more" size={14} /></button>
     </div>}
-    {/* AD · 「지우기 · 은퇴」는 **폴더 탭 아래에만 작게** 남긴다 (2026-09-23 Dave) — 할 일 탭에는 없다 */}
-    {only === 'todo' ? null : <div className={`pfoot ${only ? 'sm' : ''}`}><button style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'inherit' }} onClick={(e) => setMenu(menu ? null : anchorOf(e.currentTarget as HTMLElement, { gap: 6 }))}><Icon n="more" size={12} />이 봇{bot.orchestrator ? '' : ' · 색 · 지우기 · 은퇴'}</button>
-      {menu && !bot.orchestrator ? <Float at={menu} onClose={() => setMenu(null)}><div onClick={() => setMenu(null)} style={{ display: 'contents' }}>{sessions.some((x) => sessionUnread(x.lastReplyAt, x.readAt)) ? <button onClick={async () => { const r = await api<{ read: number }>(`/bots/${bot.id}/read-all`, { body: {} }); say(r.read ? `${r.read}개 세션을 읽음으로 했어요` : '안 읽은 세션이 없어요') }}><Icon n="check" size={13} /><span>모두 읽음</span></button> : null}<button onClick={() => pickColor(bot)}><span className="csdot" style={{ background: bot.color }} /><span style={{ flex: 1 }}>색 바꾸기</span></button><button onClick={async () => { await api(`/bots/${bot.id}/stop`, { body: {} }); say(`${bot.name} 을 레일에서 덜어냈어요`); await refresh(); go('orch') }}><Icon n="x" size={13} /><span style={{ flex: 1 }}>지우기 (연결 해지)</span><span className="k">폴더 유지</span></button><button className="warn" onClick={async () => { if (!(await askConfirm({ title: `${bot.name} 봇을 은퇴시킬까요?`, body: '폴더를 Archive 로 옮기고 봇을 쉬게 합니다. 세션 기록은 보관돼요.', ok: '은퇴', danger: true }))) return; try { await api(`/bots/${bot.id}/retire`, { body: {} }); say('옮기고 은퇴했어요'); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="archive" size={13} /><span style={{ flex: 1 }}>Archive 로 이동 (은퇴)</span></button></div></Float> : null}
-      {menu && bot.orchestrator ? <Float at={menu} onClose={() => setMenu(null)}><div onClick={() => setMenu(null)} style={{ display: 'contents' }}>{sessions.some((x) => sessionUnread(x.lastReplyAt, x.readAt)) ? <button onClick={async () => { const r = await api<{ read: number }>(`/bots/${bot.id}/read-all`, { body: {} }); say(r.read ? `${r.read}개 세션을 읽음으로 했어요` : '안 읽은 세션이 없어요') }}><Icon n="check" size={13} /><span>모두 읽음</span></button> : null}<button onClick={() => onTalk('지금 뭐 돌고 있어? 봇별로 한 줄씩.')}><Icon n="sub" size={13} /><span>현황 물어보기</span></button></div></Float> : null}
-    </div>}
+    {pop?.k === 'rt' ? <Float at={pop.at} onClose={() => setPop(null)} className="spop rtpop" width={260}><div onClick={() => setPop(null)} style={{ display: 'contents' }}>
+      {/* CF-4 · 줄을 누르면 그 루틴이 골라진 채 열린다 · cron 원문 대신 사람 말 */}
+      {bot.routines.map((r) => <button key={r.name} className="kv" onClick={() => setRoutines(r.name)}><Icon n="clock" size={12} color={r.lastError ? 'var(--err)' : 'var(--t3)'} /><span className="n">{r.name}</span><span className="rwhen">{r.enabled === false ? '꺼짐' : `${describeCron(r.cron)}${onceDone(r.cron) ? (r.lastError ? ' · 놓침' : ' · 끝남') : ''}`}</span></button>)}
+      {bot.routines.length ? <hr className="shr" /> : null}
+      <button className="kv" onClick={() => setRoutines(true)}><Icon n="plus" size={12} /><span className="n">{bot.routines.length ? '루틴 편집' : '루틴 추가'}</span></button>
+    </div></Float> : null}
+    {pop?.k === 'cmd' ? <Float at={pop.at} onClose={() => setPop(null)} className="spop cmdpop" width={300}><HarnessList bot={bot} onOpenFile={(rel) => { setPop(null); onOpenFile(rel) }} say={say} filesTick={filesTick} close={() => setPop(null)} /></Float> : null}
+    {pop?.k === 'more' ? <Float at={pop.at} onClose={() => setPop(null)}><div onClick={() => setPop(null)} style={{ display: 'contents' }}>
+      {unreadAny ? <button onClick={() => void readAll()}><Icon n="check" size={13} /><span>모두 읽음</span></button> : null}
+      {bot.orchestrator ? <button onClick={() => onTalk('지금 뭐 돌고 있어? 봇별로 한 줄씩.')}><Icon n="sub" size={13} /><span>현황 물어보기</span></button> : <>
+        <button onClick={() => pickColor(bot)}><span className="csdot" style={{ background: bot.color }} /><span style={{ flex: 1 }}>색 바꾸기</span></button>
+        <button onClick={async () => { await api(`/bots/${bot.id}/stop`, { body: {} }); say(`${bot.name} 을 레일에서 덜어냈어요`); await refresh(); go('orch') }}><Icon n="x" size={13} /><span style={{ flex: 1 }}>지우기 (연결 해지)</span><span className="k">폴더 유지</span></button>
+        <button className="warn" onClick={async () => { if (!(await askConfirm({ title: `${bot.name} 봇을 은퇴시킬까요?`, body: '폴더를 Archive 로 옮기고 봇을 쉬게 합니다. 세션 기록은 보관돼요.', ok: '은퇴', danger: true }))) return; try { await api(`/bots/${bot.id}/retire`, { body: {} }); say('옮기고 은퇴했어요'); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="archive" size={13} /><span style={{ flex: 1 }}>Archive 로 이동 (은퇴)</span></button>
+      </>}
+    </div></Float> : null}
     {routines ? <RoutineSheet bot={bot} pick={typeof routines === 'string' ? routines : undefined} onClose={() => setRoutines(false)} /> : null}
   </div>
 }
 
 /**
- * 지침 · 하네스 (V25 · 2026-09-13 Dave 승인) — «이 폴더에서 실제로 쓸 수 있는 것».
+ * 개요 칸 — 이 폴더가 어디까지 왔나 (2026-11-13 Dave 카드 · 목업 «평소»).
+ *
+ * 🔴 **지어내지 않는다.** 호스트가 폴더에 있는 것만 모아 준다(`GET /bots/:id/overview` · `core/overview`) — 모델을 부르지 않는다.
+ *    첫 줄은 `state.md` 의 «현재 목표» 줄 그대로, 줄 끝에 출처 파일과 시각.
+ * 🔴 **`state.md` 가 없어도 칸을 비우지 않는다** — «없어요 — 봇에게 정리를 시키기» 한 줄이 선다.
+ * ⚠ 세션 상태 · 할 일 · 파일이 바뀌면 다시 받는다. 받는 동안 옛 값을 그대로 둔다(깜빡이지 않게) — 다른 봇의 값만 안 보인다.
+ */
+function OverviewCard({ bot, sessions, todos, filesTick, onOpenFile, onTalk, go, showTodo }: { bot: Bot; sessions: SessionInfo[]; todos: TodoItem[]; filesTick?: number; onOpenFile: (rel: string) => void; onTalk: (t: string) => void; go: (b: string, sid?: string) => void; showTodo: () => void }) {
+  const [got, setGot] = useState<{ id: string; ov: Overview } | null>(null)
+  const sig = useMemo(() => `${sessions.map((x) => (x.state === 'awaiting_input' ? x.id : '')).join('')}|${todos.map((t) => `${t.done ? 1 : 0}${t.proposed ? 1 : 0}${t.due ?? ''}`).join(',')}`, [sessions, todos])
+  useEffect(() => {
+    let live = true
+    const t = window.setTimeout(() => { void api<Overview>(`/bots/${bot.id}/overview`).then((ov) => { if (live) setGot({ id: bot.id, ov }) }).catch(() => { /* 못 받으면 옛 값을 둔다 */ }) }, 250)
+    return () => { live = false; window.clearTimeout(t) }
+  }, [bot.id, sig, filesTick])
+  const ov = got && got.id === bot.id ? got.ov : null
+  if (!ov) return <div className="ovw" aria-busy="true"><div className="oh">개요</div><div className="tskel" role="status" aria-label="개요를 읽는 중"><div className="skel" style={{ width: '86%' }} /><div className="skel" style={{ width: '58%' }} /></div></div>
+  const n = ov.mine.asks + ov.mine.proposed
+  const due = ov.mine.due ? dueChipOf(ov.mine.due) : null
+  const waiting = sessions.find((x) => x.state === 'awaiting_input')
+  const src = [ov.hasState ? 'state.md' : '', todos.length ? 'todo.md' : ''].filter(Boolean)
+  const at = ov.goalAt ? stamp(ov.goalAt) : ''
+  return <div className="ovw">
+    <div className="oh">개요</div>
+    {!ov.hasState ? <button className="onone" onClick={() => onTalk('이 폴더의 state.md 를 만들어 지금 상태를 정리해 줘.')}>state.md 가 없어요 — 봇에게 정리를 시키기</button>
+      : ov.goal ? <button className="og" title="state.md 열기" onClick={() => onOpenFile('state.md')}>{ov.goal}</button>
+        : <button className="onone" onClick={() => onOpenFile('state.md')}>state.md 에 «현재 목표» 줄이 없어요 — 열어서 적기</button>}
+    <div className="om">
+      {n ? <span className="dot wait" /> : null}<b>{n ? `내가 나설 곳 ${n}` : '내가 나설 곳 없음'}</b>
+      {ov.mine.asks ? <button title="답을 기다리는 세션으로" onClick={() => { if (waiting) go(bot.id, waiting.id) }}>· 답 대기 {ov.mine.asks}</button> : null}
+      {ov.mine.proposed ? <button title="봇이 올린 제안 보기" onClick={showTodo}>· 제안 {ov.mine.proposed}</button> : null}
+      {due ? <span className={due.tone === 'past' ? 'past' : ''} title={ov.mine.due}>· 마감 {due.text}</span> : null}
+    </div>
+    {ov.recent.length ? <div className="or"><span>최근 만든 것</span>{ov.recent.map((r) => <button key={r.rel} title={r.rel} onClick={() => onOpenFile(r.rel)}>· {r.rel.split('/').pop()}</button>)}</div> : null}
+    {src.length || at ? <div className="os">{[...src, at].filter(Boolean).join(' · ')}</div> : null}
+  </div>
+}
+const p2 = (x: number) => String(x).padStart(2, '0')
+/** 개요 발의 시각 — «11/13 15:40»(24시간제) */
+const stamp = (t: number): string => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${p2(d.getHours())}:${p2(d.getMinutes())}` }
+
+/**
+ * 잘린 칸은 잘렸다고 말한다 — 할 일 칸의 틀 (2026-11-13 Dave 카드 · 11/12 리뷰 «311px 중 92px 만 보이는데 표시가 없다»).
+ *
+ * 접힌 채로는 내용만큼, 최대 패널 높이의 45% 까지. 넘치면 아래를 흐리고 «＋N 더» 를 세운다(N = 가려진 할 일 줄 수).
+ * 누르면 칸이 펼쳐져 파일 칸의 최소 높이만 남기고 다 쓰고(그래도 넘치면 칸 안에서 스크롤), «접기» 가 선다. 펼친 것은 봇마다 기억한다.
+ * ⚠ 높이는 px 로 잰다 — `max-height:45%` 는 부모 높이가 «정해진 값» 일 때만 듣는데 패널은 늘어나는 칸이다.
+ */
+function ClampSec({ clamp, all, setAll, grow, children }: { clamp: boolean; all: boolean; setAll: (v: boolean) => void; grow?: boolean; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [cap, setCap] = useState(0)
+  const [cut, setCut] = useState<{ over: boolean; n: number }>({ over: false, n: 0 })
+  useEffect(() => {
+    if (!clamp) { setCut({ over: false, n: 0 }); return }
+    const el = ref.current; const panel = el?.closest('.panel') as HTMLElement | null; if (!el || !panel) return
+    const measure = () => {
+      const c = Math.max(96, Math.round(panel.getBoundingClientRect().height * TODO_CAP)); setCap(c)
+      const body = el.querySelector(':scope > .secb') as HTMLElement | null; if (!body) { setCut({ over: false, n: 0 }); return }
+      // 펼친 채로는 «접으면 잘리나»(= 접기 단추를 세울지)를, 접힌 채로는 «지금 잘렸나» 를 본다 — 창이 낮으면 45% 보다 덜 받을 수도 있다
+      if (all) { const head = body.getBoundingClientRect().top - el.getBoundingClientRect().top; setCut({ over: head + body.scrollHeight > c + 1, n: 0 }); return }
+      body.scrollTop = 0
+      if (body.scrollHeight <= body.clientHeight + 1) { setCut({ over: false, n: 0 }); return }
+      const edge = body.getBoundingClientRect().bottom
+      let n = 0; body.querySelectorAll('.todo:not(.addbtn):not(.add), .tprop').forEach((r) => { if (r.getBoundingClientRect().bottom > edge + 1) n++ })
+      setCut((p) => (p.over && p.n === n ? p : { over: true, n }))
+    }
+    measure()
+    const ro = new ResizeObserver(measure); ro.observe(panel); ro.observe(el)
+    const mo = new MutationObserver(measure); mo.observe(el, { childList: true, subtree: true, characterData: true })
+    return () => { ro.disconnect(); mo.disconnect() }
+  }, [clamp, all])
+  const folded = clamp && cut.over && !all
+  return <div ref={ref} className={`sec ${grow ? 'grow' : 'tclamp'} ${folded ? 'cut' : ''} ${clamp && all ? 'all' : ''}`} style={clamp && !all && cap ? { maxHeight: cap } : undefined}>
+    {children}
+    {folded ? <button className="tmore" onClick={() => setAll(true)}>{cut.n ? `＋${cut.n} 더` : '더 보기'}</button> : null}
+    {clamp && all && cut.over ? <button className="tless" onClick={() => setAll(false)}>접기</button> : null}
+  </div>
+}
+
+/**
+ * 명령 · 스킬 (V25 · 2026-09-13 Dave 승인) — «이 폴더에서 실제로 쓸 수 있는 것». 도구 막대의 단추가 연다(2026-11-14).
  *
  * 🔴 **폴더별 하네스의 집은 여기다.** 설정에도 같은 내용의 표가 있지만 그건 전체를 훑는 용도고,
  *    «지금 어느 폴더 이야기인가» 가 붙어 있는 자리는 이 패널뿐이다 (Dave: «이건 어떻게 보여져야 할지 고민»).
@@ -96,15 +198,15 @@ export function Panel({ bot, sessions, sessionId, go, onOpenFile, onTalk, onAtta
  */
 const SCOPE_T: Record<HarnessItem['scope'], string> = { folder: '이 폴더', root: '볼트', user: '사용자', builtin: '내장' }
 interface CmdRow { name: string; desc: string; scope: 'folder' | 'root' | 'user'; rel: string | null }
-function HarnessSec({ bot, open, tog, onOpenFile, say, filesTick }: { bot: Bot; open: boolean; tog: () => void; onOpenFile: (rel: string) => void; say: Say; filesTick?: number }) {
+function HarnessList({ bot, onOpenFile, say, filesTick, close }: { bot: Bot; onOpenFile: (rel: string) => void; say: Say; filesTick?: number; close: () => void }) {
   const [hz, setHz] = useState<HarnessDetail | null>(null)
   const [cmds, setCmds] = useState<CmdRow[] | null>(null)
   /** EA · 이 봇이 부를 수 있는 에이전트 정의(`.claude/agents`) — 폴더 것과 사용자 것. 읽기만 한다 */
   const [agents, setAgents] = useState<AgentDef[] | null>(null)
   const [all, setAll] = useState(false)
-  useEffect(() => { if (!open) return; void api<HarnessDetail>(`/harness?rel=${encodeURIComponent(bot.rel)}`).then(setHz).catch(() => setHz(null)) }, [open, bot.rel])
-  useEffect(() => { if (!open) return; void api<CmdRow[]>(`/bots/${bot.id}/commands`).then(setCmds).catch(() => setCmds([])) }, [open, bot.id, filesTick])
-  useEffect(() => { if (!open) return; void api<AgentDef[]>(`/bots/${bot.id}/agents`).then(setAgents).catch(() => setAgents([])) }, [open, bot.id, filesTick])
+  useEffect(() => { void api<HarnessDetail>(`/harness?rel=${encodeURIComponent(bot.rel)}`).then(setHz).catch(() => setHz(null)) }, [bot.rel])
+  useEffect(() => { void api<CmdRow[]>(`/bots/${bot.id}/commands`).then(setCmds).catch(() => setCmds([])) }, [bot.id, filesTick])
+  useEffect(() => { void api<AgentDef[]>(`/bots/${bot.id}/agents`).then(setAgents).catch(() => setAgents([])) }, [bot.id, filesTick])
   const guides = hz ? [hz.claudeMd ? 'CLAUDE.md' : null, hz.agentsMd ? 'AGENTS.md' : null].filter(Boolean) as string[] : []
   /**
    * V · **한 목록에 명령·스킬·커넥터를 함께** (2026-09-22 Dave: «커맨드랑 스킬을 따로 구분하지 말고 한 공간에서 한 번에 볼 수는 없을까»).
@@ -124,13 +226,13 @@ function HarnessSec({ bot, open, tog, onOpenFile, say, filesTick }: { bot: Bot; 
     try { const r = await api<{ rel: string }>(`/bots/${bot.id}/commands`, { body: { name: name.trim().replace(/\.md$/, ''), scope: 'folder' } }); onOpenFile(r.rel) } catch (e) { say((e as Error).message) }
   }
   return <>
-    <button className="sech" onClick={tog}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>명령 · 스킬</span><span className="c">{hz || cmds ? guides.length + rows.length : ''}</span><span className="sp" /><span className="ib nsb" title="새 슬래시 명령" onClick={(e) => { e.stopPropagation(); void create() }}><Icon n="plus" size={12} /></span></button>
-    {open ? <div className="secb hsec cmds">
+    <div className="ph"><span>명령 · 스킬</span><span className="c">{hz || cmds ? guides.length + rows.length : ''}</span><span className="sp" /><button className="ib nsb" title="새 슬래시 명령" onClick={() => { close(); void create() }}><Icon n="plus" size={12} /></button></div>
+    <div className="hsec cmds">
       {guides.map((g) => <button className="hz" key={g} onClick={() => onOpenFile(g)}><Mark id={g === 'AGENTS.md' ? 'codex' : 'claude'} size={13} /><span className="n">{g}</span><span className="sc">지침 · 폴더</span></button>)}
       {shown.map((r) => <button className={`hz ${r.rel ? '' : 'ro'}`} key={r.key} title={r.rel ? '열어서 고치기' : `${r.kind} — 여기서는 못 고쳐요`} onClick={() => { if (r.rel) onOpenFile(r.rel) }}><Icon n={r.icon} size={13} color={r.folder ? 'var(--run)' : 'var(--t3)'} /><span className="n"><b>{r.name}</b>{r.desc ? <small> — {r.desc}</small> : null}</span><span className="sc">{r.kind} · {r.scope}</span></button>)}
       {(hz || cmds) && !rows.length ? <div className="kv" style={{ color: 'var(--t3)' }}>아직 없어요 — + 로 만들면 `/이름` 으로 부를 수 있어요</div> : null}
       {rows.length > 6 ? <button className="hz more" onClick={() => setAll(!all)}>{all ? '접기' : `+ ${rows.length - 6}개 더 보기`}</button> : null}
-    </div> : null}
+    </div>
   </>
 }
 

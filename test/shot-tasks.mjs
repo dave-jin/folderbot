@@ -89,8 +89,8 @@ try {
   await shot(dp, '04-데스크톱-접힌-패널')
   await dp.keyboard.press('Meta+Shift+B'); await dp.waitForSelector('.panel', { timeout: 4000 }); await wait(400)   // 다음 캡처(하네스 절)는 펼친 패널에서 찍는다
   // 하네스 절의 에이전트 정의
-  await dp.click('.panel .sech:has-text("명령 · 스킬")'); await wait(900)
-  await dp.evaluate(() => document.querySelector('.panel .hsec')?.scrollIntoView({ block: 'end' })); await wait(200)
+  await dp.click('.panel .ptools .tb.cmd'); await dp.waitForSelector('.spop.cmdpop .hsec', { timeout: 4000 }); await wait(900)
+  await dp.evaluate(() => { const h = document.querySelector('.spop.cmdpop .hsec'); if (h) h.scrollTop = h.scrollHeight }); await wait(200)
   await shot(dp, '05-데스크톱-하네스-에이전트')
   // 긴 결과 — 카드 펼침 · 열어 보기 · 쓴 글 보기
   await dp.goto(`${base}/#bot=${bot.id}&s=${s2.sessionId}`); await dp.waitForSelector('.chat-body .sub', { timeout: 8000 }); await wait(700)

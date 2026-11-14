@@ -92,8 +92,9 @@ export async function uxuiEight({ br, check, port = 7481, shots = '' }) {
 
     // 오른쪽 패널의 루틴 줄 → 루틴 편집
     const openRoutineEdit = async () => {
-      if (!(await pg.$('.panel .kv:has-text("아침 정리")'))) await pg.click('.panel .sech:has-text("루틴")')
-      await pg.click('.panel .kv:has-text("아침 정리")'); await pg.waitForSelector('.modal.rted .modal-h', { timeout: 3000 }); await wait(250)
+      // 오른쪽 패널(2026-11-14) — 루틴은 패널 아래 도구 막대의 단추가 여는 목록에 있다
+      await pg.click('.panel .ptools .tb.rt'); await pg.waitForSelector('.spop.rtpop .kv:has-text("아침 정리")', { timeout: 3000 }); await wait(200)
+      await pg.click('.spop.rtpop .kv:has-text("아침 정리")'); await pg.waitForSelector('.modal.rted .modal-h', { timeout: 3000 }); await wait(250)
     }
     await check('U2 루틴 편집 — ⎋ 로 닫힌다 · 고친 것이 있으면 묻고, 그 위의 ⎋ 는 확인창만 닫는다', async () => {
       await openRoutineEdit(); await blur(); await esc()
@@ -226,9 +227,11 @@ export async function uxuiEight({ br, check, port = 7481, shots = '' }) {
     })
 
     await check('U7 묻기 창의 어둠막이 아래 창 위에 선다', async () => {
-      // 세션 줄(2026-11-13) — 세션 메뉴의 «이름 바꾸기»(묻기 창)는 없어졌다(탭을 두 번 눌러 그 자리에서 고친다). 묻기 창은 패널 「명령 · 스킬」 머리의 ＋(새 슬래시 명령)로 연다
-      const btn = '.panel .sech:has-text("명령 · 스킬") .nsb'
-      must(await pg.$(btn), '패널 「명령 · 스킬」 머리에 ＋(새 슬래시 명령)가 없다 — 검사 전제')
+      // 세션 줄(2026-11-13) — 세션 메뉴의 «이름 바꾸기»(묻기 창)는 없어졌다(탭을 두 번 눌러 그 자리에서 고친다). 묻기 창은 「명령 · 스킬」 목록 머리의 ＋(새 슬래시 명령)로 연다
+      // 오른쪽 패널(2026-11-14) — 그 목록은 패널 도구 막대의 단추가 연다
+      await pg.click('.panel .ptools .tb.cmd'); await pg.waitForSelector('.spop.cmdpop .ph', { timeout: 3000 }); await wait(200)
+      const btn = '.spop.cmdpop .ph .nsb'
+      must(await pg.$(btn), '「명령 · 스킬」 목록 머리에 ＋(새 슬래시 명령)가 없다 — 검사 전제')
       await pg.click(btn); await pg.waitForSelector('.modal.ask', { timeout: 2000 })
       const z = await pg.evaluate(() => { const m = document.querySelector('.modal.ask'); const b = m?.previousElementSibling; return { modal: Number(getComputedStyle(m).zIndex), back: b?.classList.contains('backdrop') ? Number(getComputedStyle(b).zIndex) : -1, plain: 42 } })
       must(z.back > z.plain && z.back < z.modal, '묻기 창의 어둠막이 보통 창(42)보다 아래다 ' + JSON.stringify(z))
@@ -383,8 +386,8 @@ export async function uxuiEight({ br, check, port = 7481, shots = '' }) {
         await ph.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
         await ph.goto(`${base}/#bot=${bot.id}&s=${s1.id}`); await ph.waitForSelector('.tabbar [data-tab="files"]', { timeout: 10000 }); await wait(500)
         await ph.click('.tabbar [data-tab="files"]'); await wait(500)
-        if (!(await ph.$('.panel .kv:has-text("아침 정리")'))) await ph.click('.panel .sech:has-text("루틴")')
-        await ph.click('.panel .kv:has-text("아침 정리")'); await ph.waitForSelector('.modal.rted .modal-h', { timeout: 4000 }); await wait(400)
+        await ph.click('.panel .ptools .tb.rt'); await ph.waitForSelector('.spop.rtpop .kv:has-text("아침 정리")', { timeout: 3000 }); await wait(300)
+        await ph.click('.spop.rtpop .kv:has-text("아침 정리")'); await ph.waitForSelector('.modal.rted .modal-h', { timeout: 4000 }); await wait(400)
         const f = await ph.evaluate(() => {
           const m = document.querySelector('.modal.rted'); const R = (e) => { if (!e) return null; const b = e.getBoundingClientRect(); return { l: Math.round(b.left), r: Math.round(b.right), t: Math.round(b.top), b: Math.round(b.bottom), w: Math.round(b.width), h: Math.round(b.height) } }
           const save = m.querySelector('[data-rt="save"]'); const sc = save.getBoundingClientRect()

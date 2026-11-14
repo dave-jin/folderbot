@@ -43,6 +43,7 @@ import { approvalTimeoutMin, fmtWait } from '../core/approvalTimeout'
 import { mark } from './slow'
 import { SessionManager, SteerRefused, setOauthToken, setKeychainLogin, AUTH_ERROR, type SessionRec } from './session'
 import { readTodo, todoAdd, todoContext } from './todoStore'
+import { buildOverview, type Overview } from '../core/overview'
 import { recent as recentFiles, tree as fileTree } from './files'
 import { ConflictBook, sweep as sweepCopies } from './docSave'
 import { ContextService } from './context'
@@ -594,6 +595,16 @@ export class Host {
     if (notify && by === 'bot') this.notifier.emit('todo', bot.id, `${bot.name} · 할 일 남김`, `${title}${desc ? `: ${desc}` : ''}`)
   }
   todo(bot: Bot) { return readTodo(bot.abs) }
+  /** 오른쪽 패널 «개요» 칸 — 폴더에 이미 있는 것만 모은다(모델을 부르지 않는다 · 계산은 `core/overview`) */
+  overview(bot: Bot): Overview {
+    const sp = join(bot.abs, 'state.md')
+    let stateMd: string | null = null; let stateAt: number | undefined
+    try { if (existsSync(sp)) { stateMd = readFileSync(sp, 'utf8'); stateAt = statSync(sp).mtimeMs } } catch { stateMd = null }
+    const recs = this.sessions.list(bot.id).map((x) => this.sessions.get(x.id)).filter((r): r is SessionRec => !!r)
+    const chips: { t: number; paths: string[] }[] = []
+    for (const r of recs) for (const it of r.items) if (it.kind === 'files') chips.push({ t: it.t, paths: it.paths })
+    return buildOverview({ stateMd, stateAt, asks: recs.filter((r) => r.state === 'awaiting_input').length, todos: readTodo(bot.abs), chips, root: bot.abs })
+  }
   /**
    * CK-2 · 미리보기 ↔ 켜기. 🔴 켜기(live)는 사람이 설정에서 누를 때만 — 그때 오케스트레이터에 15분 루틴 «Akiflow 동기화» 가 생긴다.
    * 끄면(미리보기·off) 루틴을 지운다. 짝 장부는 그대로 둔다.
