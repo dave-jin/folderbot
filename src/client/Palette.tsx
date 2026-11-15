@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { OVERVIEW_REL } from '../core/overviewPage'
 import { useEsc } from './esc'
 import { rank } from '../core/search'
 import { api } from './api'
@@ -53,6 +54,7 @@ export function Palette(p: PaletteProps) {
     cmd('c-new', 'plus', '새 세션', '⌘N', () => void p.newSession())
     cmd('c-notify', 'bell', '알림 센터', '⌘⇧U', () => p.setModal('notify'))
     cmd('c-routines', 'eye', '루틴 관리', '', () => p.setModal('routines'))   // RB-6
+    if (!p.bot.orchestrator) cmd('c-overview', 'doc', '이 폴더 개요 한 장', '', () => p.openDoc(OVERVIEW_REL, true))   // 2026-11-15 · 폴더 개요
     cmd('c-set', 'gear', '설정', '⌘,', () => p.setModal('settings'))
     cmd('c-keys', 'search', '단축키 보기', '⌘/', () => p.setModal('keys'))
     cmd('c-sb', 'eye', '폴더 목록 접기 · 펴기', '⌘B', () => p.toggle('sb'))

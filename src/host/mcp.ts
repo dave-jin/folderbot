@@ -302,7 +302,7 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       const def: RoutineDef = { name, cron: w.cron, prompt: s('prompt'), ...(a.push === undefined ? {} : { push: !!a.push }) }
       saveRoutines(reg, host, b, [...b.routines, def])
       noteChange(host, botId, b.id, foreign, name, `새로 걸림 · ${describeCron(def.cron)}`, s('why'), undefined, def)
-      return { ok: true, name, when: w.text, confirm: confirmLine(w.cron), note: '승인 수준(approve)은 사람이 화면에서 정해요 — 기본은 «묻지 않고 바로 한다»(always) 이고, «자동»(auto · Claude 가 권한을 판단)으로 낮출 수 있어요. 낮춘 루틴이 승인을 물으면 정한 시간 뒤 거절돼 그 회차는 실패로 남습니다' }
+      return { ok: true, name, when: w.text, confirm: confirmLine(w.cron), note: '승인 수준(approve)은 사람이 화면에서 정해요 — 기본은 «묻지 않고 바로 해요»(always) 이고, «자동»(auto · Claude 가 권한을 판단)으로 낮출 수 있어요. 낮춘 루틴이 승인을 물으면 정한 시간 뒤 거절돼 그 회차는 실패로 남습니다' }
     }
     case 'routine_update': {
       const { bot: b, foreign } = routineTarget(reg, botId, a, true)

@@ -2282,7 +2282,7 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 /* ── 오른쪽 패널 — 개요 · 할 일 · 파일 + 도구 막대 (2026-11-14 · 가안 둘째 묶음 · 목업 «평소») ── */
 /* 개요 — 이 폴더가 어디까지 왔나. 줄마다 폴더에 있는 것을 그대로 옮긴다 */
 .ovw { flex:none; margin:10px 10px 6px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--box); display:flex; flex-direction:column; align-items:flex-start; gap:6px; min-width:0 }
-.ovw .oh { font-size:11px; color:var(--t3) }
+.ovw .oh { font-size:11px; color:var(--t3); display:flex; align-items:center; align-self:stretch } .ovw .oh .opage { margin-left:auto; height:20px; padding:0 8px; border:1px solid var(--line2); border-radius:6px; font-size:11px; color:var(--t) } .ovw .oh .opage:hover { color:var(--w); border-color:var(--t3) }
 .ovw .og { font-size:13px; line-height:1.45; color:var(--t); text-align:left; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere } .ovw .og:hover { color:var(--w) }
 .ovw .onone { font-size:12px; line-height:1.45; color:var(--t2); text-align:left } .ovw .onone:hover { color:var(--t) }
 .ovw .om, .ovw .or { display:flex; flex-wrap:wrap; align-items:center; gap:2px 5px; font-size:12px; color:var(--t3); min-width:0; max-width:100% }
@@ -2337,3 +2337,37 @@ code.code-path { cursor:pointer } code.code-path:hover { background:var(--sel) }
 .mhome .cx-strip.wband { margin:2px 16px 8px; padding:2px 12px 8px } .mhome .cx-strip.wband .cx-gl { font-size:12px; margin-top:8px }
 .mhome .cx-strip.wband .cx-it { min-height:44px; font-size:16px } .mhome .cx-strip.wband .cx-it .cx-f small { font-size:14px } .mhome .cx-strip.wband .cx-it .cx-a .btn { min-height:32px; padding:0 12px; font-size:14px; border-radius:8px }
 .mhome .cx-strip.wband .cx-more { font-size:14px; min-height:32px }
+
+/* ── 폴더 개요 한 장 (2026-11-15 Dave 카드 — 자리는 문서 칸 · 파일에서 그대로 · 목업 `2026-11-15_폴더-개요-목업`) ── */
+/* 보기 전용 한 장. 덩이 넷은 폭이 되면 두 칸, 좁으면(문서 칸 520px 아래 · 폰) 한 줄기 */
+.dbody.ovp { padding:18px 22px 28px; overflow:auto; container-type:inline-size; min-width:0 }
+.ovp-t { margin:0; font-size:17px; font-weight:600; color:var(--w); display:flex; align-items:center; gap:10px; flex-wrap:wrap } .ovp-t span { min-width:0; overflow-wrap:anywhere }
+.ovp-t em { font-style:normal; font:600 11px var(--mono); color:var(--t2); border:1px solid var(--line2); border-radius:4px; padding:1px 6px; white-space:nowrap } .ovp-t em.past { color:var(--err); border-color:var(--err) }
+.ovp-made { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; margin:4px 0 12px; font-size:11px; color:var(--t3) } .ovp-made .stale { color:var(--wait) } .ovp-made .btn.sm { height:22px; font-size:11px } .ovp-made .ovp-re { color:var(--wait); border-color:var(--wait) }
+.ovp-goal { margin:0 0 10px; padding:2px 0 2px 11px; border-left:2px solid var(--line2); font-size:13px; line-height:1.5; color:var(--w); overflow-wrap:anywhere } .ovp-goal small { display:block; margin-top:2px; font-size:11px; color:var(--t3) } .ovp-goal.now { color:var(--t) }
+.ovp-grid { display:grid; grid-template-columns:1fr; gap:12px; margin-top:14px }
+@container (min-width: 520px) { .ovp-grid { grid-template-columns:1fr 1fr } }
+.ovc { min-width:0; border:1px solid var(--line); border-radius:8px; background:var(--box); padding:10px 12px 11px; display:flex; flex-direction:column } .ovc.sel { border-color:var(--wait) }
+.ovc-h { display:flex; flex-wrap:wrap; align-items:center; gap:1px 8px; margin-bottom:7px } .ovc-h b { flex:none; font-size:13px; font-weight:600; color:var(--w); white-space:nowrap } .ovc-h small { order:3; flex-basis:100%; min-width:0; font-size:11px; color:var(--t3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.ovc-h .ovc-ask { margin-left:auto; height:22px; font-size:11px; gap:4px } .ovc-h .ovc-ask.on { color:var(--wait); border-color:var(--wait) }
+.ovr { display:flex; align-items:baseline; gap:8px; width:100%; min-height:26px; padding:3px 0; font-size:13px; line-height:1.45; color:var(--t2); text-align:left } .ovr:hover span { color:var(--w) }
+.ovr span { flex:1; min-width:0; overflow-wrap:anywhere } .ovr small { flex:none; font-size:11px; color:var(--t3); white-space:nowrap } .ovr small.past { color:var(--err) }
+.ovr i { flex:none; width:13px; height:13px; border-radius:999px; border:1.5px solid var(--t3); display:inline-flex; align-items:center; justify-content:center; align-self:center; color:var(--done) }
+.ovr.st-ok i { border-color:var(--done) } .ovr.st-now { color:var(--w) } .ovr.st-now i { border-color:var(--run); background:var(--run) }
+.ovr.mi-ask { color:var(--w) } .ovr.mi-ask i { width:7px; height:7px; border:0; background:var(--wait) } .ovr.mi-todo { color:var(--t) } .ovr.mi-todo i { width:10px; height:10px; border-radius:2px } .ovr.mi-wait i { width:7px; height:7px }
+.ovr.fl { color:var(--t) } .ovr.fl i { width:10px; height:12px; border-radius:2px; border-width:1.2px }
+.ovc-none { font-size:12px; color:var(--t3); padding:4px 0 }
+.ovc-more { margin-top:5px; font-size:11px; color:var(--t3); overflow-wrap:anywhere }
+.ovc-lk { display:flex; flex-wrap:wrap; gap:5px } .ovlk { display:inline-flex; align-items:center; gap:6px; max-width:100%; height:24px; padding:0 8px; border:1px solid var(--line2); border-radius:6px; font-size:12px; color:var(--t); white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .ovlk:not(:disabled):hover { color:var(--w); border-color:var(--t3) } .ovlk:disabled { color:var(--t2); cursor:default } .ovlk i { flex:none; width:10px; height:8px; border-radius:2px; background:var(--t3) }
+.ovp-none { font-size:13px; color:var(--t2) }
+/* 입력칸 위에 붙은 덩이 — [이 부분 묻기]. ✕ 로 뗀다 */
+.composer .oref { display:flex; align-items:center; gap:6px; min-width:0; min-height:26px; padding:2px 4px 2px 8px; border:1px solid var(--wait); border-radius:6px; font-size:12px; color:var(--t2) }
+.composer .oref b { flex:none; color:var(--w); font-weight:600; white-space:nowrap } .composer .oref span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.composer .oref .x { flex:none; width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; border-radius:4px; color:var(--t3) } .composer .oref .x:hover { color:var(--w); background:var(--sel) }
+/* 폰 — 덩이는 늘 한 줄기 · 단추는 손가락 크기 */
+.app.phone .dbody.ovp { padding:14px 14px 24px } .app.phone .ovp-t { font-size:17px } .app.phone .ovp-goal { font-size:14px } .app.phone .ovp-made { font-size:12px } .app.phone .ovp-made .btn.sm { height:32px; font-size:14px; padding:0 12px }
+.app.phone .ovp-grid { grid-template-columns:1fr } .app.phone .ovc { padding:12px 14px } .app.phone .ovc-h b { font-size:14px } .app.phone .ovc-h small { font-size:12px } .app.phone .ovc-h .ovc-ask { height:32px; font-size:14px; padding:0 14px }
+.app.phone .ovr { min-height:44px; font-size:14px; padding:6px 0 } .app.phone .ovr small { font-size:12px } .app.phone .ovc-none { font-size:14px } .app.phone .ovc-more { font-size:12px } .app.phone .ovlk { height:32px; font-size:14px; padding:0 12px }
+.app.phone .ovw .oh .opage { height:32px; font-size:14px; padding:0 14px }
+.app.phone .composer.ph:has(.oref) { grid-template-areas:"ref ref ref" "chips chips chips" "left text right" } .app.phone .composer.ph .oref { grid-area:ref; min-height:32px; font-size:14px; margin-bottom:4px } .app.phone .composer.ph .oref .x { width:32px; height:32px }
+

@@ -54,6 +54,7 @@ import { LocalOpenHost, localBridge, openOnThisDevice, useLocalSettings } from '
 import { BridgeRail, BridgeSide, BridgeThread } from './Bridges'
 import type { PeerView } from '../core/bridgeView'
 import { clock } from '../core/timeText'
+import { OVERVIEW_REL, withAskRef, type AskRef } from '../core/overviewPage'
 import { botRelOf } from '../core/paths'
 import { ICON_PX, useIconSize, useTheme } from './theme'
 import { UsageCard, colorLeft, useUsage } from './Usage'
@@ -466,6 +467,8 @@ function Main() {
   const [attachReq, setAttachReq] = useState<Att[]>([])
   const [mentionReq, setMentionReq] = useState<string[]>([])
   const [focusReq, setFocusReq] = useState(0)
+  /** 폴더 개요 한 장의 [이 부분 묻기] — 입력칸 위에 붙은 덩이(봇마다 하나 · 보내면 걷힌다) */
+  const [oref, setOref] = useState<{ botId: string; ref: AskRef } | null>(null)
   /** EC · «내 답을 기다리는 다음 세션» 으로 뛴 뒤 그 세션의 카드에 초점을 두라는 요청(세션 id + 번호) */
   const [cardFocusReq, setCardFocusReq] = useState<{ sid: string; n: number } | null>(null)
   const [focusSec, setFocusSec] = useState<{ sec: string; n: number } | null>(null)
@@ -663,7 +666,7 @@ function Main() {
     if (o.source === 'agent' && o.turnKey) { if (agentOpenRef.current === o.turnKey) return; agentOpenRef.current = o.turnKey }
     openDoc(rel, o.pin)
     // 시안 C · 같은 문서를 다시 골라도(탭이 안 바뀌어도) 트리에 자리를 다시 짚는다 — 탭이 바뀌면 트리가 스스로 짚는다
-    window.dispatchEvent(new CustomEvent('fb:reveal', { detail: { rel, file: true } }))
+    if (rel !== OVERVIEW_REL) window.dispatchEvent(new CustomEvent('fb:reveal', { detail: { rel, file: true } }))   // 개요 한 장은 파일이 아니라 트리에 짚을 자리가 없다
   }
   // 맥락 상황판 이야기의 파일 근거 — 그 봇으로 옮겨 간 뒤에 그 봇 기준 경로로 연다
   useEffect(() => { if (ctxDoc && bot?.id === ctxDoc.botId) { openInDocPane(ctxDoc.rel); setCtxDoc(null) } }, [ctxDoc, bot?.id])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -1137,7 +1140,7 @@ function Main() {
         <div className="gap" />
         {stripBots.map(({ b, sum }) => <button key={b.id} className={`bot ${b.id === bot.id ? 'on' : ''} ${sum.unread ? 'unread' : ''}`} onPointerEnter={() => prefetch(b.id)} onPointerDown={() => prefetch(b.id)} onClick={() => go(b.id)}><FolderBot color={b.color} size={17} mood={sum.mood} unread={sum.unread} recent={sum.recent} mono /><span className="fly"><b><Mid s={b.displayName} /></b><span><span className={`dot ${stateDot(sum.state ?? undefined)}`} style={{ marginRight: 5 }} />{sum.text}</span><span className="t3">{b.section} · {fmtTime(sum.t)}</span></span></button>)}
       </div>
-  const docwrapEl = showDoc ? <div className="docwrap" style={{ width: wide || narrow ? undefined : fit.doc, flex: wide ? 3 : 'none', display: 'flex', minWidth: 0 }}><DocPane bot={bot} docs={docs} filesTick={s.filesTick[bot.id]} onTalk={(rel) => { setPrefill(`${rel} 파일 봐 줘: `); if (phone) setView('chat') }} onHide={() => setDocOpen((d) => ({ ...d, [bot.id]: false }))} wide={wide} onWide={() => setWide(!wide)} onAttach={(rel) => addAttach({ rel, abs: `${bot.abs}/${rel}` })} say={say} phone={phone} onBack={toList} /></div> : null
+  const docwrapEl = showDoc ? <div className="docwrap" style={{ width: wide || narrow ? undefined : fit.doc, flex: wide ? 3 : 'none', display: 'flex', minWidth: 0 }}><DocPane bot={bot} docs={docs} filesTick={s.filesTick[bot.id]} ov={bot.orchestrator ? undefined : { tick: `${s.filesTick[bot.id] ?? 0}|${sessions.map((x) => (x.state === 'awaiting_input' ? x.id : '')).join('')}|${(s.todos[bot.id] ?? []).map((t) => `${t.line}${t.done ? 1 : 0}${t.proposed ? 1 : 0}${t.due ?? ''}`).join(',')}`, askOn: oref && oref.botId === bot.id ? oref.ref.title : '', onAsk: (r) => { setOref({ botId: bot.id, ref: r }); setFocusReq((n) => n + 1); if (phone) setView('chat') }, onSay: (t) => { setPrefill(t); if (phone) setView('chat') }, go }} onTalk={(rel) => { setPrefill(`${rel} 파일 봐 줘: `); if (phone) setView('chat') }} onHide={() => setDocOpen((d) => ({ ...d, [bot.id]: false }))} wide={wide} onWide={() => setWide(!wide)} onAttach={(rel) => addAttach({ rel, abs: `${bot.abs}/${rel}` })} say={say} phone={phone} onBack={toList} /></div> : null
   /**
    * AD · **문서 탭은 비어 있어도 눌린다** (2026-09-23 Dave: *«문서가 없을 때 누르면 그냥 빈 문서 보여 주면 돼»*).
    *    종전에는 `disabled` 라 손가락이 아무 반응도 못 받았다 — 흐린 단추는 «고장» 으로 읽힌다.
@@ -1149,7 +1152,7 @@ function Main() {
         <button className="btn" onClick={() => { setPanelTab('files'); setView('panel') }}>폴더 열기</button></div>
     </div>
   </div>
-  const rpwrapEl = <div className="rpwrap" style={{ width: narrow ? '100%' : fit.rp, flex: 'none', display: 'flex', minWidth: 0 }}>{peerId ? <BridgeSide peerId={peerId} go={go} phone={phone} onBack={() => setView('chat')} onCollapse={closeRp} /> : <Panel bot={bot} sessions={sessions} sessionId={sessionId} go={go} onOpenFile={(rel, pin) => openInDocPane(rel, { pin })} onTalk={(t) => { setPrefill(t); if (phone) setView('chat') }} onAttach={(rel, dir) => addAttach({ rel, abs: `${bot.abs}/${rel}`, dir })} onMention={(rel) => { setMentionReq((m) => [...m, rel]); if (phone) setView('chat') }} onStartAt={startAt} onNewFolderAt={newFolderAt} touched={touched} filesTick={s.filesTick[bot.id]} onCollapse={closeRp} focusSec={focusSec} say={say} refresh={refresh} activeDoc={showDoc ? docs.active : null} phone={phone} onBack={toList} only={phone ? panelTab : undefined} />}</div>
+  const rpwrapEl = <div className="rpwrap" style={{ width: narrow ? '100%' : fit.rp, flex: 'none', display: 'flex', minWidth: 0 }}>{peerId ? <BridgeSide peerId={peerId} go={go} phone={phone} onBack={() => setView('chat')} onCollapse={closeRp} /> : <Panel bot={bot} sessions={sessions} sessionId={sessionId} go={go} onOverview={() => openDoc(OVERVIEW_REL, true)} onOpenFile={(rel, pin) => openInDocPane(rel, { pin })} onTalk={(t) => { setPrefill(t); if (phone) setView('chat') }} onAttach={(rel, dir) => addAttach({ rel, abs: `${bot.abs}/${rel}`, dir })} onMention={(rel) => { setMentionReq((m) => [...m, rel]); if (phone) setView('chat') }} onStartAt={startAt} onNewFolderAt={newFolderAt} touched={touched} filesTick={s.filesTick[bot.id]} onCollapse={closeRp} focusSec={focusSec} say={say} refresh={refresh} activeDoc={showDoc ? docs.active : null} phone={phone} onBack={toList} only={phone ? panelTab : undefined} />}</div>
   const stripRightEl = peerId ? <div className="strip right"><button className="ib" onClick={() => openRp()} title="세션 · 편지함 펼치기 (⌘⇧B)"><Icon n="panelr" size={14} /></button></div> : <div className="strip right"><button className="ib" onClick={() => openRp()} title="패널 펼치기 (⌘⇧B)"><Icon n="panelr" size={14} /></button>
     {/* S-3 · 패널을 접어 둬도 **새 세션 +** 는 우측 상단에 남는다 (2026-09-21 Dave: «상시 노출») — 펼친 패널 「세션」 줄의 + 와 같은 일 */}
     <button className="ib nsb" onClick={() => void newSession()} title="새 세션 (⌘N)"><Icon n="plus" size={14} /><span className="fly"><b>새 세션</b><span>이 폴더에서</span></span></button><div className="gap" />
@@ -1167,7 +1170,7 @@ function Main() {
       {stage === 'wide' ? <div className="divx" onPointerDown={sbOpen ? dragX('sb', 1) : undefined} onDoubleClick={() => setLay({ ...lay, sb: DEF.sb, sbOpen: true, sbPin: true })} /> : null}
 
       {/* ── 채팅 ── */}
-      {peerId ? <BridgeThread peerId={peerId} go={go} say={say} phone={phone} onBack={toList} onSide={narrow || !rpOpen ? () => openRp() : undefined} /> : <Chat bot={bot} go={go} sessions={sessions} cur={cur} items={items} loaded={!!sessionId && !!s.chats[sessionId]} phase={phase} ghost={phase === 'fade' ? ghost ?? undefined : undefined} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} sendReq={sendReq} onSendReq={() => setSendReq(null)} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} cardFocusReq={cardFocusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openInDocPane(rel, { pin })} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={toList} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} queue={queueFor(sessionId)} onQueue={(f) => { if (sessionId) onQueue(sessionId, f) }} onReveal={reveal} />}
+      {peerId ? <BridgeThread peerId={peerId} go={go} say={say} phone={phone} onBack={toList} onSide={narrow || !rpOpen ? () => openRp() : undefined} /> : <Chat bot={bot} go={go} oref={oref && oref.botId === bot.id ? oref.ref : null} onOref={(r) => setOref(r ? { botId: bot.id, ref: r } : null)} sessions={sessions} cur={cur} items={items} loaded={!!sessionId && !!s.chats[sessionId]} phase={phase} ghost={phase === 'fade' ? ghost ?? undefined : undefined} pending={pending} prefill={prefill} onPrefilled={() => setPrefill('')} sendReq={sendReq} onSendReq={() => setSendReq(null)} attachReq={attachReq} onAttached={() => setAttachReq([])} mentionReq={mentionReq} onMentioned={() => setMentionReq([])} focusReq={focusReq} cardFocusReq={cardFocusReq} onSession={(sid) => go(bot.id, sid)} onFile={(rel, pin) => openInDocPane(rel, { pin })} docBadge={docs.tabs.length} docTabs={docs.tabs.map((t) => t.rel)} docOn={showDoc} onDocToggle={() => setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] }))} say={say} refreshAll={refresh} collapsed={!phone && wide && showDoc} onUncollapse={() => setWide(false)} phone={phone} onBack={toList} onPanel={() => setView('panel')} newSession={newSession} filesTick={s.filesTick[bot.id]} queue={queueFor(sessionId)} onQueue={(f) => { if (sessionId) onQueue(sessionId, f) }} onReveal={reveal} />}
 
       {/* ── 문서 열 (넓음만 흐름 안 · 중간·좁음은 오른쪽 서랍) ── */}
       {stage === 'wide' && showDoc && !peerId ? <><div className="divx" onPointerDown={dragX('doc', -1)} onDoubleClick={() => setLay({ ...lay, doc: DEF.doc })} />{docwrapEl}</> : null}
@@ -1525,7 +1528,7 @@ interface FileNode { rel: string; dir: boolean; mtime: number }
 // ⚠ 맥 파일 이름은 NFD 로 저장된다 — 비교 전에 양쪽을 NFC 로 맞추지 않으면 한글이 «아예» 안 걸린다(core/search 머리말)
 const fuzzy = (q: string, s: string): number => { if (!q) return 1; const t = norm(s); const nq = norm(q); if (t.includes(nq)) return t.startsWith(nq) ? 3 : 2; let i = 0; for (const c of t) if (c === nq[i]) i++; return i === nq.length ? 1 : 0 }
 
-function Chat({ bot, go, sessions, cur, items, loaded, phase = 'ready', ghost, pending, prefill, onPrefilled, sendReq, onSendReq, attachReq, onAttached, mentionReq, onMentioned, focusReq, cardFocusReq, onSession, onFile, docBadge, docTabs, docOn, onDocToggle, say, refreshAll, collapsed, onUncollapse, phone, onBack, onPanel, newSession, filesTick, queue, onQueue, onReveal }: { bot: Bot; go: (botId: string, sid?: string) => void; sessions: SessionInfo[]; cur?: SessionInfo; items: ChatItem[]; loaded: boolean; /** CF · 대화 칸 단계(`core/loadPhase`) */ phase?: ChatPhase; /** CF ④ · 받는 동안 흐리게 남기는 옛 대화 — 그리기만(그 대화의 봇·세션으로 그린다 · 파일 칩이 새 폴더 기준으로 풀리지 않게) */ ghost?: { sid: string; items: ChatItem[]; bot: Bot }; pending: PermissionRequest[]; prefill: string; onPrefilled: () => void; sendReq: { botId: string; text: string; n: number } | null; onSendReq: () => void; attachReq: Att[]; onAttached: () => void; mentionReq: string[]; onMentioned: () => void; focusReq: number; /** EC · 이 세션의 승인·질문 카드에 초점을 두라(⌘J 로 뛰어왔다) */ cardFocusReq?: { sid: string; n: number } | null; onSession: (sid: string) => void; onFile: (rel: string, pin?: boolean) => void; docBadge: number; docTabs: string[]; docOn: boolean; onDocToggle: () => void; say: Say; refreshAll: () => Promise<void>; collapsed: boolean; onUncollapse: () => void; phone: boolean; onBack: () => void; onPanel: () => void; newSession: () => Promise<void>; filesTick?: number; queue: string[]; onQueue: (f: (q: string[]) => string[]) => void; onReveal: (rel: string) => void }) {
+function Chat({ bot, go, oref, onOref, sessions, cur, items, loaded, phase = 'ready', ghost, pending, prefill, onPrefilled, sendReq, onSendReq, attachReq, onAttached, mentionReq, onMentioned, focusReq, cardFocusReq, onSession, onFile, docBadge, docTabs, docOn, onDocToggle, say, refreshAll, collapsed, onUncollapse, phone, onBack, onPanel, newSession, filesTick, queue, onQueue, onReveal }: { bot: Bot; oref: AskRef | null; onOref: (r: AskRef | null) => void; go: (botId: string, sid?: string) => void; sessions: SessionInfo[]; cur?: SessionInfo; items: ChatItem[]; loaded: boolean; /** CF · 대화 칸 단계(`core/loadPhase`) */ phase?: ChatPhase; /** CF ④ · 받는 동안 흐리게 남기는 옛 대화 — 그리기만(그 대화의 봇·세션으로 그린다 · 파일 칩이 새 폴더 기준으로 풀리지 않게) */ ghost?: { sid: string; items: ChatItem[]; bot: Bot }; pending: PermissionRequest[]; prefill: string; onPrefilled: () => void; sendReq: { botId: string; text: string; n: number } | null; onSendReq: () => void; attachReq: Att[]; onAttached: () => void; mentionReq: string[]; onMentioned: () => void; focusReq: number; /** EC · 이 세션의 승인·질문 카드에 초점을 두라(⌘J 로 뛰어왔다) */ cardFocusReq?: { sid: string; n: number } | null; onSession: (sid: string) => void; onFile: (rel: string, pin?: boolean) => void; docBadge: number; docTabs: string[]; docOn: boolean; onDocToggle: () => void; say: Say; refreshAll: () => Promise<void>; collapsed: boolean; onUncollapse: () => void; phone: boolean; onBack: () => void; onPanel: () => void; newSession: () => Promise<void>; filesTick?: number; queue: string[]; onQueue: (f: (q: string[]) => string[]) => void; onReveal: (rel: string) => void }) {
   const { s } = useStore()
   const [text, setText] = useState(''); const [caret, setCaret] = useState(0); const [sessSheet, setSessSheet] = useState(false); const [busy, setBusy] = useState(false)
   const [attach, setAttach] = useState<Att[]>([]); const [pop, setPop] = useState<'' | 'plus' | 'mode' | 'model' | 'effort' | 'ctx'>(''); const [pickOpen, setPickOpen] = useState(false); const [uploading, setUploading] = useState(false)
@@ -1801,7 +1804,8 @@ function Chat({ bot, go, sessions, cur, items, loaded, phase = 'ready', ghost, p
   const post = async (t: string) => { if (cur) { const r = await api<{ sessionId?: string }>(`/sessions/${cur.id}/send`, { body: { text: t, client: clientCtx() } }); if (r?.sessionId && r.sessionId !== cur.id) { await refreshAll(); onSession(r.sessionId) } } else { const r = await api<{ sessionId: string }>(`/bots/${bot.id}/send`, { body: { text: t, name: '메인', client: clientCtx(), ...draft } }); await refreshAll(); onSession(r.sessionId) } }
   // ⚠ 대기열을 내보내는 일은 **부모**가 한다 — 보고 있지 않은 세션의 것도 나가야 하기 때문(위 머리말)
   const sendText = async (raw: string, direct = false) => {
-    let t = raw.trim(); if ((!t && !attach.length) || busy || uploading) return
+    let t = raw.trim(); if ((!t && !attach.length && !oref) || busy || uploading) return
+    if (oref) { t = withAskRef(t, oref); onOref(null) }
     const wasFixing = fixing && !!cur?.stopped && !running && !!t
     setFixing(false)
     if (attach.length) t = `${t || '첨부한 파일을 봐 줘.'}\n\n첨부 파일 (읽어서 참고해):\n${attach.map((a) => (a.dir ? `- ${a.abs}/ (폴더 — 안의 파일들)` : `- ${a.abs}`)).join('\n')}`
@@ -1849,13 +1853,14 @@ function Chat({ bot, go, sessions, cur, items, loaded, phase = 'ready', ghost, p
   /** 지금 말을 넣으면 안 되나 — 호스트 `mustWait` 와 같은 판정(미뤄진 질문만 걸렸으면 넣어도 된다) */
   const mustWaitNow = () => running || (state === 'awaiting_input' && !(pending.length > 0 && pending.every((p) => p.deferred)))
   const sendNow = async () => {
-    if (!cur || (!text.trim() && !attach.length) || busy || uploading) return
+    if (!cur || (!text.trim() && !attach.length && !oref) || busy || uploading) return
     const sid = cur.id
     // 보낼 글은 지금 떼어 두고 입력칸은 바로 비운다 — 멈추기를 기다리는 동안 새로 친 글을 지우지 않게(리뷰 10/16)
     // 고쳐 다시 중에 ⌥⏎ — 이미 멈춘 뒤라 ⏎ 와 같은 길(되감기 B · 안 되면 머리말 A)로 보낸다
     if (fixing && cur.stopped && !running && state !== 'awaiting_input') { void sendText(text); return }
     let t = text.trim()
     setFixing(false)
+    if (oref) { t = withAskRef(t, oref); onOref(null) }
     if (attach.length) t = `${t || '첨부한 파일을 봐 줘.'}\n\n첨부 파일 (읽어서 참고해):\n${attach.map((a) => (a.dir ? `- ${a.abs}/ (폴더 — 안의 파일들)` : `- ${a.abs}`)).join('\n')}`
     setText(''); setAttach([]); try { localStorage.removeItem(draftRef.current) } catch { /* */ }
     clearHostDraft(sidKey)
@@ -2109,7 +2114,7 @@ function Chat({ bot, go, sessions, cur, items, loaded, phase = 'ready', ghost, p
     if (!enterSends || e.shiftKey || e.altKey) return
     e.preventDefault(); void send()
   }
-  const hasText = !!text.trim() || attach.length > 0
+  const hasText = !!text.trim() || attach.length > 0 || !!oref
   const mode: 'send' | 'queue' | 'stop' | 'off' = hasText ? (running || state === 'awaiting_input' ? 'queue' : 'send') : running ? 'stop' : 'off'
   const ctx = cur?.ctx; const pct = ctx ? Math.min(100, Math.round((ctx.used / ctx.window) * 100)) : 0
   if (collapsed) return <div className="strip" style={{ background: 'var(--bg)' }}><button className="ib" onClick={onUncollapse} title="세션 펼치기"><Icon n="sub" size={14} /></button><div className="gap" /><FolderBot color={bot.color} size={17} mood={moodOf(state, !!cur?.hibernated)} mono />{running ? <span className="pulse" style={{ marginTop: 8 }} /> : null}</div>
@@ -2391,11 +2396,13 @@ function Chat({ bot, go, sessions, cur, items, loaded, phase = 'ready', ghost, p
       <div className={`composer glassb ${text.includes('\n') || text.length > (phone ? 24 : 40) ? 'multi' : ''} ${phone ? 'ph' : ''}`}
         onPaste={(e) => { const fromItems = Array.from(e.clipboardData.items).filter((i) => i.type.startsWith('image/')).map((i) => i.getAsFile()).filter((f): f is File => !!f); const imgs = fromItems.length ? fromItems : Array.from(e.clipboardData.files ?? []).filter((f) => f.type.startsWith('image/'));   /* N-4 · 폰 클립보드는 files 로 온다 */ if (imgs.length) { e.preventDefault(); const d = new Date(); void upload(imgs.map((f, i) => new File([f], `스크린샷_${d.getHours()}${String(d.getMinutes()).padStart(2, '0')}${i ? `-${i + 1}` : ''}.${(f.type.split('/')[1] ?? 'png').replace('jpeg', 'jpg')}`, { type: f.type }))) } }}>
         {popEl}
+        {/* 폴더 개요 한 장의 [이 부분 묻기] — 붙은 덩이. 보내면 이 덩이의 줄이 내 말 아래 인용으로 간다(`core/overviewPage.withAskRef`) */}
+        {oref ? <div className="oref" role="status"><Icon n="chev" size={9} /><b>{oref.title}</b><span>{oref.lines[0] ?? '비어 있는 덩이'}</span><button className="x" aria-label="붙인 덩이 떼기" title="떼기" onClick={() => onOref(null)}><Icon n="x" size={11} /></button></div> : null}
         {phone && attach.length ? <div className="achips">{attach.map((a) => <span key={a.rel} className={`achip ${a.uploading ? 'up' : ''}`} title={a.abs || a.name}>{a.thumb ? <img src={a.thumb} alt="" /> : <span className="ai"><Icon n={a.dir ? 'folder' : 'doc'} size={14} /></span>}{a.uploading ? <span className="ring"><Ring pct={a.pct ?? 0} size={16} stroke={2} /></span> : null}<span className="nm">{attName(a)}</span><button className="x" onClick={() => { if (a.thumb) URL.revokeObjectURL(a.thumb); setAttach((l) => l.filter((x) => x.rel !== a.rel)) }} title="빼기"><Icon n="x" size={11} /></button></span>)}</div> : null}
         {/* Q-1 (2026-09-19 Dave: «+ 하나만 있는 UX가 더 좋아 · 2스텝 안에 카메라/이미지첨부») — 📷 단추는 뺐다. 카메라·사진은 + 메뉴 첫 두 줄 */}
         {phone ? <div className="cleft">{plusBtn}</div> : null}
         <div className={phone ? 'ctext' : 'crow'}>
-          <InlineInput ref={taRef} placeholder={drill ? '원래 세션으로 보내요 — 이 안에는 직접 말을 걸 수 없어요' : cur && takeoverMode(cur) === 'fork' ? '여기 쓰면 새 세션으로 이어서 열려요' : running ? (touch ? '보내면 대기열에 들어가요' : `보내면 대기열에 들어가요 (${sendKey})`) : state === 'awaiting_input' ? '답을 기다리는 중 — 보내면 대기열에' : enterSends ? '메시지…  ⏎ 보내기 · ⇧⏎ 줄 바꿈 · / 스킬 · @ 파일' : '메시지…  / 스킬 · @ 파일'} value={text} chips={chipsByName} onChange={(t, c) => { setText(t); setCaret(c) }} onCaret={setCaret} onKeyDown={onKey} onFocus={() => { if (phone) stickBottom() }} onChipClick={(name) => { const a = attach.find((x) => attName(x) === name); if (a && !a.uploading && !a.dir) onFile(a.rel) }} />
+          <InlineInput ref={taRef} placeholder={oref && !drill ? '이 부분에 대해 묻기…' : drill ? '원래 세션으로 보내요 — 이 안에는 직접 말을 걸 수 없어요' : cur && takeoverMode(cur) === 'fork' ? '여기 쓰면 새 세션으로 이어서 열려요' : running ? (touch ? '보내면 대기열에 들어가요' : `보내면 대기열에 들어가요 (${sendKey})`) : state === 'awaiting_input' ? '답을 기다리는 중 — 보내면 대기열에' : enterSends ? '메시지…  ⏎ 보내기 · ⇧⏎ 줄 바꿈 · / 스킬 · @ 파일' : '메시지…  / 스킬 · @ 파일'} value={text} chips={chipsByName} onChange={(t, c) => { setText(t); setCaret(c) }} onCaret={setCaret} onKeyDown={onKey} onFocus={() => { if (phone) stickBottom() }} onChipClick={(name) => { const a = attach.find((x) => attName(x) === name); if (a && !a.uploading && !a.dir) onFile(a.rel) }} />
         </div>
         {phone ? <div className={`cright ${uploading ? 'dis' : ''}`}>{ringBtn}{sendEl}</div> : null}
         {!phone ? <div className="cbar">{modeBtn}{plusBtn}{attach.length ? <span className="acount">첨부 {attach.length}개 · 봇이 읽어서 참고</span> : null}<span className="sp" />{modelBtn}{effortBtn}{ringBtn}{sendEl}</div> : null}

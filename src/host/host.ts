@@ -45,6 +45,7 @@ import { mark } from './slow'
 import { SessionManager, SteerRefused, setOauthToken, setKeychainLogin, AUTH_ERROR, type SessionRec } from './session'
 import { readTodo, todoAdd, todoContext } from './todoStore'
 import { buildOverview, type Overview } from '../core/overview'
+import { buildOverviewPage, type OverviewPage } from '../core/overviewPage'
 import { recent as recentFiles, tree as fileTree } from './files'
 import { ConflictBook, sweep as sweepCopies } from './docSave'
 import { ContextService } from './context'
@@ -605,6 +606,21 @@ export class Host {
     const chips: { t: number; paths: string[] }[] = []
     for (const r of recs) for (const it of r.items) if (it.kind === 'files') chips.push({ t: it.t, paths: it.paths })
     return buildOverview({ stateMd, stateAt, asks: recs.filter((r) => r.state === 'awaiting_input').length, todos: readTodo(bot.abs), chips, root: bot.abs })
+  }
+  /**
+   * 폴더 개요 한 장(2026-11-15 Dave 카드 «파일에서 그대로») — 모델을 부르지 않고 폴더에 적힌 줄만 모은다. 계산은 `core/overviewPage`.
+   * 못 읽는 파일은 «없다» 로 넘긴다(한 장은 그 덩이를 비우고 그렇게 말한다).
+   */
+  overviewPage(bot: Bot): OverviewPage {
+    const read = (name: string): { md: string | null; at?: number } => { const p = join(bot.abs, name); try { return existsSync(p) ? { md: readFileSync(p, 'utf8'), at: statSync(p).mtimeMs } : { md: null } } catch { return { md: null } } }
+    const st = read('state.md'), td = read('todo.md'), cm = read('CLAUDE.md')
+    const recs = this.sessions.list(bot.id).map((x) => this.sessions.get(x.id)).filter((r): r is SessionRec => !!r)
+    const chips: { t: number; paths: string[] }[] = []
+    for (const r of recs) for (const it of r.items) if (it.kind === 'files') chips.push({ t: it.t, paths: it.paths })
+    let around: { links: { id: string; label: string; why: string; botId?: string }[]; past: { label: string; why: string; file?: string }[] } = { links: [], past: [] }
+    try { around = this.links?.around(bot.rel) ?? around } catch { /* 지도가 없어도 한 장은 선다 */ }
+    return buildOverviewPage({ claudeMd: cm.md, stateMd: st.md, stateAt: st.at, todoMd: td.md, todoAt: td.at, todos: readTodo(bot.abs),
+      asks: recs.filter((r) => r.state === 'awaiting_input').map((r) => ({ id: r.id, name: r.name })), chips, root: bot.abs, links: around.links, past: around.past, now: Date.now() })
   }
   /**
    * CK-2 · 미리보기 ↔ 켜기. 🔴 켜기(live)는 사람이 설정에서 누를 때만 — 그때 오케스트레이터에 15분 루틴 «Akiflow 동기화» 가 생긴다.

@@ -1,4 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { isOverviewRel, type AskRef } from '../core/overviewPage'
+import { OverviewPage } from './OverviewPage'
 import { openSheet } from './openSheet'
 import { createPortal } from 'react-dom'
 import { renderMarkdown } from './render'
@@ -74,7 +76,7 @@ type DocId = { botId: string; rel: string }
 const keyOf = (id: DocId) => `${id.botId}\u0000${id.rel}`
 
 /** 문서 열 — 헤더(탭) · 툴바(폴더/파일 · 위치 · ⋯) · 본문. 편집은 자동 저장, 봇이 고치면 한 줄 배너 */
-export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, onAttach, say, phone, onBack }: { bot: Bot; docs: DocsApi; filesTick?: number; onTalk: (rel: string) => void; onHide: () => void; wide: boolean; onWide: () => void; onAttach: (rel: string) => void; say: (m: string) => void; phone?: boolean; onBack?: () => void }) {
+export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, onAttach, say, phone, onBack, ov }: { bot: Bot; docs: DocsApi; filesTick?: number; /** 폴더 개요 한 장(가짜 경로 `OVERVIEW_REL`)이 쓰는 길 — 없으면 한 장을 못 연다 */ ov?: { tick: string; askOn: string; onAsk: (r: AskRef) => void; onSay: (t: string) => void; go: (b: string, sid?: string) => void }; onTalk: (rel: string) => void; onHide: () => void; wide: boolean; onWide: () => void; onAttach: (rel: string) => void; say: (m: string) => void; phone?: boolean; onBack?: () => void }) {
   const { s: { device, hostName, root }, refresh } = useStore(); const main = device.main   // 원격이면 «이 기기에서» 연다(localOpen.openOnThisDevice) — E
   const [lcfg] = useLocalSettings()
   /**
@@ -233,10 +235,10 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
    *    꺼지기 때문이다. 실제로 스모크가 **todo.md 가 표 문서로 덮인 것**으로 잡았다(2026-09-13).
    *    아래 `key={rel}` 과 짝이다 — 이쪽은 창을 닫고, 저쪽은 «옛 문서의 편집기» 를 옛 채로 보낸다.
    */
-  useEffect(() => { if (rel) { dirtyRef.current = false; setErr(''); void load(rel) } else { setDoc(null); setDraft('') } }, [bot.id, rel])
+  useEffect(() => { if (rel && !isOverviewRel(rel)) { dirtyRef.current = false; setErr(''); void load(rel) } else { setDoc(null); setDraft(''); setErr('') } }, [bot.id, rel])
   // 같은 폴더의 형제 — 위치(2/4)와 ↑↓ 이동
   useEffect(() => {
-    if (!rel) return
+    if (!rel || isOverviewRel(rel)) return
     const dir = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : ''
     void api<{ name: string; rel: string; dir: boolean }[]>(`/bots/${bot.id}/ls?dir=${encodeURIComponent(dir)}`).then((l) => setSibs(l.filter((x) => !x.dir).map((x) => x.rel))).catch(() => setSibs([]))
   }, [bot.id, rel, filesTick])
@@ -250,7 +252,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
    * ⚠ 내용은 정말 바뀌었을 때만 받는다 — 파일 이벤트는 남의 파일 때문에도 온다.
    */
   useEffect(() => {
-    if (!rel || !filesTick) return
+    if (!rel || !filesTick || isOverviewRel(rel)) return
     const id: DocId = { botId: bot.id, rel }
     void api<{ kind: string; mtime?: number; ver?: string }>(`/bots/${bot.id}/peek?rel=${encodeURIComponent(rel)}`).then(async (p) => {
       if (!isCur(id)) return
@@ -321,7 +323,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
   const heads = useMemo(() => (/\.(md|markdown)$/i.test(rel ?? '') ? normalizeDepth(outline(draft)) : []), [draft, rel])
   const edApi = useRef<{ goToLine: (n: number) => void } | null>(null)
   const idx = rel ? sibs.indexOf(rel) : -1
-  const name = rel?.split('/').pop() ?? ''; const dir = rel && rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : (bot.orchestrator ? '볼트' : bot.name)
+  const ovw = isOverviewRel(rel); const name = ovw ? '개요' : rel?.split('/').pop() ?? ''; const dir = rel && rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : (bot.orchestrator ? '볼트' : bot.name)
   const isMd = /\.(md|markdown|txt)$/i.test(rel ?? '')
   const outside = !!rel && rel.startsWith('../')
   const vaultRel = rel ? vaultRelOf(bot.rel, rel) : ''
@@ -337,10 +339,10 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
     <div className="hdr" style={phone ? undefined : { paddingLeft: 10 }}>
       {/* AG · **좌상단은 네 화면이 같다** (2026-09-24 Dave: «왼쪽 위 폴더봇으로 가는 버튼이 문서와 다르다 · 통일») */}
       {phone ? <><button className="rb glassb" onClick={onBack} title="봇 목록"><Icon n="list" size={20} /></button><span className="ttl"><Mid s={name || '문서'} /></span><span className="sp" /></> : null}
-      <div className="tabs" ref={tabsRef} onWheel={(e) => { const el = e.currentTarget; if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) el.scrollLeft += e.deltaY }}>{docs.tabs.map((t) => <button key={t.rel} data-rel={t.rel} className={`tab ${t.rel === docs.active ? 'on' : ''} ${t.pinned ? '' : 'pv'}`} onClick={() => docs.setActive(t.rel)} onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); docs.close(t.rel) } }} onDoubleClick={() => docs.pin(t.rel)} title={t.rel}>{t.rel.split('/').pop()}<span className="x" onClick={(e) => { e.stopPropagation(); docs.close(t.rel) }}><Icon n="x" size={9} /></span></button>)}</div>
+      <div className="tabs" ref={tabsRef} onWheel={(e) => { const el = e.currentTarget; if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) el.scrollLeft += e.deltaY }}>{docs.tabs.map((t) => <button key={t.rel} data-rel={t.rel} className={`tab ${t.rel === docs.active ? 'on' : ''} ${t.pinned ? '' : 'pv'}`} onClick={() => docs.setActive(t.rel)} onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); docs.close(t.rel) } }} onDoubleClick={() => docs.pin(t.rel)} title={isOverviewRel(t.rel) ? '이 폴더의 개요 한 장' : t.rel}>{isOverviewRel(t.rel) ? '개요' : t.rel.split('/').pop()}<span className="x" onClick={(e) => { e.stopPropagation(); docs.close(t.rel) }}><Icon n="x" size={9} /></span></button>)}</div>
       <div className="acts"><button className={`ib ${wide ? 'on' : ''}`} onClick={onWide} title="넓게"><Icon n="expand" size={13} /></button><button className="ib" onClick={onHide} title="문서 열 접기 (⌘⇧D)"><Icon n="x" size={13} /></button></div>
     </div>
-    {rel ? <div className="dtb"><span>{dir}</span><span>/</span><span className="nm">{name}</span>{outside ? <span className="scp out" title={`볼트 기준: ${vaultRel}`}>폴더 외</span> : null}{!main && lcfg && lcfg.openMode !== 'sync' ? <span className="scp copy" title="이 기기에서 «열기» 를 누르면 메인에서 받은 사본을 열어요 — 고쳐도 되돌아가지 않아요">사본</span> : null}
+    {rel && !ovw ? <div className="dtb"><span>{dir}</span><span>/</span><span className="nm">{name}</span>{outside ? <span className="scp out" title={`볼트 기준: ${vaultRel}`}>폴더 외</span> : null}{!main && lcfg && lcfg.openMode !== 'sync' ? <span className="scp copy" title="이 기기에서 «열기» 를 누르면 메인에서 받은 사본을 열어요 — 고쳐도 되돌아가지 않아요">사본</span> : null}
       <span className="r">
         {sibs.length > 1 ? <><button className="nb" onClick={() => docs.replace(sibs[(idx - 1 + sibs.length) % sibs.length])}><Icon n="back" size={10} /></button><span className="pos">{idx + 1} / {sibs.length}</span><button className="nb" style={{ transform: 'scaleX(-1)' }} onClick={() => docs.replace(sibs[(idx + 1) % sibs.length])}><Icon n="back" size={10} /></button></> : null}
         {/* 모드가 없으니 알릴 상태도 없다 — 저장 중·실패일 때만 한 마디. ⛔ 「편집 중」 배지를 다시 만들지 마라 */}
@@ -382,6 +384,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
         <button onClick={() => docs.open(doc.clashes![0], true)}>사본 열기</button><button onClick={() => void resolveClash(doc.clashes![0], 'mine')}>내 글로 바꾸기</button><button onClick={() => void resolveClash(doc.clashes![0], 'theirs')}>지금 파일 유지</button></div>
       : botTouched ? <div className="dbanner"><span className="dot run" /><span>봇이 {fmtTime(botTouched)} 고침</span><button onClick={() => setBotTouched(null)}>닫기</button></div> : null}
     {!rel ? <div className="empty">오른쪽 파일에서 열거나, 세션의 파일 칩을 누르세요</div>
+      : ovw ? (ov ? <OverviewPage bot={bot} tick={ov.tick} askOn={ov.askOn} onAsk={ov.onAsk} onOpenFile={(r) => docs.open(r, true)} onTalk={ov.onSay} go={ov.go} phone={phone} /> : <div className="empty">개요는 폴더 봇에서만 열려요</div>)
       : err ? <div className="empty">{err}</div>
       : !doc ? <div className="dbody"><div className="skel" style={{ width: '60%', marginBottom: 10 }} /><div className="skel" style={{ width: '85%', marginBottom: 10 }} /><div className="skel" style={{ width: '70%' }} /></div>
       : doc.kind === 'text' ? (isMd && !doc.truncated && !outside
@@ -422,6 +425,6 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
       : doc.kind === 'video' ? <div className="dbody mediabody"><video key={raw(rel)} className="dvideo" src={raw(rel)} controls playsInline preload="metadata" /></div>
       : doc.kind === 'audio' ? <div className="dbody mediabody"><div className="daudio"><span className="nm">{name}</span><audio key={raw(rel)} src={raw(rel)} controls preload="metadata" /></div></div>
       : <div className="empty nopv">미리보기 없음 · {name} · {doc.size} bytes<button className="btn primary" onClick={openHere}>외부에서 열기 ↗</button><a href={raw(rel)} target="_blank" rel="noreferrer" className="btn">새 창에서 열기</a></div>}
-    {phone && rel ? <div className="dfoot">{sibs.length > 1 ? <><button className="rb" title="이전 문서" onClick={() => docs.replace(sibs[(idx - 1 + sibs.length) % sibs.length])}><Icon n="up" size={18} /></button><span className="pos">{idx + 1} / {sibs.length}</span><button className="rb" title="다음 문서" onClick={() => docs.replace(sibs[(idx + 1) % sibs.length])}><Icon n="chevd" size={18} /></button></> : null}<button className="talk" onClick={() => onAttach(rel)}>봇에게 이 문서로 말하기</button></div> : null}
+    {phone && rel && !ovw ? <div className="dfoot">{sibs.length > 1 ? <><button className="rb" title="이전 문서" onClick={() => docs.replace(sibs[(idx - 1 + sibs.length) % sibs.length])}><Icon n="up" size={18} /></button><span className="pos">{idx + 1} / {sibs.length}</span><button className="rb" title="다음 문서" onClick={() => docs.replace(sibs[(idx + 1) % sibs.length])}><Icon n="chevd" size={18} /></button></> : null}<button className="talk" onClick={() => onAttach(rel)}>봇에게 이 문서로 말하기</button></div> : null}
   </div>
 }

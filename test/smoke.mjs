@@ -7804,6 +7804,16 @@ try {
       await leftRail({ br, shots: 'test/tmp', check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 왼쪽 목록 · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } names.push(name.split(' ')[0]) } })
       ok(`왼쪽 목록 — 봇 목록이 가장 큰 자리 · 답 대기는 위 띠에(세 줄까지) · 숫자 줄은 «내가 볼 것» 만 · 정렬은 단추 하나 · 폰 홈 바닥에 상황판 한 줄과 숫자 줄 [${names.join(' ')}]`)
     }
+    /**
+     * 폴더 개요 한 장 (2026-11-15 Dave 카드 — 자리는 «문서 칸» · 채우는 법은 «파일에서 그대로» · 시각화 채팅 셋째 묶음).
+     * 검사 본문(`test/overview-page.mjs`)이 제 호스트를 따로 띄운다.
+     */
+    {
+      const { overviewPage } = await import('./overview-page.mjs')
+      const names = []
+      await overviewPage({ br, shots: 'test/tmp', check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 폴더 개요 · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } names.push(name.split(' ')[0]) } })
+      ok(`폴더 개요 한 장 — 패널 «한 장» 으로 문서 칸에 · 줄은 파일에 적힌 그대로 · [이 부분 묻기] 는 내 말 아래 인용으로 · 바뀌면 «다시 읽기» 로만 · 폰은 «문서» 탭 [${names.join(' ')}]`)
+    }
     await br.close(); ok('ui renders (desktop · phone) → test/tmp/*.png')
   } catch (e) { try { await globalThis.__br?.close() } catch {} if (/executablePath|Executable doesn't exist|Cannot find (module|package) 'playwright/.test(String(e.message))) console.log('(화면 검사 건너뜀 — 브라우저 없음:', e.message.split('\n')[0], ')'); else fail('ui: ' + e.stack.split('\n').slice(0, 4).join(' | ')) }
   // 원본 울타리 · 브라우저가 없는 기기에서도 호스트 쪽 검사(S1~S3)는 돈다

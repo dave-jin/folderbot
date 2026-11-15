@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { OVERVIEW_REL } from '../core/overviewPage'
 import { useEsc } from './esc'
 import { api } from './api'
 import { useStore } from './store'
@@ -340,6 +341,8 @@ function GoalView({ at, back, onClose, go, goTodo, phone, openDoc, owner }: {
   return <>
     <div className="modal-h cx-gvh"><button className="ib" onClick={back} title="상황판으로" aria-label="상황판으로"><Icon n="back" size={14} /></button>
       <div className="t"><b>{name}</b><span className="cnt">{g ? `${g.goal} · ${dueKo(g.due)}` : '불러오는 중…'}{note ? ` · ${note}` : ''}</span></div>
+      {/* 상황판은 모든 폴더를 한눈에, 개요 한 장은 한 폴더를 깊게(2026-11-15) — 여기서 그 폴더의 한 장으로 간다 */}
+      {openDoc ? <button className="btn sm cx-ovp" onClick={() => openDoc(bot, OVERVIEW_REL)} title="이 폴더의 개요 한 장을 문서 칸에 열기">폴더 개요</button> : null}
       <button className="ib mx" onClick={onClose} title="닫기 ⎋" aria-label="닫기"><Icon n="x" size={14} /></button></div>
     <div className={`cx-three ${phone ? 'phone' : ''}`}>
       <section className="cx-col cx-tasks">

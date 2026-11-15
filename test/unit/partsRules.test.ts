@@ -49,7 +49,7 @@ describe('지우기 확인 — 브라우저 기본 창을 쓰지 않는다', () 
 
 describe('단추 넷 — 변형은 정해진 낱말뿐', () => {
   /** 화면 고유 꾸밈(자리 · 크기만 다루는 것) — 색과 채움은 넷 중 하나가 정한다 */
-  const LOCAL = /^(cx-[a-z]+|dawn-b)$/
+  const LOCAL = /^(cx-[a-z]+|dawn-b|ov[cp]-[a-z]+)$/   // ov* — 폴더 개요 한 장(2026-11-15)
   const KNOWN = new Set(['primary', 'ghost', 'danger', 'sm'])
   it('className="btn …" 의 낱말은 primary · ghost · danger · sm 과 화면 고유 접두뿐', () => {
     const bad: string[] = []

@@ -390,6 +390,18 @@ export class LinkService {
 
   /** 세션 시작 카드 — 지도가 아직 없으면 빈 글 */
   card(folderId: string): string { const m = this.map; return m ? linkCard(m, folderId) : '' }
+  /** 개요 한 장의 «이어진 곳» — 이웃(허브·보관 폴더 빼고)과 가져다 쓸 지난 일. 지도가 아직 없으면 빈 것 */
+  around(folderId: string): { links: { id: string; label: string; why: string; botId?: string }[]; past: { label: string; why: string; file?: string }[] } {
+    const m = this.map
+    if (!m) return { links: [], past: [] }
+    const byId = new Map(m.nodes.map((n) => [n.id, n]))
+    const me = byId.get(folderId)
+    if (!me || me.hub) return { links: [], past: [] }
+    const links = neighbors(m, folderId).filter((x) => !byId.get(x.id)?.hub && !byId.get(x.id)?.past)
+      .map((x) => { const n = byId.get(x.id); return { id: x.id, label: x.label, why: `${KIND_KO[x.t]} — ${x.ev}${x.guess ? ' (봇 추측)' : ''}`, ...(n?.botId ? { botId: n.botId } : {}) } })
+    const past = me.past ? [] : pastFor(m, folderId, 2).map((p) => ({ label: p.label, why: `${p.why}${p.guess ? ' (봇 추측)' : ''}`, ...(p.files[0] ? { file: p.files[0] } : {}) }))
+    return { links, past }
+  }
 
   private async need(): Promise<LinkMap> { return this.map ?? await this.rebuild() }
 

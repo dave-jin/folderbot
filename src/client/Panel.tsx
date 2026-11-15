@@ -41,7 +41,7 @@ const TODO_CAP = 0.45
  *    이제 할 일 칸은 내용만큼, 최대 패널의 45% 까지 쓰고 잘리면 «＋N 더» 로 말한다. 파일 칸이 남는 높이를 쓴다.
  * 🔴 **드물게 쓰는 것은 아래 도구 막대로** — 종전의 «명령 · 스킬» 절 · «루틴» 절 · 발의 «이 봇» 줄. 누르면 그 내용이 뜬다.
  */
-export function Panel({ bot, sessions, go, onOpenFile, onTalk, onAttach, onMention, onStartAt, onNewFolderAt, touched, filesTick, onCollapse, say, refresh, activeDoc, focusSec, phone, onBack, only }: { bot: Bot; sessions: SessionInfo[]; sessionId?: string; go: (b: string, sid?: string) => void; onOpenFile: (rel: string, pin?: boolean) => void; onTalk: (t: string) => void; onAttach: (rel: string, dir?: boolean) => void; onMention: (rel: string) => void; onStartAt: (vaultRel: string, botId?: string) => void; onNewFolderAt: (vaultRel: string) => void; phone?: boolean; onBack?: () => void;
+export function Panel({ bot, sessions, go, onOverview, onOpenFile, onTalk, onAttach, onMention, onStartAt, onNewFolderAt, touched, filesTick, onCollapse, say, refresh, activeDoc, focusSec, phone, onBack, only }: { bot: Bot; sessions: SessionInfo[]; sessionId?: string; go: (b: string, sid?: string) => void; /** 폴더 개요 한 장을 문서 칸에 연다 */ onOverview?: () => void; onOpenFile: (rel: string, pin?: boolean) => void; onTalk: (t: string) => void; onAttach: (rel: string, dir?: boolean) => void; onMention: (rel: string) => void; onStartAt: (vaultRel: string, botId?: string) => void; onNewFolderAt: (vaultRel: string) => void; phone?: boolean; onBack?: () => void;
   /**
    * AD · **폰의 「할 일」 탭과 「폴더」 탭은 다른 화면이다** (2026-09-23 Dave: *«투두랑 폴더를 클릭했을 때 사실상
    * 똑같은 메뉴가 나오는데 그러면 의미가 없잖아»*). `only` 를 주면 그 화면만 보인다 —
@@ -69,7 +69,7 @@ export function Panel({ bot, sessions, go, onOpenFile, onTalk, onAttach, onMenti
   return <div className="col side panel" style={{ width: '100%' }}>
     <div className="hdr">{phone ? <button className="rb glassb" onClick={onBack} title="봇 목록"><Icon n="list" size={20} /></button> : null}<span className="ttl">{only === 'todo' ? '할 일' : only === 'files' ? '폴더' : bot.orchestrator ? '이 볼트에서' : '이 폴더에서'}</span><span className="sp" />{!phone ? <div className="acts"><button className="ib on" onClick={onCollapse} title="패널 접기 (⌘⇧B)"><Icon n="panelr" size={14} /></button></div> : null}</div>
     {/* 개요 — 이 폴더가 어디까지 왔나. 오케스트레이터(«이 볼트에서»)는 자리를 비운다(볼트 요약을 둘지는 미정) · 폰 「할 일」 탭에는 없다 */}
-    {!bot.orchestrator && only !== 'todo' ? <OverviewCard bot={bot} sessions={sessions} todos={todos} filesTick={filesTick} onOpenFile={onOpenFile} onTalk={onTalk} go={go} showTodo={() => setOpen((o) => ({ ...o, todo: true }))} /> : null}
+    {!bot.orchestrator && only !== 'todo' ? <OverviewCard bot={bot} sessions={sessions} todos={todos} filesTick={filesTick} onPage={onOverview} onOpenFile={onOpenFile} onTalk={onTalk} go={go} showTodo={() => setOpen((o) => ({ ...o, todo: true }))} /> : null}
     {/* 할 일 / Inbox — `only='todo'` 면 이 절 하나가 화면을 다 쓴다. 그 밖에는 내용만큼(최대 45%) · 잘리면 «＋N 더» */}
     {only === 'files' ? null : <ClampSec clamp={!only && secOn('todo')} all={!!open.todoAll} setAll={(v) => setOpen((o) => ({ ...o, todoAll: v }))} grow={only === 'todo'}>
       {bot.orchestrator ? <InboxSec open={secOn('todo')} tog={() => tog('todo')} onSend={onTalk} /> : <TodoSec bot={bot} items={todos} loading={!s.todos[bot.id]} open={secOn('todo')} tog={() => tog('todo')} onDelegate={(t) => onTalk(`${t.title}${t.desc ? ` — ${t.desc}` : ''}`)} onOpenFile={onOpenFile} reload={() => loadTodo(bot.id)} phone={phone} />}
@@ -118,7 +118,7 @@ export function Panel({ bot, sessions, go, onOpenFile, onTalk, onAttach, onMenti
  * 🔴 **`state.md` 가 없어도 칸을 비우지 않는다** — «없어요 — 봇에게 정리를 시키기» 한 줄이 선다.
  * ⚠ 세션 상태 · 할 일 · 파일이 바뀌면 다시 받는다. 받는 동안 옛 값을 그대로 둔다(깜빡이지 않게) — 다른 봇의 값만 안 보인다.
  */
-function OverviewCard({ bot, sessions, todos, filesTick, onOpenFile, onTalk, go, showTodo }: { bot: Bot; sessions: SessionInfo[]; todos: TodoItem[]; filesTick?: number; onOpenFile: (rel: string) => void; onTalk: (t: string) => void; go: (b: string, sid?: string) => void; showTodo: () => void }) {
+function OverviewCard({ bot, sessions, todos, filesTick, onPage, onOpenFile, onTalk, go, showTodo }: { bot: Bot; sessions: SessionInfo[]; todos: TodoItem[]; filesTick?: number; onPage?: () => void; onOpenFile: (rel: string) => void; onTalk: (t: string) => void; go: (b: string, sid?: string) => void; showTodo: () => void }) {
   const [got, setGot] = useState<{ id: string; ov: Overview } | null>(null)
   const sig = useMemo(() => `${sessions.map((x) => (x.state === 'awaiting_input' ? x.id : '')).join('')}|${todos.map((t) => `${t.done ? 1 : 0}${t.proposed ? 1 : 0}${t.due ?? ''}`).join(',')}`, [sessions, todos])
   useEffect(() => {
@@ -134,7 +134,8 @@ function OverviewCard({ bot, sessions, todos, filesTick, onOpenFile, onTalk, go,
   const src = [ov.hasState ? 'state.md' : '', todos.length ? 'todo.md' : ''].filter(Boolean)
   const at = ov.goalAt ? stamp(ov.goalAt) : ''
   return <div className="ovw">
-    <div className="oh">개요</div>
+    {/* «한 장» — 폴더 개요 한 장을 문서 칸에 연다(2026-11-15 Dave 카드 «문서 칸»). 이 칸은 그 한 장의 머리 석 줄이다 */}
+    <div className="oh">개요{onPage ? <button className="opage" onClick={onPage} title="이 폴더의 개요 한 장을 문서 칸에 열기">한 장</button> : null}</div>
     {!ov.hasState ? <button className="onone" onClick={() => onTalk('이 폴더의 state.md 를 만들어 지금 상태를 정리해 줘.')}>state.md 가 없어요 — 봇에게 정리를 시키기</button>
       : ov.goal ? <button className="og" title="state.md 열기" onClick={() => onOpenFile('state.md')}>{ov.goal}</button>
         : <button className="onone" onClick={() => onOpenFile('state.md')}>state.md 에 «현재 목표» 줄이 없어요 — 열어서 적기</button>}
