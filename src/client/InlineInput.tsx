@@ -102,6 +102,29 @@ function placeCaret(el: HTMLElement, pos: number): void {
   range.selectNodeContents(el); range.collapse(false); sel.removeAllRanges(); sel.addRange(range)
 }
 
+/**
+ * 🔴 **우리가 놓은 커서는 브라우저가 따라 굴려 주지 않는다** (2026-11-15 Dave: «붙여넣기 등을 했을때 커서 위치가 화면에 제대로 표시되지 않거나»).
+ *    글자를 치면 크롬이 커서를 보이는 자리로 굴리지만, `placeCaret` 로 놓은 selection 은 그대로 둔다 — 그래서 긴 글을 붙여 넣거나
+ *    긴 글의 끝에서 ⇧⏎ 를 누르면 입력칸은 맨 위에 머물고 커서는 칸 아래 안 보이는 곳에 있었다(실측 `test/caret-scroll.mjs` K1 · K2 · K10).
+ *    커서 줄이 칸 밖이면 그만큼만 굴린다. 이미 보이면 손대지 않는다(가운데를 고칠 때 칸이 튀지 않게).
+ * ⚠ 접힌 범위는 줄 머리 · 빈 줄에서 자리가 안 나올 때가 있다 — 그때는 바로 뒤 글자나 요소(<br> · 칩)의 자리를 쓰고, 뒤에 아무것도 없으면 글의 끝이다.
+ */
+function revealCaret(el: HTMLElement): void {
+  if (el.scrollHeight <= el.clientHeight + 1) return
+  const sel = window.getSelection(); if (!sel || !sel.rangeCount) return
+  const r = sel.getRangeAt(0); if (!el.contains(r.startContainer)) return
+  let rect: DOMRect | undefined = Array.from(r.getClientRects()).find((x) => x.height > 0)
+  if (!rect) {
+    const n = r.startContainer, off = r.startOffset
+    if (n.nodeType === Node.TEXT_NODE && off < (n.textContent ?? '').length) { const rr = document.createRange(); rr.setStart(n, off); rr.setEnd(n, off + 1); rect = Array.from(rr.getClientRects()).find((x) => x.height > 0) }
+    if (!rect) { const next = n.nodeType === Node.TEXT_NODE ? n.nextSibling : n.childNodes[off]; if (next instanceof HTMLElement) rect = next.getBoundingClientRect() }
+  }
+  if (!rect || !rect.height) { el.scrollTop = el.scrollHeight; return }
+  const box = el.getBoundingClientRect(), pad = 2
+  if (rect.bottom > box.bottom - pad) el.scrollTop += rect.bottom - (box.bottom - pad)
+  else if (rect.top < box.top + pad) el.scrollTop -= box.top + pad - rect.top
+}
+
 /** 글 → 자식 목록(구조 비교용). `@이름` 이 칩 목록에 있으면 칩, 아니면 글자 그대로 */
 function tokens(value: string, chips: Record<string, ChipInfo>): { t: 'text' | 'chip'; s: string }[] {
   const out: { t: 'text' | 'chip'; s: string }[] = []
@@ -155,7 +178,7 @@ export const InlineInput = forwardRef<InlineInputHandle, Props>(function InlineI
 
   useImperativeHandle(ref, () => ({
     focus: () => el.current?.focus({ preventScroll: true }),   // P-4 · Safari 가 포커스 때 문서를 밀지 않게
-    setSelection: (pos) => { const e = el.current; if (!e) return; e.focus({ preventScroll: true }); placeCaret(e, pos) },
+    setSelection: (pos) => { const e = el.current; if (!e) return; e.focus({ preventScroll: true }); placeCaret(e, pos); revealCaret(e) },
     el: () => el.current
   }), [])
 
@@ -214,6 +237,7 @@ export const InlineInput = forwardRef<InlineInputHandle, Props>(function InlineI
     e.normalize()
     ensureTail(e)   // ⇧⏎ 로 끝에 넣은 줄바꿈이 **그 자리에서** 보이게
     placeCaret(e, pos + s.length)
+    revealCaret(e)   // 붙여 넣은 글 · 넣은 줄의 끝이 칸 밖이면 거기까지 굴린다
     emit()
   }
   /**

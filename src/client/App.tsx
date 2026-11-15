@@ -77,6 +77,7 @@ import { resultPreview } from '../core/bgTasks'
 import { STEER_WHY, steerVerdict } from '../core/steer'
 import { nextWaiting, waitingOrder } from '../core/sessionTabs'
 import { errText } from './errText'
+import { fitArea, revealAreaCaret } from './areaFit'
 
 type Tool = Extract<ChatItem, { kind: 'tool' }>
 type Sub = Extract<ChatItem, { kind: 'subagent' }>
@@ -2731,7 +2732,7 @@ function FilePickModal({ bot, onClose, onPick }: { bot: Bot; onClose: () => void
 function PreviewBox({ block, text, editing, onEditing, onText }: { block: PreviewBlock; text: string | undefined; editing: boolean; onEditing: (v: boolean) => void; onText: (t: string | undefined) => void }) {
   const cur = text ?? block.text; const fixed = text != null && !sameText(text, block.text); const mono = monoText(block.text)
   const ta = useRef<HTMLTextAreaElement>(null)
-  useLayoutEffect(() => { const t = ta.current; if (!t) return; t.style.height = 'auto'; t.style.height = `${t.scrollHeight + 2}px` }, [editing, cur])
+  useLayoutEffect(() => { const t = ta.current; if (!t) return; fitArea(t); if (document.activeElement === t) revealAreaCaret(t) }, [editing, cur])
   return <div className={`pvw ${fixed ? 'ed' : ''}`}>
     <div className="pvh"><span className="pvl">{block.owner ? `보낼 글 · ${block.owner}` : '보낼 글'}</span>{fixed ? <span className="pvtag">고친 글</span> : null}<span style={{ flex: 1 }} />
       {editing ? <>{fixed ? <button className="pvb" onClick={() => onText(undefined)}>되돌리기</button> : null}<button className="pvb on" onClick={() => onEditing(false)}>다 고침</button></> : <button className="pvb" onClick={() => onEditing(true)}><Icon n="edit" size={11} />고치기</button>}</div>

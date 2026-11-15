@@ -7814,6 +7814,17 @@ try {
       await overviewPage({ br, shots: 'test/tmp', check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 폴더 개요 · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } names.push(name.split(' ')[0]) } })
       ok(`폴더 개요 한 장 — 패널 «한 장» 으로 문서 칸에 · 줄은 파일에 적힌 그대로 · [이 부분 묻기] 는 내 말 아래 인용으로 · 바뀌면 «다시 읽기» 로만 · 폰은 «문서» 탭 [${names.join(' ')}]`)
     }
+    /*
+     * 커서와 스크롤 (2026-11-15 Dave: «AskUserQuestion 혹은 기존 문구 고치기 그리고 붙여넣기 등을 했을때 커서 위치가 화면에 제대로
+     * 표시되지 않거나 스크롤 업/다운 되는 현상이 있어. 이 부분 전수 검사해서 고쳐야 해.»). 글자를 치는 칸마다 «커서가 보이는가 ·
+     * 스크롤이 저절로 움직였는가» 를 잰다. 검사 본문(`test/caret-scroll.mjs`)이 제 호스트를 따로 띄운다.
+     */
+    {
+      const { caretScroll } = await import('./caret-scroll.mjs')
+      const names = []
+      await caretScroll({ br, shots: 'test/tmp', check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 커서와 스크롤 · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } names.push(name.split(' ')[0]) } })
+      ok(`커서와 스크롤 — 입력칸에 붙여 넣거나 줄을 넣으면 커서가 보인다 · 질문 카드의 미리보기 [고치기] 는 커서를 따라가고 대화가 흔들리지 않는다 · 위를 읽는 중에는 대화가 그대로 [${names.join(' ')}]`)
+    }
     await br.close(); ok('ui renders (desktop · phone) → test/tmp/*.png')
   } catch (e) { try { await globalThis.__br?.close() } catch {} if (/executablePath|Executable doesn't exist|Cannot find (module|package) 'playwright/.test(String(e.message))) console.log('(화면 검사 건너뜀 — 브라우저 없음:', e.message.split('\n')[0], ')'); else fail('ui: ' + e.stack.split('\n').slice(0, 4).join(' | ')) }
   // 원본 울타리 · 브라우저가 없는 기기에서도 호스트 쪽 검사(S1~S3)는 돈다
