@@ -131,7 +131,7 @@ const HOST_BUNDLE = join(__dirname, 'host', 'host', 'index.mjs')
 const HOST_CLIENT = join(__dirname, 'host', 'client')
 function hostAvailable() { return existsSync(HOST_BUNDLE) && existsSync(join(HOST_CLIENT, 'index.html')) }
 async function startHostMode(root) {
-  if (!hostAvailable()) throw new Error('이 빌드에는 호스트가 안 들어 있어요')
+  if (!hostAvailable()) throw new Error('이 빌드에는 메인으로 뜨는 부품이 안 들어 있어요')
   process.env.FOLDERBOT_DATA = join(app.getPath('userData'), 'host')
   /**
    * 🔴 호스트가 이 앱 안에서 돌면 **맥 배너는 이 앱(Electron)이 띄운다** — 눌러서 그 대화로 갈 수 있는 쪽이다.
@@ -161,7 +161,7 @@ async function switchRoot(root) {
   try { hostRun?.stop() } catch { /* 이미 내려갔으면 그만 */ }
   hostRun = null
   try { await startHostMode(root); if (!settings.loginItem) { settings.loginItem = true; save(); app.setLoginItemSettings({ openAtLogin: true, openAsHidden: true }) } showWin(); loadHome() }
-  catch (e) { dialog.showErrorBox('호스트를 못 띄웠어요', String(e && e.message || e)) }
+  catch (e) { dialog.showErrorBox('메인을 못 띄웠어요', String(e && e.message || e)) }
 }
 /**
  * 🔴 **사용량 폴링은 모드와 상관없이 돈다** (2026-09-13 Dave 제보 — 원격 맥의 메뉴에 사용량이 아예 없었다).
@@ -262,7 +262,7 @@ ipcMain.handle('fb:local-copy-image', async (_e, a) => {
     if (a && a.path && existsSync(String(a.path))) { img = nativeImage.createFromPath(String(a.path)); from = 'path' }
     if ((!img || img.isEmpty()) && a && a.url) {
       const r = await fetch(String(a.url), { headers: { authorization: `Bearer ${settings.token}` } })
-      if (!r.ok) return { ok: false, why: `호스트에서 그림을 못 받았어요 (HTTP ${r.status})` }
+      if (!r.ok) return { ok: false, why: `메인에서 그림을 못 받았어요 (HTTP ${r.status})` }
       img = nativeImage.createFromBuffer(Buffer.from(await r.arrayBuffer())); from = 'url'
     }
     if (!img || img.isEmpty()) return { ok: false, why: `그림을 못 읽었어요 (${from || '경로 없음'}) — HEIC·SVG 는 아직 못 붙여요` }
@@ -377,7 +377,7 @@ function appMenu() {
     { label: '파일', submenu: [
       { label: '새 세션', accelerator: 'CmdOrCtrl+N', click: cmd('new-session') },
       // 2026-10-02 · ⌘K 는 검색(시안 A) — 폴더 고르기는 ⌘⇧N 으로 옮겼다
-      { label: '검색', accelerator: 'CmdOrCtrl+K', click: cmd('search') },
+      { label: '찾기', accelerator: 'CmdOrCtrl+K', click: cmd('search') },
       { label: '폴더 고르기 · 시작', accelerator: 'CmdOrCtrl+Shift+N', click: cmd('picker') },
       { label: '세션 정리…', click: cmd('cleanup') },
       { label: '명령 팔레트', accelerator: 'CmdOrCtrl+P', click: cmd('palette') },
@@ -490,20 +490,20 @@ ipcMain.on('fb:tray-act', (_e, id) => {
 /** ⚠ 폴백 전용 — 아직 호스트에 붙기 전(그릴 화면이 없을 때)만 뜬다. 평소 메뉴는 위 `trayPanel` 이다. */
 function trayMenu() {
   return Menu.buildFromTemplate([
-    { label: waiting ? `확인 대기 ${waiting}` : mood === 'work' ? '일하는 중' : mood === 'error' ? '문제 있어요' : '한가함', enabled: false },
+    { label: waiting ? `내 답 기다림 ${waiting}` : mood === 'work' ? '일하는 중' : mood === 'error' ? '문제 있어요' : '쉼', enabled: false },
     ...usageItems(),
     { label: 'Folder Bot 열기', click: showWin },
     { label: '알림 센터', click: () => { showWin(); try { win.webContents.send('fb:cmd', 'notify') } catch { navigate('#notify=1') } } },
     { type: 'separator' },
     ...(settings.mode === 'host' ? [
-      { label: `이 맥이 호스트 · ${settings.root}`, enabled: false },
+      { label: `이 맥이 메인 · ${settings.root}`, enabled: false },
       { label: pairing && Date.now() < pairing.expiresAt ? `페어링 코드 ${pairing.code} (클릭해 복사)` : '페어링 코드 만들기', click: () => { const p = pairing && Date.now() < pairing.expiresAt ? pairing : newPairing(); if (p) { clipboard.writeText(p.code); new Notification({ title: 'Folder Bot 페어링 코드', body: `${p.code} · 2분 안에 폰·맥북에서 입력` }).show() } } },
       { label: '새 페어링 코드', click: () => { const p = newPairing(); if (p) { clipboard.writeText(p.code); new Notification({ title: 'Folder Bot 페어링 코드', body: `${p.code} · 복사됨` }).show() } } },
       { label: '폰에서 열 주소 복사', click: () => { const urls = hostRun ? hostRun.urls.filter((u) => !u.includes('127.0.0.1')) : []; clipboard.writeText(urls[0] || settings.hostUrl); new Notification({ title: 'Folder Bot', body: urls[0] ? `${urls[0]} 복사됨 (같은 Tailscale)` : 'Tailscale 주소가 아직 없어요 — Tailscale 을 켜세요' }).show() } },
       { label: '루트 폴더 바꾸기…', click: () => { void chooseRootAndStart() } }
     ] : [
-      { label: settings.hostUrl ? `호스트 · ${settings.hostUrl.replace(/^https?:\/\//, '')}` : '호스트 없음', enabled: false },
-      { label: '호스트 바꾸기…', click: () => { settings.mode = ''; settings.hostUrl = ''; settings.token = ''; save(); stopSse(); showWin(); loadHome() } }
+      { label: settings.hostUrl ? `메인 · ${settings.hostUrl.replace(/^https?:\/\//, '')}` : '메인 없음', enabled: false },
+      { label: '메인 바꾸기…', click: () => { settings.mode = ''; settings.hostUrl = ''; settings.token = ''; save(); stopSse(); showWin(); loadHome() } }
     ]),
     { type: 'separator' },
     ...(() => { const u = updater.state(); return u.staged?.ready ? [{ label: `v${u.staged.version} 업데이트 적용 (재시작)`, click: () => updater.apply() }] : u.downloading ? [{ label: `업데이트 받는 중 ${Math.round((u.staged?.progress || 0) * 100)}%`, enabled: false }] : [{ label: `업데이트 확인 (v${u.current})`, click: () => void updater.check(true) }] })(),
@@ -563,7 +563,7 @@ function refreshTray() {
   //    ⚠ 확인 대기 수만 글자로 남긴다 — 그건 잔량이 아니라 **지금 사람을 기다리는 일**의 개수다.
   tray.setImage(trayIcon())
   tray.setTitle(waiting ? String(waiting) : '', { fontType: 'monospacedDigit' })
-  tray.setToolTip(waiting ? `Folder Bot · 확인 대기 ${waiting}` : 'Folder Bot')
+  tray.setToolTip(waiting ? `Folder Bot · 내 답 기다림 ${waiting}` : 'Folder Bot')
   if (app.dock) app.dock.setBadge(waiting ? String(waiting) : '')
   pushTrayState() // ⚠ 패널이 떠 있으면 «한가함 → 일하는 중» 이 그 자리에서 바뀌어야 한다
 }

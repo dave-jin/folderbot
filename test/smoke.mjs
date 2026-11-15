@@ -507,7 +507,7 @@ try {
       if (!taskOf(g3, '내가 고른 작업')?.cards.includes(s3x.sessionId) || taskOf(g3, '딴 작업').cards.includes(s3x.sessionId)) fail('🔴 CX-3: Dave 가 옮긴 카드를 묶기가 다시 옮겼다 · ' + JSON.stringify(g3.tasks))
       ok('CX-3 · Dave 가 옮긴 카드는 같은 세션 다음 턴·뒤이은 묶기 뒤에도 «내가 고른 작업» 에 · 새 카드만 «딴 작업» 으로')
 
-      // CX-4 주인 아님 — 볼트 board.json 을 그대로 보여 주고 · 고치기는 409 «주인 맥(다른맥)» · 판 파일이 없으면 «아직 주인 맥 판 없음»
+      // CX-4 주인 아님 — 볼트 board.json 을 그대로 보여 주고 · 고치기는 409 «루틴을 돌리는 메인(다른맥)» · 판 파일이 없으면 «아직 메인 판 없음»
       const opsF = join(root, '.claude/ops.yml'), boardF = join(root, '.folderbot/context/board.json'), boardAway = join(data, 'cx-board-away.json')
       const opsWas = existsSync(opsF) ? readFileSync(opsF, 'utf8') : null
       if (!existsSync(boardF)) fail('CX-4: 주인 맥인데 볼트에 board.json 이 없다')
@@ -518,15 +518,15 @@ try {
         if (b4.at !== fileAt) fail('🔴 CX-4: 주인 아닌 맥이 볼트 board.json 을 그대로 안 보여 준다 · ' + JSON.stringify({ got: b4.at, file: fileAt }))
         const r409 = await fetch(base + '/api/context/move', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ bot: cx.id, card: s3y.sessionId, newTitle: '주인 아님' }) })
         const t409 = await r409.text()
-        if (r409.status !== 409 || !t409.includes('주인 맥(다른맥)')) fail('🔴 CX-4: 주인 아닌 맥에서 옮기기가 409 «주인 맥(다른맥)» 으로 안 막혔다 · ' + r409.status + ' ' + t409)
+        if (r409.status !== 409 || !t409.includes('루틴을 돌리는 메인(다른맥)')) fail('🔴 CX-4: 주인 아닌 맥에서 옮기기가 409 «루틴을 돌리는 메인(다른맥)» 으로 안 막혔다 · ' + r409.status + ' ' + t409)
         writeFileSync(boardAway, readFileSync(boardF)); rmSync(boardF)
         const b5 = await board()
-        if (!b5.sources.some((s) => /아직 주인 맥 판 없음/.test(s.note ?? ''))) fail('🔴 CX-4: 판 파일이 없는데 «아직 주인 맥 판 없음» 이 없다 · ' + JSON.stringify(b5.sources))
+        if (!b5.sources.some((s) => /아직 메인 판 없음/.test(s.note ?? ''))) fail('🔴 CX-4: 판 파일이 없는데 «아직 메인 판 없음» 이 없다 · ' + JSON.stringify(b5.sources))
       } finally {
         if (opsWas === null) rmSync(opsF, { force: true }); else writeFileSync(opsF, opsWas)
         if (existsSync(boardAway)) { mkdirSync(join(root, '.folderbot/context'), { recursive: true }); writeFileSync(boardF, readFileSync(boardAway)); rmSync(boardAway) }
       }
-      ok('CX-4 · 주인 아닌 맥 — 볼트 board.json 의 at 그대로 · 옮기기 409 «주인 맥(다른맥)» · 판 파일이 없으면 «아직 주인 맥 판 없음»')
+      ok('CX-4 · 주인 아닌 맥 — 볼트 board.json 의 at 그대로 · 옮기기 409 «루틴을 돌리는 메인(다른맥)» · 판 파일이 없으면 «아직 메인 판 없음»')
 
       // CX-5 오케스트레이터 도구 — context_board 와 볼트 board.md 가 같은 «오늘의 축» 을 담는다
       const md = await until(async () => { const r = await mcp('tools/call', { name: 'context_board', arguments: {} }); const t = r.result?.content?.[0]?.text ?? ''; return /오늘은 스모크가 축이다/.test(t) ? t : null })
@@ -1142,7 +1142,7 @@ try {
         await pg.goto(base + '/#bot=orch')
         await pg.waitForSelector('.sb-list .brg-row[data-peer="auto"]', { timeout: 10000 }).catch(() => fail('🔴 BQ-9: 레일에 «연결» 절의 상대 줄이 없다'))
         const order = await pg.evaluate(() => [...document.querySelectorAll('.sb-list .secl')].map((x) => x.textContent))
-        if (order[0] !== '관제' || order[1] !== '연결') fail('🔴 BQ-9: «연결» 절이 관제 바로 아래가 아니다 · ' + JSON.stringify(order))
+        if (order[0] !== '볼트' || order[1] !== '연결') fail('🔴 BQ-9: «연결» 절이 관제 바로 아래가 아니다 · ' + JSON.stringify(order))
         if (await pg.$('.sb-list .brow[data-peer]')) fail('BQ-9: 상대 줄이 봇 줄(.brow)로 그려졌다 — 끌어 놓기·정렬 검사가 센다')
         await pg.click('.brg-row[data-peer="auto"]')
         await pg.waitForSelector('.brg-thread[data-peer="auto"] .brg-letter', { timeout: 8000 }).catch(() => fail('🔴 BQ-9: 상대를 눌렀는데 가운데에 편지 스레드가 안 열렸다'))
@@ -1614,7 +1614,7 @@ try {
         await pg.click('.sb-foot .bd.upd'); await wait(200); const vt = await pg.textContent('.toast'); if (!/업데이트/.test(vt ?? '')) fail('ui version chip toast: ' + vt)
         // 레일 순서 — 섹션은 관제 → 2 → 3 → 4, 행은 마감일 오름차순(폴더명 날짜 · 연·월은 그 기간 끝날 · 날짜 없으면 뒤에 이름순), 활동으로 자리가 안 바뀐다
         const order = await pg.evaluate(() => Array.from(document.querySelectorAll('.sb-list > div')).map((sec) => ({ s: sec.querySelector('.secl')?.textContent, n: Array.from(sec.querySelectorAll('.brow .n .bname')).map((e) => e.getAttribute('title')) })))
-        const secNames = order.map((o) => o.s); const sorted = [...secNames].sort((a, b) => (a === '관제' ? -1 : b === '관제' ? 1 : a.localeCompare(b, 'ko', { numeric: true })))
+        const secNames = order.map((o) => o.s); const sorted = [...secNames].sort((a, b) => (a === '볼트' ? -1 : b === '볼트' ? 1 : a.localeCompare(b, 'ko', { numeric: true })))
         if (JSON.stringify(secNames) !== JSON.stringify(sorted)) fail('ui section order ' + secNames.join(' | '))
         const dueKey = (n) => { const m = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?_./.exec(n ?? ''); if (!m) return null; const y = +m[1], mo = m[2] ? +m[2] : 12, d = m[3] ? +m[3] : new Date(y, mo, 0).getDate(); return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}` }
         const byDueName = (a, b) => { const ka = dueKey(a), kb = dueKey(b); if (ka !== kb) return ka === null ? 1 : kb === null ? -1 : ka < kb ? -1 : 1; const pa = (/^\d{4}(-\d{2})?(-\d{2})?_/.exec(a) ?? [])[0]?.length ?? 0, pb = (/^\d{4}(-\d{2})?(-\d{2})?_/.exec(b) ?? [])[0]?.length ?? 0; if (pa !== pb) return pb - pa; return a.localeCompare(b, 'ko', { numeric: true, sensitivity: 'base' }) }
@@ -1730,7 +1730,7 @@ try {
           // ② 호스트에서 받기 — 설정 › 기기 에서 바꾸면 즉시: 캐시로 내려받아 열고 탭에 「사본」
           await rp.keyboard.press('Meta+,'); await rp.waitForSelector('.setw', { timeout: 4000 }); await rp.click('.snav .nv:has-text("기기")'); await wait(400)
           const sp = await rp.textContent('.setw'); for (const w of ['이 기기에서 파일 열기', '동기화 볼트 위치']) if (!sp?.includes(w)) fail('E 설정 › 기기: «' + w + '» 줄이 없다')
-          await rp.click('.setw .seg button:has-text("호스트에서 받기")'); await wait(300)
+          await rp.click('.setw .seg button:has-text("메인에서 받기")'); await wait(300)
           if ((await rp.evaluate(() => window.__local.settings.openMode)) !== 'download') fail('E 설정: 모드 전환이 저장되지 않았다')
           await rp.keyboard.press('Escape'); await wait(300)
           await rp.evaluate(() => { const b = [...document.querySelectorAll('.panel .trow')].find((x) => /CLAUDE\.md/.test(x.textContent ?? '')); b?.click() }); await rp.waitForSelector('.docwrap .dtb', { timeout: 5000 }); await wait(300)
@@ -2882,7 +2882,7 @@ try {
                 {
                   await hp.click('.panel .ptools .tb.rt')
                   await hp.waitForSelector('.spop.rtpop button.kv', { timeout: 3000 }); await wait(300)
-                  const rtBtn = await hp.evaluate(() => { const b = [...document.querySelectorAll('.spop.rtpop button.kv')].find((x) => /루틴 (편집|추가)/.test(x.textContent ?? '')); b?.click(); return !!b })
+                  const rtBtn = await hp.evaluate(() => { const b = [...document.querySelectorAll('.spop.rtpop button.kv')].find((x) => /루틴 (고치기|추가)/.test(x.textContent ?? '')); b?.click(); return !!b })
                   if (!rtBtn) fail('CF-4: 도구 막대의 루틴 목록에 «루틴 편집/추가» 가 없다 — 검사가 헛돈다')
                   await wait(400)
                   await hp.evaluate(() => { if (!document.querySelector('.modal.rted textarea')) { const n = [...document.querySelectorAll('.modal.rted button.srow')].find((x) => /새 루틴/.test(x.textContent ?? '')); n?.click() } })
@@ -3287,7 +3287,7 @@ try {
           await pg.evaluate((h) => { location.hash = h }, `bot=${cmBot.id}`); await wait(1200)
           const shown = await pg.evaluate(() => ({ body: document.querySelector('.chat-body')?.textContent ?? '', empty: !!document.querySelector('.chat-body > .empty'), ph: document.querySelector('.col.chat [contenteditable], .col.chat textarea')?.getAttribute('data-placeholder') ?? document.querySelector('.col.chat textarea')?.getAttribute('placeholder') ?? '' }))
           if (shown.empty || !shown.body.includes('소통만 왔어요 CM')) fail('🔴 CM: 소통 세션만 있는 봇을 열었는데 그 대화가 안 선다(빈 창) ' + JSON.stringify(shown).slice(0, 300))
-          if (!/새 채팅으로 이어서/.test(shown.ph)) fail('CM: 소통 세션 입력칸에 «새 채팅으로 이어서 열려요» 안내가 없다 ' + JSON.stringify(shown.ph))
+          if (!/새 세션으로 이어서/.test(shown.ph)) fail('CM: 소통 세션 입력칸에 «새 채팅으로 이어서 열려요» 안내가 없다 ' + JSON.stringify(shown.ph))
           ok('CM 소통 세션만 있는 봇 — 열면 그 대화 · 입력칸은 «새 채팅으로 이어서»')
           // 거기서 사람이 친 말은 새 채팅으로 갈라 열리고 화면도 그리로 간다(소통 세션엔 사람 말이 안 섞인다)
           {
@@ -3423,7 +3423,7 @@ try {
          */
         {
           const navs = await pg.$$eval('.col.side.left .nav > span:nth-child(2)', (r) => r.map((x) => x.textContent))
-          if (navs[0] !== '검색' || navs.includes('알림') || navs.includes('세션 정리')) fail('🔴 메뉴: 검색이 맨 위가 아니거나 «알림»·«세션 정리» 줄이 남았다(CJ — 네 칸이 흡수) ' + JSON.stringify(navs))
+          if (navs[0] !== '찾기' || navs.includes('알림') || navs.includes('세션 정리')) fail('🔴 메뉴: 검색이 맨 위가 아니거나 «알림»·«세션 정리» 줄이 남았다(CJ — 네 칸이 흡수) ' + JSON.stringify(navs))
           const back = await pg.evaluate(() => location.hash)
           await pg.keyboard.press('Meta+k'); await pg.waitForSelector('.modal.srch', { timeout: 3000 }).catch(() => {})
           if (!(await pg.$('.modal.srch'))) fail('🔴 검색: ⌘K 로 안 열린다')
@@ -3513,7 +3513,7 @@ try {
           else {
             if (a.cls !== 'me' || !a.on || a.name !== 'DF 검사' || !/재무_CFO/.test(a.folder ?? '') || !a.l2) fail('DF: 움직이는 세션 줄 모양(주황 · 처음 고른 줄 · 이름 · 폴더 · 하는 일) ' + JSON.stringify(a))
             if (a.l2h < 10) fail('🔴 DF: 둘째 줄(지금 하는 일)이 화면에서 눌려 안 보인다 — 채팅 진행 줄의 전역 .live(높이 24px)가 걸렸나 ' + a.l2h)
-            if (!/움직이는 세션 \d/.test(a.head) || !a.sub) fail('DF: «최근» 머리에 움직이는 세션 수 · «지금 움직이는 세션» 머리가 없다 ' + JSON.stringify(a))
+            if (!/일하는 중 \d/.test(a.head) || !a.sub) fail('DF: «최근» 머리에 움직이는 세션 수 · «지금 움직이는 세션» 머리가 없다 ' + JSON.stringify(a))
             if (a.recentBots.includes(cfo.id)) fail('🔴 DF: 움직이는 폴더가 아래 폴더 줄에 또 나온다 ' + JSON.stringify(a.recentBots))
             if (a.sess) fail('🔴 DF: 폴더를 안 폈는데 세션 줄이 섰다 ' + a.sess)
             await wait(1300); const b = await look()
@@ -3746,7 +3746,7 @@ try {
            * 2026-09-17 «설정 1안» (Dave: «설정 메뉴가 엉망진창임 … 종류별로 정리») — 가르는 기준이 «무엇의 설정인가».
            * 아홉 칸 중 Codex 는 깔렸을 때만, 할 일은 폰에서만 목차에 나온다. 참고 칸은 맨 아래·보기만.
            */
-          for (const want of ['일반', '호스트 · 볼트', '기기', 'Claude', '세션 · 사용량', '알림', '참고 · 커넥터 · 스킬'])
+          for (const want of ['일반', '메인 · 볼트', '기기', 'Claude', '세션 · 사용량', '알림', '참고 · 커넥터 · 스킬'])
             if (!navs.includes(want)) fail('설정 목차에 «' + want + '» 가 없다 ' + JSON.stringify(navs))
           for (const gone of ['에이전트', '하네스', '권한 · 보안', '화면', '할 일']) if (navs.includes(gone)) fail('설정 목차에 옛 칸 «' + gone + '» 이 남아 있다 ' + JSON.stringify(navs))
           if (navs[navs.length - 1] !== '참고 · 커넥터 · 스킬') fail('참고 칸이 맨 아래가 아니다 ' + JSON.stringify(navs))
@@ -3758,13 +3758,13 @@ try {
           }))
           if (!three.length || three.some((x) => !x.ok)) fail('설정: 조작 자리가 흔들린다 ' + JSON.stringify(three.filter((x) => !x.ok)))
           if (!(await pg.$('.sp-b .setr[data-t="턴마다 기록하기"]'))) fail('설정 › 세션·사용량: 훅 줄이 없다')
-          if (!(await pg.$('.sp-b .setr[data-t="유휴 세션 절전"]'))) fail('설정 › 세션·사용량: 절전 줄이 없다')
+          if (!(await pg.$('.sp-b .setr[data-t="쉬는 세션 절전"]'))) fail('설정 › 세션·사용량: 절전 줄이 없다')
           // 🔴 범위 배지 — 줄마다 [메인]/[이 기기] 가 붙어 «어디에 남는 값인가» 가 보인다
           await pg.click('.snav .nv:has-text("일반")'); await wait(300)
-          const at = await pg.evaluate(() => ({ main: !!document.querySelector('.sp-b .setr[data-t="메인(호스트) 이름"] .scp.at-main'), dev: !!document.querySelector('.sp-b .setr[data-t="테마"] .scp.at-dev') }))
+          const at = await pg.evaluate(() => ({ main: !!document.querySelector('.sp-b .setr[data-t="메인 이름"] .scp.at-main'), dev: !!document.querySelector('.sp-b .setr[data-t="테마"] .scp.at-dev') }))
           if (!at.main || !at.dev) fail('설정: 범위 배지가 없다 ' + JSON.stringify(at))
           // 호스트 · 볼트 — 깔린 CLI 가 여기로
-          await pg.click('.snav .nv:has-text("호스트 · 볼트")'); await wait(400)
+          await pg.click('.snav .nv:has-text("메인 · 볼트")'); await wait(400)
           const hs = await pg.textContent('.sp-b'); if (!/Claude Code/.test(hs)) fail('설정 › 호스트·볼트: 깔린 CLI 가 없다')
           if (!(await pg.$('.sp-b .setr[data-t="볼트 루트"]'))) fail('설정 › 호스트·볼트: 볼트 루트가 없다')
           // 기기 — 흩어져 있던 기기 항목이 한 칸에 (페어링 · 로그아웃이 맨 아래)
@@ -3775,8 +3775,8 @@ try {
           // 🔴 Claude — 인증 → 새 채팅 기본값(모델 · **권한**) → 연결. 권한 기본값은 이 판에서 생겼다
           await pg.click('.snav .nv:has-text("Claude")'); await wait(500)
           const cl = await pg.$$eval('.sp-b .setr', (rs) => rs.map((r) => r.dataset.t))
-          for (const w of ['Claude 로그인 상태', '모델 · 생각 레벨', '새 채팅 기본 권한', '다시 연결', '연결 진단']) if (!cl.includes(w)) fail('설정 › Claude: «' + w + '» 줄이 없다 ' + JSON.stringify(cl))
-          if (cl.indexOf('Claude 로그인 상태') > cl.indexOf('새 채팅 기본 권한')) fail('설정 › Claude: 인증이 기본값보다 뒤에 있다 ' + JSON.stringify(cl))
+          for (const w of ['Claude 로그인 상태', '모델 · 생각 레벨', '새 세션 기본 권한', '다시 연결', '연결 진단']) if (!cl.includes(w)) fail('설정 › Claude: «' + w + '» 줄이 없다 ' + JSON.stringify(cl))
+          if (cl.indexOf('Claude 로그인 상태') > cl.indexOf('새 세션 기본 권한')) fail('설정 › Claude: 인증이 기본값보다 뒤에 있다 ' + JSON.stringify(cl))
           await pg.screenshot({ path: 'test/tmp/desktop-settings-claude.png' })
           // 참고 — 커넥터·스킬·폴더별 하네스(보기 전용). 고치는 버튼이 있으면 계약 위반이다
           await pg.click('.snav .nv:has-text("참고")'); await wait(500)
@@ -4657,7 +4657,7 @@ try {
            */
           {
             // 왼쪽 목록 A안(2026-11-14) — 네 칸(`.sbtiles .mcards`)은 봇 목록 아래 숫자 줄(`.numrow .ncell`)이 됐고, «폴더봇» 칸은 목록 머리의 «폴더 N»(`.lhead .lf`)이 됐다.
-            //    상황판 띠는 «내 답을 기다림» 띠(`.side.left .wband`)만 남았고, 판 상태 글(«아직 주인 맥 판 없음» 등)은 목록 아래 상황판 한 줄(`.cx-line .s`)이 말한다
+            //    상황판 띠는 «내 답을 기다림» 띠(`.side.left .wband`)만 남았고, 판 상태 글(«아직 메인 판 없음» 등)은 목록 아래 상황판 한 줄(`.cx-line .s`)이 말한다
             const labels = await pg.$$eval('.side.left .numrow .ncell .l', (r) => r.map((x) => x.textContent ?? ''))
             for (const want of ['세션', '알림', '할 일']) if (!labels.some((l) => l.includes(want))) fail(`레일 숫자 줄: «${want}» 칸이 없다 · ` + JSON.stringify(labels))
             { const lf = (await pg.textContent('.side.left .lhead .lf').catch(() => null)) ?? ''; if (!/폴더\s*\d+/.test(lf)) fail('레일 목록 머리: «폴더 N» 이 없다 · ' + JSON.stringify(lf)) }
@@ -4703,7 +4703,7 @@ try {
               await pg.evaluate((h) => { location.hash = h }, hashWas); await wait(400)   // 뒤 검사들이 보던 화면으로 되돌린다
             }
             await api(`/sessions/${hold.id}`, undefined, 'DELETE')
-            // ② 주인이 아닌 맥 · 판 파일 없음 — 판이 «아직 주인 맥 판 없음» 이어도 이 맥의 대기는 이 맥 세션 id 로 선다(Ruling 21)
+            // ② 주인이 아닌 맥 · 판 파일 없음 — 판이 «아직 메인 판 없음» 이어도 이 맥의 대기는 이 맥 세션 id 로 선다(Ruling 21)
             const opsF = join(root, '.claude/ops.yml'), boardF = join(root, '.folderbot/context/board.json')
             const opsWas = existsSync(opsF) ? readFileSync(opsF, 'utf8') : null, boardWas = existsSync(boardF) ? readFileSync(boardF, 'utf8') : null
             mkdirSync(join(root, '.claude'), { recursive: true }); writeFileSync(opsF, 'host: 다른맥\n'); rmSync(boardF, { force: true })
@@ -4711,13 +4711,13 @@ try {
               const hold2 = await api(`/bots/${bot.id}/sessions`, { name: '주인 아님 대기' })
               await api(`/sessions/${hold2.id}/send`, { text: '승인이 필요한 일 해 줘' })
               const r2 = await waitRow(hold2.id)
-              // 왼쪽 목록 A안(2026-11-14) — «아직 주인 맥 판 없음» 은 띠가 아니라 목록 아래 상황판 한 줄(`.cx-line .s`)에 선다
+              // 왼쪽 목록 A안(2026-11-14) — «아직 메인 판 없음» 은 띠가 아니라 목록 아래 상황판 한 줄(`.cx-line .s`)에 선다
               let strip = r2?.line ?? ''
-              for (let i = 0; i < 40 && !/아직 주인 맥 판 없음/.test(strip); i++) { await wait(250); strip = (await rowOf(hold2.id))?.line ?? '' }
+              for (let i = 0; i < 40 && !/아직 메인 판 없음/.test(strip); i++) { await wait(250); strip = (await rowOf(hold2.id))?.line ?? '' }
               if (!r2) fail('🔴 Ruling 21: 주인 아닌 맥·판 파일 없음에서 이 맥의 확인 대기가 띠에 안 선다')
               else {
-                if (!/아직 주인 맥 판 없음/.test(strip)) fail('Ruling 21: 판 파일이 없는데 «아직 주인 맥 판 없음» 이 안 보인다 · ' + strip.slice(0, 200))
-                if (/모두 잘 도는 중/.test(strip)) fail('🔴 판 파일이 없는데 «모두 잘 도는 중» 으로 보인다')
+                if (!/아직 메인 판 없음/.test(strip)) fail('Ruling 21: 판 파일이 없는데 «아직 메인 판 없음» 이 안 보인다 · ' + strip.slice(0, 200))
+                if (/모두 순조로워요/.test(strip)) fail('🔴 판 파일이 없는데 «모두 순조로워요» 으로 보인다')
                 if (!r2.acts.includes('허용')) fail('Ruling 21: 주인 아닌 맥 대기 줄에 [허용] 이 없다 · ' + JSON.stringify(r2.acts))
               }
               await api(`/sessions/${hold2.id}`, undefined, 'DELETE')
@@ -4848,7 +4848,7 @@ try {
               fail('모델 확인창: 안 떴다 · ' + JSON.stringify(d) + ' · 세션=' + JSON.stringify((await api(`/bots/${bot.id}/sessions`)).map((x) => [x.id.slice(-4), x.model, !!x.cliSessionId])) + ' · 목표=' + target + ' · 지금=' + was)
             }
             const ctext = (await pg.textContent('.modal.conf')) ?? ''
-            if (!/모델을 변경하시겠습니까/.test(ctext) || !/캐시/.test(ctext) || !/다시 묻지 않기/.test(ctext)) fail('모델 확인창: 문안이 다르다 · ' + JSON.stringify(ctext.slice(0, 160)))
+            if (!/모델을 바꿀까요/.test(ctext) || !/캐시/.test(ctext) || !/다시 묻지 않기/.test(ctext)) fail('모델 확인창: 문안이 다르다 · ' + JSON.stringify(ctext.slice(0, 160)))
             await pg.evaluate(() => { const b = [...document.querySelectorAll('.modal.conf .modal-f .btn')].find((x) => x.textContent === '취소'); b?.click() })
             await wait(700)
             if ((await modelNow()) !== was) fail('모델 확인창: 취소했는데 바뀌었다 · ' + JSON.stringify([was, await modelNow()]))
@@ -6081,7 +6081,7 @@ try {
           await pg.locator('.sb-list .brow:has-text("제품_Rondo")').scrollIntoViewIfNeeded(); await wait(300)
           await pg.click('.sb-list .brow:has-text("제품_Rondo")', { button: 'right' }); await wait(300)
           const mtx = await pg.textContent('.menu.ctx')
-          if (!/지우기/.test(mtx ?? '')) fail('레일 우클릭: 지우기 항목이 없다 · ' + mtx)
+          if (!/목록에서 빼기/.test(mtx ?? '')) fail('레일 우클릭: 지우기 항목이 없다 · ' + mtx)
           if (/폴더 삭제/.test(mtx ?? '')) fail('레일 우클릭: 폴더를 지우는 항목이 되살아났다 · ' + mtx)
           if (!/은퇴/.test(mtx ?? '')) fail('레일 우클릭: 은퇴가 사라졌다 · ' + mtx)
           await pg.keyboard.press('Escape'); await wait(200)
@@ -6128,7 +6128,7 @@ try {
             await api('/bots/pin', { id: bot.id, on: true })
             await wait(600)
             const secs = await pg.$$eval('.sb-list > div .secl', (r) => r.map((x) => x.textContent ?? ''))
-            if (secs[0] !== '관제' || secs[1] !== '고정') fail('고정: 「고정」 칸이 관제 바로 아래에 없다 · ' + JSON.stringify(secs))
+            if (secs[0] !== '볼트' || secs[1] !== '고정') fail('고정: 「고정」 칸이 관제 바로 아래에 없다 · ' + JSON.stringify(secs))
             const inPin = await pg.evaluate(() => { const sec = [...document.querySelectorAll('.sb-list > div')].find((d) => d.querySelector('.secl')?.textContent === '고정'); return sec ? [...sec.querySelectorAll('.brow .n')].map((x) => x.textContent ?? '') : [] })
             if (!inPin.some((n) => /제품_Rondo/.test(n))) fail('고정: 고정한 봇이 「고정」 칸에 없다 · ' + JSON.stringify(inPin))
             if (!(await api('/bots')).find((b) => b.id === bot.id)?.pinned) fail('고정: 호스트에 안 남았다')
@@ -6385,7 +6385,7 @@ try {
         }
         // 트리 우클릭 — 폴더면 «새 봇 시작» 항목이 있다
         await pg.$eval('.panel .secb button.trow.dir', (e) => e.scrollIntoView({ block: 'center' })).catch(() => {}); await wait(250)
-        await pg.click('.panel .secb button.trow.dir', { button: 'right' }); await wait(200); const cm = await pg.textContent('.menu.ctx'); if (!/새 봇 시작|에이전트 시작|봇 열기/.test(cm ?? '')) fail('ui tree ctx: ' + cm); await pg.keyboard.press('Escape'); await wait(150)
+        await pg.click('.panel .secb button.trow.dir', { button: 'right' }); await wait(200); const cm = await pg.textContent('.menu.ctx'); if (!/새 봇 시작|여기서 봇 시작|봇 열기/.test(cm ?? '')) fail('ui tree ctx: ' + cm); await pg.keyboard.press('Escape'); await wait(150)
         // 이름 바꾸기 — prompt() 가 아니라 앱 안 모달 (Electron 은 prompt 를 지원하지 않는다)
         await pg.$eval('.panel .secb button.trow:not(.dir)', (e) => e.scrollIntoView({ block: 'center' })).catch(() => {}); await wait(250)
         await pg.click('.panel .secb button.trow:not(.dir)', { button: 'right' }); await wait(200); await pg.click('.menu.ctx button:has-text("이름 바꾸기")'); await wait(200)
@@ -6410,7 +6410,7 @@ try {
           const cals = await pg.$eval('.todo:not(.add):not(.addbtn):not(.done)', (r) => ({ inline: r.querySelectorAll('.tt [title="마감 정하기"], .duec0').length, tools: r.querySelectorAll('.tools button[title^="마감"]').length }))
           if (cals.inline || cals.tools !== 1) fail('🔴 할 일 줄 달력이 하나가 아니다 · ' + JSON.stringify(cals))
         }
-        await pg.hover('.todo:has(.mk)'); await pg.click('.todo:has(.mk) .tools button[title="편집"]'); await wait(200)
+        await pg.hover('.todo:has(.mk)'); await pg.click('.todo:has(.mk) .tools button[title="고치기"]'); await wait(200)
         if (!(await pg.$('.todo.edit .ein'))) fail('ui todo edit box'); const cur = await pg.inputValue('.todo.edit .ein'); if (!/:/.test(cur)) fail('ui todo edit value: ' + cur)
         await pg.fill('.todo.edit .ein', `${cur.split(':')[0]} (편집됨):${cur.split(':').slice(1).join(':')}`); await pg.keyboard.press('Enter'); await wait(600)
         if (!/편집됨/.test((await pg.textContent('.panel')) ?? '')) fail('ui todo edit save')
@@ -6763,7 +6763,7 @@ try {
         await pg.keyboard.press('Enter'); await wait(200); const ta = await pg.getAttribute('.composer .cin', 'data-value'); if (!/@todo\.md /.test(ta)) fail('ui @ insert: ' + ta); if (!(await pg.$('.composer .cin .ichip'))) fail('ui @ attach chip')
         await pg.fill('.composer .cin', '')
         // 모드 팝업 · 모델 팝업
-        await pg.click('.cbar .cbtn'); await wait(150); if (!/편집 자동 수락/.test((await pg.textContent('.cpop')) ?? '')) fail('ui mode popup'); await pg.keyboard.press('Escape')
+        await pg.click('.cbar .cbtn'); await wait(150); if (!/고치기 자동 수락/.test((await pg.textContent('.cpop')) ?? '')) fail('ui mode popup'); await pg.keyboard.press('Escape')
         // ↓ 최근으로 — 위로 스크롤하면 뜨고, 직전 질문이 고정된다
         await pg.evaluate(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop = 0 }); await wait(400)
         if (!(await pg.$('.tobot'))) fail('ui ↓ button'); if (await pg.$('.pinq')) fail('ui pinned question should not show while the question is below')
@@ -7167,7 +7167,7 @@ try {
             if (!bgs.rows.length || odd.length) fail('🔴 폰 목록: 행 바탕이 서랍과 다르다(띠로 떠 보인다) · ' + JSON.stringify(bgs))
           }
           const n = (await pg.$$(rowSel)).length; if (n < 2) fail('phone home: folder rows should be swipeable (.swwrap) · ' + n)
-          if (await pg.$('.mhome .secl:has-text("관제") + .swwrap')) fail('phone home: orchestrator row must not be swipeable')
+          if (await pg.$('.mhome .secl:has-text("볼트") + .swwrap')) fail('phone home: orchestrator row must not be swipeable')
           const sel = `${rowSel} >> nth=${n - 1}`
           const name = await pg.$eval(sel + ' >> .l1 b', (e) => e.textContent)
           const box = await pg.$eval(sel, (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height } }); const cy = box.y + box.h / 2
@@ -7181,7 +7181,7 @@ try {
           }
           await swipe(-1, 0.3); await wait(350)
           const sheet = (await pg.textContent('.tsheet').catch(() => '')) ?? ''
-          for (const w of ['맨 위에 고정', '지우기', '은퇴']) if (!sheet.includes(w)) fail(`phone home: swipe left-short should open the menu sheet with «${w}» · ` + JSON.stringify(sheet))
+          for (const w of ['맨 위에 고정', '목록에서 빼기', '은퇴']) if (!sheet.includes(w)) fail(`phone home: swipe left-short should open the menu sheet with «${w}» · ` + JSON.stringify(sheet))
           if (await pg.$('.mhome .mrow.on, .chat-hdr')) { /* 시트가 떴다면 화면은 홈 그대로여야 한다 */ }
           await pg.click('.backdrop'); await wait(250)
           const h2 = await swipe(1, 0.6); if (!/고정/.test(h2)) fail('phone home: swipe right-long hint should say 고정 · ' + h2)
@@ -7580,7 +7580,7 @@ try {
     }
     /**
      * 🔴 **CF · 로딩·전환 화면** (2026-10-19 Dave «전부 A» · 목업 03_디자인/2026-10-12_로딩-전환-목업).
-     *    ① 첫 그림 — HTML 안에 «호스트에 연결하는 중…» 이 들어 있다(앱 JS 를 막아도 보인다 · 테마 따라 · 앱이 서면 걷힌다)
+     *    ① 첫 그림 — HTML 안에 «메인에 연결하는 중…» 이 들어 있다(앱 JS 를 막아도 보인다 · 테마 따라 · 앱이 서면 걷힌다)
      *    ②·④ 봇 전환 — 받는 동안 0.4초 안에는 옛 대화가 흐리게(눌리지 않게) 남고, 넘기면 말풍선 회색 줄, 받으면 둘 다 걷힌다 · 머리줄은 곧바로 새 봇
      *    ③ 할 일 — 받는 중에는 회색 줄 둘, «할 일이 없어요» 라고 하지 않는다
      *    ⑤ 다시 붙는 중 — 상태 받기를 붙잡아 두면 머리줄에 «맞추는 중» 점, 풀면 사라진다
@@ -7588,13 +7588,13 @@ try {
      */
     {
       const html = await (await fetch(base + '/')).text()
-      if (!/<div id="root"><div id="fb-splash"[^>]*>[\s\S]*?호스트에 연결하는 중…<\/div><\/div>/.test(html)) fail('🔴 CF ①: index.html 의 #root 안에 «연결하는 중» 첫 그림이 없다(검은 빈 판)')
+      if (!/<div id="root"><div id="fb-splash"[^>]*>[\s\S]*?메인에 연결하는 중…<\/div><\/div>/.test(html)) fail('🔴 CF ①: index.html 의 #root 안에 «연결하는 중» 첫 그림이 없다(검은 빈 판)')
       const sp = await br.newPage({ viewport: { width: 390, height: 844 } })
       await sp.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); if (!localStorage.getItem('fb:theme')) localStorage.setItem('fb:theme', 'dark') })
       await sp.route('**/*.js', (rt) => rt.abort())
       await sp.goto(base + '/'); await wait(200)
       const sv = await sp.evaluate(() => { const e = document.querySelector('#fb-splash'); const r = e?.getBoundingClientRect(); return e ? { t: e.textContent, w: Math.round(r.width), h: Math.round(r.height), bg: getComputedStyle(e).backgroundColor, svg: !!e.querySelector('svg') } : null })
-      if (!sv || !/호스트에 연결하는 중/.test(sv.t) || sv.w !== 390 || sv.h !== 844 || !sv.svg || sv.bg !== 'rgb(20, 20, 20)') fail('🔴 CF ①: 앱 JS 가 안 왔을 때 첫 그림이 화면을 채우지 않는다 ' + JSON.stringify(sv))
+      if (!sv || !/메인에 연결하는 중/.test(sv.t) || sv.w !== 390 || sv.h !== 844 || !sv.svg || sv.bg !== 'rgb(20, 20, 20)') fail('🔴 CF ①: 앱 JS 가 안 왔을 때 첫 그림이 화면을 채우지 않는다 ' + JSON.stringify(sv))
       await sp.screenshot({ path: 'test/tmp/cf-splash.png' })
       await sp.evaluate(() => localStorage.setItem('fb:theme', 'light')); await sp.reload(); await wait(200)
       const lbg = await sp.evaluate(() => getComputedStyle(document.querySelector('#fb-splash')).backgroundColor)
@@ -7998,7 +7998,7 @@ try {
         const after = await api2(`/sessions/${cl.id}/chat`)
         if (after.info.cliSessionId) fail('🔴 /clear 가 이어가기를 안 끊었다 ' + after.info.cliSessionId)
         if (after.items.length < before.items.length) fail('🔴 /clear 가 대화 기록을 지웠다 — 사람이 쓴 말은 사람 것이다')
-        if (!after.items.some((x) => x.kind === 'system' && /새 대화로/.test(x.text ?? ''))) fail('/clear: 무슨 일이 났는지 안 알려 준다 ' + JSON.stringify(after.items.slice(-2)))
+        if (!after.items.some((x) => x.kind === 'system' && /맥락을 비웠어요/.test(x.text ?? ''))) fail('/clear: 무슨 일이 났는지 안 알려 준다 ' + JSON.stringify(after.items.slice(-2)))
         // 목록 — Codex 세션에는 Claude 의 명령이 안 보인다
         const menu = await api2(`/bots/${b1.id}/slash?sid=${cl.id}`)
         const names = menu.map((c) => c.name)
@@ -8207,8 +8207,8 @@ try {
     try {
       for (let i = 0; i < 60; i++) { try { await api('/state'); break } catch { await wait(250) } }
       const endOf = (run) => evs().find((e) => e.event === 'end' && e.run === run)
-      for (const run of [runA, runB]) { const e = endOf(run); if (!e || e.ok !== false || e.result !== 'fail' || e.reason !== '호스트 재시작으로 중단') fail('🔴 CI: 끊긴 회차가 fail · 호스트 재시작으로 닫히지 않았다 · ' + JSON.stringify(e ?? null)) }
-      const note = (await api(`/sessions/${runB}/chat`)).items.find((it) => it.kind === 'system' && /호스트가 다시 뜨면서/.test(it.text))
+      for (const run of [runA, runB]) { const e = endOf(run); if (!e || e.ok !== false || e.result !== 'fail' || e.reason !== '메인 재시작으로 중단') fail('🔴 CI: 끊긴 회차가 fail · 호스트 재시작으로 닫히지 않았다 · ' + JSON.stringify(e ?? null)) }
+      const note = (await api(`/sessions/${runB}/chat`)).items.find((it) => it.kind === 'system' && /메인이 다시 뜨면서/.test(it.text))
       if (!note) fail('CI: 끊긴 세션에 «왜 멈췄나» 한 줄이 없다')
       // ② retry 켠 루틴 → 두 번째 시도가 돌고 끝난다 · 끈 루틴은 다시 안 돈다
       let seq = ''

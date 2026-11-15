@@ -72,7 +72,7 @@ export function StemManager({ map, op, close, onPick, phone }: {
               <div><button className="lk" onClick={() => { onPick(p.folder); close() }}>{L(p.folder)}</button>{byId.get(p.folder)?.past ? <span className="lm-tag past">보관</span> : null} → <b>{map.stems[p.stem]?.name}</b></div>
               <div className="why">{p.how === 'ai' ? p.why : `선으로 — ${p.why}`}</div>
               <div className="acts"><MoveSel map={map} cur={map.stems[p.stem]?.key} onMove={(k) => void op({ op: 'add', stem: k, folder: p.folder }, '옮겼어요')} /><button className="btn ghost sm" onClick={() => void op({ op: 'out', folder: p.folder }, '줄기 밖으로 뺐어요')}>빼기</button></div>
-            </div>) : <div className="m">아직 없어요 — 주인 맥이 판단하면 여기 쌓여요</div>}
+            </div>) : <div className="m">아직 없어요 — 루틴을 돌리는 메인이 판단하면 여기 쌓여요</div>}
           </div>
         </div>
       </div>

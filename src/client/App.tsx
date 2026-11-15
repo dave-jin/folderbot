@@ -200,7 +200,7 @@ export function App() {
   useEffect(() => { void refreshModels() }, [])
   useTheme() // 저장된 테마를 부팅 즉시 적용
   if (!authed) return <div className="app"><Pairing onDone={() => location.reload()} /></div>
-  if (!s.loaded) return <div className="app"><div className="empty"><FolderBot color="#e08850" size={40} mood="work" />호스트에 연결하는 중…</div></div>
+  if (!s.loaded) return <div className="app"><div className="empty"><FolderBot color="#e08850" size={40} mood="work" />메인에 연결하는 중…</div></div>
   if (perm.open && perm.items) return <div className="app"><PermGate items={perm.items} refresh={perm.refresh} onDone={() => perm.setOpen(false)} /></div>
   if (!s.rulesInstalled) return <div className="app"><Onboarding /></div>
   return <Main />
@@ -224,7 +224,7 @@ export const KEYS: { k: string; t: string; d?: string }[] = [
   { k: '⌘,', t: '설정' },
   { k: '⌘/', t: '단축키 보기' },
   { k: '⌘P', t: '명령 팔레트', d: '폴더 · 문서 · 세션 · 명령' },
-  { k: '⌘K', t: '검색', d: '폴더봇 · 세션 · 지난 대화' },
+  { k: '⌘K', t: '찾기', d: '폴더봇 · 세션 · 세션에 쓴 글' },
   { k: '⌘N', t: '새 세션', d: '지금 폴더' },
   { k: '⌘⇧N', t: '폴더 고르기 · 시작' },
   { k: '⌘1…9', t: 'n번째 폴더로' },
@@ -242,9 +242,9 @@ export const KEYS: { k: string; t: string; d?: string }[] = [
   { k: '↩', t: '보내기', d: '자판이 있는 기기에서 — 폰에서는 줄 바꾸기(보내기는 단추)' },
   { k: '⇧↩', t: '줄 바꾸기' },
   { k: '⌘↩', t: '보내기', d: '어디서나 — 폰에 외장 자판을 붙였을 때도' },
-  { k: '⎋', t: '닫기 · 편집 끝내기 · 멈추기', d: '열린 창·목록 → 걸린 승인 카드 거부 → 도는 턴 멈추기 순서로 하나만' },
+  { k: '⎋', t: '닫기 · 고치기 끝내기 · 멈추기', d: '열린 창·목록 → 걸린 승인 카드 거부 → 도는 턴 멈추기 순서로 하나만' },
   { k: '⌘Z', t: '실행 취소', d: '맥 기본 — 우리가 안 가로챈다' },
-  { k: '⌘F', t: '문서에서 찾기', d: '편집기 기본' }
+  { k: '⌘F', t: '문서에서 찾기', d: '문서 창 기본' }
 ]
 
 function KeysSheet({ onClose }: { onClose: () => void }) {
@@ -278,7 +278,7 @@ function useUpdate(say: Say): [UpdState | null, () => void, () => void, string, 
   }, [])
   const check = () => {
     const u = desk?.update
-    if (!u) { say('업데이트는 Mac 앱(호스트)이 스스로 받아요 — 이 화면은 호스트가 새 버전을 적용하면 함께 바뀝니다'); return }
+    if (!u) { say('업데이트는 메인의 Mac 앱이 스스로 받아요 — 이 화면은 메인이 새 버전을 적용하면 함께 바뀌어요'); return }
     setSt((x) => (x ? { ...x, checking: true } : x)); say('업데이트 확인 중…')
     void u.check().then((n) => {
       setSt(n)
@@ -310,7 +310,7 @@ function UpdateAsk({ st, onApply, onLater, onDawn, anchor = '.sb-foot .bd.upd' }
   </div>
 }
 function UpdateChip({ version, st, onCheck, onApply }: { version: string; st: UpdState | null; onCheck: () => void; onApply: () => void }) {
-  if (!isDesktop || !st) return <button className="bd mono upd" onClick={onCheck} title={isDesktop ? '업데이트 확인' : '호스트 버전'}>v{version}</button>
+  if (!isDesktop || !st) return <button className="bd mono upd" onClick={onCheck} title={isDesktop ? '업데이트 확인' : '메인 버전'}>v{version}</button>
   // ⚠ 준비된 칩을 누르면 **묻는 팝업**이 뜬다 — 바로 갈아끼우지 않는다 (2026-09-15 Dave)
   if (st.staged?.ready && st.dawn) return <button className="bd upd dawn" style={{ color: 'var(--hold)' }} onClick={onApply} title={`v${st.staged.version} — 새벽 ${dawnText(st.dawn.at)} 에 적용 예약 · 눌러서 취소하거나 지금 적용`}><span className="dot hold" style={{ width: 5, height: 5 }} />v{st.staged.version} · 새벽 적용 예약</button>
   if (st.staged?.ready) return <button className="bd upd" style={{ color: 'var(--done)' }} onClick={onApply} title={`v${st.staged.version} 준비됨 — 눌러서 적용할지 정하기`}><span className="dot done" style={{ width: 5, height: 5 }} />v{st.staged.version} · 적용</button>
@@ -333,9 +333,9 @@ function HostUpdateChip({ say }: { say: Say }) {
     return () => { dead = true; window.clearInterval(iv); window.removeEventListener('fb:bridges', load) }
   }, [])
   if (!st?.staged?.ready) return null
-  const dawn = (on: boolean) => { setOpen(false); void api<UpdState>('/update/dawn', { body: { on } }).then((n) => { setSt(n); say(on ? (n.dawn ? `호스트가 새벽 ${dawnText(n.dawn.at)} 에 적용해요` : '호스트에 받아 둔 판이 없어요') : '호스트 새벽 적용 예약을 풀었어요') }).catch((e: unknown) => say(`예약 실패 — ${e instanceof Error ? e.message : String(e)}`)) }
+  const dawn = (on: boolean) => { setOpen(false); void api<UpdState>('/update/dawn', { body: { on } }).then((n) => { setSt(n); say(on ? (n.dawn ? `메인이 새벽 ${dawnText(n.dawn.at)} 에 적용해요` : '메인에 받아 둔 판이 없어요') : '메인의 새벽 적용 예약을 풀었어요') }).catch((e: unknown) => say(`예약 실패 — ${e instanceof Error ? e.message : String(e)}`)) }
   return <>
-    <button className="bd upd hostupd" style={{ color: st.dawn ? 'var(--hold)' : 'var(--done)' }} onClick={() => setOpen(!open)} title={`호스트 v${st.staged.version} 받아 둠${st.dawn ? ` · 새벽 ${dawnText(st.dawn.at)} 적용 예약` : ''}`}><span className={`dot ${st.dawn ? 'hold' : 'done'}`} style={{ width: 5, height: 5 }} />호스트 v{st.staged.version}{st.dawn ? ' · 새벽 적용 예약' : ''}</button>
+    <button className="bd upd hostupd" style={{ color: st.dawn ? 'var(--hold)' : 'var(--done)' }} onClick={() => setOpen(!open)} title={`메인 v${st.staged.version} 받아 둠${st.dawn ? ` · 새벽 ${dawnText(st.dawn.at)} 적용 예약` : ''}`}><span className={`dot ${st.dawn ? 'hold' : 'done'}`} style={{ width: 5, height: 5 }} />메인 v{st.staged.version}{st.dawn ? ' · 새벽 적용 예약' : ''}</button>
     {open ? <UpdateAsk st={st} onLater={() => setOpen(false)} onDawn={dawn} anchor=".sb-foot .bd.hostupd" /> : null}
   </>
 }
@@ -1080,7 +1080,7 @@ function Main() {
         <div style={{ padding: '10px 8px 0' }}>
           {/* 🔴 검색은 맨 위 (2026-10-02 Dave · 시안 A). «알림»·«세션 정리»(10/16) · «설정»(11/14 A안) 줄은 목록 아래 숫자 줄의 칸이 됐다.
               같은 입구를 두 번 두지 않는다. ⌘⇧U · 명령 팔레트 · 접힌 레일 띠의 종은 남는다 */}
-          <button className="nav nsearch" onClick={() => setModal('search')}><Icon n="search" size={14} /><span>검색</span><span className="bd kb">⌘K</span></button>
+          <button className="nav nsearch" onClick={() => setModal('search')}><Icon n="search" size={14} /><span>찾기</span><span className="bd kb">⌘K</span></button>
           <button className="nav" onClick={() => setModal('picker')}><Icon n="fplus" size={14} /><span>폴더 선택 · 시작</span><span className="bd">후보 {s.candidates.filter((c) => !c.active).length}</span></button>
         </div>
         {/* 🔴 **왼쪽 목록 A안** (2026-11-12 Dave 카드 «A안» · 11/13 «이대로 만든다») — 봇 목록이 가장 큰 자리를 쓴다.
@@ -1093,7 +1093,7 @@ function Main() {
           {/* DB · 바깥 상대(할일이)가 묻는 중·방금 답한 세션 — 봇 섹션보다 위에 한 번만 보면 찾게 */}
           <AskStrip go={go} />
           {rows.map(([sec, list]) => <div key={sec}>
-            <div className="secl">{sec === '관제' ? '관제' : sec}</div>
+            <div className="secl">{sec === '관제' ? '볼트' : sec}</div>
             {list.map(({ b, sum }) => <button key={b.id} data-id={b.id} className={`brow ${b.id === bot.id && view !== 'list' && !peerId ? 'on' : ''} ${sum.unread ? 'unread' : ''} ${overBot === b.id ? 'dover' : ''} ${dragBot === b.id ? 'dsrc' : ''}`}
               draggable={!b.orchestrator}
               onDragStart={(e) => { setDragBot(b.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/x-fb-bot', b.id) }}
@@ -1119,7 +1119,7 @@ function Main() {
           <button onClick={async () => { const b = s.bots.find((x) => x.id === railCtx.id); try { await api('/bots/pin', { body: { id: railCtx.id, on: !b?.pinned } }); say(b?.pinned ? '고정을 풀었어요' : '맨 위에 고정했어요'); await refresh() } catch (e) { say((e as Error).message) } }}><Icon n="pin" size={13} /><span style={{ flex: 1 }}>{s.bots.find((x) => x.id === railCtx.id)?.pinned ? '고정 풀기' : '맨 위에 고정'}</span><span className="k">3개까지</span></button>
           {s.bots.find((x) => x.id === railCtx.id)?.orderedBy === 'user' ? <button className="unfix" onClick={async () => { try { await api('/bots/unfix', { body: { id: railCtx.id } }); say('순서 고정을 풀었어요 — 오케스트레이터가 옮길 수 있어요'); await refresh() } catch (e) { say((e as Error).message) } }}><Icon n="sort" size={13} /><span style={{ flex: 1 }}>순서 고정 해제</span><span className="k">끌어 놓은 자리</span></button> : null}
           <button onClick={() => { const b = s.bots.find((x) => x.id === railCtx.id); if (b) pickColor(b) }}><span className="csdot" style={{ background: s.bots.find((x) => x.id === railCtx.id)?.color }} /><span style={{ flex: 1 }}>색 바꾸기</span></button>
-          <button onClick={async () => { try { await api(`/bots/${railCtx.id}/stop`, { body: {} }); say(`${railCtx.name} 을 레일에서 덜어냈어요 — 폴더는 그대로예요`); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="x" size={13} /><span style={{ flex: 1 }}>지우기 (연결 해지)</span><span className="k">폴더 유지</span></button>
+          <button onClick={async () => { try { await api(`/bots/${railCtx.id}/stop`, { body: {} }); say(`${railCtx.name} 을 목록에서 뺐어요 — 폴더는 그대로예요`); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="x" size={13} /><span style={{ flex: 1 }}>목록에서 빼기</span><span className="k">폴더 유지</span></button>
           <button onClick={async () => { const c = railCtx; if (!(await askConfirm({ title: `${c.name} 봇을 은퇴시킬까요?`, body: '폴더를 Archive 로 옮기고 봇을 쉬게 합니다. 세션 기록은 보관돼요.', ok: '은퇴', danger: true }))) return; try { const r = await api<{ to: string }>(`/bots/${c.id}/retire`, { body: {} }); say(`${r.to} 로 은퇴`); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="archive" size={13} /><span style={{ flex: 1 }}>은퇴 (Archive 로)</span></button>
         </div></Float> : null}
         {/* ⛔ 맥에서는 사용량을 앱 안에 안 그린다 — **메뉴바에서만** 본다 (2026-09-13 Dave: «맥에서는 그냥 메뉴바 안에서만 이게 보이면 좋겠어»).
@@ -1156,8 +1156,8 @@ function Main() {
         <button className="ib" onClick={() => openRp('routines')}><Icon n="cal" size={14} /><span className="fly"><b>루틴</b><span>{bot.routines.length}개</span></span></button>
       </div>
   return <div className={`app ${isDesktop ? 'desktop' : ''} ${phone ? 'phone' : ''} ${mid ? 'smid' : ''} ${kb ? 'kb' : ''} ${drag === 'x' ? 'dragx' : ''} ${phone && !tabsHere ? 'notabs' : ''}`} data-view={view === 'doc' && !showDoc && !phone ? 'panel' : view} data-nav={`${nav.stack.join('>')}${nav.fwd.length ? ' |' + [...nav.fwd].reverse().join('>') : ''}`}>
-    {s.online === 'off' ? <div className="offline">{s.hostName || '호스트'} 와 다시 연결하는 중…</div> : null}
-    {s.auth.verdict === 'unreadable' || s.auth.verdict === 'loggedout' ? <div className="banner"><span className="dot wait" /><span><b>{s.hostName} 에서 Claude 로그인이 필요해요.</b> 호스트 맥에서 <span className="mono">claude</span> → <span className="mono">/login</span>, 또는 설정 › Claude 토큰. 보낸 지시는 대기열에 두었다가 복구되면 이어서 해요.</span><span style={{ marginLeft: 'auto' }} /><button className="btn" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button></div> : null}
+    {s.online === 'off' ? <div className="offline">{s.hostName || '메인'} 와 다시 연결하는 중…</div> : null}
+    {s.auth.verdict === 'unreadable' || s.auth.verdict === 'loggedout' ? <div className="banner"><span className="dot wait" /><span><b>{s.hostName} 에서 Claude 로그인이 필요해요.</b> 메인에서 <span className="mono">claude</span> → <span className="mono">/login</span>, 또는 설정 › Claude 토큰. 보낸 지시는 대기열에 두었다가 복구되면 이어서 해요.</span><span style={{ marginLeft: 'auto' }} /><button className="btn" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button></div> : null}
     <div className={`cols ${dragSide ? 'dragging' : ''}`} ref={colsRef} onPointerDown={swDown} onPointerMove={swMove} onPointerUp={swUp} onPointerCancel={swCancel}>
       {/* ── 왼쪽 (폰은 홈 화면) ── */}
       {/* H-1 · 넓음: 이름 있는 레일 또는 아이콘 띠(접었을 때) · 중간: 아이콘 띠(52px)만, 레일은 서랍으로 · 좁음: 아무것도 없음(☰ · 쓸기) */}
@@ -1270,7 +1270,7 @@ type RailSort = 'due' | 'manual' | 'state'
 const RAIL_SORT_KEY = 'fb:railsort'
 // AZ (2026-09-25 Dave) · «직접» → «사용자» — 사람이 끌어다 놓은 차례라는 뜻이 이름에 드러나게. 값(`manual`)은 그대로 둔다(저장된 선택이 안 풀린다)
 const RAIL_SORT_LABEL: Record<RailSort, string> = { due: '마감일', manual: '사용자', state: '상태' }
-const RAIL_SORT_HINT: Record<RailSort, string> = { due: '마감이 가까운 것부터 (폴더명 날짜 · 지난 마감이 맨 위 · 날짜 없는 폴더는 뒤)', manual: '끌어다 놓은 차례 (볼트에 남아요)', state: '확인 대기 → 일하는 중 → 대기 → 문제 → 끝남 → 유휴' }
+const RAIL_SORT_HINT: Record<RailSort, string> = { due: '마감이 가까운 것부터 (폴더명 날짜 · 지난 마감이 맨 위 · 날짜 없는 폴더는 뒤)', manual: '끌어다 놓은 차례 (볼트에 남아요)', state: '내 답 기다림 → 일하는 중 → 남을 기다림 → 문제 → 끝남 → 쉼' }
 /**
  * 봇 목록의 머리 — 왼쪽에 «폴더 N»(폴더 현황), 오른쪽에 정렬 단추 하나 (왼쪽 목록 A안 · 2026-11-12 Dave 카드).
  * 🔴 정렬 갈래 셋(마감일 · 사용자 · 상태)은 그대로다 — 늘 서 있던 단추 셋을 **단추 하나 + 메뉴**로 접었을 뿐이다(목록이 한 줄 더 쓴다).
@@ -1280,7 +1280,7 @@ const RAIL_SORT_HINT: Record<RailSort, string> = { due: '마감이 가까운 것
 function ListHead({ n, onFolders, k: cur, set }: { n: number; onFolders: () => void; k: RailSort; set: (k: RailSort) => void }) {
   const [menu, setMenu] = useState<Anchor | null>(null); const down = useRef(false)
   return <div className="lhead" role="group" aria-label="폴더 목록">
-    <button className="lf" onClick={onFolders} title="폴더 현황 — 일하는 중 · 답 대기 · 후보" aria-label={`폴더 ${n}`}>폴더 <b>{n}</b></button>
+    <button className="lf" onClick={onFolders} title="폴더 현황 — 일하는 중 · 내 답 기다림 · 후보" aria-label={`폴더 ${n}`}>폴더 <b>{n}</b></button>
     <span className="sp" />
     <button className={`sortb ${menu ? 'on' : ''}`} aria-haspopup="menu" aria-expanded={!!menu} aria-label={`정렬 — ${RAIL_SORT_LABEL[cur]}`} title={RAIL_SORT_HINT[cur]}
       onMouseDown={() => { down.current = !!menu }} onClick={(e) => { const was = e.detail === 0 ? !!menu : down.current; setMenu(was ? null : anchorOf(e.currentTarget, { right: true, gap: 4 })) }}>
@@ -1307,7 +1307,7 @@ function botSummary(bot: Bot, sessions: SessionInfo[], notif: NotifyEvent[]) {
    *    종전에는 레일만 「일하는 중 · 생각 중」이라 말하고 채팅은 아무 말이 없었다.
    */
   const holder: Holder = top ? holderOf(top.state, top.inflight, Date.now(), top.bg ?? 0) : 'none'
-  const text = wait ? `확인해 주세요 · ${wait.pending[0]?.displayName ?? wait.name}`
+  const text = wait ? `내 답 기다림 · ${wait.pending[0]?.displayName ?? wait.name}`
     : holder === 'other' ? `${holdHeader(holder, top?.inflight, top?.bg ?? 0)} · ${top?.inflight?.summary || top?.name || ''}`
       : run ? `일하는 중 · ${run.activity || run.name}` : last ? notePlain(last) : top ? `${top.name}${top.hibernated ? ' · 절전' : ''}` : '메시지를 보내 보세요'
   /** BH · 이 봇이 마지막으로 끝낸 시각 — 가장 최근에 봇이 낸 말(`lastReplyAt`). 도는 세션은 아직 안 끝났으므로 뺀다 */
@@ -1400,7 +1400,7 @@ function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, 
     try {
       if (a === 'pin') { await api('/bots/pin', { body: { id: b.id, on: !b.pinned } }); say(b.pinned ? '고정을 풀었어요' : '맨 위에 고정했어요'); await refresh() }
       else if (a === 'unfix') { await api('/bots/unfix', { body: { id: b.id } }); say('순서 고정을 풀었어요 — 오케스트레이터가 옮길 수 있어요'); await refresh() }
-      else if (a === 'unlink') { await api(`/bots/${b.id}/stop`, { body: {} }); say(`${b.name} 을 레일에서 덜어냈어요 — 폴더는 그대로예요`); await refresh() }
+      else if (a === 'unlink') { await api(`/bots/${b.id}/stop`, { body: {} }); say(`${b.name} 을 목록에서 뺐어요 — 폴더는 그대로예요`); await refresh() }
       else if (a === 'retire') {
         if (!(await askConfirm({ title: `${b.name} 을 은퇴시킬까요?`, body: 'Archive 로 옮기고 레일에서 내려요. 세션 기록은 보관돼요.', ok: '은퇴' }))) return
         const r = await api<{ to: string }>(`/bots/${b.id}/retire`, { body: {} }); say(`${r.to} 로 은퇴`); await refresh()
@@ -1449,7 +1449,7 @@ function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, 
       <ListHead n={s.bots.filter((b) => !b.orchestrator).length} onFolders={() => setModal('folders')} k={railSort} set={setRailSort} />
       <AskStrip go={go} phone />
       {rows.map(([sec, list]) => <div key={sec}>
-        <div className="secl">{sec}</div>
+        <div className="secl">{sec === '관제' ? '볼트' : sec}</div>
         {list.map(({ b, sum }) => {
           const row = <button key={b.id} className={`mrow ${sum.unread ? 'unread' : ''}`} data-bot={b.id} onPointerDown={() => prefetch(b.id)} onClick={() => go(b.id)}><span className="av"><FolderBot color={b.color} size={46} mood={sum.mood} unread={sum.unread} recent={sum.recent} mono /></span><span className="t"><span className="l1"><BotName b={b} chip={false} />{b.due || b.todoDue ? (() => { const d = botDueChip(b); return d ? <span className={`due ${d.tone}`} title={d.line ? '할 일 마감' : undefined}>{d.text}</span> : null })() : <time>{fmtTime(sum.t)}</time>}</span><span className="l2">{sum.text}</span></span></button>
           // 관제(오케스트레이터)는 고정·지우기·은퇴의 대상이 아니다 — 쓸리지 않는다
@@ -1462,7 +1462,7 @@ function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, 
     {fsheet ? <><div className="backdrop" onClick={() => setFsheet(null)} /><div className="tsheet">
       <div className="grip" />
       <div className="ti">{fsheet.name}</div>
-      {([['pin', fsheet.pinned ? '고정 풀기' : '맨 위에 고정'], ...(fsheet.orderedBy === 'user' ? [['unfix', '순서 고정 해제 — 끌어 놓은 자리']] : []), ['color', '색 바꾸기'], ['unlink', '지우기 (연결 해지) — 폴더는 그대로'], ['retire', '은퇴 (Archive 로)']] as [SwipeAct, string][]).map(([a, l]) => <button key={a} onClick={() => { const b = fsheet; setFsheet(null); void folderAct(b, a) }}><Icon n={ACT_ICON[a] as 'edit'} size={16} />{l}</button>)}
+      {([['pin', fsheet.pinned ? '고정 풀기' : '맨 위에 고정'], ...(fsheet.orderedBy === 'user' ? [['unfix', '순서 고정 해제 — 끌어 놓은 자리']] : []), ['color', '색 바꾸기'], ['unlink', '목록에서 빼기 — 폴더는 그대로'], ['retire', '은퇴 (Archive 로)']] as [SwipeAct, string][]).map(([a, l]) => <button key={a} onClick={() => { const b = fsheet; setFsheet(null); void folderAct(b, a) }}><Icon n={ACT_ICON[a] as 'edit'} size={16} />{l}</button>)}
     </div></> : null}
     <div className={`mbot ${q === null ? '' : 'find'}`}>
     {q === null
@@ -1503,7 +1503,7 @@ function Ghost({ on, children }: { on: boolean; children: ReactNode }) {
 }
 /** CF ② A · 말풍선 모양 회색 줄 — 내 말(오른쪽 둥근 칸) · 봇 말(줄 셋) · 내 말 · 봇 말(목업 그대로) */
 function ChatSkel() {
-  return <div className="cskel" aria-label="대화를 받는 중" role="status">
+  return <div className="cskel" aria-label="세션을 받는 중" role="status">
     <div className="skel me" style={{ width: '58%' }} /><div className="skel" style={{ width: '88%' }} /><div className="skel" style={{ width: '80%' }} /><div className="skel" style={{ width: '46%' }} />
     <div className="skel me" style={{ width: '52%', marginTop: 8 }} /><div className="skel" style={{ width: '84%' }} />
   </div>
@@ -1518,7 +1518,7 @@ function SyncDot() {
   // 끊겨 있는 동안은 «다시 연결하는 중…» 띠가 말한다 — 점은 다시 붙은 뒤 맞추는 동안만
   return show && s.syncing && s.online === 'on' ? <span className="syncdot" role="status"><i />맞추는 중</span> : null
 }
-const BUILTIN_SLASH: SlashCmd[] = [{ name: 'compact', desc: '대화 압축 — 컨텍스트 줄이기', kind: 'cli', scope: 'cli' }, { name: 'context', desc: '컨텍스트 사용 내역', kind: 'cli', scope: 'cli' }, { name: 'clear', desc: '새 대화로 (새 세션)', kind: 'cli', scope: 'cli' }]
+const BUILTIN_SLASH: SlashCmd[] = [{ name: 'compact', desc: '세션 압축 — 컨텍스트 줄이기', kind: 'cli', scope: 'cli' }, { name: 'context', desc: '컨텍스트 사용 내역', kind: 'cli', scope: 'cli' }, { name: 'clear', desc: '맥락 비우기 (처음부터 다시)', kind: 'cli', scope: 'cli' }]
 interface FileNode { rel: string; dir: boolean; mtime: number }
 // ⚠ 맥 파일 이름은 NFD 로 저장된다 — 비교 전에 양쪽을 NFC 로 맞추지 않으면 한글이 «아예» 안 걸린다(core/search 머리말)
 const fuzzy = (q: string, s: string): number => { if (!q) return 1; const t = norm(s); const nq = norm(q); if (t.includes(nq)) return t.startsWith(nq) ? 3 : 2; let i = 0; for (const c of t) if (c === nq[i]) i++; return i === nq.length ? 1 : 0 }
@@ -1779,9 +1779,9 @@ function Chat({ bot, go, sessions, cur, items, loaded, phase = 'ready', ghost, p
     if (!cur) { setDraft((d) => ({ ...d, ...p })); return }
     if (p.model !== undefined && p.model !== (cur.model ?? '') && cur.cliSessionId) {
       const okGo = await askConfirm({
-        title: '모델을 변경하시겠습니까?',
+        title: '모델을 바꿀까요?',
         body: `현재 세션은 ${modelLabel(cur.model, vend)} 기준으로 캐시되어 있습니다. ${modelLabel(p.model, vend)}로 전환하면 다음 메시지를 보낼 때 ${vend === 'codex' ? 'Codex' : 'Claude'}가 전체 세션을 다시 읽으며, 이는 한도를 더 많이 사용합니다.`,
-        ok: '모델 변경',
+        ok: '모델 바꾸기',
         remember: 'fb:askmodel'
       })
       if (!okGo) return
@@ -2110,7 +2110,7 @@ function Chat({ bot, go, sessions, cur, items, loaded, phase = 'ready', ghost, p
   const hasText = !!text.trim() || attach.length > 0
   const mode: 'send' | 'queue' | 'stop' | 'off' = hasText ? (running || state === 'awaiting_input' ? 'queue' : 'send') : running ? 'stop' : 'off'
   const ctx = cur?.ctx; const pct = ctx ? Math.min(100, Math.round((ctx.used / ctx.window) * 100)) : 0
-  if (collapsed) return <div className="strip" style={{ background: 'var(--bg)' }}><button className="ib" onClick={onUncollapse} title="대화 펼치기"><Icon n="sub" size={14} /></button><div className="gap" /><FolderBot color={bot.color} size={17} mood={moodOf(state, !!cur?.hibernated)} mono />{running ? <span className="pulse" style={{ marginTop: 8 }} /> : null}</div>
+  if (collapsed) return <div className="strip" style={{ background: 'var(--bg)' }}><button className="ib" onClick={onUncollapse} title="세션 펼치기"><Icon n="sub" size={14} /></button><div className="gap" /><FolderBot color={bot.color} size={17} mood={moodOf(state, !!cur?.hibernated)} mono />{running ? <span className="pulse" style={{ marginTop: 8 }} /> : null}</div>
   /**
    * 🔴 **채팅에 쓴 한 줄을 그대로 루틴으로** (2026-09-13 Dave: «루틴을 폴더 채팅에서 바로 채팅으로 생성»).
    *    「매주 월요일 아침 9시에 지난주 정리해 줘」 라고 써 두고 + → 루틴으로 만들기 를 누르면
@@ -2139,7 +2139,7 @@ function Chat({ bot, go, sessions, cur, items, loaded, phase = 'ready', ghost, p
    *    보여 주면 «바꿨는데 왜 물어봐» 가 된다. 그 사이는 호스트가 새 모드를 대신 집행하고(host/session.ts
    *    `autoAllow`), 칩에는 «적용 중» 을 단다. 데스크톱 푸터에만 있던 힌트는 폰에서 안 보였다.
    */
-  const modePendTitle = '이 턴은 Folder Bot 이 새 모드대로 대신 답하고, 턴이 끝나면 새 모드로 이어서 재시작해요 (대화 유지)'
+  const modePendTitle = '이 턴은 Folder Bot 이 새 모드대로 대신 답하고, 턴이 끝나면 새 모드로 이어서 재시작해요 (세션 내용은 그대로)'
   /** EB · Codex 세션에는 권한 모드가 없다 — 샌드박스가 그 자리다(설정 › Codex). 칩은 그 값을 보이고 고르는 목록은 안 연다 */
   const cxSandbox = CODEX_SANDBOX.find((x) => x.v === (s.defaults.codex?.sandbox ?? 'read-only'))?.t ?? '읽기만'
   const modeBtn = vendOf() === 'codex'
@@ -2186,8 +2186,8 @@ function Chat({ bot, go, sessions, cur, items, loaded, phase = 'ready', ghost, p
     ? <div className="cpop modepop modepop-cx"><div className="h">권한 · Codex</div><div className="hint pend">Codex 세션은 권한 모드 대신 <b>샌드박스</b>를 써요 — 지금 «{cxSandbox}». 설정 › Codex 에서 바꿉니다(모든 Codex 세션에 같이 적용).</div></div>
     : <div className="cpop modepop"><div className="h">모드 · 이 세션</div>{MODES.map((m, i) => <button key={m.v} data-mode={m.v} className={`prow2 ${cfg.mode === m.v ? 'on' : ''}`} onClick={() => void applyCfg({ permissionMode: m.v })}><div className="t"><b>{m.t}</b><small>{m.d}</small></div>{cfg.mode === m.v ? <Icon n="check" size={13} /> : <span className="k">{i + 1}</span>}</button>)}<div className="hint"><span>1~5</span><span className="sp" /><span>새 세션은 설정의 기본값으로</span></div>
       {cur?.restartPending ? <div className="hint pend">{modePendTitle}</div> : null}
-      {!cur?.restartPending && cur?.modeApplied === 'now' ? <div className="hint pend">도는 중인 턴에 바로 적용됐어요.</div> : null}
-      {modeFollows ? <div className="hint pend pend-follows">모드를 따로 고르지 않아 «새 채팅 기본 권한» 대로 «{modeLabel(liveMode)}» 으로 돌아요. 여기서 고르면 그 모드로 고정됩니다.</div> : null}</div>)
+      {!cur?.restartPending && cur?.modeApplied === 'now' ? <div className="hint pend">지금 턴에 바로 적용됐어요.</div> : null}
+      {modeFollows ? <div className="hint pend pend-follows">모드를 따로 고르지 않아 «새 세션 기본 권한» 대로 «{modeLabel(liveMode)}» 으로 돌아요. 여기서 고르면 그 모드로 고정됩니다.</div> : null}</div>)
     /**
      * 🔴 **종류별 최신 하나씩만 보인다** (2026-09-14 Dave: «다른 모델은 안쓰고 최신 버전만 종류별로만
      *    선택하게 할꺼야»). 나머지(긴 문맥·기계에서 주워 온 이름)는 **「더 많은 모델」** 아래로.
@@ -2226,9 +2226,9 @@ function Chat({ bot, go, sessions, cur, items, loaded, phase = 'ready', ghost, p
       {moreList.length ? (moreOpen
         ? <>{moreList.map((m) => <button key={m.v} className={`prow2 ${cfg.model === m.v ? 'on' : ''}`} onClick={() => void applyCfg({ model: m.v })}><div className="t"><b>{m.t}</b>{m.d ? <small>{m.d}</small> : null}</div>{cfg.model === m.v ? <Icon n="check" size={13} /> : null}</button>)}</>
         : <button className="prow2 more" onClick={(e) => { e.stopPropagation(); setMoreOpen(true) }}><div className="t"><b>더 많은 모델</b></div><Icon n="chev" size={12} /></button>) : null}
-      <div className="hint"><span>바꾸면 이 세션을 이어서 재시작해요 (대화 유지)</span><span className="sp" /><button className="lnk" onClick={() => void hardRefreshModels()}>새로고침</button></div></div>)
+      <div className="hint"><span>바꾸면 이 세션을 이어서 재시작해요 (세션 내용은 그대로)</span><span className="sp" /><button className="lnk" onClick={() => void hardRefreshModels()}>새로고침</button></div></div>)
     : pop === 'effort' ? <div className="cpop r"><div className="effort"><div className="top"><span style={{ color: 'var(--t3)', fontSize: 13 }}>노력</span><b>{effortLabel(cfg.effort, vend)}</b></div><div className="lbl"><span>더 빠르게</span><span>더 스마트하게</span></div><input type="range" min={0} max={effortList.length - 1} step={1} value={Math.max(0, effortList.findIndex((e) => e.v === cfg.effort))} onChange={(e) => { const v = effortList[Number(e.target.value)].v; if (v !== cfg.effort) void (async () => { if (cur) { try { await api(`/sessions/${cur.id}/settings`, { body: { effort: v } }) } catch (er) { say((er as Error).message) } } else setDraft((d) => ({ ...d, effort: v })) })() }} /><div className="steps">{effortList.map((e) => <span key={e.v}>{e.t}</span>)}</div></div><div className="hint"><span>다음 턴부터 적용 · 기본값은 설정에서</span></div></div>
-    : pop === 'ctx' ? <div className="cpop r ctxpop"><div className={`big ${pct >= 80 ? 'hot' : ''}`}><Ring pct={pct} size={40} stroke={3} /><div><b>컨텍스트 {ctx ? `${pct}%` : '—'}</b><small>{ctx ? `${fmtK(ctx.used)} / ${fmtK(ctx.window)} 토큰 · 이 세션` : '첫 답이 오면 잽니다'}</small></div></div><hr /><button className="prow2" onClick={() => { setPop(''); void sendText('/compact') }}><div className="t"><b>/compact 압축</b><small>대화를 요약해 컨텍스트를 줄여요</small></div></button><div className="hint"><span>80% 를 넘으면 링이 주황</span></div></div>
+    : pop === 'ctx' ? <div className="cpop r ctxpop"><div className={`big ${pct >= 80 ? 'hot' : ''}`}><Ring pct={pct} size={40} stroke={3} /><div><b>컨텍스트 {ctx ? `${pct}%` : '—'}</b><small>{ctx ? `${fmtK(ctx.used)} / ${fmtK(ctx.window)} 토큰 · 이 세션` : '첫 답이 오면 잽니다'}</small></div></div><hr /><button className="prow2" onClick={() => { setPop(''); void sendText('/compact') }}><div className="t"><b>/compact 압축</b><small>세션을 요약해 컨텍스트를 줄여요</small></div></button><div className="hint"><span>80% 를 넘으면 링이 주황</span></div></div>
     : pop === 'plus' ? <div className="cpop plus">{phone ? <button className="prow2" onClick={() => { setPop(''); camRef.current?.click() }}><span className="ic-cam" /><div className="t"><b>카메라로 찍기</b></div></button> : null}<button className="prow2" onClick={() => { setPop(''); fileRef.current?.click() }}><Icon n="phone" size={14} color="var(--t3)" /><div className="t"><b>{phone ? '사진·파일 고르기' : '이 기기에서 파일 올리기'}</b>{phone ? <small>사진 보관함 · 파일 앱</small> : null}</div><span className="k">→ 첨부/</span></button>{bot.orchestrator ? null : <button className="prow2" onClick={() => { setPop(''); openRoutine() }}><Icon n="clock" size={14} color="var(--t3)" /><div className="t"><b>루틴으로 만들기</b><small>{routinePeek()}</small></div></button>}<button className="prow2" onClick={() => { setPop(''); setPickOpen(true) }}><Icon n="folder" size={14} color="var(--t3)" /><div className="t"><b>{bot.orchestrator ? '볼트' : '이 폴더'}에서 고르기</b></div></button>{docTabs.length ? <button className="prow2" onClick={() => { setPop(''); for (const rel of docTabs) addAtt({ rel, abs: `${bot.abs}/${rel}` }) }}><Icon n="doc" size={14} color="var(--t3)" /><div className="t"><b>열린 문서 첨부 ({docTabs.length})</b></div></button> : null}<hr /><button className="prow2" onClick={() => { setPop(''); setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}@`); setCaret(text.length + 1); taRef.current?.focus() }}><span className="mono" style={{ width: 14, textAlign: 'center', color: 'var(--t3)' }}>@</span><div className="t"><b>@ 로 이름 쳐서 넣기</b></div></button><div className="hint"><span>{phone ? '사진 앱에서 복사한 이미지는 길게 눌러 붙여넣기' : '스크린샷은 ⌘V 로 붙여 넣으면 첨부/ 에 저장'}</span></div></div>
     : slashQ !== null && slashList.length ? <div className="cpop">{(['skill', 'cli'] as const).map((grp) => { const l = slashList.filter((c) => (grp === 'skill' ? c.kind !== 'cli' : c.kind === 'cli')); return l.length ? <div key={grp}><div className="h">{grp === 'skill' ? '스킬 · 이 폴더' : '명령'}</div>{l.map((c) => { const i = slashList.indexOf(c); return <button key={c.name} className={`prow2 ${i === sel ? 'on' : ''}`} onMouseEnter={() => setSel(i)} onClick={() => pickSlash(c)}><div className="t"><b>/{c.name}</b>{c.desc ? <small>{c.desc}</small> : null}</div>{i === sel ? <span className="k">⏎</span> : c.scope !== 'cli' && c.scope !== 'folder' ? <span className="k">{c.scope}</span> : null}</button> })}</div> : null })}<div className="hint"><span>↑↓ 이동</span><span>Tab · ⏎ 선택</span><span>⎋ 닫기</span><span className="sp" /><span>{slashList.length}개</span></div></div>
     : atQ !== null && atList.length ? <div className="cpop"><div className="h">{docTabs.length ? '열린 문서 먼저 · ' : ''}이 폴더{atQ ? ` · «${atQ}»` : ''}</div>{atList.map((f, i) => { const name = f.rel.split('/').pop() ?? f.rel; const dir = f.rel.includes('/') ? f.rel.slice(0, f.rel.lastIndexOf('/')) + '/' : ''; return <button key={f.rel} className={`prow2 ${i === sel ? 'on' : ''}`} onMouseEnter={() => setSel(i)} onClick={() => pickAt(f)}><Icon n={f.dir ? 'folder' : 'doc'} size={14} color="var(--t3)" /><div className="t"><b>{name}</b><small>{f.dir ? `폴더째${dir ? ` · ${dir}` : ''}` : dir || (docTabs.includes(f.rel) ? '열림' : '')}</small></div>{i === sel ? <span className="k">⏎</span> : null}</button> })}<div className="hint"><span>↑↓ 이동</span><span>⏎ 넣기</span><span className="sp" /><span>이름 · 경로로 찾음</span></div></div>
@@ -2284,14 +2284,14 @@ function Chat({ bot, go, sessions, cur, items, loaded, phase = 'ready', ghost, p
     onDragOver={(e) => { const k = dragKind(e.dataTransfer); if (!k) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
     onDragLeave={() => { if (!dragN.current) return; dragN.current -= 1; if (!dragN.current) setDrop('') }}
     onDrop={dropHere}>
-    {drop ? <div className="dropzone"><div className="card"><FolderBot color={bot.color} size={40} mood="idle" /><b>{bot.name}에게 첨부</b><small>{drop === 'tree' ? '놓으면 이 대화에 첨부해요' : <>볼트 안 파일은 그대로 첨부 · 밖의 파일은 <span className="mono">첨부/</span> 에 복사한 뒤 첨부</>}</small>{drop === 'files' && dropN ? <span className="n">파일 {dropN}개</span> : null}</div></div> : null}
+    {drop ? <div className="dropzone"><div className="card"><FolderBot color={bot.color} size={40} mood="idle" /><b>{bot.name}에게 첨부</b><small>{drop === 'tree' ? '놓으면 이 세션에 첨부해요' : <>볼트 안 파일은 그대로 첨부 · 밖의 파일은 <span className="mono">첨부/</span> 에 복사한 뒤 첨부</>}</small>{drop === 'files' && dropN ? <span className="n">파일 {dropN}개</span> : null}</div></div> : null}
     <div className={`hdr chat-hdr ${phone ? '' : 'glass'}`}>
       {/* H-5 · 좁음 헤더 한 줄 — ☰(레일 서랍 · H 전까지는 봇 목록으로) · 표시 이름 · 작업 중 ●. ‹·폴더 아이콘은 없다(폴더는 독의 📄 · 쓸기) */}
-      {phone ? <><button className="rb glassb hb-menu" onClick={drillSub ? () => setDrill(null) : onBack} title={drillSub ? '메인 대화로' : '봇 목록'}><Icon n={drillSub ? 'back' : 'list'} size={20} /></button>
+      {phone ? <><button className="rb glassb hb-menu" onClick={drillSub ? () => setDrill(null) : onBack} title={drillSub ? '원래 세션으로' : '봇 목록'}><Icon n={drillSub ? 'back' : 'list'} size={20} /></button>
         {/* 감싸는 span 은 헤더의 flex 아이템 — 폭이 내용에 의존하는데 알약이 그 100% − 118px 을 최대폭으로 삼아 스스로를 눌러 이름이 «2026-…» 로 잘렸다(2026-09-13 Dave). 알약 최대폭은 감싸는 칸의 100%, 칸이 남는 공간을 받는다 */}
-        <span className="hname"><button className="hnb" aria-haspopup="dialog" onClick={() => setSessSheet(true)} title={cur?.name ?? '세션'}><span className="h2">{drillSub ? <b className="dn">{drillSub.name}</b> : <BotName b={bot} chip={false} />}<small className="hs">{chatHolder === 'other' ? <span className="dot hold" title="남을 기다리는 중" /> : running ? <span className="dot run" title="작업 중" /> : state === 'awaiting_input' ? <span className="dot wait" /> : null}<span className="sn">{cur?.name ?? '새 대화'}</span><Icon n="chevd" size={9} /></small></span></button></span>
+        <span className="hname"><button className="hnb" aria-haspopup="dialog" onClick={() => setSessSheet(true)} title={cur?.name ?? '세션'}><span className="h2">{drillSub ? <b className="dn">{drillSub.name}</b> : <BotName b={bot} chip={false} />}<small className="hs">{chatHolder === 'other' ? <span className="dot hold" title="남을 기다리는 중" /> : running ? <span className="dot run" title="일하는 중" /> : state === 'awaiting_input' ? <span className="dot wait" /> : null}<span className="sn">{cur?.name ?? '새 세션'}</span><Icon n="chevd" size={9} /></small></span></button></span>
         <span className="sp" /><SyncDot /></>
-        : drillSub ? <><button className="ib" onClick={() => setDrill(null)} title="메인 대화로"><Icon n="back" size={14} /></button><span style={{ color: 'var(--t3)' }}>/</span><span className="ttl">{drillSub.name}</span>{drillSub.status === 'run' ? <span className="spin run" /> : <Icon n={drillSub.status === 'error' ? 'x' : 'check'} size={11} color={drillSub.status === 'error' ? 'var(--err)' : 'var(--done)'} />}<span style={{ color: 'var(--t3)', fontSize: 12, whiteSpace: 'nowrap' }}>도구 {drillSub.tools}</span><span className="sp" /></>
+        : drillSub ? <><button className="ib" onClick={() => setDrill(null)} title="원래 세션으로"><Icon n="back" size={14} /></button><span style={{ color: 'var(--t3)' }}>/</span><span className="ttl">{drillSub.name}</span>{drillSub.status === 'run' ? <span className="spin run" /> : <Icon n={drillSub.status === 'error' ? 'x' : 'check'} size={11} color={drillSub.status === 'error' ? 'var(--err)' : 'var(--done)'} />}<span style={{ color: 'var(--t3)', fontSize: 12, whiteSpace: 'nowrap' }}>도구 {drillSub.tools}</span><span className="sp" /></>
           : <><FolderBot color={bot.color} size={16} mood={moodOf(state, !!cur?.hibernated, chatHolder)} mono /><span className="ttl" title={bot.name}><Mid s={bot.displayName} /></span><VendorMark vendor={cur?.vendor} size={12} />
             {/* AB · 헤더 한 줄 — 레일·대기 줄과 **같은 값**에서 나온다 */}
             {chatHolder === 'other' ? <span className="hstate"><i />{holdHeader(chatHolder, cur?.inflight, cur?.bg ?? 0)}</span> : null}
@@ -2306,7 +2306,7 @@ function Chat({ bot, go, sessions, cur, items, loaded, phase = 'ready', ghost, p
     {pinnedItem && !drill && !ghost ? <button className="pinq glassb" onClick={() => { const sc = scRef.current; const el = sc?.querySelector<HTMLElement>(`.umsg[data-id="${CSS.escape(pinnedItem.id)}"]`); if (!sc || !el) return; /* 알약 바로 아래에 질문이 오게 — 맨 위에 붙이면 알약(그 앞 질문)이 첫 줄을 가린다 */ sc.scrollTo({ top: sc.scrollTop + (el.getBoundingClientRect().top - sc.getBoundingClientRect().top) - (phone ? 56 : 48), behavior: 'smooth' }) }} title="이 질문으로">{pinnedItem.text}</button> : null}
     <div className="chat-scroll" ref={scRef} data-autoscroll="1">
       <div className="chat-body">
-        {!cur && !drill ? <div className="empty" style={{ flex: 1 }}><FolderBot color={bot.color} size={40} mood="idle" /><div><b>{bot.name}</b>{bot.orchestrator ? ' — 볼트 전체를 보는 관제 봇이에요. "지금 뭐 돌고 있어?", "Inbox 정리해 줘", "X 폴더에서 시작해".' : ' 봇이에요. 이 폴더의 지침·기억·자료를 들고 일해요.'}</div></div> : null}
+        {!cur && !drill ? <div className="empty" style={{ flex: 1 }}><FolderBot color={bot.color} size={40} mood="idle" /><div><b>{bot.name}</b>{bot.orchestrator ? ' — 볼트 전체를 보는 봇이에요. "지금 뭐 돌고 있어?", "Inbox 정리해 줘", "X 폴더에서 시작해".' : ' 봇이에요. 이 폴더의 지침·기억·자료를 들고 일해요.'}</div></div> : null}
         {drillSub ? <div className="drill-p"><div className="meta" style={{ cursor: 'default' }}>무엇을 시켰나</div><div className="tx">{drillSub.prompt || drillSub.name}</div><hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '4px 0', width: '100%' }} /></div> : null}
         {/* CF ② A · 받는 중 0.15초(옛 대화가 흐려져 있었으면 0.4초)를 넘기면 회색 줄 · ④ A · 그 전에는 옛 대화를 흐리게(눌리지 않게) */}
         {phase === 'skel' && !drill ? <ChatSkel /> : null}
@@ -2367,12 +2367,12 @@ function Chat({ bot, go, sessions, cur, items, loaded, phase = 'ready', ghost, p
           onSave={(v) => onQueue((l) => (v.trim() ? l.map((x, k) => (k === i ? v : x)) : l.filter((_, k) => k !== i)))}
           onDrop={() => onQueue((l) => l.filter((_, k) => k !== i))} />)}
       </div> : null}
-      {fixing ? <div className="fixrow">멈춘 요청을 고쳐 보내요 — 그 요청 직전으로 대화를 되감아 새로 보내요(파일은 그대로) · <button onClick={() => { setFixing(false); setText('') }}>취소 (⎋)</button></div> : null}
+      {fixing ? <div className="fixrow">멈춘 요청을 고쳐 보내요 — 그 요청 직전으로 세션을 되감아 새로 보내요(파일은 그대로) · <button onClick={() => { setFixing(false); setText('') }}>취소 (⎋)</button></div> : null}
       {/* 🔴 **입력창의 링크도 아이콘을 갖는다** (2026-09-13 Dave). ⚠ `textarea` 안에는 그림을 못 넣는다 —
           글자만 담는 칸이다. 그래서 쓰는 중인 주소를 **입력칸 위 칩**으로 올린다: 같은 캐시, 같은 아이콘,
           그리고 «이 주소가 맞나» 를 보내기 전에 확인할 수 있다. */}
       {/* CC · 자동화 세션을 보고 있으면 — 여기에 쓴 말이 어디로 가는지 미리 말한다(2026-10-12 Dave) */}
-      {cur && takeoverMode(cur) !== 'none' ? <div className="autonote">{autoKind(cur)} 세션이에요 — {takeoverMode(cur) === 'fork' ? '여기에 쓰면 이 대화를 이어받은 새 채팅이 열려요' : '여기에 쓰면 이 세션이 채팅으로 옮겨져 자동 정리에서 빠져요'}</div> : null}
+      {cur && takeoverMode(cur) !== 'none' ? <div className="autonote">{autoKind(cur)} 세션이에요 — {takeoverMode(cur) === 'fork' ? '여기에 쓰면 이 세션을 이어받은 새 세션이 열려요' : '여기에 쓰면 이 세션을 내가 이어받아 자동 정리에서 빠져요'}</div> : null}
       {draftLinks.length ? <div className="files lchips">{draftLinks.map((u) => <LinkChip key={u} url={u} />)}</div> : null}
       <input ref={fileRef} type="file" multiple hidden onChange={(e) => void upload(Array.from(e.target.files ?? []))} />
       {/**
@@ -2393,7 +2393,7 @@ function Chat({ bot, go, sessions, cur, items, loaded, phase = 'ready', ghost, p
         {/* Q-1 (2026-09-19 Dave: «+ 하나만 있는 UX가 더 좋아 · 2스텝 안에 카메라/이미지첨부») — 📷 단추는 뺐다. 카메라·사진은 + 메뉴 첫 두 줄 */}
         {phone ? <div className="cleft">{plusBtn}</div> : null}
         <div className={phone ? 'ctext' : 'crow'}>
-          <InlineInput ref={taRef} placeholder={drill ? '메인 대화로 보냅니다 — 이 안에는 직접 말을 걸 수 없어요' : cur && takeoverMode(cur) === 'fork' ? '여기 쓰면 새 채팅으로 이어서 열려요' : running ? (touch ? '보내면 대기열에 들어갑니다' : `보내면 대기열에 들어갑니다 (${sendKey})`) : state === 'awaiting_input' ? '답을 기다리는 중 — 보내면 대기열에' : enterSends ? '메시지…  ⏎ 보내기 · ⇧⏎ 줄 바꿈 · / 스킬 · @ 파일' : '메시지…  / 스킬 · @ 파일'} value={text} chips={chipsByName} onChange={(t, c) => { setText(t); setCaret(c) }} onCaret={setCaret} onKeyDown={onKey} onFocus={() => { if (phone) stickBottom() }} onChipClick={(name) => { const a = attach.find((x) => attName(x) === name); if (a && !a.uploading && !a.dir) onFile(a.rel) }} />
+          <InlineInput ref={taRef} placeholder={drill ? '원래 세션으로 보내요 — 이 안에는 직접 말을 걸 수 없어요' : cur && takeoverMode(cur) === 'fork' ? '여기 쓰면 새 세션으로 이어서 열려요' : running ? (touch ? '보내면 대기열에 들어갑니다' : `보내면 대기열에 들어갑니다 (${sendKey})`) : state === 'awaiting_input' ? '답을 기다리는 중 — 보내면 대기열에' : enterSends ? '메시지…  ⏎ 보내기 · ⇧⏎ 줄 바꿈 · / 스킬 · @ 파일' : '메시지…  / 스킬 · @ 파일'} value={text} chips={chipsByName} onChange={(t, c) => { setText(t); setCaret(c) }} onCaret={setCaret} onKeyDown={onKey} onFocus={() => { if (phone) stickBottom() }} onChipClick={(name) => { const a = attach.find((x) => attName(x) === name); if (a && !a.uploading && !a.dir) onFile(a.rel) }} />
         </div>
         {phone ? <div className={`cright ${uploading ? 'dis' : ''}`}>{ringBtn}{sendEl}</div> : null}
         {!phone ? <div className="cbar">{modeBtn}{plusBtn}{attach.length ? <span className="acount">첨부 {attach.length}개 · 봇이 읽어서 참고</span> : null}<span className="sp" />{modelBtn}{effortBtn}{ringBtn}{sendEl}</div> : null}
@@ -2519,7 +2519,7 @@ function Live({ cur, state, color, onOpenBg, onBgDown, onStop, hint, bgN = 0, on
   }, [holder, bgN > 0])
   // EA · 턴은 끝났고 기다릴 에이전트도 없는데 뒤에서 도는 것(셸)이 남았다 — 조용한 한 줄로 들어갈 문만 둔다(기다리라는 말이 아니다)
   if (holder === 'none') return bgEl ? <div className="live bgline" ref={rootRef}><span className="tx">뒤에서 도는 일이 있어요</span>{bgEl}<span className="sp" /></div> : null
-  if (holder === 'you') return <div className="live" ref={rootRef}><span className="glow" /><span className="tx">확인 대기 — 위 요청에 응답해 주세요</span><span className="el"><Elapsed from={cur.turnStartedAt} /></span>{stopEl}{bgEl}</div>
+  if (holder === 'you') return <div className="live" ref={rootRef}><span className="glow" /><span className="tx">내 답 기다림 — 위 요청에 답해 주세요</span><span className="el"><Elapsed from={cur.turnStartedAt} /></span>{stopEl}{bgEl}</div>
   const ms = Math.max(0, Date.now() - from)
   const a = cur.activity ?? ''
   if (holder === 'me') return <div className="live run work" ref={rootRef}>
@@ -2567,7 +2567,7 @@ function PriorTry({ items, files, bot, onFile }: { items: ChatItem[]; files: str
   const said = items.filter((x): x is Extract<ChatItem, { kind: 'user' | 'assistant' }> => x.kind === 'user' || x.kind === 'assistant')
   const tools = items.filter((x) => x.kind === 'tool').length
   return <div className="prior" role="group" aria-label="이전 시도">
-    <button type="button" className="ph" onClick={() => setOpen(!open)} aria-expanded={open}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span className="lb">이전 시도</span><span className="q">«{(first?.text ?? '').split('\n')[0].slice(0, 60)}»</span><span className="why">멈춘 요청 · 대화에서 뺐어요{tools ? ` · 도구 ${tools}번` : ''}</span></button>
+    <button type="button" className="ph" onClick={() => setOpen(!open)} aria-expanded={open}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span className="lb">이전 시도</span><span className="q">«{(first?.text ?? '').split('\n')[0].slice(0, 60)}»</span><span className="why">멈춘 요청 · 세션에서 뺐어요{tools ? ` · 도구 ${tools}번` : ''}</span></button>
     {files.length ? <div className="files"><span className="fl">이때 고친 파일 — 되돌리지 않았어요</span>{files.map((p) => <span key={p} className="fpair"><FileChip abs={p} botAbs={bot.abs} botId={bot.id} onClick={() => onFile(p)} /><DiffBtn abs={p} onOpen={() => onFile(p)} /></span>)}</div> : null}
     {open ? <div className="pb">{said.map((x) => <div key={x.id} className={x.kind === 'user' ? 'pu' : 'pa'}>{x.text}</div>)}</div> : null}
   </div>
@@ -2643,7 +2643,7 @@ function Item({ it, bot, items, onFile, onReveal, onDrill, state, say, isLastAss
        */
       const kids = items.filter((x) => x.kind === 'tool' && x.parentId === it.id) as Tool[]
       const pv = resultPreview(it.result)
-      const label = it.status === 'run' ? '실행 중' : it.stopped ? '멈춤' : it.status === 'error' ? '실패' : '끝남'
+      const label = it.status === 'run' ? '일하는 중' : it.stopped ? '멈춤' : it.status === 'error' ? '실패' : '끝남'
       return <div className="sub" data-sub={it.id}><div className="l"><button className="ib" style={{ width: 18, height: 18, marginLeft: -4 }} onClick={() => setOpen(!open)}><Icon n={open ? 'chevd' : 'sub'} size={12} /></button><span className="nm">{it.name}</span>{it.status === 'run' ? <span className="spin run" /> : it.stopped ? <Icon n="stop" size={10} color="var(--t3)" /> : <Icon n={it.status === 'error' ? 'x' : 'check'} size={11} color={it.status === 'error' ? 'var(--err)' : 'var(--done)'} />}<span className="m"><span className="w">{label} · 도구 {it.tools}회</span><span className="ic" title={`도구 ${it.tools}회`}><Icon n="task" size={11} />{it.tools}</span>{it.last ? <> · <span className="mono">{it.last}</span></> : null}</span>{it.status === 'run' && it.taskId && sid ? <SubStop sid={sid} taskId={it.taskId} name={it.name} say={say} /> : null}<button className="op" onClick={() => onDrill(it.id)} title="열기"><span className="w">열기</span><Icon n="chev" size={10} /></button></div>{open ? <div className="in">{kids.slice(-4).map((k) => <ToolLine key={k.id} it={k} onFile={onFile} base={bot.abs} />)}{it.result && it.status !== 'run' ? <div className="meta subres" style={{ whiteSpace: 'pre-wrap' }}>{pv.text}</div> : null}{pv.more && it.status !== 'run' ? <button className="submore" onClick={() => onDrill(it.id)}>전체 보기<Icon n="chev" size={9} /></button> : null}{!kids.length ? <div className="meta">아직 도구를 안 썼어요</div> : null}</div> : null}</div> }
     case 'todos': return <TodoWidget it={it} stopped={state !== 'running'} />
     // 루프 6/10 — 칩 옆의 ⇄ 가 «이 턴이 손대기 전 ↔ 지금» 을 연다
@@ -2781,7 +2781,7 @@ function PermCard({ p, sid, keys }: { p: PermissionRequest; sid: string; keys?: 
     }
     const ready = qs.every((q, i) => !!answerOf(q, i))
     const send = () => { const r = reply(); void act({ answers: r.answers, ...(r.annotations ? { annotations: r.annotations } : {}) }, 'ask') }
-    return <div className="card" data-req={p.requestId} data-kind="ask" tabIndex={-1}><div className="lab">에이전트의 질문{qs[0]?.header ? ` · ${qs[0].header}` : ''}</div>
+    return <div className="card" data-req={p.requestId} data-kind="ask" tabIndex={-1}><div className="lab">봇의 질문{qs[0]?.header ? ` · ${qs[0].header}` : ''}</div>
       {qs.map((q, i) => { const key = keyOf(q, i); const multi = !!q.multiSelect; const on = (label: string) => picksOf(key).includes(label); const bl = blockOf(q, i); return <div key={i} style={{ display: 'flex', flexDirection: 'column' }}><div className="q">{q.question}{multi ? <span className="mhint">여러 개 고를 수 있어요</span> : null}</div>
         {bl ? <PreviewBox block={bl} text={edits[editKey(key, bl.owner)]} editing={!!editing[key]} onEditing={(v) => { setEditing((m) => ({ ...m, [key]: v })); setShown((m) => ({ ...m, [key]: bl.owner })) }} onText={(t) => setEdits((m) => { const k = editKey(key, bl.owner); if (t == null) { const { [k]: _, ...rest } = m; return rest } return { ...m, [k]: t } })} /> : null}
         {(q.options ?? []).map((o) => <button key={o.label} className={`opt ${on(o.label ?? '') ? 'on' : ''}`} onClick={() => { toggle(key, o.label ?? '', multi); if (o.preview?.trim() && !editing[key]) setShown((m) => ({ ...m, [key]: o.label ?? '' })) }}><span className={`r ${multi ? 'sq' : ''}`}>{multi && on(o.label ?? '') ? <Icon n="check" size={9} color="var(--bg)" /> : null}</span><div><div>{o.label}{o.preview?.trim() && bl && bl.owner !== (o.label ?? '') ? <span className="pvhas">미리보기 있음</span> : null}</div>{o.description ? <div className="d">{o.description}</div> : null}</div></button>)}<div className={`opt ${(other[key] ?? '').trim() ? 'on' : ''}`}><span className={`r ${multi ? 'sq' : ''}`} style={{ marginTop: 7 }}>{multi && (other[key] ?? '').trim() ? <Icon n="check" size={9} color="var(--bg)" /> : null}</span><input placeholder={multi ? '기타 — 직접 입력해 덧붙이기…' : '기타 — 직접 입력…'} value={other[key] ?? ''} onChange={(e) => setOther({ ...other, [key]: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && !busy && ready) send() }} /></div></div> })}

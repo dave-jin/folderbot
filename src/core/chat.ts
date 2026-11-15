@@ -132,7 +132,7 @@ export function itemId(prefix = 'i'): string {
  */
 export function closeOpenItems(items: ChatItem[], reason: 'result' | 'exit' | 'restore'): ChatItem[] {
   const changed: ChatItem[] = []
-  const note = reason === 'result' ? undefined : reason === 'exit' ? '세션이 끝나 중단됨' : '호스트가 다시 떠서 중단됨'
+  const note = reason === 'result' ? undefined : reason === 'exit' ? '세션이 끝나 중단됨' : '메인이 다시 떠서 중단됨'
   for (const it of items) {
     if ((it.kind === 'assistant' || it.kind === 'thinking') && it.streaming) { it.streaming = false; changed.push(it) }
     else if (it.kind === 'tool' && it.result === undefined && !it.isError) { if (reason === 'result') it.result = ''; else { it.result = note; it.isError = true } changed.push(it) }

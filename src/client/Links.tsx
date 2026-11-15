@@ -103,7 +103,7 @@ export function LinksView({ phone, go, openDoc, say }: {
     if (to === '__manage') { setMng(true); return }
     if (to === '__new') { const nm = await askName('새 줄기 이름'); if (nm?.trim()) await op({ op: 'create', name: nm.trim(), folders: [id] }, `«${nm.trim()}» 줄기를 만들고 넣었어요`); return }
     if (to === '__none') await op({ op: 'out', folder: id }, '줄기 밖으로 뺐어요 — 봇이 다시 넣지 않아요')
-    else if (to === '__auto') await op({ op: 'auto', folder: id }, '봇에게 맡겼어요 — 주인 맥이 줄기에 맞춰 넣어요')
+    else if (to === '__auto') await op({ op: 'auto', folder: id }, '봇에게 맡겼어요 — 루틴을 돌리는 메인이 줄기에 맞춰 넣어요')
     else await op({ op: 'add', stem: to, folder: id }, '줄기를 옮겼어요')
   }
   const detail = selN ? <NodeDetail map={map} n={selN} color={color} onPick={setSel} close={() => setSel(null)}
@@ -120,7 +120,7 @@ export function LinksView({ phone, go, openDoc, say }: {
     </div>
     <div className="lm-bar2">{toggles}{view === 'map' && map.past?.total ? <button className={`lm-chip${withPast ? ' on' : ''}`} onClick={togglePast} title="보관 폴더(끝난 일)를 과녁 바깥 고리에">지난 일 {map.past.linked}</button> : null}
       <button className="lm-chip" onClick={() => setMng(true)}><Icon n="edit" size={10} />줄기 관리</button>{stemF !== null ? <button className="lm-chip on" onClick={() => setStemF(null)}>줄기 «{map.stems[stemF]?.name}» 만 <Icon n="x" size={10} /></button> : null}
-      {map.aiAt ? null : <span className="lm-note">같은 사람·장소 · 비슷한 일은 주인 맥이 하루 한 번 채워요{r?.status.owner ? '' : ' (이 맥은 주인이 아니에요)'}</span>}</div>
+      {map.aiAt ? null : <span className="lm-note">같은 사람·장소 · 비슷한 일은 루틴을 돌리는 메인이 하루 한 번 채워요{r?.status.owner ? '' : ' (이 맥은 루틴을 돌리지 않아요)'}</span>}</div>
 
     <div className={`lm-main ${view}`}>
       <div className="lm-canvas">
@@ -184,7 +184,7 @@ function Insights({ map, act, onPick }: { map: LinkMap; act: (r: Reuse) => void;
   const refs = map.reuse.filter((r) => r.act === 'ref')
   const box = (title: string, rows: Reuse[], empty: string) => <div className="lm-ins"><b>{title}</b>
     {rows.length ? rows.slice(0, 4).map((r) => <div key={`${r.to}:${r.from}`} className="r"><button className="lk" onClick={() => onPick(r.to)}>{L(r.to)}</button><span> ← {L(r.from)} · {r.what}{r.fact ? '' : <span className="lm-tag guess">봇 추측</span>}</span><button className="btn sm" onClick={() => act(r)}>{r.act === 'ref' ? '참조 폴더로 묶기' : '알려 주기'}</button></div>) : <div className="m">{empty}</div>}</div>
-  return <div className="lm-insights">{box('♻ 끝난 일·앞선 일에서 가져올 것', fromPast, '아직 없어요')}{box('♻ 비슷한 일', guess, map.aiAt ? '없어요' : '주인 맥이 하루 한 번 채워요')}{box('🔗 참조 폴더로 묶을 만한 쌍', refs, '중계가 잦은 쌍이 없어요')}</div>
+  return <div className="lm-insights">{box('♻ 끝난 일·앞선 일에서 가져올 것', fromPast, '아직 없어요')}{box('♻ 비슷한 일', guess, map.aiAt ? '없어요' : '루틴을 돌리는 메인이 하루 한 번 채워요')}{box('🔗 참조 폴더로 묶을 만한 쌍', refs, '중계가 잦은 쌍이 없어요')}</div>
 }
 
 /* ── 과녁 지도 ─────────────────────────────────────────────────────────────── */
@@ -299,7 +299,7 @@ function NodeDetail({ map, n, color, onPick, close, stemMove, act, bot, go, open
       <option value="__new">＋ 새 줄기 만들기…</option><option value="__none">줄기 밖으로</option><option value="__auto">봇에게 맡기기</option>
       <option disabled>──────</option>
       <option value="__manage">줄기 관리 열기</option>
-    </select>{n.byBot ? <span className="lm-tag bot" title={n.byBot === 'ai' ? '주인 맥 모델이 줄기 목록에 맞춰 넣었어요 — 옮기면 그때부터 Dave 것' : '이 줄기 폴더들과 선이 가장 많이 닿아요 — 모델이 곧 다시 봐요'}>봇이 넣음</span> : null}</span>)}
+    </select>{n.byBot ? <span className="lm-tag bot" title={n.byBot === 'ai' ? '메인의 모델이 줄기 목록에 맞춰 넣었어요 — 옮기면 그때부터 내 것' : '이 줄기 폴더들과 선이 가장 많이 닿아요 — 모델이 곧 다시 봐요'}>봇이 넣음</span> : null}</span>)}
     {reuse.map((r) => <div key={r.from + r.act} className="ru"><div><b>♻ {byId.get(r.from)?.label}</b> · {r.what} <span className={`lm-tag ${r.fact ? 'fact' : 'guess'}`}>{r.fact ? '사실' : '봇 추측'}</span></div>
       {r.files.map((f) => <div key={f} className="ff"><code>{f}</code><button className="btn sm" onClick={() => openFile(r.from, f)}>열기</button></div>)}
       <button className="btn primary sm" onClick={() => act(r)}>{r.act === 'ref' ? '참조 폴더로 묶기' : '이 폴더 봇에게 알려 주기'}</button></div>)}

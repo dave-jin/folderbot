@@ -17,8 +17,8 @@ describe('세션 정리 판정', () => {
   })
   it('🔴 잠김 — 일하는 중 · 답 기다림 · 뒤에서 도는 중 · 대기 말 · 안 읽음', () => {
     expect(sessLocked(S({ state: 'running' }))).toBe('일하는 중')
-    expect(sessLocked(S({ state: 'awaiting_input' }))).toBe('답 기다림')
-    expect(sessLocked(S({ bg: 1 }))).toBe('뒤에서 도는 중')
+    expect(sessLocked(S({ state: 'awaiting_input' }))).toBe('내 답 기다림')
+    expect(sessLocked(S({ bg: 1 }))).toBe('뒤에서 일하는 중')
     expect(sessLocked(S({ queue: [{ text: 'x', from: 'o', t: 1 }] }))).toBe('대기 말 있음')
     expect(sessLocked(S({ lastReplyAt: 5, readAt: 1 }))).toBe('안 읽음')
     expect(sessLocked(S({ lastReplyAt: 5, readAt: 9 }))).toBe(null)

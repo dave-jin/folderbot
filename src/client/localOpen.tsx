@@ -72,7 +72,7 @@ export async function openOnThisDevice(bot: Bot, rel: string, mode: OpenMode, ct
   const viaDownload = async (why?: string) => {
     try {
       const p = await b.download(rawUrl(bot, rel), ctx.hostName, vrel)
-      await doOpen(p); ctx.say(`${why ? why + ' — ' : ''}호스트에서 받은 사본을 열었어요 (고쳐도 되돌아가지 않아요)`)
+      await doOpen(p); ctx.say(`${why ? why + ' — ' : ''}메인에서 받은 사본을 열었어요 (고쳐도 되돌아가지 않아요)`)
     } catch (e) { ctx.say((e as Error).message) }
   }
   if (st.openMode !== 'sync' || !st.vaultLocal) {
@@ -119,8 +119,8 @@ export function LocalOpenHost() {
     <div className="backdrop" onClick={() => done(null)} />
     <div className="modal conf lopen" style={{ width: 'min(520px,calc(100% - 24px))' }}>
       <div className="modal-h"><div className="t"><b>동기화 중 — {a.name}</b></div></div>
-      <div className="modal-b" style={{ padding: '2px 22px 6px' }}><p className="cbody">호스트 {fmtTime(a.hostAt)} · 내 기기 {a.localAt ? fmtTime(a.localAt) : '없음'}. 이 기기의 사본이 호스트와 달라요. 도착하면 자동으로 열어 드릴까요?</p></div>
-      <div className="modal-f"><button className="btn" onClick={() => done('download')}>호스트에서 받기</button><button className="btn" onClick={() => done('force')}>그래도 열기</button><span className="sp" /><button className="btn" onClick={() => done(null)}>취소</button><button className="btn primary" autoFocus onClick={() => done('wait')}>기다렸다 열기</button></div>
+      <div className="modal-b" style={{ padding: '2px 22px 6px' }}><p className="cbody">메인 {fmtTime(a.hostAt)} · 내 기기 {a.localAt ? fmtTime(a.localAt) : '없음'}. 이 기기의 사본이 메인과 달라요. 도착하면 자동으로 열어 드릴까요?</p></div>
+      <div className="modal-f"><button className="btn" onClick={() => done('download')}>메인에서 받기</button><button className="btn" onClick={() => done('force')}>그래도 열기</button><span className="sp" /><button className="btn" onClick={() => done(null)}>취소</button><button className="btn primary" autoFocus onClick={() => done('wait')}>기다렸다 열기</button></div>
     </div>
   </>
 }
@@ -147,11 +147,11 @@ export function LocalOpenPicker({ root, compact, onDone }: { root: string; compa
       {cands.map((c, i) => <button key={c.path} className={`cand ${i === 0 && !c.shell ? 'best' : ''} ${c.shell ? 'shell' : ''} ${st?.vaultLocal === c.path ? 'on' : ''}`} onClick={() => void choose(c.path)} title={c.real}>
         <span className="p mono">{c.path}</span><span className="n">{c.shell ? '파일이 거의 없어요 — 껍데기 폴더일 수 있어요' : `파일 ${c.files >= 2000 ? '2000+' : c.files}개`}</span>
       </button>)}
-    </> : <div className="hint">이 기기에서 같은 볼트를 못 찾았어요. 동기화 폴더가 없으면 호스트에서 받아서 열어요.</div>}
+    </> : <div className="hint">이 기기에서 같은 볼트를 못 찾았어요. 동기화 폴더가 없으면 메인에서 받아서 열어요.</div>}
     <div className="acts">
       <button className="btn" onClick={() => void pick()}>폴더 고르기…</button>
       <button className="btn" onClick={() => void detect()}>다시 찾기</button>
-      <button className={`btn ${st?.openMode === 'download' || (!cands?.length && !st?.openMode) ? 'on' : ''}`} onClick={async () => { await set({ openMode: 'download' }); onDone?.() }}>{compact ? '호스트에서 받기' : '호스트에서 받아서 열기 (동기화 폴더 없음)'}</button>
+      <button className={`btn ${st?.openMode === 'download' || (!cands?.length && !st?.openMode) ? 'on' : ''}`} onClick={async () => { await set({ openMode: 'download' }); onDone?.() }}>{compact ? '메인에서 받기' : '메인에서 받아서 열기 (동기화 폴더 없음)'}</button>
     </div>
   </div>
 }

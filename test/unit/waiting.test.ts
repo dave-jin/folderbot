@@ -64,7 +64,7 @@ describe('AB · 기다림을 보이게', () => {
     const f = fl('Task', 1000, '개인_북극성')
     expect(holdHeader(holderOf('running', f, NOW), f)).toBe('다른 에이전트의 답을 기다리는 중')
     expect(holdHeader(holderOf('running', null, NOW), null)).toBe('생각 중')
-    expect(holdHeader(holderOf('awaiting_input', null, NOW), null)).toBe('확인해 주세요')
+    expect(holdHeader(holderOf('awaiting_input', null, NOW), null)).toBe('내 답 기다림')
     expect(holdHeader(holderOf('idle', null, NOW), null)).toBe('')
   })
 })

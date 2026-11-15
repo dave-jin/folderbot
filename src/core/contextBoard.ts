@@ -26,7 +26,7 @@ export const AXIS_MARK = '[[folderbot:context-axis]]'
 const BRIEF_MAX = 2000
 const TASK_STATES: readonly TaskState[] = ['done', 'claimed', 'running', 'stalled', 'waiting', 'todo']
 const STATE_KO: Record<TaskState, string> = {
-  done: '끝남', claimed: '끝났다고 함', running: '하는 중', stalled: '하다 멈춤', waiting: '내 답 대기', todo: '아직'
+  done: '끝남', claimed: '끝났다고 함', running: '일하는 중', stalled: '하다 멈춤', waiting: '내 답 기다림', todo: '아직'
 }
 const PERIOD_KO: Record<Period, string> = { today: '지난 24시간', week: '지난 7일', away: '자리를 비운 사이' }
 

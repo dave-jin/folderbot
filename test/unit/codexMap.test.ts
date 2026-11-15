@@ -80,7 +80,7 @@ describe('답 없이 끝난 턴 — 이유를 답 자리에 적는다', () => {
   })
 
   it('아무 정보가 없어도 빈 말을 하지 않는다', () => {
-    expect(emptyTurnNote({ code: 0, stderr: '', unknown: new Set() })).toContain('연결 진단')
+    expect(emptyTurnNote({ code: 0, stderr: '', unknown: new Set() })).toContain('Codex 다시 연결')
   })
 })
 

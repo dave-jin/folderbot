@@ -307,7 +307,7 @@ export function BridgeSide({ peerId, go, phone, onBack, onCollapse }: { peerId: 
 
 /** 줄 하나 — 설정의 `Row` 와 같은 꼴(제목 · 설명 · 조작). ⚠ 설정 검색 인덱스 검사가 이 파일의 `<Row t=…>` 도 읽는다 */
 function Row({ t, d, children }: { t: string; d?: ReactNode; children?: ReactNode }) {
-  return <div className="setr" data-t={t}><span className="tx"><span className="t">{t}<span className="scp at-main" title="호스트에 저장 — 모든 기기에 같이 보여요">메인</span></span>{d ? <span className="d">{d}</span> : null}</span>{children ? <span className="c">{children}</span> : null}</div>
+  return <div className="setr" data-t={t}><span className="tx"><span className="t">{t}<span className="scp at-main" title="메인에 저장 — 모든 기기에 같이 보여요">메인</span></span>{d ? <span className="d">{d}</span> : null}</span>{children ? <span className="c">{children}</span> : null}</div>
 }
 const TRUST_T: Record<Trust, string> = { read: '읽고 답장만', propose: '읽고 답하고 봇에게 나눠 주기까지(추천)', act: '제한 없음 — 믿는 상대만' }
 
@@ -316,7 +316,7 @@ export function BridgesPane() {
   const [wiz, setWiz] = useState(false)
   if (wiz) return <BridgeWizard onDone={() => setWiz(false)} />
   return <>
-    <Row t="지금 연결" d={b?.peers.length ? '레일의 «연결» 절에도 보여요. 누르면 편지 스레드가 열려요' : '아직 연결이 없어요 — 바깥 에이전트(클라우드 비서·스크립트·자동화)와 편지 파일로 대화하는 길이에요'} />
+    <Row t="지금 연결" d={b?.peers.length ? '왼쪽 목록의 «연결» 절에도 보여요. 누르면 주고받은 편지가 열려요' : '아직 연결이 없어요 — 바깥 상대(클라우드 비서·스크립트·자동화)와 편지 파일로 말을 주고받는 길이에요'} />
     {b?.peers.map((p) => <div className="brg-prow" key={p.id} data-peer={p.id}><PeerIcon p={p} size={24} /><span className="n"><b>{p.name}</b><small>{p.mailbox} · trust {p.trust}{p.host ? ` · ${p.host}` : ''}</small></span>{p.stale ? <span className="brg-pill e">끊김</span> : null}</div>)}
     {b?.errors.length ? <div className="brg-err">⚠ .claude/bridges.yml — {b.errors.join(' · ')}</div> : null}
     <Row t="새 연결 만들기" d="세 단계 — 상대 종류 → 우편함 자리·권한 → 만들기. 우편함 폴더와 README 를 만들고, 상대에게 줄 한 줄을 알려 드려요"><button className="btn primary" onClick={() => setWiz(true)}>만들기</button></Row>
@@ -370,11 +370,11 @@ function BridgeWizard({ onDone }: { onDone: () => void }) {
         <label className="sm">id <small>영문 · 편지 파일 이름에</small><input className="mono" value={id} onChange={(e) => setId(e.target.value.toLowerCase())} /></label>
       </div>
       <label className="brg-f">우편함 폴더 <small>볼트 기준 · 없으면 만들어요</small><input className="mono" value={mb} onChange={(e) => { setMailbox(e.target.value); setMbTouched(true) }} /></label>
-      <label className="brg-f">편지를 받을 봇<select value={bot} onChange={(e) => setBot(e.target.value)}>{bots.map((x) => <option key={x.id} value={x.id}>{x.displayName || x.name}{x.orchestrator ? ' (관제)' : ''}</option>)}</select></label>
+      <label className="brg-f">편지를 받을 봇<select value={bot} onChange={(e) => setBot(e.target.value)}>{bots.map((x) => <option key={x.id} value={x.id}>{x.displayName || x.name}{x.orchestrator ? ' (볼트 전체)' : ''}</option>)}</select></label>
       <div className="brg-f">신뢰 수준<div className="seg">{(['read', 'propose', 'act'] as Trust[]).map((x) => <button key={x} className={trust === x ? 'on' : ''} onClick={() => setTrust(x)}>{x}</button>)}</div><small>{TRUST_T[trust]} · 어느 수준이든 편지가 시작한 턴에서는 폴더 생성·이동·은퇴를 못 해요</small></div>
       {preset === 'grok-bot' ? <label className="brg-f">끊김 감지 <small>이만큼 상대 커서가 안 바뀌면 «끊김»</small><input className="mono" value={every} onChange={(e) => setEvery(e.target.value)} placeholder="150m" /></label> : null}
       {preset !== 'generic-file' ? <label className="brg-chk"><input type="checkbox" className="chk" checked={wake} onChange={(e) => setWake(e.target.checked)} />급한 편지에 상대 깨우기(웹훅) <small>주소·키는 ~/.config/secrets/folderbot-bridge-{id || '<id>'}.env 에 직접 둬요</small></label> : null}
-      {preset === 'webhook' ? <div className="brg-note">들어오는 웹훅을 켜요 — 토큰은 호스트 맥의 <span className="mono">~/.config/secrets/folderbot-bridge-{id || '<id>'}-in.env</span> 에 <span className="mono">TOKEN=…</span>(16자 이상 · 0600)으로 직접 만들어요. 같은 tailnet 에서만 받아요.</div> : null}
+      {preset === 'webhook' ? <div className="brg-note">들어오는 웹훅을 켜요 — 토큰은 메인의 <span className="mono">~/.config/secrets/folderbot-bridge-{id || '<id>'}-in.env</span> 에 <span className="mono">TOKEN=…</span>(16자 이상 · 0600)으로 직접 만들어요. 같은 tailnet 에서만 받아요.</div> : null}
       {problems.length ? <div className="brg-err">{problems.join(' · ')}</div> : null}
       {err ? <div className="brg-err">{err}</div> : null}
       <div className="brg-btns"><button className="btn ghost" onClick={() => setStep(1)}>이전</button><button className="btn primary" disabled={!!problems.length || busy} onClick={() => void create()}>{busy ? '만드는 중…' : '만들기'}</button></div>

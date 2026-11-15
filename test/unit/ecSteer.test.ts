@@ -53,7 +53,7 @@ describe('세션 창 상태 탭 (core/sessionTabs)', () => {
   it('판정을 새로 짓지 않는다 — 일하는 중은 세션 정리의 잠금 사유와 같다', () => {
     for (const x of [S({ state: 'running' }), S({ bg: 1 }), S({ state: 'done' }), S({ lastReplyAt: 5, readAt: 1 })]) {
       const lock = sessLocked(x)
-      expect(sessTabOf(x) === 'work').toBe(lock === '일하는 중' || lock === '뒤에서 도는 중')
+      expect(sessTabOf(x) === 'work').toBe(lock === '일하는 중' || lock === '뒤에서 일하는 중')
     }
     expect(isWaiting(S({ state: 'awaiting_input' }))).toBe(true); expect(isWaiting(S({ state: 'running' }))).toBe(false)
   })

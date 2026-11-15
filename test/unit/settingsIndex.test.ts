@@ -31,6 +31,6 @@ describe('설정 검색 인덱스', () => {
     expect(index.filter((i) => !secs.has(i.sec)).map((i) => i.sec)).toEqual([])
   })
   it('Claude 새 채팅 기본 권한이 줄로도 인덱스로도 있다 (2026-09-17 Dave)', () => {
-    expect(rows).toContain('새 채팅 기본 권한'); expect(index.some((i) => i.t === '새 채팅 기본 권한' && i.sec === 'claude')).toBe(true)
+    expect(rows).toContain('새 세션 기본 권한'); expect(index.some((i) => i.t === '새 세션 기본 권한' && i.sec === 'claude')).toBe(true)
   })
 })

@@ -334,7 +334,7 @@ export type Frame =
   | { ev: 'draft'; botId: string; sid: string; draft: Draft | null; by: string }
 
 export const STATE_LABEL: Record<SessionState, string> = {
-  idle: '대기', running: '일하는 중', awaiting_input: '확인해 주세요', done: '끝났어요', error: '문제 있어요'
+  idle: '쉼', running: '일하는 중', awaiting_input: '내 답 기다림', done: '끝났어요', error: '문제 있어요'
 }
 
 // CN · 판과 주황 예약은 `core/botColor` 한 곳에 있다(2026-10-16)

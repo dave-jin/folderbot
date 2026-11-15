@@ -14,7 +14,7 @@ import { approvalRunReason } from '../core/approvalTimeout'
 export interface RunEvent { event: 'start' | 'end' | 'timeout' | 'retry' | 'peer_stale' | 'peer_ok' | 'wake' | 'report' | 'ops_watch' | 'approval_timeout'; botId?: string; bot?: string; routine?: string; run?: string; ok?: boolean; result?: string; reason?: string; error?: string; ms?: number; attempt?: number; catchup?: string; peer?: string; [k: string]: unknown }
 
 /** CI · 호스트가 다시 떠서 끊긴 회차의 끝 사유 — 감시기·화면이 이 말로 가른다 */
-export const INTERRUPTED_REASON = '호스트 재시작으로 중단'
+export const INTERRUPTED_REASON = '메인 재시작으로 중단'
 
 export class RunLog {
   private open = new Map<string, { botId: string; bot: string; routine: string; at: number; timedOut?: boolean; denied?: string[]; deniedMin?: number }>()

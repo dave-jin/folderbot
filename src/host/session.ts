@@ -512,7 +512,7 @@ export class SessionManager extends EventEmitter {
         if (r.state === 'running' || r.state === 'awaiting_input') r.state = 'idle' // 호스트가 다시 뜨면 워커는 없다
         let dirty = closeOpenItems(r.items, 'restore').length > 0   // 스피너로 남은 항목도 함께 마감
         // EA · 워커가 없으면 그 작업도 없다 — «도는 중» 으로 남은 맡긴 일을 닫는다(안 닫으면 다시 켠 뒤 영영 도는 중이다)
-        if (r.tasks?.length) { const c = closeRunningTasks(r.tasks, Date.now(), '호스트가 다시 떠서 중단됨'); if (c.changed.length) { r.tasks = c.tasks; dirty = true } }
+        if (r.tasks?.length) { const c = closeRunningTasks(r.tasks, Date.now(), '메인이 다시 떠서 중단됨'); if (c.changed.length) { r.tasks = c.tasks; dirty = true } }
         if (cut) {
           if (cut === 'note') {
             r.items.push({ id: itemId('s'), t: Date.now(), kind: 'system', text: CUT_TURN_NOTE })
@@ -770,7 +770,7 @@ export class SessionManager extends EventEmitter {
         if (this.workers.get(r.id) !== w || !w.alive || r.permissionMode !== want) { this.persist(r); this.emit('sessions', r.botId); return }
         const busy = r.state === 'running' || r.state === 'awaiting_input'
         if (res.ok) {
-          if (busy) { r.modeApplied = 'now'; this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `권한 모드 → «${permModeLabel(want)}» · 도는 중인 턴에 바로 적용했어요` }) }
+          if (busy) { r.modeApplied = 'now'; this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `권한 모드 → «${permModeLabel(want)}» · 지금 턴에 바로 적용했어요` }) }
         } else {
           restart = true
           if (busy || busy0) { r.modeApplied = 'next'; this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `권한 모드 → «${permModeLabel(want)}» · 다음 턴부터 적용돼요 — 그때까지 물어 오는 것은 Folder Bot 이 새 모드대로 답해요 (${modeWhy(res)})` }) }
@@ -942,14 +942,14 @@ export class SessionManager extends EventEmitter {
     if (mode === 'none') return r
     if (mode === 'adopt') {
       r.adopted = true
-      this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: '사람이 이어받아 채팅으로 옮겼어요 — 이제 자동 정리에서 빠져요.' })
+      this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: '사람이 이어받았어요 — 이제 자동 정리에서 빠져요.' })
       this.persist(r); this.emit('sessions', r.botId)
       return r
     }
-    const nr = this.create(bot, '새 대화', { vendor: r.vendor })
+    const nr = this.create(bot, '새 세션', { vendor: r.vendor })
     nr.prelude = forkHandover(r.name, r.id, r.items as { kind: string; text?: string }[])
-    this.push(nr, { id: itemId('s'), t: Date.now(), kind: 'system', text: `자동화 세션 «${r.name}» 에서 갈라 연 채팅이에요 — 그 세션의 최근 대화를 이어받았어요.` })
-    this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `사람이 보낸 말은 새 채팅(${nr.id})으로 갈라 열었어요 — 이 세션은 자동화 채널로 남아요.` })
+    this.push(nr, { id: itemId('s'), t: Date.now(), kind: 'system', text: `자동화 세션 «${r.name}» 에서 갈라 연 세션이에요 — 그 세션의 최근 내용을 이어받았어요.` })
+    this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `사람이 보낸 말은 새 세션(${nr.id})으로 갈라 열었어요 — 이 세션은 자동화 채널로 남아요.` })
     this.persist(r); this.persist(nr); this.emit('sessions', bot.id)
     return nr
   }
@@ -1103,7 +1103,7 @@ export class SessionManager extends EventEmitter {
   compact(r: SessionRec, bot: Bot, why: string): void {
     const w = this.ensureWorker(r, bot)
     r.compactedAt = Date.now(); r.ctx = undefined
-    this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `자동 압축 — ${why}. 지난 대화를 요약해 토큰을 줄여요.` })
+    this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `자동 압축 — ${why}. 지난 내용을 요약해 토큰을 줄여요.` })
     this.turnAt.set(r.id, Date.now())
     w.send('/compact')
     r.turnStartedAt = Date.now()
@@ -1513,7 +1513,7 @@ export class SessionManager extends EventEmitter {
           const w0 = this.workers.get(r.id)
           if (w0) { w0.kill(); this.workers.delete(r.id) }
           r.cliSessionId = null
-          this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: '새 대화로 — 여기까지의 맥락을 끊었어요. 다음 메시지는 처음부터 시작합니다.' })
+          this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: '맥락을 비웠어요 — 여기까지의 맥락을 끊었어요. 다음 메시지는 처음부터 시작해요.' })
         }
         // ⚠ 명령 뒤에 글이 붙어 있으면(«/clear 그리고 …») 그 글은 **새 대화의 첫 말**로 보낸다
         if (hit.rest) { const w2 = this.ensureWorker(r, bot); w2.send(hit.rest); this.setActivity(r, '시작하는 중', true); this.setState(r, { kind: 'user_sent' }) }
@@ -1530,7 +1530,7 @@ export class SessionManager extends EventEmitter {
     const pre = slash ? undefined : r.prelude; if (!slash) r.prelude = undefined
     const wtext = slash ? text.trim() : withClient(pre ? `${pre}\n\n---\n\n${text}` : text, client)
     const closed = w instanceof ClaudeWorker ? w.sendClosingAsks(wtext) : (w.send(wtext), [])
-    for (const id of closed) this.closeTool(r, id, '채팅으로 답했어요', true)
+    for (const id of closed) this.closeTool(r, id, '글로 답했어요', true)
     if (closed.length) this.emit('sessions', r.botId)
     if (r.state !== 'running') r.turnStartedAt = Date.now()
     this.setActivity(r, '시작하는 중', true)
@@ -1645,7 +1645,7 @@ export class SessionManager extends EventEmitter {
   }
   private makeRoom(except: string): void {
     while (this.liveCount() >= this.maxLive) {
-      if (!this.sleepLru(except)) throw new Error(`워커 ${this.maxLive}개가 모두 일하는 중이에요 — 하나가 끝나면 이어서 할게요.`)
+      if (!this.sleepLru(except)) throw new Error(`세션 ${this.maxLive}개가 모두 일하는 중이에요 — 하나가 끝나면 이어서 할게요.`)
     }
   }
   /**
@@ -1701,7 +1701,7 @@ function channelWorkerSpec(trust: Trust, daveMay?: string[]): Pick<SpawnSpec, 'p
 
 /** EB · 도는 워커에 모드를 못 넣은 까닭을 사람 말로 */
 function modeWhy(res: ControlResult): string {
-  if (res.code === 'bypass_not_launched') return '«항상 허용» 은 도는 워커에 넣을 수 없어요'
+  if (res.code === 'bypass_not_launched') return '«항상 허용» 은 일하는 중인 세션에 넣을 수 없어요'
   if (res.code === 'invalid_mode') return '이 Claude Code 가 모르는 모드예요'
   return res.error ? res.error.slice(0, 120) : '이유를 모르겠어요'
 }

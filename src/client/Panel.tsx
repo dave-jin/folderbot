@@ -94,14 +94,14 @@ export function Panel({ bot, sessions, go, onOpenFile, onTalk, onAttach, onMenti
       {/* CF-4 · 줄을 누르면 그 루틴이 골라진 채 열린다 · cron 원문 대신 사람 말 */}
       {bot.routines.map((r) => <button key={r.name} className="kv" onClick={() => setRoutines(r.name)}><Icon n="clock" size={12} color={r.lastError ? 'var(--err)' : 'var(--t3)'} /><span className="n">{r.name}</span><span className="rwhen">{r.enabled === false ? '꺼짐' : `${describeCron(r.cron)}${onceDone(r.cron) ? (r.lastError ? ' · 놓침' : ' · 끝남') : ''}`}</span></button>)}
       {bot.routines.length ? <hr className="shr" /> : null}
-      <button className="kv" onClick={() => setRoutines(true)}><Icon n="plus" size={12} /><span className="n">{bot.routines.length ? '루틴 편집' : '루틴 추가'}</span></button>
+      <button className="kv" onClick={() => setRoutines(true)}><Icon n="plus" size={12} /><span className="n">{bot.routines.length ? '루틴 고치기' : '루틴 추가'}</span></button>
     </div></Float> : null}
     {pop?.k === 'cmd' ? <Float at={pop.at} onClose={() => setPop(null)} className="spop cmdpop" width={300}><HarnessList bot={bot} onOpenFile={(rel) => { setPop(null); onOpenFile(rel) }} say={say} filesTick={filesTick} close={() => setPop(null)} /></Float> : null}
     {pop?.k === 'more' ? <Float at={pop.at} onClose={() => setPop(null)}><div onClick={() => setPop(null)} style={{ display: 'contents' }}>
       {unreadAny ? <button onClick={() => void readAll()}><Icon n="check" size={13} /><span>모두 읽음</span></button> : null}
       {bot.orchestrator ? <button onClick={() => onTalk('지금 뭐 돌고 있어? 봇별로 한 줄씩.')}><Icon n="sub" size={13} /><span>현황 물어보기</span></button> : <>
         <button onClick={() => pickColor(bot)}><span className="csdot" style={{ background: bot.color }} /><span style={{ flex: 1 }}>색 바꾸기</span></button>
-        <button onClick={async () => { await api(`/bots/${bot.id}/stop`, { body: {} }); say(`${bot.name} 을 레일에서 덜어냈어요`); await refresh(); go('orch') }}><Icon n="x" size={13} /><span style={{ flex: 1 }}>지우기 (연결 해지)</span><span className="k">폴더 유지</span></button>
+        <button onClick={async () => { await api(`/bots/${bot.id}/stop`, { body: {} }); say(`${bot.name} 을 목록에서 뺐어요`); await refresh(); go('orch') }}><Icon n="x" size={13} /><span style={{ flex: 1 }}>목록에서 빼기</span><span className="k">폴더 유지</span></button>
         <button className="warn" onClick={async () => { if (!(await askConfirm({ title: `${bot.name} 봇을 은퇴시킬까요?`, body: '폴더를 Archive 로 옮기고 봇을 쉬게 합니다. 세션 기록은 보관돼요.', ok: '은퇴', danger: true }))) return; try { await api(`/bots/${bot.id}/retire`, { body: {} }); say('옮기고 은퇴했어요'); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="archive" size={13} /><span style={{ flex: 1 }}>Archive 로 이동 (은퇴)</span></button>
       </>}
     </div></Float> : null}
@@ -139,7 +139,7 @@ function OverviewCard({ bot, sessions, todos, filesTick, onOpenFile, onTalk, go,
         : <button className="onone" onClick={() => onOpenFile('state.md')}>state.md 에 «현재 목표» 줄이 없어요 — 열어서 적기</button>}
     <div className="om">
       {n ? <span className="dot wait" /> : null}<b>{n ? `내가 나설 곳 ${n}` : '내가 나설 곳 없음'}</b>
-      {ov.mine.asks ? <button title="답을 기다리는 세션으로" onClick={() => { if (waiting) go(bot.id, waiting.id) }}>· 답 대기 {ov.mine.asks}</button> : null}
+      {ov.mine.asks ? <button title="답을 기다리는 세션으로" onClick={() => { if (waiting) go(bot.id, waiting.id) }}>· 내 답 기다림 {ov.mine.asks}</button> : null}
       {ov.mine.proposed ? <button title="봇이 올린 제안 보기" onClick={showTodo}>· 제안 {ov.mine.proposed}</button> : null}
       {due ? <span className={due.tone === 'past' ? 'past' : ''} title={ov.mine.due}>· 마감 {due.text}</span> : null}
     </div>
@@ -445,7 +445,7 @@ function TodoSec({ bot, items, loading = false, open, tog, onDelegate, onOpenFil
       {isOpen ? <>
         {t.desc ? <div className="dsc">{t.desc}</div> : null}
         <div className="acts" onClick={(e) => e.stopPropagation()}>
-          <button onClick={() => setESheet({ line: t.line, title: t.title, desc: t.desc, section: t.section })}><Icon n="edit" size={12} />편집</button>
+          <button onClick={() => setESheet({ line: t.line, title: t.title, desc: t.desc, section: t.section })}><Icon n="edit" size={12} />고치기</button>
           {!t.done ? <button onClick={() => onDelegate(t)}><Icon n="sub" size={12} />맡기기</button> : null}
           <button onClick={() => onOpenFile('todo.md')}><Icon n="doc" size={12} />문서에서 보기</button>
         </div>
@@ -502,9 +502,9 @@ function TodoSec({ bot, items, loading = false, open, tog, onDelegate, onOpenFil
       {t.desc ? <span className="mk"><Icon n={isOpen ? 'chevd' : 'chev'} size={9} /></span> : null}
       <span className="tools" onClick={(e) => e.stopPropagation()}>
         {!t.done ? <button title={t.due ? `마감 ${dueText(t.due)} — 바꾸기` : '마감 정하기'} onClick={(e) => setDueMenu({ t, at: anchorOf(e.currentTarget as HTMLElement, { gap: 4 }) })}><Icon n="cal" size={12} /></button> : null}
-        <button title="편집" onClick={() => startEdit(t)}><Icon n="edit" size={12} /></button>
+        <button title="고치기" onClick={() => startEdit(t)}><Icon n="edit" size={12} /></button>
         {!t.done ? <button title="봇에게 맡기기" onClick={() => onDelegate(t)}><Icon n="sub" size={12} /></button> : null}
-        <button title="삭제" onClick={() => void remove(t)}><Icon n="x" size={12} /></button>
+        <button title="지우기" onClick={() => void remove(t)}><Icon n="x" size={12} /></button>
       </span>
     </div>
   }
@@ -543,7 +543,7 @@ function TodoSec({ bot, items, loading = false, open, tog, onDelegate, onOpenFil
             : !isDoneSection(name) ? <button className={`todo addbtn ${phone ? 'ph' : ''}`} onClick={() => (phone ? setESheet({ line: -1, title: '', desc: '', section: name }) : setAdding(name))}><span className="bx ghost dash" /><span>새 할 일</span></button> : null}
         </> : null}
       </div>)}
-      {undo ? <div className="kv" style={{ color: 'var(--t3)' }}><span className="n">삭제했어요</span><button style={{ color: 'var(--t2)' }} onClick={() => void undoRemove()}>되돌리기</button></div> : null}
+      {undo ? <div className="kv" style={{ color: 'var(--t3)' }}><span className="n">지웠어요</span><button style={{ color: 'var(--t2)' }} onClick={() => void undoRemove()}>되돌리기</button></div> : null}
     </div> : null}
     {dueMenu ? <Float at={dueMenu.at} onClose={() => setDueMenu(null)} className="menu duem">
       <div className="h">{dueMenu.t.due ? `${dueText(dueMenu.t.due)} 마감` : '마감 정하기'}</div>
@@ -554,11 +554,11 @@ function TodoSec({ bot, items, loading = false, open, tog, onDelegate, onOpenFil
     {sheet ? <><div className="backdrop" onClick={() => setSheet(null)} /><div className="tsheet">
       <div className="grip" />
       <div className="ti">{sheet.title}</div>
-      {([['edit', '편집'], ['delegate', '봇에게 맡기기'], ['done', sheet.done ? '되돌리기' : '완료로'], ['delete', '삭제']] as [SwipeAct, string][]).map(([a2, l]) => <button key={a2} onClick={() => { const t = sheet; setSheet(null); void run(t, a2) }}><Icon n={ACT_ICON[a2] as 'edit'} size={16} />{l}</button>)}
+      {([['edit', '고치기'], ['delegate', '봇에게 맡기기'], ['done', sheet.done ? '되돌리기' : '완료로'], ['delete', '지우기']] as [SwipeAct, string][]).map(([a2, l]) => <button key={a2} onClick={() => { const t = sheet; setSheet(null); void run(t, a2) }}><Icon n={ACT_ICON[a2] as 'edit'} size={16} />{l}</button>)}
     </div></> : null}
     {esheet ? <><div className="backdrop" onClick={() => setESheet(null)} /><div className="tsheet esheet">
       <div className="grip" />
-      <div className="eh2"><b>{esheet.line < 0 ? '새 할 일' : '할 일 고치기'}</b>{esheet.line >= 0 ? <button className="del" onClick={() => { const t = items.find((x) => x.line === esheet.line); setESheet(null); if (t) void remove(t) }}>삭제</button> : null}</div>
+      <div className="eh2"><b>{esheet.line < 0 ? '새 할 일' : '할 일 고치기'}</b>{esheet.line >= 0 ? <button className="del" onClick={() => { const t = items.find((x) => x.line === esheet.line); setESheet(null); if (t) void remove(t) }}>지우기</button> : null}</div>
       <label className="fld"><span>제목</span><input autoFocus value={esheet.title} placeholder="무엇을 할까요" onChange={(e) => setESheet({ ...esheet, title: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') void saveSheet() }} /></label>
       <label className="fld"><span>상세</span><textarea rows={3} value={esheet.desc} placeholder="없어도 됩니다" onChange={(e) => setESheet({ ...esheet, desc: e.target.value })} /></label>
       {/* CK-1 · 마감 — 바깥에서 정해진 날만. 제목 끝에 «내일» 이라고 써도 된다 */}
@@ -895,7 +895,7 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
       onDragLeave={(e) => { if (e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) return; setDropOn((x) => (x === '' ? null : x)) }}
       onDrop={(e) => { setDropOn(null); const raw = e.dataTransfer.getData('text/x-fb-rels'); if (!raw) return; e.preventDefault(); try { void moveTo(JSON.parse(raw) as string[], '') } catch { /* */ } }}><Icon n={open ? 'chevd' : 'chev'} size={9} /><span>파일</span>{dropOn === '' ? <span className="dhint">여기 놓으면 맨 위로</span> : null}
       <span className={`tools ${sort !== 'name' || filter !== null ? 'on' : ''}`} onClick={(e) => e.stopPropagation()}>
-        <span style={{ position: 'relative' }}><span className={`ib ${sort !== 'name' ? 'on' : ''}`} title="정렬" onClick={() => setSortMenu(!sortMenu)}><Icon n="sort" size={12} /></span>{sortMenu ? <div className="menu" style={{ right: 0, top: 26 }} onClick={() => setSortMenu(false)}><div className="h">정렬</div><button className={sort === 'name' ? 'on' : ''} onClick={() => setSort('name')}><span style={{ flex: 1 }}>이름 (폴더 먼저)</span>{sort === 'name' ? <Icon n="check" size={11} /> : null}</button><button className={sort === 'mtime' ? 'on' : ''} onClick={() => setSort('mtime')}><span style={{ flex: 1 }}>수정순 — 최근 변경</span>{sort === 'mtime' ? <Icon n="check" size={11} /> : null}</button><hr /><button className={hidden ? 'on' : ''} onClick={() => setHidden(!hidden)}><span style={{ flex: 1 }}>숨김 파일 보기</span>{hidden ? <Icon n="check" size={11} /> : null}</button></div> : null}</span>
+        <span style={{ position: 'relative' }}><span className={`ib ${sort !== 'name' ? 'on' : ''}`} title="정렬" onClick={() => setSortMenu(!sortMenu)}><Icon n="sort" size={12} /></span>{sortMenu ? <div className="menu" style={{ right: 0, top: 26 }} onClick={() => setSortMenu(false)}><div className="h">정렬</div><button className={sort === 'name' ? 'on' : ''} onClick={() => setSort('name')}><span style={{ flex: 1 }}>이름 (폴더 먼저)</span>{sort === 'name' ? <Icon n="check" size={11} /> : null}</button><button className={sort === 'mtime' ? 'on' : ''} onClick={() => setSort('mtime')}><span style={{ flex: 1 }}>고친 순 — 최근에 고친 것</span>{sort === 'mtime' ? <Icon n="check" size={11} /> : null}</button><hr /><button className={hidden ? 'on' : ''} onClick={() => setHidden(!hidden)}><span style={{ flex: 1 }}>숨김 파일 보기</span>{hidden ? <Icon n="check" size={11} /> : null}</button></div> : null}</span>
         <span className={`ib ${filter !== null ? 'on' : ''}`} title="이름으로 거르기" onClick={() => setFilter(filter === null ? '' : null)}><Icon n="search" size={12} /></span>
         <span className="ib" title="모두 접기" onClick={() => setExp(new Set(['']))}><Icon n="collapse" size={12} style={{ transform: 'rotate(90deg)' }} /></span>
         {bot.rel ? <span className="ib" title="참조 폴더 더하기 — 이 봇이 읽기만 하는 폴더" onClick={() => setPicking(true)}><Icon n="fplus" size={12} /></span> : null}
@@ -972,7 +972,7 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
       {/* ⚠ 여럿을 고른 채 우클릭했으면 **몇 개를 다루는지** 를 먼저 말한다 — 되돌리기 어려운 항목이 아래 있다 */}
       {sel.has(ctx.n.rel) && sel.size > 1 ? <div className="h">{sel.size}개 고름</div> : null}
       {sel.has(ctx.n.rel) && sel.size > 1 ? null : !ctx.n.dir ? <><button onClick={() => onOpen(ctx.n.rel, true)}><span style={{ flex: 1 }}>열기 (고정 탭)</span><span className="k">⏎</span></button><button onClick={() => onAttach(ctx.n.rel)}><span style={{ flex: 1 }}>첨부로 보내기</span></button><button onClick={() => onMention(ctx.n.rel)}><span style={{ flex: 1 }}>@ 로 언급하기</span><span className="k">@</span></button></>
-        : <>{ctx.n.botId ? <button className="on" onClick={() => onStartAt(vaultRel(ctx.n.rel), ctx.n.botId)}><Icon n="sub" size={12} /><span style={{ flex: 1 }}>봇 열기</span><span className="k">⏎</span></button> : <button className="on" onClick={() => onStartAt(vaultRel(ctx.n.rel))}><Icon n="sub" size={12} /><span style={{ flex: 1 }}>{bot.orchestrator ? '여기서 에이전트 시작' : '이 하위 폴더로 새 봇 시작'}</span><span className="k">⏎</span></button>}<button onClick={() => onNewFolderAt(vaultRel(ctx.n.rel))}><Icon n="fplus" size={12} /><span style={{ flex: 1 }}>새 폴더 만들기 → 시작</span></button><hr /><button onClick={() => toggleDir(ctx.n.rel)}><span style={{ flex: 1 }}>{exp.has(ctx.n.rel) ? '접기' : '펼치기'}</span></button><button onClick={() => onAttach(ctx.n.rel, true)}><span style={{ flex: 1 }}>폴더째 첨부</span></button></>}
+        : <>{ctx.n.botId ? <button className="on" onClick={() => onStartAt(vaultRel(ctx.n.rel), ctx.n.botId)}><Icon n="sub" size={12} /><span style={{ flex: 1 }}>봇 열기</span><span className="k">⏎</span></button> : <button className="on" onClick={() => onStartAt(vaultRel(ctx.n.rel))}><Icon n="sub" size={12} /><span style={{ flex: 1 }}>{bot.orchestrator ? '여기서 봇 시작' : '이 하위 폴더로 새 봇 시작'}</span><span className="k">⏎</span></button>}<button onClick={() => onNewFolderAt(vaultRel(ctx.n.rel))}><Icon n="fplus" size={12} /><span style={{ flex: 1 }}>새 폴더 만들기 → 시작</span></button><hr /><button onClick={() => toggleDir(ctx.n.rel)}><span style={{ flex: 1 }}>{exp.has(ctx.n.rel) ? '접기' : '펼치기'}</span></button><button onClick={() => onAttach(ctx.n.rel, true)}><span style={{ flex: 1 }}>폴더째 첨부</span></button></>}
       {/* 이미지는 **그림 그대로** 클립보드에 — 붙여넣기로 슬랙·문서에 바로 들어간다 */}
       {!ctx.n.dir && IMG_RE.test(ctx.n.rel) ? <button onClick={() => void copyImage(ctx.n.rel)}><span style={{ flex: 1 }}>이미지 복사</span></button> : null}
       {/* M-3 · 파일 자체를 복사 — Finder ⌘V·카톡 첨부. 원격은 캐시로 받은 사본(진행·취소), 폰은 공유 시트 */}

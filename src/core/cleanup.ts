@@ -28,15 +28,15 @@ export function sessKind(x: Pick<SessionInfo, 'comm' | 'routine' | 'delegated' |
 /** 지울 수 없는 세션 — 🔴 일하는 중·답 기다림·안 읽음·백그라운드가 도는 것·대기 말이 있는 것. 지우면 일·답이 사라진다 */
 export function sessLocked(x: Pick<SessionInfo, 'state' | 'lastReplyAt' | 'readAt' | 'bg' | 'queue'>): string | null {
   if (x.state === 'running') return '일하는 중'
-  if (x.state === 'awaiting_input') return '답 기다림'
-  if ((x.bg ?? 0) > 0) return '뒤에서 도는 중'
+  if (x.state === 'awaiting_input') return '내 답 기다림'
+  if ((x.bg ?? 0) > 0) return '뒤에서 일하는 중'
   if (x.queue?.length) return '대기 말 있음'
   if (sessionUnread(x.lastReplyAt, x.readAt)) return '안 읽음'
   return null
 }
 
 export type CleanFilter = 'old' | 'bot' | 'routine' | 'done' | 'all'
-export const CLEAN_FILTER_LABEL: Record<CleanFilter, string> = { old: '7일 넘게 안 씀', bot: '봇끼리 대화', routine: '루틴', done: '끝남', all: '모든 세션' }
+export const CLEAN_FILTER_LABEL: Record<CleanFilter, string> = { old: '7일 넘게 안 씀', bot: '봇끼리 세션', routine: '루틴', done: '끝남', all: '모든 세션' }
 /** 처음 열 때 골라 두는 거름 — 시안 B */
 export const CLEAN_DEFAULT: CleanFilter[] = ['old', 'bot']
 

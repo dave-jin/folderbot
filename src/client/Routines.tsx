@@ -105,7 +105,7 @@ export function Routines({ onClose, go, openSheet, say, phone }: { onClose: () =
           <select className="cfold" value={folder} onChange={(e) => setFolder(e.target.value)} aria-label="폴더"><option value="">폴더: 전체</option>{[...new Set(b.routines.map((r) => r.botId))].map((id) => <option key={id} value={id}>{nameOf(id)}</option>)}</select>
           <input className="rtq" value={q} onChange={(e) => setQ(e.target.value)} placeholder="루틴 찾기" aria-label="루틴 찾기" />
         </div>
-        {b.noteMissing.length ? <div className="rtnote">CLAUDE.md 없음 — 이 폴더 봇은 루틴 변경을 모를 수 있어요: {b.noteMissing.map(nameOf).join(' · ')}</div> : null}
+        {b.noteMissing.length ? <div className="rtnote">CLAUDE.md 없음 — 이 폴더 봇은 루틴이 바뀐 것을 모를 수 있어요: {b.noteMissing.map(nameOf).join(' · ')}</div> : null}
 
         {groups.map(([st, list]) => <div key={st} className="rtgrp" data-state={st}>
           <div className="gh">{st === 'off' ? <Icon n="pause" size={11} color="var(--t3)" /> : <i className={`sdot s-${st}`} aria-hidden="true" />}<b>{LABEL[st]}</b><span className="c">{list.length}</span>{HINT[st] ? <span className="h">— {HINT[st]}</span> : null}<span className="sp" />

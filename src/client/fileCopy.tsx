@@ -36,7 +36,7 @@ export async function copyFiles(bot: Bot, rels: string[], ctx: { main: boolean; 
     const files = mans.flatMap(({ rel, m }) => m.files.map((f) => ({ rel: joinRel(rel, f.rel), size: f.size, head: f.head })))
     const total = files.reduce((a, f) => a + f.size, 0)
     if (mans.some(({ m }) => m.truncated)) { ctx.say('파일이 5000개를 넘어요 — 폴더째 복사 대신 «공유…»(zip) 를 쓰세요'); return }
-    if (files.length > 50 || total > 200 * 1024 * 1024) { if (!(await askConfirm({ title: `파일 ${files.length}개 · ${fmtBytes(total)} 를 받을까요?`, body: '호스트에서 이 기기의 캐시로 받은 뒤 복사해요. 시간이 걸릴 수 있어요.', ok: '받기' }))) return }
+    if (files.length > 50 || total > 200 * 1024 * 1024) { if (!(await askConfirm({ title: `파일 ${files.length}개 · ${fmtBytes(total)} 를 받을까요?`, body: '메인에서 이 기기의 캐시로 받은 뒤 복사해요. 시간이 걸릴 수 있어요.', ok: '받기' }))) return }
     const id = `c${Date.now().toString(36)}`; let cancelled = false; const started = Date.now()
     const prog: CopyProgress = { id, label: rels.length === 1 ? rels[0].split('/').pop() ?? rels[0] : `${rels.length}개`, done: 0, total, started, rate: 0, files: files.length, at: started, cancel: () => { cancelled = true; void b.cancel?.(id) } }
     emit(prog)

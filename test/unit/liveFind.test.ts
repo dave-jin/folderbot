@@ -50,7 +50,7 @@ describe('DF · freezeOrder — 연 동안 차례는 그대로', () => {
 describe('DF · liveView — 줄의 말 · 색 · 시간', () => {
   it('확인 대기는 노랑 · 권한 이름 · «N째»', () => {
     const v = liveView(s('a', { state: 'awaiting_input', turnStartedAt: NOW - 130_000, pending: [{ displayName: '파일 쓰기' }] }), NOW)
-    expect(v).toMatchObject({ cls: 'you', text: '확인해 주세요 · 파일 쓰기', tm: '2분 10초째' })
+    expect(v).toMatchObject({ cls: 'you', text: '내 답 기다림 · 파일 쓰기', tm: '2분 10초째' })
   })
   it('일하는 중은 주황 · 레일과 같은 활동 줄 · 경과', () => {
     const v = liveView(s('a', { state: 'running', activity: 'Read · Search.tsx', turnStartedAt: NOW - 72_000 }), NOW)

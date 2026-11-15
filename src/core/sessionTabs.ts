@@ -24,7 +24,7 @@ export function isWaiting(x: Pick<SessionInfo, 'state'>): boolean { return x.sta
 export function sessTabOf(x: TabFields): Exclude<SessTab, 'all'> {
   if (isWaiting(x)) return 'wait'
   const lock = sessLocked(x)
-  if (lock === '일하는 중' || lock === '뒤에서 도는 중') return 'work'
+  if (lock === '일하는 중' || lock === '뒤에서 일하는 중') return 'work'
   if (sessionUnread(x.lastReplyAt, x.readAt)) return 'unread'
   return 'rest'
 }

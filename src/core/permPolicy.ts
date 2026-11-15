@@ -43,7 +43,7 @@ export function autoAllows(mode: PermissionMode | undefined, toolName: string): 
 export const PERM_MODE_MENU: { v: PermissionMode; t: string; d: string }[] = [
   { v: 'auto', t: '자동', d: 'Claude 가 권한을 판단 — 물어 오는 것만 확인' },
   { v: 'default', t: '수동', d: '바꾸기 전에 늘 물어봄 (읽기는 바로)' },
-  { v: 'acceptEdits', t: '편집 자동 수락', d: '파일 편집은 바로, 명령 실행은 물어봄' },
+  { v: 'acceptEdits', t: '고치기 자동 수락', d: '파일 고치기는 바로, 명령 실행은 물어봄' },
   { v: 'plan', t: '계획', d: '바꾸지 않고 계획만 세움' },
   { v: 'bypassPermissions', t: '항상 허용', d: '묻지 않음 — 루틴·신뢰하는 폴더에서만' }
 ]

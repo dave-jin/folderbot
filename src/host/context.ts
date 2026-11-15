@@ -39,7 +39,7 @@ export type AskFn = typeof oneShot
 
 /** 주인 맥이 아닌 곳에서 고치려 했다 — 게이트웨이가 409 로 바꾼다 */
 export class NotOwner extends Error {
-  constructor(readonly owner: string) { super(`주인 맥(${owner})에서만 고칠 수 있어요`); this.name = 'NotOwner' }
+  constructor(readonly owner: string) { super(`루틴을 돌리는 메인(${owner})에서만 고칠 수 있어요`); this.name = 'NotOwner' }
 }
 
 const DAY = 86_400_000
@@ -47,7 +47,7 @@ const HOUR = 3_600_000
 const START_WINDOW_MS = 7 * DAY
 const DEFAULT_CAP = 500
 const AXIS_MAX = 200
-const VAULT_OPS_NAME = '볼트 운영'
+const VAULT_OPS_NAME = '오케스트레이터'
 const ONE_SHOT_DIR = 'folderbot-context'
 const CARD_SYSTEM = '너는 대화 기록을 «요약 카드» JSON 하나로 바꾸는 도구다. JSON 객체 하나만 답한다.'
 const GROUP_SYSTEM = '너는 요약 카드들을 폴더의 작업으로 묶는 도구다. JSON 객체 하나만 답한다.'
@@ -449,7 +449,7 @@ export class ContextService {
 
   private emptyBoard(period: Period, since: number, now: number): Board {
     return buildBoard({ folders: [], waiting: [], routines: [], period, since, now, host: this.h.hostName(), axis: null,
-      sources: [{ name: '주인 맥 판', ok: false, at: null, note: '아직 주인 맥 판 없음' }] })
+      sources: [{ name: '메인 판', ok: false, at: null, note: '아직 메인 판 없음' }] })
   }
 
   /**

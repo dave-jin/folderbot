@@ -339,7 +339,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
       <div className="tabs" ref={tabsRef} onWheel={(e) => { const el = e.currentTarget; if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) el.scrollLeft += e.deltaY }}>{docs.tabs.map((t) => <button key={t.rel} data-rel={t.rel} className={`tab ${t.rel === docs.active ? 'on' : ''} ${t.pinned ? '' : 'pv'}`} onClick={() => docs.setActive(t.rel)} onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); docs.close(t.rel) } }} onDoubleClick={() => docs.pin(t.rel)} title={t.rel}>{t.rel.split('/').pop()}<span className="x" onClick={(e) => { e.stopPropagation(); docs.close(t.rel) }}><Icon n="x" size={9} /></span></button>)}</div>
       <div className="acts"><button className={`ib ${wide ? 'on' : ''}`} onClick={onWide} title="넓게"><Icon n="expand" size={13} /></button><button className="ib" onClick={onHide} title="문서 열 접기 (⌘⇧D)"><Icon n="x" size={13} /></button></div>
     </div>
-    {rel ? <div className="dtb"><span>{dir}</span><span>/</span><span className="nm">{name}</span>{outside ? <span className="scp out" title={`볼트 기준: ${vaultRel}`}>폴더 외</span> : null}{!main && lcfg && lcfg.openMode !== 'sync' ? <span className="scp copy" title="이 기기에서 «열기» 를 누르면 호스트에서 받은 사본을 열어요 — 고쳐도 되돌아가지 않아요">사본</span> : null}
+    {rel ? <div className="dtb"><span>{dir}</span><span>/</span><span className="nm">{name}</span>{outside ? <span className="scp out" title={`볼트 기준: ${vaultRel}`}>폴더 외</span> : null}{!main && lcfg && lcfg.openMode !== 'sync' ? <span className="scp copy" title="이 기기에서 «열기» 를 누르면 메인에서 받은 사본을 열어요 — 고쳐도 되돌아가지 않아요">사본</span> : null}
       <span className="r">
         {sibs.length > 1 ? <><button className="nb" onClick={() => docs.replace(sibs[(idx - 1 + sibs.length) % sibs.length])}><Icon n="back" size={10} /></button><span className="pos">{idx + 1} / {sibs.length}</span><button className="nb" style={{ transform: 'scaleX(-1)' }} onClick={() => docs.replace(sibs[(idx + 1) % sibs.length])}><Icon n="back" size={10} /></button></> : null}
         {/* 모드가 없으니 알릴 상태도 없다 — 저장 중·실패일 때만 한 마디. ⛔ 「편집 중」 배지를 다시 만들지 마라 */}
@@ -379,8 +379,8 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
         고르기 전까지 매번 연다(다른 기기에서 열어도 뜬다 — 호스트 장부). 고르지 않은 사본은 7일 뒤 호스트가 휴지통에 넣는다. */}
     {doc?.clashes?.length ? <div className="dbanner clash"><span className="dot wait" /><span>충돌 — 다른 곳에서 먼저 바뀌어, 내 글은 <b>{doc.clashes[0].split('/').pop()}</b> 에 따로 저장했어요{doc.clashes.length > 1 ? ` (사본 ${doc.clashes.length}개)` : ''}</span>
         <button onClick={() => docs.open(doc.clashes![0], true)}>사본 열기</button><button onClick={() => void resolveClash(doc.clashes![0], 'mine')}>내 글로 바꾸기</button><button onClick={() => void resolveClash(doc.clashes![0], 'theirs')}>지금 파일 유지</button></div>
-      : botTouched ? <div className="dbanner"><span className="dot run" /><span>봇이 {fmtTime(botTouched)} 수정</span><button onClick={() => setBotTouched(null)}>닫기</button></div> : null}
-    {!rel ? <div className="empty">오른쪽 파일에서 열거나, 대화의 파일 칩을 누르세요</div>
+      : botTouched ? <div className="dbanner"><span className="dot run" /><span>봇이 {fmtTime(botTouched)} 고침</span><button onClick={() => setBotTouched(null)}>닫기</button></div> : null}
+    {!rel ? <div className="empty">오른쪽 파일에서 열거나, 세션의 파일 칩을 누르세요</div>
       : err ? <div className="empty">{err}</div>
       : !doc ? <div className="dbody"><div className="skel" style={{ width: '60%', marginBottom: 10 }} /><div className="skel" style={{ width: '85%', marginBottom: 10 }} /><div className="skel" style={{ width: '70%' }} /></div>
       : doc.kind === 'text' ? (isMd && !doc.truncated && !outside

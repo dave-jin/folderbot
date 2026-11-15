@@ -118,7 +118,7 @@ export function emptyTurnNote(o: { code: number | null; stderr: string; unknown:
   if (err) bits.push(`CLI: ${err.slice(0, 300)}`)
   const seen = [...o.unknown].slice(0, 6)
   if (seen.length) bits.push(`받은 줄: ${seen.join(' · ')}`)
-  bits.push('설정 › 에이전트 › 연결 진단 을 눌러 보세요.')
+  bits.push('설정 › Codex › «Codex 다시 연결» 을 눌러 보세요.')
   return bits.join('\n')
 }
 

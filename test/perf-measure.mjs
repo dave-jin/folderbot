@@ -394,7 +394,7 @@ async function scenarioUi(profile) {
     const keyThen = async (key, sel, text) => { await pg.keyboard.press(key); return pg.evaluate(([sel, text]) => window.__fbUntil(sel, text, window.__perf.key), [sel, text]) }
     // ⌘K 검색 — 창이 뜨기까지 · 대화 본문 검색 결과가 붙기까지(200ms 디바운스 포함)
     r.searchOpen = await keyThen('Meta+k', '.modal.srch')
-    await pg.keyboard.type('질문 12', { delay: 0 }); r.searchHits = await pg.evaluate(() => window.__fbUntil('.modal.srch .plist', '지난 대화', window.__perf.key))
+    await pg.keyboard.type('질문 12', { delay: 0 }); r.searchHits = await pg.evaluate(() => window.__fbUntil('.modal.srch .plist', '세션에 쓴 글', window.__perf.key))
     await pg.keyboard.press('Escape'); await wait(200)
     // ⌘⇧N 폴더 선택 — 창 · 첫 폴더 줄
     o.reqs.clear()

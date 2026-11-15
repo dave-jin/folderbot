@@ -378,7 +378,7 @@ export function FolderPicker({ onClose, onStarted, pick }: { onClose: () => void
   return <>
     <div className="backdrop" onClick={onClose} />
     <div className="modal pk sz-m" role="dialog" aria-modal="true" style={{ height: 'min(720px, calc(100% - 24px))' }} onKeyDown={onKey} tabIndex={-1}>
-      <div className="modal-h"><FolderBot color="#e08850" size={40} /><div className="t">{pick ? <><b>{pick.title}</b><small>{pick.sub}</small></> : <><b>에이전트와 함께 일할 폴더를 선택하세요</b><small>PARA 어디든 됩니다 — 접었다 펴서 고르세요 · 활성 폴더가 먼저 · 새 폴더는 그 자리에서</small></>}</div><ModalX onClose={onClose} /></div>
+      <div className="modal-h"><FolderBot color="#e08850" size={40} /><div className="t">{pick ? <><b>{pick.title}</b><small>{pick.sub}</small></> : <><b>봇과 함께 일할 폴더를 고르세요</b><small>PARA 어디든 됩니다 — 접었다 펴서 고르세요 · 활성 폴더가 먼저 · 새 폴더는 그 자리에서</small></>}</div><ModalX onClose={onClose} /></div>
       <div className="search"><Icon n="search" size={14} /><input placeholder="폴더 이름으로 찾기 — 치면 트리가 펼쳐지며 걸러져요" value={q} onChange={(e) => setQ(e.target.value)} autoFocus /></div>
       <div className="fl"><Seg cls="pkseg" label="폴더 거르기" value={filter} options={[['all', '전체'], ['active', '활성만'], ['free', '봇 없는 폴더만']] as const} onChange={setFilter} /><span className="hint">↑↓ 이동 · → 펼침 · ← 접음 · ⏎ {pick ? '고르기' : '시작'}</span></div>
       <div className="modal-b" style={{ flex: 1 }} ref={listRef}>
@@ -411,7 +411,7 @@ export function Onboarding() {
     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
       <button className={`preset ${preset === 'para' ? 'on' : ''}`} onClick={() => setPreset('para')}><b><Icon n="folder" size={15} color={preset === 'para' ? 'var(--w)' : 'var(--t3)'} />PARA</b><small>Projects · Area · Resources · Archive. Inbox 는 정리 상자.</small></button>
       <button className={`preset ${preset === 'johnny-decimal' ? 'on' : ''}`} onClick={() => setPreset('johnny-decimal')}><b><Icon n="folder" size={15} color={preset === 'johnny-decimal' ? 'var(--w)' : 'var(--t3)'} />Johnny.Decimal</b><small>10-19 영역 · 11 카테고리. 모든 2단계 폴더가 후보.</small></button>
-      <button className={`preset ${preset === 'custom' ? 'on' : ''}`} onClick={() => setPreset('custom')}><b><Icon n="folder" size={15} color={preset === 'custom' ? 'var(--w)' : 'var(--t3)'} />내 방식대로</b><small>PARA 로 시작하고, 오케스트레이터와 대화해 규칙 절을 고칩니다.</small></button>
+      <button className={`preset ${preset === 'custom' ? 'on' : ''}`} onClick={() => setPreset('custom')}><b><Icon n="folder" size={15} color={preset === 'custom' ? 'var(--w)' : 'var(--t3)'} />내 방식대로</b><small>PARA 로 시작하고, 오케스트레이터에게 말해 규칙 절을 고쳐요.</small></button>
     </div>
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ fontSize: 12, color: 'var(--t3)' }}>CLAUDE.md 가 이미 있으면 덮어쓰지 않고 절만 덧붙여요.</span><span style={{ flex: 1 }} /><button className="btn primary" disabled={busy} onClick={go}>규칙 설치하고 스캔</button></div>
   </div></div>
@@ -428,7 +428,7 @@ export function Pairing({ onDone }: { onDone: () => void }) {
   return <div className="pair"><div className="box">
     <FolderBot color="#e08850" size={72} />
     <b style={{ fontSize: 22, color: 'var(--w)' }}>Folder Bot</b>
-    <div style={{ color: 'var(--t2)' }}>호스트 맥의 메뉴바 폴더봇 › 페어링 코드, 또는 호스트 터미널에 보이는 6자리 코드를 넣으세요.</div>
+    <div style={{ color: 'var(--t2)' }}>메인의 메뉴바 폴더봇 › 페어링 코드, 또는 메인 터미널에 보이는 6자리 코드를 넣으세요.</div>
     <input inputMode="numeric" placeholder="000 000" value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void go() }} autoFocus />
     {err ? <div className="err">{err}</div> : null}
     <button className="btn primary" disabled={busy || code.replace(/\D/g, '').length < 6} onClick={go} style={{ width: '100%', justifyContent: 'center', minHeight: 44 }}>이 {device} 연결하기</button>
@@ -448,7 +448,7 @@ export function NotifyCenter({ onClose, onJump }: { onClose: () => void; onJump:
   const waitN = s.notifications.filter((n) => n.kind === 'awaiting' && !n.read).length
   /* 거르기는 거르기 줄의 세그먼트로 (2026-11-13 · 부품 넷) — 종전에는 머리줄의 단추 하나가 눌린 채 흰 단추가 됐다(주 행동처럼 보였다) */
   return <Modal size="s" cls="nmodal" title="알림" sub="모든 봇 · 한 기기에서 처리하면 다른 기기에서도 사라져요" onClose={onClose}
-    bar={<Seg cls="nseg" label="알림 거르기" value={only ? 'wait' : 'all'} options={[['all', '전체'], ['wait', `확인 대기 ${waitN}`]] as const} onChange={(v) => setOnly(v === 'wait')} />}
+    bar={<Seg cls="nseg" label="알림 거르기" value={only ? 'wait' : 'all'} options={[['all', '전체'], ['wait', `내 답 기다림 ${waitN}`]] as const} onChange={(v) => setOnly(v === 'wait')} />}
     foot={<><button className="btn" onClick={readAll}>모두 읽음</button><span className="sp" /><button className="btn" onClick={enablePush}>{pushOn ? pushWhyText[pushOn] : '이 기기에 푸시 켜기'}</button><button className="btn" onClick={async () => { try { const r = await api<{ subs: number; mine: boolean }>('/push/test', { body: {} }); setTestMsg(r.subs ? (r.mine ? '보냈어요' : `보냈어요 · 이 기기는 구독 없음(${r.subs}대)`) : '구독한 기기가 없어요') } catch (e) { setTestMsg((e as Error).message) } }}>{testMsg || '푸시 테스트'}</button></>}>
     {/* ⛔ 목록 높이를 인라인으로 묶지 않는다 — 폰에서 `.modal-b { flex:1 }` 을 «55vh» 가 이겨 목록이 화면 중간에서 끊겼다(2026-09-13 Dave). 상한은 데스크톱 전용 규칙으로 */}
     {list.length ? list.map((n) => { const b = botOf(n.botId); return <button key={n.id} className={`nrow ${n.read ? '' : 'unread'}`} onClick={() => onJump(n)}><FolderBot color={b?.color ?? '#e08850'} size={28} mood={n.kind === 'awaiting' ? 'wait' : n.kind === 'done' ? 'done' : n.kind === 'error' ? 'error' : 'idle'} /><div className="t"><div className="l1"><b>{n.title}</b><time>{fmtTime(n.t)}</time></div><div className="l2">{notePlain(n)}</div></div></button> }) : <div className="empty">알림이 없어요</div>}
@@ -501,7 +501,7 @@ export function RoutineSheet({ bot, onClose, draft, pick }: { bot: Bot; onClose:
    * «취소» 단추는 버리겠다고 누른 것이라 묻지 않는다. 초안(`draft`)으로 연 창은 처음부터 «저장 안 한 것» 이다.
    */
   const softClose = async () => {
-    if (JSON.stringify(list) !== saved.current && !(await askConfirm({ title: '고친 내용을 버릴까요?', body: '저장하지 않은 루틴 변경이 있어요. 닫으면 사라져요.', ok: '버리고 닫기' }))) return
+    if (JSON.stringify(list) !== saved.current && !(await askConfirm({ title: '고친 내용을 버릴까요?', body: '저장하지 않고 고친 루틴이 있어요. 닫으면 사라져요.', ok: '버리고 닫기' }))) return
     onClose()
   }
   const save = async () => {
@@ -516,7 +516,7 @@ export function RoutineSheet({ bot, onClose, draft, pick }: { bot: Bot; onClose:
     try {
       await put()
       const r = await api<{ ran: string; warn?: string | null }>(`/bots/${bot.id}/routines/run`, { method: 'POST', body: { name } })
-      await refresh(); setRan(r.warn ? `${name} 을 돌렸어요 — ${r.warn}` : `${name} 을 지금 한 번 돌렸어요 · 채팅에서 결과를 보세요`)
+      await refresh(); setRan(r.warn ? `${name} 을 돌렸어요 — ${r.warn}` : `${name} 을 지금 한 번 돌렸어요 · 세션에서 결과를 보세요`)
     } catch (e) { setRan(`못 돌렸어요 — ${(e as Error).message}`) } finally { setBusy(false) }
   }
 
@@ -544,7 +544,7 @@ export function RoutineSheet({ bot, onClose, draft, pick }: { bot: Bot; onClose:
                 <span className="sub">{v.ok ? v.text : <span className="err">주기를 못 읽어요</span>}{off ? ' · 꺼짐' : v.ok && v.once ? (v.past ? (r.lastError ? ' · 놓침' : ' · 끝남') : '') : next ? ` · 다음 ${formatNext(next)}` : ''}</span>
               </button>
               <span className="rtacts">
-                <button className="ib" title={off ? '켜기' : '끄기'} onClick={() => setList(list.map((x, q) => (q === k ? { ...x, enabled: off } : x)))}><Icon n={off ? 'run' : 'pause'} size={12} /></button>
+                <button className="ib" title={off ? '루틴 켜기' : '루틴 끄기'} onClick={() => setList(list.map((x, q) => (q === k ? { ...x, enabled: off } : x)))}><Icon n={off ? 'run' : 'pause'} size={12} /></button>
                 <button className="ib" title="지금 한 번 돌려보기" disabled={busy || !r.name} onClick={() => void runNow(r.name)}><Icon n="run" size={12} /></button>
               </span>
             </div>
@@ -680,7 +680,7 @@ function DiffSheet({ req, onClose }: { req: DiffReq; onClose: () => void }) {
   if (err) body = <p className="dnote">{err}</p>
   else if (!d) body = <p className="dnote">읽는 중…</p>
   else if (d.after === undefined) body = <p className="dnote">글 파일이 아니라 줄로 비교할 수 없어요.</p>
-  else if (!d.known) body = <><p className="dnote">이 세션이 손대기 전의 내용을 갖고 있지 않아요 — 호스트를 다시 켰거나 너무 오래된 턴이에요. 지금 내용만 보여 드려요.</p><pre className="dnow">{d.after ?? '(파일이 없어요)'}</pre></>
+  else if (!d.known) body = <><p className="dnote">이 세션이 손대기 전의 내용을 갖고 있지 않아요 — 메인을 다시 켰거나 너무 오래된 턴이에요. 지금 내용만 보여 드려요.</p><pre className="dnow">{d.after ?? '(파일이 없어요)'}</pre></>
   else if (d.after === null) body = <p className="dnote">지금은 파일이 없어요{d.before ? ` — 전에는 ${d.before.split('\n').length}줄이 있었어요.` : '.'}</p>
   else if (stat && !stat.add && !stat.del) body = <p className="dnote">바뀐 줄이 없어요 — 같은 내용을 다시 썼어요.</p>
   else body = <div className="dlines">{rows!.map((r, i) => r.t === '~'

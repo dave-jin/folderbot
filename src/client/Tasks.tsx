@@ -79,7 +79,7 @@ export function TaskList({ sid, tasks, openIds, onOpen, say }: { sid: string; ta
   const row = (t: BgTask) => <TaskRow key={t.id} t={t} sid={sid} canOpen={t.kind === 'agent' && !!t.toolUseId && openIds.has(`t_${t.toolUseId}`)} onOpen={onOpen} say={say} />
   if (!tasks.length) return <div className="bgtasks"><div className="bgt-empty">아직 맡긴 일이 없어요. 봇이 서브에이전트나 긴 명령을 맡기면 여기서 보고 멈출 수 있어요.</div></div>
   return <div className="bgtasks">
-    <div className="bgt-h"><span>도는 중</span><span className="c">{running.length}</span></div>
+    <div className="bgt-h"><span>일하는 중</span><span className="c">{running.length}</span></div>
     {running.length ? running.map(row) : <div className="bgt-empty">지금 도는 일은 없어요</div>}
     {finished.length ? <button className="bgt-h fin" onClick={() => setFinOpen(!showFin)} aria-expanded={showFin}><Icon n={showFin ? 'chevd' : 'chev'} size={9} /><span>끝남</span><span className="c">{finished.length}</span></button> : null}
     {finished.length && showFin ? finished.map(row) : null}
@@ -105,7 +105,7 @@ export function TaskSheet({ sid, tasks, openIds, onOpen, onClose, say }: { sid: 
     <div className="backdrop" onClick={onClose} />
     <div className="tsheet bgsheet" role="dialog" aria-label="뒤에서 도는 일">
       <div className="grip" />
-      <div className="bgsh"><b>뒤에서 도는 일</b><span className="c">{run ? `도는 중 ${run}` : `끝남 ${tasks.length}`}</span><button className="xb" onClick={onClose}>닫기</button></div>
+      <div className="bgsh"><b>뒤에서 도는 일</b><span className="c">{run ? `일하는 중 ${run}` : `끝남 ${tasks.length}`}</span><button className="xb" onClick={onClose}>닫기</button></div>
       <div className="bgsb"><TaskList sid={sid} tasks={tasks} openIds={openIds} onOpen={(id) => { onClose(); onOpen(id) }} say={say} /></div>
     </div>
   </>
@@ -130,7 +130,7 @@ export function SubDetail({ sub, sid, botId, onFile, say }: { sub: Sub; sid: str
   const stop = async () => { if (!sub.taskId || busy) return; setBusy(true); await stopOneTask(sid, sub.taskId, say, sub.name); setBusy(false) }
   const run = sub.status === 'run'
   return <div className="drill-r">
-    <div className="meta" style={{ cursor: 'default' }}>{run ? '아직 도는 중' : sub.stopped ? '멈춘 자리' : sub.status === 'error' ? '실패한 자리' : '결과'}</div>
+    <div className="meta" style={{ cursor: 'default' }}>{run ? '아직 일하는 중' : sub.stopped ? '멈춘 자리' : sub.status === 'error' ? '실패한 자리' : '결과'}</div>
     {run ? <div className="dr-run"><span className="spin run" /><span>끝나면 결과가 여기에 보여요</span>{sub.taskId ? <button className="stopb" disabled={busy} onClick={() => void stop()}><Icon n="stop" size={8} />{busy ? '멈추는 중' : '멈추기'}</button> : null}</div>
       : sub.result ? <div className="dr-res"><Md text={sub.result} botId={botId} onPath={onFile} /></div>
         : <div className="dr-none">남긴 결과가 없어요</div>}

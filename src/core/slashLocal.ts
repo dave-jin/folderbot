@@ -13,8 +13,8 @@ export interface LocalCmd { name: string; desc: string }
 
 /** Codex 세션에서 우리가 처리하는 것들 — 이 목록이 곧 화면에 뜨는 목록이다 */
 export const CODEX_LOCAL: LocalCmd[] = [
-  { name: 'clear', desc: '새 대화로 — 여기까지의 맥락을 끊습니다' },
-  { name: 'new', desc: '새 대화로 (clear 와 같음)' }
+  { name: 'clear', desc: '맥락 비우기 — 여기까지의 맥락을 끊어요' },
+  { name: 'new', desc: '맥락 비우기 (clear 와 같음)' }
 ]
 
 /** 앞머리가 슬래시 명령인가 — 줄 하나가 통째로 그 명령일 때만 (글 속 `/` 는 건드리지 않는다) */

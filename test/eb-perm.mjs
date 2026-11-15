@@ -1,5 +1,5 @@
 /**
- * EB · «사람이 없어도 안전하게 돈다» 검사 (2026-11-11) — Auto 권한 모드와 이름(자동 · 수동 · 편집 자동 수락 · 계획 · 항상 허용) ·
+ * EB · «사람이 없어도 안전하게 돈다» 검사 (2026-11-11) — Auto 권한 모드와 이름(자동 · 수동 · 고치기 자동 수락 · 계획 · 항상 허용) ·
  * Auto 를 못 켰을 때 수동으로 내리기 · 도는 워커의 모드 바로 바꾸기(set_permission_mode) · 승인 시간 초과(사람이 시작하지 않은 턴만) ·
  * 루틴 승인 선택지의 Auto · Codex 세션에는 이 모드가 없다.
  *
@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
-const MODE_NAMES = ['자동', '수동', '편집 자동 수락', '계획', '항상 허용']
+const MODE_NAMES = ['자동', '수동', '고치기 자동 수락', '계획', '항상 허용']
 const MODE_VALUES = ['auto', 'default', 'acceptEdits', 'plan', 'bypassPermissions']
 
 /**
@@ -134,7 +134,7 @@ export async function ebPerm({ base, root, data, claudeCfg, botId, botAbs, br, c
     must(r.modeApplied === 'now' && !r.restartPending && r.liveMode === 'acceptEdits' && r.permissionMode === 'acceptEdits', '답 ' + JSON.stringify({ a: r.modeApplied, rp: r.restartPending, live: r.liveMode, stored: r.permissionMode }))
     const c = await stateIs(s.id, 'done')
     must(lastA(c) === '모드 acceptEdits — 묻지 않고 실행: Write', '바뀐 모드로 판단하지 않았다 · ' + lastA(c))
-    must(sys(c).some((t) => /권한 모드 → «편집 자동 수락» · 도는 중인 턴에 바로 적용/.test(t)), '시스템 줄 ' + JSON.stringify(sys(c)))
+    must(sys(c).some((t) => /권한 모드 → «고치기 자동 수락» · 지금 턴에 바로 적용/.test(t)), '시스템 줄 ' + JSON.stringify(sys(c)))
     must(!sys(c).some((t) => /^자동 허용/.test(t)), '호스트가 대신 답했다(바로 적용이 아니다) ' + JSON.stringify(sys(c)))
     must(c.info.alive && !c.info.modeApplied && !c.info.restartPending, '턴 뒤 ' + JSON.stringify({ alive: c.info.alive, a: c.info.modeApplied, rp: c.info.restartPending }))
   })
@@ -159,7 +159,7 @@ export async function ebPerm({ base, root, data, claudeCfg, botId, botAbs, br, c
       await say(s.id, '모드대로:Write 느리게 해 줘'); await stateIs(s.id, 'running'); await wait(300)
       const r = await api(`/sessions/${s.id}/settings`, { permissionMode: 'acceptEdits' })
       must(r.modeApplied === 'next' && r.restartPending === true, '답 ' + JSON.stringify({ a: r.modeApplied, rp: r.restartPending }))
-      const c = await stateIs(s.id, 'done'); must(sys(c).some((t) => /^자동 허용 · Write \(편집 자동 수락 모드\)/.test(t)), '호스트가 대신 답하지 않았다 ' + JSON.stringify(sys(c)))
+      const c = await stateIs(s.id, 'done'); must(sys(c).some((t) => /^자동 허용 · Write \(고치기 자동 수락 모드\)/.test(t)), '호스트가 대신 답하지 않았다 ' + JSON.stringify(sys(c)))
     } finally { sw(null) }
     sw({ ctl: 'silent' })
     try {
@@ -168,7 +168,7 @@ export async function ebPerm({ base, root, data, claudeCfg, botId, botAbs, br, c
       must(ms >= 2000 && ms < 6000 && !r.alive && r.permissionMode === 'plan', `답 없는 CLI — ${ms}ms · ` + JSON.stringify({ alive: r.alive, stored: r.permissionMode }))
     } finally { sw(null) }
   })
-  await check('M9 모드를 안 정한 세션은 «새 채팅 기본 권한» 을 따른다 — 그 맥의 Claude Code 설정이 아니다 · 기본이 «수동» 이면 묻고, 기본을 바꾸면 다음에 뜰 때 그 모드', async () => {
+  await check('M9 모드를 안 정한 세션은 «새 세션 기본 권한» 을 따른다 — 그 맥의 Claude Code 설정이 아니다 · 기본이 «수동» 이면 묻고, 기본을 바꾸면 다음에 뜰 때 그 모드', async () => {
     // 🔴 2026-11-11 Dave 결정 — 실 CLI 는 인자 없이 띄우면 `~/.claude/settings.json` 의 `permissions.defaultMode`(맥미니는 auto)를 따른다.
     //    그래서 호스트는 **늘** 모드를 인자로 넘긴다. 스텁의 `inherit: 'auto'` 는 «인자 없이 뜨면 auto» 다 — 인자가 빠지면 아래가 빨개진다.
     sw({ inherit: 'auto' })
@@ -181,12 +181,12 @@ export async function ebPerm({ base, root, data, claudeCfg, botId, botAbs, br, c
       // 기본이 «수동» — CLI 설정이 auto 여도 묻는다
       await say(s.id, '모드대로:Bash 해 줘')
       const p = await pendingOf(s.id); must(p.info.liveMode === 'default', '기본 «수동» 인데 워커가 ' + p.info.liveMode + ' 로 떴다'); await answer(s.id, p, false); await stateIs(s.id, 'done')
-      // 기본을 «편집 자동 수락» 으로 — 모드를 안 정한 세션은 워커가 없을 때도 그 모드로 보이고, 다시 뜰 때 그 모드로 뜬다. 저장값은 그대로
+      // 기본을 «고치기 자동 수락» 으로 — 모드를 안 정한 세션은 워커가 없을 때도 그 모드로 보이고, 다시 뜰 때 그 모드로 뜬다. 저장값은 그대로
       const y = await newSession('EB 기본 권한 따름 2')
       await setDefault('acceptEdits')
-      const y1 = (await chatOf(y.id)).info; must((y1.permissionMode ?? 'default') === 'default' && y1.liveMode === 'acceptEdits', '워커가 없는 세션의 표시(기본 편집 자동 수락) ' + JSON.stringify({ stored: y1.permissionMode, live: y1.liveMode }))
+      const y1 = (await chatOf(y.id)).info; must((y1.permissionMode ?? 'default') === 'default' && y1.liveMode === 'acceptEdits', '워커가 없는 세션의 표시(기본 고치기 자동 수락) ' + JSON.stringify({ stored: y1.permissionMode, live: y1.liveMode }))
       await say(y.id, '안녕'); const cy = await stateIs(y.id, 'done')
-      must((cy.info.permissionMode ?? 'default') === 'default' && cy.info.liveMode === 'acceptEdits', '기본 «편집 자동 수락» 인데 ' + JSON.stringify({ stored: cy.info.permissionMode, live: cy.info.liveMode }))
+      must((cy.info.permissionMode ?? 'default') === 'default' && cy.info.liveMode === 'acceptEdits', '기본 «고치기 자동 수락» 인데 ' + JSON.stringify({ stored: cy.info.permissionMode, live: cy.info.liveMode }))
       await api(`/sessions/${s.id}/hibernate`, {}); await say(s.id, '안녕'); const cs = await stateIs(s.id, 'done')
       must(cs.info.liveMode === 'acceptEdits', '재웠다 깨운 세션이 바뀐 기본을 안 따른다 ' + cs.info.liveMode)
       // «수동» 을 직접 고르면 고정 — 기본이 무엇이든, 재웠다 깨워도 수동
@@ -297,7 +297,7 @@ export async function ebPerm({ base, root, data, claudeCfg, botId, botAbs, br, c
     const openMode = async (pg, phone) => { await (phone ? pg.tap('.cchips .cbtn') : pg.click('.cbar .cbtn')); await pg.waitForSelector('.cpop.modepop', { timeout: 4000 }); await wait(150) }
     const rows = (pg) => pg.evaluate(() => [...document.querySelectorAll('.cpop.modepop .prow2')].map((e) => ({ v: e.dataset.mode, t: e.querySelector('b')?.textContent ?? '', d: e.querySelector('small')?.textContent ?? '', on: e.classList.contains('on'), k: e.querySelector('.k')?.textContent ?? null, w: Math.round(e.getBoundingClientRect().right), h: Math.round(e.getBoundingClientRect().height) })))
     const D = await page(false); const P = await page(true)
-    await check('U1 데스크톱 — 모드 목록이 다섯(자동 · 수동 · 편집 자동 수락 · 계획 · 항상 허용) · default 세션의 칩은 «수동» · 숫자 키 1 이 «자동»', async () => {
+    await check('U1 데스크톱 — 모드 목록이 다섯(자동 · 수동 · 고치기 자동 수락 · 계획 · 항상 허용) · default 세션의 칩은 «수동» · 숫자 키 1 이 «자동»', async () => {
       const s = await newSession('EB 화면'); K.ui = s.id
       const pg = D.pg; await goto(pg, s.id)
       const c0 = await chip(pg); must(c0?.t === '수동' && c0.mode === 'default', 'default 세션의 칩 ' + JSON.stringify(c0))
@@ -341,7 +341,7 @@ export async function ebPerm({ base, root, data, claudeCfg, botId, botAbs, br, c
       const s = await newSession('EB 화면 바로'); const pg = D.pg; await goto(pg, s.id)
       await say(s.id, '모드대로:Write 느리게 해 줘'); await stateIs(s.id, 'running'); await wait(400)
       await openMode(pg, false); await pg.click('.cpop.modepop .prow2[data-mode="acceptEdits"]')
-      await until(async () => { const c = await chip(pg); return c?.t === '편집 자동 수락' && c.pend === '바로 적용' }, '칩의 «바로 적용»', 4000)
+      await until(async () => { const c = await chip(pg); return c?.t === '고치기 자동 수락' && c.pend === '바로 적용' }, '칩의 «바로 적용»', 4000)
       must(await pg.evaluate(() => /바로 적용됐어요/.test(document.body.textContent ?? '')), '알림 글이 없다')
       await shot(pg, 'u4-데스크톱-도는중-모드-바로적용')
       await stateIs(s.id, 'done'); await until(async () => (await chip(pg))?.pend === null, '턴 뒤 표시가 걷힌다')
@@ -356,7 +356,7 @@ export async function ebPerm({ base, root, data, claudeCfg, botId, botAbs, br, c
       const s3 = await newSession('EB 폰 바로'); await goto(P.pg, s3.id)
       await say(s3.id, '모드대로:Write 느리게 해 줘'); await stateIs(s3.id, 'running'); await wait(400)
       await openMode(P.pg, true); await P.pg.tap('.cpop.modepop .prow2[data-mode="acceptEdits"]')
-      await until(async () => { const c = await chip(P.pg); return c?.t === '편집 자동 수락' && c.pend === '바로 적용' }, '폰 칩의 «바로 적용»', 4000)
+      await until(async () => { const c = await chip(P.pg); return c?.t === '고치기 자동 수락' && c.pend === '바로 적용' }, '폰 칩의 «바로 적용»', 4000)
       await shot(P.pg, 'u4-폰-도는중-모드-바로적용')
       await stateIs(s3.id, 'done')
     })
@@ -368,7 +368,7 @@ export async function ebPerm({ base, root, data, claudeCfg, botId, botAbs, br, c
         await shot(x.pg, `u5-${nm}-승인-시간-초과-줄`)
       }
     })
-    await check('U6 모드를 안 정한 세션이 «새 채팅 기본 권한» 을 따라 돌면 — 칩은 그 모드, 팝업에 까닭 한 줄 · «수동» 을 고르면 바로 수동', async () => {
+    await check('U6 모드를 안 정한 세션이 «새 세션 기본 권한» 을 따라 돌면 — 칩은 그 모드, 팝업에 까닭 한 줄 · «수동» 을 고르면 바로 수동', async () => {
       sw({ inherit: 'auto' })
       const st0 = await api('/state')
       const setDefault = (mode) => api('/defaults', { model: st0.defaults.model, effort: st0.defaults.effort, agent: 'claude', permissionMode: mode })
@@ -376,9 +376,9 @@ export async function ebPerm({ base, root, data, claudeCfg, botId, botAbs, br, c
         const s = await newSession('EB 화면 기본따름'); await setDefault('acceptEdits')
         await say(s.id, '안녕'); await stateIs(s.id, 'done')
         const pg = D.pg; await goto(pg, s.id)
-        must((await chip(pg))?.t === '편집 자동 수락', '칩이 실제 모드가 아니다 ' + JSON.stringify(await chip(pg)))
+        must((await chip(pg))?.t === '고치기 자동 수락', '칩이 실제 모드가 아니다 ' + JSON.stringify(await chip(pg)))
         await openMode(pg, false)
-        must(/«새 채팅 기본 권한» 대로 «편집 자동 수락»/.test(await pg.textContent('.cpop.modepop')), '까닭 줄이 없다 · ' + (await pg.textContent('.cpop.modepop')).slice(0, 200))
+        must(/«새 세션 기본 권한» 대로 «고치기 자동 수락»/.test(await pg.textContent('.cpop.modepop')), '까닭 줄이 없다 · ' + (await pg.textContent('.cpop.modepop')).slice(0, 200))
         must((await rows(pg)).find((x) => x.on)?.v === 'acceptEdits', '고른 줄이 실제 모드가 아니다')
         await shot(pg, 'u6-데스크톱-기본-권한을-따라')
         await pg.click('.cpop.modepop .prow2[data-mode="default"]')
@@ -402,12 +402,12 @@ export async function ebPerm({ base, root, data, claudeCfg, botId, botAbs, br, c
       // 왼쪽 목록 A안(2026-11-14) — 레일의 «설정» 줄(`.nav`)은 숫자 줄의 `.t-set` 칸이 됐다
       await pg.click('.side.left .numrow .t-set'); await pg.waitForSelector('.modal.setw', { timeout: 5000 }); await pg.click('.snav .nv:has-text("세션 · 사용량")'); await pg.waitForSelector('select[data-approval-timeout]', { timeout: 4000 })
       const row = await pg.evaluate(() => { const sel = document.querySelector('select[data-approval-timeout]'); const r = sel.closest('.setr'); return { v: sel.value, opts: [...sel.options].map((o) => o.textContent), t: r?.querySelector('.tx')?.textContent ?? '', inBox: sel.getBoundingClientRect().right <= r.getBoundingClientRect().right + 1 } })
-      must(row.v === '0' && JSON.stringify(row.opts) === JSON.stringify(['5분', '10분', '30분', '1시간', '끄기 — 끝까지 기다림']) && /승인 시간 초과/.test(row.t) && /내가 보낸 턴은 끝까지/.test(row.t) && row.inBox, '설정 줄 ' + JSON.stringify(row))
+      must(row.v === '0' && JSON.stringify(row.opts) === JSON.stringify(['5분', '10분', '30분', '1시간', '끔 — 끝까지 기다림']) && /승인 시간 초과/.test(row.t) && /내가 보낸 턴은 끝까지/.test(row.t) && row.inBox, '설정 줄 ' + JSON.stringify(row))
       await shot(pg, 'u8-데스크톱-설정-승인-시간-초과')
       await pg.selectOption('select[data-approval-timeout]', '30'); await until(async () => (await api('/state')).defaults.approvalTimeoutMinutes === 30, '30분 저장')
       await pg.selectOption('select[data-approval-timeout]', '0'); await until(async () => (await api('/state')).defaults.approvalTimeoutMinutes === 0, '끄기로 되돌리기')
       await pg.click('.snav .nv:has-text("Claude")'); await wait(400)
-      const perm = await pg.evaluate(() => { const sel = [...document.querySelectorAll('.setw select')].find((x) => [...x.options].some((o) => /편집 자동 수락/.test(o.textContent ?? ''))); return sel ? { v: sel.value, opts: [...sel.options].map((o) => (o.textContent ?? '').split(' — ')[0]) } : null })
+      const perm = await pg.evaluate(() => { const sel = [...document.querySelectorAll('.setw select')].find((x) => [...x.options].some((o) => /고치기 자동 수락/.test(o.textContent ?? ''))); return sel ? { v: sel.value, opts: [...sel.options].map((o) => (o.textContent ?? '').split(' — ')[0]) } : null })
       must(perm && perm.v === 'default' && JSON.stringify(perm.opts) === JSON.stringify(MODE_NAMES), '설정의 기본 권한 목록 ' + JSON.stringify(perm))
       await shot(pg, 'u8-데스크톱-설정-기본-권한')
       await pg.keyboard.press('Escape'); await wait(200)

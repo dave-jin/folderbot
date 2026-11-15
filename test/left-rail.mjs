@@ -73,7 +73,7 @@ export async function leftRail({ br, check, port = 7487, shots = '' }) {
           cells: [...sb.querySelectorAll('.numrow .ncell .l')].map((x) => x.textContent), old: ['.mcards', '.rtline', '.sortbar', '.cx-fold', '.cx-sbody', '.t-fold'].filter((q) => sb.querySelector(q)), rows: sb.querySelectorAll('.sb-list .brow').length,
           sw: sb.scrollWidth, cw: sb.clientWidth, docSw: document.documentElement.scrollWidth, vw: innerWidth }
       })
-      must(JSON.stringify(o.nav) === JSON.stringify(['검색', '폴더 선택 · 시작']), '맨 위 줄 ' + JSON.stringify(o.nav))
+      must(JSON.stringify(o.nav) === JSON.stringify(['찾기', '폴더 선택 · 시작']), '맨 위 줄 ' + JSON.stringify(o.nav))
       must(!o.band, '기다리는 세션이 없는데 띠가 섰다')
       must(o.navT > 0 && o.navT < o.head && o.head < o.list && o.list < o.line && o.line < o.nums && o.nums < o.foot, '순서 ' + JSON.stringify(o))
       must(JSON.stringify(o.cells) === JSON.stringify(['세션', '알림', '할 일', '루틴', '설정']), '숫자 줄 칸 ' + JSON.stringify(o.cells))
@@ -133,7 +133,7 @@ export async function leftRail({ br, check, port = 7487, shots = '' }) {
         return { n: b.querySelector('.cx-gl .c')?.textContent, head: (b.querySelector('.cx-gl')?.firstChild?.textContent ?? ''), rows: [...b.querySelectorAll('.cx-it')].map((r) => ({ sid: r.dataset.sid, f: r.querySelector('.cx-f .fo')?.textContent, allow: !!r.querySelector('.cx-allow'), reply: !!r.querySelector('.cx-reply') })), more: b.querySelector('.cx-more')?.textContent ?? null, bt: Math.round(b.getBoundingClientRect().top), navB: Math.round([...document.querySelectorAll('.side.left .nav')].pop().getBoundingClientRect().bottom), headT: Math.round(top('.lhead')), bb: Math.round(b.getBoundingClientRect().bottom) } })
       await until(async () => (await band())?.rows.length === 2, '띠에 두 줄이 안 선다 ' + JSON.stringify(await band()))
       const b2 = await band()
-      must(b2.n === '2' && b2.head === '내 답을 기다림' && b2.rows.every((r) => r.allow && r.reply) && !b2.more, '띠 두 줄 ' + JSON.stringify(b2))
+      must(b2.n === '2' && b2.head === '내 답 기다림' && b2.rows.every((r) => r.allow && r.reply) && !b2.more, '띠 두 줄 ' + JSON.stringify(b2))
       must(b2.bt >= b2.navB && b2.bb <= b2.headT + 1, '띠가 찾기 · 폴더 선택과 목록 머리 사이에 없다 ' + JSON.stringify(b2))
       if (shots) await pg.screenshot({ path: join(shots, 'lr-5-답-대기-둘-desktop.png') })
       // [허용] — 그 줄이 빠진다

@@ -57,7 +57,7 @@ function codexPrompts(): SlashCmd[] {
   if (!existsSync(dir)) return []
   return safeList(dir).filter((n) => n.endsWith('.md')).map((n) => ({ name: n.slice(0, -3), desc: safeDesc(join(dir, n)), kind: 'command' as const, scope: 'user' as const }))
 }
-const CLI_DESC: Record<string, string> = { compact: '대화 압축 — 컨텍스트 줄이기', context: '컨텍스트 사용 내역', cost: '이번 세션 비용', review: '코드 리뷰', init: 'CLAUDE.md 만들기', clear: '새 대화로', help: '도움말' }
+const CLI_DESC: Record<string, string> = { compact: '세션 압축 — 컨텍스트 줄이기', context: '컨텍스트 사용 내역', cost: '이번 세션 비용', review: '코드 리뷰', init: 'CLAUDE.md 만들기', clear: '맥락 비우기', help: '도움말' }
 
 /* ── 슬래시 명령 관리 (루프 8/10) ─────────────────────────────────────────────
    🔴 **명령은 파일이다** — `.claude/commands/<이름>.md`. 만드는 것도 파일 하나 쓰는 것이고, 고치는 것은 문서 열에서 한다.

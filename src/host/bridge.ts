@@ -226,7 +226,7 @@ export class BridgeHub {
   askNow(peerId: string, o: { kind?: string; text: string; title?: string; re?: string; urgent?: boolean; to: string }): { id: string; rel: string; sid: string | null } {
     const peer = this.peer(peerId); if (!peer || !peer.enabled) throw new Error('그런 연결이 없어요')
     const box = this.boxes.get(peer.id)
-    if (!box) throw Object.assign(new Error(`이 호스트는 «${peer.name}» 연결의 주인이 아니에요${peer.host ? ` — ${peer.host} 에서 부르세요` : ''}`), { code: 'not-owner' })
+    if (!box) throw Object.assign(new Error(`이 맥은 «${peer.name}» 연결을 맡지 않아요${peer.host ? ` — ${peer.host} 에서 부르세요` : ''}`), { code: 'not-owner' })
     const kind = (FBMF_KINDS.includes(String(o.kind ?? 'request') as LetterKind) && o.kind !== 'heartbeat' ? String(o.kind ?? 'request') : 'request') as LetterKind
     const out = this.writeLetter(peer, 'to-folderbot', peer.id, peer.id, o.to, { ...o, kind, via: 'ask' })
     const abs = this.abs(out.rel)

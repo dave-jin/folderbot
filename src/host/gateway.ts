@@ -376,7 +376,7 @@ export class Gateway {
      */
     if (p === '/api/agents/claude/update' && m === 'POST') {
       const cl = providers().find((x) => x.id === 'claude')
-      if (!cl?.bin) return json(400, { error: '이 호스트에 claude CLI 가 없어요' })
+      if (!cl?.bin) return json(400, { error: '메인에 claude CLI 가 없어요' })
       const before = cl.version ?? null
       // 🔴 **QA 는 실 CLI 를 건드리지 않는다** (리포 규칙). 검사에서는 길이 열려 있는지만 보고 실제로는 안 올린다
       if (process.env.FOLDERBOT_QA) return json(200, { ok: true, skipped: true, before, after: before, changed: false, out: 'QA — 실제 업데이트는 건너뜀' })
@@ -622,7 +622,7 @@ export class Gateway {
      */
     if (p === '/api/auth/login-terminal' && m === 'POST') {
       const b = await body()
-      if (!who.main) return json(400, { error: '호스트 맥에서 눌러 주세요 — 터미널은 그쪽에 떠야 해요' })
+      if (!who.main) return json(400, { error: '메인에서 눌러 주세요 — 터미널은 그쪽에 떠야 해요' })
       if (process.platform !== 'darwin') return json(400, { error: '맥에서만 열 수 있어요' })
       const cmd = b.agent === 'codex' ? 'codex login' : 'claude'
       const script = `cd ${JSON.stringify(reg.root)}; clear; ${cmd}`
@@ -663,7 +663,7 @@ export class Gateway {
     // EB · 승인 시간 초과(분) — 사람이 시작하지 않은 턴만. 0 = 끄기. 값은 메인에 산다(어느 기기에서 바꿔도 같다)
     if (p === '/api/approval-timeout' && m === 'POST') {
       const b = await body(); const n = Number(b.minutes)
-      if (!Number.isFinite(n) || n < 0) return json(400, { error: '분은 0 이상의 숫자여야 해요 (0 = 끄기)' })
+      if (!Number.isFinite(n) || n < 0) return json(400, { error: '분은 0 이상의 숫자여야 해요 (0 = 끔)' })
       h.setApprovalTimeout(n); return json(200, { minutes: approvalTimeoutMin(h.cfg.approvalTimeoutMinutes) })
     }
     if (p === '/api/bots/pin' && m === 'POST') { const b = await body(); try { reg.pin(String(b.id), !!b.on) } catch (e) { return json(400, { error: (e as Error).message }) } h.afterBotsChanged(); return json(200, { ok: true }) }

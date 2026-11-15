@@ -88,7 +88,7 @@ export function holdLine(holder: Holder, inflight: InFlight | null | undefined, 
 
 /** 헤더 한 줄 — 레일·헤더·대기 줄이 **같은 값**에서 나와야 셋이 서로 다른 말을 안 한다 */
 export function holdHeader(holder: Holder, inflight: InFlight | null | undefined, bg = 0): string {
-  if (holder === 'you') return '확인해 주세요'
+  if (holder === 'you') return '내 답 기다림'
   if (holder === 'me') return '생각 중'
   if (holder !== 'other') return ''
   const kind = holdKindOf(inflight, bg)

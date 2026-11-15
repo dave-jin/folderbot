@@ -57,7 +57,7 @@ export function liveView(x: S, now = Date.now(), took?: number): LiveView {
   const since = liveSince(x)
   const holder = holderOf(x.state, x.inflight, now, x.bg ?? 0)
   const el = elapsedText(now - since)
-  if (holder === 'you') return { cls: 'you', text: `확인해 주세요 · ${x.pending?.[0]?.displayName || '답을 기다려요'}`, tm: `${el}째`, since }
+  if (holder === 'you') return { cls: 'you', text: `내 답 기다림 · ${x.pending?.[0]?.displayName || '답을 기다려요'}`, tm: `${el}째`, since }
   if (holder === 'me') return { cls: 'me', text: x.activity || '생각 중', tm: el, since }
   if (holder === 'other') return { cls: 'other', text: `${holdHeader(holder, x.inflight, x.bg ?? 0)}${x.inflight?.summary ? ` · ${x.inflight.summary}` : ''}`, tm: el, since }
   if (x.state === 'error') return { cls: 'err', text: `문제 있어요${x.lastError ? ` · ${x.lastError}` : ''}`, tm: '방금', since }

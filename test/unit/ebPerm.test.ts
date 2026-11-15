@@ -14,7 +14,7 @@ import { MODEL_RE } from '../../src/core/modelList'
 describe('EB 권한 모드 — 이름은 Claude Desktop 과 같다', () => {
   it('다섯 모드의 순서와 이름 — 자동(auto) · 수동(default) · 편집 자동 수락 · 계획 · 항상 허용', () => {
     expect(PERM_MODE_MENU.map((m) => m.v)).toEqual(['auto', 'default', 'acceptEdits', 'plan', 'bypassPermissions'])
-    expect(PERM_MODE_MENU.map((m) => m.t)).toEqual(['자동', '수동', '편집 자동 수락', '계획', '항상 허용'])
+    expect(PERM_MODE_MENU.map((m) => m.t)).toEqual(['자동', '수동', '고치기 자동 수락', '계획', '항상 허용'])
     expect(PERM_MODE_MENU.every((m) => m.d.length > 4)).toBe(true)
   })
   it('🔴 «자동» 은 auto 의 이름이다 — default 는 «수동» 이고, 모르는 값·빈 값도 «수동» 으로 보인다(권한이 넓어 보이지 않게)', () => {

@@ -73,7 +73,7 @@ export function AskChip({ go }: { go: (botId: string, sid?: string) => void }) {
   const [at, setAt] = useState<Anchor | null>(null)
   if (!p.chip || !rows.length) return null
   return <>
-    <button className="askchip" onClick={(e) => setAt(at ? null : anchorOf(e.currentTarget as HTMLElement, { gap: 6 }))} title="바깥 상대가 묻고 기다리는 세션">ask 대기 {rows.length}건</button>
+    <button className="askchip" onClick={(e) => setAt(at ? null : anchorOf(e.currentTarget as HTMLElement, { gap: 6 }))} title="바깥 상대가 묻고 기다리는 세션">바깥 질문 {rows.length}건</button>
     {at ? <Float at={at} onClose={() => setAt(null)}>{rows.map(({ s, b, bot }) => <button key={s.id} onClick={() => { setAt(null); go(bot.id, s.id) }}><span className="dot run" /><span style={{ flex: 1 }}>{askLabel(b)} · {bot.displayName || bot.name}</span></button>)}</Float> : null}
   </>
 }

@@ -128,7 +128,7 @@ export function Search({ go, onClose }: { go: (botId: string, sid?: string) => v
       const due = dueShort(b.due)
       const lv = liveOfBot(b.id)
       const sub = lv ? `${lv.x.name} · ${lv.v.text}`
-        : b.orchestrator ? `관제 · 세션 ${ss.length}`
+        : b.orchestrator ? `볼트 전체 · 세션 ${ss.length}`
           : marked ? (para ? `${secOf(b)}${para === 'P' && due ? ` · ${due}` : ''}` : b.rel)
             : para === 'P' && due ? `${due} 마감` : para ? '' : b.rel
       out.push({ key: `b-${b.id}`, kind: 'bot', botId: b.id, label: nameOf(b), sub: sub || undefined, color: b.color, para: marked ? para : null, v: lv?.v, tm: lv ? lv.v.tm : b.orchestrator ? undefined : agoShort(readOf(b.id), now), head: heads.get(b.id), n: ss.length })
@@ -147,7 +147,7 @@ export function Search({ go, onClose }: { go: (botId: string, sid?: string) => v
       for (const { b, x, v } of live.list) {
         const k = `l-${x.id}`, ft = flashRef.current.get(x.id)
         out.push({ key: k, kind: 'live', botId: b.id, sid: x.id, label: x.name, v, routine: !!x.routine, flash: ft != null && now - ft < FLASH_MS,
-          chip: { name: nameOf(b), para: paraOf(b.rel), color: b.color }, head: first ? recHead : undefined, sh: first ? '지금 움직이는 세션' : undefined })
+          chip: { name: nameOf(b), para: paraOf(b.rel), color: b.color }, head: first ? recHead : undefined, sh: first ? '지금 일하는 중인 세션' : undefined })
         first = false
         if (aopen === k) for (const y of sessOf(b.id)) if (!live.list.some((e) => e.x.id === y.id)) out.push(sessRow(b, y, 'idle', 'a'))
       }
@@ -223,7 +223,7 @@ export function Search({ go, onClose }: { go: (botId: string, sid?: string) => v
 
   return <><div className="backdrop" onClick={onClose} /><div className="modal pal srch">
     <div className="pq"><Icon n="search" size={14} color="var(--t3)" />
-      <input autoFocus placeholder="폴더봇 · 세션 찾기 — 이름 · 초성 · 지난 대화" value={q} onChange={(e) => setQ(e.target.value)}
+      <input autoFocus placeholder="폴더봇 · 세션 찾기 — 이름 · 초성 · 세션에 쓴 글" value={q} onChange={(e) => setQ(e.target.value)}
         onKeyDown={(e) => {
           if (e.nativeEvent.isComposing) return
           if (e.key === 'Escape') { e.preventDefault(); if (!fold()) onClose(); return }
@@ -244,9 +244,9 @@ export function Search({ go, onClose }: { go: (botId: string, sid?: string) => v
         const firstHit = r.kind === 'hit' && rows[n - 1]?.kind !== 'hit'
         const on = n === i ? 'on' : ''
         return <div key={r.key} style={{ display: 'contents' }}>
-          {firstHit ? <div className="sgrp">지난 대화</div> : null}
+          {firstHit ? <div className="sgrp">세션에 쓴 글</div> : null}
           {r.head ? <div className="sgrp fhd" data-head={r.head.para ?? r.head.key}>{r.head.para ? <i className={`fsq p-${r.head.para}`} /> : null}<span>{r.head.label}</span>
-            {r.head.live ? <span className="lv">움직이는 세션 {r.head.live}</span> : null}<span className="n">{r.head.n}</span></div> : null}
+            {r.head.live ? <span className="lv">일하는 중 {r.head.live}</span> : null}<span className="n">{r.head.n}</span></div> : null}
           {r.sh ? <div className="sgrp fsub" data-sub={r.kind === 'live' ? 'live' : 'recent'}>{r.sh}</div> : null}
           {r.kind === 'live' && r.v ? <button className={`prow lrow ${on} ${r.flash ? 'flash' : ''}`} data-sid={r.sid} data-cls={r.v.cls} onMouseMove={(e) => hover(e, r.key)} onClick={() => pick(r)}>
             <span className="l1"><i className={`ldot ${r.v.cls}`} /><span className="n"><Mid s={r.label} /></span>{r.routine ? <span className="rt">루틴</span> : null}

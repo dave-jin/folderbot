@@ -169,7 +169,7 @@ describe('CC · 사람이 자동화 세션에 답하면 (SessionManager)', () =>
     expect(said).toMatch(/오케스트레이터가 보낸 요청/)
     expect(nr.name).not.toMatch(/자동화|이 채팅은/)          // 제목은 사람의 첫 말에서
     expect(sessArea(sm.list(bot.id).find((x) => x.id === nr.id)!)).toBe('chat')
-    expect(sm.items(c.id).some((i) => i.kind === 'system' && /새 채팅\(/.test((i as { text: string }).text))).toBe(true)
+    expect(sm.items(c.id).some((i) => i.kind === 'system' && /새 세션\(/.test((i as { text: string }).text))).toBe(true)
   })
   it('호스트가 뜰 때 이관 — 사람 말 있는 루틴 세션은 채팅으로 · 소통은 하나만 남는다', () => {
     const sd = join(dir, 'sessions'); mkdirSync(sd, { recursive: true })

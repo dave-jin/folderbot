@@ -27,7 +27,7 @@ type TrayState = {
 type Bridge = { on: (f: (s: TrayState) => void) => void; act: (id: string) => void; size: (h: number) => void }
 const fbTray = (window as unknown as { fbTray?: Bridge }).fbTray
 
-const MOOD: Record<string, string> = { idle: '한가함', work: '일하는 중', wait: '확인 대기', error: '문제 있어요' }
+const MOOD: Record<string, string> = { idle: '쉼', work: '일하는 중', wait: '내 답 기다림', error: '문제 있어요' }
 
 function Row({ id, label, hint, dim, on }: { id?: string; label: string; hint?: string; dim?: boolean; on?: boolean }) {
   if (!id) return <div className="tmi dim">{label}</div>
@@ -45,21 +45,21 @@ function Panel() {
   const up = st?.update
   const host = st?.mode === 'host'
   return <div className="traypanel" ref={box}>
-    <div className="th">{st?.waiting ? `확인 대기 ${st.waiting}` : MOOD[st?.mood ?? 'idle'] ?? '한가함'}</div>
+    <div className="th">{st?.waiting ? `내 답 기다림 ${st.waiting}` : MOOD[st?.mood ?? 'idle'] ?? '쉼'}</div>
     {u && u.tools.length ? <div className="tu"><UsageCard u={u} compact /></div> : null}
     <hr />
     <Row id="open" label="Folder Bot 열기" />
     <Row id="notify" label="알림 센터" />
     <hr />
     {host ? <>
-      <Row label={`이 맥이 호스트 · ${st?.root ?? ''}`} />
+      <Row label={`이 맥이 메인 · ${st?.root ?? ''}`} />
       <Row id="pairing" label={st?.pairing && Date.now() < st.pairing.expiresAt ? `페어링 코드 ${st.pairing.code} (클릭해 복사)` : '페어링 코드 만들기'} />
       <Row id="pairing-new" label="새 페어링 코드" />
       <Row id="copy-addr" label="폰에서 열 주소 복사" />
       <Row id="change-root" label="루트 폴더 바꾸기…" />
     </> : <>
-      <Row label={st?.hostLabel ? `호스트 · ${st.hostLabel}` : '호스트 없음'} />
-      <Row id="change-host" label="호스트 바꾸기…" />
+      <Row label={st?.hostLabel ? `메인 · ${st.hostLabel}` : '메인 없음'} />
+      <Row id="change-host" label="메인 바꾸기…" />
     </>}
     <hr />
     {up?.staged?.ready

@@ -27,14 +27,14 @@ type Go = (b: string, sid?: string) => void
 type Open = (goal?: { bot: string; task?: string }) => void
 
 const STATES: TaskState[] = ['done', 'claimed', 'running', 'stalled', 'waiting', 'todo']
-const STATE_KO: Record<TaskState, string> = { done: '끝남', claimed: '끝났다고 함', running: '하는 중', stalled: '하다 멈춤', waiting: '내 답 대기', todo: '아직' }
+const STATE_KO: Record<TaskState, string> = { done: '끝남', claimed: '끝났다고 함', running: '일하는 중', stalled: '하다 멈춤', waiting: '내 답 기다림', todo: '아직' }
 const PERIOD_KO: Record<Period, string> = { today: '오늘', week: '이번 주', away: '내가 비운 사이' }
 const CH_KO: Record<StoryRow['channel'], string> = { folder: '폴더 봇', orch: '오케스트레이터', comm: '소통', bridge: '연결 편지', routine: '루틴', file: '파일 변화' }
 const EV_KO = { file: '파일 근거', commit: '커밋 근거', letter: '편지 근거', tool: '도구 기록 근거' } as const
 /** 🔴 2026-11-02 Dave «목업대로» — 내 답이 필요한 것 먼저, 그다음 하다 만 일 · 어긋난 루틴 */
-const GROUPS: { k: keyof Board['step']; t: string }[] = [{ k: 'waiting', t: '내 답을 기다림' }, { k: 'stalled', t: '하다 만 일' }, { k: 'routine', t: '어긋난 루틴' }]
+const GROUPS: { k: keyof Board['step']; t: string }[] = [{ k: 'waiting', t: '내 답 기다림' }, { k: 'stalled', t: '하다 만 일' }, { k: 'routine', t: '어긋난 루틴' }]
 /** 범례 — 뜻을 가진 색은 둘(초록 끝남 · 앰버 내 차례). 하다 멈춤과 내 답 대기는 같은 «내 차례» 색이라 범례에서 한 칸이다 */
-const LEGEND: { k: string; t: string }[] = [{ k: 'done', t: '끝남' }, { k: 'claimed', t: '끝났다고 함' }, { k: 'running', t: '하는 중' }, { k: 'waiting', t: '내 차례' }, { k: 'todo', t: '아직' }]
+const LEGEND: { k: string; t: string }[] = [{ k: 'done', t: '끝남' }, { k: 'claimed', t: '끝났다고 함' }, { k: 'running', t: '일하는 중' }, { k: 'waiting', t: '내 답 기다림' }, { k: 'todo', t: '아직' }]
 const p2 = (n: number) => String(n).padStart(2, '0')
 const hm = (t: number) => { const d = new Date(t); return `${p2(d.getHours())}:${p2(d.getMinutes())}` }
 const when = (t: number) => (new Date(t).toDateString() === new Date().toDateString() ? hm(t) : `${new Date(t).getMonth() + 1}/${new Date(t).getDate()} ${hm(t)}`)
@@ -48,7 +48,7 @@ const dueTag = (d: string): { t: string; soon: boolean } => {
 const sidOf = (cardId: string) => cardId.split('#')[0]
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 /** 판 파일이 아직 없는 맥(주인 아님) — 빈 판을 «잘 도는 중» 으로 보이면 안 된다. 주인 여부를 못 읽어도 이 표지로 판정한다 */
-const noFile = (b: Board) => b.sources.some((x) => x.name === '주인 맥 판' && !x.ok)
+const noFile = (b: Board) => b.sources.some((x) => x.name === '메인 판' && !x.ok)
 
 /** 세션 상태가 바뀌면(SSE `state`) 다시 읽게 하는 표지 — 상태 글자만 모아 비교한다 */
 function useStateSig(): string {
@@ -65,7 +65,7 @@ type WRow = StepRow & { req?: PermissionRequest }
 function useLocalWaiting(): { rows: WRow[]; more: number } {
   const { s } = useStore()
   return useMemo(() => {
-    const names = new Map(s.bots.map((b) => [b.id, b.orchestrator ? '볼트 운영' : b.displayName || b.name] as const))
+    const names = new Map(s.bots.map((b) => [b.id, b.orchestrator ? '오케스트레이터' : b.displayName || b.name] as const))
     // EC · 목록은 `core/sessionTabs.waitingOrder` 하나가 짓는다 — ⌘J(다음 기다리는 세션)와 세션 창의 «내 답 기다림» 탭이 같은 것을 쓴다
     const rows: WRow[] = waitingOrder(Object.values(s.sessionsByBot).flat(), (id) => names.has(id))
       .map((x) => {
@@ -125,8 +125,8 @@ function groupsOf(b: Board | null, waiting: StepGroup): { board: Board | null; g
 function StripView({ b, waiting, a }: { b: Board | null; waiting: StepGroup; a: Acts }) {
   const { board, groups } = groupsOf(b, waiting)
   const total = board ? board.goals.length + board.quiet.length : 0
-  const calm = board ? <div className="cx-calm"><i />{total ? `목표 ${total}개 모두 잘 도는 중` : '아직 정리된 목표가 없어요'}</div> : null
-  const none = b && noFile(b) ? <div className="cx-calm none">아직 주인 맥 판 없음<span>주인 맥이 판을 한 번 쓰면 여기에 보여요</span></div> : null
+  const calm = board ? <div className="cx-calm"><i />{total ? `목표 ${total}개 모두 순조로워요` : '아직 정리된 목표가 없어요'}</div> : null
+  const none = b && noFile(b) ? <div className="cx-calm none">아직 메인 판 없음<span>루틴을 돌리는 메인이 판을 한 번 쓰면 여기에 보여요</span></div> : null
   const rows = groups.flatMap((g) => g.v.rows)
   const more = groups.reduce((n, g) => n + g.v.more, 0)
   return <div className="cx-strip big">
@@ -157,9 +157,9 @@ export function WaitBand({ go, open, compact }: { go: Go; open: Open; compact?: 
   useEffect(() => { if (!note) return; const t = window.setTimeout(() => setNote(''), 4000); return () => window.clearTimeout(t) }, [note])
   if (!waiting.rows.length) return null
   const a: Acts = { go, open, snooze: () => { /* 이 띠에는 «하다 만 일» 줄이 없다 */ }, allow, busy }
-  return <div className={`cx-strip wband ${compact ? 'mini' : ''}`} role="group" aria-label="내 답을 기다림">
+  return <div className={`cx-strip wband ${compact ? 'mini' : ''}`} role="group" aria-label="내 답 기다림">
     <div className="cx-grp k-waiting">
-      <div className="cx-gl">내 답을 기다림<span className="c">{waiting.rows.length + waiting.more}</span>{note ? <span className="cx-note">{note}</span> : null}</div>
+      <div className="cx-gl">내 답 기다림<span className="c">{waiting.rows.length + waiting.more}</span>{note ? <span className="cx-note">{note}</span> : null}</div>
       {waiting.rows.map((r, i) => <StepItem key={`${r.botId}:${r.sessionId ?? i}`} r={r} a={a} mini />)}
       {waiting.more ? <button className="cx-more" onClick={() => open()}>외 {waiting.more} — 상황판에서</button> : null}
     </div>
@@ -182,7 +182,7 @@ export function ContextLine({ open }: { open: Open }) {
   const parts = [n('stalled') ? `하다 만 일 ${n('stalled')}` : '', n('routine') ? `어긋난 루틴 ${n('routine')}` : ''].filter(Boolean)
   const total = board ? board.goals.length + board.quiet.length : 0
   // 판을 못 읽어도(옛 호스트 · 오류) 줄은 선다 — 숫자 없이 «상황판 ›» 만. 상황판 창을 여는 길이 사라지면 안 된다
-  const text = !b ? '' : !board ? '아직 주인 맥 판 없음' : parts.length ? parts.join(' · ') : total ? `목표 ${total}개 모두 잘 도는 중` : '아직 정리된 목표가 없어요'
+  const text = !b ? '' : !board ? '아직 메인 판 없음' : parts.length ? parts.join(' · ') : total ? `목표 ${total}개 모두 순조로워요` : '아직 정리된 목표가 없어요'
   return <button className={`cx-line ${parts.length ? '' : 'calm'}`} onClick={() => open()} aria-label="상황판 열기" title="상황판 열기">
     <b>상황판</b><span className="s">{text}</span><Icon n="chev" size={10} color="var(--t3)" />
   </button>
@@ -251,7 +251,7 @@ export function ContextPage({ onClose, go, goTodo, openRoutines, at, phone, open
   const botOfName = (name: string) => s.bots.find((x) => (x.displayName || x.name) === name || x.name === name)
   const awaySub = prev === undefined ? '' : prev ? `${when(prev)} 이후` : '처음 열었어요 · 지난 7일'
   const mismatch = b && b.period !== period ? `${b.host} 판은 ${PERIOD_KO[b.period]}만 있어요` : ''
-  const missing = b ? b.sources.filter((x) => !x.ok && x.name !== '주인 맥 판') : []
+  const missing = b ? b.sources.filter((x) => !x.ok && x.name !== '메인 판') : []
 
   return <><div className="backdrop" onClick={onClose} /><div className={`modal board cx sz-l ${phone ? 'phone' : ''}`} aria-modal="true" role="dialog" aria-label="상황판">
     <div className="grip" />
@@ -343,7 +343,7 @@ function GoalView({ at, back, onClose, go, goTodo, phone, openDoc, owner }: {
       <button className="ib mx" onClick={onClose} title="닫기 ⎋" aria-label="닫기"><Icon n="x" size={14} /></button></div>
     <div className={`cx-three ${phone ? 'phone' : ''}`}>
       <section className="cx-col cx-tasks">
-        <div className="cx-ch"><b>작업</b><span className="m">{owner === false ? '고치기는 주인 맥에서' : 'AI 가 묶음 · 틀리면 끌어서 옮김'}</span></div>
+        <div className="cx-ch"><b>작업</b><span className="m">{owner === false ? '고치기는 루틴을 돌리는 메인에서' : 'AI 가 묶음 · 틀리면 끌어서 옮김'}</span></div>
         <button className={`cx-tk ${sel === null ? 'on' : ''}`} onClick={() => setSel(null)}><span className="st all" /><span><span className="nm">전체 이야기</span></span></button>
         {d?.tasks.map((t) => <button key={t.id} className={`cx-tk ${sel === t.id ? 'on' : ''} ${over === t.id ? 'over' : ''}`} data-task={t.id}
           onClick={() => (t.state === 'todo' ? goTodo(bot) : setSel(t.id))}
@@ -358,7 +358,7 @@ function GoalView({ at, back, onClose, go, goTodo, phone, openDoc, owner }: {
           {task && (task.state === 'done' || task.state === 'claimed') ? <button className="btn ghost cx-re" onClick={() => void reopen()}>안 끝났어</button> : null}</div>
         {task ? <div className="cx-now"><p><b>지금 어디까지</b> — {task.summary || '아직 요약이 없어요'}</p><p><b>빠진 것</b> — {task.missing || '없음'}</p></div>
           : sel === null && g?.gap ? <div className="cx-now"><p><b>목표 대비</b> — {g.gap}</p></div> : null}
-        {owner === false ? <div className="bempty">이야기는 주인 맥에서 보여요</div> : null}
+        {owner === false ? <div className="bempty">이야기는 루틴을 돌리는 메인에서 보여요</div> : null}
         {rows.length ? rows.map((r, i) => <div key={i} className={`cx-ev ${r.stalled ? 'half' : ''}`} draggable={r.cards.length > 0}
           onDragStart={(e) => { e.dataTransfer.setData(DRAG, JSON.stringify(r.cards)); e.dataTransfer.effectAllowed = 'move' }}>
           <button className="cx-evb" onClick={() => clickRow(r)}>

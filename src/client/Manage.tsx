@@ -51,7 +51,7 @@ export function TodoBoard({ onClose, onTodo, say }: { onClose: () => void; onTod
     <div className="bbody">
       {err ? <div className="bempty">할 일을 못 읽었어요 — {err}</div> : null}
       {!data && !err ? <div className="bempty">읽는 중…</div> : null}
-      {oldHost ? <div className="bempty">이 보드는 맥미니 앱이 새 판이어야 보여요. 맥미니에서 업데이트 칩을 눌러 주세요.</div> : null}
+      {oldHost ? <div className="bempty">이 보드는 메인의 앱이 새 판이어야 보여요. 메인에서 업데이트 칩을 눌러 주세요.</div> : null}
       {data?.items && !rows.length ? <div className="bempty">{q || filter !== 'all' ? '이 거름에 걸리는 할 일이 없어요' : '열린 할 일이 없어요'}</div> : null}
       {rows.map(({ bot, items, total }) => {
         const m = meta.get(bot.id); const ch = botDueChip(bot); const all = more.has(bot.id)
@@ -83,7 +83,7 @@ export function TodoBoard({ onClose, onTodo, say }: { onClose: () => void; onTod
  * [중단] 은 두지 않는다(결정 ② · 중단은 대화 안 단추가 제자리 — 무엇을 멈추는지 보면서 누른다). 줄을 누르면 그 대화로 간다.
  * 맨 아래 «폴더 선택 · 시작» 은 레일 메뉴와 같은 창을 연다.
  */
-const GROUP_LABEL: Record<FolderGroup, string> = { wait: '확인 대기', run: '일하는 중', rest: '쉬는 중', idle: '오래 쉼 · 14일 넘게' }
+const GROUP_LABEL: Record<FolderGroup, string> = { wait: '내 답 기다림', run: '일하는 중', rest: '쉼', idle: '오래 쉼 · 14일 넘게' }
 export function FolderSheet({ rows, onClose, go, onPick }: { rows: { b: Bot; sum: { state: SessionInfo['state'] | null; text: string; t: number; mood: Mood; unread: boolean; recent: boolean } }[]; onClose: () => void; go: (botId: string, sid?: string) => void; onPick: () => void }) {
   const { s } = useStore()
   const groups = useMemo(() => {

@@ -192,7 +192,7 @@ export function groupTasks(tasks: readonly BgTask[]): { running: BgTask[]; finis
   return { running, finished }
 }
 
-export const TASK_STATUS_LABEL: Record<TaskStatus, string> = { run: '도는 중', done: '끝남', stopped: '멈춤', error: '실패' }
+export const TASK_STATUS_LABEL: Record<TaskStatus, string> = { run: '일하는 중', done: '끝남', stopped: '멈춤', error: '실패' }
 export const TASK_KIND_LABEL: Record<TaskKind, string> = { agent: '에이전트', shell: '명령', other: '작업' }
 
 /** 「1분 5초」 — 끝난 줄에 걸린 시간을 적는다. 1초 미만은 «1초 미만» */

@@ -94,7 +94,7 @@ export function Cleanup({ onClose, say, manage = false, go }: { onClose: () => v
       {SESS_TABS.map((t) => <button key={t.k} role="tab" aria-selected={tab === t.k} data-tab={t.k} className={`stab ${tab === t.k ? 'on' : ''} ${t.k === 'wait' && counts.wait ? 'hot' : ''}`} onClick={() => setTab(t.k)}><span>{t.t}</span><span className="c">{counts[t.k]}</span></button>)}
     </div>
     <div className="cbar">
-      {manage ? <button className="pill pickc" disabled={!cleanN} onClick={pickCleanable} title="7일 넘게 안 씀(또는 고른 날) + 봇끼리 대화 중 지워도 되는 것">정리할 만한 것 {cleanN} 고르기</button> : null}
+      {manage ? <button className="pill pickc" disabled={!cleanN} onClick={pickCleanable} title="7일 넘게 안 씀(또는 고른 날) + 봇끼리 주고받은 세션 중 지워도 되는 것">정리할 만한 것 {cleanN} 고르기</button> : null}
       {(Object.keys(CLEAN_FILTER_LABEL) as CleanFilter[]).map((f) => f === 'old'
         ? <span key={f} className={`pill dpill ${on.includes(f) ? 'on' : ''}`}>
           <select className="cdays" value={days} onChange={(e) => pickDays(Number(e.target.value))} aria-label="안 쓴 지" title="며칠 넘게 안 쓴 세션인지 고르기">{CLEAN_DAYS.map((d) => <option key={d} value={d}>{dayWord(d)}</option>)}</select>
@@ -123,7 +123,7 @@ export function Cleanup({ onClose, say, manage = false, go }: { onClose: () => v
       </table>
     </div>
     <div className="clfoot">
-      <span className="hint">잠긴 줄 — 일하는 중·답 기다림·안 읽음은 지울 수 없어요</span><span style={{ flex: 1 }} />
+      <span className="hint">잠긴 줄 — 일하는 중·내 답 기다림·안 읽음은 지울 수 없어요</span><span style={{ flex: 1 }} />
       <button className="btn ghost" onClick={onClose}>닫기</button>
       <button className="btn danger" disabled={!pick.size || busy} onClick={() => void del()}>선택한 {pick.size}개 지우기</button>
     </div>

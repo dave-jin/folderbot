@@ -59,7 +59,7 @@ export function Palette(p: PaletteProps) {
     cmd('c-doc', 'doc', '문서 열 접기 · 펴기', '⌘⇧D', () => p.toggle('doc'))
     cmd('c-rp', 'eye', '오른쪽 패널 접기 · 펴기', '⌘⇧B', () => p.toggle('rp'))
     // ② 폴더(봇) — 지금 보고 있는 것은 뺀다(갈 데가 아니다)
-    for (const b of p.bots) if (b.id !== p.bot.id) out.push({ id: `b-${b.id}`, icon: 'folder', label: b.name, sub: b.rel || '관제', run: () => p.go(b.id) })
+    for (const b of p.bots) if (b.id !== p.bot.id) out.push({ id: `b-${b.id}`, icon: 'folder', label: b.name, sub: b.rel || '볼트 전체', run: () => p.go(b.id) })
     // ③ 이 폴더의 세션
     for (const x of p.sessions) out.push({ id: `s-${x.id}`, icon: 'sub', label: x.name, sub: `${p.bot.name} · 세션`, run: () => p.go(p.bot.id, x.id) })
     // ④ 이 폴더의 문서
@@ -78,7 +78,7 @@ export function Palette(p: PaletteProps) {
     if (qq.length < 2) { setHits({ q: '', rows: [] }); return }
     const t = window.setTimeout(() => {
       void api<{ sessionId: string; botId: string; name: string; snippet: string; where: 'name' | 'text'; bot: string }[]>(`/search?q=${encodeURIComponent(qq)}`)
-        .then((l) => setHits({ q: qq, rows: l.map((h) => ({ id: `h-${h.sessionId}`, icon: 'sub', label: h.name, sub: h.where === 'text' ? h.snippet : `${h.bot} · 대화`, hint: h.where === 'text' ? h.bot : undefined, run: () => p.go(h.botId, h.sessionId) })) }))
+        .then((l) => setHits({ q: qq, rows: l.map((h) => ({ id: `h-${h.sessionId}`, icon: 'sub', label: h.name, sub: h.where === 'text' ? h.snippet : `${h.bot} · 세션에 쓴 글`, hint: h.where === 'text' ? h.bot : undefined, run: () => p.go(h.botId, h.sessionId) })) }))
         .catch(() => setHits({ q: qq, rows: [] }))
     }, 200)
     return () => window.clearTimeout(t)
@@ -96,7 +96,7 @@ export function Palette(p: PaletteProps) {
   const pick = (a?: PalAct) => { if (!a) return; p.onClose(); a.run() }
   return <><div className="backdrop" onClick={p.onClose} /><div className="modal pal">
     <div className="pq"><Icon n="search" size={14} color="var(--t3)" />
-      <input autoFocus placeholder="어디로 갈까요 — 폴더 · 문서 · 세션 · 명령 · 지난 대화" value={q} onChange={(e) => setQ(e.target.value)}
+      <input autoFocus placeholder="어디로 갈까요 — 폴더 · 문서 · 세션 · 명령 · 세션에 쓴 글" value={q} onChange={(e) => setQ(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Escape') { e.preventDefault(); p.onClose(); return }
           if (e.key === 'ArrowDown') { e.preventDefault(); setI((n) => Math.min(rows.length - 1, n + 1)); return }

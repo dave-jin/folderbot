@@ -217,7 +217,7 @@ export class Host {
       this.broadcast({ ev: 'permission', sessionId: r.id, botId: r.botId, req })
       const bot = this.registry.bot(r.botId)
       const what = req.ask ? String((req.input.questions as { question?: string }[] | undefined)?.[0]?.question ?? '질문에 답해 주세요') : `${req.displayName}: ${summarize(req)}`
-      this.notifier.emit('awaiting', r.botId, `${bot?.name ?? r.botId} · 확인해 주세요`, what, r.id)
+      this.notifier.emit('awaiting', r.botId, `${bot?.name ?? r.botId} · 내 답 기다림`, what, r.id)
     })
     this.sessions.on('state', (r: SessionRec, prev: SessionState, notify: boolean) => {
       this.broadcast({ ev: 'state', sessionId: r.id, botId: r.botId, state: r.state })
@@ -428,7 +428,7 @@ export class Host {
     try { cut = this.runs.recoverInterrupted() } catch (e) { this.log(`끊긴 회차를 못 읽었어요: ${(e as Error).message}`) }
     for (const c of cut) {
       this.log(`끊긴 루틴 회차를 닫았어요: ${c.bot} · ${c.routine} · ${c.run}`)
-      this.sessions.systemNote(c.run, `이 루틴 회차는 호스트가 다시 뜨면서(업데이트 적용·앱 재시작) 끊겼어요 — 실행 기록에 «실패 · ${INTERRUPTED_REASON}» 로 닫았어요.`)
+      this.sessions.systemNote(c.run, `이 루틴 회차는 메인이 다시 뜨면서(업데이트 적용·앱 재시작) 끊겼어요 — 실행 기록에 «실패 · ${INTERRUPTED_REASON}» 로 닫았어요.`)
     }
     return cut
   }
@@ -446,7 +446,7 @@ export class Host {
       const why = !b || !d ? '루틴이 이제 없어요' : d.enabled === false ? '루틴이 꺼져 있어요' : c.attempt > 1 ? '이미 두 번째 시도였어요' : d.retry !== true ? '재시도가 꺼져 있어요(retry)' : '보충 창(6시간)이 지났어요'
       told.push(`- ${c.bot} · «${c.routine}» · ${hm} 시작 · 세션 ${c.run} — 다시 안 돌림: ${why}`)
     }
-    if (told.length) this.notifyOrch(`[운영 · 끊긴 루틴 ${told.length}건] 호스트가 다시 뜨면서(업데이트 적용·앱 재시작) 도중에 끊긴 루틴 회차예요. 실행 기록은 «실패 · ${INTERRUPTED_REASON}» 로 닫았어요.\n${told.join('\n')}\n다시 돌릴지는 그 봇이나 Dave 가 정합니다(routine_run). 외부 발송이 든 루틴이면 이미 나갔는지 먼저 확인하세요.`, 'ops')
+    if (told.length) this.notifyOrch(`[운영 · 끊긴 루틴 ${told.length}건] 메인이 다시 뜨면서(업데이트 적용·앱 재시작) 도중에 끊긴 루틴 회차예요. 실행 기록은 «실패 · ${INTERRUPTED_REASON}» 로 닫았어요.\n${told.join('\n')}\n다시 돌릴지는 그 봇이나 Dave 가 정합니다(routine_run). 외부 발송이 든 루틴이면 이미 나갔는지 먼저 확인하세요.`, 'ops')
   }
 
   /**
@@ -463,7 +463,7 @@ export class Host {
       const hm = c.at ? new Date(c.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '시각 모름'
       told.push(`- ${bot?.name ?? c.botId} · «${c.name}» · ${hm} 시작 · 세션 ${c.id} · 시킨 쪽: ${c.from === 'peer' ? '바깥 상대(연결)' : c.from === 'routine' ? '루틴' : '봇'}`)
     }
-    if (told.length) this.notifyOrch(`[운영 · 끊긴 턴 ${told.length}건] 호스트가 다시 뜨면서(업데이트 적용·앱 재시작) 도중에 끊긴 턴이에요. 그 대화에 «끊겼어요» 줄을 남겼고 다시 돌리지는 않았어요.\n${told.join('\n')}\n이어서 시키려면 그 봇에게 다시 보내 주세요(같은 세션이면 끊기기 전 맥락을 이어받아요). 외부 발송이 든 일이면 이미 나갔는지 먼저 확인하세요.`, 'ops')
+    if (told.length) this.notifyOrch(`[운영 · 끊긴 턴 ${told.length}건] 메인이 다시 뜨면서(업데이트 적용·앱 재시작) 도중에 끊긴 턴이에요. 그 세션에 «끊겼어요» 줄을 남겼고 다시 돌리지는 않았어요.\n${told.join('\n')}\n이어서 시키려면 그 봇에게 다시 보내 주세요(같은 세션이면 끊기기 전 맥락을 이어받아요). 외부 발송이 든 일이면 이미 나갔는지 먼저 확인하세요.`, 'ops')
   }
 
   /**
@@ -572,7 +572,7 @@ export class Host {
     setKeychainLogin(!!this.auth.keychain)
     this.auth.mode = this.cfg.claudeOauthToken && !this.auth.keychain ? 'token' : 'login'
     this.broadcast({ ev: 'auth', auth: this.auth })
-    if (this.auth.verdict === 'unreadable' && prev !== 'unreadable') this.notifier.emit('error', ORCH_ID, `${this.hostName()} 에서 Claude 로그인이 필요해요`, '호스트 맥에서 터미널 → claude → /login. 대기 중인 지시는 복구되면 이어서 해요.')
+    if (this.auth.verdict === 'unreadable' && prev !== 'unreadable') this.notifier.emit('error', ORCH_ID, `${this.hostName()} 에서 Claude 로그인이 필요해요`, '메인에서 터미널 → claude → /login. 대기 중인 지시는 복구되면 이어서 해요.')
     if (this.auth.verdict === 'loggedout' && prev !== 'loggedout') this.notifier.emit('error', ORCH_ID, 'Claude 가 로그아웃됐어요', `${this.hostName()} 에서 claude → /login 을 해 주세요.`)
     if (this.auth.verdict === 'loggedin' && prev !== 'loggedin') this.sessions.drainAll()   // 로그인이 막혀 큐에만 둔 편지를 내보낸다
     if (this.auth.verdict === 'loggedin' && this.queued.length) {

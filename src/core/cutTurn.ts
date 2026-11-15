@@ -11,7 +11,7 @@ import type { SessionState } from './types'
  */
 export type CutVerdict = 'note' | 'quiet' | null
 export const CUT_WINDOW_MS = 7 * 24 * 3600_000
-export const CUT_TURN_NOTE = '호스트가 다시 뜨면서(업데이트 적용·앱 재시작) 이 턴이 도중에 끊겼어요 — 다시 돌리지는 않았어요. 위에 남은 것까지가 끊기기 전에 한 일이에요. 이어서 하려면 «이어서 해 줘» 라고 보내 주세요.'
+export const CUT_TURN_NOTE = '메인이 다시 뜨면서(업데이트 적용·앱 재시작) 이 턴이 도중에 끊겼어요 — 다시 돌리지는 않았어요. 위에 남은 것까지가 끊기기 전에 한 일이에요. 이어서 하려면 «이어서 해 줘» 라고 보내 주세요.'
 
 export function cutTurnAtLoad(r: { state: SessionState; activity?: string; turnStartedAt?: number; routine?: string; adopted?: boolean; cut?: { at: number } }, now: number): CutVerdict {
   const live = r.state === 'running' || r.state === 'awaiting_input' || !!r.cut

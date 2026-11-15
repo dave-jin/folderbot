@@ -39,7 +39,7 @@ import { askConfirm } from './Sheets'
 export type SecId = 'general' | 'host' | 'devices' | 'claude' | 'codex' | 'sessions' | 'notify' | 'todo' | 'akiflow' | 'bridges' | 'ref'
 const SECS: { id: SecId; label: string; icon: 'gear'; phoneOnly?: boolean; ref?: boolean }[] = [
   { id: 'general', label: '일반', icon: 'gear' },
-  { id: 'host', label: '호스트 · 볼트', icon: 'folder' as 'gear' },
+  { id: 'host', label: '메인 · 볼트', icon: 'folder' as 'gear' },
   { id: 'devices', label: '기기', icon: 'phone' as 'gear' },
   { id: 'claude', label: 'Claude', icon: 'sub' as 'gear' },
   { id: 'codex', label: 'Codex', icon: 'sub' as 'gear' },
@@ -55,7 +55,7 @@ const SECS: { id: SecId; label: string; icon: 'gear'; phoneOnly?: boolean; ref?:
 
 /** 범위 배지 — 이 줄의 값이 어디에 남는가. `main` 은 호스트(모든 기기), `dev` 는 이 기기의 브라우저 */
 type At = 'main' | 'dev'
-function AtTag({ at }: { at: At }) { return <span className={`scp at-${at}`} title={at === 'main' ? '호스트에 저장 — 모든 기기에 같이 보여요' : '이 기기에만 저장'}>{at === 'main' ? '메인' : '이 기기'}</span> }
+function AtTag({ at }: { at: At }) { return <span className={`scp at-${at}`} title={at === 'main' ? '메인에 저장 — 모든 기기에 같이 보여요' : '이 기기에만 저장'}>{at === 'main' ? '메인' : '이 기기'}</span> }
 
 /** 줄 하나 — 제목 · 설명 · 조작. 조작은 오른쪽 끝에 고정된다 */
 function Row({ t, d, children, danger, at }: { t: string; d?: ReactNode; children?: ReactNode; danger?: boolean; at?: At }) {
@@ -98,7 +98,7 @@ export function Settings({ onClose, start }: { onClose: () => void; start?: SecI
     return <div className="setp">
       <div className="setp-h"><b className="big">설정</b><button className="ib" onClick={onClose}><Icon n="x" size={14} /></button></div>
       <div className="setp-b">
-        <div className="sfind"><Icon n="search" size={14} color="var(--t3)" /><input placeholder="검색" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+        <div className="sfind"><Icon n="search" size={14} color="var(--t3)" /><input placeholder="찾기" value={q} onChange={(e) => setQ(e.target.value)} /></div>
         {q.trim() ? hits.map((h) => <button className="sec-row" key={h.sec + h.t} onClick={() => { setSec(h.sec); setDrill(true); setQ('') }}>
           <span className="ic"><Icon n="search" size={14} /></span><span className="nm">{h.t}<small>{label(h.sec)}</small></span><Icon n="chev" size={11} color="var(--t3)" />
         </button>)
@@ -114,7 +114,7 @@ export function Settings({ onClose, start }: { onClose: () => void; start?: SecI
     <div className="backdrop" onClick={onClose} />
     <div className="modal setw sz-l" role="dialog" aria-modal="true" aria-label="설정">
       <div className="snav">
-        <div className="sfind"><Icon n="search" size={13} color="var(--t3)" /><input placeholder="검색" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+        <div className="sfind"><Icon n="search" size={13} color="var(--t3)" /><input placeholder="찾기" value={q} onChange={(e) => setQ(e.target.value)} /></div>
         {q.trim()
           ? hits.map((h) => <button className={`nv ${sec === h.sec ? 'on' : ''}`} key={h.sec + h.t} onClick={() => { setSec(h.sec); setQ('') }}><Icon n="search" size={13} />{h.t}<small>{label(h.sec)}</small></button>)
           : secs.map((x) => <button className={`nv ${sec === x.id ? 'on' : ''} ${x.ref ? 'ref' : ''}`} key={x.id} onClick={() => setSec(x.id)}><Icon n={x.icon} size={14} />{x.label}</button>)}
@@ -136,11 +136,11 @@ function usePhone(): boolean {
 
 /** 검색 — 제목과 설명을 함께 찾는다 («토큰» 을 치면 Claude 칸의 그 줄이 나온다). ⚠ 유닛이 실제 `<Row t=…>` 와 대조한다 */
 export const INDEX: { sec: SecId; t: string; d: string }[] = [
-  { sec: 'general', t: '메인(호스트) 이름', d: '모든 기기에 같이 보이는 이름' },
+  { sec: 'general', t: '메인 이름', d: '모든 기기에 같이 보이는 이름' },
   { sec: 'general', t: '테마', d: '시스템 라이트 다크 화면' },
   { sec: 'general', t: '폴더봇 크기', d: '레일 아이콘 크게 작게 화면' },
   { sec: 'general', t: 'ask 세션 맨 위로', d: '할일이 folderbot ask 묻는 중 답함 자동화 묶음 숨음 목록 위' },
-  { sec: 'general', t: 'ask 대기 칩', d: '할일이 folderbot ask 기다리는 세션 수 칩' },
+  { sec: 'general', t: '바깥 질문 칩', d: '할일이 folderbot ask 기다리는 세션 수 칩' },
   { sec: 'general', t: 'ask 동안 자동화 펼치기', d: '할일이 folderbot ask 자동화 묶음 펼침 강조' },
   { sec: 'host', t: '볼트 루트', d: '봇이 사는 폴더 PARA' },
   { sec: 'host', t: '주소', d: '포트 접속 같은 망' },
@@ -150,41 +150,41 @@ export const INDEX: { sec: SecId; t: string; d: string }[] = [
   { sec: 'devices', t: '이 기기 이름', d: '기기마다 따로' },
   { sec: 'devices', t: '연결된 기기', d: '페어링 끊기 목록' },
   { sec: 'devices', t: '새 기기 연결', d: '페어링 코드 폰 맥북' },
-  { sec: 'devices', t: '이 기기에서 파일 열기', d: 'Finder 열기 동기화 볼트 Dropbox iCloud 호스트에서 받기 원격' },
+  { sec: 'devices', t: '이 기기에서 파일 열기', d: 'Finder 열기 동기화 볼트 Dropbox iCloud 메인에서 받기 원격' },
   { sec: 'devices', t: '동기화 볼트 위치', d: 'Dropbox iCloud 폴더 찾기 경로 원격' },
-  { sec: 'devices', t: '받은 사본 캐시', d: '호스트에서 받아 연 파일·복사한 파일의 사본 · 상한 2GB · 비우기' },
+  { sec: 'devices', t: '받은 사본 캐시', d: '메인에서 받아 연 파일·복사한 파일의 사본 · 상한 2GB · 비우기' },
   { sec: 'devices', t: '복사 진단', d: '복사가 안 될 때 — 파일 하나로 밟아 보고 결과를 글로' },
   { sec: 'devices', t: '이 기기 로그아웃', d: '연결 끊기 보안' },
   { sec: 'claude', t: 'Claude 로그인 상태', d: '키체인 인증 상태 다시 확인' },
   { sec: 'claude', t: '쓰는 인증', d: '키체인 장기 토큰 커넥터' },
   { sec: 'claude', t: 'Claude Code 로그인', d: '터미널에서 로그인 /login' },
   { sec: 'claude', t: '장기 토큰', d: 'setup-token 헤드리스 SSH 인증' },
-  { sec: 'claude', t: '모델 · 생각 레벨', d: '새 채팅 기본값 새 세션부터 적용' },
-  { sec: 'claude', t: '새 채팅 기본 권한', d: '권한 모드 자동 auto 수동 편집 자동 수락 계획 항상 허용 permission' },
-  { sec: 'claude', t: '다시 연결', d: '일꾼 내리기 커넥터 새 환경' },
+  { sec: 'claude', t: '모델 · 생각 레벨', d: '새 세션 기본값 새 세션부터 적용' },
+  { sec: 'claude', t: '새 세션 기본 권한', d: '권한 모드 자동 auto 수동 고치기 자동 수락 계획 항상 허용 permission' },
+  { sec: 'claude', t: '다시 연결', d: '봇 내리기 커넥터 새 환경' },
   { sec: 'claude', t: '연결 진단', d: '로그인 안 될 때 진단 복사' },
   { sec: 'claude', t: '토큰 지우기', d: '키체인 로그인 모드로' },
   { sec: 'codex', t: 'Codex 로그인 상태', d: 'codex login 인증' },
   { sec: 'codex', t: 'Codex 로그인', d: '터미널에서 codex login' },
   { sec: 'codex', t: 'OpenAI API 키', d: 'openai key 헤드리스' },
-  { sec: 'codex', t: 'Codex 기본 모델 · 노력', d: 'gpt codex reasoning effort 새 채팅 기본값' },
+  { sec: 'codex', t: 'Codex 기본 모델 · 노력', d: 'gpt codex reasoning effort 새 세션 기본값' },
   { sec: 'codex', t: 'Codex 권한 (샌드박스)', d: 'sandbox read-only workspace-write 권한 정책' },
-  { sec: 'codex', t: 'Codex 다시 연결', d: '일꾼 내리기 키 바꿈' },
+  { sec: 'codex', t: 'Codex 다시 연결', d: '봇 내리기 키 바꿈' },
   { sec: 'codex', t: 'Codex 키 지우기', d: 'codex login 모드로' },
-  { sec: 'sessions', t: '유휴 세션 절전', d: '워커 내리기 절전 시간 분' },
+  { sec: 'sessions', t: '쉬는 세션 절전', d: '봇 내리기 절전 시간 분' },
   { sec: 'sessions', t: '승인 시간 초과', d: '루틴 봇이 시작한 턴 승인 대기 거절 분 timeout 사람이 없을 때' },
   { sec: 'sessions', t: '턴마다 기록하기', d: '훅 설치 사용량' },
   { sec: 'sessions', t: '예산 — 5시간 창', d: '달러 사용량 예산' },
   { sec: 'sessions', t: '예산 — 하루', d: '달러 사용량 예산' },
   { sec: 'sessions', t: '예산 — 한 주', d: '달러 사용량 예산' },
   { sec: 'sessions', t: '상황판', d: '맥락 상황판 요약 Haiku' },
-  { sec: 'sessions', t: '상황판 요약 끄기', d: '맥락 상황판 세션 요약 카드 Haiku 끄기 멈춤' },
+  { sec: 'sessions', t: '상황판 요약', d: '맥락 상황판 세션 요약 카드 Haiku 켬 끔 멈춤' },
   { sec: 'sessions', t: '하루 호출 상한', d: '맥락 상황판 요약 호출 수 하루 상한 500' },
   { sec: 'sessions', t: '상황판 지금 상태', d: '맥락 상황판 멈춤 이유 오늘 호출 밀린 일' },
   { sec: 'akiflow', t: '동기화 상태', d: 'Akiflow 할 일 todo.md 미리보기 켜기' },
   { sec: 'akiflow', t: '옛 봇 줄', d: 'Akiflow 제안으로 돌리기 봇이 쓴 할 일' },
   { sec: 'notify', t: '이 기기 푸시', d: '알림 폰 푸시 켜기' },
-  { sec: 'notify', t: '조용한 시간', d: '알림 밤 시간 확인해 주세요만 통과' },
+  { sec: 'notify', t: '조용한 시간', d: '알림 밤 시간 내 답 기다림만 통과' },
   { sec: 'notify', t: '푸시 테스트', d: '알림 한 번 보내기' },
   { sec: 'todo', t: '오른쪽으로 짧게', d: '쓸어서 처리 스와이프' },
   { sec: 'todo', t: '오른쪽으로 길게', d: '쓸어서 처리 스와이프' },
@@ -192,7 +192,7 @@ export const INDEX: { sec: SecId; t: string; d: string }[] = [
   { sec: 'todo', t: '왼쪽으로 길게', d: '쓸어서 처리 스와이프' },
   { sec: 'todo', t: '진동', d: '스와이프 햅틱' },
   { sec: 'todo', t: '기본값으로', d: '스와이프 되돌리기' },
-  { sec: 'bridges', t: '지금 연결', d: '바깥 에이전트 편지 우편함 Bridge 상대 목록' },
+  { sec: 'bridges', t: '지금 연결', d: '바깥 상대 편지 우편함 Bridge 상대 목록' },
   { sec: 'bridges', t: '새 연결 만들기', d: '마법사 Grok 웹훅 우편함 README bridges.yml 연결 추가' },
   { sec: 'ref', t: '커넥터 (MCP)', d: '연결된 도구 서버 mcp' },
   { sec: 'ref', t: '스킬', d: '슬래시 명령 skills' },
@@ -235,7 +235,7 @@ function GeneralPane() {
   const save = async (body: { hostName?: string }) => { try { await api('/names', { body }); await refresh(); setMsg('저장했어요') } catch (e) { setMsg((e as Error).message) } }
   return <>
     <p className="lead">지금 이 화면은 {s.device.main ? <><b>메인</b> ({s.hostName}) 에서</> : <><b>원격 · {s.device.name}</b> 에서 <b>{s.hostName}</b> 를</>} 보고 있어요.{msg ? ` · ${msg}` : ''} 줄의 <span className="scp at-main">메인</span> 은 모든 기기에 같이 보이는 값, <span className="scp at-dev">이 기기</span> 는 여기에만 남는 값이에요.</p>
-    <Row t="메인(호스트) 이름" d="봇이 사는 맥의 이름. 모든 기기에 같이 보여요." at="main">
+    <Row t="메인 이름" d="봇이 사는 맥의 이름. 모든 기기에 같이 보여요." at="main">
       <input className="sin" value={host} onChange={(e) => setHost(e.target.value)} onBlur={() => { if (host.trim() !== s.hostName) void save({ hostName: host }) }} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} />
     </Row>
     <Group t="화면" />
@@ -250,7 +250,7 @@ function GeneralPane() {
     <Row t="ask 세션 맨 위로" d="할일이가 folderbot ask 로 물으면 그 세션을 왼쪽 목록과 세션 목록 맨 위에 올려요. 답하고 10분이 지나거나 열면 원래 자리로 돌아가요." at="dev">
       <span className="seg">{([[true, '켬'], [false, '끔']] as const).map(([v, l]) => <button key={l} className={ap.lift === v ? 'on' : ''} onClick={() => setAp({ lift: v })}>{l}</button>)}</span>
     </Row>
-    <Row t="ask 대기 칩" d="목록 머리에 «ask 대기 N건» 을 띄워요. 누르면 기다리는 세션 목록이 열려요." at="dev">
+    <Row t="바깥 질문 칩" d="목록 머리에 «바깥 질문 N건» 을 띄워요. 누르면 기다리는 세션 목록이 열려요." at="dev">
       <span className="seg">{([[true, '켬'], [false, '끔']] as const).map(([v, l]) => <button key={l} className={ap.chip === v ? 'on' : ''} onClick={() => setAp({ chip: v })}>{l}</button>)}</span>
     </Row>
     <Row t="ask 동안 자동화 펼치기" d="ask 가 도는 동안 세션 목록의 «자동화» 묶음을 저절로 펼치고 그 세션에 줄을 그어요." at="dev">
@@ -275,18 +275,18 @@ function RootRow() {
   }
   const apply = async (p: string) => {
     // 되돌리기 어려운 일 — 호스트가 통째로 다시 선다. 종전에는 묻지 않았다(2026-11-13 «지우기 확인 규칙»)
-    if (!(await askConfirm({ title: '볼트 루트를 바꿀까요?', body: `${p}\n\n바꾸면 호스트가 그 폴더로 다시 섭니다.`, ok: '바꾸기', danger: true }))) return
+    if (!(await askConfirm({ title: '볼트 루트를 바꿀까요?', body: `${p}\n\n바꾸면 메인이 그 폴더로 다시 서요.`, ok: '바꾸기', danger: true }))) return
     setBusy(true); setMsg('바꾸는 중…')
     try {
       const r = await api<{ root: string; restarting: boolean; same?: boolean }>('/root', { body: { path: p } })
       if (r.same) { setMsg('이미 그 폴더예요'); setBusy(false); return }
       setOpen(false)
-      if (r.restarting) { setMsg(`${r.root} 로 바꿨어요 — 호스트를 다시 세우는 중이에요`); setTimeout(() => location.reload(), 3000) }
-      else { setMsg(`${r.root} 로 저장했어요 — 호스트를 다시 시작하면 적용돼요`); setBusy(false); await refresh() }
+      if (r.restarting) { setMsg(`${r.root} 로 바꿨어요 — 메인을 다시 세우는 중이에요`); setTimeout(() => location.reload(), 3000) }
+      else { setMsg(`${r.root} 로 저장했어요 — 메인을 다시 시작하면 적용돼요`); setBusy(false); await refresh() }
     } catch (e) { setMsg((e as Error).message); setBusy(false) }
   }
   return <>
-    <Row t="볼트 루트" d={<>봇들이 사는 폴더예요. 바꾸면 호스트가 그 폴더로 다시 섭니다.{msg ? <><br /><b>{msg}</b></> : null}</>}>
+    <Row t="볼트 루트" d={<>봇들이 사는 폴더예요. 바꾸면 메인이 그 폴더로 다시 서요.{msg ? <><br /><b>{msg}</b></> : null}</>}>
       <span className="mono sv">{s.root}</span>
       <button className="btn ghost" disabled={busy} onClick={() => { const n = !open; setOpen(n); if (n && !at) void load(s.root) }}>{open ? '닫기' : '바꾸기'}</button>
     </Row>
@@ -340,13 +340,13 @@ function HostPane({ onClose, providers }: { onClose: () => void; providers: Prov
 function LocalOpenRows() {
   const { s } = useStore(); const [cfg, set] = useLocalSettings()
   return <>
-    <Row t="이 기기에서 파일 열기" d="«Finder 에서 보기»·«열기» 가 이 기기에서 열립니다. 동기화 볼트가 있으면 그 파일을(신선도 확인 뒤), 없으면 호스트에서 받은 사본을 열어요." at="dev">
-      <span className="seg"><button className={cfg?.openMode === 'sync' ? 'on' : ''} onClick={() => void set({ openMode: 'sync' })}>동기화 볼트</button><button className={cfg?.openMode === 'download' || !cfg?.openMode ? 'on' : ''} onClick={() => void set({ openMode: 'download' })}>호스트에서 받기</button></span>
+    <Row t="이 기기에서 파일 열기" d="«Finder 에서 보기»·«열기» 가 이 기기에서 열립니다. 동기화 볼트가 있으면 그 파일을(신선도 확인 뒤), 없으면 메인에서 받은 사본을 열어요." at="dev">
+      <span className="seg"><button className={cfg?.openMode === 'sync' ? 'on' : ''} onClick={() => void set({ openMode: 'sync' })}>동기화 볼트</button><button className={cfg?.openMode === 'download' || !cfg?.openMode ? 'on' : ''} onClick={() => void set({ openMode: 'download' })}>메인에서 받기</button></span>
     </Row>
     <Row t="동기화 볼트 위치" d={cfg?.vaultLocal ? cfg.vaultLocal : '아직 안 정했어요 — 찾기를 누르면 Dropbox·iCloud 에서 같은 볼트를 찾아요.'} at="dev">
       <LocalOpenPicker root={s.root} compact />
     </Row>
-    <Row t="받은 사본 캐시" d="호스트에서 받아 연 파일·복사한 파일의 사본. 상한(2GB)을 넘으면 오래 안 쓴 것부터 지워요." at="dev">
+    <Row t="받은 사본 캐시" d="메인에서 받아 연 파일·복사한 파일의 사본. 상한(2GB)을 넘으면 오래 안 쓴 것부터 지워요." at="dev">
       <CacheRow />
     </Row>
     <Row t="복사 진단" d="파일 하나를 골라 클립보드에 올려 보고, 맥이 그걸 파일로 받았는지 되읽어 알려줘요. 복사가 안 될 때 이 글을 그대로 보내 주세요." at="dev">
@@ -404,8 +404,8 @@ function DevicesPane() {
 const VERDICT_T: Record<string, string> = { loggedin: '로그인됨', loggedout: '로그아웃', unreadable: '못 읽음', unknown: '확인 전' }
 const VERDICT_D: Record<string, string> = {
   loggedin: '키체인 로그인이 읽혀요.',
-  loggedout: '호스트 맥 터미널에서 claude → /login 을 해 주세요.',
-  unreadable: '로그인은 있는데 이 문맥에서 못 읽어요 — 호스트를 GUI 터미널에서 띄우거나 장기 토큰을 넣으세요.',
+  loggedout: '메인의 터미널에서 claude → /login 을 해 주세요.',
+  unreadable: '로그인은 있는데 이 문맥에서 못 읽어요 — 메인을 GUI 터미널에서 띄우거나 장기 토큰을 넣으세요.',
   unknown: '아직 확인하지 않았어요.'
 }
 
@@ -425,7 +425,7 @@ function ClaudePane() {
   const clModels = useMemo(() => [...modelsFor('claude'), ...moreModelsFor('claude')], [found.claude])
   const saveD = async (m: string, e: string) => { await api('/defaults', { body: { model: m, effort: e, agent: 'claude' } }); await refresh(); setMsg('저장했어요 — 다음 세션부터 적용돼요.') }
   /** 새 채팅 기본 권한 (2026-09-17 Dave) — 입력창 팝오버가 «새 세션은 설정의 기본값으로» 라고 약속하던 그 값 */
-  const savePerm = async (p: PermissionMode) => { await api('/defaults', { body: { model, effort, agent: 'claude', permissionMode: p } }); await refresh(); setMsg('저장했어요 — 다음 새 채팅부터 적용돼요. 지금 세션은 입력창에서 바꿉니다.') }
+  const savePerm = async (p: PermissionMode) => { await api('/defaults', { body: { model, effort, agent: 'claude', permissionMode: p } }); await refresh(); setMsg('저장했어요 — 다음 새 세션부터 적용돼요. 지금 세션은 입력창에서 바꿔요.') }
   const saveT = async (t: string) => { setBusy(true); try { await api('/auth/token', { body: { token: t } }); await refresh(); setMsg(t ? '토큰을 저장했어요.' : '토큰을 지웠어요.'); setTok('') } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) } }
   const openLogin = async () => { setBusy(true); try { await api('/auth/login-terminal', { body: { agent: 'claude' } }); setMsg('터미널을 열었어요 — claude 가 뜨면 /login 을 치고, 끝나면 [다시 연결]') } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) } }
   const reconnect = async () => {
@@ -433,12 +433,12 @@ function ClaudePane() {
     try {
       const r = await api<{ now: number; pending: number }>('/auth/reconnect', { body: {} })
       await refresh()
-      setMsg(r.pending ? `${r.now}개를 다시 연결했어요 · ${r.pending}개는 턴이 끝나면 이어서 합니다.` : r.now ? `${r.now}개를 다시 연결했어요 — 다음 메시지부터 새 환경이에요.` : '연결할 일꾼이 없었어요 — 다음 메시지부터 새 환경으로 뜹니다.')
+      setMsg(r.pending ? `${r.now}개를 다시 연결했어요 · ${r.pending}개는 턴이 끝나면 이어서 합니다.` : r.now ? `${r.now}개를 다시 연결했어요 — 다음 메시지부터 새 환경이에요.` : '떠 있는 봇이 없었어요 — 다음 메시지부터 새 환경으로 떠요.')
     } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) }
   }
   const loginD = main
-    ? <span>누르면 호스트 맥에 터미널이 열립니다. <span className="mono">claude</span> 가 뜨면 <span className="mono">/login</span> 을 치고 브라우저에서 마치세요 — 그러면 <b>claude.ai 커넥터도 함께 붙습니다</b>.</span>
-    : <span>로그인은 <b>호스트 맥</b>({s.hostName})에서 해야 해요. 그 맥의 Folder Bot 설정에서 누르거나, 터미널에서 <span className="mono">claude</span> → <span className="mono">/login</span>.</span>
+    ? <span>누르면 메인에 터미널이 열려요. <span className="mono">claude</span> 가 뜨면 <span className="mono">/login</span> 을 치고 브라우저에서 마치세요 — 그러면 <b>claude.ai 커넥터도 함께 붙습니다</b>.</span>
+    : <span>로그인은 <b>메인</b>({s.hostName})에서 해야 해요. 그 맥의 Folder Bot 설정에서 누르거나, 터미널에서 <span className="mono">claude</span> → <span className="mono">/login</span>.</span>
   const perm = s.defaults.permissionMode ?? 'default'
   return <>
     <p className="lead">Claude Code 세션이 어떻게 붙고 어떤 값으로 뜨는지. 커넥터·스킬 목록은 <b>참고</b> 칸에, 폴더마다 다른 지침은 그 폴더 패널에 있어요.{msg ? ` · ${msg}` : ''}</p>
@@ -448,7 +448,7 @@ function ClaudePane() {
       <button className="btn ghost" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button>
     </Row>
     <Row t="쓰는 인증" d={s.auth.mode === 'token'
-      ? <>장기 토큰으로 붙어 있어요. ⚠ <b>이 모드에서는 claude.ai 계정에 연결해 둔 커넥터가 안 붙습니다</b> — 토큰 스코프에 <span className="mono">user:mcp_servers</span> 가 없어요. 호스트 맥 터미널에서 <span className="mono">claude</span> → <span className="mono">/login</span> 을 하고 토큰을 지우면 키체인 로그인으로 돌아갑니다.</>
+      ? <>장기 토큰으로 붙어 있어요. ⚠ <b>이 모드에서는 claude.ai 계정에 연결해 둔 커넥터가 안 붙습니다</b> — 토큰 스코프에 <span className="mono">user:mcp_servers</span> 가 없어요. 메인의 터미널에서 <span className="mono">claude</span> → <span className="mono">/login</span> 을 하고 토큰을 지우면 키체인 로그인으로 돌아갑니다.</>
       : <>키체인 로그인으로 붙어 있어요 — <b>이 맥에 설치된 MCP 커넥터·스킬과 claude.ai 계정 커넥터를 그대로 씁니다</b>. (장기 토큰이 저장돼 있어도 키체인이 읽히면 그쪽을 씁니다.)</>} at="main">
       <span className="sv" style={{ color: s.auth.mode === 'token' ? 'var(--wait)' : 'var(--done)' }}>{s.auth.mode === 'token' ? '장기 토큰' : '키체인 로그인'}</span>
     </Row>
@@ -460,17 +460,17 @@ function ClaudePane() {
       <button className="btn" disabled={busy || !tok.trim()} onClick={() => saveT(tok)}>저장</button>
     </Row>
 
-    <Group t="새 채팅 기본값" />
+    <Group t="새 세션 기본값" />
     <Row t="모델 · 생각 레벨" d="모든 봇의 새 세션이 이 값으로 뜹니다. 세션마다 바꾸려면 입력창 아래 줄에서." at="main">
       <select className="ssel" value={model} onChange={(e) => { setModel(e.target.value); void saveD(e.target.value, effort) }}>{clModels.map((m) => <option key={m.v} value={m.v}>{m.t}</option>)}</select>
       <select className="ssel sm" value={effort} onChange={(e) => { setEffort(e.target.value); void saveD(model, e.target.value) }}>{EFFORTS.map((e) => <option key={e.v} value={e.v}>{e.t}</option>)}</select>
     </Row>
-    <Row t="새 채팅 기본 권한" d={<>새 세션이 이 모드로 시작해요. 모드를 따로 고르지 않은 세션(봇끼리 말하는 «소통» 세션 포함)도 다음에 뜰 때 이 모드를 따릅니다. 세션 안에서는 입력창의 «모드» 로 바꿉니다 · 루틴은 루틴의 승인 설정이 이겨요. «자동» 은 Claude 가 권한을 판단하고, «수동» 은 바꾸기 전에 늘 물어요.{perm === 'bypassPermissions' ? <><br /><b>⚠ «항상 허용» 은 묻지 않고 실행합니다 — 신뢰하는 볼트에서만 두세요.</b></> : null}</>} at="main">
+    <Row t="새 세션 기본 권한" d={<>새 세션이 이 모드로 시작해요. 모드를 따로 고르지 않은 세션(봇끼리 말하는 «소통» 세션 포함)도 다음에 뜰 때 이 모드를 따릅니다. 세션 안에서는 입력창의 «모드» 로 바꿉니다 · 루틴은 루틴의 승인 설정이 이겨요. «자동» 은 Claude 가 권한을 판단하고, «수동» 은 바꾸기 전에 늘 물어요.{perm === 'bypassPermissions' ? <><br /><b>⚠ «항상 허용» 은 묻지 않고 실행합니다 — 신뢰하는 볼트에서만 두세요.</b></> : null}</>} at="main">
       <select className="ssel" value={perm} onChange={(e) => void savePerm(e.target.value as PermissionMode)}>{MODES.map((m) => <option key={m.v} value={m.v}>{m.t} — {m.d}</option>)}</select>
     </Row>
 
     <Group t="연결" />
-    <Row t="다시 연결" d={<>로그인을 새로 했거나 커넥터를 붙였으면 눌러 주세요. <b>대화는 그대로 두고 일꾼만 내립니다</b> — 다음 메시지에 새 환경으로 다시 떠요. 일하는 중인 세션은 <b>턴이 끝나면</b> 내려갑니다.</>}>
+    <Row t="다시 연결" d={<>로그인을 새로 했거나 커넥터를 붙였으면 눌러 주세요. <b>세션은 그대로 두고 봇만 내려요</b> — 다음 메시지에 새 환경으로 다시 떠요. 일하는 중인 세션은 <b>턴이 끝나면</b> 내려갑니다.</>}>
       <button className="btn" disabled={busy} onClick={() => void reconnect()}>다시 연결</button>
     </Row>
     <Row t="연결 진단" d={diag ? <pre className="diag">{diag}</pre> : '로그인이 안 될 때 눌러 보세요. 무엇이 어디에 있고 CLI 가 뭐라고 하는지 한 덩이로 보여 줍니다 — 그대로 복사해서 저에게 주시면 돼요.'}>
@@ -498,13 +498,13 @@ function CodexPane() {
   const openLogin = async () => { setBusy(true); try { await api('/auth/login-terminal', { body: { agent: 'codex' } }); setMsg('터미널을 열었어요 — codex login 이 돌아가면 마치고 [다시 연결]') } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) } }
   const reconnect = async () => {
     setBusy(true)
-    try { const r = await api<{ now: number; pending: number }>('/auth/reconnect', { body: { agent: 'codex' } }); await refresh(); setMsg(r.pending ? `${r.now}개를 다시 연결했어요 · ${r.pending}개는 턴이 끝나면 이어서 합니다.` : r.now ? `${r.now}개를 다시 연결했어요.` : '연결할 일꾼이 없었어요 — 다음 메시지부터 새 환경으로 뜹니다.') }
+    try { const r = await api<{ now: number; pending: number }>('/auth/reconnect', { body: { agent: 'codex' } }); await refresh(); setMsg(r.pending ? `${r.now}개를 다시 연결했어요 · ${r.pending}개는 턴이 끝나면 이어서 합니다.` : r.now ? `${r.now}개를 다시 연결했어요.` : '떠 있는 봇이 없었어요 — 다음 메시지부터 새 환경으로 떠요.') }
     catch (e) { setMsg((e as Error).message) } finally { setBusy(false) }
   }
   const cxAuth = s.defaults.codex?.auth
   const cxLoginD = main
-    ? <span>누르면 호스트 맥에 터미널이 열리고 <span className="mono">codex login</span> 이 돌아갑니다. 브라우저에서 마치고 [다시 연결] 을 누르세요.</span>
-    : <span>로그인은 <b>호스트 맥</b>({s.hostName})에서 해야 해요.</span>
+    ? <span>누르면 메인에 터미널이 열리고 <span className="mono">codex login</span> 이 돌아갑니다. 브라우저에서 마치고 [다시 연결] 을 누르세요.</span>
+    : <span>로그인은 <b>메인</b>({s.hostName})에서 해야 해요.</span>
   return <>
     <p className="lead">Codex 세션이 어떻게 붙고 어떤 값으로 뜨는지. 🔴 Codex 는 <b>우리가 승인 화면을 못 띄웁니다</b>(stdio 권한 프로토콜이 없어요) — 그래서 «샌드박스» 가 곧 권한 정책이에요.{msg ? ` · ${msg}` : ''}</p>
     <Group t="인증" />
@@ -514,12 +514,12 @@ function CodexPane() {
     <Row t="Codex 로그인" d={cxLoginD}>
       <button className="btn" disabled={busy || !main} onClick={() => void openLogin()}>터미널에서 로그인</button>
     </Row>
-    <Row t="OpenAI API 키" d="키체인·브라우저 로그인을 못 쓰는 문맥(헤드리스·SSH)의 대안입니다. 워커 환경에만 넣고 ~/.codex 설정 파일은 건드리지 않아요." at="main">
+    <Row t="OpenAI API 키" d="키체인·브라우저 로그인을 못 쓰는 문맥(헤드리스·SSH)의 대안입니다. 봇의 환경에만 넣고 ~/.codex 설정 파일은 건드리지 않아요." at="main">
       <input className="sin mono" type="password" placeholder="sk-…" value={cxKey} onChange={(e) => setCxKey(e.target.value)} />
       <button className="btn" disabled={busy || !cxKey.trim()} onClick={() => { void saveCx({ apiKey: cxKey }); setCxKey('') }}>저장</button>
     </Row>
 
-    <Group t="새 채팅 기본값" />
+    <Group t="새 세션 기본값" />
     <Row t="Codex 기본 모델 · 노력" d={<>Codex 세션이 이 값으로 뜹니다. <b>비워 두면 CLI 가 계정에 맞는 모델을 고릅니다</b> — ChatGPT 계정으로 쓰신다면 그대로 두세요(쓸 수 있는 모델이 구독마다 달라서, 이름을 박으면 그 계정에서 안 돌 수 있어요).</>} at="main">
       <input className="sin mono" list="cx-models" value={cxModel} onChange={(e) => setCxModel(e.target.value)} onBlur={() => void saveD(cxModel, cxEffort)} placeholder="비워 두면 CLI 기본" />
       <datalist id="cx-models">{cxModels.map((m) => <option key={m.v} value={m.v}>{m.t}</option>)}</datalist>
@@ -530,7 +530,7 @@ function CodexPane() {
     </Row>
 
     <Group t="연결" />
-    <Row t="Codex 다시 연결" d={<>터미널에서 <span className="mono">codex login</span> 을 새로 했거나 키를 바꿨으면 눌러 주세요. Codex 세션의 일꾼만 내려 다음 메시지에 새로 뜹니다.</>}>
+    <Row t="Codex 다시 연결" d={<>터미널에서 <span className="mono">codex login</span> 을 새로 했거나 키를 바꿨으면 눌러 주세요. Codex 세션의 봇만 내려 다음 메시지에 새로 떠요.</>}>
       <button className="btn" disabled={busy} onClick={() => void reconnect()}>다시 연결</button>
     </Row>
     {cxAuth?.how === 'key' ? <Row t="Codex 키 지우기" d="터미널 로그인(codex login) 모드로 돌아갑니다." danger at="main"><button className="btn danger" disabled={busy} onClick={() => void saveCx({ apiKey: '' })}>지우기</button></Row> : null}
@@ -539,7 +539,7 @@ function CodexPane() {
 
 /** EB · 승인 시간 초과 선택지 — 저장된 값이 목록에 없으면(손으로 고친 설정) 그 값도 한 줄로 보인다 */
 function approvalChoices(cur?: number): [number, string][] {
-  const base: [number, string][] = [[5, '5분'], [10, '10분'], [30, '30분'], [60, '1시간'], [0, '끄기 — 끝까지 기다림']]
+  const base: [number, string][] = [[5, '5분'], [10, '10분'], [30, '30분'], [60, '1시간'], [0, '끔 — 끝까지 기다림']]
   return cur !== undefined && !base.some(([v]) => v === cur) ? [[cur, fmtWait(cur)], ...base] : base
 }
 
@@ -556,7 +556,7 @@ function SessionsPane() {
   return <>
     <p className="lead">모든 봇의 세션에 같이 적용되는 것들이에요.{msg ? ` · ${msg}` : ''}</p>
     {/* 🔴 절전 시간은 사람이 정한다 (루프 4/10) — 밤새 돌리는 사람과 낮에만 쓰는 사람이 다르다. 0 = 안 재움 */}
-    <Row t="유휴 세션 절전" d="이만큼 조용하면 워커를 내려요. 대화·세션은 남고, 다음 메시지에 같은 자리에서 이어집니다." at="main">
+    <Row t="쉬는 세션 절전" d="이만큼 조용하면 봇을 내려요(절전). 세션은 남고, 다음 메시지에 같은 자리에서 이어져요." at="main">
       <select className="ssel" value={String(s.defaults.idleMinutes ?? 60)} onChange={async (e) => { try { await api('/idle', { body: { minutes: Number(e.target.value) } }); await refresh(); setMsg('저장했어요') } catch (err) { setMsg((err as Error).message) } }}>
         {[[15, '15분'], [30, '30분'], [60, '1시간'], [120, '2시간'], [240, '4시간'], [0, '재우지 않음']].map(([v, t]) => <option key={String(v)} value={String(v)}>{t}</option>)}
       </select>
@@ -572,7 +572,7 @@ function SessionsPane() {
     {/* 훅은 **메인의** `~/.claude/settings.json` 을 고친다 — 원격에서는 상태만 보여 주고 버튼을 안 준다 */}
     <Row t="턴마다 기록하기" d="Claude Code 훅이 턴 끝에 읽기만 해서 이번 턴 토큰을 남깁니다. 터미널 세션까지 전부 잡혀요. 실패해도 조용히 끝나 턴을 막지 않습니다." at="main">
       {main
-        ? <button className="btn" disabled={busy} onClick={async () => { setBusy(true); try { await api('/usage/hook', { body: { on: !st?.hook } }); load() } finally { setBusy(false) } }}>{st?.hook ? '설치됨 · 제거' : '훅 설치'}</button>
+        ? <button className="btn" disabled={busy} onClick={async () => { setBusy(true); try { await api('/usage/hook', { body: { on: !st?.hook } }); load() } finally { setBusy(false) } }}>{st?.hook ? '설치됨 · 지우기' : '훅 설치'}</button>
         : <span className="sv">{st?.hook ? '설치됨' : '설치 안 됨'} · 메인에서</span>}
     </Row>
     <Row t="예산 — 5시간 창" d="막대가 이 값을 기준으로 줄어듭니다." at="main"><input className="bud" defaultValue={st?.budget?.window ?? ''} onBlur={(e) => void setB('window', e.target.value)} /><span className="unit">달러</span></Row>
@@ -598,11 +598,11 @@ function ContextRows() {
   // 비우면 null 을 보내 호스트가 키를 지운다 — 기본값 500 으로 돌아간다(Ruling 16)
   const setCap = (v: string) => { if (!v.trim()) { if (cfg?.dailyCap !== null) void save({ dailyCap: null }); return } const n = Number(v); if (!Number.isInteger(n) || n <= 0) { setMsg('1 이상의 정수로 적어 주세요'); return } if (n !== cfg?.dailyCap) void save({ dailyCap: n }) }
   if (!cfg) return null
-  const line = !st ? '' : !st.owner ? '이 맥은 주인 맥이 아니라 요약을 만들지 않아요 — 주인 맥의 판을 읽기만 해요'
-    : `${st.paused ? PAUSE_T[st.paused] : '도는 중'} · 오늘 호출 ${st.calls}번 · 밀린 일 ${st.pending}개`
+  const line = !st ? '' : !st.owner ? '이 맥은 루틴을 돌리는 메인이 아니라 요약을 만들지 않아요 — 그 메인의 판을 읽기만 해요'
+    : `${st.paused ? PAUSE_T[st.paused] : '일하는 중'} · 오늘 호출 ${st.calls}번 · 밀린 일 ${st.pending}개`
   return <>
     <Group t="상황판" right={msg ? <span className="sv">{msg}</span> : undefined} />
-    <Row t="상황판 요약 끄기" d={cfg.env ? '환경변수 FOLDERBOT_CONTEXT=0 으로 꺼져 있어요 — 여기 스위치와 상관없이 쉬어요.' : '끄면 세션이 끝나도 요약 카드를 만들지 않아요. 판은 마지막으로 만든 것을 그대로 보여 줘요.'} at="main">
+    <Row t="상황판 요약" d={cfg.env ? '환경변수 FOLDERBOT_CONTEXT=0 으로 꺼져 있어요 — 여기 스위치와 상관없이 쉬어요.' : '끄면 세션이 끝나도 요약 카드를 만들지 않아요. 판은 마지막으로 만든 것을 그대로 보여 줘요.'} at="main">
       <span className="seg">{([[false, '켬'], [true, '끔']] as const).map(([v, l]) => <button key={l} className={cfg.off === v ? 'on' : ''} onClick={() => { if (cfg.off !== v) void save({ off: v }) }}>{l}</button>)}</span>
     </Row>
     <Row t="하루 호출 상한" d="요약 모델을 하루에 이만큼까지만 불러요. 넘으면 다음 날까지 쉬어요. 비우면 500." at="main">
@@ -646,14 +646,14 @@ function AkiflowPane() {
   return <>
     <p className="lead">레일에 선 폴더의 todo.md 줄 하나가 Akiflow 태스크 하나가 됩니다. 봇이 쓴 줄은 «🤖» 로 시작하고, 첫 줄에 출처 폴더가 붙어요. 봇의 제안은 [넣기] 한 것만 갑니다.</p>
     <Row t="동기화 상태" d={<>{st.mode === 'live' ? `켜짐 — 15분마다 맞춰요${st.routine ? '' : ' (루틴이 없어요 — 다시 켜 주세요)'}` : st.mode === 'preview' ? '미리보기 — 무엇을 할지 보여 주기만 해요. Akiflow 는 안 건드려요' : '꺼짐'} · 짝 {st.pairs}개 · 폴더 {st.folders}개{st.lastRun ? ` · 마지막 ${new Date(st.lastRun.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 성공 ${st.lastRun.ok} · 실패 ${st.lastRun.fail}` : ''}{msg ? ` · ${msg}` : ''}</>} at="main">
-      <span className="seg">{([['preview', '미리보기'], ['live', '켬'], ['off', '끔']] as const).map(([m, l]) => <button key={m} className={st.mode === m ? 'on' : ''} onClick={async () => { if (m === 'live' && st.mode !== 'live' && !(await askConfirm({ title: 'Akiflow 동기화를 켤까요?', body: `Akiflow 에 실제로 씁니다 — 지금 기준 만들기 ${c.create}건. 처음 회차는 Akiflow 를 먼저 읽어 제목이 같은 일은 «같은 일?» 로 묻고 붙잡아 두며, 나머지는 바로 만들어요.`, ok: '켜기' }))) return; void call('/akiflow/mode', { mode: m }, () => (m === 'live' ? '켰어요 — 오케스트레이터에 «Akiflow 동기화» 루틴이 생겼어요' : ''))
+      <span className="seg">{([['preview', '미리보기'], ['live', '켬'], ['off', '끔']] as const).map(([m, l]) => <button key={m} className={st.mode === m ? 'on' : ''} onClick={async () => { if (m === 'live' && st.mode !== 'live' && !(await askConfirm({ title: 'Akiflow 동기화를 켤까요?', body: `Akiflow 에 실제로 씁니다 — 지금 기준 만들기 ${c.create}건. 처음 회차는 Akiflow 를 먼저 읽어 제목이 같은 일은 «같은 일?» 로 묻고 붙잡아 두며, 나머지는 바로 만들어요.`, ok: '동기화 켜기' }))) return; void call('/akiflow/mode', { mode: m }, () => (m === 'live' ? '켰어요 — 오케스트레이터에 «Akiflow 동기화» 루틴이 생겼어요' : ''))
       }}>{l}</button>)}</span>
     </Row>
     <Row t="옛 봇 줄" d={st.legacyLeft ? `처음 볼 때 이미 있던 봇 줄 ${st.legacyLeft}개는 올리지 않아요. 제안 칸으로 돌리면 폴더마다 [넣기] 한 것만 Akiflow 로 갑니다.` : '남은 옛 봇 줄이 없어요.'} at="main">
       {st.legacyLeft ? <button className="btn" onClick={async () => { if (await askConfirm({ title: `옛 봇 줄 ${st.legacyLeft}개를 «제안» 으로 돌릴까요?`, body: '각 폴더 todo.md 의 표식만 바뀌고 줄은 지우지 않아요.', ok: '제안으로 돌리기' })) void call('/akiflow/legacy', {}, (r) => `${r.moved ?? 0}줄을 제안으로 돌렸어요`) }}>제안으로 돌리기</button> : null}
     </Row>
     <div className="akprev">
-      <div className="akh">이번에 할 일 — 만들기 {c.create} · 고치기 {c.update} · 완료 {c.complete}{c.delete ? ` · 지우기 ${c.delete}` : ''}{st.proposed ? ` · 제안 ${st.proposed}(안 감)` : ''}{st.held ? ` · 같은 일 확인 대기 ${st.held}` : ''}</div>
+      <div className="akh">이번에 할 일 — 만들기 {c.create} · 고치기 {c.update} · 완료 {c.complete}{c.delete ? ` · 지우기 ${c.delete}` : ''}{st.proposed ? ` · 제안 ${st.proposed}(안 감)` : ''}{st.held ? ` · 같은 일 내 답 기다림 ${st.held}` : ''}</div>
       {st.preview.length ? st.preview.map((o, i) => <div key={i} className="akrow"><span className={`akop ${o.op}`}>{AK_OP[o.op] ?? o.op}</span><span className="akt">{o.title}</span><span className="akr">{o.rel.split('/').pop()}{o.deadline ? ` · 📅 ${o.deadline}` : ''}</span></div>) : <div className="akrow none">할 일이 없어요 — 양쪽이 같아요</div>}
     </div>
     {st.pairAsks.map((a) => <div key={a.id} className="akcard"><b>같은 일인가요?</b><span>{a.rel.split('/').pop()} «{a.title}» ↔ Akiflow «{a.remoteTitle}»</span><span className="sp" /><button onClick={() => void call('/akiflow/resolve', { kind: 'pair', id: a.id, choice: 'pair' })}>같은 일 · 짝짓기</button><button onClick={() => void call('/akiflow/resolve', { kind: 'pair', id: a.id, choice: 'new' })}>다른 일</button></div>)}
@@ -677,11 +677,11 @@ function NotifyPane() {
   useEffect(() => { setFrom(q.from); setTo(q.to) }, [q.from, q.to])
   const saveQ = async (f: string, t: string, off = !!q.off) => { if (f === q.from && t === q.to && off === !!q.off) return; try { await api('/quiet', { body: { from: f, to: t, off } }); await refresh(); setMsg('저장했어요') } catch (e) { setMsg((e as Error).message) } }
   return <>
-    <Row t="이 기기 푸시" d="폰에는 «확인해 주세요» 만 울려요 — 끝남·오류·할 일은 알림 목록에만 남아요. 폰 푸시는 Tailscale serve 로 HTTPS 를 붙이고 홈 화면에 설치해야 동작해요." at="dev">
-      <button className="btn" onClick={async () => setPushOn(await subscribePush(s.vapidPublic, navigator.userAgent.slice(0, 30)))}>{pushOn ? pushWhyText[pushOn] : '켜기'}</button>
+    <Row t="이 기기 푸시" d="폰에는 «내 답 기다림» 만 울려요 — 끝남·오류·할 일은 알림 목록에만 남아요. 폰 푸시는 Tailscale serve 로 HTTPS 를 붙이고 홈 화면에 설치해야 동작해요." at="dev">
+      <button className="btn" onClick={async () => setPushOn(await subscribePush(s.vapidPublic, navigator.userAgent.slice(0, 30)))}>{pushOn ? pushWhyText[pushOn] : '푸시 켜기'}</button>
     </Row>
     {/* 켬/끔 — 끄면 시각 칸을 숨기고 밤에도 맥 배너가 뜬다. 시각은 남겨 둬서 다시 켜면 그대로(2026-10-19 Dave) */}
-    <Row t="조용한 시간" d={<>{q.off ? '꺼져 있어요 — 밤에도 맥 배너가 떠요.' : '이 사이에는 «확인해 주세요» 만 통과합니다.'} 모든 기기에 같이 적용돼요.{msg ? ` · ${msg}` : ''}</>} at="main">
+    <Row t="조용한 시간" d={<>{q.off ? '꺼져 있어요 — 밤에도 맥 배너가 떠요.' : '이 사이에는 «내 답 기다림» 만 통과해요.'} 모든 기기에 같이 적용돼요.{msg ? ` · ${msg}` : ''}</>} at="main">
       {q.off ? null : <>
         <input className="sin tm" type="time" value={from} onChange={(e) => setFrom(e.target.value)} onBlur={() => void saveQ(from, to)} />
         <span className="unit">–</span>

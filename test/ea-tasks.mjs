@@ -159,7 +159,7 @@ export async function eaTasks({ base, root, claudeCfg, botId, botAbs, br, check,
       must(rows.find((r) => /로그 훑기/.test(r.nm))?.open && !rows.find((r) => /개발 서버/.test(r.nm))?.open, '[열기] 는 에이전트 줄에만 ' + JSON.stringify(rows))
       must(/도구 1/.test(rows.find((r) => /로그 훑기/.test(r.nm)).tx) && /Explore/.test(rows.find((r) => /로그 훑기/.test(r.nm)).tx), '상태 줄 ' + JSON.stringify(rows[0]))
       const head = await pg.evaluate(() => ({ c: document.querySelector('.live .bgo b')?.textContent, groups: [...document.querySelectorAll('.spop.bgpop .bgt-h')].map((e) => e.textContent) }))
-      must(head.c === '3' && /도는 중\s*3/.test(head.groups[0] ?? ''), '머리줄 ' + JSON.stringify(head))
+      must(head.c === '3' && /일하는 중\s*3/.test(head.groups[0] ?? ''), '머리줄 ' + JSON.stringify(head))
       await shot(pg, 'u1-데스크톱-패널')
     })
     await check('U2 진행 줄의 «뒤에서 도는 일 N» 단추 — 같은 단추 · ⎋ 로 닫히고 다시 열린다 · 접힌 패널 띠에는 그 단추가 없다', async () => {

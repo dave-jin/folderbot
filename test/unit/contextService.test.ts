@@ -408,7 +408,7 @@ describe('ContextService — 주인 아님', () => {
     expect(svc.board('today')).toEqual(seeded)
     expect(() => svc.move('hack1', 's_n', { newTitle: 'x' })).toThrow(NotOwner)
     expect(() => svc.snooze('hack1', 't')).toThrow(NotOwner)
-    expect(() => svc.reopen('hack1', 't')).toThrow('주인 맥(맥미니)에서만 고칠 수 있어요')
+    expect(() => svc.reopen('hack1', 't')).toThrow('루틴을 돌리는 메인(맥미니)에서만 고칠 수 있어요')
     expect(svc.status().owner).toBe(false)
   })
 
@@ -418,10 +418,10 @@ describe('ContextService — 주인 아님', () => {
     writeFileSync(boardFile(), JSON.stringify({ v: 1, at: 1, host: '맥북', period: 'today', since: 0, axis: null, tally: { done: 0, stalled: 0, added: 0 },
       step: { stalled: { rows: [], more: 0 }, waiting: { rows: [], more: 0 }, routine: { rows: [], more: 0 } }, goals: [], quiet: [], sources: [] }))
     const svc = new ContextService({ ...host(), routineOwner: () => '다른맥' }, fakeAsk().ask)
-    expect(() => svc.move('hack1', 's_n', { newTitle: 'x' })).toThrow('주인 맥(다른맥)에서만 고칠 수 있어요')
+    expect(() => svc.move('hack1', 's_n', { newTitle: 'x' })).toThrow('루틴을 돌리는 메인(다른맥)에서만 고칠 수 있어요')
     // ops.yml 을 못 읽으면(던짐) 판의 host 로
     const svc2 = new ContextService({ ...host(), routineOwner: () => { throw new Error('x') } }, fakeAsk().ask)
-    expect(() => svc2.snooze('hack1', 't')).toThrow('주인 맥(맥북)에서만 고칠 수 있어요')
+    expect(() => svc2.snooze('hack1', 't')).toThrow('루틴을 돌리는 메인(맥북)에서만 고칠 수 있어요')
   })
 
   it('🔴 goal() 은 저장된 작업 상태를 그대로 — 이 맥 카드로 다시 매기지 않는다 · 목표 카드는 볼트 판에서(최종 검토 3)', () => {
@@ -450,6 +450,6 @@ describe('ContextService — 주인 아님', () => {
     const svc = new ContextService(host(), fakeAsk().ask)
     const b = svc.board('today')
     expect(b.goals).toEqual([])
-    expect(b.sources.some((s) => !s.ok && s.note === '아직 주인 맥 판 없음')).toBe(true)
+    expect(b.sources.some((s) => !s.ok && s.note === '아직 메인 판 없음')).toBe(true)
   })
 })
