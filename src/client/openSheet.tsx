@@ -6,6 +6,7 @@ import { token } from './api'
 import { copyText } from './clip'
 import { copyFiles } from './fileCopy'
 import { Icon } from './FolderBot'
+import { errText } from './errText'
 
 /**
  * 폰 «바깥으로 열기» 시트 (OL · 2026-11-04 Dave — 카드 답: Safari 에서 열기 · 다른 앱으로(공유) · 링크 복사 · 이 기기로 내려받기).
@@ -59,7 +60,7 @@ function rowsOf(t: OpenTarget, say: (m: string) => void): { title: string; sub: 
       rows: [
         { icon: 'open', label: 'Safari 에서 열기', sub: '안 넘어가면 «링크 복사» 뒤 Safari 주소창에', run: () => { toSafari(t.url); say('Safari 로 넘겼어요 — 안 열리면 «링크 복사» 를 쓰세요') } },
         { icon: 'doc', label: '앱 안에서 보기', run: () => { window.open(t.url, '_blank', 'noopener') } },
-        { icon: 'up', label: '다른 앱으로', sub: '공유 시트 — 카톡·메모·메일 …', off: typeof navigator.share !== 'function', run: async () => { try { await navigator.share({ url: t.url }) } catch (e) { if ((e as Error).name !== 'AbortError') say(`공유 실패 — ${(e as Error).message}`) } } },
+        { icon: 'up', label: '다른 앱으로', sub: '공유 시트 — 카톡·메모·메일 …', off: typeof navigator.share !== 'function', run: async () => { try { await navigator.share({ url: t.url }) } catch (e) { if ((e as Error).name !== 'AbortError') say(errText('못 공유했어요', e)) } } },
         { icon: 'copy', label: '링크 복사', run: async () => { say((await copyText(t.url)) ? '링크를 복사했어요' : '복사를 못 했어요') } },
       ],
     }

@@ -275,6 +275,6 @@ export function describeCron(cron: string, now = new Date()): string {
 /** 저장 전에 사람에게 보여 줄 한 줄 — 「매일 저녁 8시에 돌립니다. 다음 실행은 9/23(화) 20:00 입니다.」 */
 export function confirmLine(cron: string, from = new Date()): string {
   const once = onceAt(cron)
-  if (once) return once.getTime() <= from.getTime() ? `${onceWhen(once, from)}에 한 번 도는 루틴이었어요 — 그 시각이 지나 다시 돌지 않아요.` : `${onceWhen(once, from)}에 한 번만 돌립니다. 그 뒤로는 다시 돌지 않아요.`
-  return `${describeCron(cron)}에 돌립니다. 다음 실행은 ${formatNext(nextRunOf(cron, from))} 입니다.`
+  if (once) return once.getTime() <= from.getTime() ? `${onceWhen(once, from)}에 한 번 도는 루틴이었어요 — 그 시각이 지나 다시 돌지 않아요.` : `${onceWhen(once, from)}에 한 번만 돌려요. 그 뒤로는 다시 돌지 않아요.`
+  return `${describeCron(cron)}에 돌려요. 다음 실행은 ${formatNext(nextRunOf(cron, from))} 이에요.`
 }

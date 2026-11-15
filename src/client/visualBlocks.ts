@@ -94,7 +94,7 @@ export function renderVisualBlocks(root: HTMLElement, opts: { open?: boolean } =
     const pre = code.parentElement as HTMLElement
     const wrap = pre.parentElement?.classList.contains('cbwrap') ? (pre.parentElement as HTMLElement) : pre
     const b = parseVisual(lang, code.textContent ?? '')
-    if (!b) { wrap.insertAdjacentElement('afterend', el('div', 'vb-err', '블록을 못 읽었어요 — 코드 그대로 둡니다')); continue }
+    if (!b) { wrap.insertAdjacentElement('afterend', el('div', 'vb-err', '블록을 못 읽었어요 — 코드 그대로 둬요')); continue }
     wrap.replaceWith(b.kind === 'steps' ? stepsCard(b) : b.kind === 'compare' ? compareCard(b) : chartCard(b)); n++
   }
   return n

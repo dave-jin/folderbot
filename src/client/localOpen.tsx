@@ -5,6 +5,7 @@ import { fmtTime } from './store'
 import { freshness, type HostStat, type LocalStat } from '../core/localOpen'
 import type { Bot } from '../core/types'
 import { openSheet } from './openSheet'
+import { errText } from './errText'
 
 /**
  * 원격에서 파일 열기 (E · 2026-09-19 Dave 1안 확정) — «Finder 에서 보기 · 열기» 가 **지금 앉아 있는 기기에서** 된다.
@@ -56,7 +57,7 @@ let hinted = false
 
 export async function openOnThisDevice(bot: Bot, rel: string, mode: OpenMode, ctx: OpenCtx): Promise<void> {
   if (ctx.main) {
-    try { await api(`/bots/${bot.id}/${mode}`, { body: { rel } }); ctx.say(mode === 'open' ? '기본 앱으로 열었어요' : 'Finder 에서 보여 드렸어요') } catch (e) { ctx.say((e as Error).message) }
+    try { await api(`/bots/${bot.id}/${mode}`, { body: { rel } }); ctx.say(mode === 'open' ? '기본 앱으로 열었어요' : 'Finder 에서 보여 드렸어요') } catch (e) { ctx.say(errText('못 열었어요', e)) }
     return
   }
   const b = localBridge()
@@ -73,7 +74,7 @@ export async function openOnThisDevice(bot: Bot, rel: string, mode: OpenMode, ct
     try {
       const p = await b.download(rawUrl(bot, rel), ctx.hostName, vrel)
       await doOpen(p); ctx.say(`${why ? why + ' — ' : ''}메인에서 받은 사본을 열었어요 (고쳐도 되돌아가지 않아요)`)
-    } catch (e) { ctx.say((e as Error).message) }
+    } catch (e) { ctx.say(errText('메인에서 못 받았어요', e)) }
   }
   if (st.openMode !== 'sync' || !st.vaultLocal) {
     if (!st.openMode && !hinted) { hinted = true; ctx.say('설정 › 기기 에서 동기화 볼트를 지정하면 이 기기의 파일을 바로 열어요') }
@@ -81,7 +82,7 @@ export async function openOnThisDevice(bot: Bot, rel: string, mode: OpenMode, ct
   }
   const local = `${st.vaultLocal.replace(/\/+$/, '')}/${vrel}`
   let host: HostStat & { mtime: number }
-  try { host = await api(`/bots/${bot.id}/stat?rel=${encodeURIComponent(rel)}`) } catch (e) { ctx.say((e as Error).message); return }
+  try { host = await api(`/bots/${bot.id}/stat?rel=${encodeURIComponent(rel)}`) } catch (e) { ctx.say(errText('파일을 못 확인했어요', e)); return }
   const mine = await b.stat(local)
   const f = freshness(host, mine)
   if (f === 'same') { await doOpen(local); return }

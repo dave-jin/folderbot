@@ -243,7 +243,7 @@ function Target({ map, show, color, dim, sel, onPick, withPast }: Draw & { withP
 function Stems({ map, stemF, setStemF, rename, onPick, manage }: { map: LinkMap; stemF: number | null; setStemF: (i: number | null) => void; rename: (key: string, name: string) => void; onPick: (id: string) => void; manage: () => void }) {
   const byId = new Map(map.nodes.map((n) => [n.id, n]))
   return <div className="lm-stems">
-    <div className="h"><b>일의 줄기</b><span className="m">{map.stems.length} · 누르면 그 줄기만 남는다</span><button className="btn sm" style={{ marginLeft: 'auto' }} onClick={manage}>줄기 관리</button></div>
+    <div className="h"><b>일의 줄기</b><span className="m">{map.stems.length} · 누르면 그 줄기만 남아요</span><button className="btn sm" style={{ marginLeft: 'auto' }} onClick={manage}>줄기 관리</button></div>
     {map.stems.map((st, i) => <div key={st.key} className={`st${stemF === i ? ' on' : ''}`}>
       <div className="t"><button className="nm" style={{ color: st.color }} onClick={() => setStemF(stemF === i ? null : i)}>{st.name}</button><span className="m">폴더 {st.members.length}{st.past.length ? ` · 지난 일 ${st.past.length}` : ''}{st.next ? ` · 다음 ${st.next}` : ''}{st.fixed ? ' · 고정' : st.named === 'auto' ? ' · 임시 이름' : ''}</span>
         <button className="ib" title="이름 고치기" aria-label="줄기 이름 고치기" onClick={() => rename(st.key, st.name)}><Icon n="edit" size={11} /></button></div>

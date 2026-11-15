@@ -1181,7 +1181,7 @@ export class SessionManager extends EventEmitter {
           r.modelRetried = true
           const was = r.model
           r.model = undefined
-          this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `${was} 는 이 계정에서 못 써요 — 기본 모델로 다시 보냅니다` })
+          this.push(r, { id: itemId('s'), t: Date.now(), kind: 'system', text: `${was} 는 이 계정에서 못 써요 — 기본 모델로 다시 보내요` })
           this.persist(r)
           const bot2 = bot
           const again = r.turnFrom; const grantAgain = r.turnGrant

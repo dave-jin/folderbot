@@ -127,7 +127,7 @@ export default function Canvas({ text, onCommit, onOpenFile, raw, readOnly }: {
   const byId = useMemo(() => new Map(doc.nodes.map((n) => [n.id, n])), [doc.nodes])
   const dragging = drag.current
 
-  if (doc.error) return <div className="empty">캔버스 파일을 못 읽었어요 — JSON 이 깨졌습니다.</div>
+  if (doc.error) return <div className="empty">캔버스 파일을 못 읽었어요 — JSON 이 깨졌어요.</div>
 
   return <div className="cvs" ref={host}
     onPointerDown={(e) => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains('cvs-plane')) { setSel(null); drag.current = { kind: 'pan', sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y } } }}

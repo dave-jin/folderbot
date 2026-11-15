@@ -76,7 +76,7 @@ export function holdLine(holder: Holder, inflight: InFlight | null | undefined, 
   const kind = holdKindOf(inflight, bg)
   const what = (inflight?.summary || inflight?.name || '').slice(0, 60)
   const stage = holdStage(ms)
-  if (stage === 'long') return { text: '오래 걸리네요 — 다른 일 보셔도 됩니다. 끝나면 알릴게요', elapsed, action: 'notify', actionLabel: '알림 켜기' }
+  if (stage === 'long') return { text: '오래 걸리네요 — 다른 일 보셔도 돼요. 끝나면 알릴게요', elapsed, action: 'notify', actionLabel: '알림 켜기' }
   const still = stage === 'mid' ? '아직 ' : ''
   const body = kind === 'bot' ? `${still}${what || '다른 에이전트'} 의 답을 기다리는 중`
     : kind === 'web' ? `${still}${what || '브라우저'} 작업을 기다리는 중`

@@ -12,6 +12,7 @@ import { FolderBot, Icon } from './FolderBot'
 import { ICON_PX, useIconSize } from './theme'
 import { fmtTime, useStore } from './store'
 import { Md } from './Sheets'
+import { errText } from './errText'
 
 /**
  * 연결(Bridge) 화면 (BQ-9 · BQ-10 · 2026-10-19 Dave «A·A» — 목업 `03_디자인/2026-10-09_연결-목업` ①A · ②A).
@@ -176,7 +177,7 @@ export function BridgeThread({ peerId, go, say, phone, onBack, onSide }: { peerI
     try {
       await api<{ id: string }>(`/bridges/${peerId}/letters`, { body: { kind: re ? 'reply' : kind, text, ...(re ? { re: re.id } : {}), urgent, needsHuman: human } })
       setText(''); setRe(null); setUrgent(false); setHuman(false); say(`${t?.peer.name ?? '상대'}에게 편지를 보냈어요`); await loadThread(peerId); void loadBridges()
-    } catch (e) { say(`못 보냈어요 — ${(e as Error).message}`) } finally { setBusy(false) }
+    } catch (e) { say(errText('못 보냈어요', e)) } finally { setBusy(false) }
   }
   const entries = useMemo(() => threadEntries(t?.letters ?? [], filter), [t, filter])
   const byId = useMemo(() => new Map((t?.letters ?? []).map((l) => [l.id, l])), [t])
@@ -240,7 +241,7 @@ export function BridgeThread({ peerId, go, say, phone, onBack, onSide }: { peerI
       <div className="row">
         {re ? <span className="brg-kind fixed">답장</span>
           : <select className="brg-kind" value={kind} onChange={(e) => setKind(e.target.value)} aria-label="편지 종류" title="편지 종류">{(['report', 'request', 'done', 'incident'] as const).map((k) => <option key={k} value={k}>{KIND_KO[k]}</option>)}</select>}
-        <button className={`tg ${urgent ? 'on' : ''}`} aria-pressed={urgent} onClick={() => setUrgent(!urgent)} title={p.wake ? '급함 — 상대 웹훅도 불러 바로 깨운다' : '급함'}>⚡ 급함</button>
+        <button className={`tg ${urgent ? 'on' : ''}`} aria-pressed={urgent} onClick={() => setUrgent(!urgent)} title={p.wake ? '급함 — 상대 웹훅도 불러 바로 깨워요' : '급함'}>⚡ 급함</button>
         <button className={`tg ${human ? 'on' : ''}`} aria-pressed={human} onClick={() => setHuman(!human)} title="상대가 사람에게 물어봐야 하는 편지">✋ 결정 필요</button>
         <span className="sp" />
         <button className={`sendb brg-send ${text.trim() && !busy ? '' : 'off'}`} disabled={!text.trim() || busy} onClick={() => void send()} title="보내기 (⌘⏎)" aria-label="보내기"><Icon n="up" size={phone ? 16 : 12} /></button>
@@ -366,7 +367,7 @@ function BridgeWizard({ onDone }: { onDone: () => void }) {
     </> : null}
     {step === 2 ? <>
       <div className="brg-fields">
-        <label>이름<input value={name} onChange={(e) => setName(e.target.value)} placeholder="할일이" /></label>
+        <label>이름<input value={name} onChange={(e) => setName(e.target.value)} placeholder="내 비서" /></label>
         <label className="sm">아이콘<input value={icon} onChange={(e) => setIcon(e.target.value)} maxLength={4} /></label>
         <label className="sm">id <small>영문 · 편지 파일 이름에</small><input className="mono" value={id} onChange={(e) => setId(e.target.value.toLowerCase())} /></label>
       </div>

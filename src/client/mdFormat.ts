@@ -84,7 +84,7 @@ const SLASH: Slash[] = [
   { label: '체크박스', detail: '- [ ] 할 일', keys: 'todo check task 체크 할일', insert: '- [ ] ' },
   { label: '불릿 목록', detail: '- 항목', keys: 'bullet list ul 목록', insert: '- ' },
   { label: '번호 목록', detail: '1. 항목', keys: 'number ordered ol 번호', insert: '1. ' },
-  { label: '표', detail: '3×3 — 칸을 눌러 고친다', keys: 'table 표 테이블', insert: TABLE },
+  { label: '표', detail: '3×3 — 칸을 눌러 고쳐요', keys: 'table 표 테이블', insert: TABLE },
   { label: '인용', detail: '> 인용문', keys: 'quote 인용', insert: '> ' },
   { label: '콜아웃', detail: '> [!note] 강조 상자', keys: 'callout note 콜아웃', insert: '> [!note] ' },
   { label: '코드 블록', detail: '``` 코드 ```', keys: 'code fence 코드', insert: '```\n\n```', back: 4 },

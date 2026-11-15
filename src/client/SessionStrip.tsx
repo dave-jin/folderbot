@@ -15,6 +15,7 @@ import { PROVIDER_LABEL, type ProviderId } from '../core/agents'
 import { fmtElapsed, fmtTime, useStore } from './store'
 import { fitTabs, hiddenDot, type StripDot } from '../core/stripFit'
 import { useEsc } from './esc'
+import { errText } from './errText'
 
 /**
  * 세션 줄 (2026-11-13 Dave 카드 — 가안 «가운데는 대화, 오른쪽은 폴더» · 넘칠 때는 «가 — ＋N 목록»).
@@ -66,14 +67,14 @@ export function useSessionOps(bot: Bot, sessions: SessionInfo[], sessionId: stri
     const name = r.v.trim()
     const was = sessions.find((x) => x.id === r.id)
     if (!name || !was || name === was.name) return
-    try { await api(`/sessions/${r.id}/rename`, { body: { name } }) } catch (e) { say((e as Error).message) }
+    try { await api(`/sessions/${r.id}/rename`, { body: { name } }) } catch (e) { say(errText('이름을 못 바꿨어요', e)) }
   }
   /** 지우기 — 묻지 않고 지운 뒤 10초 되돌리기(`deleteSession`). 지운 게 지금 보는 세션이면 남은 첫 세션으로 간다 */
   const del = async (x: SessionInfo) => {
     const wasCur = x.id === sessionId
     try {
       await deleteSession(x, say, () => { const left = sessions.filter((y) => y.id !== x.id && sessArea(y) === 'chat'); if (wasCur) go(bot.id, left[0]?.id) }, () => { if (wasCur) go(bot.id, x.id) })
-    } catch (e) { say((e as Error).message) }
+    } catch (e) { say(errText('세션을 못 지웠어요', e)) }
   }
   const pickEl = pick ? <Float at={pick} onClose={() => setPick(null)}>{provs.map((pv) => <button key={pv.id} onClick={() => newSession(pv.id)}><Mark id={pv.id} size={14} /><span>{PROVIDER_LABEL[pv.id]}</span></button>)}<hr /><button onClick={() => setPick(null)}><span>취소</span></button></Float> : null
   return { provs, lifted, chat, auto, askHl, askNow, newSession, askNew, ren, setRen, saveRen, del, pickEl }

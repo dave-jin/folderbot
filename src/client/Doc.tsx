@@ -25,6 +25,7 @@ import { fmtTime, useStore } from './store'
 import { openOnThisDevice, useLocalSettings, vaultRelOf } from './localOpen'
 import { cacheWriter, dropDoc, readDoc, writeDoc, type DocRec } from './cache'
 import { openTab, replaceTab, type DocTab } from '../core/docTabs'
+import { errText } from './errText'
 
 /** DA · 이번 실행에 받은 문서 — 봇·탭을 오가도 남는다(디스크 사본은 `cache.ts`) */
 const docMem = new Map<string, DocRec>()
@@ -122,7 +123,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
       try {
         if (d?.savePdf) { const p = await d.savePdf((rel ?? 'document').split('/').pop() ?? 'document'); if (p) say(`PDF 로 저장했어요 — ${p}`) }
         else window.print()
-      } catch (e) { say((e as Error).message) } finally { if (live) setPrintHtml(null) }
+      } catch (e) { say(errText('PDF 로 못 저장했어요', e)) } finally { if (live) setPrintHtml(null) }
     }
     void run()
     return () => { live = false }
@@ -219,7 +220,7 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
   const resolveClash = async (copy: string, action: 'mine' | 'theirs') => {
     if (!rel) return
     try { await api(`/bots/${bot.id}/clash`, { body: { copy, action } }); say(action === 'mine' ? '내 글로 바꿨어요 — 사본은 휴지통으로' : '지금 파일을 두고 사본은 휴지통으로 보냈어요'); await load(rel) }
-    catch (e) { say((e as Error).message) }
+    catch (e) { say(errText('사본을 못 정리했어요', e)) }
   }
   /** 마크다운이 아닌 글(textarea) — 0.8초 모아 낸다. 떠날 때 남은 것은 **그 글의 문서로** 낸다 */
   const rawPend = useRef<{ id: DocId; text: string } | null>(null); const rawT = useRef<number | undefined>(undefined)

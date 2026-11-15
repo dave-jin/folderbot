@@ -6,6 +6,7 @@ import { askConfirm } from './Sheets'
 import { copyResult, localBridge, vaultRelOf } from './localOpen'
 import { eta, fmtBytes } from '../core/cache'
 import { Icon } from './FolderBot'
+import { errText } from './errText'
 
 /**
  * 파일·폴더를 «붙여넣을 수 있게» 복사 (M-3 · 2026-09-19). 붙는 곳은 Finder(⌘V 로 사본)·카톡 입력창(첨부).
@@ -51,7 +52,7 @@ export async function copyFiles(bot: Bot, rels: string[], ctx: { main: boolean; 
         try { out.push(await b.fetch(id, location.origin + rawUrl(bot, f.rel), ctx.hostName, vrel)) } catch (e) { if (cancelled) break; throw e }
         base += f.size
       }
-    } catch (e) { off?.(); emit(null); ctx.say(`받기 실패 — ${(e as Error).message}`); return }
+    } catch (e) { off?.(); emit(null); ctx.say(errText('못 받았어요', e)); return }
     off?.(); emit(null)
     if (cancelled) { ctx.say('취소했어요 — 받던 파일은 지웠어요'); return }
     // 폴더는 폴더째 — 캐시 안의 그 폴더 경로를 넣는다(안의 파일은 방금 다 받았다)
@@ -71,7 +72,7 @@ export async function copyFiles(bot: Bot, rels: string[], ctx: { main: boolean; 
       }
       if (navigator.canShare && !navigator.canShare({ files: fs })) { ctx.say('이 파일은 공유 시트가 못 받아요'); return }
       await navigator.share({ files: fs, title: fs.map((f) => f.name).join(', ') })
-    } catch (e) { if ((e as Error).name !== 'AbortError') ctx.say(`공유 실패 — ${(e as Error).message}`) }
+    } catch (e) { if ((e as Error).name !== 'AbortError') ctx.say(errText('못 공유했어요', e)) }
     return
   }
   // ④ 브라우저 탭 — 내려받기

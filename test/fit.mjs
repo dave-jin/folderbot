@@ -111,7 +111,7 @@ for (const [label, W, H, phone, lay] of CASES) {
   await pg.evaluate(() => {
     const host2 = document.querySelector('.chat-body'); if (!host2 || document.querySelector('.live.hold')) return
     const d = document.createElement('div'); d.className = 'live hold'   // EA · 2분 넘은 대기 줄에 «뒤에서 도는 일» 단추까지 — 가장 빽빽한 경우로 잰다(좁으면 단추가 다음 줄로 내려가야 한다)
-    d.innerHTML = '<span style="width:22px;height:22px;flex:none;display:inline-block"></span><span class="bounce"><i></i><i></i><i></i></span><span class="tx">오래 걸리네요 — 다른 일 보셔도 됩니다. 끝나면 알려 드릴게요</span><span class="el mono">38분 9초</span><span class="sp"></span><button class="bgo"><svg class="ico" viewBox="0 0 16 16" width="11" height="11"></svg><span class="w">뒤에서 도는 일</span><span class="sh">뒤에서</span><b>12</b></button><button class="hact">알림 켜기</button>'
+    d.innerHTML = '<span style="width:22px;height:22px;flex:none;display:inline-block"></span><span class="bounce"><i></i><i></i><i></i></span><span class="tx">오래 걸리네요 — 다른 일 보셔도 돼요. 끝나면 알려 드릴게요</span><span class="el mono">38분 9초</span><span class="sp"></span><button class="bgo"><svg class="ico" viewBox="0 0 16 16" width="11" height="11"></svg><span class="w">뒤에서 도는 일</span><span class="sh">뒤에서</span><b>12</b></button><button class="hact">알림 켜기</button>'
     host2.appendChild(d)
   })
   /**

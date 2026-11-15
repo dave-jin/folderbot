@@ -80,7 +80,7 @@ describe('AA-3 · 주기를 사람 말로', () => {
     const from = new Date(2026, 8, 22, 21, 0, 0)     // 2026-09-22(화) 21:00
     expect(formatNext(nextRunOf('0 20 * * *', from))).toBe('9/23(수) 20:00')
     expect(nextRunOf('20', from)).toBeNull()
-    expect(confirmLine('0 20 * * *', from)).toBe('매일 저녁 8시에 돌립니다. 다음 실행은 9/23(수) 20:00 입니다.')
+    expect(confirmLine('0 20 * * *', from)).toBe('매일 저녁 8시에 돌려요. 다음 실행은 9/23(수) 20:00 이에요.')
   })
 })
 

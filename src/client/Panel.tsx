@@ -23,6 +23,7 @@ const IMG_RE = /\.(png|jpe?g|gif|webp|bmp|avif)$/i
 import { scoreName } from '../core/search'
 import { fmtElapsed, fmtTime, useStore } from './store'
 import { localBridge, openOnThisDevice } from './localOpen'
+import { errText } from './errText'
 
 interface Node { name: string; rel: string; dir: boolean; mtime: number; size?: number; harness?: boolean; botId?: string }
 
@@ -102,7 +103,7 @@ export function Panel({ bot, sessions, go, onOpenFile, onTalk, onAttach, onMenti
       {bot.orchestrator ? <button onClick={() => onTalk('지금 뭐 돌고 있어? 봇별로 한 줄씩.')}><Icon n="sub" size={13} /><span>현황 물어보기</span></button> : <>
         <button onClick={() => pickColor(bot)}><span className="csdot" style={{ background: bot.color }} /><span style={{ flex: 1 }}>색 바꾸기</span></button>
         <button onClick={async () => { await api(`/bots/${bot.id}/stop`, { body: {} }); say(`${bot.name} 을 목록에서 뺐어요`); await refresh(); go('orch') }}><Icon n="x" size={13} /><span style={{ flex: 1 }}>목록에서 빼기</span><span className="k">폴더 유지</span></button>
-        <button className="warn" onClick={async () => { if (!(await askConfirm({ title: `${bot.name} 봇을 은퇴시킬까요?`, body: '폴더를 Archive 로 옮기고 봇을 쉬게 합니다. 세션 기록은 보관돼요.', ok: '은퇴', danger: true }))) return; try { await api(`/bots/${bot.id}/retire`, { body: {} }); say('옮기고 은퇴했어요'); await refresh(); go('orch') } catch (e) { say((e as Error).message) } }}><Icon n="archive" size={13} /><span style={{ flex: 1 }}>Archive 로 이동 (은퇴)</span></button>
+        <button className="warn" onClick={async () => { if (!(await askConfirm({ title: `${bot.name} 봇을 은퇴시킬까요?`, body: '폴더를 Archive 로 옮기고 봇을 쉬게 해요. 세션 기록은 보관돼요.', ok: '은퇴', danger: true }))) return; try { await api(`/bots/${bot.id}/retire`, { body: {} }); say('옮기고 은퇴했어요'); await refresh(); go('orch') } catch (e) { say(errText('못 은퇴시켰어요', e)) } }}><Icon n="archive" size={13} /><span style={{ flex: 1 }}>Archive 로 이동 (은퇴)</span></button>
       </>}
     </div></Float> : null}
     {routines ? <RoutineSheet bot={bot} pick={typeof routines === 'string' ? routines : undefined} onClose={() => setRoutines(false)} /> : null}
@@ -223,7 +224,7 @@ function HarnessList({ bot, onOpenFile, say, filesTick, close }: { bot: Bot; onO
   const create = async () => {
     const name = await askName('새 슬래시 명령 이름 (영문·숫자·-)', 'my-command')
     if (!name) return
-    try { const r = await api<{ rel: string }>(`/bots/${bot.id}/commands`, { body: { name: name.trim().replace(/\.md$/, ''), scope: 'folder' } }); onOpenFile(r.rel) } catch (e) { say((e as Error).message) }
+    try { const r = await api<{ rel: string }>(`/bots/${bot.id}/commands`, { body: { name: name.trim().replace(/\.md$/, ''), scope: 'folder' } }); onOpenFile(r.rel) } catch (e) { say(errText('명령을 못 만들었어요', e)) }
   }
   return <>
     <div className="ph"><span>명령 · 스킬</span><span className="c">{hz || cmds ? guides.length + rows.length : ''}</span><span className="sp" /><button className="ib nsb" title="새 슬래시 명령" onClick={() => { close(); void create() }}><Icon n="plus" size={12} /></button></div>
@@ -560,7 +561,7 @@ function TodoSec({ bot, items, loading = false, open, tog, onDelegate, onOpenFil
       <div className="grip" />
       <div className="eh2"><b>{esheet.line < 0 ? '새 할 일' : '할 일 고치기'}</b>{esheet.line >= 0 ? <button className="del" onClick={() => { const t = items.find((x) => x.line === esheet.line); setESheet(null); if (t) void remove(t) }}>지우기</button> : null}</div>
       <label className="fld"><span>제목</span><input autoFocus value={esheet.title} placeholder="무엇을 할까요" onChange={(e) => setESheet({ ...esheet, title: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') void saveSheet() }} /></label>
-      <label className="fld"><span>상세</span><textarea rows={3} value={esheet.desc} placeholder="없어도 됩니다" onChange={(e) => setESheet({ ...esheet, desc: e.target.value })} /></label>
+      <label className="fld"><span>상세</span><textarea rows={3} value={esheet.desc} placeholder="없어도 돼요" onChange={(e) => setESheet({ ...esheet, desc: e.target.value })} /></label>
       {/* CK-1 · 마감 — 바깥에서 정해진 날만. 제목 끝에 «내일» 이라고 써도 된다 */}
       {(() => { const cur = esheet.due === undefined ? (esheet.line >= 0 ? items.find((x) => x.line === esheet.line)?.due : undefined) ?? splitDue(esheet.title).due ?? null : esheet.due; return <div className="fsec fdue"><span>마감</span><span className="seg">
         {quickDues().map((q) => <button key={q.label} className={cur === q.date ? 'on' : ''} onMouseDown={(e) => e.preventDefault()} onClick={() => setESheet({ ...esheet, due: q.date })}>{q.label}</button>)}
@@ -748,7 +749,7 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
     await refreshStore(); setPicking(false); say('참조 폴더로 더했어요 — 새 세션부터 이 봇이 그 폴더를 읽어요')
   }
   const removeRef = async (r: RefRoot) => {
-    try { await api(`/bots/${bot.id}/refs`, { body: { path: r.abs, remove: true } }); await refreshStore(); say(`${r.name} 을(를) 참조에서 뺐어요`) } catch (e) { say((e as Error).message) }
+    try { await api(`/bots/${bot.id}/refs`, { body: { path: r.abs, remove: true } }); await refreshStore(); say(`${r.name} 을(를) 참조에서 뺐어요`) } catch (e) { say(errText('참조에서 못 뺐어요', e)) }
   }
   const dirOf = (n: Node) => (n.dir ? n.rel : n.rel.includes('/') ? n.rel.slice(0, n.rel.lastIndexOf('/')) : '')
   const makeNew = async (n: Node, kind: 'note' | 'folder') => {
@@ -758,10 +759,10 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
       const r = await api<{ rel: string }>(`/bots/${bot.id}/new`, { body: { dir: dirOf(n), name, kind } })
       say(`${r.rel} 만들었어요`)
       if (kind === 'note') onOpen(r.rel, true)
-    } catch (e) { say((e as Error).message) }
+    } catch (e) { say(errText('못 만들었어요', e)) }
   }
   const dup = async (n: Node) => {
-    try { const r = await api<{ rel: string }>(`/bots/${bot.id}/copy`, { body: { rel: n.rel } }); say(`${r.rel} 로 복제했어요`) } catch (e) { say((e as Error).message) }
+    try { const r = await api<{ rel: string }>(`/bots/${bot.id}/copy`, { body: { rel: n.rel } }); say(`${r.rel} 로 복제했어요`) } catch (e) { say(errText('못 복제했어요', e)) }
   }
   const reveal = async (n: Node) => {
     // ⛔ 훅을 콜백 안에서 부르지 않는다 — 호스트 이름은 컴포넌트에서 미리 받아 둔다
@@ -792,11 +793,11 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
           for (const e of hits) await api('/undo', { body: { t: e.t } })
           say(hits.length ? `되돌렸어요 — ${hits.length > 1 ? `${hits.length}개` : hits[0].from.split('/').pop()}` : '되돌릴 게 없어요')
           refreshOpen()
-        } catch (e2) { say((e2 as Error).message) }
+        } catch (e2) { say(errText('못 되돌렸어요', e2)) }
       }
       say(r.failed.length ? `${r.to.length}개 옮기고 ${r.failed.length}개는 못 옮겼어요` : `${what} 를 휴지통으로 옮겼어요`, r.to.length ? { label: '되돌리기', run: back } : undefined)
       refreshOpen()
-    } catch (e) { say((e as Error).message) }
+    } catch (e) { say(errText('휴지통으로 못 옮겼어요', e)) }
   }
   /** 끌어다 놓아 옮기기 (A7) — 목적지는 **폴더 줄**이다. 같은 자리면 아무 일도 안 한다(호스트가 안다) */
   const moveTo = async (rels0: string[], dir: string) => {
@@ -809,7 +810,7 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
       if (r.failed.length) say(`${r.moved.length}개 옮기고 ${r.failed.length}개는 못 옮겼어요`)
       else if (r.moved.length) say(`${r.moved.length > 1 ? `${r.moved.length}개를 ` : ''}${dir || '맨 위'} 로 옮겼어요`)
       refreshOpen()
-    } catch (e) { say((e as Error).message) }
+    } catch (e) { say(errText('못 옮겼어요', e)) }
   }
   /** 이 줄에 놓으면 어디로 가나 — 폴더면 그 폴더, 파일이면 그 파일이 든 폴더('' = 맨 위) */
   const dropDir = (n: Node) => (n.dir ? n.rel : n.rel.includes('/') ? n.rel.slice(0, n.rel.lastIndexOf('/')) : '')
@@ -859,7 +860,7 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
         await api('/undo', { body: { t: list[0].t } })
         say(`되돌렸어요 — ${list[0].from.split('/').pop()}`)
         refreshOpen()
-      } catch (e2) { say((e2 as Error).message) }
+      } catch (e2) { say(errText('못 되돌렸어요', e2)) }
     }
     window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
   }, [exp, bot.id])
@@ -887,7 +888,7 @@ function Tree({ bot, phone, open, tog, onOpen, onAttach, onMention, onStartAt, o
   }, [dirs, exp, sort, filter, refRoots])
   const vaultRel = (rel: string) => (bot.rel ? `${bot.rel}/${rel}` : rel)
   const toggleDir = (rel: string) => setExp((e) => { const n = new Set(e); if (n.has(rel)) n.delete(rel); else n.add(rel); return n })
-  const rename = async (n: Node) => { const name = await askName(`${n.dir ? '폴더' : '파일'} 이름 바꾸기`, n.name); if (!name || name === n.name) return; try { const r = await api<{ rel: string }>(`/bots/${bot.id}/rename`, { body: { rel: n.rel, name } }); say(`→ ${r.rel}`); const parent = n.rel.includes('/') ? n.rel.slice(0, n.rel.lastIndexOf('/')) : ''; void loadDir(parent) } catch (e) { say((e as Error).message) } }
+  const rename = async (n: Node) => { const name = await askName(`${n.dir ? '폴더' : '파일'} 이름 바꾸기`, n.name); if (!name || name === n.name) return; try { const r = await api<{ rel: string }>(`/bots/${bot.id}/rename`, { body: { rel: n.rel, name } }); say(`→ ${r.rel}`); const parent = n.rel.includes('/') ? n.rel.slice(0, n.rel.lastIndexOf('/')) : ''; void loadDir(parent) } catch (e) { say(errText('이름을 못 바꿨어요', e)) } }
   return <>
     {/* 🔴 «파일» 제목 줄 = 맨 위(봇 폴더)로 옮길 자리 (10/18 Dave: 트리 밑의 «여기로 끌면 맨 위로» 띠는 트리를 펼치면 닿지 않았다) */}
     <button className={`sech ${dropOn === '' ? 'dover' : ''}`} onClick={tog}

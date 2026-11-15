@@ -748,7 +748,7 @@ try {
       if (!/돌지 못했어요/.test(l2?.lastError ?? '')) fail('🔴 CR: 안 돈 지난 한 번짜리가 «놓침» 으로 안 보인다 · ' + JSON.stringify(l2))
       // 봇 도구 — «30분 뒤» · 목록에 once
       const added = JSON.parse((await mcpB('routine_add', { name: '알림 한 번', when: '30분 뒤', prompt: '알려 줘' })).content[0].text)
-      if (!added.ok || !/한 번만 돌립니다/.test(added.confirm ?? '')) fail('CR: routine_add «30분 뒤» · ' + JSON.stringify(added))
+      if (!added.ok || !/한 번만 돌려요/.test(added.confirm ?? '')) fail('CR: routine_add «30분 뒤» · ' + JSON.stringify(added))
       const lst = JSON.parse((await mcpB('routine_list', {})).content[0].text).find((r) => r.name === '알림 한 번')
       if (!lst?.once || lst.finished !== false || !lst.next) fail('CR: routine_list 에 once·next 가 없다 · ' + JSON.stringify(lst))
       // 🔴 «정오 12시» 를 시트처럼 되읽은 말로 다시 저장해도 낮 12시 — 종전엔 자정이 됐다
@@ -5754,7 +5754,7 @@ try {
           })
           let late = null
           for (let i = 0; i < 40; i++) { await wait(100); late = await view(); if (/다른 일 보셔도/.test(late.txt ?? '')) break }
-          if (!/다른 일 보셔도 됩니다/.test(late.txt ?? '')) fail('🔴 AB-3: 2분이 넘었는데 «가도 된다» 고 말하지 않는다 ' + JSON.stringify(late))
+          if (!/다른 일 보셔도 돼요/.test(late.txt ?? '')) fail('🔴 AB-3: 2분이 넘었는데 «가도 된다» 고 말하지 않는다 ' + JSON.stringify(late))
           if (late.act !== '알림 켜기') fail('AB-3: [알림 켜기] 가 없다 ' + JSON.stringify(late))
           if (!/분/.test(late.el ?? '')) fail('AB-2: 얼마나 됐는지 안 보인다 ' + JSON.stringify(late))
           await pg.screenshot({ path: 'test/tmp/ab-hold.png' })

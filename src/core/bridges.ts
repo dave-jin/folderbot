@@ -84,14 +84,14 @@ export function parseBridges(text: string): BridgesConfig {
     const name = String(r.name ?? id).trim() || id
     const icon = String(r.icon ?? '✉️').trim() || '✉️'
     const color = r.color === undefined ? '' : String(r.color).trim().toLowerCase()
-    if (color && !colorAllowed(color)) errors.push(`연결 «${id}»: color 는 봇 색 판 12색 중 하나예요 — 색은 id 로 정합니다`)
+    if (color && !colorAllowed(color)) errors.push(`연결 «${id}»: color 는 봇 색 판 12색 중 하나예요 — 색은 id 로 정해요`)
     const d = (r.deliver_to && typeof r.deliver_to === 'object' ? r.deliver_to : {}) as Record<string, unknown>
     const trust = TRUSTS.includes(String(r.trust) as Trust) ? (String(r.trust) as Trust) : 'propose'
-    if (r.trust !== undefined && trust !== r.trust) errors.push(`연결 «${id}»: trust 는 read · propose · act 중 하나예요 — propose 로 둡니다`)
+    if (r.trust !== undefined && trust !== r.trust) errors.push(`연결 «${id}»: trust 는 read · propose · act 중 하나예요 — propose 로 둬요`)
     const mayRaw = Array.isArray(r.dave_may) ? (r.dave_may as unknown[]).map((x) => String(x).trim()) : r.dave_may === undefined ? [] : null
     if (mayRaw === null) errors.push(`연결 «${id}»: dave_may 는 목록이에요(예: [folder_create, bot_start])`)
     const daveMay = (mayRaw ?? []).filter((x, k, a) => DAVE_MAY.includes(x) && a.indexOf(x) === k)
-    for (const x of mayRaw ?? []) if (!DAVE_MAY.includes(x)) errors.push(`연결 «${id}»: dave_may 에 «${x}» 는 못 넣어요 — ${DAVE_MAY.join(' · ')} 만 됩니다(옮기기·은퇴는 사람 승인)`)
+    for (const x of mayRaw ?? []) if (!DAVE_MAY.includes(x)) errors.push(`연결 «${id}»: dave_may 에 «${x}» 는 못 넣어요 — ${DAVE_MAY.join(' · ')} 만 돼요(옮기기·은퇴는 사람 승인)`)
     const since = r.since === undefined ? undefined : Date.parse(String(r.since))
     if (r.since !== undefined && !Number.isFinite(since)) errors.push(`연결 «${id}»: since 를 시각으로 못 읽었어요`)
     let wake: PeerDef['wake']

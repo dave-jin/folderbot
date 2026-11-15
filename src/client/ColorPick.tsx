@@ -4,6 +4,7 @@ import type { Bot } from '../core/types'
 import { ORCH_COLOR, PALETTE } from '../core/botColor'
 import { api } from './api'
 import { FolderBot } from './FolderBot'
+import { errText } from './errText'
 
 /**
  * 🔴 **CN · 폴더봇 색 바꾸기** (2026-10-16 Dave 승인 · 기획안 §8 · 목업 `03_디자인/2026-10-16_폰-오케스트레이터-색-목업`).
@@ -24,7 +25,7 @@ export function ColorHost({ say }: { say: (m: string) => void }) {
   const choose = async (hex: string) => {
     if (hex === b.color.toLowerCase()) { setB(null); return }
     setBusy(hex)
-    try { await api(`/bots/${b.id}/color`, { body: { color: hex } }); say(`${b.displayName || b.name} 색을 바꿨어요`); setB(null) } catch (e) { say((e as Error).message) } finally { setBusy('') }
+    try { await api(`/bots/${b.id}/color`, { body: { color: hex } }); say(`${b.displayName || b.name} 색을 바꿨어요`); setB(null) } catch (e) { say(errText('색을 못 바꿨어요', e)) } finally { setBusy('') }
   }
   return <>
     <div className="backdrop" onClick={() => setB(null)} />

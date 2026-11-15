@@ -32,8 +32,8 @@ export async function pickAgent(rel: string): Promise<ProviderId | null> {
 }
 
 const DESC: Record<ProviderId, string> = {
-  claude: '하네스 · 스킬 · 커넥터를 그대로 씁니다. 이 폴더의 CLAUDE.md 를 읽어요.',
-  codex: 'AGENTS.md 를 읽습니다. 같은 폴더에 형제로 둘 수 있어요.'
+  claude: '하네스 · 스킬 · 커넥터를 그대로 써요. 이 폴더의 CLAUDE.md 를 읽어요.',
+  codex: 'AGENTS.md 를 읽어요. 같은 폴더에 형제로 둘 수 있어요.'
 }
 
 export function AgentPickHost() {
@@ -73,7 +73,7 @@ export function AgentPickHost() {
         </button>)}
       </div>
       <div className="ap-env">
-        <div className="cap">환경 — 고른 에이전트가 이 조건으로 뜹니다</div>
+        <div className="cap">환경 — 고른 에이전트가 이 조건으로 떠요</div>
         {env.map(([k, v, ok, go]) => <div className="er" key={k}><span className="k">{k}</span><span className="v mono">{v}</span>{ok ? <Icon n="check" size={11} color="var(--done)" /> : null}{go ? <button className="lk" onClick={go}>바꾸기</button> : null}</div>)}
       </div>
       <div className="ap-f">

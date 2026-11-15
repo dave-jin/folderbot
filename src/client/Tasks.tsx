@@ -8,6 +8,7 @@ import { Icon } from './FolderBot'
 import { Md } from './Sheets'
 import { fmtElapsed, useStore } from './store'
 import { Float, type Anchor } from './Float'
+import { errText } from './errText'
 
 /**
  * EA · **뒤에서 도는 일** (2026-11-11 Dave 승인 «맡긴 에이전트를 보고 멈춘다»).
@@ -30,7 +31,7 @@ export function useTasks(sid?: string): BgTask[] { const { s } = useStore(); ret
 
 /** 작업 하나 멈추기 — 됐는지를 그 자리에서 말한다. 상태 줄은 호스트가 보내는 `task` 프레임이 바꾼다 */
 export async function stopOneTask(sid: string, taskId: string, say: (m: string) => void, name?: string): Promise<boolean> {
-  try { await api(`/sessions/${sid}/tasks/${encodeURIComponent(taskId)}/stop`, { body: {} }); say(name ? `멈췄어요 · ${name}` : '멈췄어요'); return true } catch (e) { say((e as Error).message); return false }
+  try { await api(`/sessions/${sid}/tasks/${encodeURIComponent(taskId)}/stop`, { body: {} }); say(name ? `멈췄어요 · ${name}` : '멈췄어요'); return true } catch (e) { say(errText('못 멈췄어요', e)); return false }
 }
 
 /** 끝난 줄의 요약 한 줄 — 마크다운 표식(`##`·`-`·`**`)은 걷고(`core/mdPlain`) 200자까지. 전문은 열어 보는 화면에 있다 */
@@ -125,7 +126,7 @@ export function SubDetail({ sub, sid, botId, onFile, say }: { sub: Sub; sid: str
   const load = async () => {
     if (!sub.taskId) return
     setW('loading')
-    try { setW(await api<Written>(`/sessions/${sid}/tasks/${encodeURIComponent(sub.taskId)}/transcript`)) } catch (e) { setW(null); say((e as Error).message) }
+    try { setW(await api<Written>(`/sessions/${sid}/tasks/${encodeURIComponent(sub.taskId)}/transcript`)) } catch (e) { setW(null); say(errText('쓴 글을 못 읽었어요', e)) }
   }
   const stop = async () => { if (!sub.taskId || busy) return; setBusy(true); await stopOneTask(sid, sub.taskId, say, sub.name); setBusy(false) }
   const run = sub.status === 'run'

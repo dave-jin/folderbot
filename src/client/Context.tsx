@@ -106,7 +106,7 @@ function StepItem({ r, a, mini }: { r: WRow; a: Acts; mini?: boolean }) {
     <div className="cx-w">{r.kind === 'routine' ? what : <><span className="ti">{r.title}</span> — {r.line}</>}</div>
     {r.at ? <span className="cx-tm">{when(r.at)}</span> : <span className="cx-tm" />}
     <div className="cx-a">
-      {r.kind === 'stalled' ? <><button className="btn cx-pri cx-cont" onClick={() => a.open({ bot: r.botId, task: r.taskId })}>{mini ? '이어서' : '이어서 하기'}</button>{mini ? null : <button className="btn ghost" onClick={() => a.snooze(r)}>놔둬</button>}</> : null}
+      {r.kind === 'stalled' ? <><button className="btn cx-pri cx-cont" onClick={() => a.open({ bot: r.botId, task: r.taskId })}>{mini ? '이어서' : '이어서 하기'}</button>{mini ? null : <button className="btn ghost" onClick={() => a.snooze(r)}>놔두기</button>}</> : null}
       {perm ? <button className="btn cx-pri cx-allow" disabled={a.busy === r.sessionId} onClick={() => a.allow(r)}>{a.busy === r.sessionId ? '…' : '허용'}</button> : null}
       {r.kind === 'waiting' ? <button className={`btn ${perm ? 'ghost' : 'cx-pri'} cx-reply`} onClick={() => a.go(r.botId, r.sessionId)}>답하기</button> : null}
       {r.kind === 'routine' && a.openRoutines ? <button className="btn cx-pri" onClick={a.openRoutines}>점검하기</button> : null}
@@ -355,7 +355,7 @@ function GoalView({ at, back, onClose, go, goTodo, phone, openDoc, owner }: {
 
       <section className="cx-col cx-story">
         <div className="cx-ch"><b>{sel === 'loose' ? '안 묶인 세션' : task ? task.title : '전체 이야기'}</b>{task ? <span className="m">{STATE_KO[task.state]}</span> : null}
-          {task && (task.state === 'done' || task.state === 'claimed') ? <button className="btn ghost cx-re" onClick={() => void reopen()}>안 끝났어</button> : null}</div>
+          {task && (task.state === 'done' || task.state === 'claimed') ? <button className="btn ghost cx-re" onClick={() => void reopen()}>안 끝났어요</button> : null}</div>
         {task ? <div className="cx-now"><p><b>지금 어디까지</b> — {task.summary || '아직 요약이 없어요'}</p><p><b>빠진 것</b> — {task.missing || '없음'}</p></div>
           : sel === null && g?.gap ? <div className="cx-now"><p><b>목표 대비</b> — {g.gap}</p></div> : null}
         {owner === false ? <div className="bempty">이야기는 루틴을 돌리는 메인에서 보여요</div> : null}

@@ -7,6 +7,7 @@ import { api } from './api'
 import { ago as agoText } from '../core/timeText'
 import { Icon } from './FolderBot'
 import { useStore } from './store'
+import { errText } from './errText'
 
 /**
  * 세션 정리 (2026-10-02 Dave: «전체 세션을 보고 일괄로 유휴 상태나 안쓰는 세션들을 지우는 기능» · «정리 단추 따로» · 시안 B).
@@ -80,11 +81,11 @@ export function Cleanup({ onClose, say, manage = false, go }: { onClose: () => v
       setPick(new Set())
       if (r.removed.length) setUndo({ ids: r.removed, until: Date.now() + 10_000 })
       if (r.skipped.length) say(`${r.skipped.length}개는 건너뛰었어요 — ${[...new Set(r.skipped.map((x) => x.why))].join(' · ')}`)
-    } catch (e) { say((e as Error).message) } finally { setBusy(false) }
+    } catch (e) { say(errText('세션을 못 지웠어요', e)) } finally { setBusy(false) }
   }
   const restore = async () => {
     if (!undo) return
-    try { const r = await api<{ restored: string[] }>('/sessions/restore', { body: { ids: undo.ids } }); say(`세션 ${r.restored.length}개를 되살렸어요`); setUndo(null) } catch (e) { say((e as Error).message) }
+    try { const r = await api<{ restored: string[] }>('/sessions/restore', { body: { ids: undo.ids } }); say(`세션 ${r.restored.length}개를 되살렸어요`); setUndo(null) } catch (e) { say(errText('세션을 못 되살렸어요', e)) }
   }
   const kindCls = (x: SessionInfo) => ({ 소통: 'k-comm', 채널: 'k-comm', 루틴: 'k-rt', 봇끼리: 'k-bot', 사람: 'k-me' })[sessKind(x)]
 

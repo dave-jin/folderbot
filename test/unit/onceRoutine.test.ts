@@ -102,7 +102,7 @@ describe('CR · 한 번만 도는 루틴 — «언제» 에 날짜·때를 쓰�
     expect(onceAt('0 9 * * *')).toBeNull()
     expect(onceDone('2026-10-01T09:00', NOW)).toBe(true); expect(onceDone('2026-10-20T15:00', NOW)).toBe(false)
     expect(sameOnce('2026-10-01T09:00', '2026-10-01T09:00:00')).toBe(true); expect(sameOnce('2026-10-01T09:00', undefined)).toBe(false)
-    expect(confirmLine('2026-10-20T15:00', NOW)).toBe('10/20(화) 오후 3시에 한 번만 돌립니다. 그 뒤로는 다시 돌지 않아요.')
+    expect(confirmLine('2026-10-20T15:00', NOW)).toBe('10/20(화) 오후 3시에 한 번만 돌려요. 그 뒤로는 다시 돌지 않아요.')
     expect(confirmLine('2026-10-01T09:00', NOW)).toContain('다시 돌지 않아요')
   })
 })

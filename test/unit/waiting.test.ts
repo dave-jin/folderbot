@@ -35,7 +35,7 @@ describe('AB · 기다림을 보이게', () => {
 
   it('🔴 2분이 넘으면 화면이 먼저 «가도 된다» 고 말한다', () => {
     const l = holdLine('other', fl('Task', HOLD_LONG_MS), HOLD_LONG_MS)
-    expect(l.text).toContain('다른 일 보셔도 됩니다')
+    expect(l.text).toContain('다른 일 보셔도 돼요')
     expect(l.action).toBe('notify'); expect(l.actionLabel).toBe('알림 켜기')
     expect(l.elapsed).toBe('2분 0초')
   })

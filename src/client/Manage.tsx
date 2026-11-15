@@ -8,6 +8,7 @@ import { api } from './api'
 import { ago as agoText } from '../core/timeText'
 import { FolderBot, Icon, type Mood } from './FolderBot'
 import { fmtTime, useStore } from './store'
+import { errText } from './errText'
 
 /**
  * 🔴 **CJ R2 · 전체 할 일 보드** (2026-10-16 Dave «전부 추천대로» · 기획안 §2-3 · 목업 `03_디자인/2026-10-16_홈-네-칸-목업` ②
@@ -42,7 +43,7 @@ export function TodoBoard({ onClose, onTodo, say }: { onClose: () => void; onTod
   const check = async (botId: string, t: BoardItem) => {
     const k = `${botId}:${t.line}`; if (busy) return
     setBusy(k)
-    try { await api(`/bots/${botId}/todo/toggle`, { body: { line: t.line, done: true, title: t.title } }); say(`«${t.title}» 완료`) } catch (e) { say((e as Error).message) } finally { await load(); setBusy('') }
+    try { await api(`/bots/${botId}/todo/toggle`, { body: { line: t.line, done: true, title: t.title } }); say(`«${t.title}» 완료`) } catch (e) { say(errText('완료로 못 바꿨어요', e)) } finally { await load(); setBusy('') }
   }
   const open = (botId: string) => { onClose(); onTodo(botId) }
   /* 거르기는 하나만 켜지는 것이라 세그먼트로 (2026-11-13 · 부품 넷 «고르기») — 종전의 알약은 여럿을 함께 켜는 거르개(세션 정리)와 같은 모양이었다 */
@@ -52,7 +53,7 @@ export function TodoBoard({ onClose, onTodo, say }: { onClose: () => void; onTod
     <div className="bbody">
       {err ? <div className="bempty">할 일을 못 읽었어요 — {err}</div> : null}
       {!data && !err ? <div className="bempty">읽는 중…</div> : null}
-      {oldHost ? <div className="bempty">이 보드는 메인의 앱이 새 판이어야 보여요. 메인에서 업데이트 칩을 눌러 주세요.</div> : null}
+      {oldHost ? <div className="bempty">이 보드는 메인의 앱이 새 판이어야 보여요. 메인에서 왼쪽 아래 버전을 눌러 주세요.</div> : null}
       {data?.items && !rows.length ? <div className="bempty">{q || filter !== 'all' ? '이 거름에 걸리는 할 일이 없어요' : '열린 할 일이 없어요'}</div> : null}
       {rows.map(({ bot, items, total }) => {
         const m = meta.get(bot.id); const ch = botDueChip(bot); const all = more.has(bot.id)

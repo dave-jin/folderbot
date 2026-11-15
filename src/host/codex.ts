@@ -153,7 +153,7 @@ export class CodexWorker extends EventEmitter {
         this.dropModel = true
         this.retrying = prompt
         this.unknown.clear(); this.lastError = ''
-        this.out({ type: 'system', subtype: 'activity', summary: `모델 ${this.spec.model} 은 이 계정에서 못 써요 — CLI 기본 모델로 다시 보냅니다` })
+        this.out({ type: 'system', subtype: 'activity', summary: `모델 ${this.spec.model} 은 이 계정에서 못 써요 — CLI 기본 모델로 다시 보내요` })
         this.send(prompt)
         return
       }

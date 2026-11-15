@@ -62,10 +62,10 @@ export function StemManager({ map, op, close, onPick, phone }: {
         </div>
         <div className="smg-side">
           <div className="smg-rule"><b>어떻게 정리되나</b><ol>
-            <li><b>Dave 가 손댄 것은 그대로</b> — 이름·구성원·차례·합침·지운 줄기. 다시 계산해도 안 풀려요.</li>
+            <li><b>내가 손댄 것은 그대로</b> — 이름·구성원·차례·합침·지운 줄기. 다시 계산해도 안 풀려요.</li>
             <li><b>나머지는 봇이 이 목록에 맞춰 넣어요</b> — 새 폴더, 새로 보관된 폴더, 아직 안 묶인 폴더. 하루 한 번, 그리고 줄기를 만들거나 합치거나 지운 뒤.</li>
             <li>맞는 줄기가 없으면 <b>새 줄기는 제안만</b> 해요.</li>
-            <li>«봇이 넣음» 은 Dave 가 옮기거나 빼면 그때부터 Dave 것이에요.</li>
+            <li>«봇이 넣음» 은 내가 옮기거나 빼면 그때부터 내 것이에요.</li>
             <li>줄기를 지우면 그 폴더들은 봇이 남은 줄기로 다시 나눠요.</li></ol></div>
           <div className="smg-log"><div className="h"><b>봇이 정리한 것</b><span className="m">{map.placed.length}{map.undecided.length ? ` · 판단 기다림 ${map.undecided.length}` : ''}</span></div>
             {bots.length ? bots.map((p) => <div key={p.folder} className="li">

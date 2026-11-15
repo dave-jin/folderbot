@@ -24,6 +24,7 @@ import { copyText } from './clip'
 import { askExists } from './existsCache'
 import { pickAgent } from './AgentPick'
 import { fmtTime, useStore } from './store'
+import { errText } from './errText'
 
 /**
  * 답변 속 «경로처럼 보이는 글자» 를 눌러서 여는 칩으로 (2026-09-13 Dave).
@@ -353,7 +354,7 @@ export function FolderPicker({ onClose, onStarted, pick }: { onClose: () => void
           <button className={`rb ${q ? 'on' : ''}`} onClick={() => { setQ(q ? '' : ' '); setTimeout(() => (document.querySelector('.pk.phone .ph-s input') as HTMLInputElement | null)?.focus(), 30) }} title="찾기"><Icon n="search" size={16} /></button>
           <button className="rb" onClick={onClose} title="닫기"><Icon n="x" size={16} /></button>
         </div>
-        {q ? <div className="ph-s"><Icon n="search" size={14} /><input placeholder="폴더 이름 · 초성도 됩니다" value={q.trim() ? q : ''} onChange={(e) => setQ(e.target.value || ' ')} /></div>
+        {q ? <div className="ph-s"><Icon n="search" size={14} /><input placeholder="폴더 이름 · 초성도 돼요" value={q.trim() ? q : ''} onChange={(e) => setQ(e.target.value || ' ')} /></div>
           : <div className="ph-c">{['PARA', ...(cur ? cur.split('/') : [])].map((c, i, arr) => <span key={i} className={i === arr.length - 1 ? 'on' : ''} onClick={() => setCur(arr.slice(1, i + 1).join('/'))}>{c}</span>)}</div>}
         <div className="modal-b ph-b" ref={listRef}>
           {kids.map((n2) => <button key={n2.rel} data-rel={n2.rel} className="ph-row" onClick={() => { if (q) { setQ(''); setCur(n2.rel) } else setCur(n2.rel) }}>
@@ -378,7 +379,7 @@ export function FolderPicker({ onClose, onStarted, pick }: { onClose: () => void
   return <>
     <div className="backdrop" onClick={onClose} />
     <div className="modal pk sz-m" role="dialog" aria-modal="true" style={{ height: 'min(720px, calc(100% - 24px))' }} onKeyDown={onKey} tabIndex={-1}>
-      <div className="modal-h"><FolderBot color="#e08850" size={40} /><div className="t">{pick ? <><b>{pick.title}</b><small>{pick.sub}</small></> : <><b>봇과 함께 일할 폴더를 고르세요</b><small>PARA 어디든 됩니다 — 접었다 펴서 고르세요 · 활성 폴더가 먼저 · 새 폴더는 그 자리에서</small></>}</div><ModalX onClose={onClose} /></div>
+      <div className="modal-h"><FolderBot color="#e08850" size={40} /><div className="t">{pick ? <><b>{pick.title}</b><small>{pick.sub}</small></> : <><b>봇과 함께 일할 폴더를 고르세요</b><small>PARA 어디든 돼요 — 접었다 펴서 고르세요 · 활성 폴더가 먼저 · 새 폴더는 그 자리에서</small></>}</div><ModalX onClose={onClose} /></div>
       <div className="search"><Icon n="search" size={14} /><input placeholder="폴더 이름으로 찾기 — 치면 트리가 펼쳐지며 걸러져요" value={q} onChange={(e) => setQ(e.target.value)} autoFocus /></div>
       <div className="fl"><Seg cls="pkseg" label="폴더 거르기" value={filter} options={[['all', '전체'], ['active', '활성만'], ['free', '봇 없는 폴더만']] as const} onChange={setFilter} /><span className="hint">↑↓ 이동 · → 펼침 · ← 접음 · ⏎ {pick ? '고르기' : '시작'}</span></div>
       <div className="modal-b" style={{ flex: 1 }} ref={listRef}>
@@ -517,7 +518,7 @@ export function RoutineSheet({ bot, onClose, draft, pick }: { bot: Bot; onClose:
       await put()
       const r = await api<{ ran: string; warn?: string | null }>(`/bots/${bot.id}/routines/run`, { method: 'POST', body: { name } })
       await refresh(); setRan(r.warn ? `${name} 을 돌렸어요 — ${r.warn}` : `${name} 을 지금 한 번 돌렸어요 · 세션에서 결과를 보세요`)
-    } catch (e) { setRan(`못 돌렸어요 — ${(e as Error).message}`) } finally { setBusy(false) }
+    } catch (e) { setRan(errText('못 돌렸어요', e)) } finally { setBusy(false) }
   }
 
   const PRESETS = ['매일 아침 9시', '매일 저녁 8시', '평일 오전', '매주 월요일']
@@ -572,7 +573,7 @@ export function RoutineSheet({ bot, onClose, draft, pick }: { bot: Bot; onClose:
             </div>
             <div className="field"><label>끝나면 폰으로 한 줄 푸시</label><Seg cls="rtpush" label="끝나면 폰으로 한 줄 푸시" value={cur.push === false ? 'off' : 'on'} options={[['on', '켬'], ['off', '끔']] as const} onChange={(v) => upd({ push: v === 'on' })} /></div>
             {/* 🔴 always 가 bypassPermissions 라는 사실을 모르고 고르면 안 된다 (AA-4) · EB · auto 는 `--permission-mode auto`(기본값은 그대로 always — Dave 결정 대기) */}
-            <div className="field"><label>승인 수준 · 사람이 없을 때</label><div className="apgrid">{([['always', '묻지 않고 바로 한다', '기본값 · 사람이 없어도 끝까지 돈다 (모든 확인을 건너뜀)'], ['auto', '자동 — Claude 가 판단', '권한을 Claude 가 판단 · 물어 오면 정한 시간 뒤 거절'], ['folder', '이 폴더 안에서만 쓴다', 'todo.md·노트 갱신까지 스스로'], ['readonly', '계획만 세운다', '파일을 쓰지 않아요']] as const).map(([v, t, sub]) => <button key={v} data-approve={v} className={`preset ${(cur.approve ?? 'always') === v ? 'on' : ''}`} onClick={() => upd({ approve: v })}><b>{t}</b><small>{sub}</small></button>)}</div></div>
+            <div className="field"><label>승인 수준 · 사람이 없을 때</label><div className="apgrid">{([['always', '묻지 않고 바로 해요', '기본값 · 사람이 없어도 끝까지 돌아요 (모든 확인을 건너뛰어요)'], ['auto', '자동 — Claude 가 판단', '권한을 Claude 가 판단 · 물어 오면 정한 시간 뒤 거절'], ['folder', '이 폴더 안에서만 써요', 'todo.md·노트 갱신까지 스스로'], ['readonly', '계획만 세워요', '파일을 쓰지 않아요']] as const).map(([v, t, sub]) => <button key={v} data-approve={v} className={`preset ${(cur.approve ?? 'always') === v ? 'on' : ''}`} onClick={() => upd({ approve: v })}><b>{t}</b><small>{sub}</small></button>)}</div></div>
             {cur.lastError ? <div className="rterr" style={{ border: '1px solid var(--err)', borderRadius: 8, padding: '8px 10px' }}><b>이 루틴은 지금 안 걸려 있어요</b><br />{cur.lastError}</div> : null}
             {ran ? <div className="rtnext" style={{ border: '1px solid var(--line2)', borderRadius: 8, padding: '8px 10px' }}>{ran}</div> : null}
             <small className="rtnote">루틴 세션은 봇당 동시 상한(4)에 포함돼요</small>
@@ -712,7 +713,7 @@ export async function deleteSession(x: { id: string; name: string; state: string
     try {
       const r = await api<{ restored: string[] }>('/sessions/restore', { body: { ids: [x.id] } })
       if (r.restored.length) { await restored?.(); say(`«${x.name}» 세션을 되살렸어요`) } else say('되살리지 못했어요')
-    } catch (e) { say((e as Error).message) }
+    } catch (e) { say(errText('세션을 못 되살렸어요', e)) }
   } })
   return true
 }

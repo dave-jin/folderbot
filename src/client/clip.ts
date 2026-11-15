@@ -1,3 +1,4 @@
+import { errText } from './errText'
 /**
  * 복사 — 🔴 **원격에서만 안 되던 이유** (2026-09-13 Dave: *«복사기능이 원격에서만 안돼»*).
  *
@@ -68,5 +69,5 @@ export async function copyImageWhy(url: string, abs?: string): Promise<{ ok: boo
     const safari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
     const item = safari ? new ClipboardItem({ 'image/png': toPng() }) : new ClipboardItem({ 'image/png': await toPng() })
     await navigator.clipboard.write([item]); return { ok: true }
-  } catch (e) { return { ok: false, why: `그림 복사 실패 — ${(e as Error).message}` } }
+  } catch (e) { return { ok: false, why: errText('그림을 못 복사했어요', e) } }
 }

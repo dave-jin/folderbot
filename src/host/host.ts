@@ -324,7 +324,7 @@ export class Host {
     if (!from) r = this.sessions.takeOver(r, bot)
     if (this.auth.verdict === 'unreadable' || this.auth.verdict === 'loggedout') {
       this.queued.push({ botId: bot.id, sessionId: r.id, text, origin: from ? 'bot' : 'human' })
-      this.sessions.get(r.id)!.items.push({ id: `q${Date.now()}`, t: Date.now(), kind: 'system', text: '미니의 Claude 로그인이 필요해 대기열에 뒀어요. 복구되면 이어서 보냅니다.' })
+      this.sessions.get(r.id)!.items.push({ id: `q${Date.now()}`, t: Date.now(), kind: 'system', text: '메인의 Claude 로그인이 필요해 대기열에 뒀어요. 복구되면 이어서 보내요.' })
       this.broadcast({ ev: 'chat', sessionId: r.id, item: r.items[r.items.length - 1] })
       return r.id
     }
@@ -447,7 +447,7 @@ export class Host {
       const why = !b || !d ? '루틴이 이제 없어요' : d.enabled === false ? '루틴이 꺼져 있어요' : c.attempt > 1 ? '이미 두 번째 시도였어요' : d.retry !== true ? '재시도가 꺼져 있어요(retry)' : '보충 창(6시간)이 지났어요'
       told.push(`- ${c.bot} · «${c.routine}» · ${hm} 시작 · 세션 ${c.run} — 다시 안 돌림: ${why}`)
     }
-    if (told.length) this.notifyOrch(`[운영 · 끊긴 루틴 ${told.length}건] 메인이 다시 뜨면서(업데이트 적용·앱 재시작) 도중에 끊긴 루틴 회차예요. 실행 기록은 «실패 · ${INTERRUPTED_REASON}» 로 닫았어요.\n${told.join('\n')}\n다시 돌릴지는 그 봇이나 Dave 가 정합니다(routine_run). 외부 발송이 든 루틴이면 이미 나갔는지 먼저 확인하세요.`, 'ops')
+    if (told.length) this.notifyOrch(`[운영 · 끊긴 루틴 ${told.length}건] 메인이 다시 뜨면서(업데이트 적용·앱 재시작) 도중에 끊긴 루틴 회차예요. 실행 기록은 «실패 · ${INTERRUPTED_REASON}» 로 닫았어요.\n${told.join('\n')}\n다시 돌릴지는 그 봇이나 사람이 정해요(routine_run). 외부 발송이 든 루틴이면 이미 나갔는지 먼저 확인하세요.`, 'ops')
   }
 
   /**

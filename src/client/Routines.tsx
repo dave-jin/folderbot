@@ -7,6 +7,7 @@ import { Icon } from './FolderBot'
 import type { Board } from '../host/routineBoard'
 import { LOAD_BAD, LOAD_WARN, STATE_ORDER, type BoardRoutine, type BoardState, type RunRow } from '../core/routineBoard'
 import type { RoutineDef } from '../core/types'
+import { errText } from './errText'
 
 /**
  * 🔴 RB-6 · 루틴 관리 페이지 (2026-10-30 Dave: *«folderbot 전체 루틴을 보고 관리할 수 있는 루틴 관리 페이지»* ·
@@ -38,7 +39,7 @@ export function Routines({ onClose, go, openSheet, say, phone }: { onClose: () =
   const [open, setOpen] = useState<string>('')
   const [busy, setBusy] = useState('')
   const [hidden, setHidden] = useState<string>(() => { try { return localStorage.getItem(HIDE_KEY) ?? '' } catch { return '' } })
-  const load = () => { void api<Board>('/routines/overview').then(setB).catch((e) => say((e as Error).message)) }
+  const load = () => { void api<Board>('/routines/overview').then(setB).catch((e) => say(errText('루틴을 못 읽었어요', e))) }
   useEffect(() => { load(); const t = window.setInterval(load, 30_000); return () => window.clearInterval(t) }, [])
   useEffect(() => { load() }, [s.bots])   // 루틴이 바뀌면 봇 목록이 다시 온다
 
@@ -55,9 +56,9 @@ export function Routines({ onClose, go, openSheet, say, phone }: { onClose: () =
       const clean = cur.map(({ when: _w, lastError: _e, nextRun: _n, ...r }) => r)
       await api(`/bots/${botId}/routines`, { method: 'PUT', body: { routines: f(clean) } })
       say(label); load()
-    } catch (e) { say((e as Error).message) } finally { setBusy('') }
+    } catch (e) { say(errText('루틴을 못 바꿨어요', e)) } finally { setBusy('') }
   }
-  const run = async (r: BoardRoutine) => { setBusy(`run:${key(r)}`); try { await api(`/bots/${r.botId}/routines/run`, { method: 'POST', body: { name: r.name } }); say(`«${r.name}» 을 지금 돌렸어요`); window.setTimeout(load, 1500) } catch (e) { say((e as Error).message) } finally { setBusy('') } }
+  const run = async (r: BoardRoutine) => { setBusy(`run:${key(r)}`); try { await api(`/bots/${r.botId}/routines/run`, { method: 'POST', body: { name: r.name } }); say(`«${r.name}» 을 지금 돌렸어요`); window.setTimeout(load, 1500) } catch (e) { say(errText('루틴을 못 돌렸어요', e)) } finally { setBusy('') } }
   const toggle = (r: BoardRoutine) => mutate(r.botId, r.enabled ? `«${r.name}» 을 껐어요` : `«${r.name}» 을 켰어요`, (l) => l.map((x) => (x.name === r.name ? { ...x, enabled: !r.enabled } : x)))
   const remove = async (r: BoardRoutine) => { if (await askConfirm({ title: `«${r.name}» 루틴을 지울까요?`, body: `«${r.bot}» 의 루틴이에요. 지우면 되돌릴 수 없어요.`, ok: '지우기', danger: true })) void mutate(r.botId, `«${r.name}» 을 지웠어요`, (l) => l.filter((x) => x.name !== r.name)) }
   const sweepFinished = async () => {
@@ -113,7 +114,7 @@ export function Routines({ onClose, go, openSheet, say, phone }: { onClose: () =
           {list.map((r) => { const k = key(r), on = open === k; return <div key={k} className={`rtr ${on ? 'open' : ''}`} data-routine={r.name}>
             <div className="row" onClick={() => setOpen(on ? '' : k)}>
               <span className="nm"><b>{r.name}</b><span className="f">{r.bot}</span></span>
-              <span className="why">{r.last ? `${when(r.last.start, b.now)} ${RES[r.last.result]}${r.last.reason ? ` — ${r.last.reason}` : ''}${r.last.catchup ? ' (보충)' : ''}` : r.firstWait ? '첫 회차 대기' : r.error ?? '기록 없음'}{r.daveTodo ? <em className="dave"> · Dave 할 일</em> : null}</span>
+              <span className="why">{r.last ? `${when(r.last.start, b.now)} ${RES[r.last.result]}${r.last.reason ? ` — ${r.last.reason}` : ''}${r.last.catchup ? ' (보충)' : ''}` : r.firstWait ? '첫 회차 대기' : r.error ?? '기록 없음'}{r.daveTodo ? <em className="dave"> · 내 할 일</em> : null}</span>
               {phone ? null : <><span className="wh">{r.when}</span><span className="nx">{r.next ? `다음 ${when(r.next, b.now)}` : r.state === 'finished' ? '끝남' : '—'}</span>
                 <span className="dots">{r.recent.slice(0, 14).reverse().map((x) => <i key={x.run} className={`d-${x.result}${x.catchup ? ' c' : ''}`} title={`${when(x.start, b.now)} ${RES[x.result]}`} />)}{r.avgMs ? <span className="avg">평균 {dur(r.avgMs)}</span> : null}</span></>}
               {phone && !on ? null : <span className="acts" onClick={(e) => e.stopPropagation()}>
