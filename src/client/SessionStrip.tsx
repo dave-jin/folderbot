@@ -181,7 +181,7 @@ export function SessionStrip({ bot, sessions, sessionId, go, say }: { bot: Bot; 
 }
 
 /** 폰 · 채팅 머리줄의 단추가 여는 세션 목록(바닥 시트) */
-export function SessionSheet({ bot, sessions, sessionId, go, say, onClose }: { bot: Bot; sessions: SessionInfo[]; sessionId?: string; go: Go; say: Say; onClose: () => void }) {
+export function SessionSheet({ bot, sessions, sessionId, go, say, onClose, onPresent }: { bot: Bot; sessions: SessionInfo[]; sessionId?: string; go: Go; say: Say; onClose: () => void; onPresent?: () => void }) {
   // 세션을 고르거나 새로 만들면 시트는 닫힌다(에이전트를 고른 뒤에 만드는 길 포함)
   const ops = useSessionOps(bot, sessions, sessionId, (b, sid) => { go(b, sid); onClose() }, say)
   useEsc(onClose)
@@ -192,7 +192,9 @@ export function SessionSheet({ bot, sessions, sessionId, go, say, onClose }: { b
       <div className="ssh"><b>세션</b><span className="c">{ops.chat.length + ops.lifted.length}</span><button className="ib mx" onClick={onClose} title="닫기" aria-label="닫기"><Icon n="x" size={14} /></button></div>
       <div className="ssb"><SessionRows bot={bot} ops={ops} rows={ops.chat} lifts={ops.lifted} sessionId={sessionId} go={go} onPicked={onClose} withAuto /></div>
       {/* 새 세션은 목록 밖 발에 둔다 — 세션이 많아 목록이 밀려도 늘 보인다 */}
-      <div className="ssf"><button className="srow sadd" onClick={(e) => { ops.askNew(e.currentTarget as HTMLElement); if (ops.provs.length <= 1) onClose() }}><Icon n="plus" size={12} color="var(--t2)" /><span className="n">새 세션</span></button></div>
+      <div className="ssf"><button className="srow sadd" onClick={(e) => { ops.askNew(e.currentTarget as HTMLElement); if (ops.provs.length <= 1) onClose() }}><Icon n="plus" size={12} color="var(--t2)" /><span className="n">새 세션</span></button>
+        {/* 보여 주기 보기 — 폰은 여기서 켠다(머리줄에 단추를 하나 더 세우지 않는다 · 2026-11-15 목업). 끄는 자리는 머리줄 오른쪽의 [끝내기] */}
+        {onPresent ? <button className="srow spres" onClick={onPresent}><Icon n="eye" size={12} color="var(--t2)" /><span className="n">보여 주기</span><span className="spd">말과 답만 크게</span></button> : null}</div>
       {ops.pickEl}
     </div>
   </>

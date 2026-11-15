@@ -7825,6 +7825,16 @@ try {
       await caretScroll({ br, shots: 'test/tmp', check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 커서와 스크롤 · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } names.push(name.split(' ')[0]) } })
       ok(`커서와 스크롤 — 입력칸에 붙여 넣거나 줄을 넣으면 커서가 보인다 · 질문 카드의 미리보기 [고치기] 는 커서를 따라가고 대화가 흔들리지 않는다 · 위를 읽는 중에는 대화가 그대로 [${names.join(' ')}]`)
     }
+    /*
+     * 보여 주기 보기 (2026-11-12 Dave «화면을 띄워 보여 주기» · 11/15 카드 답 셋 — 입력칸 «남긴다» · 승인 카드 «보이고 경로만 가린다» · 폰 «폰에도 넣는다»
+     * · 시각화 채팅 넷째 묶음). 검사 본문(`test/present.mjs`)이 제 호스트를 따로 띄운다.
+     */
+    {
+      const { presentView } = await import('./present.mjs')
+      const names = []
+      await presentView({ br, shots: 'test/tmp', check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 보여 주기 보기 · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } names.push(name.split(' ')[0]) } })
+      ok(`보여 주기 보기 — 켜면 다른 폴더 이름과 작업 흔적이 화면에서 사라지고 말과 답이 한 단계 크다 · 승인 카드는 명령을 가린 채 남는다 · 입력칸은 남는다 · ⎋ 로는 안 꺼진다 · 다시 열면 꺼져 있다 · 폰은 세션 시트에서 켠다 [${names.join(' ')}]`)
+    }
     await br.close(); ok('ui renders (desktop · phone) → test/tmp/*.png')
   } catch (e) { try { await globalThis.__br?.close() } catch {} if (/executablePath|Executable doesn't exist|Cannot find (module|package) 'playwright/.test(String(e.message))) console.log('(화면 검사 건너뜀 — 브라우저 없음:', e.message.split('\n')[0], ')'); else fail('ui: ' + e.stack.split('\n').slice(0, 4).join(' | ')) }
   // 원본 울타리 · 브라우저가 없는 기기에서도 호스트 쪽 검사(S1~S3)는 돈다

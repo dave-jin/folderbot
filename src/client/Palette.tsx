@@ -5,6 +5,7 @@ import { rank } from '../core/search'
 import { api } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { useStore } from './store'
+import { usePresent } from './present'
 import type { Bot, SessionInfo } from '../core/types'
 
 /**
@@ -31,11 +32,13 @@ export interface PaletteProps {
   setModal: (m: 'picker' | 'notify' | 'settings' | 'keys' | 'routines') => void
   newSession: () => Promise<void>
   toggle: (what: 'sb' | 'rp' | 'doc') => void
+  onPresent: () => void
 }
 
 export function Palette(p: PaletteProps) {
   useEsc(p.onClose)
   const { s } = useStore()
+  const present = usePresent()
   const [q, setQ] = useState('')
   const [files, setFiles] = useState<string[] | null>(null)
   const [i, setI] = useState(0)
@@ -55,6 +58,7 @@ export function Palette(p: PaletteProps) {
     cmd('c-notify', 'bell', '알림 센터', '⌘⇧U', () => p.setModal('notify'))
     cmd('c-routines', 'eye', '루틴 관리', '', () => p.setModal('routines'))   // RB-6
     if (!p.bot.orchestrator) cmd('c-overview', 'doc', '이 폴더 개요 한 장', '', () => p.openDoc(OVERVIEW_REL, true))   // 2026-11-15 · 폴더 개요
+    cmd('c-present', 'eye', present ? '보여 주기 끝내기' : '보여 주기', '⌘⇧P', () => p.onPresent())   // 2026-11-15 · 보여 주기 보기
     cmd('c-set', 'gear', '설정', '⌘,', () => p.setModal('settings'))
     cmd('c-keys', 'search', '단축키 보기', '⌘/', () => p.setModal('keys'))
     cmd('c-sb', 'eye', '폴더 목록 접기 · 펴기', '⌘B', () => p.toggle('sb'))
@@ -67,7 +71,7 @@ export function Palette(p: PaletteProps) {
     // ④ 이 폴더의 문서
     for (const rel of files ?? []) out.push({ id: `f-${rel}`, icon: 'doc', label: rel.split('/').pop() ?? rel, sub: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : p.bot.name, run: () => p.openDoc(rel, true) })
     return out
-  }, [p.bots, p.bot.id, p.sessions, files, s.hostName])
+  }, [p.bots, p.bot.id, p.sessions, files, s.hostName, present])
 
   /**
    * ⑤ 지난 대화 (루프 7/10) — 두 글자부터, 200ms 쉬었다가 호스트에 묻는다(볼트 전체 · 이름과 말).

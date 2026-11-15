@@ -78,6 +78,8 @@ import { STEER_WHY, steerVerdict } from '../core/steer'
 import { nextWaiting, waitingOrder } from '../core/sessionTabs'
 import { errText } from './errText'
 import { fitArea, revealAreaCaret } from './areaFit'
+import { usePresent } from './present'
+import { permLinePlain, presentOn, setPresent } from '../core/present'
 
 type Tool = Extract<ChatItem, { kind: 'tool' }>
 type Sub = Extract<ChatItem, { kind: 'subagent' }>
@@ -237,6 +239,7 @@ export const KEYS: { k: string; t: string; d?: string }[] = [
   { k: '⌘B', t: '폴더 목록 접기' },
   { k: '⌘⇧B', t: '오른쪽 패널 접기' },
   { k: '⌘⇧D', t: '문서 열 접기' },
+  { k: '⌘⇧P', t: '보여 주기 켜기 · 끄기', d: '다른 폴더와 작업 흔적을 숨기고 지금 세션의 말과 답만 크게 보여요' },
   { k: '⌘⇧U', t: '알림' },
   { k: '⌘J', t: '내 답을 기다리는 다음 세션으로', d: '승인·질문 카드가 걸린 세션을 차례로 돌아요 — 뛰면 그 카드에 초점이 가요' },
   { k: '⏎ · ⎋', t: '승인 카드 허용 · 거부', d: '⏎ 는 카드에 초점이 있을 때만 · ⎋ 는 카드가 걸려 있으면 거부 하나만 해요(턴은 안 멈춰요)' },
@@ -462,6 +465,7 @@ function Main() {
   useEffect(() => { const f = (e: Event) => { setSetSec((e as CustomEvent).detail as SecId); setModal('settings') }; window.addEventListener('fb:settings', f); return () => window.removeEventListener('fb:settings', f) }, [])
   const [drag, setDrag] = useState<'' | 'x'>('')
   const [toast, say, clearToast] = useToast()
+  const present = usePresent()   // 보여 주기 보기 — 기억하지 않는다(다시 열면 꺼져 있다)
   const [prefill, setPrefill] = useState('')
   /** CJ · 폰 알약에서 «오케스트레이터에게 보내기» — 그 봇의 대화가 화면에 선 뒤 한 번 보낸다(Chat 이 `botId` 를 맞춰 보고 보낸다) */
   const [sendReq, setSendReq] = useState<{ botId: string; text: string; n: number } | null>(null)
@@ -859,7 +863,7 @@ function Main() {
    *    키보드도 안 올라왔는데(`--kbh: 0px`) 앱은 «입력 중» 으로 읽어 **문서 화면의 탭이 통째로 사라졌다.**
    *    탭이 숨을 이유는 하나뿐이다 — **키보드가 입력칸을 가리는 채팅 화면**. 문서·폴더에는 입력칸이 없으므로 숨을 이유가 없다.
    */
-  const tabsHere = phone && view !== 'list' && !(kb && view === 'chat') && !peerId   // 편지 창은 제 머리줄에 목록·편지함 단추가 있다
+  const tabsHere = phone && view !== 'list' && !(kb && view === 'chat') && !peerId && !present   // 편지 창은 제 머리줄에 목록·편지함 단추가 있다
   const dockRef = useRef<HTMLDivElement>(null)
   const [dockY, setDockY] = useState(() => { try { return readDockOffset(localStorage.getItem('fb:docky')) } catch { return 0 } })
   const [dockDrag, setDockDrag] = useState(false)
@@ -902,7 +906,7 @@ function Main() {
   const paintDrag = (side: 'left' | 'right', dx: number, opening: boolean) => { const el = drawerEl(side); if (!el) return; const p = dragProgress(opening, side, dx, el.clientWidth || window.innerWidth * (phone ? 1 : 0.85)); el.style.transition = 'none'; el.style.transform = `translateX(${side === 'left' ? -(1 - p) * 100 : (1 - p) * 100}%)`; if (scrimRef.current) { scrimRef.current.style.transition = 'none'; scrimRef.current.style.opacity = String(p) } }
   const settle = (side: 'left' | 'right') => { requestAnimationFrame(() => { const el = drawerEl(side); if (el) { el.style.transition = ''; el.style.transform = '' } if (scrimRef.current) { scrimRef.current.style.transition = ''; scrimRef.current.style.opacity = '' } }); window.setTimeout(() => setDragSide(''), 260) }
   const swDown = (e: React.PointerEvent) => {
-    if (!phone || e.button !== 0 || gref.current) return
+    if (!phone || e.button !== 0 || gref.current || presentOn()) return   // 보여 주는 동안에는 쓸어도 봇 목록이 안 나온다
     const t = e.target as HTMLElement
     const inInput = !!t.closest?.('textarea, input, select, [contenteditable="true"], .cchips, .chat-foot, .composer, .menu, .cpop, .modal, .modal-w, .tsheet, .swrow, .swwrap, .dock, .zbar')
     const sel = window.getSelection(); const selecting = !!sel && !sel.isCollapsed
@@ -1013,6 +1017,9 @@ function Main() {
    *    편집기(CodeMirror)의 것이 이긴다. 가로채는 순간 «실행 취소가 안 되는 앱» 이 된다.
    * ⚠ 목록은 `KEYS` 한 곳에 있고 ⌘/ 가 그 목록을 그대로 보여 준다 — 표와 동작이 갈리지 않게.
    */
+  // 보여 주기 보기 켜기 · 끄기 — ⌘⇧P 와 명령 팔레트가 같이 쓴다. ⚠ 편지 창에서는 켜지 않는다(끝내는 단추가 채팅 머리줄에만 있다)
+  const togglePresent = () => { if (presentOn()) { setPresent(false); return } if (peerId) { say('보여 주기는 세션 화면에서 켤 수 있어요'); return } setModal(null); setPresent(true) }
+  const togglePresentRef = useRef(togglePresent); togglePresentRef.current = togglePresent
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return
@@ -1020,6 +1027,8 @@ function Main() {
       const hit = (want: string, shift = false) => key === want && e.shiftKey === shift && !e.altKey
       // ⌘P — 명령 팔레트. ⚠ 브라우저의 «인쇄» 를 덮으므로 반드시 막는다
       if (hit('p')) { e.preventDefault(); setModal((m) => (m === 'palette' ? null : 'palette')); return }
+      // ⌘⇧P — 보여 주기 보기. 같은 키로 끈다. ⎋ 로는 끄지 않는다(보여 주다가 ⎋ 를 눌렀는데 봇 목록이 드러나면 곤란하다)
+      if (hit('p', true)) { e.preventDefault(); togglePresentRef.current(); return }
       if (hit('b')) { e.preventDefault(); setLay((l) => ({ ...l, sbOpen: !l.sbOpen })); return }
       if (hit('b', true)) { e.preventDefault(); setLay((l) => ({ ...l, rpOpen: !l.rpOpen })); return }
       if (hit('d', true) && bot) { e.preventDefault(); setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] })); return }
@@ -1161,7 +1170,7 @@ function Main() {
         <button className="ib" onClick={() => openRp('files')}><Icon n="folder" size={14} /><span className="fly"><b>파일</b><span>{bot.rel || '볼트'}</span></span></button>
         <button className="ib" onClick={() => openRp('routines')}><Icon n="cal" size={14} /><span className="fly"><b>루틴</b><span>{bot.routines.length}개</span></span></button>
       </div>
-  return <div className={`app ${isDesktop ? 'desktop' : ''} ${phone ? 'phone' : ''} ${mid ? 'smid' : ''} ${kb ? 'kb' : ''} ${drag === 'x' ? 'dragx' : ''} ${phone && !tabsHere ? 'notabs' : ''}`} data-view={view === 'doc' && !showDoc && !phone ? 'panel' : view} data-nav={`${nav.stack.join('>')}${nav.fwd.length ? ' |' + [...nav.fwd].reverse().join('>') : ''}`}>
+  return <div className={`app ${isDesktop ? 'desktop' : ''} ${phone ? 'phone' : ''} ${mid ? 'smid' : ''} ${kb ? 'kb' : ''} ${drag === 'x' ? 'dragx' : ''} ${phone && !tabsHere ? 'notabs' : ''} ${present ? 'present' : ''}`} data-view={view === 'doc' && !showDoc && !phone ? 'panel' : view} data-nav={`${nav.stack.join('>')}${nav.fwd.length ? ' |' + [...nav.fwd].reverse().join('>') : ''}`}>
     {s.online === 'off' ? <div className="offline">{s.hostName || '메인'} 와 다시 연결하는 중…</div> : null}
     {s.auth.verdict === 'unreadable' || s.auth.verdict === 'loggedout' ? <div className="banner"><span className="dot wait" /><span><b>{s.hostName} 에서 Claude 로그인이 필요해요.</b> 메인에서 <span className="mono">claude</span> → <span className="mono">/login</span>, 또는 설정 › Claude 토큰. 보낸 지시는 대기열에 두었다가 복구되면 이어서 해요.</span><span style={{ marginLeft: 'auto' }} /><button className="btn" onClick={() => api('/auth/refresh', { body: {} }).then(refresh)}>다시 확인</button></div> : null}
     <div className={`cols ${dragSide ? 'dragging' : ''}`} ref={colsRef} onPointerDown={swDown} onPointerMove={swMove} onPointerUp={swUp} onPointerCancel={swCancel}>
@@ -1222,7 +1231,7 @@ function Main() {
     {/* 🔴 **명령 팔레트 (⌘P)** — 폴더 · 문서 · 세션 · 명령이 한 목록에 선다(Rondo 이식 D1).
         ⛔ 되돌리기 어려운 일(지우기·은퇴)은 여기 두지 않는다 — 손이 빠른 자리라 한 글자 잘못 치고
         ⏎ 를 누르면 그대로 실행된다. */}
-    {modal === 'palette' ? <Palette bots={s.bots} bot={bot} sessions={sessions} onClose={() => setModal(null)}
+    {modal === 'palette' ? <Palette bots={s.bots} bot={bot} sessions={sessions} onClose={() => setModal(null)} onPresent={togglePresent}
       go={(b, sid) => go(b, sid)} openDoc={(rel, pin) => openDoc(rel, pin)} setModal={setModal} newSession={newSession}
       toggle={(w) => { if (w === 'sb') setLay((l) => ({ ...l, sbOpen: !l.sbOpen })); else if (w === 'rp') setLay((l) => ({ ...l, rpOpen: !l.rpOpen })); else setDocOpen((d) => ({ ...d, [bot.id]: !d[bot.id] })) }} /> : null}
     <AskHost />
@@ -1629,6 +1638,7 @@ function Chat({ bot, go, oref, onOref, sessions, cur, items, loaded, phase = 're
   useEffect(() => { const f = (e: Event) => { const d = (e as CustomEvent).detail as { sid?: string; id?: string } | undefined; if (d?.id && d.sid === cur?.id) setDrill(d.id) }; window.addEventListener('fb:drill', f); return () => window.removeEventListener('fb:drill', f) }, [cur?.id])
   const [drop, setDrop] = useState<'' | 'tree' | 'files'>(''); const [dropN, setDropN] = useState(0); const dragN = useRef(0)
   const [slash, setSlash] = useState<SlashCmd[]>([]); const [files, setFiles] = useState<FileNode[] | null>(null); const [sel, setSel] = useState(0); const [dismissed, setDismissed] = useState('')
+  const present = usePresent()
   const [pinnedId, setPinnedId] = useState<string | null>(null); const [atBottom, setAtBottom] = useState(true); const atBottomRef = useRef(true); atBottomRef.current = atBottom
   /**
    * 🔴 **「최근으로」 단추는 자동 스크롤과 **다른 눈금**을 쓴다** (2026-09-13 Dave: «누르려고 하면 도망가네»).
@@ -2172,7 +2182,7 @@ function Chat({ bot, go, oref, onOref, sessions, cur, items, loaded, phase = 're
   const modelBtn = <button className={`cbtn ${pop === 'model' ? 'on' : ''}`} onClick={() => { if (pop !== 'model') void refreshModels(); setPop(pop === 'model' ? '' : 'model') }} title="모델">{modelLabel(cfg.model, vend)}{phone ? <span className="chev">▾</span> : null}</button>
   const effortBtn = <button className={`cbtn ${pop === 'effort' ? 'on' : ''}`} onClick={() => setPop(pop === 'effort' ? '' : 'effort')} title="노력">{effortLabel(cfg.effort, vend)}{phone ? <span className="chev">▾</span> : null}</button>
   const ringBtn = <button className={`ring ${pct >= 80 ? 'hot' : ''}`} onClick={() => setPop(pop === 'ctx' ? '' : 'ctx')} title={ctx ? `컨텍스트 ${pct}%` : '컨텍스트'}><Ring pct={pct} size={phone ? 20 : 18} />{pct >= 80 && !phone ? <span style={{ fontSize: 12, marginLeft: 4 }}>압축</span> : null}</button>
-  const plusBtn = <button className={phone ? 'plusb' : `cbtn ${pop === 'plus' ? 'on' : ''}`} style={phone ? undefined : { padding: '3px 6px' }} title="첨부" onClick={() => setPop(pop === 'plus' ? '' : 'plus')} disabled={uploading}><Icon n="plus" size={phone ? 20 : 14} /></button>
+  const plusBtn = <button className={phone ? 'plusb' : `cbtn cplus ${pop === 'plus' ? 'on' : ''}`} style={phone ? undefined : { padding: '3px 6px' }} title="첨부" onClick={() => setPop(pop === 'plus' ? '' : 'plus')} disabled={uploading}><Icon n="plus" size={phone ? 20 : 14} /></button>
   /**
    * 🔴 **입력줄 단추는 하나다 — 보내기(일하는 중이면 대기 +N)** (2026-10-19 Dave 스크린샷_101·059: *«예전처럼 하나로 통일해줘.
    *    스탑버튼은 (상태 줄) 옆에 보이면 충분해 · 항상 클로드 코드 디자인을 레퍼런스로 해»*). CL-1 의 [⏹][↑] 나란히와
@@ -2287,7 +2297,7 @@ function Chat({ bot, go, oref, onOref, sessions, cur, items, loaded, phase = 're
   }
   // H · 쓸기는 App(.cols) 이 맡는다(세 칸 띠). 드릴인 중의 👉 만 여기서 먼저 받아 드릴에서 나온다 — preventDefault 하면 서랍은 안 열린다
   useEffect(() => { const f = (e: Event) => { if ((e as CustomEvent).detail === 'back' && drillSub) { e.preventDefault(); setDrill(null) } }; window.addEventListener('fb:nav', f); return () => window.removeEventListener('fb:nav', f) }, [drillSub])
-  return <div className={`col chat ${!phone && !drillSub ? 'has-strip' : ''}`} style={{ flex: 1 }} ref={colRef}
+  return <div className={`col chat ${!phone && !drillSub && !present ? 'has-strip' : ''}`} style={{ flex: 1 }} ref={colRef}
     onDragEnter={(e) => { const k = dragKind(e.dataTransfer); if (!k) return; e.preventDefault(); dragN.current++; setDrop(k); setDropN(e.dataTransfer.items?.length ?? 0) }}
     onDragOver={(e) => { const k = dragKind(e.dataTransfer); if (!k) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
     onDragLeave={() => { if (!dragN.current) return; dragN.current -= 1; if (!dragN.current) setDrop('') }}
@@ -2295,7 +2305,8 @@ function Chat({ bot, go, oref, onOref, sessions, cur, items, loaded, phase = 're
     {drop ? <div className="dropzone"><div className="card"><FolderBot color={bot.color} size={40} mood="idle" /><b>{bot.name}에게 첨부</b><small>{drop === 'tree' ? '놓으면 이 세션에 첨부해요' : <>볼트 안 파일은 그대로 첨부 · 밖의 파일은 <span className="mono">첨부/</span> 에 복사한 뒤 첨부</>}</small>{drop === 'files' && dropN ? <span className="n">파일 {dropN}개</span> : null}</div></div> : null}
     <div className={`hdr chat-hdr ${phone ? '' : 'glass'}`}>
       {/* H-5 · 좁음 헤더 한 줄 — ☰(레일 서랍 · H 전까지는 봇 목록으로) · 표시 이름 · 작업 중 ●. ‹·폴더 아이콘은 없다(폴더는 독의 📄 · 쓸기) */}
-      {phone ? <><button className="rb glassb hb-menu" onClick={drillSub ? () => setDrill(null) : onBack} title={drillSub ? '원래 세션으로' : '봇 목록'}><Icon n={drillSub ? 'back' : 'list'} size={20} /></button>
+      {present ? <><span className="ttl" title={bot.name}><Mid s={bot.displayName} /></span><span className="psn">{drillSub ? drillSub.name : cur?.name ?? '새 세션'}</span><span className="sp" /><button className={phone ? 'btn ghost sm' : 'btn sm'} data-present-end onClick={() => setPresent(false)} title={phone ? '보여 주기 끝내기' : '보여 주기 끝내기 (⌘⇧P)'}>{phone ? '끝내기' : '보여 주기 끝내기'}</button></>
+        : phone ? <><button className="rb glassb hb-menu" onClick={drillSub ? () => setDrill(null) : onBack} title={drillSub ? '원래 세션으로' : '봇 목록'}><Icon n={drillSub ? 'back' : 'list'} size={20} /></button>
         {/* 감싸는 span 은 헤더의 flex 아이템 — 폭이 내용에 의존하는데 알약이 그 100% − 118px 을 최대폭으로 삼아 스스로를 눌러 이름이 «2026-…» 로 잘렸다(2026-09-13 Dave). 알약 최대폭은 감싸는 칸의 100%, 칸이 남는 공간을 받는다 */}
         <span className="hname"><button className="hnb" aria-haspopup="dialog" onClick={() => setSessSheet(true)} title={cur?.name ?? '세션'}><span className="h2">{drillSub ? <b className="dn">{drillSub.name}</b> : <BotName b={bot} chip={false} />}<small className="hs">{chatHolder === 'other' ? <span className="dot hold" title="남을 기다리는 중" /> : running ? <span className="dot run" title="일하는 중" /> : state === 'awaiting_input' ? <span className="dot wait" /> : null}<span className="sn">{cur?.name ?? '새 세션'}</span><Icon n="chevd" size={9} /></small></span></button></span>
         <span className="sp" /><SyncDot /></>
@@ -2304,10 +2315,10 @@ function Chat({ bot, go, oref, onOref, sessions, cur, items, loaded, phase = 're
             {/* AB · 헤더 한 줄 — 레일·대기 줄과 **같은 값**에서 나온다 */}
             {chatHolder === 'other' ? <span className="hstate"><i />{holdHeader(chatHolder, cur?.inflight, cur?.bg ?? 0)}</span> : null}
             <span className={`dot ${stateDot(state)}`} /><span className="sp" /><SyncDot />
-            <div className="acts"><button className={`ib ${docOn ? 'on' : ''}`} onClick={onDocToggle} title="문서 열 (⌘⇧D)"><Icon n="doc" size={14} />{!docOn && docBadge ? <span className="bd">{docBadge}</span> : null}</button></div></>}
+            <div className="acts"><button className="btn sm" data-present-on onClick={() => setPresent(true)} title="보여 주기 (⌘⇧P) — 다른 폴더와 작업 흔적을 숨기고 지금 세션의 말과 답만 크게 보여요">보여 주기</button><button className={`ib ${docOn ? 'on' : ''}`} onClick={onDocToggle} title="문서 열 (⌘⇧D)"><Icon n="doc" size={14} />{!docOn && docBadge ? <span className="bd">{docBadge}</span> : null}</button></div></>}
     </div>
-    {!phone && !drillSub ? <SessionStrip bot={bot} sessions={sessions} sessionId={cur?.id} go={go} say={say} /> : null}
-    {sessSheet ? <SessionSheet bot={bot} sessions={sessions} sessionId={cur?.id} go={go} say={say} onClose={() => setSessSheet(false)} /> : null}
+    {!phone && !drillSub && !present ? <SessionStrip bot={bot} sessions={sessions} sessionId={cur?.id} go={go} say={say} /> : null}
+    {sessSheet ? <SessionSheet bot={bot} sessions={sessions} sessionId={cur?.id} go={go} say={say} onClose={() => setSessSheet(false)} onPresent={drillSub ? undefined : () => { setSessSheet(false); setPresent(true) }} /> : null}
     {bgPop && cur ? <TaskPop at={bgPop} sid={cur.id} tasks={tasks} openIds={subIds} onOpen={(id) => { setBgPop(null); setDrill(id) }} onClose={() => setBgPop(null)} say={say} /> : null}
     {routineDraft ? <RoutineSheet bot={bot} draft={routineDraft} onClose={() => setRoutineDraft(null)} /> : null}
     {/* Q-2 (2026-09-19 Dave: «이전처럼 라운드 칩이 더 좋았다 · 바로 위 질문이 항상 상단 고정 · 더 올리면 그 이전 질문») — N-2 의 흐름 안 헤더(.qhdr)는 폐기. 폰·데스크톱 모두 유리 알약 하나, 탭하면 그 질문으로 */}
@@ -2563,8 +2574,9 @@ function Live({ cur, state, color, onOpenBg, onBgDown, onStop, hint, bgN = 0, on
 function FileChip({ abs, dir, botAbs, botId, rel, onClick, tail, busy }: { abs: string; dir?: boolean; botAbs: string; botId?: string; rel?: string; onClick?: () => void; tail?: ReactNode; busy?: boolean }) {
   const p = chipParts(abs, botAbs, !!dir)
   const r = rel ?? (abs.startsWith(botAbs + '/') ? abs.slice(botAbs.length + 1) : undefined)
-  return <button type="button" className={`chip fchip ${dir ? 'dir' : ''} ${busy ? 'busy' : ''}`} data-tip={busy ? undefined : abs} onClick={onClick} ref={!dir && !busy && r && botId ? hoverRef({ kind: 'file', botId, rel: r }) : undefined}>
-    {busy ? <span className="spin" /> : <Icon n={dir ? 'folder' : 'doc'} size={11} color="var(--t3)" />}<span className="nm">{p.name}</span>{p.folder ? <span className="fb">{p.folder}</span> : null}{tail}
+  const present = usePresent()   // 보여 주는 동안은 이름만 — 폴더 경로 · 전체 경로 말풍선 · 미리 보기를 띄우지 않는다
+  return <button type="button" className={`chip fchip ${dir ? 'dir' : ''} ${busy ? 'busy' : ''}`} data-tip={busy || present ? undefined : abs} onClick={onClick} ref={!dir && !busy && !present && r && botId ? hoverRef({ kind: 'file', botId, rel: r }) : undefined}>
+    {busy ? <span className="spin" /> : <Icon n={dir ? 'folder' : 'doc'} size={11} color="var(--t3)" />}<span className="nm">{p.name}</span>{p.folder && !present ? <span className="fb">{p.folder}</span> : null}{tail}
   </button>
 }
 /**
@@ -2642,7 +2654,7 @@ function Item({ it, bot, items, onFile, onReveal, onDrill, state, say, isLastAss
     case 'assistant': return <div className="amsg"><Md text={it.text || ' '} streaming={!!it.streaming} botId={bot.id} onPath={onFile} onDir={onReveal} visual />{/* 답 아래 줄 — 🔴 **아이콘만** (2026-09-13 Dave: «복사 및 기능들을 아이콘으로»). 글자를 빼면
             답과 답 사이가 조용해지고, 무엇을 하는지는 툴팁이 말한다. ⚠ 시각은 남긴다(언제 온 답인지) */}
         {!it.streaming && isLastAssistant ? <div className="acts-row"><button className="ib" onClick={() => void copySay(it.text, say)} title="답 복사"><Icon n="copy" size={14} /></button>{onRetry && state !== 'running' ? <button className="ib" onClick={onRetry} title="같은 질문 다시"><Icon n="undo" size={14} /></button> : null}<span>{fmtTime(it.t)}</span></div> : null}</div>
-    case 'thinking': return <div><button className={`meta ${open ? 'open' : ''}`} onClick={() => setOpen(!open)}><span className="lb">생각</span>{!open ? <span className="tx">· {it.text.trim() ? it.text.replace(/\s+/g, ' ').slice(0, 100) : it.streaming ? '생각 중…' : '(내용 없음)'}</span> : null}<Icon n={open ? 'chevd' : 'chev'} size={9} /></button>{open ? <div className="think">{it.text.trim() ? it.text : it.streaming ? '생각 중…' : 'Claude Code 가 headless 출력에서는 생각 내용을 주지 않아요 (서명만 와요).'}</div> : null}</div>
+    case 'thinking': return <div><button className={`meta think ${open ? 'open' : ''}`} onClick={() => setOpen(!open)}><span className="lb">생각</span>{!open ? <span className="tx">· {it.text.trim() ? it.text.replace(/\s+/g, ' ').slice(0, 100) : it.streaming ? '생각 중…' : '(내용 없음)'}</span> : null}<Icon n={open ? 'chevd' : 'chev'} size={9} /></button>{open ? <div className="think">{it.text.trim() ? it.text : it.streaming ? '생각 중…' : 'Claude Code 가 headless 출력에서는 생각 내용을 주지 않아요 (서명만 와요).'}</div> : null}</div>
     /* 답한 질문은 도구 줄 대신 «내가 답한 것» 요약으로 (2026-11-12) — 못 읽는 답·취소·아직 답 전이면 종전 도구 줄 */
     case 'tool': return askDoneOf(it) ? <AskDone it={it} /> : <ToolLine it={it} onFile={onFile} base={bot.abs} />
     case 'subagent': {
@@ -2658,7 +2670,7 @@ function Item({ it, bot, items, onFile, onReveal, onDrill, state, say, isLastAss
     case 'todos': return <TodoWidget it={it} stopped={state !== 'running'} />
     // 루프 6/10 — 칩 옆의 ⇄ 가 «이 턴이 손대기 전 ↔ 지금» 을 연다
     case 'files': { const list = open ? it.paths : it.paths.slice(0, 4); return <div className="files">{list.map((p) => <span key={p} className="fpair"><FileChip abs={p} botAbs={bot.abs} botId={bot.id} onClick={() => onFile(p)} /><DiffBtn abs={p} onOpen={() => onFile(p)} /></span>)}{it.paths.length > list.length ? <button type="button" className="chip more" onClick={() => setOpen(true)} title="나머지 펼치기">+{it.paths.length - list.length}</button> : null}</div> }
-    case 'result': return it.ok ? null : <div className="meta" style={{ color: 'var(--err)' }}><Icon n="warn" size={11} /><span className="tx">{it.error || '오류로 끝남'}</span></div>
+    case 'result': return it.ok ? null : <div className="meta err" style={{ color: 'var(--err)' }}><Icon n="warn" size={11} /><span className="tx">{it.error || '오류로 끝남'}</span></div>
     default: return <div className="meta"><span className="tx">{(it as { text: string }).text}</span></div>
   }
 }
@@ -2751,6 +2763,7 @@ function PreviewBox({ block, text, editing, onEditing, onText }: { block: Previe
  *    `keys` — 키 안내를 보일지(자판이 있는 화면만 · 폰에는 안 보인다).
  */
 function PermCard({ p, sid, keys }: { p: PermissionRequest; sid: string; keys?: boolean }) {
+  const present = usePresent()
   const [busy, setBusy] = useState(false); const [sent, setSent] = useState(false)
   /**
    * 🔴 **「기타」 칸은 질문마다 따로다** (2026-09-15 Dave: *«AskUserQuestion 에서 추가 Text를 입력하면
@@ -2798,17 +2811,18 @@ function PermCard({ p, sid, keys }: { p: PermissionRequest; sid: string; keys?: 
       {err ? <div className="meta perr" role="alert">{err}</div> : null}<div className="btns"><button className="btn ghost" disabled={busy} onClick={() => act({ allow: false }, 'permission')}>취소 ⎋</button><span style={{ flex: 1 }} /><button className="btn primary" disabled={busy || !ready} onClick={send}>보내기</button></div></div>
   }
   const i = p.input; const cmd = typeof i.command === 'string' ? i.command : typeof i.file_path === 'string' ? i.file_path : typeof i.url === 'string' ? i.url : JSON.stringify(i).slice(0, 400)
-  const human = p.description || (typeof i.command === 'string' ? `명령을 실행해요` : typeof i.file_path === 'string' ? `파일을 ${/Write|Edit/.test(p.toolName) ? '고쳐요' : '읽어요'} — ${String(i.file_path).split('/').pop()}` : `${p.displayName} 를 써요`)
+  // 보여 주는 동안은 CLI 가 준 설명도 쓰지 않는다 — 명령과 경로가 그대로 들어 있을 때가 있다(`permLinePlain`)
+  const human = present ? permLinePlain(p.toolName, p.displayName, i) : p.description || (typeof i.command === 'string' ? `명령을 실행해요` : typeof i.file_path === 'string' ? `파일을 ${/Write|Edit/.test(p.toolName) ? '고쳐요' : '읽어요'} — ${String(i.file_path).split('/').pop()}` : `${p.displayName} 를 써요`)
   const onCardKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== 'Enter' || e.target !== e.currentTarget || e.nativeEvent.isComposing || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
     e.preventDefault(); e.stopPropagation(); if (!busy) void act({ allow: true }, 'permission')
   }
-  return <div className="card" data-req={p.requestId} data-kind="perm" tabIndex={-1} onKeyDown={onCardKey}><div className="lab">권한 · {p.displayName}</div><div className="q">{human}</div><div className="cmd">{cmd}</div>
+  return <div className="card" data-req={p.requestId} data-kind="perm" tabIndex={-1} onKeyDown={onCardKey}><div className="lab">권한 · {p.displayName}</div><div className="q">{human}</div>{present ? null : <div className="cmd">{cmd}</div>}
     {err ? <div className="meta perr" role="alert">{err}</div> : null}{/* 🔴 [허용] 은 **오른쪽 끝** (2026-11-13 Dave 카드 «오른쪽 끝으로» · 부품 넷) — 창의 발 · 질문 카드와 같은 자리. 종전에는 왼쪽 첫 자리였다. ⏎ 허용 · ⎋ 거부는 그대로.
         순서: [거부] 키 안내 … [이 세션에서 항상 허용] [허용] */}
     <div className="btns perm-btns"><button className="btn ghost" data-act="deny" disabled={busy} onClick={() => act({ allow: false }, 'permission')}>거부</button>
       {/* 키 안내 — 카드에 초점이 있으면 «↩ 허용 · ⎋ 거부», 없으면 ↩ 는 입력칸의 것이라 «⌘J 로 초점 · ⎋ 거부» 만 말한다 */}
       {keys ? <span className="pkeys" aria-hidden="true"><span className="pk-on">⏎ 허용 · ⎋ 거부</span><span className="pk-off">⌘J 초점 · ⎋ 거부</span></span> : null}<span className="sp" />
-      {p.suggestions.length ? <button className="btn" disabled={busy} title={rulesLabel(p.suggestions)} onClick={() => act({ allow: true, always: true }, 'permission')}>이 세션에서 항상 허용</button> : null}<button className="btn primary" data-act="allow" disabled={busy} onClick={() => act({ allow: true }, 'permission')}>허용</button></div>
+      {p.suggestions.length ? <button className="btn" disabled={busy} title={present ? undefined : rulesLabel(p.suggestions)} onClick={() => act({ allow: true, always: true }, 'permission')}>이 세션에서 항상 허용</button> : null}<button className="btn primary" data-act="allow" disabled={busy} onClick={() => act({ allow: true }, 'permission')}>허용</button></div>
     {p.suggestions.length ? <div className="meta rule">항상 허용 = {rulesLabel(p.suggestions) || '이 도구'}</div> : null}</div>
 }
