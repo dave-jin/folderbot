@@ -4,6 +4,7 @@ import { CLEAN_DAYS, CLEAN_DEFAULT, CLEAN_FILTER_LABEL, cleanDaysOf, cleanMatch,
 import { STATE_LABEL, type SessionInfo } from '../core/types'
 import { SESS_TABS, tabCounts, tabMatch, type SessTab } from '../core/sessionTabs'
 import { api } from './api'
+import { ago as agoText } from '../core/timeText'
 import { Icon } from './FolderBot'
 import { useStore } from './store'
 
@@ -31,7 +32,7 @@ import { useStore } from './store'
 const DAY = 24 * 3600_000
 export const CLEAN_DAYS_KEY = 'fb:cleanDays'
 export const savedCleanDays = () => { try { return cleanDaysOf(localStorage.getItem(CLEAN_DAYS_KEY)) } catch { return cleanDaysOf(null) } }
-const ago = (t: number) => { const d = Math.floor((Date.now() - t) / DAY); if (d >= 1) return `${new Date(t).getMonth() + 1}/${new Date(t).getDate()} (${d}일 전)`; const h = Math.floor((Date.now() - t) / 3600_000); return h >= 1 ? `${h}시간 전` : '방금' }
+const ago = (t: number) => { const d = Math.floor((Date.now() - t) / DAY); if (d >= 1) return `${new Date(t).getMonth() + 1}/${new Date(t).getDate()} (${d}일 전)`; return agoText(t) }
 
 export function Cleanup({ onClose, say, manage = false, go }: { onClose: () => void; say: (m: string) => void; manage?: boolean; go?: (botId: string, sid?: string) => void }) {
   const { s } = useStore()

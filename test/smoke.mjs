@@ -7749,7 +7749,7 @@ try {
       const names = []
       await ecSteer({ base, root, data, claudeCfg, botId: ecBot.id, br, shots: 'test/tmp', check: async (name, f) => { try { await f() } catch (e) { fail(`🔴 EC · ${name} — ${String(e.message ?? e).split('\n')[0]}`) } names.push(name.split(' ')[0]) } })
       globalThis.__ecDone = true
-      ok(`EC 끼워 넣기 — 같은 턴에 반영(priority next) · 경주는 보통 말로 한 번 · 카드·Codex·봇 말은 거절 · 턴 출처 유지 · 대기 줄 두 단추 · ⌘J 다음 기다리는 세션 · 카드 키(↩ ⎋) · 세션 창 탭 다섯 · 폰 [${names.join(' ')}]`)
+      ok(`EC 끼워 넣기 — 같은 턴에 반영(priority next) · 경주는 보통 말로 한 번 · 카드·Codex·봇 말은 거절 · 턴 출처 유지 · 대기 줄 두 단추 · ⌘J 다음 기다리는 세션 · 카드 키(⏎ ⎋) · 세션 창 탭 다섯 · 폰 [${names.join(' ')}]`)
     }
     /**
      * ═══ 원본 응답의 울타리 (2026-11-12) ═══════════════════════════════════════════════════

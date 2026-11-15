@@ -1,3 +1,4 @@
+import { elapsedText } from './timeText'
 /**
  * EA · **맡긴 일의 목록** (2026-11-11 Dave 승인 «맡긴 에이전트를 보고 멈춘다»).
  *
@@ -198,9 +199,7 @@ export const TASK_KIND_LABEL: Record<TaskKind, string> = { agent: '에이전트'
 /** 「1분 5초」 — 끝난 줄에 걸린 시간을 적는다. 1초 미만은 «1초 미만» */
 export function taskTook(t: Pick<BgTask, 'startedAt' | 'endedAt'>, now: number): string {
   const ms = Math.max(0, (t.endedAt ?? now) - t.startedAt)
-  const s = Math.floor(ms / 1000); if (s < 1) return '1초 미만'
-  const m = Math.floor(s / 60); const h = Math.floor(m / 60)
-  return h ? `${h}시간 ${m % 60}분` : m ? `${m}분 ${s % 60}초` : `${s}초`
+  return ms < 1000 ? '1초 미만' : elapsedText(ms)
 }
 
 /** 지금 멈출 수 있나 — 도는 중이고 CLI 의 작업 id 를 안다 */

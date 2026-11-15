@@ -5,6 +5,7 @@ import type { Draft } from '../core/draft'
 import { upsertTask, type BgTask } from '../core/bgTasks'
 import { cacheWriter, pool, readChats, storeVer, writeChats } from './cache'
 import { forgetMissing } from './existsCache'
+import { clock, elapsedText } from '../core/timeText'
 
 export interface Tailnet { state: string; ip?: string; dnsName?: string }
 export interface StateShape {
@@ -299,16 +300,12 @@ export function fmtTime(t: number): string {
   const same = d.toDateString() === now.toDateString()
   const diff = now.getTime() - t
   if (diff < 60_000) return '방금'
-  if (same) return d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })
+  if (same) return clock(t)
   if (diff < 7 * 86400_000) return ['일', '월', '화', '수', '목', '금', '토'][d.getDay()]
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
 export function fmtElapsed(from?: number): string {
   if (!from) return ''
-  const sec = Math.max(0, Math.floor((Date.now() - from) / 1000))
-  if (sec < 60) return `0:${String(sec).padStart(2, '0')}`
-  const m = Math.floor(sec / 60); const ss = sec % 60
-  if (m < 60) return `${m}m ${String(ss).padStart(2, '0')}s`
-  return `${Math.floor(m / 60)}h ${m % 60}m`
+  return elapsedText(Date.now() - from)
 }
-export function fmtDate(t: number): string { const d = new Date(t); return `${d.getMonth() + 1}월 ${d.getDate()}일 (${['일', '월', '화', '수', '목', '금', '토'][d.getDay()]}) ${d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })}` }
+export function fmtDate(t: number): string { const d = new Date(t); return `${d.getMonth() + 1}월 ${d.getDate()}일 (${['일', '월', '화', '수', '목', '금', '토'][d.getDay()]}) ${clock(t)}` }

@@ -3,6 +3,7 @@ import { idSlug, isoLocal, type LetterKind } from './fbmf'
 import { TRUSTS, parseDuration, type Trust } from './bridges'
 import type { FolderRules } from './types'
 import { PALETTE_HEX, colorAllowed } from './botColor'
+import { ago } from './timeText'
 
 /**
  * 연결(Bridge) 화면 — 레일 «연결» 절 · 편지 스레드 · 새 연결 마법사가 읽는 순수 함수 (BQ-9 · BQ-10 · 2026-10-19 Dave «A·A»).
@@ -139,11 +140,7 @@ export function peerMood(p: Pick<PeerView, 'stale' | 'needs' | 'unread' | 'pendi
 
 /** «3분 전» · «2시간 전» · «3일 전» — 끊김·마지막 신호 표시용 */
 export function agoText(ms: number, now = Date.now()): string {
-  const d = Math.max(0, now - ms)
-  if (d < 60_000) return '방금'
-  if (d < 3600_000) return `${Math.floor(d / 60_000)}분`
-  if (d < 86400_000) return `${Math.floor(d / 3600_000)}시간`
-  return `${Math.floor(d / 86400_000)}일`
+  return ago(ms, now, { short: true })
 }
 
 /* ── 새 연결 마법사 (BQ-10 · 목업 ②A) ─────────────────────────────────────── */

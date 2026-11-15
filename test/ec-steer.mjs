@@ -184,11 +184,11 @@ export async function ecSteer({ base, data, botId, br, check, shots }) {
       // «느린 일 끝» 은 U1 의 턴이 낸 하나뿐이어야 한다 — 이 턴(4초)은 멈췄으니 끝 줄을 내지 않는다
       must(answers(await chatOf(s)).filter((t) => /^느린 일 끝/.test(t)).length === 1, '멈춘 턴이 뒤늦게 끝났다(안 멈췄다) ' + JSON.stringify(answers(await chatOf(s))))
     })
-    await check('U3 끼워 넣을 수 없을 때 — 카드가 걸리면 [끼워 넣기] 가 흐려지고 까닭이 title · 누르면 말로(아무것도 안 나간다) · 입력칸의 ↩ 는 카드를 허용하지 않는다', async () => {
+    await check('U3 끼워 넣을 수 없을 때 — 카드가 걸리면 [끼워 넣기] 가 흐려지고 까닭이 title · 누르면 말로(아무것도 안 나간다) · 입력칸의 ⏎ 는 카드를 허용하지 않는다', async () => {
       const pg = D.pg; const k = await newSession('EC 화면 카드'); K.card = k.id; await goto(pg, k.id)
       await say(k.id, '승인 EC-U3'); await pendingOf(k.id); await pg.waitForSelector('.card[data-kind="perm"]', { timeout: 4000 })
       await typeSend(pg, '카드 뒤에 보낼 말 EC-U3'); await pg.waitForSelector('.qlist .queue .qb.steer', { timeout: 4000 })
-      const c0 = await chatOf(k.id); must(c0.info.state === 'awaiting_input' && c0.info.pending.length === 1 && !c0.items.some((i) => i.kind === 'system' && i.text === '허용'), '🔴 입력칸의 ↩ 가 카드를 허용했다')
+      const c0 = await chatOf(k.id); must(c0.info.state === 'awaiting_input' && c0.info.pending.length === 1 && !c0.items.some((i) => i.kind === 'system' && i.text === '허용'), '🔴 입력칸의 ⏎ 가 카드를 허용했다')
       const b = (await queueOf(pg))[0].btns[0]
       must(b.t === '끼워 넣기' && b.off && b.aria === 'true' && /카드에 먼저 답/.test(b.title), '흐린 단추 ' + JSON.stringify(b))
       await shot(pg, 'u3-데스크톱-카드-걸림-끼워넣기-흐림')
@@ -212,7 +212,7 @@ export async function ecSteer({ base, data, botId, br, check, shots }) {
       must(((await chatOf(comm.id)).info.queue ?? []).length === 1 && (await chatOf(comm.id)).info.state === 'running', '흐린 단추가 봇 말을 내보냈다')
       await until(async () => { const x = await chatOf(comm.id); return x.info.state !== 'running' && !(x.info.queue ?? []).length && answers(x).includes('줄 선 봇 말 EC-U4') }, '봇 말이 제 차례에 나간다', 15000)
     })
-    await check('U5 ⌘J — «내 답을 기다리는» 다음 세션으로 뛰고(띠와 같은 차례 · 끝이면 처음으로) 카드에 초점 · 키 안내 · ↩ 로 허용 · 질문 카드는 초점만', async () => {
+    await check('U5 ⌘J — «내 답을 기다리는» 다음 세션으로 뛰고(띠와 같은 차례 · 끝이면 처음으로) 카드에 초점 · 키 안내 · ⏎ 로 허용 · 질문 카드는 초점만', async () => {
       const pg = D.pg
       const a = await newSession('EC 기다림 승인'); await say(a.id, '승인 EC-U5a'); const pa = await pendingOf(a.id)
       const b = await newSession('EC 기다림 질문'); await say(b.id, '질문 EC-U5b'); const pb = await pendingOf(b.id)
@@ -231,29 +231,29 @@ export async function ecSteer({ base, data, botId, br, check, shots }) {
         const pend = (await chatOf(want)).info.pending[0]
         const f = await until(async () => { const x = await focusOf(pg); return x.self && x.req === pend.requestId ? x : null }, '카드에 초점', 5000)
         must(f.kind === (pend.ask ? 'ask' : 'perm'), '카드 종류 ' + JSON.stringify(f))
-        if (!pend.ask) must(f.on !== 'none' && f.off === 'none' && /↩ 허용 · ⎋ 거부/.test(f.keys ?? ''), '승인 카드의 키 안내 ' + JSON.stringify(f))
+        if (!pend.ask) must(f.on !== 'none' && f.off === 'none' && /⏎ 허용 · ⎋ 거부/.test(f.keys ?? ''), '승인 카드의 키 안내 ' + JSON.stringify(f))
         else must(f.keys === null, '질문 카드에 키 안내가 있다 ' + JSON.stringify(f))
         seen.push(want); cur = want
       }
       must(seen[order.length] === seen[0] && new Set(seen).size === order.length, '한 바퀴를 안 돌았다 ' + JSON.stringify(seen.map((x) => x.slice(-4))))
-      // 질문 카드 — ↩ 로 답하지 않는다(선택지를 골라야 한다)
+      // 질문 카드 — ⏎ 로 답하지 않는다(선택지를 골라야 한다)
       while ((await sidOf(pg)) !== b.id) { await pg.keyboard.press('Meta+j'); await wait(500) }
       await until(async () => (await focusOf(pg)).req === pb.info.pending[0].requestId, '질문 카드 초점'); await pg.keyboard.press('Enter'); await wait(500)
-      const cb = await chatOf(b.id); must(cb.info.state === 'awaiting_input' && cb.info.pending.length === 1 && !answers(cb).some((t) => /^답변 받음/.test(t)), '🔴 질문 카드가 ↩ 로 답해졌다')
-      // 승인 카드 — 초점이 카드에 있을 때 ↩ = 허용
+      const cb = await chatOf(b.id); must(cb.info.state === 'awaiting_input' && cb.info.pending.length === 1 && !answers(cb).some((t) => /^답변 받음/.test(t)), '🔴 질문 카드가 ⏎ 로 답해졌다')
+      // 승인 카드 — 초점이 카드에 있을 때 ⏎ = 허용
       while ((await sidOf(pg)) !== a.id) { await pg.keyboard.press('Meta+j'); await wait(500) }
       await until(async () => { const x = await focusOf(pg); return x.self && x.req === pa.info.pending[0].requestId }, '승인 카드 초점')
       await shot(pg, 'u5-데스크톱-다음-기다리는-세션-카드-초점')
-      // 한글 조합 중의 ↩ 는 허용이 아니다
+      // 한글 조합 중의 ⏎ 는 허용이 아니다
       await pg.evaluate(() => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, isComposing: true })))
-      await wait(300); must((await chatOf(a.id)).info.pending.length === 1, '🔴 조합 중의 ↩ 가 카드를 허용했다')
+      await wait(300); must((await chatOf(a.id)).info.pending.length === 1, '🔴 조합 중의 ⏎ 가 카드를 허용했다')
       await pg.keyboard.press('Enter')
-      const ca = await until(async () => { const x = await chatOf(a.id); return x.items.some((i) => i.kind === 'system' && i.text === '허용') && answers(x).some((t) => /^스텁이 처리했습니다/.test(t)) ? x : null }, '↩ 로 허용')
+      const ca = await until(async () => { const x = await chatOf(a.id); return x.items.some((i) => i.kind === 'system' && i.text === '허용') && answers(x).some((t) => /^스텁이 처리했습니다/.test(t)) ? x : null }, '⏎ 로 허용')
       must(!ca.info.held && !ca.info.stopped, '허용했는데 멈춤이 남았다')
       K.ask = b.id
       must(!D.errs.length, '화면 오류 ' + D.errs.join(' | '))
     })
-    await check('U6 ⎋ 순서 — 승인 카드가 걸려 있으면 ⎋ 는 그 카드를 거부하는 것 하나만(턴은 안 멈춘다) · 카드의 [거부] 에서 누른 ↩ 는 거부다', async () => {
+    await check('U6 ⎋ 순서 — 승인 카드가 걸려 있으면 ⎋ 는 그 카드를 거부하는 것 하나만(턴은 안 멈춘다) · 카드의 [거부] 에서 누른 ⏎ 는 거부다', async () => {
       const pg = D.pg
       // ① 초점이 입력칸에 있어도 — 카드 거부 하나만
       const e = await newSession('EC ⎋ 입력칸'); await goto(pg, e.id); await say(e.id, '승인 EC-U6a'); await pendingOf(e.id); await pg.waitForSelector('.card[data-kind="perm"]', { timeout: 4000 })
@@ -271,11 +271,11 @@ export async function ecSteer({ base, data, botId, br, check, shots }) {
       // 한 박자 쉬고 누른 ⎋ 는 종전대로 그 턴을 멈춘다(카드가 없다)
       await wait(400); await pg.keyboard.press('Escape')
       await until(async () => { const x = await chatOf(f.id); return x.info.state !== 'running' && x.info.stopped ? x : null }, '한 박자 뒤의 ⎋ = 턴 멈추기', 4000)
-      // ③ [거부] 단추에 초점을 두고 누른 ↩ 는 그 단추의 일이다(허용으로 새지 않는다)
-      const g = await newSession('EC ↩ 거부단추'); await goto(pg, g.id); await say(g.id, '승인 EC-U6c'); await pendingOf(g.id); await pg.waitForSelector('.card[data-kind="perm"] button[data-act="deny"]', { timeout: 4000 })
+      // ③ [거부] 단추에 초점을 두고 누른 ⏎ 는 그 단추의 일이다(허용으로 새지 않는다)
+      const g = await newSession('EC ⏎ 거부단추'); await goto(pg, g.id); await say(g.id, '승인 EC-U6c'); await pendingOf(g.id); await pg.waitForSelector('.card[data-kind="perm"] button[data-act="deny"]', { timeout: 4000 })
       await pg.focus('.card[data-kind="perm"] button[data-act="deny"]'); await pg.keyboard.press('Enter')
       const cg = await until(async () => { const x = await chatOf(g.id); return x.info.state === 'done' ? x : null }, '턴 끝')
-      must(cg.items.some((i) => i.kind === 'system' && i.text === '거부') && !cg.items.some((i) => i.kind === 'system' && i.text === '허용'), '🔴 [거부] 에서 누른 ↩ 가 허용으로 갔다')
+      must(cg.items.some((i) => i.kind === 'system' && i.text === '거부') && !cg.items.some((i) => i.kind === 'system' && i.text === '허용'), '🔴 [거부] 에서 누른 ⏎ 가 허용으로 갔다')
       // ④ 카드가 없으면 ⎋ 는 종전대로 턴을 멈춘다
       const h = await newSession('EC ⎋ 멈추기'); await goto(pg, h.id); await say(h.id, '느린일 길게 EC-U6d'); await running(h.id)
       await pg.click('.composer .cin'); await pg.keyboard.press('Escape')
@@ -407,7 +407,7 @@ export async function ecSteer({ base, data, botId, br, check, shots }) {
 }
 /** ⌘/ 단축키 표의 줄 글자들 */
 async function keysOf(pg) { await pg.keyboard.press('Meta+/'); await pg.waitForSelector('.modal.keys .krow', { timeout: 3000 }); const rows = await pg.$$eval('.modal.keys .krow', (r) => r.map((x) => `${x.querySelector('.kk')?.textContent} ${x.querySelector('.kt')?.textContent}`)); await pg.keyboard.press('Meta+/'); await wait(200); return rows }
-const KEYS_ROW = (rows) => rows.filter((r) => /⌘J|↩ · ⎋/.test(r))
+const KEYS_ROW = (rows) => rows.filter((r) => /⌘J|⏎ · ⎋/.test(r))
 
 // ── 혼자 돌 때 ─────────────────────────────────────────────────────────────────
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -1,3 +1,4 @@
+import { ago } from './timeText'
 /**
  * 🔴 DB · **ask 세션은 자동화 묶음에 숨지 않는다** (2026-10-25 Dave «계획대로 두 자리»).
  *    `folderbot ask` 로 온 말은 그 상대의 채널 세션으로 들어가고, 채널 세션은 접힌 «자동화» 묶음에 산다(`core/autoArea`).
@@ -91,6 +92,5 @@ export function iGa(name: string): string {
 export function askLabel(b: AskBadge, now = Date.now()): string {
   if (b.state === 'asking') return `${b.by}${iGa(b.by)} 묻는 중`
   if (b.err) return '끝남 · 오류'
-  const min = Math.floor((now - (b.doneAt ?? now)) / 60_000)
-  return `답함 · ${min < 1 ? '방금' : `${min}분 전`}`
+  return `답함 · ${ago(b.doneAt ?? now, now)}`
 }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { dayClock } from '../core/timeText'
 import { useEsc } from './esc'
 import { ModalX } from './Modal'
 import type { HarnessItem, HarnessRow, PermissionMode } from '../core/types'
@@ -645,7 +646,7 @@ function AkiflowPane() {
   const c = st.counts
   return <>
     <p className="lead">레일에 선 폴더의 todo.md 줄 하나가 Akiflow 태스크 하나가 됩니다. 봇이 쓴 줄은 «🤖» 로 시작하고, 첫 줄에 출처 폴더가 붙어요. 봇의 제안은 [넣기] 한 것만 갑니다.</p>
-    <Row t="동기화 상태" d={<>{st.mode === 'live' ? `켜짐 — 15분마다 맞춰요${st.routine ? '' : ' (루틴이 없어요 — 다시 켜 주세요)'}` : st.mode === 'preview' ? '미리보기 — 무엇을 할지 보여 주기만 해요. Akiflow 는 안 건드려요' : '꺼짐'} · 짝 {st.pairs}개 · 폴더 {st.folders}개{st.lastRun ? ` · 마지막 ${new Date(st.lastRun.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 성공 ${st.lastRun.ok} · 실패 ${st.lastRun.fail}` : ''}{msg ? ` · ${msg}` : ''}</>} at="main">
+    <Row t="동기화 상태" d={<>{st.mode === 'live' ? `켜짐 — 15분마다 맞춰요${st.routine ? '' : ' (루틴이 없어요 — 다시 켜 주세요)'}` : st.mode === 'preview' ? '미리보기 — 무엇을 할지 보여 주기만 해요. Akiflow 는 안 건드려요' : '꺼짐'} · 짝 {st.pairs}개 · 폴더 {st.folders}개{st.lastRun ? ` · 마지막 ${dayClock(st.lastRun.at)} 성공 ${st.lastRun.ok} · 실패 ${st.lastRun.fail}` : ''}{msg ? ` · ${msg}` : ''}</>} at="main">
       <span className="seg">{([['preview', '미리보기'], ['live', '켬'], ['off', '끔']] as const).map(([m, l]) => <button key={m} className={st.mode === m ? 'on' : ''} onClick={async () => { if (m === 'live' && st.mode !== 'live' && !(await askConfirm({ title: 'Akiflow 동기화를 켤까요?', body: `Akiflow 에 실제로 씁니다 — 지금 기준 만들기 ${c.create}건. 처음 회차는 Akiflow 를 먼저 읽어 제목이 같은 일은 «같은 일?» 로 묻고 붙잡아 두며, 나머지는 바로 만들어요.`, ok: '동기화 켜기' }))) return; void call('/akiflow/mode', { mode: m }, () => (m === 'live' ? '켰어요 — 오케스트레이터에 «Akiflow 동기화» 루틴이 생겼어요' : ''))
       }}>{l}</button>)}</span>
     </Row>

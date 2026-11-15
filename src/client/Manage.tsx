@@ -5,6 +5,7 @@ import { dueChipOf, dueText } from '../core/due'
 import { BOARD_FILTER_LABEL, BOARD_PEEK, boardRows, folderGroup, type BoardFilter, type BoardItem, type FolderGroup } from '../core/home'
 import type { Bot, SessionInfo } from '../core/types'
 import { api } from './api'
+import { ago as agoText } from '../core/timeText'
 import { FolderBot, Icon, type Mood } from './FolderBot'
 import { fmtTime, useStore } from './store'
 
@@ -19,7 +20,7 @@ import { fmtTime, useStore } from './store'
  */
 interface BoardData { open: number; items?: boolean; akLive?: boolean; rows: { botId: string; name: string; open: number; proposed?: number; items?: BoardItem[]; ak?: { pending: number; at: number | null } | null }[] }
 
-const agoMin = (t: number) => { const m = Math.max(0, Math.round((Date.now() - t) / 60_000)); return m < 1 ? '방금' : m < 60 ? `${m}분 전` : m < 24 * 60 ? `${Math.round(m / 60)}시간 전` : fmtTime(t) }
+const agoMin = (t: number) => (Date.now() - t < 86_400_000 ? agoText(t) : fmtTime(t))
 
 export function TodoBoard({ onClose, onTodo, say }: { onClose: () => void; onTodo: (botId: string) => void; say: (m: string) => void }) {
   const { s } = useStore()

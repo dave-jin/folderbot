@@ -8,6 +8,7 @@
  *    맥동 속도도 뜻이다: 주황은 빠르게(바쁘다) · 청록은 느리게(기다린다) · **노랑은 안 깜빡인다**(재촉이 아니라 멈춤).
  */
 import type { SessionState } from './types'
+import { elapsedText } from './timeText'
 
 /** 공을 누가 들고 있나 */
 export type Holder = 'none' | 'me' | 'other' | 'you'
@@ -62,10 +63,7 @@ export type HoldStage = 'short' | 'mid' | 'long'
 export function holdStage(ms: number): HoldStage { return ms >= HOLD_LONG_MS ? 'long' : ms >= HOLD_MID_MS ? 'mid' : 'short' }
 
 /** 「1분 5초」 — 분이 없으면 초만 */
-export function elapsedText(ms: number): string {
-  const s = Math.max(0, Math.floor(ms / 1000)); const m = Math.floor(s / 60)
-  return m ? `${m}분 ${s % 60}초` : `${s}초`
-}
+export { elapsedText }
 
 export interface HoldLine { text: string; elapsed: string; action: 'none' | 'open' | 'notify'; actionLabel: string }
 /**

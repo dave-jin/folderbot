@@ -53,6 +53,7 @@ import { botDueChip, byDue } from '../core/botName'
 import { LocalOpenHost, localBridge, openOnThisDevice, useLocalSettings } from './localOpen'
 import { BridgeRail, BridgeSide, BridgeThread } from './Bridges'
 import type { PeerView } from '../core/bridgeView'
+import { clock } from '../core/timeText'
 import { botRelOf } from '../core/paths'
 import { ICON_PX, useIconSize, useTheme } from './theme'
 import { UsageCard, colorLeft, useUsage } from './Usage'
@@ -235,13 +236,13 @@ export const KEYS: { k: string; t: string; d?: string }[] = [
   { k: '⌘⇧D', t: '문서 열 접기' },
   { k: '⌘⇧U', t: '알림' },
   { k: '⌘J', t: '내 답을 기다리는 다음 세션으로', d: '승인·질문 카드가 걸린 세션을 차례로 돈다 — 뛰면 그 카드에 초점이 간다' },
-  { k: '↩ · ⎋', t: '승인 카드 허용 · 거부', d: '↩ 는 카드에 초점이 있을 때만 · ⎋ 는 카드가 걸려 있으면 거부 하나만 한다(턴은 안 멈춘다)' },
+  { k: '⏎ · ⎋', t: '승인 카드 허용 · 거부', d: '⏎ 는 카드에 초점이 있을 때만 · ⎋ 는 카드가 걸려 있으면 거부 하나만 한다(턴은 안 멈춘다)' },
   { k: '⌘+ ⌘−', t: '화면 확대 · 축소', d: '글씨와 화면 전체 — 다시 켜도 그대로 · 이미지 뷰어에서는 그림 확대' },
   { k: '⌘0', t: '실제 크기' },
   { k: '⌘W', t: '문서 탭 닫기' },
-  { k: '↩', t: '보내기', d: '자판이 있는 기기에서 — 폰에서는 줄 바꾸기(보내기는 단추)' },
-  { k: '⇧↩', t: '줄 바꾸기' },
-  { k: '⌘↩', t: '보내기', d: '어디서나 — 폰에 외장 자판을 붙였을 때도' },
+  { k: '⏎', t: '보내기', d: '자판이 있는 기기에서 — 폰에서는 줄 바꾸기(보내기는 단추)' },
+  { k: '⇧⏎', t: '줄 바꾸기' },
+  { k: '⌘⏎', t: '보내기', d: '어디서나 — 폰에 외장 자판을 붙였을 때도' },
   { k: '⎋', t: '닫기 · 고치기 끝내기 · 멈추기', d: '열린 창·목록 → 걸린 승인 카드 거부 → 도는 턴 멈추기 순서로 하나만' },
   { k: '⌘Z', t: '실행 취소', d: '맥 기본 — 우리가 안 가로챈다' },
   { k: '⌘F', t: '문서에서 찾기', d: '문서 창 기본' }
@@ -292,7 +293,7 @@ function useUpdate(say: Say): [UpdState | null, () => void, () => void, string, 
 }
 /** 버전 칩 위 팝업 — «받아 뒀어요, 적용할까요?» 한 장. 돌고 있는 세션 수는 여기서 말한다(적용하면 끊긴다) */
 /** BX · «M/D 4:00» — 오늘 밤이면 «오늘», 내일이면 «내일» */
-function dawnText(at: number): string { const d = new Date(at), now = new Date(); const day = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime(); const dd = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); const w = dd === day ? '오늘' : dd - day === 86400_000 ? '내일' : `${d.getMonth() + 1}/${d.getDate()}`; return `${w} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}` }
+function dawnText(at: number): string { const d = new Date(at), now = new Date(); const day = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime(); const dd = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); const w = dd === day ? '오늘' : dd - day === 86400_000 ? '내일' : `${d.getMonth() + 1}/${d.getDate()}`; return `${w} ${clock(at)}` }
 function UpdateAsk({ st, onApply, onLater, onDawn, anchor = '.sb-foot .bd.upd' }: { st: UpdState; onApply?: () => void; onLater: () => void; /** BX · 새벽 4시에 적용 걸기/풀기 — 없으면 단추를 안 그린다 */ onDawn?: (on: boolean) => void; /** 팝업을 띄울 칩 — 호스트 칩은 따로 */ anchor?: string }) {
   // ⚠ 레일은 overflow 로 잘린다 — 팝업은 칩 자리를 재서 **화면 좌표(fixed)** 로 띄운다 (오늘 아침 미리보기 카드와 같은 교훈)
   const [pos, setPos] = useState<{ left: number; bottom: number }>({ left: 12, bottom: 48 })
@@ -1426,7 +1427,7 @@ function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, 
   const askOrch = () => { const t = (q ?? '').trim(); if (!t) return; closeFind(); onAsk(t) }
   const enter = () => { const r = pillEnter(hits, q ?? ''); if (!r) return; if ('go' in r) { closeFind(); go(r.go) } else askOrch() }
   const mark = (name: string) => { const r = q ? hitRange(q, name) : null; return r ? <>{name.normalize('NFC').slice(0, r[0])}<mark>{name.normalize('NFC').slice(r[0], r[1])}</mark>{name.normalize('NFC').slice(r[1])}</> : name }
-  const orchLine = (first: boolean) => <button className={`orchrow ${first ? 'first' : ''}`} onClick={askOrch}><Icon n="chat" size={16} /><span>«<b>{(q ?? '').trim()}</b>» 오케스트레이터에게 보내기</span>{first ? <span className="k">↵</span> : null}</button>
+  const orchLine = (first: boolean) => <button className={`orchrow ${first ? 'first' : ''}`} onClick={askOrch}><Icon n="chat" size={16} /><span>«<b>{(q ?? '').trim()}</b>» 오케스트레이터에게 보내기</span>{first ? <span className="k">⏎</span> : null}</button>
   return <div className="col mhome">
     {/* 🔴 CN · 왼쪽 위 = 오케스트레이터 바로 가기 (2026-10-16 Dave: «설정이라는 느낌이 안 들어서 클릭하면 바로 오케스트레이터로»).
         주황 얼굴은 오케스트레이터 색이라 생김새와 하는 일을 맞춘다 — 표정·배지·안 읽음 링도 «확인 대기 전체» 가 아니라 오케스트레이터 자기 것.
@@ -1439,7 +1440,7 @@ function Home({ rows, go, setModal, waiting, onAsk, say, railSort, setRailSort, 
           {!hits.length ? orchLine(true) : null}
           {hits.map((b) => { const sum = sumOf(b.id); return <button key={b.id} className="mrow" data-bot={b.id} onPointerDown={() => prefetch(b.id)} onClick={() => { closeFind(); go(b.id) }}><span className="av"><FolderBot color={b.color} size={46} mood={sum?.mood} unread={sum?.unread} recent={sum?.recent} mono /></span><span className="t"><span className="l1"><b className="dn">{mark(b.displayName || b.name)}</b></span><span className="l2">{b.rel}</span></span></button> })}
           {hits.length ? orchLine(false) : null}
-        </> : <div className="mfhint">폴더 이름이나 경로를 쳐 보세요 — 엔터는 맨 위 폴더로, 맞는 폴더가 없으면 오케스트레이터에게 보내요</div>}
+        </> : <div className="mfhint">폴더 이름이나 경로를 쳐 보세요 — ⏎ 는 맨 위 폴더로, 맞는 폴더가 없으면 오케스트레이터에게 보내요</div>}
       </div> : <>
       <div className="mtitle">Folder Bot<AskChip go={go} /></div>
       {/* CJ · 봇·후보 수는 폴더봇 칸이 말한다 — 같은 숫자를 두 번 안 쓴다 */}
@@ -2798,7 +2799,7 @@ function PermCard({ p, sid, keys }: { p: PermissionRequest; sid: string; keys?: 
         순서: [거부] 키 안내 … [이 세션에서 항상 허용] [허용] */}
     <div className="btns perm-btns"><button className="btn ghost" data-act="deny" disabled={busy} onClick={() => act({ allow: false }, 'permission')}>거부</button>
       {/* 키 안내 — 카드에 초점이 있으면 «↩ 허용 · ⎋ 거부», 없으면 ↩ 는 입력칸의 것이라 «⌘J 로 초점 · ⎋ 거부» 만 말한다 */}
-      {keys ? <span className="pkeys" aria-hidden="true"><span className="pk-on">↩ 허용 · ⎋ 거부</span><span className="pk-off">⌘J 초점 · ⎋ 거부</span></span> : null}<span className="sp" />
+      {keys ? <span className="pkeys" aria-hidden="true"><span className="pk-on">⏎ 허용 · ⎋ 거부</span><span className="pk-off">⌘J 초점 · ⎋ 거부</span></span> : null}<span className="sp" />
       {p.suggestions.length ? <button className="btn" disabled={busy} title={rulesLabel(p.suggestions)} onClick={() => act({ allow: true, always: true }, 'permission')}>이 세션에서 항상 허용</button> : null}<button className="btn primary" data-act="allow" disabled={busy} onClick={() => act({ allow: true }, 'permission')}>허용</button></div>
     {p.suggestions.length ? <div className="meta rule">항상 허용 = {rulesLabel(p.suggestions) || '이 도구'}</div> : null}</div>
 }

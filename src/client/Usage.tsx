@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
+import { ago, clock } from '../core/timeText'
 import { FolderBot, Icon } from './FolderBot'
 import type { UsageReport } from '../core/usage'
 
@@ -17,10 +18,8 @@ const headLeft = (l: number): string => (l > 40 ? '아직 넉넉해요' : l > 20
 
 const money = (n: number): string => `$${n < 10 ? n.toFixed(2) : Math.round(n)}`
 export const tokens = (n: number): string => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M` : n >= 1000 ? `${Math.round(n / 1000)}K` : String(n))
-const clock = (ms: number): string => { const d = new Date(ms); const h = d.getHours(); return `${h < 12 ? '오전' : '오후'} ${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')}` }
 const dayClock = (ms: number): string => `${'일월화수목금토'[new Date(ms).getDay()]} ${clock(ms)}`
 /** 몇 분 전에 받은 값인가 — 실제 한도는 3분마다 새로 묻는다 */
-const ago = (t: number, now: number): string => { const m = Math.max(0, Math.round((now - t) / 60000)); return m < 1 ? '방금' : m < 60 ? `${m}분 전` : `${Math.round(m / 60)}시간 전` }
 export function until(ms: number, now: number): string {
   const s = Math.max(0, Math.round((ms - now) / 1000))
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60)

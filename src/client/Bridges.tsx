@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react'
 import type { LetterView, PeerView, PresetId } from '../core/bridgeView'
+import { dayClock } from '../core/timeText'
 import { PRESETS, agoText, defaultMailbox, freeId, newBridgeProblems, peerColor, peerMood, presetOf } from '../core/bridgeView'
 import type { Trust } from '../core/bridges'
 
@@ -55,7 +56,7 @@ function PeerIcon({ p, size = 24, mono = true }: { p: PeerView; size?: number; m
 /** 머리줄 보조 글 — 개발자 말(trust · 커서 · 우편함 경로) 대신 사람 말. 자세한 값은 이름에 마우스를 올리면 */
 const peerLine = (p: PeerView) => p.stale ? `신호가 끊겼어요${p.lastSignal ? ` · ${agoText(p.lastSignal)} 전에 마지막으로 다녀갔어요` : ''}`
   : p.lastSignal ? (agoText(p.lastSignal) === '방금' ? '방금 다녀갔어요' : `${agoText(p.lastSignal)} 전에 다녀갔어요`) : '아직 다녀가지 않았어요'
-const peerTitle = (p: PeerView) => `${p.name} · 우편함 ${p.mailbox} · 권한 ${p.trust}${p.host ? ` · ${p.host} 가 받음` : ''}${p.lastSignal ? ` · 마지막 신호 ${new Date(p.lastSignal).toLocaleString('ko-KR')}` : ''}`
+const peerTitle = (p: PeerView) => `${p.name} · 우편함 ${p.mailbox} · 권한 ${p.trust}${p.host ? ` · ${p.host} 가 받음` : ''}${p.lastSignal ? ` · 마지막 신호 ${dayClock(p.lastSignal)}` : ''}`
 
 /** 레일 «연결» 절 — 상대가 없으면 절 자체를 안 그린다 */
 export function BridgeRail({ active, onOpen, phone }: { active?: string; onOpen: (p: PeerView) => void; phone?: boolean }) {
@@ -242,7 +243,7 @@ export function BridgeThread({ peerId, go, say, phone, onBack, onSide }: { peerI
         <button className={`tg ${urgent ? 'on' : ''}`} aria-pressed={urgent} onClick={() => setUrgent(!urgent)} title={p.wake ? '급함 — 상대 웹훅도 불러 바로 깨운다' : '급함'}>⚡ 급함</button>
         <button className={`tg ${human ? 'on' : ''}`} aria-pressed={human} onClick={() => setHuman(!human)} title="상대가 사람에게 물어봐야 하는 편지">✋ 결정 필요</button>
         <span className="sp" />
-        <button className={`sendb brg-send ${text.trim() && !busy ? '' : 'off'}`} disabled={!text.trim() || busy} onClick={() => void send()} title="보내기 (⌘↵)" aria-label="보내기"><Icon n="up" size={phone ? 16 : 12} /></button>
+        <button className={`sendb brg-send ${text.trim() && !busy ? '' : 'off'}`} disabled={!text.trim() || busy} onClick={() => void send()} title="보내기 (⌘⏎)" aria-label="보내기"><Icon n="up" size={phone ? 16 : 12} /></button>
       </div>
     </div>
   </div>

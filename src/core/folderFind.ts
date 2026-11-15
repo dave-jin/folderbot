@@ -1,3 +1,4 @@
+import { ago } from './timeText'
 /**
  * 🔴 **DE · 폴더봇 찾기(⌘K) A안 — 맨 위 «최근» 다섯 줄 + 아래 PARA 칸** (2026-10-18 목업 `03_디자인/2026-10-18_폴더찾기-PARA-목업` · 2026-10-19 Dave A 확정).
  *    종전에는 레일 순서 그대로 서서 2. Area 폴더가 1. Projects 폴더와 섞이고, 어제 쓴 폴더가 아래에 묻혔다(스크린샷_002).
@@ -78,13 +79,5 @@ export function dueShort(due?: { date: string; precision: 'day' | 'month' | 'yea
 /** «최근» 시각을 짧게 — 방금 · N분 · N시간(오늘) · 어제 · 요일(이번 주) · M/D */
 export function agoShort(t: number, now = Date.now()): string {
   if (!t) return ''
-  const diff = now - t
-  if (diff < 60_000) return '방금'
-  const d = new Date(t), n = new Date(now)
-  const day0 = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
-  const days = Math.round((day0(n) - day0(d)) / 86_400_000)
-  if (days <= 0) return diff < 3_600_000 ? `${Math.floor(diff / 60_000)}분` : `${Math.floor(diff / 3_600_000)}시간`
-  if (days === 1) return '어제'
-  if (days < 7) return ['일', '월', '화', '수', '목', '금', '토'][d.getDay()]
-  return `${d.getMonth() + 1}/${d.getDate()}`
+  return ago(t, now, { short: true, far: 'date' })
 }

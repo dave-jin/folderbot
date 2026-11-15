@@ -21,6 +21,7 @@ import { DraftStore } from './drafts'
 import { McpAuth } from './mcpAuth'
 import { BridgeHub, type Incoming } from './bridge'
 import { INTERRUPTED_REASON, RunLog } from './runs'
+import { clock } from '../core/timeText'
 import { mailWake, readWakeEnv, wakePeer } from './wake'
 import { AskDesk, answerAfter } from './ask'
 import { OpsWatch } from './opsWatch'
@@ -316,7 +317,7 @@ export class Host {
         //    호스트 전체 상한(15)은 워커를 띄우는 자리(`sessions.ensureWorker`)가 지킨다 — 새로 만들 때도, 잠든 세션을 깨울 때도
         if (this.sessions.liveCountFor(bot.id) >= 4 && !this.sessions.sleepLru(undefined, bot.id)) throw new Error(`${bot.name} 은 세션 4개가 모두 일하는 중이에요. 하나 끝나면 이어서 하세요.`)
         // BH · 위임으로 새로 연 세션은 출처를 남긴다 — `orch_ask` 가 이것으로 «되묻기 고리» 를 막는다
-        r = this.sessions.create(bot, name ?? (from ? `위임 · ${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : '메인'), { ...opts, ...(from ? { delegatedFrom: from } : {}) })
+        r = this.sessions.create(bot, name ?? (from ? `위임 · ${clock(Date.now())}` : '메인'), { ...opts, ...(from ? { delegatedFrom: from } : {}) })
       }
     }
     // CC · 사람이 자동화 세션에 보낸 말 — 루틴·봇끼리는 그 세션을 채팅으로 옮기고, 소통·채널은 새 채팅을 갈라 연다
