@@ -68,7 +68,10 @@ export interface RoutineDef {
   push?: boolean
   /** 꺼 두면 스케줄에 안 건다 — 지우지 않고 잠시 멈추는 길 (AA-4). 없으면 켜진 것으로 본다 */
   enabled?: boolean
-  /** BR-2 · 실패하면 10분 뒤 한 번 다시 — **기본 끔**(외부 발송이 든 루틴이 같은 것을 두 번 보내지 않게 · 2026-10-09 Dave) */
+  /**
+   * BR-2 · 실패하면 10분 뒤 한 번 다시 — **기본 켬**, `false` 로 끈다(2026-11-16 Dave «전부 기본 켬» · 10/9 의 «기본 끔» 을 뒤집었다).
+   * 판정은 `core/routineRetry` 의 `retryOn()` 한 곳 — `r.retry === true` 로 직접 보지 않는다.
+   */
   retry?: boolean
   /** BR-2 · 호스트가 꺼져 있어 놓친 회차를 켜질 때 한 번 보충한다(6시간 안) — 기본 켬, false 로 끈다 */
   catchup?: boolean

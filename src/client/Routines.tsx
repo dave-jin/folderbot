@@ -7,6 +7,7 @@ import { Icon } from './FolderBot'
 import type { Board } from '../host/routineBoard'
 import { LOAD_BAD, LOAD_WARN, STATE_ORDER, type BoardRoutine, type BoardState, type RunRow } from '../core/routineBoard'
 import type { RoutineDef } from '../core/types'
+import { rerunnable } from '../core/routineRetry'
 import { errText } from './errText'
 
 /**
@@ -66,6 +67,22 @@ export function Routines({ onClose, go, openSheet, say, phone }: { onClose: () =
     if (!done.length || !(await askConfirm({ title: `끝난 일회성 루틴 ${done.length}개를 지울까요?`, body: done.map((r) => `· ${r.bot} · ${r.name}`).join('\n'), ok: '지우기', danger: true }))) return
     for (const id of [...new Set(done.map((r) => r.botId))]) await mutate(id, `끝난 일회성 ${done.length}개를 지웠어요`, (l) => l.filter((x) => !done.some((d) => d.botId === id && d.name === x.name)))
   }
+  /**
+   * «실패 N개 다시 돌리기» (2026-11-16 Dave «일괄 재실행 버튼») — 지금 목록에 보이는 실패 루틴만, 확인 창에서 이름과 이유를 보여 준 뒤 돌린다.
+   * 호스트가 시작 줄에 세워 둘씩 차례로 돌린다. 지금 도는 것 · 그사이 다시 돈 것은 호스트가 건너뛰고 이유를 돌려준다.
+   */
+  const rerunFailed = async (list: BoardRoutine[]) => {
+    if (!list.length) return
+    const lines = list.map((r) => `· ${r.bot} · ${r.name}${r.last?.reason ? ` — ${r.last.reason}` : ''}`).join('\n')
+    if (!(await askConfirm({ title: `실패한 루틴 ${list.length}개를 다시 돌릴까요?`, body: `${lines}\n\n둘씩 차례로 돌아요. 다시 도는 회차는 앞 회차가 해 둔 일을 먼저 확인하고 남은 것만 해요.`, ok: '다시 돌리기' }))) return
+    setBusy('rerun')
+    try {
+      const res = await api<{ queued: { bot: string; name: string }[]; skipped: { bot: string; name: string; why: string }[] }>('/routines/rerun', { method: 'POST', body: { items: list.map((r) => ({ botId: r.botId, name: r.name })) } })
+      const skip = res.skipped.length ? ` · ${res.skipped.length}개는 건너뛰었어요(${res.skipped[0].why})` : ''
+      say(res.queued.length ? `${res.queued.length}개를 다시 돌려요${skip}` : `다시 돌린 루틴이 없어요${skip}`)
+      window.setTimeout(load, 1500)
+    } catch (e) { say(errText('루틴을 못 돌렸어요', e)) } finally { setBusy('') }
+  }
   const sg = b?.suggest, sgKey = sg ? `${sg.botId}::${sg.name}::${sg.to}` : ''
   const shift = () => { if (sg) void mutate(sg.botId, `«${sg.name}» 을 옮겼어요`, (l) => l.map((x) => (x.name === sg.name ? { ...x, cron: sg.to } : x))) }
   const hideSg = () => { setHidden(sgKey); try { localStorage.setItem(HIDE_KEY, sgKey) } catch { /* */ } }
@@ -110,11 +127,12 @@ export function Routines({ onClose, go, openSheet, say, phone }: { onClose: () =
 
         {groups.map(([st, list]) => <div key={st} className="rtgrp" data-state={st}>
           <div className="gh">{st === 'off' ? <Icon n="pause" size={11} color="var(--t3)" /> : <i className={`sdot s-${st}`} aria-hidden="true" />}<b>{LABEL[st]}</b><span className="c">{list.length}</span>{HINT[st] ? <span className="h">— {HINT[st]}</span> : null}<span className="sp" />
-            {st === 'finished' ? <button className="btn" disabled={!!busy} onClick={() => void sweepFinished()}>끝난 일회성 {list.length}개 정리</button> : null}</div>
+            {st === 'finished' ? <button className="btn" disabled={!!busy} onClick={() => void sweepFinished()}>끝난 일회성 {list.length}개 정리</button> : null}
+            {st === 'fail' && rerunnable(list).length ? <button className="btn" data-rerun disabled={!!busy} onClick={() => void rerunFailed(rerunnable(list))}>실패 {rerunnable(list).length}개 다시 돌리기</button> : null}</div>
           {list.map((r) => { const k = key(r), on = open === k; return <div key={k} className={`rtr ${on ? 'open' : ''}`} data-routine={r.name}>
             <div className="row" onClick={() => setOpen(on ? '' : k)}>
               <span className="nm"><b>{r.name}</b><span className="f">{r.bot}</span></span>
-              <span className="why">{r.last ? `${when(r.last.start, b.now)} ${RES[r.last.result]}${r.last.reason ? ` — ${r.last.reason}` : ''}${r.last.catchup ? ' (보충)' : ''}` : r.firstWait ? '첫 회차 대기' : r.error ?? '기록 없음'}{r.daveTodo ? <em className="dave"> · 내 할 일</em> : null}</span>
+              <span className="why">{r.last ? `${when(r.last.start, b.now)} ${RES[r.last.result]}${r.last.reason ? ` — ${r.last.reason}` : ''}${r.last.catchup ? ' (보충)' : ''}${r.last.again ? ' (다시 돌림)' : ''}` : r.firstWait ? '첫 회차 대기' : r.error ?? '기록 없음'}{r.retryAt ? <em className="again" data-retry-at> · {when(r.retryAt, b.now)} 에 다시 돌아요</em> : null}{r.daveTodo ? <em className="dave"> · 내 할 일</em> : null}</span>
               {phone ? null : <><span className="wh">{r.when}</span><span className="nx">{r.next ? `다음 ${when(r.next, b.now)}` : r.state === 'finished' ? '끝남' : '—'}</span>
                 <span className="dots">{r.recent.slice(0, 14).reverse().map((x) => <i key={x.run} className={`d-${x.result}${x.catchup ? ' c' : ''}`} title={`${when(x.start, b.now)} ${RES[x.result]}`} />)}{r.avgMs ? <span className="avg">평균 {dur(r.avgMs)}</span> : null}</span></>}
               {phone && !on ? null : <span className="acts" onClick={(e) => e.stopPropagation()}>
@@ -125,7 +143,7 @@ export function Routines({ onClose, go, openSheet, say, phone }: { onClose: () =
               </span>}
             </div>
             {on ? <div className="exp">
-              <div><h4>최근 회차</h4>{r.recent.length ? <table><tbody>{r.recent.slice(0, 8).map((x) => <tr key={x.run}><td>{when(x.start, b.now)}</td><td className={`res d-${x.result}`}>{RES[x.result]}{x.catchup ? ' · 보충' : ''}</td><td>{dur(x.ms ?? (x.end ? x.end - x.start : undefined))}</td><td className="r">{x.reason ?? ''}</td><td><button className="btn ghost" onClick={() => { onClose(); go(r.botId, x.run) }}>세션 보기</button></td></tr>)}</tbody></table> : <div className="none">지난 7일 기록이 없어요</div>}</div>
+              <div><h4>최근 회차</h4>{r.recent.length ? <table><tbody>{r.recent.slice(0, 8).map((x) => <tr key={x.run}><td>{when(x.start, b.now)}</td><td className={`res d-${x.result}`}>{RES[x.result]}{x.catchup ? ' · 보충' : ''}{x.again ? ' · 다시 돌림' : ''}</td><td>{dur(x.ms ?? (x.end ? x.end - x.start : undefined))}</td><td className="r">{x.reason ?? ''}</td><td><button className="btn ghost" onClick={() => { onClose(); go(r.botId, x.run) }}>세션 보기</button></td></tr>)}</tbody></table> : <div className="none">지난 7일 기록이 없어요</div>}</div>
               <div><h4>최근 바뀜</h4>{r.changes.length ? <table><tbody>{r.changes.map((c, i) => <tr key={i}><td>{when(c.at, b.now)}</td><td>{c.actor}</td><td className="r">{c.what}{c.why ? ` · 이유: ${c.why}` : ''}</td></tr>)}</tbody></table> : <div className="none">바뀐 기록이 없어요</div>}</div>
             </div> : null}
           </div> })}

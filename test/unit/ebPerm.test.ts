@@ -116,7 +116,7 @@ describe('EB 루틴 — 승인 선택지에 auto · 기본값은 그대로', () 
     rl.start('s_a', 'b1', '봇', '아침')
     expect(rl.approvalTimedOut('s_a', 'Bash', 10)).toBe(true)
     expect(rl.approvalTimedOut('s_none', 'Bash', 10)).toBe(false)   // 이 호스트가 시작하지 않은 회차
-    expect(rl.end('s_a', true, '다 했어요\n결과: ok')).toEqual({ ok: false, result: 'fail' })
+    expect(rl.end('s_a', true, '다 했어요\n결과: ok')).toEqual({ ok: false, result: 'fail', reason: '승인 시간 초과 · Bash (10분 동안 답 없음)' })   // 2026-11-16 · 이유도 돌려준다 — 다시 도는 회차에 실어 보낸다
     rl.start('s_b', 'b1', '봇', '아침'); expect(rl.end('s_b', true, '결과: ok')).toEqual({ ok: true, result: 'ok' })   // 시간 초과가 없으면 종전대로
     const dir = join(root, '.folderbot', 'ops'); const rows = readFileSync(join(dir, readdirSync(dir)[0]), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))
     expect(rows.find((e) => e.event === 'approval_timeout')).toMatchObject({ run: 's_a', tool: 'Bash', minutes: 10, routine: '아침' })

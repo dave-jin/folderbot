@@ -33,6 +33,7 @@ import type { BgTask } from '../core/bgTasks'
 export interface ShellUpdate { state: () => unknown; dawn: (on: boolean) => unknown }
 import { ORCH_ID, Registry, canon, ORCH_REQUEST_RULES_MD, DAVE_SAID_RULES_MD, ORCH_ASK_HINT, ORCH_REPORT_HINT, LETTER_RULES_MD } from './registry'
 import { CATCHUP_WINDOW_MS, Routines, routineRun, RETRY_DELAY_MS, StartQueue } from './routines'
+import { rerunnable, retryOn } from '../core/routineRetry'
 import { boardSummary, latestStarts, pairRuns } from '../core/routineBoard'
 import { buildBoard, type Board } from './routineBoard'
 import { RoutineNotes } from './routineNotes'
@@ -230,13 +231,20 @@ export class Host {
         const res = this.runs.end(r.id, r.state === 'done', lastA?.text, r.state === 'error' ? r.lastError : undefined)
         const w = this.waitEnd.get(r.id); if (w) { this.waitEnd.delete(r.id); w() }   // RB-2 · 시작 줄의 자리를 비운다
         this.fromQueue.delete(r.id)
-        // BR-2 · 실패한 회차는 `retry: true` 인 루틴만 10분 뒤 한 번 다시(기본 끔 — 외부 발송이 두 번 나가지 않게)
+        // BR-2 · 실패한 회차는 10분 뒤 한 번 다시 — **기본 켬**(2026-11-16 Dave «전부 기본 켬» · `retry: false` 인 루틴만 안 돈다 · `core/routineRetry`)
         const info = this.routineRuns.get(r.id); this.routineRuns.delete(r.id); this.startQueue.kick()   // 제시각 회차가 끝났으면 줄에 자리가 났다
         if (res && !res.ok && info && info.attempt === 1) {
           const def = this.registry.bot(info.botId)?.routines.find((x) => x.name === r.routine)
-          if (def?.retry === true && def.enabled !== false) {
+          if (def && retryOn(def) && def.enabled !== false) {
             this.runs.note({ event: 'retry', botId: info.botId, routine: def.name, run: r.id, ms: this.retryDelayMs })
-            setTimeout(() => { const b = this.registry.bot(info.botId); const d = b?.routines.find((x) => x.name === def.name); if (b && d && d.enabled !== false) this.runRoutine(b, d, { attempt: 2 }) }, this.retryDelayMs).unref()
+            const key = `${info.botId}::${def.name}`, why = res.reason
+            this.dropRetry(key)
+            const t = setTimeout(() => {
+              this.retryTimers.delete(key)
+              const b = this.registry.bot(info.botId); const d = b?.routines.find((x) => x.name === def.name)
+              if (b && d && d.enabled !== false && retryOn(d)) this.runRoutine(b, d, { attempt: 2, ...(why ? { reason: why } : {}) })
+            }, this.retryDelayMs)
+            t.unref(); this.retryTimers.set(key, t)
           }
         }
       }
@@ -350,7 +358,7 @@ export class Host {
   /** RB-2 · 줄에서 시작한 회차가 끝나면 부를 것(세션 id → 자리 비우기) */
   private waitEnd = new Map<string, () => void>()
   /** RB-2 · 줄에 세워 돌린다 — 회차가 끝나거나 60분(`RUN_TIMEOUT_MS`)이 지나면 다음 것이 뜬다 */
-  queueRun(at: number, b: Bot, r: RoutineDef, why: { attempt?: number; catchup?: number } = {}): void {
+  queueRun(at: number, b: Bot, r: RoutineDef, why: { attempt?: number; catchup?: number; reason?: string } = {}): void {
     // 🔴 최종 리뷰 · 같은 루틴은 줄에 하나만 · 차례가 왔을 때 그사이 이 호스트가 이미 돌렸으면(제시각 회차·croner 의 늦은 타이머) 건너뛴다
     const t0 = Date.now(), key = `${b.id}::${r.name}`
     const queued = this.startQueue.push(at, () => new Promise<void>((res) => {
@@ -402,11 +410,46 @@ export class Host {
 
   /** BR-2 · 이 호스트가 돌린 루틴 회차(세션 id → 몇 번째 시도) — 재시도 판단 */
   private routineRuns = new Map<string, { botId: string; attempt: number; t: number }>()
+  /**
+   * 10분 뒤 다시 돌리려고 걸어 둔 타이머(`botId::루틴`) — 그사이 같은 루틴이 어떤 길로든 다시 돌면 걷는다.
+   * 🔴 안 걷으면 사람이 [지금 돌리기] · «실패 N개 다시 돌리기» 로 돌린 직후 타이머가 또 돌려 같은 일이 두 번 나간다.
+   */
+  private retryTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private dropRetry(key: string): void { const t = this.retryTimers.get(key); if (t) { clearTimeout(t); this.retryTimers.delete(key) } }
+  /** 지금 도는 루틴 회차(`botId::루틴`) — 60분 넘은 것은 끝난 셈(`onTimeLive` 와 같은 기준) */
+  private runningRoutines(now = Date.now()): Set<string> {
+    const out = new Set<string>()
+    for (const [sid, x] of this.routineRuns) { const name = this.sessions.get(sid)?.routine; if (name && now - x.t < RUN_TIMEOUT_MS) out.add(`${x.botId}::${name}`) }
+    return out
+  }
+  /**
+   * «실패 N개 다시 돌리기» (2026-11-16 Dave «일괄 재실행 버튼») — 마지막 회차가 실패로 끝난 루틴을 시작 줄에 세운다(동시 둘 · `StartQueue`).
+   *    화면이 보낸 목록(`items`)이 있으면 그 안에서만 고른다 — 사람이 확인 창에서 본 것만 돈다. 판정은 보드와 같은 값(`rerunnable`)이다.
+   * ⚠ 두 번째 시도로 적는다 — 이것마저 실패해도 10분 뒤 또 돌지 않는다(사람이 보고 돌린 회차다).
+   */
+  rerunFailed(items?: { botId: string; name: string }[]): { queued: { bot: string; name: string }[]; skipped: { bot: string; name: string; why: string }[] } {
+    const now = Date.now(), live = this.runningRoutines(now)
+    const queued: { bot: string; name: string }[] = [], skipped: { bot: string; name: string; why: string }[] = []
+    const failed = rerunnable(this.routineBoard(now).routines)
+    const want = items ? items.map((i) => ({ i, r: failed.find((f) => f.botId === i.botId && f.name === i.name) })) : failed.map((r) => ({ i: { botId: r.botId, name: r.name }, r }))
+    for (const { i, r } of want) {
+      const b = this.registry.bot(i.botId), d = b?.routines.find((x) => x.name === i.name), key = `${i.botId}::${i.name}`
+      const why = !b || !d ? '루틴이 이제 없어요' : !r ? '마지막 회차가 실패가 아니에요' : live.has(key) ? '지금 돌고 있어요' : this.startQueue.has(key) ? '이미 줄에서 기다려요' : ''
+      if (why || !b || !d || !r) { skipped.push({ bot: b?.name ?? i.botId, name: i.name, why }); continue }
+      this.dropRetry(key)
+      this.runs.note({ event: 'retry', botId: b.id, routine: d.name, ...(r.last?.run ? { run: r.last.run } : {}), by: 'person' })
+      this.queueRun(now, b, d, { attempt: 2, ...(r.last?.reason ? { reason: r.last.reason } : {}) })
+      queued.push({ bot: b.name, name: d.name })
+    }
+    if (queued.length) this.log(`실패한 루틴 ${queued.length}개를 다시 돌려요: ${queued.map((q) => `${q.bot} · ${q.name}`).join(' / ')}`)
+    return { queued, skipped }
+  }
   /** @returns 루틴 세션 id */
-  runRoutine(bot: Bot, r: RoutineDef, why: { attempt?: number; catchup?: number } = {}): string {
+  runRoutine(bot: Bot, r: RoutineDef, why: { attempt?: number; catchup?: number; reason?: string } = {}): string {
     this.log(`루틴 실행: ${bot.name} · ${r.name}${why.attempt && why.attempt > 1 ? ` · ${why.attempt}번째 시도` : ''}${why.catchup ? ' · 놓친 회차 보충' : ''}`)
+    this.dropRetry(`${bot.id}::${r.name}`)   // 어떤 길로든 다시 돌면 걸어 둔 «10분 뒤 다시» 는 필요 없다
     this.routines.markRun(bot.id, r.name)
-    const run = routineRun(r)   // BS · 문구와 권한 모드를 같은 값에서
+    const run = routineRun(r, why.attempt && why.attempt > 1 ? { ...(why.reason ? { reason: why.reason } : {}) } : undefined)   // BS · 문구와 권한 모드를 같은 값에서 · 다시 도는 회차는 한 줄 더
     const s = this.sessions.create(bot, `루틴 · ${r.name}`, { permissionMode: run.mode, routine: r.name })
     this.runs.start(s.id, bot.id, bot.name, r.name, why)
     this.routineRuns.set(s.id, { botId: bot.id, attempt: why.attempt ?? 1, t: Date.now() })
@@ -422,7 +465,7 @@ export class Host {
   /**
    * 🔴 **CI · 끊긴 루틴 회차** (2026-10-13 오케스트레이터 제보 — 12:00 SNS 게시 루틴이 12:02 업데이트 적용으로 끊겨 조용히 빠졌다).
    *    ① 켜질 때 기록을 닫고(`RunLog.recoverInterrupted` · fail · «호스트 재시작으로 중단») 그 세션에 한 줄 남긴다.
-   *    ② 다시 돌릴지는 루틴의 `retry` 가 정한다(BR-2 와 같은 값 · 기본 끔 — 외부 발송이 두 번 나가지 않게). 켜져 있으면 두 번째 시도로 한 번,
+   *    ② 다시 돌릴지는 루틴의 `retry` 가 정한다(BR-2 와 같은 값 · 2026-11-16 부터 기본 켬 — `retry: false` 인 루틴만 안 돈다). 켜져 있으면 두 번째 시도로 한 번(«앞 회차가 한 일을 먼저 확인» 한 줄과 함께),
    *       꺼져 있거나 이미 두 번째였으면 오케스트레이터 소통 세션에 한 줄 — 다시 돌릴지는 사람이 정한다.
    */
   recoverInterrupted(): ReturnType<RunLog['recoverInterrupted']> {
@@ -440,12 +483,12 @@ export class Host {
     for (const c of cut) {
       const b = this.registry.bot(c.botId), d = b?.routines.find((x) => x.name === c.routine)
       const hm = new Date(c.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
-      if (b && d && d.retry === true && d.enabled !== false && c.attempt === 1 && now - c.at <= CATCHUP_WINDOW_MS) {
+      if (b && d && retryOn(d) && d.enabled !== false && c.attempt === 1 && now - c.at <= CATCHUP_WINDOW_MS) {
         this.runs.note({ event: 'retry', botId: c.botId, routine: c.routine, run: c.run, reason: INTERRUPTED_REASON })
-        this.queueRun(c.at, b, d, { attempt: 2 })   // RB-2 · 보충과 한 줄에 — 시작 시각이 이르니 자연히 먼저
+        this.queueRun(c.at, b, d, { attempt: 2, reason: INTERRUPTED_REASON })   // RB-2 · 보충과 한 줄에 — 시작 시각이 이르니 자연히 먼저
         continue
       }
-      const why = !b || !d ? '루틴이 이제 없어요' : d.enabled === false ? '루틴이 꺼져 있어요' : c.attempt > 1 ? '이미 두 번째 시도였어요' : d.retry !== true ? '재시도가 꺼져 있어요(retry)' : '보충 창(6시간)이 지났어요'
+      const why = !b || !d ? '루틴이 이제 없어요' : d.enabled === false ? '루틴이 꺼져 있어요' : c.attempt > 1 ? '이미 두 번째 시도였어요' : !retryOn(d) ? '«실패하면 다시 돌리기» 가 꺼져 있어요(retry: false)' : '보충 창(6시간)이 지났어요'
       told.push(`- ${c.bot} · «${c.routine}» · ${hm} 시작 · 세션 ${c.run} — 다시 안 돌림: ${why}`)
     }
     if (told.length) this.notifyOrch(`[운영 · 끊긴 루틴 ${told.length}건] 메인이 다시 뜨면서(업데이트 적용·앱 재시작) 도중에 끊긴 루틴 회차예요. 실행 기록은 «실패 · ${INTERRUPTED_REASON}» 로 닫았어요.\n${told.join('\n')}\n다시 돌릴지는 그 봇이나 사람이 정해요(routine_run). 외부 발송이 든 루틴이면 이미 나갔는지 먼저 확인하세요.`, 'ops')

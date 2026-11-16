@@ -1,6 +1,7 @@
 import { Cron } from 'croner'
 import type { RoutineDef } from './types'
 import { describeCron, onceAt } from './when'
+import { retryOn } from './routineRetry'
 
 /**
  * 🔴 **RB · 루틴 관리 페이지의 판정·집계·시간표 — 한 곳** (2026-10-30 Dave: *«시간표를 보면서 리소스가 너무 몰리는건 아닌지 확인하고,
@@ -13,13 +14,14 @@ import { describeCron, onceAt } from './when'
  */
 
 /** 실행 기록 한 줄(`host/runs.ts` RunEvent + 시각) — core 는 host 를 안 읽으니 필요한 칸만 */
-export interface RunEventLike { ts: string; event: string; botId?: string; bot?: string; routine?: string; run?: string; result?: string; reason?: string; ms?: number; catchup?: string }
+export interface RunEventLike { ts: string; event: string; botId?: string; bot?: string; routine?: string; run?: string; result?: string; reason?: string; ms?: number; catchup?: string; attempt?: number }
 export type RunOutcome = 'ok' | 'fail' | 'skip' | 'unknown' | 'timeout'
-export interface RunRow { run: string; botId: string; routine: string; start: number; end?: number; result: RunOutcome; reason?: string; ms?: number; catchup: boolean }
+export interface RunRow { run: string; botId: string; routine: string; start: number; end?: number; result: RunOutcome; reason?: string; ms?: number; catchup: boolean; again?: boolean }
 export type BoardState = 'fail' | 'missed' | 'unknown' | 'finished' | 'off' | 'ok'
 /** 페이지 묶음 순서 — 문제 먼저 */
 export const STATE_ORDER: BoardState[] = ['fail', 'missed', 'unknown', 'finished', 'off', 'ok']
 export interface BoardRoutine { botId: string; bot: string; name: string; cron: string; when: string; enabled: boolean; once: boolean; next?: number; error?: string
+  retry: boolean; retryAt?: number
   state: BoardState; firstWait: boolean; last?: RunRow; recent: RunRow[]; avgMs?: number; daveTodo: boolean; changes: ChangeRow[] }
 export interface ChangeRow { at: number; botId: string; routine: string; actor: '오케스트레이터' | '이 폴더 봇' | '화면'; what: string; why?: string; before?: Partial<RoutineDef>; after?: Partial<RoutineDef> }
 
@@ -37,7 +39,7 @@ export function pairRuns(events: RunEventLike[]): RunRow[] {
   for (const e of events) {
     if (!e.run || !e.botId || !e.routine) continue
     const t = Date.parse(e.ts)
-    if (e.event === 'start') { by.set(e.run, { run: e.run, botId: e.botId, routine: e.routine, start: t, result: 'unknown', catchup: !!e.catchup }); continue }
+    if (e.event === 'start') { by.set(e.run, { run: e.run, botId: e.botId, routine: e.routine, start: t, result: 'unknown', catchup: !!e.catchup, ...((e.attempt ?? 1) > 1 ? { again: true } : {}) }); continue }
     const r = by.get(e.run); if (!r) continue
     if (e.event === 'timeout') { r.result = 'timeout'; r.end = t }
     else if (e.event === 'end') {
@@ -54,6 +56,22 @@ export function pairRuns(events: RunEventLike[]): RunRow[] {
 export function latestStarts(events: RunEventLike[]): Map<string, number> {
   const m = new Map<string, number>()
   for (const e of events) { if (e.event !== 'start' || !e.botId || !e.routine) continue; const k = `${e.botId}::${e.routine}`, t = Date.parse(e.ts); if (t > (m.get(k) ?? 0)) m.set(k, t) }
+  return m
+}
+
+/**
+ * `botId::루틴` 마다 «곧 다시 돌아요» 의 예정 시각 — 실패 뒤 `retry` 사건(걸어 둔 시간 `ms`)이 있고 그 뒤로 시작이 없는 것만.
+ * ⚠ 예정 시각이 지났는데 시작이 없으면(그사이 앱이 다시 떴다 — 타이머는 메모리에만 산다) 뺀다. «곧 돌아요» 라고 계속 말하면 거짓이다.
+ */
+export function pendingRetries(events: RunEventLike[], now: number): Map<string, number> {
+  const m = new Map<string, number>()
+  for (const e of events) {
+    if (!e.botId || !e.routine) continue
+    const k = `${e.botId}::${e.routine}`
+    if (e.event === 'start') m.delete(k)
+    else if (e.event === 'retry' && typeof e.ms === 'number') m.set(k, Date.parse(e.ts) + e.ms)
+  }
+  for (const [k, at] of m) if (!(at > now)) m.delete(k)
   return m
 }
 
@@ -186,6 +204,7 @@ export function changeWhat(before: RoutineDef, after: RoutineDef): string {
   if ((before.enabled !== false) !== (after.enabled !== false)) w.push(after.enabled === false ? '껐음' : '켰음')
   if (before.prompt !== after.prompt) w.push('문구 바뀜')
   if (!!before.push !== !!after.push) w.push(after.push ? '알림 켬' : '알림 끔')
+  if (retryOn(before) !== retryOn(after)) w.push(retryOn(after) ? '실패하면 다시 돌리기 켬' : '실패하면 다시 돌리기 끔')
   return w.join(' · ')
 }
 /** RB-5 · 화면이 루틴 목록을 통째로 저장했을 때의 전후 비교 — 안 바뀐 루틴은 빠진다 · 바뀐 것 → 지운 것 → 새로 건 것 순 */

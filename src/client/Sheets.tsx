@@ -3,6 +3,7 @@ import { useEsc } from './esc'
 import { createRoot, type Root } from 'react-dom/client'
 import type { Bot, NotifyEvent, RoutineDef } from '../core/types'
 import { notePlain } from '../core/mdPlain'
+import { retryOn } from '../core/routineRetry'
 import { api, pushWhyText, setToken, subscribePush, type PushWhy } from './api'
 import { FolderBot, Icon, Mid } from './FolderBot'
 import { Modal, ModalX, Seg } from './Modal'
@@ -572,6 +573,10 @@ export function RoutineSheet({ bot, onClose, draft, pick }: { bot: Bot; onClose:
               <small style={{ color: 'var(--t3)' }}>힌트 — 「어제 이후 바뀐 파일을 훑고 todo.md 에 남은 일을 정리해 줘. 바뀐 게 없으면 «변화 없음» 한 줄만.」</small>
             </div>
             <div className="field"><label>끝나면 폰으로 한 줄 푸시</label><Seg cls="rtpush" label="끝나면 폰으로 한 줄 푸시" value={cur.push === false ? 'off' : 'on'} options={[['on', '켬'], ['off', '끔']] as const} onChange={(v) => upd({ push: v === 'on' })} /></div>
+            {/* 2026-11-16 · 기본 켬 — 값이 없으면 켜진 것이다(`retryOn`). 끄면 `retry: false` 가 저장되고, 다시 켜면 그 줄이 빠진다 */}
+            <div className="field"><label>실패하면 10분 뒤 한 번 다시 돌리기</label><Seg cls="rtretry" label="실패하면 10분 뒤 한 번 다시 돌리기" value={retryOn(cur) ? 'on' : 'off'} options={[['on', '켬'], ['off', '끔']] as const} onChange={(v) => upd({ retry: v === 'on' ? undefined : false })} />
+              <small style={{ color: 'var(--t3)' }}>다시 도는 회차는 앞 회차가 해 둔 일을 먼저 확인하고 남은 것만 해요. 같은 일을 두 번 하면 안 되는 루틴은 끄세요.</small>
+            </div>
             {/* 🔴 always 가 bypassPermissions 라는 사실을 모르고 고르면 안 된다 (AA-4) · EB · auto 는 `--permission-mode auto`(기본값은 그대로 always — Dave 결정 대기) */}
             <div className="field"><label>승인 수준 · 사람이 없을 때</label><div className="apgrid">{([['always', '묻지 않고 바로 해요', '기본값 · 사람이 없어도 끝까지 돌아요 (모든 확인을 건너뛰어요)'], ['auto', '자동 — Claude 가 판단', '권한을 Claude 가 판단 · 물어 오면 정한 시간 뒤 거절'], ['folder', '이 폴더 안에서만 써요', 'todo.md·노트 갱신까지 스스로'], ['readonly', '계획만 세워요', '파일을 쓰지 않아요']] as const).map(([v, t, sub]) => <button key={v} data-approve={v} className={`preset ${(cur.approve ?? 'always') === v ? 'on' : ''}`} onClick={() => upd({ approve: v })}><b>{t}</b><small>{sub}</small></button>)}</div></div>
             {cur.lastError ? <div className="rterr" style={{ border: '1px solid var(--err)', borderRadius: 8, padding: '8px 10px' }}><b>이 루틴은 지금 안 걸려 있어요</b><br />{cur.lastError}</div> : null}

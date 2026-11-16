@@ -391,6 +391,12 @@ export class Gateway {
     }
     // RB-5 · 루틴 관리 페이지 — 모든 봇 루틴의 보드 한 장(오케스트레이터 routines_overview 와 같은 계산)
     if (p === '/api/routines/overview' && m === 'GET') return json(200, h.routineBoard())
+    // «실패 N개 다시 돌리기» (2026-11-16) — 화면이 확인 창에서 보여 준 목록만 시작 줄에 세운다. 목록이 없으면 실패한 것 전부
+    if (p === '/api/routines/rerun' && m === 'POST') {
+      const b = await body()
+      const items = Array.isArray(b.items) ? (b.items as { botId?: unknown; name?: unknown }[]).filter((x) => x && typeof x.botId === 'string' && typeof x.name === 'string').map((x) => ({ botId: String(x.botId), name: String(x.name) })) : undefined
+      return json(200, { ok: true, ...h.rerunFailed(items) })
+    }
     // LM · 연결 지도 — 어느 맥이든 읽는다(모델 추측은 주인 맥이 볼트에 둔 것) · 줄기 고치기는 볼트 edit.json(어느 맥이든)
     if (p.startsWith('/api/links')) {
       try {

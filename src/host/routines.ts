@@ -4,6 +4,7 @@ import { Cron } from 'croner'
 import type { Bot, PermissionMode, RoutineDef } from '../core/types'
 import { cronOk, describeCron, onceAt, onceDone } from '../core/when'
 import { RESULT_LINE_HINT } from '../core/runs'
+import { retryNote } from '../core/routineRetry'
 
 export interface RoutineRunner { run: (bot: Bot, r: RoutineDef, why?: { catchup?: number }) => void; log: (msg: string) => void }
 
@@ -202,12 +203,12 @@ export function approveToMode(a: RoutineDef['approve']): PermissionMode {
  *    `approve` 를 안 적은 루틴은 **「제안만 하라」 와 bypassPermissions 를 같이** 받았다. 이제 둘 다 이 함수를 거친다.
  * ⚠ 폴더 생성·이동·은퇴는 승인 수준과 상관없이 루틴 턴에서 막힌다(`core/turnGuard`) — 문구도 그렇게 말한다.
  */
-export function routineRun(r: Pick<RoutineDef, 'name' | 'prompt' | 'approve'>): { mode: PermissionMode; text: string } {
+export function routineRun(r: Pick<RoutineDef, 'name' | 'prompt' | 'approve'>, again?: { reason?: string }): { mode: PermissionMode; text: string } {
   const a = r.approve ?? DEFAULT_ROUTINE_APPROVE
   const how = a === 'always' || a === 'auto' ? '' : a === 'folder' ? '이 폴더 안 파일만 고치고 ' : '파일을 고치지 말고 제안만 하고 '
   return {
     mode: approveToMode(a),
-    text: `${r.prompt}\n\n(이건 예약된 루틴 "${r.name}" 이야. 사람이 없을 수 있으니 ${how}결과를 짧게 요약해. 폴더 생성·이동·은퇴·외부 발송처럼 되돌리기 어려운 일은 하지 말고 제안으로 남겨. ${RESULT_LINE_HINT})`,
+    text: `${r.prompt}\n\n(이건 예약된 루틴 "${r.name}" 이야. 사람이 없을 수 있으니 ${how}결과를 짧게 요약해. 폴더 생성·이동·은퇴·외부 발송처럼 되돌리기 어려운 일은 하지 말고 제안으로 남겨. ${RESULT_LINE_HINT})${again ? `\n\n${retryNote(again.reason)}` : ''}`,
   }
 }
 

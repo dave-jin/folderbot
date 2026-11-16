@@ -1,6 +1,7 @@
 import type { Bot, RoutineDef } from '../core/types'
 import { describeCron, isOnce, onceAt } from '../core/when'
-import { DEFAULT_MS, STATE_ORDER, classify, prevDue, daveTodo, groupRuns, occurrences, pairRuns, planSlots, suggestShift, weekGrid,
+import { retryOn } from '../core/routineRetry'
+import { DEFAULT_MS, STATE_ORDER, classify, prevDue, daveTodo, groupRuns, occurrences, pairRuns, pendingRetries, planSlots, suggestShift, weekGrid,
   type BoardRoutine, type BoardState, type ChangeRow, type RunEventLike, type RunRow } from '../core/routineBoard'
 
 /**
@@ -18,7 +19,7 @@ export interface Board {
 const DAY = 86_400_000
 
 export function buildBoard(bots: Bot[], decorate: (botId: string, r: RoutineDef[]) => RoutineDef[], events: RunEventLike[], changes: ChangeRow[], now: number, hasNote: (b: Bot) => boolean = () => true): Board {
-  const rows = pairRuns(events), groups = groupRuns(rows)
+  const rows = pairRuns(events), groups = groupRuns(rows), again = pendingRetries(events, now)
   const d0 = new Date(now); d0.setHours(0, 0, 0, 0); const dayStart = d0.getTime()
   const routines: BoardRoutine[] = [], plan: { botId: string; name: string; cron: string; ms: number }[] = []
   const blocks: Board['today']['blocks'] = []
@@ -30,6 +31,7 @@ export function buildBoard(bots: Bot[], decorate: (botId: string, r: RoutineDef[
     const avgMs = durs.length ? Math.round(durs.reduce((p, c) => p + c, 0) / durs.length) : undefined
     const { state, firstWait } = classify({ enabled, once, ...(oAt !== undefined ? { onceAt: oAt } : {}), ...(!once && r.lastError ? { error: r.lastError } : {}), ...(!once ? { prevDue: prevDue(r.cron, now) } : {}) }, last, now)
     routines.push({ botId: b.id, bot: b.name, name: r.name, cron: r.cron, when: describeCron(r.cron), enabled, once, ...(r.nextRun ? { next: r.nextRun } : {}), ...(r.lastError ? { error: r.lastError } : {}),
+      retry: retryOn(r), ...(enabled && retryOn(r) && state === 'fail' && again.has(`${b.id}::${r.name}`) ? { retryAt: again.get(`${b.id}::${r.name}`)! } : {}),
       state, firstWait, ...(last ? { last } : {}), recent, ...(avgMs !== undefined ? { avgMs } : {}), daveTodo: state === 'fail' && daveTodo(last?.reason),
       changes: changes.filter((c) => c.botId === b.id && c.routine === r.name).sort((x, y) => y.at - x.at).slice(0, 5) })
     if (!enabled) continue

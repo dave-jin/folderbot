@@ -36,7 +36,7 @@ export class RunLog {
   }
   /** 루틴 세션의 턴이 끝났다 — 이 호스트가 시작한 회차만 한 번 적는다 */
   /** @returns 적었으면 그 결과(재시도 판단에 쓴다), 이 호스트가 시작 안 한 회차면 null */
-  end(run: string, ok: boolean, lastText: string | undefined, error?: string): { ok: boolean; result: string } | null {
+  end(run: string, ok: boolean, lastText: string | undefined, error?: string): { ok: boolean; result: string; reason?: string } | null {
     const o = this.open.get(run); if (!o) return null
     this.open.delete(run)
     const r = routineResult(lastText)
@@ -45,7 +45,7 @@ export class RunLog {
     const out = denied ? { ok: false, result: 'fail' } : { ok: ok && r.result !== 'fail', result: ok ? r.result : 'fail' }
     const reason = [denied, r.reason].filter(Boolean).join(' · ').slice(0, 300)
     this.write({ event: 'end', botId: o.botId, bot: o.bot, routine: o.routine, run, ...out, ...(reason ? { reason } : {}), ...(denied ? { approvalTimeouts: o.denied!.length } : {}), ...(error ? { error: error.slice(0, 300) } : {}), ms: this.now() - o.at })
-    return out
+    return { ...out, ...(reason || error ? { reason: reason || String(error).slice(0, 200) } : {}) }
   }
   /**
    * EB · 이 회차의 승인 요청 하나가 시간 초과로 거절됐다(`core/approvalTimeout`) — 그 자리에서 한 줄 적고, 끝을 적을 때 실패 사유로 싣는다.

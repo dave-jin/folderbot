@@ -282,6 +282,13 @@ rl.on('line', (raw) => {
     say({ type: 'result', subtype: 'success', duration_ms: 10, total_cost_usd: 0.001 })
     return
   }
+  // 루틴 다시 돌리기 검사용(2026-11-16) — 처음에는 실패하고, «다시 도는 회차» 한 줄을 받은 회차는 성공한다. 받은 한 줄을 답에 드러낸다
+  if (/다시돌면성공/.test(text)) {
+    const again = /\(이건 다시 도는 회차야[^)]*\)/.exec(text)?.[0] ?? ''
+    say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: again ? `받은 말: ${again}\n\n결과: ok` : '결과: fail — 처음에는 실패' }], stop_reason: 'end_turn' } })
+    say({ type: 'result', subtype: 'success', duration_ms: 10, total_cost_usd: 0.001 })
+    return
+  }
   // 「채팅 칩」 검사용 — «되읊어:» 뒤를 답변으로 그대로 돌려준다(경로·파일명이 칩이 되는지 재려고)
   if (/^되읊어:/.test(text)) {
     say({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: text.slice('되읊어:'.length).trim() }], stop_reason: 'end_turn' } })
