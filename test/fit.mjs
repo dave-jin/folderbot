@@ -130,7 +130,7 @@ for (const [label, W, H, phone, lay] of CASES) {
     app.appendChild(v)
   })
   /**
-   * EC · 대기 말 줄 — 단추가 넷([끼워 넣기] [멈추고 보내기] [고치기] [빼기])으로 늘었다. 봇 이름표까지 붙은 가장 빽빽한 줄을 **진짜 마크업**으로 심어 잰다
+   * EC · 대기 말 줄 — 단추가 넷이던 것을 EF(11/17)에서 [지금 보내기] 와 그림만 있는 [✎][✕] 셋으로 줄였다. 봇 이름표까지 붙은 가장 빽빽한 줄을 **진짜 마크업**으로 심어 잰다
    *   (좁으면 단추 묶음이 다음 줄로 내려가야 한다 — 줄 밖으로 나가거나 글자가 접히면 빨강).
    */
   await pg.evaluate(() => {
@@ -138,7 +138,7 @@ for (const [label, W, H, phone, lay] of CASES) {
     const ic = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M3 13l2-6 6-4 2 2-4 6z"/></svg>'
     const q = document.createElement('div'); q.className = 'qlist'
     q.innerHTML = '<div class="qhead">대기 1개 · 지금 일이 끝나면 차례로 보내요</div><div class="queue"><div class="qh"><span class="qn">대기 1</span><span class="qwho">🛠 오케스트레이터</span><span style="flex:1"></span>' +
-      `<span class="qacts"><button class="qb steer"><span>끼워 넣기</span></button><button class="qb now"><span>멈추고 보내기</span></button><button class="qb">${ic}<span>고치기</span></button><button class="qb drop">${ic}<span>빼기</span></button></span></div>` +
+      `<span class="qacts"><button class="qb send"><span>지금 보내기</span></button><button class="qb ic" aria-label="고치기">${ic}</button><button class="qb ic drop" aria-label="빼기">${ic}</button></span></div>` +
       '<button class="tx">남은 단계는 하지 말고 표만 먼저 고쳐 줘. 길어지면 세 줄에서 접힌다.</button></div>'
     foot.insertBefore(q, foot.firstChild)
   })

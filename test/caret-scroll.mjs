@@ -254,7 +254,7 @@ export async function caretScroll({ br, check, port = 7491, shots = '' }) {
       await api(`/sessions/${s.id}/send`, { text: '느린일 길게' }); await until(async () => (await stateOf(s.id)) === 'running', '느린 턴이 안 돈다')
       await pg.click('.composer .cin'); await pg.keyboard.type('기다렸다 보낼 말'); await pg.keyboard.press('Enter')
       await pg.waitForSelector('.qlist .queue', { timeout: 5000 }); await wait(300)
-      const editBtn = await pg.$('.qlist .queue button:has-text("고치기")'); must(editBtn, '검사 전제 — 대기 말 줄에 [고치기] 가 없다')
+      const editBtn = await pg.$('.qlist .queue button[aria-label="고치기"]'); must(editBtn, '검사 전제 — 대기 말 줄에 [고치기] 가 없다')   // EF(11/17) — 글자 없는 그림 단추라 aria-label 로 찾는다
       await editBtn.click(); await pg.waitForSelector('.qlist .queue .qin', { timeout: 4000 }); await wait(300)
       const vh = await k.vh()
       await k.watch('.chat-scroll', 'chat')

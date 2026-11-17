@@ -74,7 +74,7 @@ import { copySay } from './clip'
 import { SubDetail, TaskPop, TaskSheet, stopOneTask, subItemIds, useTasks } from './Tasks'
 import { SessionSheet, SessionStrip } from './SessionStrip'
 import { resultPreview } from '../core/bgTasks'
-import { STEER_WHY, steerVerdict } from '../core/steer'
+import { steerVerdict } from '../core/steer'
 import { nextWaiting, waitingOrder } from '../core/sessionTabs'
 import { errText } from './errText'
 import { fitArea, revealAreaCaret } from './areaFit'
@@ -1916,8 +1916,16 @@ function Chat({ bot, go, oref, onOref, sessions, cur, items, loaded, phase = 're
       if (r.sessionId && r.sessionId !== sid) { await refreshAll(); onSession(r.sessionId) }
     } catch (e) { onQueue((q) => [t, ...q]); say(errText('못 보냈어요', e)) } finally { steerBusy.current = false }
   }
-  /** 끼워 넣을 수 없는 까닭(없으면 넣을 수 있다) — 호스트와 같은 판정(`core/steer`). 단추를 흐리고 title 과 누를 때의 말로 쓴다 */
-  const steerWhy = steerVerdict({ vendor: cur?.vendor ?? bot.vendor, state: cur?.state ?? 'idle', pending }).text
+  /**
+   * 🔴 **EF · 대기 줄의 [지금 보내기] 하나** (2026-11-17 Dave: «끼워서 보내기 말고, '지금 보내기' 로 바꾸고 '멈추고 보내기' 는 필요 없어 없애줘»).
+   *    [끼워 넣기] [멈추고 보내기] 둘을 단추 하나로 합쳤다. 누르면 그 자리에서 할 수 있는 가장 덜 자르는 길로 간다 —
+   *    도는 턴에 넣을 수 있으면 끼워 넣고(`steerQueued` · 멈추지 않음), 도는 턴이 없으면 바로 보내고, Codex 처럼 넣을 수 없는 세션이면
+   *    종전 [멈추고 보내기] 길(`nowQueued`)로 간다. 승인·질문 카드가 걸려 있을 때만 흐리게 서서 까닭을 말한다(카드에 먼저 답한다 — EC 그대로).
+   *    판정은 호스트와 같은 `core/steer` 하나다.
+   */
+  const sendV = steerVerdict({ vendor: cur?.vendor ?? bot.vendor, state: cur?.state ?? 'idle', pending })
+  const sendWhy = sendV.why === 'card' ? sendV.text : undefined
+  const sendTip = sendV.ok ? '하던 일을 멈추지 않고, 이 말을 지금 도는 턴에 넣어요' : sendV.why === 'codex' ? 'Codex 세션은 일하는 중에 말을 받지 못해요 — 하던 단계를 멈추고 바로 보내요' : '지금 바로 보내요'
   const [fixing, setFixing] = useState(false)
   /** CL-1 B · 되감기로 보내기 — 호스트가 못 하면 false(화면이 A 로 보낸다) */
   const rewindSend = async (t: string): Promise<boolean> => {
@@ -2378,11 +2386,11 @@ function Chat({ bot, go, oref, onOref, sessions, cur, items, loaded, phase = 're
         {(cur?.queue ?? []).map((q, i) => <QueueRow key={`h${i}${q.t}`} n={i + 1} text={q.text} who={q.fromName ?? '다른 봇'}
           onSave={(v) => { if (cur) void api(`/sessions/${cur.id}/queue`, { body: { i, text: v } }).catch((e) => say(errText('대기 말을 못 고쳤어요', e))) }}
           onDrop={() => { if (cur) void api(`/sessions/${cur.id}/queue`, { body: { i, text: '' } }).catch((e) => say(errText('대기 말을 못 뺐어요', e))) }}
-          steerWhy={STEER_WHY.notHuman} onSteer={() => say(STEER_WHY.notHuman)}
-          onNow={() => { if (cur) void api(`/sessions/${cur.id}/queue-now`, { body: { i } }).catch((e) => say(errText('못 보냈어요', e))) }} />)}
+          sendTip="다른 봇의 말은 도는 턴에 넣지 않아요 — 하던 단계를 멈추고 바로 보내요"
+          onSend={() => { if (cur) void api(`/sessions/${cur.id}/queue-now`, { body: { i } }).catch((e) => say(errText('못 보냈어요', e))) }} />)}
         {queue.map((q, i) => <QueueRow key={i} n={(cur?.queue?.length ?? 0) + i + 1} text={q}
-          steerWhy={steerWhy} onSteer={() => { if (steerWhy) say(steerWhy); else void steerQueued(i) }}
-          onNow={() => void nowQueued(i)}
+          sendWhy={sendWhy} sendTip={sendTip}
+          onSend={() => { if (sendWhy) say(sendWhy); else if (sendV.ok) void steerQueued(i); else void nowQueued(i) }}
           onSave={(v) => onQueue((l) => (v.trim() ? l.map((x, k) => (k === i ? v : x)) : l.filter((_, k) => k !== i)))}
           onDrop={() => onQueue((l) => l.filter((_, k) => k !== i))} />)}
       </div> : null}
@@ -2462,7 +2470,7 @@ function LinkChip({ url }: { url: string }) {
  * 보기: 세 줄까지 · 누르면 고치기. 고치기: 글에 맞춰 커지는 글 상자(최대 화면 40%) — ⏎ 는 줄바꿈, **⌘⏎ 저장 · ⎋ 취소**.
  * ⛔ 빈 글로 저장하면 그 줄은 빠진다. ⚠ 밖을 눌러도(blur) 저장한다 — 고친 말을 잃지 않게.
  */
-function QueueRow({ n, text, who, onSave, onDrop, onNow, onSteer, steerWhy }: { n: number; text: string; who?: string; onSave: (v: string) => void; onDrop: () => void; /** CL-2 · 줄 서 있던 말을 앞으로 — 멈추고 바로 보내기 */ onNow?: () => void; /** EC · 멈추지 않고 도는 턴에 끼워 넣기 */ onSteer?: () => void; /** EC · 끼워 넣을 수 없는 까닭 — 있으면 단추가 흐려지고, 누르면 이 말을 한다(폰에는 올리기가 없다) */ steerWhy?: string }) {
+function QueueRow({ n, text, who, onSave, onDrop, onSend, sendWhy, sendTip }: { n: number; text: string; who?: string; onSave: (v: string) => void; onDrop: () => void; /** EF · [지금 보내기] — 끼워 넣을 수 있으면 끼워 넣고, 아니면 바로(필요하면 멈추고) 보낸다 */ onSend?: () => void; /** 지금 보낼 수 없는 까닭(카드가 걸림) — 있으면 단추가 흐려지고, 누르면 이 말을 한다(폰에는 올리기가 없다) */ sendWhy?: string; /** 누르면 무엇이 되는지 — title */ sendTip?: string }) {
   const [edit, setEdit] = useState(false)
   const [v, setV] = useState(text)
   const ta = useRef<HTMLTextAreaElement>(null)
@@ -2475,15 +2483,16 @@ function QueueRow({ n, text, who, onSave, onDrop, onNow, onSteer, steerWhy }: { 
     <div className="qh">
       <span className="qn">대기 {n}</span>{who ? <span className="qwho">{who}</span> : null}
       <span style={{ flex: 1 }} />
-      {/* EC · [⚡ 지금] 을 둘로 나눴다 — [끼워 넣기] 는 멈추지 않고 지금 턴에, [멈추고 보내기] 는 하던 단계를 자르고 새 턴으로.
-          ⚠ 못 끼워 넣을 때도 단추는 선다(흐리게) — 사라지면 «왜 없지» 가 되고, 폰에서는 눌러야 까닭을 들을 수 있다
+      {/* EF · [지금 보내기] 하나 + 그림만 있는 [✎][✕] (2026-11-17 Dave: «고치기와 빼기는 한글 단어 없이 이모지로만»).
+          EC(11/11)의 [끼워 넣기] [멈추고 보내기] 둘을 합쳤다 — 어느 길로 갈지는 부모가 정한다(위 `sendV`).
+          그림만 남은 두 단추는 title · aria-label 로 이름을 갖는다(올리면 보이고, 화면 읽기도 읽는다).
+          ⚠ 지금 보낼 수 없을 때도 단추는 선다(흐리게) — 사라지면 «왜 없지» 가 되고, 폰에서는 눌러야 까닭을 들을 수 있다
           🔴 이 단추들은 **초점을 뺏지 않는다**(보내기 단추와 같은 까닭 · 2026-09-22 실측) — 폰에서 입력칸에 초점을 둔 채 누르면 초점이 빠지며 키보드가 닫히고,
              그 바람에 줄이 움직여 **click 이 아예 안 난다**(EC 스모크 P1 이 처음에 여기서 빨갰다 — 눌러도 아무 일도 없었다) */}
       <span className="qacts">
-        {edit || !onSteer ? null : <button className={`qb steer${steerWhy ? ' off' : ''}`} aria-disabled={!!steerWhy} title={steerWhy ?? '하던 일을 멈추지 않고, 이 말을 지금 도는 턴에 끼워 넣어요'} onMouseDown={(e) => e.preventDefault()} onClick={onSteer}><span>끼워 넣기</span></button>}
-        {edit || !onNow ? null : <button className="qb now" title="지금 하던 단계를 멈추고 이 말을 바로 보내요" onMouseDown={(e) => e.preventDefault()} onClick={onNow}><span>멈추고 보내기</span></button>}
-        {edit ? null : <button className="qb" title="고치기" onClick={() => setEdit(true)}><Icon n="edit" size={12} /><span>고치기</span></button>}
-        <button className="qb drop" title="대기열에서 빼기" onMouseDown={(e) => e.preventDefault()} onClick={onDrop}><Icon n="x" size={12} /><span>빼기</span></button>
+        {edit || !onSend ? null : <button className={`qb send${sendWhy ? ' off' : ''}`} aria-disabled={!!sendWhy} title={sendWhy ?? sendTip ?? '지금 바로 보내요'} onMouseDown={(e) => e.preventDefault()} onClick={onSend}><span>지금 보내기</span></button>}
+        {edit ? null : <button className="qb ic" title="고치기" aria-label="고치기" onClick={() => setEdit(true)}><Icon n="edit" size={13} /></button>}
+        <button className="qb ic drop" title="대기열에서 빼기" aria-label="빼기" onMouseDown={(e) => e.preventDefault()} onClick={onDrop}><Icon n="x" size={13} /></button>
       </span>
     </div>
     {edit

@@ -295,15 +295,17 @@ b,strong { color:var(--w); font-weight:600 }
 .queue .qwho { font-size:11px; padding:1px 7px; border-radius:999px; background:var(--line2); color:var(--t2) }
 .queue .qb { display:inline-flex; align-items:center; gap:4px; font-size:12px; color:var(--t3); padding:2px 6px; border-radius:6px }
 .queue .qb:hover { color:var(--w); background:var(--line2) }
-/* EC · 대기 줄의 단추 묶음 — [끼워 넣기] [멈추고 보내기] [고치기] [빼기]. 좁으면 묶음째 다음 줄로 내려간다(단추가 낱개로 흩어지지 않게) */
+/* EF · 대기 줄의 단추 묶음 — [지금 보내기] [✎] [✕] (2026-11-17). 좁으면 묶음째 다음 줄로 내려간다(단추가 낱개로 흩어지지 않게) */
 .queue .qh { flex-wrap:wrap; row-gap:4px }
 .queue .qacts { display:flex; align-items:center; gap:4px; margin-left:auto; flex-wrap:wrap; justify-content:flex-end }
-.queue .qb.steer { color:var(--t); border:1px solid var(--line2) }
-.queue .qb.now { color:var(--t); border:1px solid var(--line2) }
-.queue .qb.steer.off { opacity:.45; cursor:default }
-.queue .qb.steer.off:hover { color:var(--t); background:none }
-/* 폰 — 올리기가 없고 엄지로 누른다. 단추 높이 34px 이상 */
+.queue .qb.send { color:var(--t); border:1px solid var(--line2) }
+.queue .qb.send.off { opacity:.45; cursor:default }
+.queue .qb.send.off:hover { color:var(--t); background:none }
+/* 그림만 있는 고치기 · 빼기 — 네모 칸(글자 단추와 높이를 맞춘다) */
+.queue .qb.ic { justify-content:center; min-width:24px; min-height:24px; padding:2px }
+/* 폰 — 올리기가 없고 엄지로 누른다. 단추 높이 34px 이상 · 그림 단추는 34px 네모 */
 .app.phone .queue .qb { min-height:34px; padding:6px 10px; font-size:13px }
+.app.phone .queue .qb.ic { min-width:34px; padding:6px }
 .app.phone .queue .qacts { gap:6px }
 /* EC · 끼워 넣은 사람 말의 작은 표시(기기 표시 `.dev` 와 같은 자리·크기) */
 .umsg .steertag { display:block; width:fit-content; font-size:11px; color:var(--t3); border:1px solid var(--line2); border-radius:999px; padding:0 7px; margin-bottom:4px; line-height:1.6 }

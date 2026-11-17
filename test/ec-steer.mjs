@@ -146,22 +146,23 @@ export async function ecSteer({ base, data, botId, br, check, shots }) {
     const phoneHome = async (pg, sid) => { await goto(pg, sid); await pg.evaluate(() => document.activeElement?.blur?.()); await wait(300); await pg.tap('.chat-hdr .hb-menu'); await pg.waitForSelector('.mhome', { timeout: 6000 }); await wait(400) }
     const goto = async (pg, sid, bot = botId) => { await pg.goto(`${base}/#bot=${bot}&s=${sid}`); await pg.waitForSelector('.composer .cin', { timeout: 15000 }); await wait(500) }
     const sidOf = (pg) => pg.evaluate(() => new URLSearchParams(location.hash.slice(1)).get('s'))
-    const queueOf = (pg) => pg.evaluate(() => [...document.querySelectorAll('.qlist .queue')].map((q) => ({ who: q.querySelector('.qwho')?.textContent ?? '', tx: q.querySelector('.tx')?.textContent ?? '', btns: [...q.querySelectorAll('.qacts .qb')].map((b) => ({ t: b.textContent.trim(), cls: b.className, title: b.title, off: b.classList.contains('off'), aria: b.getAttribute('aria-disabled'), h: Math.round(b.getBoundingClientRect().height), r: Math.round(b.getBoundingClientRect().right) })) })))
+    const queueOf = (pg) => pg.evaluate(() => [...document.querySelectorAll('.qlist .queue')].map((q) => ({ who: q.querySelector('.qwho')?.textContent ?? '', tx: q.querySelector('.tx')?.textContent ?? '', btns: [...q.querySelectorAll('.qacts .qb')].map((b) => ({ t: b.textContent.trim() || `[${b.getAttribute('aria-label') ?? ''}]`, ic: !!b.querySelector('svg') && !b.textContent.trim(), w: Math.round(b.getBoundingClientRect().width), cls: b.className, title: b.title, off: b.classList.contains('off'), aria: b.getAttribute('aria-disabled'), h: Math.round(b.getBoundingClientRect().height), r: Math.round(b.getBoundingClientRect().right) })) })))
     const typeSend = async (pg, text, phone) => { if (phone) await pg.tap('.composer .cin'); else await pg.click('.composer .cin'); await pg.keyboard.type(text); if (phone) await pg.tap('.composer .sendb'); else await pg.keyboard.press('Enter') }
     const focusOf = (pg) => pg.evaluate(() => { const a = document.activeElement; const card = a?.closest?.('.card[data-req]'); return { self: !!a?.matches?.('.card[data-req]'), req: card?.dataset.req ?? null, kind: card?.dataset.kind ?? null, on: card ? getComputedStyle(card.querySelector('.pk-on') ?? card).display : null, off: card?.querySelector('.pk-off') ? getComputedStyle(card.querySelector('.pk-off')).display : null, keys: card?.querySelector('.pkeys')?.textContent ?? null } })
     const D = await page(false); const P = await page(true)
     const K = {}
 
-    await check('U1 데스크톱 — 대기 말 줄에 [끼워 넣기] [멈추고 보내기] 둘(«⚡ 지금» 없음) · 끼워 넣으면 줄에서 빠져 «끼워 넣음» 사람 말로 서고 턴은 그대로 돈다', async () => {
+    await check('U1 데스크톱 — 대기 말 줄에 [지금 보내기] 하나와 그림만 있는 [고치기][빼기](EF · «끼워 넣기»·«멈추고 보내기» 없음) · 누르면 줄에서 빠져 «끼워 넣음» 사람 말로 서고 턴은 그대로 돈다', async () => {
       const s = await newSession('EC 화면 끼워넣기'); K.u1 = s.id; const pg = D.pg; await goto(pg, s.id)
       await say(s.id, '느린일 6초 EC-U1'); await running(s.id)
-      await typeSend(pg, '고쳐 말하기 EC-U1'); await pg.waitForSelector('.qlist .queue .qb.steer', { timeout: 4000 })
+      await typeSend(pg, '고쳐 말하기 EC-U1'); await pg.waitForSelector('.qlist .queue .qb.send', { timeout: 4000 })
       const q = await queueOf(pg)
-      must(q.length === 1 && JSON.stringify(q[0].btns.map((b) => b.t)) === JSON.stringify(['끼워 넣기', '멈추고 보내기', '고치기', '빼기']), '단추 ' + JSON.stringify(q))
-      must(!q[0].btns[0].off && q[0].btns[0].aria === 'false' && /멈추지 않고/.test(q[0].btns[0].title) && /멈추고/.test(q[0].btns[1].title), '[끼워 넣기] 가 흐리거나 설명이 없다 ' + JSON.stringify(q[0].btns.slice(0, 2)))
-      must(!/지금\s*$|⚡/.test(q[0].btns.map((b) => b.t).join(' ')), '옛 «⚡ 지금» 이 남았다')
-      await shot(pg, 'u1-데스크톱-대기말-두-단추')
-      await pg.click('.qlist .queue .qb.steer')
+      must(q.length === 1 && JSON.stringify(q[0].btns.map((b) => b.t)) === JSON.stringify(['지금 보내기', '[고치기]', '[빼기]']), '단추 ' + JSON.stringify(q))
+      must(q[0].btns[1].ic && q[0].btns[2].ic && q[0].btns[1].title === '고치기' && /빼기/.test(q[0].btns[2].title), '고치기·빼기가 그림만이 아니거나 이름이 없다 ' + JSON.stringify(q[0].btns.slice(1)))
+      must(!q[0].btns[0].off && q[0].btns[0].aria === 'false' && /멈추지 않고/.test(q[0].btns[0].title), '[지금 보내기] 가 흐리거나 설명이 없다 ' + JSON.stringify(q[0].btns[0]))
+      must(!/끼워 넣기|멈추고 보내기|⚡/.test(await pg.textContent('.qlist')), '옛 단추 이름이 남았다')
+      await shot(pg, 'u1-데스크톱-대기말-지금보내기')
+      await pg.click('.qlist .queue .qb.send')
       await until(async () => !(await pg.$('.qlist .queue')), '대기 줄에서 빠진다')
       const c1 = await until(async () => { const c = await chatOf(s.id); return users(c, '고쳐 말하기 EC-U1').length ? c : null }, '호스트에 사람 말')
       must(users(c1, '고쳐 말하기 EC-U1')[0].steer === true && c1.info.state === 'running' && !c1.info.held, '멈췄거나 끼워 넣음 표시가 없다 ' + JSON.stringify({ st: c1.info.state, held: c1.info.held }))
@@ -172,32 +173,21 @@ export async function ecSteer({ base, data, botId, br, check, shots }) {
       const c = await chatOf(s.id); must(users(c, '고쳐 말하기 EC-U1').length === 1 && c.items.filter((i) => i.kind === 'result').length === 1, '말이 두 번 나갔거나 턴이 갈렸다')
       must(!D.errs.length, '화면 오류 ' + D.errs.join(' | '))
     })
-    await check('U2 [멈추고 보내기] — 하던 턴을 멈추고 그 말을 바로 보낸다(종전 «지금» 그대로 · 끼워 넣음 표시 없음)', async () => {
-      const pg = D.pg; const s = K.u1; await rested(s)
-      await say(s, '느린일 4초 EC-U2'); await running(s)
-      await typeSend(pg, '되읊어: 멈추고 EC-U2'); await pg.waitForSelector('.qlist .queue .qb.now', { timeout: 4000 })
-      const t0 = Date.now(); await pg.click('.qlist .queue .qb.now')
-      await until(async () => answers(await chatOf(s)).includes('멈추고 EC-U2'), '멈추고 보낸 말의 답', 3500)
-      must(Date.now() - t0 < 3500, '느린 턴이 끝날 때까지 기다렸다')
-      const u = users(await chatOf(s), '되읊어: 멈추고 EC-U2'); must(u.length === 1 && !u[0].steer, '사람 말 ' + JSON.stringify(u))
-      await wait(Math.max(0, 4600 - (Date.now() - t0)))
-      // «느린 일 끝» 은 U1 의 턴이 낸 하나뿐이어야 한다 — 이 턴(4초)은 멈췄으니 끝 줄을 내지 않는다
-      must(answers(await chatOf(s)).filter((t) => /^느린 일 끝/.test(t)).length === 1, '멈춘 턴이 뒤늦게 끝났다(안 멈췄다) ' + JSON.stringify(answers(await chatOf(s))))
-    })
-    await check('U3 끼워 넣을 수 없을 때 — 카드가 걸리면 [끼워 넣기] 가 흐려지고 까닭이 title · 누르면 말로(아무것도 안 나간다) · 입력칸의 ⏎ 는 카드를 허용하지 않는다', async () => {
+    // U2([멈추고 보내기] 단추)는 EF(11/17)에서 단추와 함께 뺐다 — 멈추고 보내는 길은 봇 말 줄의 [지금 보내기](U4)와 Codex 세션이 쓴다
+    await check('U3 지금 보낼 수 없을 때 — 카드가 걸리면 [지금 보내기] 가 흐려지고 까닭이 title · 누르면 말로(아무것도 안 나간다) · 입력칸의 ⏎ 는 카드를 허용하지 않는다', async () => {
       const pg = D.pg; const k = await newSession('EC 화면 카드'); K.card = k.id; await goto(pg, k.id)
       await say(k.id, '승인 EC-U3'); await pendingOf(k.id); await pg.waitForSelector('.card[data-kind="perm"]', { timeout: 4000 })
-      await typeSend(pg, '카드 뒤에 보낼 말 EC-U3'); await pg.waitForSelector('.qlist .queue .qb.steer', { timeout: 4000 })
+      await typeSend(pg, '카드 뒤에 보낼 말 EC-U3'); await pg.waitForSelector('.qlist .queue .qb.send', { timeout: 4000 })
       const c0 = await chatOf(k.id); must(c0.info.state === 'awaiting_input' && c0.info.pending.length === 1 && !c0.items.some((i) => i.kind === 'system' && i.text === '허용'), '🔴 입력칸의 ⏎ 가 카드를 허용했다')
       const b = (await queueOf(pg))[0].btns[0]
-      must(b.t === '끼워 넣기' && b.off && b.aria === 'true' && /카드에 먼저 답/.test(b.title), '흐린 단추 ' + JSON.stringify(b))
-      await shot(pg, 'u3-데스크톱-카드-걸림-끼워넣기-흐림')
-      await pg.evaluate(() => document.querySelector('.qlist .queue .qb.steer').click())   // ⚠ 흐린 단추(aria-disabled)는 playwright 가 눌릴 때까지 기다린다 — 사람은 누를 수 있으니 DOM 으로 누른다
+      must(b.t === '지금 보내기' && b.off && b.aria === 'true' && /카드에 먼저 답/.test(b.title), '흐린 단추 ' + JSON.stringify(b))
+      await shot(pg, 'u3-데스크톱-카드-걸림-지금보내기-흐림')
+      await pg.evaluate(() => document.querySelector('.qlist .queue .qb.send').click())   // ⚠ 흐린 단추(aria-disabled)는 playwright 가 눌릴 때까지 기다린다 — 사람은 누를 수 있으니 DOM 으로 누른다
       await until(async () => /카드에 먼저 답/.test((await pg.textContent('.toast').catch(() => '')) ?? ''), '누르면 까닭을 말한다', 3000)
       await wait(300); must((await queueOf(pg)).length === 1 && !users(await chatOf(k.id), '카드 뒤에 보낼 말 EC-U3').length, '흐린 단추가 말을 보냈다')
       await pg.click('.qlist .queue .qb.drop'); await until(async () => !(await pg.$('.qlist .queue')), '대기 줄 비우기')
     })
-    await check('U4 다른 봇이 보낸 대기 말(호스트 대기열)은 [끼워 넣기] 가 흐리다 — 제 차례에 따로 돈다', async () => {
+    await check('U4 다른 봇이 보낸 대기 말(호스트 대기열)의 [지금 보내기] 는 끼워 넣지 않고 하던 턴을 멈추고 그 말을 바로 보낸다(종전 [멈추고 보내기] 길)', async () => {
       const pg = D.pg
       const comm0 = (await api(`/bots/${botId}/sessions`)).find((x) => x.comm)
       if (comm0) await until(async () => { const x = await chatOf(comm0.id); return x.info.state !== 'running' && x.info.state !== 'awaiting_input' && !(x.info.queue ?? []).length }, '소통 세션이 쉰다', 20000)
@@ -207,10 +197,15 @@ export async function ecSteer({ base, data, botId, br, check, shots }) {
       await until(async () => ((await chatOf(comm.id)).info.queue ?? []).length === 1, '호스트 대기열 1')
       await goto(pg, comm.id); await pg.waitForSelector('.qlist .queue .qwho', { timeout: 4000 })
       const q = (await queueOf(pg))[0]
-      must(q.who && q.btns[0].t === '끼워 넣기' && q.btns[0].off && /다른 봇의 말/.test(q.btns[0].title) && q.btns[1].t === '멈추고 보내기', '봇 말 줄 ' + JSON.stringify(q))
-      await pg.evaluate(() => document.querySelector('.qlist .queue .qb.steer').click()); await wait(400)
-      must(((await chatOf(comm.id)).info.queue ?? []).length === 1 && (await chatOf(comm.id)).info.state === 'running', '흐린 단추가 봇 말을 내보냈다')
-      await until(async () => { const x = await chatOf(comm.id); return x.info.state !== 'running' && !(x.info.queue ?? []).length && answers(x).includes('줄 선 봇 말 EC-U4') }, '봇 말이 제 차례에 나간다', 15000)
+      must(q.who && JSON.stringify(q.btns.map((b) => b.t)) === JSON.stringify(['지금 보내기', '[고치기]', '[빼기]']) && !q.btns[0].off && /다른 봇의 말/.test(q.btns[0].title) && /멈추고/.test(q.btns[0].title), '봇 말 줄 ' + JSON.stringify(q))
+      const ends0 = answers(await chatOf(comm.id)).filter((t) => /^느린 일 끝/.test(t)).length
+      const t0 = Date.now(); await pg.click('.qlist .queue .qb.send')
+      await until(async () => answers(await chatOf(comm.id)).includes('줄 선 봇 말 EC-U4'), '봇 말이 바로 나간다', 4000)
+      must(Date.now() - t0 < 4000, '느린 턴이 끝날 때까지 기다렸다')
+      const u = users(await chatOf(comm.id), '되읊어: 줄 선 봇 말 EC-U4'); must(u.length <= 1 && !u.some((x) => x.steer), '봇 말이 끼워 넣어졌거나 두 번 나갔다 ' + JSON.stringify(u))
+      await wait(Math.max(0, 5600 - (Date.now() - t0)))
+      must(answers(await chatOf(comm.id)).filter((t) => /^느린 일 끝/.test(t)).length === ends0, '멈춘 턴이 뒤늦게 끝났다(안 멈췄다)')
+      must(!((await chatOf(comm.id)).info.queue ?? []).length, '대기열에 남았다')
     })
     await check('U5 ⌘J — «내 답을 기다리는» 다음 세션으로 뛰고(띠와 같은 차례 · 끝이면 처음으로) 카드에 초점 · 키 안내 · ⏎ 로 허용 · 질문 카드는 초점만', async () => {
       const pg = D.pg
@@ -332,17 +327,18 @@ export async function ecSteer({ base, data, botId, br, check, shots }) {
     })
 
     // ── P · 폰(390pt) ────────────────────────────────────────────────────────
-    await check('P1 폰 — 대기 말의 두 단추가 엄지 크기(34px↑)로 화면 안에 서고, 눌러서 끼워 넣는다(올리기·끌기 없이)', async () => {
+    await check('P1 폰 — 대기 말의 [지금 보내기] 와 그림 단추 둘이 엄지 크기(34px↑ · 그림 단추는 34px 네모)로 화면 안에 서고, 눌러서 끼워 넣는다(올리기·끌기 없이)', async () => {
       const pg = P.pg; const s = await newSession('EC 폰 끼워넣기'); await goto(pg, s.id)
       must((await pg.evaluate(() => document.querySelector('.app')?.className ?? '')).includes('phone'), '폰 판이 아니다')
       await say(s.id, '느린일 6초 EC-P1'); await running(s.id)
-      await typeSend(pg, '폰에서 고쳐 말하기 EC-P1', true); await pg.waitForSelector('.qlist .queue .qb.steer', { timeout: 4000 }); await wait(300)
+      await typeSend(pg, '폰에서 고쳐 말하기 EC-P1', true); await pg.waitForSelector('.qlist .queue .qb.send', { timeout: 4000 }); await wait(300)
       const q = (await queueOf(pg))[0]
-      must(JSON.stringify(q.btns.map((b) => b.t)) === JSON.stringify(['끼워 넣기', '멈추고 보내기', '고치기', '빼기']) && !q.btns[0].off, '폰 단추 ' + JSON.stringify(q.btns.map((b) => [b.t, b.off])))
+      must(JSON.stringify(q.btns.map((b) => b.t)) === JSON.stringify(['지금 보내기', '[고치기]', '[빼기]']) && !q.btns[0].off, '폰 단추 ' + JSON.stringify(q.btns.map((b) => [b.t, b.off])))
+      must(q.btns.slice(1).every((b) => b.ic && b.w >= 34), '폰 그림 단추 너비 ' + JSON.stringify(q.btns.map((b) => b.w)))
       const fit = await pg.evaluate(() => ({ sw: document.documentElement.scrollWidth, qr: Math.round(document.querySelector('.qlist .queue').getBoundingClientRect().right) }))
       must(q.btns.every((b) => b.h >= 34 && b.r <= 390) && fit.sw <= 390 && fit.qr <= 390, '폰 치수 ' + JSON.stringify({ h: q.btns.map((b) => b.h), r: q.btns.map((b) => b.r), fit }))
-      await shot(pg, 'p1-폰-대기말-두-단추')
-      await pg.tap('.qlist .queue .qb.steer')
+      await shot(pg, 'p1-폰-대기말-지금보내기')
+      await pg.tap('.qlist .queue .qb.send')
       const got = await until(async () => { const c = await chatOf(s.id); const u = users(c, '폰에서 고쳐 말하기 EC-P1'); return u.length ? { n: u.length, steer: u[0].steer, tier: u[0].from?.tier, st: c.info.state, held: !!c.info.held } : null }, '폰에서 끼워 넣기')
       must(got.n === 1 && got.steer === true && got.tier === 'phone' && got.st === 'running' && !got.held, '폰에서 끼워 넣은 말 ' + JSON.stringify(got))
       await pg.waitForSelector('.umsg[data-steer] .steertag', { timeout: 4000 })
