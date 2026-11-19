@@ -42,6 +42,8 @@ export interface StateShape {
   quiet?: { from: string; to: string; off?: boolean }
   /** 메인(호스트) 이름 · 이 화면이 어디서 보고 있는지 */
   hostName: string
+  /** 여러 맥 — 폰 홈 화면 이름(비면 «FB » + 맥 이름) */
+  homeName?: string
   device: { id: string; name: string; main: boolean }
   online: 'on' | 'off'
   loaded: boolean

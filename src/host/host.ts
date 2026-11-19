@@ -541,8 +541,9 @@ export class Host {
     return abs
   }
 
-  setNames(o: { hostName?: string; deviceId?: string; deviceName?: string }): void {
+  setNames(o: { hostName?: string; homeName?: string; deviceId?: string; deviceName?: string }): void {
     if (o.hostName !== undefined) this.cfg.hostName = o.hostName.trim() || undefined
+    if (o.homeName !== undefined) this.cfg.homeName = [...o.homeName.trim()].slice(0, 12).join('') || undefined
     if (o.deviceId && o.deviceName !== undefined) { const d = this.cfg.devices.find((x) => x.id === o.deviceId); if (d && o.deviceName.trim()) d.name = o.deviceName.trim().slice(0, 40) }
     saveConfig(this.cfg)
   }

@@ -42,7 +42,7 @@ const D = window.folderbotDesktop, M = D && window.folderbotDesktop.macs
 const $ = (id) => document.getElementById(id)
 const focusId = new URLSearchParams(location.search).get('focus') || ''
 const hhmm = (t) => { if (!t) return ''; const d = new Date(t); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') }
-const line = (m) => m.state === 'auth' ? '다시 페어링 필요' : m.state === 'off' ? ('닿지 않음' + (m.lastSeen ? ' · 마지막 ' + hhmm(m.lastSeen) : '')) : m.working ? '일하는 중 ' + m.working : '한가함'
+const line = (m) => m.state === 'auth' ? '다시 페어링 필요' : m.state === 'off' ? ('닿지 않음' + (m.lastSeen ? ' · 마지막 ' + hhmm(m.lastSeen) : '')) : m.working ? '일하는 중 ' + m.working : '쉼'
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])) }
 function draw(list) {
   const box = $('list'); box.innerHTML = ''
@@ -52,7 +52,7 @@ function draw(list) {
     r.className = 'row' + (m.active ? ' cur' : '') + (m.id === focusId ? ' focus' : '') + (m.state !== 'on' ? ' off' : '')
     const dot = m.state === 'auth' ? 'auth' : m.state === 'off' ? 'off' : m.waiting ? 'wt' : 'on'
     r.innerHTML = '<i class="d ' + dot + '"></i><span class="nm"><b>' + esc(m.name || m.url) + '</b><small>' + esc(line(m)) + ' · ' + esc(String(m.url).replace(/^https?:\/\//, '')) + '</small></span>' +
-      (m.waiting ? '<span class="badge">답 기다림 ' + m.waiting + '</span>' : '') + (m.local ? '' : '<button class="x">빼기</button>')
+      (m.waiting ? '<span class="badge">내 답 기다림 ' + m.waiting + '</span>' : '') + (m.local ? '' : '<button class="x">빼기</button>')
     r.onclick = (ev) => {
       if (ev.target.classList.contains('x')) { ev.stopPropagation(); if (confirm(m.name + ' 을 이 맥 앱의 목록에서 뺄까요? 그 맥의 기기 목록에서는 그 맥 설정 › 기기에서 지워요.')) M.remove(m.id).then(load); return }
       if (m.state === 'auth') { $('u').value = m.url; $('code').focus(); $('e').textContent = '이 맥은 다시 페어링해야 해요 — 그 맥의 페어링 코드를 넣으세요'; return }

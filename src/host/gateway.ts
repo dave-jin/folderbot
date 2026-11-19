@@ -1,4 +1,5 @@
 import type { StemOp } from '../core/linkMap'
+import { homeShort, manifestFor, titleIn } from '../core/homeName'
 import { createHash } from 'node:crypto'
 import { draftSid } from '../core/draft'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
@@ -221,7 +222,7 @@ export class Gateway {
     const mAsk = /^\/api\/bridges\/([a-z0-9-]+)\/ask$/.exec(p)
     if (mAsk && req.method === 'POST') return this.bridgeAsk(mAsk[1], req, res, json, body)
     // ③ 승인을 기다리는 연결 채널 세션 수와 가장 오래 선 시간 — 이름은 안 낸다(인증 없는 창구다). 감시기가 이것을 본다
-    if (p === '/api/health') return json(200, { ok: true, name: 'folderbot', version: this.host.version, stallMs: this.stall.maxMs, channelWaits: this.host.sessions.channelWaits(), pushSubs: this.host.notifier.subsView().length, lastPush: this.host.notifier.lastPush })
+    if (p === '/api/health') return json(200, { ok: true, name: 'folderbot', version: this.host.version, macSwitcher: process.env.FOLDERBOT_QA_OLD_HEALTH !== '1' /* 여러 맥 — 맥 앱이 «옛 판» 을 가른다. 끄는 변수는 QA 전용 */, stallMs: this.stall.maxMs, channelWaits: this.host.sessions.channelWaits(), pushSubs: this.host.notifier.subsView().length, lastPush: this.host.notifier.lastPush })
     if (p === '/api/pair' && req.method === 'POST') {
       const b = await body()
       const code = String(b.code ?? ''); const device = String(b.device ?? 'device').slice(0, 40)
@@ -478,7 +479,7 @@ export class Gateway {
     }
     if (p === '/api/state') {
       const tn = await tailnetInfoCached()
-      return json(200, { version: h.version, root: reg.root, rules: reg.rules, rulesInstalled: reg.rulesInstalled(), bots: reg.bots(), candidates: reg.candidates(), auth: h.auth, inbox: reg.inboxItems().length, notifications: h.notifier.events.slice(0, 100) /* CJ · 알림 칸 숫자 = 알림 창(100)과 같은 창 — 50 이면 칸이 덜 셌다 */, vapidPublic: h.notifier.vapidPublic(), tailnet: tn, addrs: this.addrs, port: h.cfg.port, devices: h.cfg.devices.filter((d) => d.name !== LOCAL_DEVICE).map((d) => ({ id: d.id, name: d.name, lastSeen: d.lastSeen })), sessionsByBot: Object.fromEntries(reg.bots().map((b) => [b.id, h.sessions.list(b.id)])), quiet: h.cfg.quiet ?? { from: '23:00', to: '07:00' }, defaults: { model: h.cfg.defaultModel ?? '', effort: h.cfg.defaultEffort ?? '', permissionMode: h.cfg.defaultPermissionMode ?? 'default', idleMinutes: h.cfg.idleMinutes ?? 60, approvalTimeoutMinutes: approvalTimeoutMin(h.cfg.approvalTimeoutMinutes), codex: { model: h.cfg.defaultCodexModel ?? '', effort: h.cfg.defaultCodexEffort ?? '', sandbox: h.cfg.codexSandbox ?? 'read-only', auth: codexAuth(h.cfg.openaiApiKey) } }, hostName: h.hostName(), device: { id: who.id, name: who.main ? h.hostName() : who.device, main: who.main } })
+      return json(200, { homeName: h.cfg.homeName ?? '', version: h.version, root: reg.root, rules: reg.rules, rulesInstalled: reg.rulesInstalled(), bots: reg.bots(), candidates: reg.candidates(), auth: h.auth, inbox: reg.inboxItems().length, notifications: h.notifier.events.slice(0, 100) /* CJ · 알림 칸 숫자 = 알림 창(100)과 같은 창 — 50 이면 칸이 덜 셌다 */, vapidPublic: h.notifier.vapidPublic(), tailnet: tn, addrs: this.addrs, port: h.cfg.port, devices: h.cfg.devices.filter((d) => d.name !== LOCAL_DEVICE).map((d) => ({ id: d.id, name: d.name, lastSeen: d.lastSeen })), sessionsByBot: Object.fromEntries(reg.bots().map((b) => [b.id, h.sessions.list(b.id)])), quiet: h.cfg.quiet ?? { from: '23:00', to: '07:00' }, defaults: { model: h.cfg.defaultModel ?? '', effort: h.cfg.defaultEffort ?? '', permissionMode: h.cfg.defaultPermissionMode ?? 'default', idleMinutes: h.cfg.idleMinutes ?? 60, approvalTimeoutMinutes: approvalTimeoutMin(h.cfg.approvalTimeoutMinutes), codex: { model: h.cfg.defaultCodexModel ?? '', effort: h.cfg.defaultCodexEffort ?? '', sandbox: h.cfg.codexSandbox ?? 'read-only', auth: codexAuth(h.cfg.openaiApiKey) } }, hostName: h.hostName(), device: { id: who.id, name: who.main ? h.hostName() : who.device, main: who.main } })
     }
     /**
      * 🔴 **볼트 루트는 앱에서 바꾼다** (2026-09-14 Dave: «지금 현재 기본 볼트 수정이 안되네»).
@@ -653,7 +654,7 @@ export class Gateway {
       const r = h.sessions.recycleAll(vendor)
       return json(200, { auth, codex: codexAuth(h.cfg.openaiApiKey), ...r })
     }
-    if (p === '/api/names' && m === 'POST') { const b = await body(); h.setNames({ hostName: b.hostName === undefined ? undefined : String(b.hostName), deviceId: who.id, deviceName: b.deviceName === undefined ? undefined : String(b.deviceName) }); return json(200, { hostName: h.hostName(), device: { id: who.id, name: who.main ? h.hostName() : (h.cfg.devices.find((d) => d.id === who.id)?.name ?? who.device), main: who.main } }) }
+    if (p === '/api/names' && m === 'POST') { const b = await body(); h.setNames({ hostName: b.hostName === undefined ? undefined : String(b.hostName), homeName: b.homeName === undefined ? undefined : String(b.homeName), deviceId: who.id, deviceName: b.deviceName === undefined ? undefined : String(b.deviceName) }); return json(200, { hostName: h.hostName(), device: { id: who.id, name: who.main ? h.hostName() : (h.cfg.devices.find((d) => d.id === who.id)?.name ?? who.device), main: who.main } }) }
     if (p === '/api/defaults' && m === 'POST') { const b = await body(); h.setDefaults(String(b.model ?? ''), String(b.effort ?? ''), b.agent === 'codex' ? 'codex' : 'claude', b.permissionMode === undefined ? undefined : String(b.permissionMode)); return json(200, { model: h.cfg.defaultModel ?? '', effort: h.cfg.defaultEffort ?? '', permissionMode: h.cfg.defaultPermissionMode ?? 'default' }) }
     // 조용한 시간 — 알림 칸에서 고친다 (2026-09-17). 「확인해 주세요」 는 이 시간에도 통과한다(notify.ts)
     if (p === '/api/quiet' && m === 'POST') { const b = await body(); h.setQuiet(String(b.from ?? ''), String(b.to ?? ''), typeof b.off === 'boolean' ? b.off : undefined); return json(200, h.cfg.quiet) }
@@ -1194,6 +1195,16 @@ export class Gateway {
     const type = mime(f) === 'application/octet-stream' ? ({ '.webmanifest': 'application/manifest+json', '.ico': 'image/x-icon', '.woff2': 'font/woff2' } as Record<string, string>)[e] ?? 'application/octet-stream' : mime(f)
     // CF-1 · 자산은 압축본(br·gzip)을 메모리에서 · 나머지(index.html·sw.js)는 ETag 로 «안 바뀜» 을 304 로 — 매번 다시 받지 않는다
     const ent = this.files.get(f)
+    // 여러 맥 (2026-11-19) — 폰 홈 화면 이름을 이 맥 이름으로 채워 준다. 맥마다 앱을 따로 설치해도 홈 화면에서 구분되게(`src/core/homeName.ts`)
+    if (rel === '/manifest.webmanifest' || f === join(this.webRoot, 'index.html')) {
+      const raw = ent.raw.toString('utf8'); const name = this.host.hostName()
+      let out = raw
+      try { out = rel === '/manifest.webmanifest' ? JSON.stringify(manifestFor(JSON.parse(raw), name, this.host.cfg.homeName)) : titleIn(raw, homeShort(name, this.host.cfg.homeName)) } catch { /* 깨진 매니페스트는 원본 그대로 */ }
+      const etag = `"${createHash('sha256').update(out).digest('hex').slice(0, 16)}"`
+      const hd: Record<string, string> = { 'content-type': type, 'cache-control': 'no-cache', 'service-worker-allowed': '/', etag }
+      if (req?.headers['if-none-match'] === etag) { res.writeHead(304, hd); res.end(); return }
+      res.writeHead(200, hd); res.end(out); return
+    }
     const head: Record<string, string> = { 'content-type': type, 'cache-control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache', 'service-worker-allowed': '/', etag: ent.etag, vary: 'accept-encoding' }
     if (!immutable && req?.headers['if-none-match'] === ent.etag) { res.writeHead(304, head); res.end(); return }
     const enc = pickEncoding(req?.headers['accept-encoding'] as string | undefined)

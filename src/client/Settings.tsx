@@ -139,6 +139,7 @@ function usePhone(): boolean {
 /** 검색 — 제목과 설명을 함께 찾는다 («토큰» 을 치면 Claude 칸의 그 줄이 나온다). ⚠ 유닛이 실제 `<Row t=…>` 와 대조한다 */
 export const INDEX: { sec: SecId; t: string; d: string }[] = [
   { sec: 'general', t: '메인 이름', d: '모든 기기에 같이 보이는 이름' },
+  { sec: 'general', t: '폰 홈 화면 이름', d: '맥마다 폰 앱을 따로 둘 때 홈 화면에서 구분 · 12자' },
   { sec: 'general', t: '테마', d: '시스템 라이트 다크 화면' },
   { sec: 'general', t: '폴더봇 크기', d: '왼쪽 목록 아이콘 크게 작게 화면' },
   { sec: 'general', t: 'ask 세션 맨 위로', d: '바깥 상대 folderbot ask 묻는 중 답함 자동화 묶음 숨음 목록 위' },
@@ -234,11 +235,16 @@ function GeneralPane() {
   const [theme, setTheme] = useTheme(); const [sz, setSz] = useIconSize()
   const [ap, setAp] = useAskPrefs()
   useEffect(() => { setHost(s.hostName) }, [s.hostName])
-  const save = async (body: { hostName?: string }) => { try { await api('/names', { body }); await refresh(); setMsg('저장했어요') } catch (e) { setMsg((e as Error).message) } }
+  const [home, setHome] = useState(s.homeName ?? ''); useEffect(() => { setHome(s.homeName ?? '') }, [s.homeName])
+  const save = async (body: { hostName?: string; homeName?: string }) => { try { await api('/names', { body }); await refresh(); setMsg('저장했어요') } catch (e) { setMsg((e as Error).message) } }
   return <>
     <p className="lead">지금 이 화면은 {s.device.main ? <><b>메인</b> ({s.hostName}) 에서</> : <><b>원격 · {s.device.name}</b> 에서 <b>{s.hostName}</b> 를</>} 보고 있어요.{msg ? ` · ${msg}` : ''} 줄의 <span className="scp at-main">메인</span> 은 모든 기기에 같이 보이는 값, <span className="scp at-dev">이 기기</span> 는 여기에만 남는 값이에요.</p>
     <Row t="메인 이름" d="봇이 사는 맥의 이름. 모든 기기에 같이 보여요." at="main">
       <input className="sin" value={host} onChange={(e) => setHost(e.target.value)} onBlur={() => { if (host.trim() !== s.hostName) void save({ hostName: host }) }} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} />
+    </Row>
+    {/* 여러 맥 (2026-11-19) — 맥마다 폰 홈 화면 앱을 따로 둘 때 홈 화면에서 구분되게. 비우면 «FB » + 메인 이름(`src/core/homeName.ts`) */}
+    <Row t="폰 홈 화면 이름" d="12자 안. 비우면 «FB » + 메인 이름이에요. iPhone 은 설치할 때의 이름을 그대로 써요 — 바꾼 뒤에는 홈 화면 앱을 지우고 다시 추가하세요." at="main">
+      <input className="sin" data-homename value={home} maxLength={12} placeholder={[...`FB ${s.hostName}`].slice(0, 12).join('')} onChange={(e) => setHome(e.target.value)} onBlur={() => { if (home.trim() !== (s.homeName ?? '')) void save({ homeName: home }) }} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} />
     </Row>
     <Group t="화면" />
     <Row t="테마" d="시스템을 고르면 맥의 밝기 설정을 따라가요." at="dev">

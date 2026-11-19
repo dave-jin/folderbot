@@ -23,6 +23,8 @@ type TrayState = {
   pairing: { code: string; expiresAt: number } | null
   update: { current: string; downloading?: boolean; staged?: { ready?: boolean; version?: string; progress?: number } | null }
   loginItem: boolean
+  /** 여러 맥 (2026-11-19) — 셸 `macsView()` 그대로 */
+  macs?: { id: string; name: string; state: 'on' | 'off' | 'auth'; waiting: number; active: boolean }[]
 }
 type Bridge = { on: (f: (s: TrayState) => void) => void; act: (id: string) => void; size: (h: number) => void }
 const fbTray = (window as unknown as { fbTray?: Bridge }).fbTray
@@ -45,7 +47,7 @@ function Panel() {
   const up = st?.update
   const host = st?.mode === 'host'
   return <div className="traypanel" ref={box}>
-    <div className="th">{st?.waiting ? `내 답 기다림 ${st.waiting}` : MOOD[st?.mood ?? 'idle'] ?? '쉼'}</div>
+    <div className="th">{st?.waiting ? `내 답 기다림 ${st.waiting}` : MOOD[st?.mood ?? 'idle'] ?? '쉼'}{(st?.macs?.length ?? 0) > 1 && st?.hostLabel ? ` · ${st.hostLabel}` : ''}</div>
     {u && u.tools.length ? <div className="tu"><UsageCard u={u} compact /></div> : null}
     <hr />
     <Row id="open" label="Folder Bot 열기" />
@@ -57,9 +59,13 @@ function Panel() {
       <Row id="pairing-new" label="새 페어링 코드" />
       <Row id="copy-addr" label="폰에서 열 주소 복사" />
       <Row id="change-root" label="루트 폴더 바꾸기…" />
-    </> : <>
-      <Row label={st?.hostLabel ? `메인 · ${st.hostLabel}` : '메인 없음'} />
-      <Row id="change-host" label="메인 바꾸기…" />
+    </> : null}
+    {/* 여러 맥 (2026-11-19) — 지금 맥 ✓ · 다른 맥 답 대기 숫자 · 닿지 않음은 흐리게. 누르면 그 맥으로. 메인 맥 혼자면 지금과 같다 */}
+    {host && (st?.macs?.length ?? 0) < 2 ? null : <>
+      {host ? <hr /> : null}
+      <Row label="맥" />
+      {(st?.macs ?? []).map((m) => <Row key={m.id} id={`mac:${m.id}`} label={m.name} on={m.active} dim={m.state !== 'on'} hint={m.state === 'auth' ? '다시 페어링' : m.state === 'off' ? '닿지 않음' : !m.active && m.waiting ? String(m.waiting) : undefined} />)}
+      <Row id="mac-add" label="＋ 맥 추가…" />
     </>}
     <hr />
     {up?.staged?.ready

@@ -39,6 +39,8 @@ export interface HostConfig {
   openaiApiKey?: string
   /** 메인(호스트) 이름 — 비면 컴퓨터 이름 */
   hostName?: string
+  /** 여러 맥 (2026-11-19) — 폰 홈 화면 이름(12자 안). 비우면 «FB » + 맥 이름 · `src/core/homeName.ts` */
+  homeName?: string
   /** 맥락 상황판 — `off` 로 끄고 `dailyCap` 은 Haiku 하루 호출 상한(기본 500) */
   context?: { off?: boolean; dailyCap?: number }
 }

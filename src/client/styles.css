@@ -196,6 +196,25 @@ b,strong { color:var(--w); font-weight:600 }
 .sb-foot.two { display:flex; flex-direction:column; align-items:stretch; gap:7px; padding:9px 14px 12px; white-space:nowrap; min-width:0 }
 .sb-foot.two .r2 { display:flex; align-items:center; gap:8px; min-width:0; font-size:12px; color:var(--t2) }
 .sb-foot.two .r2 .hn { overflow:hidden; text-overflow:ellipsis; min-width:0 }
+/* 여러 맥 (2026-11-19) — 왼쪽 아래 전환기. 맥 앱에서만 단추가 된다(브라우저·폰은 위 .hn 그대로) */
+.sb-foot.two .r2 .mac-sw { display:flex; align-items:center; gap:7px; flex:0 1 auto; height:24px; padding:0 6px; margin-left:-6px; border-radius:6px; color:var(--w); font-weight:500 }
+.sb-foot.two .r2 .mac-sw:hover, .sb-foot.two .r2 .mac-sw.on { background:var(--sel) }
+.sb-foot.two .r2.mac-others { color:var(--wait); font-size:11px; margin-top:-3px }
+/* 🔴 이름이 0 으로 줄지 않게 — r2 에는 «메인»·Inbox·판 칩이 함께 서서, 줄일 수 있는 것이 전환기뿐이면 이름이 사라졌다(11/19 실측) */
+.sb-foot.two .r2 .mac-sw .hn { min-width:4em }
+.dot.off { background:transparent; box-shadow:inset 0 0 0 1.5px var(--t3) }
+.macpop { padding:5px }
+.macpop .g { font-size:11px; color:var(--t3); padding:4px 9px 2px }
+.macpop button.mrow { min-height:40px; padding:4px 9px; text-align:left; justify-content:flex-start }
+.macpop .mrow .nm { display:flex; flex-direction:column; align-items:flex-start; text-align:left; line-height:1.3; min-width:0; flex:1 }
+.macpop .mrow .nm b { font-weight:500; color:var(--w); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.macpop .mrow .nm b em { font-style:normal; font-weight:400; font-size:11px; color:var(--done) }
+.macpop .mrow .nm small { font-size:11px; color:var(--t3) }
+.macpop .mrow.dim .nm b { color:var(--t2) }
+.macpop .rt { margin-left:auto; display:flex; align-items:center; gap:6px; flex:none }
+.macpop kbd { font:11px var(--mono, ui-monospace, Menlo, monospace); color:var(--t3); background:none; border:0; padding:0 }
+.macpop .mbadge { font-size:11px; border-radius:999px; padding:0 7px; line-height:18px; background:color-mix(in srgb, var(--wait) 16%, transparent); color:var(--wait); white-space:nowrap }
+.macpop hr { border:0; border-top:1px solid var(--line); margin:4px 0 }
 .sb-foot.two .r2 .bd { margin-left:0 } .sb-foot.two .r2 .bd.upd { max-width:none }
 /* 업데이트 물어보는 팝업 — 왼쪽 아래 버전 칩 위로 뜬다 */
 .sb-foot.two .r2 { position:relative }

@@ -508,7 +508,7 @@ function appMenu() {
     ] }] : []),
     // 여러 맥 — 앱이 직접 그리는 «맥» 메뉴. 붙은 맥이 옛 판이라 화면에 전환기가 없어도 여기서는 늘 바꿀 수 있다
     { label: '맥', submenu: [
-      ...macsView().map((m) => ({ label: m.waiting ? `${m.name} · 답 기다림 ${m.waiting}` : m.name, type: 'radio', checked: m.active, accelerator: m.shortcut ? `Ctrl+Cmd+${m.shortcut}` : undefined, click: () => switchTo(m.id) })),
+      ...macsView().map((m) => ({ label: m.waiting ? `${m.name} · 내 답 기다림 ${m.waiting}` : m.name, type: 'radio', checked: m.active, accelerator: m.shortcut ? `Ctrl+Cmd+${m.shortcut}` : undefined, click: () => switchTo(m.id) })),
       ...(macList().length ? [{ type: 'separator' }] : []),
       { label: '맥 추가…', click: () => { showWin(); openConnect() } },
       { label: '맥 관리…', click: () => { showWin(); openConnect() } }

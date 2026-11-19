@@ -14,6 +14,7 @@ import { AgentPickHost, pickAgent } from './AgentPick'
 import type { SecId } from './Settings'
 import { VendorMark } from './Brand'
 import { ColorHost, pickColor } from './ColorPick'
+import { MacOthers, MacSwitcher } from './MacSwitcher'
 import { Float, anchorOf, type Anchor } from './Float'
 import { DocPane, preloadEditor, useDocs } from './Doc'
 import { Search } from './Search'
@@ -1084,6 +1085,8 @@ function Main() {
       // ⚠ 보내기는 **입력칸이 쥐고 있다** — 메뉴는 그 자리에 신호만 보낸다(같은 길을 두 벌 만들지 않는다)
       else if (c === 'send') window.dispatchEvent(new Event('fb:send'))
       // BP · 셸이 배율을 바꿨다 — 지금 몇 % 인지 잠깐 보여 준다(⌘0 이 되돌리는 길이라는 것까지)
+      // 여러 맥 — 셸이 맥을 바꾸는 중이다(화면을 다시 읽기 직전 1~2초)
+      else if (c.startsWith('moving:')) say(`${c.slice(7)}로 옮기는 중…`)
       else if (c.startsWith('zoom:')) say(c === 'zoom:100' ? '화면 크기 100% (실제 크기)' : `화면 크기 ${c.slice(5)}% · ⌘0 으로 되돌리기`)
     })
     return off
@@ -1141,7 +1144,8 @@ function Main() {
             폰은 첫 화면 위 스트립 하나로 남는다. 두 표면 다 있으면 같은 숫자가 두 번 보이고 아래 줄이 또 비좁아진다. */}
         <div className="sbtiles"><ContextLine open={openCtx} /><NumRow setModal={setModal} /></div>
         <div className="sb-foot two">
-          <div className="r2"><span className={`dot ${s.online === 'on' ? 'done' : 'err'}`} /><span className="hn">{s.hostName}</span><MrBadge />{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<UpdateChip version={s.version} st={upd} onCheck={updCheck} onApply={() => { if (upd?.staged?.ready) setUpdAsk(upd.staged.version) }} />{updAsk && upd ? <UpdateAsk st={upd} onApply={updApply} onLater={() => setUpdAsk('')} onDawn={desk?.update?.dawn ? updDawn : undefined} /> : null}{!s.device.main ? <HostUpdateChip say={say} /> : null}</div>
+          <div className="r2"><MacSwitcher hostName={s.hostName} online={s.online === 'on'} /><MrBadge />{s.inbox ? <span className="bd">Inbox {s.inbox}</span> : null}<UpdateChip version={s.version} st={upd} onCheck={updCheck} onApply={() => { if (upd?.staged?.ready) setUpdAsk(upd.staged.version) }} />{updAsk && upd ? <UpdateAsk st={upd} onApply={updApply} onLater={() => setUpdAsk('')} onDawn={desk?.update?.dawn ? updDawn : undefined} /> : null}{!s.device.main ? <HostUpdateChip say={say} /> : null}</div>
+          <MacOthers />
         </div>
       </div>
   const stripEl = <div className="strip left" onClick={(e) => { if (mid && e.target === e.currentTarget) setView('list') }}><button className="ib" onClick={openSb} title={mid ? '봇 목록 (덮여서 열림)' : '목록 펼치기 (⌘B)'}><Icon n="panel" size={14} /></button><div className="gap" />

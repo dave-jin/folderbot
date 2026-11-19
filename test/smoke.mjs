@@ -8195,6 +8195,87 @@ try {
     ok('볼트 루트 — 폴더를 훑어 고르고 · 아무 경로나 안 받고 · 설정에 남는다')
   }
 
+  // ── MM · 여러 맥 (2026-11-19) — 왼쪽 아래 전환기 · 다른 맥 답 대기 · 맥 1대는 그대로 · 옮기는 중 띠 ──
+  {
+    const hh = await (await fetch(base + '/api/health')).json()
+    if (hh.macSwitcher !== true) fail('MM-0: /api/health 에 macSwitcher 가 없다 — 맥 앱이 모든 맥을 «옛 판» 으로 본다')
+    const { chromium } = await import('playwright-core')
+    const br = await chromium.launch({ executablePath: PW_CHROMIUM, args: ['--no-sandbox'] })
+    const stub = (macs) => {
+      window.__sw = ''; window.__cmd = null
+      window.folderbotDesktop = { version: 'qa', onCmd: (cb) => { window.__cmd = cb; return () => {} },
+        perms: { list: async () => [], open: async () => ({ ok: true }), ack: async () => [], reset: async () => [], test: async () => ({ ok: true }), relaunch: () => {}, onChange: () => () => {} },
+        macs: { list: async () => macs, onChange: () => () => {}, switchTo: (id) => { window.__sw = id }, manage: () => { window.__sw = 'manage' } } }
+    }
+    const A = { id: 'A', name: '사무실 미니', url: 'http://a:7373', local: false, state: 'on', waiting: 0, working: 0, lastSeen: 0, active: true, shortcut: 1, old: false }
+    const B = { id: 'B', name: '집 미니', url: 'http://b:7373', local: false, state: 'on', waiting: 2, working: 1, lastSeen: 0, active: false, shortcut: 2, old: false }
+    const C = { id: 'C', name: '스튜디오 미니', url: 'http://c:7373', local: false, state: 'off', waiting: 0, working: 0, lastSeen: Date.UTC(2026, 10, 19, 5, 2), active: false, shortcut: 3, old: false }
+    const open = async (vp, macs, phone) => {
+      const pg = await br.newPage({ viewport: vp, deviceScaleFactor: 1, ...(phone ? { hasTouch: true, isMobile: true } : {}) })
+      await pg.addInitScript(() => { localStorage.setItem('folderbot:token', 'x'); localStorage.setItem('fb:theme', 'dark') })
+      if (macs) await pg.addInitScript(stub, macs)
+      await pg.goto(base + '/#bot=orch'); await wait(1500)
+      if (await pg.$('.perm-gate')) { await pg.click('.perm-gate button.btn.primary:has-text("계속")').catch(() => {}); await wait(400) }
+      return pg
+    }
+    try {
+      mkdirSync('test/tmp', { recursive: true })
+      // MM-1 · 통로 없는 화면(브라우저·폰) — 지금과 같다
+      for (const [vp, phone] of [[{ width: 1280, height: 800 }, false], [{ width: 390, height: 760 }, true]]) {
+        const pg = await open(vp, null, phone)
+        if (await pg.$('button.mac-sw')) fail('🔴 MM-1: 맥 앱이 아닌 화면에 전환기 단추가 생겼다 · ' + vp.width)
+        if (!phone && !(await pg.$('.sb-foot .hn'))) fail('🔴 MM-1: 브라우저 화면의 왼쪽 아래 맥 이름이 사라졌다')
+        await pg.screenshot({ path: `test/tmp/mm-1-${phone ? 'phone' : 'desk'}.png` }); await pg.close()
+      }
+      // MM-2 · 맥 셋 — 단추 → 목록(지금 · 답 기다림 2 · 닿지 않음) → 고르면 그 맥으로
+      { const pg = await open({ width: 1280, height: 800 }, [A, B, C])
+        await pg.waitForSelector('button.mac-sw', { timeout: 8000 }).catch(() => fail('🔴 MM-2: 맥 앱 화면에 전환기 단추가 없다'))
+        await pg.click('button.mac-sw')
+        await pg.waitForSelector('.macpop .mrow', { timeout: 4000 }).catch(() => fail('🔴 MM-2: 전환기를 눌렀는데 맥 목록이 안 떴다'))
+        const rows = await pg.$$eval('.macpop .mrow', (els) => els.map((e) => e.textContent))
+        { const off = await pg.$$eval('.macpop .mrow .nm b', (els) => els.map((b) => { const r = document.createRange(); r.selectNodeContents(b.firstChild); return Math.round(r.getBoundingClientRect().left - b.getBoundingClientRect().left) }))
+          if (off.some((x) => x > 2)) fail('🔴 MM-2: 목록 줄의 맥 이름 글자가 왼쪽에서 시작하지 않는다(가운데 정렬?) · ' + JSON.stringify(off)) }
+        if (rows.length !== 3) fail('MM-2: 목록 줄이 셋이 아니다 · ' + JSON.stringify(rows))
+        if (!/사무실 미니/.test(rows[0]) || !/지금/.test(rows[0])) fail('MM-2: 지금 맥 표시가 없다 · ' + rows[0])
+        if (!/집 미니/.test(rows[1]) || !/답 기다림 2/.test(rows[1]) || !/⌃⌘2/.test(rows[1])) fail('MM-2: 다른 맥 답 대기 배지·단축키가 없다 · ' + rows[1])
+        if (!/닿지 않음 · 마지막 \d\d:\d\d/.test(rows[2])) fail('MM-2: 닿지 않는 맥 줄이 «닿지 않음 · 마지막 HH:MM» 이 아니다 · ' + rows[2])
+        if (!(await pg.$('.macpop :text("맥 추가")'))) fail('MM-2: «＋ 맥 추가» 가 없다')
+        await pg.screenshot({ path: 'test/tmp/mm-2-desk.png' })
+        await pg.locator('.macpop .mrow').nth(1).click()
+        if ((await pg.evaluate(() => window.__sw)) !== 'B') fail('🔴 MM-2: 줄을 눌렀는데 그 맥으로 바꾸라고 안 했다')
+        // 옮기는 중 띠 — 셸이 보내는 명령 `moving:<이름>`
+        await pg.evaluate(() => window.__cmd && window.__cmd('moving:집 미니'))
+        await pg.waitForSelector('.toast:has-text("집 미니로 옮기는 중…")', { timeout: 3000 }).catch(() => fail('MM-2: «집 미니로 옮기는 중…» 띠가 안 떴다'))
+        // MM-3 · 다른 맥 답 대기 합
+        if (!/· 다른 맥 2/.test(await pg.$eval('.sb-foot', (e) => e.textContent))) fail('MM-3: 왼쪽 아래에 «· 다른 맥 2» 가 없다')
+        { const g = await pg.evaluate(() => { const n = document.querySelector('button.mac-sw .hn'); const rows = [...document.querySelectorAll('.macpop .mrow .nm b')]; return { w: n ? n.getBoundingClientRect().width : 0, left: rows.length ? Math.max(...rows.map((b) => b.getBoundingClientRect().left)) - Math.min(...rows.map((b) => b.getBoundingClientRect().left)) : -1 } })
+          if (g.w < 30) fail('🔴 MM-3: 전환기 단추의 맥 이름이 줄어 안 보인다 · 폭 ' + Math.round(g.w) + 'px')
+          const ov = await pg.$$eval('.sb-foot .r2', (els) => els.map((e) => e.scrollWidth - e.clientWidth)); if (ov.some((x) => x > 1)) fail('🔴 MM-3: 왼쪽 아래 줄이 넘친다 · ' + JSON.stringify(ov)) }
+        await pg.close() }
+      // MM-4 · 맥 1대 — 단추 글자는 맥 이름만, «다른 맥» 없음
+      { const pg = await open({ width: 1280, height: 800 }, [{ ...A }])
+        await pg.waitForSelector('button.mac-sw', { timeout: 8000 }).catch(() => fail('MM-4: 맥 1대인데 전환기 단추가 없다(맥 추가 입구)'))
+        const t = await pg.$eval('.sb-foot', (e) => e.textContent)
+        if (/다른 맥/.test(t)) fail('🔴 MM-4: 맥 1대인데 «다른 맥» 이 보인다')
+        if ((await pg.$eval('button.mac-sw', (e) => e.textContent.trim())) !== '사무실 미니') fail('MM-4: 단추 글자가 맥 이름만이 아니다')
+        await pg.screenshot({ path: 'test/tmp/mm-4-desk.png' }); await pg.close() }
+      // MM-5 · 폰 홈 화면 이름 — 매니페스트와 iOS 제목이 이 맥 이름을 담는다 · 설정에서 정하면 그 이름
+      { const st = await api('/state')
+        const man = await (await fetch(base + '/manifest.webmanifest')).json()
+        if (man.name !== `Folder Bot · ${st.hostName}`) fail('🔴 MM-5: 매니페스트 이름에 맥 이름이 없다 · ' + man.name)
+        if (!man.short_name.startsWith('FB ') || [...man.short_name].length > 12) fail('MM-5: 폰 이름이 «FB …» 12자 안이 아니다 · ' + man.short_name)
+        if (!Array.isArray(man.icons) || !man.icons.length) fail('MM-5: 매니페스트 아이콘이 사라졌다')
+        const html = await (await fetch(base + '/')).text()
+        if (!/<meta name="apple-mobile-web-app-title" content="FB [^"]*"/.test(html)) fail('🔴 MM-5: iOS 홈 화면 제목이 맥 이름으로 안 바뀌었다')
+        await api('/names', { homeName: '테스트 집' })
+        if ((await (await fetch(base + '/manifest.webmanifest')).json()).short_name !== '테스트 집') fail('MM-5: 설정한 폰 이름이 매니페스트에 안 들어갔다')
+        if (!(await (await fetch(base + '/')).text()).includes('content="테스트 집"')) fail('MM-5: 설정한 폰 이름이 iOS 제목에 안 들어갔다')
+        if ((await api('/state')).homeName !== '테스트 집') fail('MM-5: /api/state 에 homeName 이 없다')
+        await api('/names', { homeName: '' }) }
+      ok('MM-1~5 여러 맥 — 브라우저·폰은 그대로 · 맥 앱은 왼쪽 아래 전환기(지금·답 기다림·닿지 않음·⌃⌘n) · 고르면 그 맥 · 옮기는 중 띠 · 다른 맥 합 · 1대는 이름만 · 폰 홈 화면 이름(매니페스트·iOS 제목)')
+    } finally { await br.close() }
+  }
+
   // ── 세션 삭제 — 워커가 내려가고, 목록에서 사라지고, **호스트를 다시 띄워도 안 돌아온다** (2026-09-13 Dave 요청)
   {
     const b = await api('/bots')
