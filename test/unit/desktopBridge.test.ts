@@ -52,3 +52,18 @@ describe('여러 맥 — 셸이 지금 맥을 쓴다', () => {
   })
   it('업데이트의 «바쁜가» 는 이 맥 호스트만 센다', () => expect(code).toMatch(/const busyCount = \(\) => links\.busy\('local'\)/))
 })
+
+describe('여러 맥 — 맥 메뉴 · 통로 · 연결 화면', () => {
+  it('preload 가 맥 통로를 연다', () => {
+    const pre = read('preload.js')
+    for (const k of ["'fb:macs-list'", "'fb:macs-add'", "'fb:macs-remove'", "'fb:macs-switch'", "'fb:macs'"]) expect(pre).toContain(k)
+  })
+  it('네이티브 «맥» 메뉴가 ⌃⌘숫자로 맥을 고른다', () => {
+    const main = read('main.js')
+    expect(main).toMatch(/label: '맥', submenu/); expect(main).toContain("`Ctrl+Cmd+${")
+  })
+  it('연결 화면은 맥 목록과 새 맥 추가(주소 + 페어링 코드)', () => {
+    const c = read('connect.html')
+    expect(c).toContain('folderbotDesktop.macs'); expect(c).toContain('id="code"'); expect(c).toContain('새 맥 추가')
+  })
+})

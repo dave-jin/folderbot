@@ -1,24 +1,82 @@
 <!doctype html><html lang="ko"><head><meta charset="utf-8"><title>Folder Bot</title>
-<style>body{margin:0;background:#000;color:#ededea;font-family:-apple-system,'Apple SD Gothic Neo',system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh}.box{width:420px;display:flex;flex-direction:column;gap:14px;text-align:center;align-items:center}input{width:100%;background:#161616;border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:12px 14px;font-size:15px;color:#ededea;outline:0;box-sizing:border-box;font-family:Menlo,monospace}button{background:#e08850;color:#000;border:0;border-radius:10px;padding:12px 16px;font-weight:600;font-size:14px;width:100%;cursor:pointer}.dim{color:#7e7a71;font-size:12.5px;line-height:1.5}.err{color:#f0554e;font-size:12.5px}b{font-size:20px;color:#fff}</style></head>
+<!-- 여러 맥 (2026-11-19) — 맥 목록 + 새 맥 추가. 한 번 페어링한 맥은 여기 남고, 누르면 다시 페어링 없이 붙는다. 목업 «둘 다 같은 것 ② — 맥 추가» -->
+<style>
+body{margin:0;background:#141414;color:#d6d6d6;font-family:-apple-system,'Apple SD Gothic Neo',system-ui,sans-serif;font-size:13px;display:flex;justify-content:center;min-height:100vh;-webkit-font-smoothing:antialiased}
+.box{width:440px;padding:56px 0 40px;display:flex;flex-direction:column;gap:10px}
+h1{font-size:18px;color:#ededed;margin:0 0 4px;display:flex;align-items:center;gap:10px} h2{font-size:13px;color:#ededed;margin:18px 0 2px;font-weight:600}
+.dim{color:#8c8c8c;font-size:12px;line-height:1.5} .err{color:#e5534b;font-size:12.5px;min-height:18px} .warn{color:#e2a33b;font-size:12.5px}
+.row{display:flex;align-items:center;gap:9px;min-height:42px;padding:4px 10px;border:1px solid #232323;border-radius:8px;cursor:pointer;background:#181818}
+.row:hover{background:#1f1f1f} .row.focus{border-color:#e2a33b} .row.cur{border-color:rgba(79,191,135,.5)}
+.row .nm{display:flex;flex-direction:column;line-height:1.3;min-width:0;flex:1} .row .nm b{color:#ededed;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .row .nm small{color:#8c8c8c;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row.off .nm b{color:#9a9a9a}
+i.d{width:7px;height:7px;border-radius:50%;flex:none;display:inline-block} i.on{background:#4fbf87} i.wt{background:#e2a33b} i.off{box-shadow:inset 0 0 0 1.5px #8c8c8c} i.auth{background:#e5534b}
+.badge{font-size:11px;border-radius:9px;padding:0 7px;line-height:18px;background:rgba(226,163,59,.16);color:#e2a33b;white-space:nowrap}
+.x{border:1px solid #2c2c2c;background:none;color:#d6d6d6;border-radius:6px;height:26px;padding:0 10px;font-size:11.5px;cursor:pointer}
+input{width:100%;background:#1c1c1c;border:1px solid #2c2c2c;border-radius:8px;padding:9px 11px;font-size:13px;color:#ededed;outline:0;box-sizing:border-box}
+input:focus{border-color:#4a4a4a} input.code{font-family:Menlo,monospace;letter-spacing:2px}
+.go{background:#ededed;color:#111;border:0;border-radius:7px;height:32px;padding:0 16px;font-weight:600;font-size:12.5px;cursor:pointer;align-self:flex-start}
+.host{display:none;flex-direction:column;gap:8px;padding:12px;border:1px solid rgba(224,136,80,.45);border-radius:10px;background:#181818}
+.host button{align-self:flex-start;background:#e08850;color:#000;border:0;border-radius:7px;height:30px;padding:0 14px;font-weight:600;cursor:pointer}
+</style></head>
 <body><div class="box">
-<svg viewBox="0 0 64 64" width="72" height="72"><path d="M6 14a4 4 0 0 1 4-4h14l5 5h29a4 4 0 0 1 4 4v33a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill="#e08850" opacity=".55"/><path d="M6 24a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill="#e08850"/><rect x="20" y="30" width="6" height="10" rx="3" fill="rgba(0,0,0,.6)"/><rect x="38" y="30" width="6" height="10" rx="3" fill="rgba(0,0,0,.6)"/></svg>
-<b>Folder Bot</b>
-<div id="hostbox" style="width:100%;display:none;flex-direction:column;gap:8px;padding:14px;border:1px solid rgba(224,136,80,.45);border-radius:14px;background:#161616;text-align:left">
-  <div style="font-weight:600;color:#fff">이 맥을 메인으로 쓰기 (늘 켜 두는 맥)</div>
-  <div class="dim">루트 폴더(예: PARA)를 고르면 봇들이 여기서 삽니다. 메뉴바에 폴더봇이 생기고, 로그인 시 자동으로 켜져요. 이 맥의 <span style="font-family:Menlo">claude</span> 로그인을 그대로 씁니다.</div>
+<h1><svg viewBox="0 0 64 64" width="22" height="22"><path d="M6 24a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill="#e08850"/></svg>맥</h1>
+<div id="ts" class="warn" style="display:none">Tailscale 이 꺼져 있어 다른 맥에 닿지 않아요</div>
+<div id="list" style="display:flex;flex-direction:column;gap:6px"></div>
+<div id="empty" class="dim" style="display:none">아직 붙은 맥이 없어요. 아래에서 맥을 추가하세요.</div>
+
+<div id="hostbox" class="host">
+  <div style="font-weight:600;color:#ededed">이 맥을 메인으로 쓰기 (늘 켜 두는 맥)</div>
+  <div class="dim">루트 폴더(예: PARA)를 고르면 봇들이 여기서 삽니다. 메뉴바에 폴더봇이 생기고, 로그인 시 자동으로 켜져요.</div>
   <button id="host">루트 폴더 고르고 시작</button>
 </div>
-<div class="dim" id="or" style="display:none">— 또는, 다른 맥의 메인에 연결 —</div>
-<div class="dim">메인의 주소를 넣으세요. 메인의 터미널에 보이는 주소예요 — 같은 Tailscale 이면 <span style="font-family:Menlo">http://100.x.x.x:7373</span>, HTTPS 를 붙였으면 <span style="font-family:Menlo">https://mac-mini.xxx.ts.net</span>.</div>
-<input id="u" placeholder="http://100.64.0.1:7373" autofocus>
+
+<h2>새 맥 추가</h2>
+<div class="dim">그 맥의 주소와 페어링 코드를 넣으세요. 코드는 그 맥 메뉴 막대 › 페어링 코드에 있어요(2분 동안 유효).</div>
+<input id="u" placeholder="주소 — 예: studio-mini.tail944ed8.ts.net:7373">
+<input id="code" class="code" placeholder="페어링 코드 6자리" maxlength="12">
 <div id="e" class="err"></div>
-<button id="go">연결</button>
-<div class="dim">연결되면 화면에서 6자리 페어링 코드를 넣습니다.</div>
+<button id="go" class="go">추가하고 열기</button>
 </div>
 <script>
-const u=document.getElementById('u'), e=document.getElementById('e')
-u.value = localStorage.getItem('fb:lastHost') || ''
-async function go(){ let url=u.value.trim(); if(!url) return; if(!/^https?:\/\//.test(url)) url='http://'+url; url=url.replace(/\/+$/,''); e.textContent='확인 중…'
-  try{ const r=await fetch(url+'/api/health',{cache:'no-store'}); const j=await r.json(); if(!j.ok) throw 0; localStorage.setItem('fb:lastHost',url); location.href='folderbot-connect://'+encodeURIComponent(url) }catch{ e.textContent='메인에 닿지 못했어요. 메인에서 folderbot start 가 떠 있고, 이 맥의 Tailscale 이 켜져 있는지 확인하세요.' } }
-document.getElementById('go').onclick=go; document.getElementById('host').onclick=()=>window.folderbotDesktop&&window.folderbotDesktop.hostMode(); (async()=>{ try{ if(window.folderbotDesktop&&await window.folderbotDesktop.hostAvailable()){ document.getElementById('hostbox').style.display='flex'; document.getElementById('or').style.display='block' } }catch{} })(); u.addEventListener('keydown',ev=>{ if(ev.key==='Enter') go() })
+const D = window.folderbotDesktop, M = D && window.folderbotDesktop.macs
+const $ = (id) => document.getElementById(id)
+const focusId = new URLSearchParams(location.search).get('focus') || ''
+const hhmm = (t) => { if (!t) return ''; const d = new Date(t); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') }
+const line = (m) => m.state === 'auth' ? '다시 페어링 필요' : m.state === 'off' ? ('닿지 않음' + (m.lastSeen ? ' · 마지막 ' + hhmm(m.lastSeen) : '')) : m.working ? '일하는 중 ' + m.working : '한가함'
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])) }
+function draw(list) {
+  const box = $('list'); box.innerHTML = ''
+  $('empty').style.display = list.length ? 'none' : 'block'
+  for (const m of list) {
+    const r = document.createElement('div')
+    r.className = 'row' + (m.active ? ' cur' : '') + (m.id === focusId ? ' focus' : '') + (m.state !== 'on' ? ' off' : '')
+    const dot = m.state === 'auth' ? 'auth' : m.state === 'off' ? 'off' : m.waiting ? 'wt' : 'on'
+    r.innerHTML = '<i class="d ' + dot + '"></i><span class="nm"><b>' + esc(m.name || m.url) + '</b><small>' + esc(line(m)) + ' · ' + esc(String(m.url).replace(/^https?:\/\//, '')) + '</small></span>' +
+      (m.waiting ? '<span class="badge">답 기다림 ' + m.waiting + '</span>' : '') + (m.local ? '' : '<button class="x">빼기</button>')
+    r.onclick = (ev) => {
+      if (ev.target.classList.contains('x')) { ev.stopPropagation(); if (confirm(m.name + ' 을 이 맥 앱의 목록에서 뺄까요? 그 맥의 기기 목록에서는 그 맥 설정 › 기기에서 지워요.')) M.remove(m.id).then(load); return }
+      if (m.state === 'auth') { $('u').value = m.url; $('code').focus(); $('e').textContent = '이 맥은 다시 페어링해야 해요 — 그 맥의 페어링 코드를 넣으세요'; return }
+      M.switchTo(m.id)
+    }
+    box.appendChild(r)
+    if (m.id === focusId && m.state === 'auth') { $('u').value = m.url; setTimeout(() => $('code').focus(), 0) }
+  }
+}
+async function load() { if (!M) return; draw(await M.list()); try { $('ts').style.display = (await M.tailnet()) === 'running' ? 'none' : 'block' } catch {} }
+async function go() {
+  const url = $('u').value.trim(), code = $('code').value.trim()
+  if (!url) { $('e').textContent = '주소를 넣어 주세요'; return }
+  if (!code) { $('e').textContent = '페어링 코드를 넣어 주세요'; return }
+  $('e').textContent = '확인 중…'
+  const r = await M.add(url, code)
+  if (!r.ok) { $('e').textContent = r.error; return }
+  $('e').textContent = ''
+}
+$('go').onclick = go; $('code').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') go() })
+$('host').onclick = () => D && D.hostMode()
+;(async () => {
+  try { const list = M ? await M.list() : []; if (D && await D.hostAvailable() && !list.some((m) => m.local)) $('hostbox').style.display = 'flex' } catch {}
+  if (M) M.onChange(draw)
+  load()
+})()
 </script></body></html>

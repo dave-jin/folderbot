@@ -44,6 +44,16 @@ contextBridge.exposeInMainWorld('folderbotDesktop', {
     cacheClear: () => ipcRenderer.invoke('fb:local-cache-clear'),
     onProgress: (cb) => { const f = (_e, p) => cb(p); ipcRenderer.on('fb:local-progress', f); return () => ipcRenderer.removeListener('fb:local-progress', f) }
   },
+  // 여러 맥 (2026-11-19) — 맥 목록·바꾸기·추가·빼기. 전환기(화면 왼쪽 아래)·연결 화면이 쓴다. 판정과 저장은 셸
+  macs: {
+    list: () => ipcRenderer.invoke('fb:macs-list'),
+    switchTo: (id) => ipcRenderer.send('fb:macs-switch', id),
+    add: (url, code) => ipcRenderer.invoke('fb:macs-add', url, code),
+    remove: (id) => ipcRenderer.invoke('fb:macs-remove', id),
+    manage: () => ipcRenderer.send('fb:macs-manage'),
+    tailnet: () => ipcRenderer.invoke('fb:macs-tailnet'),
+    onChange: (cb) => { const f = (_e, l) => cb(l); ipcRenderer.on('fb:macs', f); return () => ipcRenderer.removeListener('fb:macs', f) }
+  },
   // 자기 업데이트 — 화면의 버전 칩이 쓴다
   update: {
     state: () => ipcRenderer.invoke('fb:update-state'),

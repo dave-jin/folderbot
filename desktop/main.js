@@ -412,6 +412,57 @@ ipcMain.handle('fb:update-state', () => updater.state())
 ipcMain.handle('fb:update-check', async () => { await updater.check(true); return updater.state() })
 ipcMain.on('fb:update-apply', () => { updater.apply() })
 ipcMain.handle('fb:update-dawn', (_e, on) => updater.dawn(!!on))
+// ── 여러 맥 — 통로 (preload `folderbotDesktop.macs`) ──
+ipcMain.handle('fb:macs-list', () => macsView())
+ipcMain.on('fb:macs-switch', (_e, id) => switchTo(String(id)))
+ipcMain.on('fb:macs-manage', () => { showWin(); openConnect() })
+ipcMain.handle('fb:macs-tailnet', () => tailnetState())
+ipcMain.handle('fb:macs-add', (_e, url, code) => addMacFlow(String(url || ''), String(code || '')))
+ipcMain.handle('fb:macs-remove', async (_e, id) => {
+  id = String(id); if (id === LOCAL) return
+  const m = macList().find((x) => x.id === id); if (!m) return
+  putMacs(macsLib.removeMac(macList(), id)); tokens.del(id); delete offline[id]; delete oldMac[id]
+  // 그 맥 주소의 화면 저장소(토큰 사본)도 비운다 — 목록에서 뺀 맥의 토큰이 이 맥에 남지 않게
+  try { await session.defaultSession.clearStorageData({ origin: new URL(macUrl(m)).origin, storages: ['localstorage'] }) } catch {}
+  startSse()
+  if (settings.activeMac === id) { const next = macsLib.ordered(macList())[0]; if (next) switchTo(next.id); else { settings.activeMac = ''; save(); openConnect() } }
+  refreshMacs()
+})
+/**
+ * 새 맥 추가 — 주소 확인 → 페어링 → 이름·판 → (같은 맥이 이미 있으면 멈춤) → 목록·토큰 저장 → 그 맥으로.
+ * 페어링 코드는 이 화면에서 받는다(그 맥 화면에서 따로 넣지 않는다).
+ */
+async function addMacFlow(rawUrl, code) {
+  const url = macsLib.normUrl(rawUrl)
+  if (!url) return { ok: false, error: '주소를 넣어 주세요' }
+  try { const r = await fetch(url + '/api/health', { cache: 'no-store' }); const j = await r.json(); if (!j.ok) throw new Error('health') }
+  catch { return { ok: false, error: '호스트에 닿지 못했어요. 그 맥에서 Folder Bot 이 켜져 있고, 이 맥의 Tailscale 이 켜져 있는지 확인하세요.' } }
+  let token = ''
+  try {
+    const r = await fetch(url + '/api/pair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: code.trim(), device: require('node:os').hostname().replace(/\.local$/, '') }) })
+    if (r.status === 401) return { ok: false, error: '코드가 맞지 않거나 만료됐어요' }
+    token = String((await r.json()).token || '')
+  } catch {}
+  if (!token) return { ok: false, error: '페어링에 실패했어요 — 잠시 뒤 다시 해 보세요' }
+  let name = '', version = ''
+  try { const r = await fetch(url + '/api/state', { headers: { authorization: `Bearer ${token}` } }); const j = await r.json(); name = String(j.hostName || ''); version = String(j.version || '') } catch {}
+  const { macs, mac, existed } = macsLib.addMac(macList(), url, newMacId)
+  const dup = existed ? null : macsLib.findDuplicate(macs, mac.id, name, version)
+  if (dup) return { ok: false, error: `이미 목록에 있는 맥이에요(${macsLib.displayName(macList(), dup)})` }
+  putMacs(macsLib.setSeen(macs, mac.id, { name, version, lastSeen: Date.now(), auth: 'ok' }))
+  tokens.set(mac.id, token)
+  startSse(); switchTo(mac.id)
+  return { ok: true, id: mac.id }
+}
+/** Tailscale 이 켜져 있나 — 연결 화면의 한 줄 안내용. `src/host/tailnet.ts` 와 같은 판정(맥 앱은 호스트 번들 없이도 돌아야 해서 따로 둔다) */
+function tailnetState() {
+  const bin = ['/usr/local/bin/tailscale', '/Applications/Tailscale.app/Contents/MacOS/Tailscale', '/opt/homebrew/bin/tailscale'].find((p) => existsSync(p))
+  if (!bin) return Promise.resolve('absent')
+  return new Promise((resolve) => execFile(bin, ['status', '--json'], { timeout: 8000 }, (err, out) => {
+    if (err) return resolve('unknown')
+    try { const st = JSON.parse(out).BackendState; resolve(st === 'Running' ? 'running' : st === 'NeedsLogin' ? 'needs-login' : st === 'Stopped' ? 'stopped' : 'unknown') } catch { resolve('unknown') }
+  }))
+}
 ipcMain.on('fb:change-host', () => { showWin(); openConnect() }) // 여러 맥 — 토큰을 지우지 않는다. 연결 화면(맥 목록)으로
 ipcMain.on('fb:token', (e, token) => { const m = activeMac(); if (!m || m.id === LOCAL || typeof token !== 'string' || !token) return; try { if (new URL(e.sender.getURL()).origin !== new URL(macUrl(m)).origin) return } catch { return } if (token !== tokens.get(m.id)) { tokens.set(m.id, token); startSse(); refreshMacs() } })
 
@@ -455,6 +506,13 @@ function appMenu() {
       { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
       { type: 'separator' }, { role: 'quit' }
     ] }] : []),
+    // 여러 맥 — 앱이 직접 그리는 «맥» 메뉴. 붙은 맥이 옛 판이라 화면에 전환기가 없어도 여기서는 늘 바꿀 수 있다
+    { label: '맥', submenu: [
+      ...macsView().map((m) => ({ label: m.waiting ? `${m.name} · 답 기다림 ${m.waiting}` : m.name, type: 'radio', checked: m.active, accelerator: m.shortcut ? `Ctrl+Cmd+${m.shortcut}` : undefined, click: () => switchTo(m.id) })),
+      ...(macList().length ? [{ type: 'separator' }] : []),
+      { label: '맥 추가…', click: () => { showWin(); openConnect() } },
+      { label: '맥 관리…', click: () => { showWin(); openConnect() } }
+    ] },
     { label: '파일', submenu: [
       { label: '새 세션', accelerator: 'CmdOrCtrl+N', click: cmd('new-session') },
       // 2026-10-02 · ⌘K 는 검색(시안 A) — 폴더 고르기는 ⌘⇧N 으로 옮겼다
