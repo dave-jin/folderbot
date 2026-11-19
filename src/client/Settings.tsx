@@ -139,6 +139,7 @@ function usePhone(): boolean {
 /** 검색 — 제목과 설명을 함께 찾는다 («토큰» 을 치면 Claude 칸의 그 줄이 나온다). ⚠ 유닛이 실제 `<Row t=…>` 와 대조한다 */
 export const INDEX: { sec: SecId; t: string; d: string }[] = [
   { sec: 'general', t: '메인 이름', d: '모든 기기에 같이 보이는 이름' },
+  { sec: 'general', t: '맥 바꾸는 방식', d: '여러 맥 — 같은 창에서 바꾸기 · 맥마다 창 하나' },
   { sec: 'general', t: '폰 홈 화면 이름', d: '맥마다 폰 앱을 따로 둘 때 홈 화면에서 구분 · 12자' },
   { sec: 'general', t: '테마', d: '시스템 라이트 다크 화면' },
   { sec: 'general', t: '폴더봇 크기', d: '왼쪽 목록 아이콘 크게 작게 화면' },
@@ -236,6 +237,9 @@ function GeneralPane() {
   const [ap, setAp] = useAskPrefs()
   useEffect(() => { setHost(s.hostName) }, [s.hostName])
   const [home, setHome] = useState(s.homeName ?? ''); useEffect(() => { setHome(s.homeName ?? '') }, [s.homeName])
+  // 여러 맥 2단계 — 맥 앱에서만(셸이 창을 연다). 브라우저·폰에는 칸이 없다
+  const macsB = (window as unknown as { folderbotDesktop?: { macs?: { mode?: () => Promise<string>; setMode?: (m: string) => Promise<string> } } }).folderbotDesktop?.macs
+  const [swm, setSwm] = useState(''); useEffect(() => { void macsB?.mode?.().then(setSwm).catch(() => {}) }, [macsB])
   const save = async (body: { hostName?: string; homeName?: string }) => { try { await api('/names', { body }); await refresh(); setMsg('저장했어요') } catch (e) { setMsg((e as Error).message) } }
   return <>
     <p className="lead">지금 이 화면은 {s.device.main ? <><b>메인</b> ({s.hostName}) 에서</> : <><b>원격 · {s.device.name}</b> 에서 <b>{s.hostName}</b> 를</>} 보고 있어요.{msg ? ` · ${msg}` : ''} 줄의 <span className="scp at-main">메인</span> 은 모든 기기에 같이 보이는 값, <span className="scp at-dev">이 기기</span> 는 여기에만 남는 값이에요.</p>
@@ -246,6 +250,9 @@ function GeneralPane() {
     <Row t="폰 홈 화면 이름" d="12자 안. 비우면 «FB » + 메인 이름이에요. iPhone 은 설치할 때의 이름을 그대로 써요 — 바꾼 뒤에는 홈 화면 앱을 지우고 다시 추가하세요." at="main">
       <input className="sin" data-homename value={home} maxLength={12} placeholder={[...`FB ${s.hostName}`].slice(0, 12).join('')} onChange={(e) => setHome(e.target.value)} onBlur={() => { if (home.trim() !== (s.homeName ?? '')) void save({ homeName: home }) }} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} />
     </Row>
+    {macsB?.setMode && swm ? <Row t="맥 바꾸는 방식" d="여러 맥을 오갈 때 — 같은 창이 그 맥으로 바뀌거나, 맥마다 이름 붙은 창이 따로 떠요." at="dev">
+      <span className="seg" data-switchmode>{([['same', '같은 창에서 바꾸기'], ['window', '맥마다 창 하나']] as [string, string][]).map(([v, l]) => <button key={v} className={swm === v ? 'on' : ''} onClick={() => { void macsB.setMode?.(v).then(setSwm) }}>{l}</button>)}</span>
+    </Row> : null}
     <Group t="화면" />
     <Row t="테마" d="시스템을 고르면 맥의 밝기 설정을 따라가요." at="dev">
       <span className="seg">{([['auto', '시스템'], ['light', '라이트'], ['dark', '다크']] as [Theme, string][]).map(([v, l]) => <button key={v} className={theme === v ? 'on' : ''} onClick={() => setTheme(v)}>{l}</button>)}</span>

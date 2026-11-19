@@ -21,6 +21,7 @@ files:
   - macs.js
   - tokenStore.js
   - macLinks.js
+  - macWindows.js
   - zoom.js
   - extern.js
   - nav.js

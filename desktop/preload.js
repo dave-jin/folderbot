@@ -51,6 +51,9 @@ contextBridge.exposeInMainWorld('folderbotDesktop', {
     add: (url, code) => ipcRenderer.invoke('fb:macs-add', url, code),
     remove: (id) => ipcRenderer.invoke('fb:macs-remove', id),
     manage: () => ipcRenderer.send('fb:macs-manage'),
+    // 2단계 — 설정 › 일반 «맥 바꾸는 방식»: 'same'(같은 창에서 바꾸기 · 기본) | 'window'(맥마다 창 하나)
+    mode: () => ipcRenderer.invoke('fb:macs-mode'),
+    setMode: (m) => ipcRenderer.invoke('fb:macs-set-mode', m),
     tailnet: () => ipcRenderer.invoke('fb:macs-tailnet'),
     onChange: (cb) => { const f = (_e, l) => cb(l); ipcRenderer.on('fb:macs', f); return () => ipcRenderer.removeListener('fb:macs', f) }
   },

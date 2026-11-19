@@ -15,6 +15,7 @@ const { externalOk } = require('./extern')
 const macsLib = require('./macs')
 const { createTokenStore, plainCodec, safeCodec } = require('./tokenStore')
 const { createLinks } = require('./macLinks')
+const macWindows = require('./macWindows')
 const LOCAL = macsLib.LOCAL_ID
 
 /**
@@ -106,36 +107,57 @@ function savedBounds() {
   const { screen } = require('electron')
   return pickBounds(settings.win, screen.getAllDisplays())
 }
-function createWin() {
-  win = new BrowserWindow({ ...savedBounds(), minWidth: 720, minHeight: 520, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 16 } /* 헤더 44px 의 중앙(12px 버튼) — 제목과 높이를 맞춘다 */, backgroundColor: '#141414', show: false, webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, sandbox: false } })
-  win.once('ready-to-show', () => { win.show(); if (pendingNav) { navigate(pendingNav); pendingNav = null } })
+/**
+ * 여러 맥 2단계 (2026-11-19) — 설정 «맥 바꾸는 방식» 이 «맥마다 창 하나»(`settings.switchMode === 'window'`)면 맥마다 창이 따로다.
+ * `win` 은 늘 «앞 창» 이다(마지막으로 포커스를 받은 창). 창이 어느 맥인지는 `winMac`, 맥마다 창 모드의 창 목록은 `wins`.
+ * 같은 창 모드(기본)에서는 창이 하나이고, 맥을 바꾸면 그 창이 다시 읽힌다(1단계).
+ */
+function createWin(macId) {
+  const id = macId || settings.activeMac
+  const perMac = settings.switchMode === 'window'
+  const { screen } = require('electron')
+  const bounds = perMac ? macWindows.boundsFor(settings.winByMac || {}, id, screen.getAllDisplays()) : savedBounds()
+  const w = new BrowserWindow({ ...bounds, minWidth: 720, minHeight: 520, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 16 } /* 헤더 44px 의 중앙(12px 버튼) — 제목과 높이를 맞춘다 */, backgroundColor: '#141414', show: false, webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, sandbox: false } })
+  win = w; winMac.set(w, id); if (perMac) wins.set(id, w)
+  w.once('ready-to-show', () => { w.show(); if (pendingNav && win === w) { navigate(pendingNav); pendingNav = null } })
   // ⚠ 창을 움직이는 동안 매 픽셀마다 파일을 쓰지 않는다 — 멈춘 뒤 한 번만
   let bt = null
   const remember = () => {
-    if (!win || win.isDestroyed() || win.isMinimized() || win.isFullScreen()) return
-    const b = win.getNormalBounds ? win.getNormalBounds() : win.getBounds()
+    if (w.isDestroyed() || w.isMinimized() || w.isFullScreen()) return
+    const b = w.getNormalBounds ? w.getNormalBounds() : w.getBounds()
     if (!b || !b.width || !b.height) return
-    settings.win = { x: b.x, y: b.y, width: b.width, height: b.height }; save()
+    const r = { x: b.x, y: b.y, width: b.width, height: b.height }
+    if (settings.switchMode === 'window') settings.winByMac = { ...(settings.winByMac || {}), [winMac.get(w)]: r }; else settings.win = r
+    save()
   }
   const later = () => { clearTimeout(bt); bt = setTimeout(remember, 600) }
-  win.on('resize', later); win.on('move', later)
-  win.on('close', () => { clearTimeout(bt); remember() })
-  win.on('closed', () => { win = null })
+  w.on('resize', later); w.on('move', later)
+  w.on('close', () => { clearTimeout(bt); remember() })
+  w.on('closed', () => { const mid = winMac.get(w); if (wins.get(mid) === w) wins.delete(mid); if (win === w) win = [...wins.values()].find((x) => !x.isDestroyed()) || null })
   // 여러 맥 — 맥이 2대 이상이면 창 제목에 맥 이름(⌘Tab·Mission Control 에서도 어느 맥인지). 1대면 화면 제목 그대로
-  win.on('page-title-updated', (e) => { if (macList().length > 1) { e.preventDefault(); applyTitle() } })
-  win.on('focus', () => { try { win.webContents.send('fb:perms', perms.list({ host: settings.mode === 'host', openMode: (activeMac() || {}).openMode })) } catch {} })
+  w.on('page-title-updated', (e) => { if (macList().length > 1) { e.preventDefault(); applyTitle(w) } })
+  w.on('focus', () => {
+    win = w
+    // 맥마다 창 — 앞으로 온 창의 맥이 «지금 맥» 이다(사용량·트레이·배지 기준)
+    const mid = winMac.get(w); if (settings.switchMode === 'window' && mid && mid !== settings.activeMac) { settings.activeMac = mid; save(); recount(); void pollUsage() }
+    try { w.webContents.send('fb:perms', perms.list({ host: settings.mode === 'host', openMode: (activeMac() || {}).openMode })) } catch {}
+  })
   // 🔴 새 창 요청은 웹·메일·전화 주소만 바깥으로 넘긴다(`extern.js`) — 문서 창 html 보기(격리 틀) 안의 글도 이 문을 지난다
-  win.webContents.setWindowOpenHandler(({ url }) => { if (externalOk(url)) shell.openExternal(url); return { action: 'deny' } })
-  win.webContents.on('did-finish-load', applyZoom)   // BP · 새로 읽을 때마다 저장된 배율을 다시 건다
+  w.webContents.setWindowOpenHandler(({ url }) => { if (externalOk(url)) shell.openExternal(url); return { action: 'deny' } })
+  w.webContents.on('did-finish-load', () => applyZoom(w))   // BP · 새로 읽을 때마다 저장된 배율을 다시 건다
   Menu.setApplicationMenu(appMenu())
   loadHome()
 }
+const wins = new Map()        // 맥마다 창 모드 — 맥 id → 창
+const winMac = new WeakMap()  // 창 → 그 창이 보여 주는 맥 id
+const allWins = () => [...new Set([win, ...wins.values()])].filter((w) => w && !w.isDestroyed())
+
 /**
  * BP · 화면 배율 — ⌘+ · ⌘− · ⌘0 (`zoom.js`). 배율은 settings.json 에 남고, 화면을 새로 읽을 때마다 다시 건다
  * (Electron 은 배율을 스스로 기억하지 않는다 — 호스트 판이 바뀌어 화면이 다시 읽혀도(BJ) 그대로여야 한다).
  * 바꿀 때마다 화면에 «화면 크기 110%» 를 잠깐 띄운다 — 배율이 얼마인지 사람이 외울 필요가 없게.
  */
-function applyZoom() { try { if (win && !win.isDestroyed()) win.webContents.setZoomFactor(clampZoom(settings.zoom)) } catch {} }
+function applyZoom(w) { for (const x of w ? [w] : allWins()) { try { if (!x.isDestroyed()) x.webContents.setZoomFactor(clampZoom(settings.zoom)) } catch {} } }
 function zoomBy(dir) {
   settings.zoom = stepZoom(settings.zoom, dir); save(); applyZoom()
   try { win?.webContents.send('fb:cmd', `zoom:${zoomPct(settings.zoom)}`) } catch {}
@@ -165,10 +187,13 @@ const oldMac = {}
 async function checkOld(mac) {
   try { const r = await fetch(`${macUrl(mac)}/api/health`); const j = await r.json(); const old = j.macSwitcher !== true; if (oldMac[mac.id] !== old) { oldMac[mac.id] = old; applyTitle(); refreshMacs() } } catch {}
 }
-function applyTitle() {
-  const m = activeMac()
-  if (!win || win.isDestroyed() || !m || macList().length < 2) return
-  win.setTitle(macsLib.winTitle(macList(), m, !!oldMac[m.id]))
+function applyTitle(w) {
+  for (const x of w ? [w] : allWins()) {
+    const id = settings.switchMode === 'window' ? winMac.get(x) : settings.activeMac
+    const m = macList().find((y) => y.id === id) || activeMac()
+    if (x.isDestroyed() || !m || macList().length < 2) continue
+    x.setTitle(macsLib.winTitle(macList(), m, !!oldMac[m.id]))
+  }
 }
 /**
  * 여러 맥 — 맥 바꾸기. 지금 맥에서 보던 자리(hash)를 그 줄에 남기고, 창 제목을 먼저 바꾸고, 화면에 «옮기는 중» 을 알린 뒤 연다.
@@ -177,9 +202,17 @@ function applyTitle() {
 function switchTo(id, hash) {
   const m = macList().find((x) => x.id === id)
   if (!m) return
+  // 맥마다 창 — 그 맥 창이 있으면 앞으로(알림이면 그 자리로), 없으면 새 창
+  if (settings.switchMode === 'window') {
+    settings.activeMac = id; save()
+    const w = wins.get(id)
+    if (w && !w.isDestroyed()) { win = w; showWin(); if (hash) navigate(`#${hash}`) }
+    else { pendingNav = hash || m.lastHash || null; createWin(id); showWin() }
+    recount(); void pollUsage(); return
+  }
   const cur = activeMac()
   if (cur && win && !win.isDestroyed()) { try { const h = new URL(win.webContents.getURL()).hash.replace(/^#/, ''); if (h && !/(^|&)token=/.test(h)) putMacs(macsLib.setSeen(macList(), cur.id, { lastHash: h })) } catch {} }
-  settings.activeMac = id; save()
+  settings.activeMac = id; save(); if (win) winMac.set(win, id)
   const target = hash !== undefined ? hash : (macList().find((x) => x.id === id) || {}).lastHash
   if (!win) { pendingNav = target || null; showWin() }
   else { showWin(); applyTitle(); try { win.webContents.send('fb:cmd', `moving:${macsLib.displayName(macList(), m)}`) } catch {} loadMac(m, target) }
@@ -198,7 +231,7 @@ function macsView() {
 let macsSig = ''
 function refreshMacs() {
   const v = macsView(); const sig = JSON.stringify(v.map((x) => [x.id, x.name, x.state, x.waiting, x.active, x.old]))
-  try { win?.webContents.send('fb:macs', v) } catch {}
+  for (const w of allWins()) { try { w.webContents.send('fb:macs', v) } catch {} }
   pushTrayState()
   if (sig !== macsSig) { macsSig = sig; try { Menu.setApplicationMenu(appMenu()) } catch {} }
 }
@@ -414,6 +447,25 @@ ipcMain.on('fb:update-apply', () => { updater.apply() })
 ipcMain.handle('fb:update-dawn', (_e, on) => updater.dawn(!!on))
 // ── 여러 맥 — 통로 (preload `folderbotDesktop.macs`) ──
 ipcMain.handle('fb:macs-list', () => macsView())
+ipcMain.handle('fb:macs-mode', () => settings.switchMode || 'same')
+ipcMain.handle('fb:macs-set-mode', (_e, m) => setSwitchMode(String(m)))
+/** 설정 › 일반 «맥 바꾸는 방식» — 같은 창으로 되돌리면 앞 창 하나만 남긴다(`macWindows.frontAfterModeChange`) */
+function setSwitchMode(m) {
+  m = m === 'window' ? 'window' : 'same'
+  if ((settings.switchMode || 'same') === m) return m
+  settings.switchMode = m; save()
+  if (m === 'window') { wins.clear(); if (win && !win.isDestroyed()) { const id = winMac.get(win) || settings.activeMac; wins.set(id, win); winMac.set(win, id) } }
+  else {
+    const open = [...wins.entries()].filter(([, w]) => !w.isDestroyed())
+    const frontId = win ? winMac.get(win) : settings.activeMac
+    const { keep, close } = macWindows.frontAfterModeChange('same', open.map(([id]) => id), frontId)
+    const kw = wins.get(keep[0])
+    for (const id of close) { const w = wins.get(id); wins.delete(id); try { w.destroy() } catch {} }
+    wins.clear()
+    if (kw && !kw.isDestroyed()) { win = kw; settings.activeMac = keep[0]; save() }
+  }
+  applyTitle(); refreshMacs(); return m
+}
 ipcMain.on('fb:macs-switch', (_e, id) => switchTo(String(id)))
 ipcMain.on('fb:macs-manage', () => { showWin(); openConnect() })
 ipcMain.handle('fb:macs-tailnet', () => tailnetState())
@@ -464,7 +516,7 @@ function tailnetState() {
   }))
 }
 ipcMain.on('fb:change-host', () => { showWin(); openConnect() }) // 여러 맥 — 토큰을 지우지 않는다. 연결 화면(맥 목록)으로
-ipcMain.on('fb:token', (e, token) => { const m = activeMac(); if (!m || m.id === LOCAL || typeof token !== 'string' || !token) return; try { if (new URL(e.sender.getURL()).origin !== new URL(macUrl(m)).origin) return } catch { return } if (token !== tokens.get(m.id)) { tokens.set(m.id, token); startSse(); refreshMacs() } })
+ipcMain.on('fb:token', (e, token) => { const sw = BrowserWindow.fromWebContents(e.sender); const m = (sw && macList().find((x) => x.id === winMac.get(sw))) || activeMac(); if (!m || m.id === LOCAL || typeof token !== 'string' || !token) return; try { if (new URL(e.sender.getURL()).origin !== new URL(macUrl(m)).origin) return } catch { return } if (token !== tokens.get(m.id)) { tokens.set(m.id, token); startSse(); refreshMacs() } })
 
 // ── 트레이 (폴더봇 · 표정 = 합친 상태 · 배지 = 확인 대기 수) ──
 /**
@@ -751,6 +803,8 @@ function notify(n, macId) {
   no.show()
 }
 
+// QA 손잡이 — 실 앱 검사(`test/mac-qa.mjs` ㉒)가 «다른 맥 알림 클릭» 과 «앞 창의 맥» 을 직접 잰다
+if (process.env.FOLDERBOT_QA) { global.__fbSwitchTo = (id, h) => switchTo(id, h); global.__fbFrontMac = () => (win ? winMac.get(win) || '' : '') }
 app.whenReady().then(async () => {
   // RB-2 · 맥이 잠들었다 깨면 그 사이 놓친 루틴 회차를 보충한다(호스트 모드일 때만 · 규칙은 host.onWake → routines.catchUp)
   require('electron').powerMonitor.on('resume', () => { try { hostRun?.host?.onWake?.() } catch (e) { console.error(e) } })
