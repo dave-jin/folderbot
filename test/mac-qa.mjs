@@ -342,7 +342,7 @@ console.log('\n🍎 맥 QA 통과')
   const envB = { ...env, HOME: homeB, FOLDERBOT_HOME: homeB, FOLDERBOT_DATA: join(homeB, 'data') }; delete envB.FOLDERBOT_NO_AUTH; delete envB.FOLDERBOT_USER_DATA
   execFileSync('node', ['bin/folderbot.mjs', 'init', rootB], { env: envB, stdio: 'ignore' })
   { const cf = join(homeB, 'data', 'config.json'); const c = JSON.parse(readFileSync(cf, 'utf8')); c.hostName = '집 미니'; writeFileSync(cf, JSON.stringify(c, null, 2)) }
-  let hostB = null
+  let hostB = null, botB = ''
   const startB = async (extra = {}) => {
     hostB = spawn('node', ['bin/folderbot.mjs', 'start', '--port', String(PB)], { env: { ...envB, ...extra }, stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''; hostB.stdout.on('data', (d) => (out += d)); hostB.stderr.on('data', (d) => (out += d))
@@ -382,7 +382,7 @@ console.log('\n🍎 맥 QA 통과')
 
     // ⑰ 다른 맥 답 대기 — «이 맥» 을 보는 동안 B 세션이 승인을 기다리면 독 배지 · 목록 배지
     { const H = { 'content-type': 'application/json', authorization: `Bearer ${tokB}` }
-      const bb = await (await fetch(urlB + '/api/bots/start', { method: 'POST', headers: H, body: JSON.stringify({ rel: '3. Area/B사_운영' }) })).json()
+      const bb = await (await fetch(urlB + '/api/bots/start', { method: 'POST', headers: H, body: JSON.stringify({ rel: '3. Area/B사_운영' }) })).json(); botB = bb.id
       await fetch(urlB + `/api/bots/${bb.id}/send`, { method: 'POST', headers: H, body: JSON.stringify({ text: '승인이 필요한 일 해 줘' }) })
       let l = null; for (let i = 0; i < 60; i++) { l = await macsNow(); if (l && l.find((m) => m.id === B.id)?.waiting === 1) break; await wait(250) }
       if (l?.find((m) => m.id === B.id)?.waiting !== 1) await fail('⑰ B 의 답 대기가 목록에 안 잡혔다 · ' + JSON.stringify(l))
@@ -405,11 +405,11 @@ console.log('\n🍎 맥 QA 통과')
       // ㉒ 다른 맥 알림 클릭 — 그 맥 창이 앞으로, 그 자리로 · 원래 창의 자리는 그대로
       const hashA = await page.evaluate(() => location.hash)
       await page.evaluate(() => window.folderbotDesktop.macs.switchTo('local'))
-      await app.evaluate((_e, id) => global.__fbSwitchTo(id, 'notify=1'), B.id)
+      await app.evaluate((_e, id) => global.__fbSwitchTo(id[0], `bot=${id[1]}`), [B.id, botB])
       let front = ''; for (let i = 0; i < 40; i++) { front = await app.evaluate(() => global.__fbFrontMac()); if (front === B.id) break; await wait(250) }
       if (front !== B.id) await fail('㉒ 다른 맥 알림을 눌렀는데 그 맥 창이 앞으로 안 왔다 · ' + front)
-      let hb = ''; for (let i = 0; i < 40 && !/notify=1/.test(hb); i++) { hb = (await wins()).find((w) => w.url.startsWith(urlB))?.url || ''; await wait(250) }
-      if (!/notify=1/.test(hb)) await fail('㉒ 그 맥 창이 알림의 자리로 안 갔다 · ' + hb)
+      let hb = ''; for (let i = 0; i < 40 && !hb.includes(`bot=${botB}`); i++) { hb = (await wins()).find((w) => w.url.startsWith(urlB))?.url || ''; await wait(250) }
+      if (!hb.includes(`bot=${botB}`)) await fail('㉒ 그 맥 창이 알림의 자리로 안 갔다 · ' + hb)
       if ((await page.evaluate(() => location.hash)) !== hashA) await fail('㉒ 원래 창의 자리가 바뀌었다')
       ok('㉒ 다른 맥 알림 — 그 맥 창이 앞으로 · 그 자리로 · 원래 창은 그대로')
       // ㉓ 같은 창으로 되돌리기 — 앞 창(«이 맥») 하나만 남고 배지는 그대로
@@ -424,21 +424,23 @@ console.log('\n🍎 맥 QA 통과')
 
     // ⑲ 옛 판 — B 가 전환기를 모르는 판이면 창 제목 끝에 안내
     await stopB(); await startB({ FOLDERBOT_QA_OLD_HEALTH: '1' })
-    await page.evaluate((id) => window.folderbotDesktop.macs.switchTo(id), B.id).catch(() => {})
+    await app.evaluate((_e, id) => global.__fbSwitchTo(id), B.id) // 셸에서 직접 — 화면이 토큰을 받고 다시 읽히는 틈에 보낸 요청은 사라진다
     try { await page.waitForURL((u) => String(u).startsWith(urlB), { timeout: 20000 }) } catch { await fail('⑲ 옛 판 B 로 안 갔다 · ' + page.url()) }
     { let w = null; for (let i = 0; i < 40; i++) { w = await mainWin(); if (/\(옛 판 — 맥 메뉴로 바꾸세요\)$/.test(w?.title || '')) break; await wait(250) }
       if (!/\(옛 판 — 맥 메뉴로 바꾸세요\)$/.test(w?.title || '')) await fail('⑲ 옛 판인데 창 제목 안내가 없다 · ' + JSON.stringify(w)) }
     ok('⑲ 옛 판 맥 — 창 제목 끝에 «(옛 판 — 맥 메뉴로 바꾸세요)»')
 
     // ⑳ 꺼진 맥 — 빈 창이 아니라 연결 화면의 그 맥 줄
-    await page.evaluate(() => window.folderbotDesktop.macs.switchTo('local')).catch(() => {})
+    await app.evaluate(() => global.__fbSwitchTo('local'))
     try { await page.waitForURL((u) => String(u).startsWith(base), { timeout: 20000 }) } catch { await fail('⑳ «이 맥» 으로 안 돌아왔다') }
     await stopB(); await wait(1500)
-    await page.evaluate((id) => window.folderbotDesktop.macs.switchTo(id), B.id).catch(() => {})
-    try { await page.waitForURL((u) => /connect\.html/.test(String(u)), { timeout: 20000 }) } catch { await fail('⑳ 꺼진 맥을 골랐는데 연결 화면으로 안 갔다 · ' + page.url()) }
-    { let t = ''; for (let i = 0; i < 40 && !/닿지 않음/.test(t); i++) { t = await page.$eval('.row.focus', (e) => e.textContent).catch(() => ''); await wait(250) }
+    await app.evaluate((_e, id) => global.__fbSwitchTo(id), B.id) // 셸에서 직접 — 화면이 토큰을 받고 다시 읽히는 틈에 보낸 요청은 사라진다
+    // ⚠ 실패한 주소 → 오류 페이지 → file:// 로 프로세스가 두 번 바뀌어 Playwright 의 page 가 주소를 놓친다 — 셸 쪽에서 창을 직접 읽는다
+    { let w = null; for (let i = 0; i < 80; i++) { w = await mainWin(); if (/connect\.html\?focus=/.test(w?.url || '')) break; await wait(250) }
+      if (!/connect\.html\?focus=/.test(w?.url || '')) await fail('⑳ 꺼진 맥을 골랐는데 연결 화면(그 맥 줄)으로 안 갔다 · ' + JSON.stringify(w)) }
+    { let t = ''; for (let i = 0; i < 40 && !/닿지 않음/.test(t); i++) { t = await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows().find((x) => !x.isAlwaysOnTop()); return w ? w.webContents.executeJavaScript("(document.querySelector('.row.focus')||{}).textContent||''") : '' }); await wait(250) }
       if (!/닿지 않음/.test(t)) await fail('⑳ 연결 화면의 그 맥 줄에 «닿지 않음» 이 없다 · ' + t) }
-    await page.screenshot({ path: 'test/tmp/mac-qa-mm-20.png' })
+    await app.evaluate(async ({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows().find((x) => !x.isAlwaysOnTop()); const img = await w.webContents.capturePage(); require('node:fs').writeFileSync('test/tmp/mac-qa-mm-20.png', img.toPNG()) }).catch(() => {})
     ok('⑳ 꺼진 맥 — 연결 화면의 그 맥 줄 «닿지 않음» (빈 창 아님)')
   } finally { await stopB() }
 }
