@@ -319,5 +319,129 @@ ok(`봇 화면 · ${bot.name} · 스크린샷 test/tmp/mac-qa-app.png`)
 
 if (errs.length) console.log('  ⚠ pageerror:', errs.join(' | ').slice(0, 500))
 console.log('\n🍎 맥 QA 통과')
+// ── ⑮~⑳ 여러 맥 (2026-11-19 · 첫 외부 고객: «늘 켜 둔 맥 여러 대를 오가고 싶다») ─────────────────────────
+// 두 번째 호스트(B · 인증 켬)를 같은 맥에 띄워, 맥 앱이 B 를 추가하고 · 오가고 · B 의 답 대기를 배지로 받고 · 토큰을 섞지 않고 ·
+// 옛 판·꺼진 맥을 다루는지 잰다. ⚠ 같은 맥이라 컴퓨터 이름이 같다 — B 의 이름을 «집 미니» 로 박아 «이미 있는 맥» 판정을 피한다.
+{
+  const tokFile = join(userData, 'mac-tokens.json'), setFile = join(userData, 'settings.json')
+  const readSet = () => JSON.parse(readFileSync(setFile, 'utf8'))
+  const mainWin = () => app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows().find((x) => !x.isAlwaysOnTop()); return w ? { title: w.getTitle(), url: w.webContents.getURL() } : null })
+  const macsNow = () => page.evaluate(() => window.folderbotDesktop.macs.list()).catch(() => null)
+  // ⑮ 옮겨 담기 — 옛 모양(mode:host · hostUrl) 설정이 «이 맥» 한 줄이 되고, 맥 1대라 창 제목·화면은 그대로
+  { const st = readSet()
+    if (!Array.isArray(st.macs) || st.macs.length !== 1 || st.macs[0].id !== 'local' || st.activeMac !== 'local') await fail('⑮ 옛 설정이 «이 맥» 한 줄로 안 옮겨졌다 · ' + JSON.stringify({ macs: st.macs, activeMac: st.activeMac }))
+    const w = await mainWin(); if (!w || w.title !== 'Folder Bot') await fail('⑮ 맥 1대인데 창 제목이 바뀌었다 · ' + JSON.stringify(w))
+    ok('⑮ 옮겨 담기 · 호스트 모드 설정 → «이 맥» 한 줄 · 맥 1대라 창 제목 그대로') }
+
+  const rootB = mkdtempSync(join(tmpdir(), 'fb-qa-vaultB-')); tmp.push(rootB)
+  const homeB = mkdtempSync(join(tmpdir(), 'fb-qa-homeB-')); tmp.push(homeB)
+  for (const d of ['1. Inbox', '2. Projects', '3. Area/B사_운영', '4. Resources', '5. Archive']) mkdirSync(join(rootB, d), { recursive: true })
+  writeFileSync(join(rootB, '3. Area/B사_운영/CLAUDE.md'), '# B사_운영\n')
+  let PB = PORT + 1; while (!(await portFree(PB))) PB++
+  const urlB = `http://127.0.0.1:${PB}`
+  const envB = { ...env, HOME: homeB, FOLDERBOT_HOME: homeB, FOLDERBOT_DATA: join(homeB, 'data') }; delete envB.FOLDERBOT_NO_AUTH; delete envB.FOLDERBOT_USER_DATA
+  execFileSync('node', ['bin/folderbot.mjs', 'init', rootB], { env: envB, stdio: 'ignore' })
+  { const cf = join(homeB, 'data', 'config.json'); const c = JSON.parse(readFileSync(cf, 'utf8')); c.hostName = '집 미니'; writeFileSync(cf, JSON.stringify(c, null, 2)) }
+  let hostB = null
+  const startB = async (extra = {}) => {
+    hostB = spawn('node', ['bin/folderbot.mjs', 'start', '--port', String(PB)], { env: { ...envB, ...extra }, stdio: ['ignore', 'pipe', 'pipe'] })
+    let out = ''; hostB.stdout.on('data', (d) => (out += d)); hostB.stderr.on('data', (d) => (out += d))
+    for (let i = 0; i < 120 && !/페어링 코드: (\S+)/.test(out); i++) await wait(250)
+    const m = /페어링 코드: (\S+)/.exec(out); if (!m) await fail('호스트 B 가 안 떴다 · ' + out.slice(-600))
+    return m[1]
+  }
+  const stopB = async () => { if (!hostB) return; hostB.kill('SIGTERM'); for (let i = 0; i < 40 && hostB.exitCode === null; i++) await wait(100); hostB = null }
+  try {
+    const code = await startB()
+    // ⑨ 가 창을 1000px 로 줄여 둬 사이드바가 접혀 있다 — 전환기(사이드바 왼쪽 아래)가 보이는 넓은 폭으로 되돌린다(접힌 폭에서는 «맥» 메뉴·⌃⌘숫자가 길이다)
+    await app.evaluate(({ BrowserWindow }) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isAlwaysOnTop()) w.setBounds({ x: 60, y: 60, width: 1320, height: 820 }) }); await wait(800)
+    // ⑯ 맥 추가 → B 로 바뀜(창 제목 · 전환기) → «이 맥» 으로 돌아와도 다시 페어링 없음
+    await page.evaluate(([u, c]) => window.folderbotDesktop.macs.add(u, c), [urlB, code]).catch(() => {}) // 성공하면 창이 B 로 바뀌며 이 문맥이 사라진다
+    try { await page.waitForURL((u) => String(u).startsWith(urlB), { timeout: 20000 }) } catch { await fail('⑯ 맥을 추가했는데 창이 B 로 안 갔다 · ' + page.url()) }
+    await page.waitForSelector('.app', { timeout: 20000 }).catch(() => fail('⑯ B 화면(.app)이 안 떴다'))
+    await page.waitForSelector('button.mac-sw', { timeout: 10000 }).catch(() => fail('⑯ B 화면에 전환기 단추가 없다'))
+    { const w = await mainWin(); if (w?.title !== 'Folder Bot — 집 미니') await fail('⑯ 창 제목이 «Folder Bot — 집 미니» 가 아니다 · ' + JSON.stringify(w)) }
+    const st = readSet(); const B = st.macs.find((m) => m.url === urlB)
+    if (!B || st.activeMac !== B.id) await fail('⑯ 설정에 B 줄이 없거나 지금 맥이 아니다 · ' + JSON.stringify(st.macs))
+    await page.screenshot({ path: 'test/tmp/mac-qa-mm-16-B.png' })
+    await page.evaluate(() => window.folderbotDesktop.macs.switchTo('local')).catch(() => {})
+    try { await page.waitForURL((u) => String(u).startsWith(base), { timeout: 20000 }) } catch { await fail('⑯ «이 맥» 으로 안 돌아왔다 · ' + page.url()) }
+    await page.waitForSelector('.app', { timeout: 20000 }).catch(() => fail('⑯ 돌아온 «이 맥» 화면이 안 떴다'))
+    { const w = await mainWin(); if (!/^Folder Bot — /.test(w?.title || '') || /집 미니/.test(w.title)) await fail('⑯ 돌아온 뒤 창 제목이 이상하다 · ' + JSON.stringify(w)) }
+    await page.screenshot({ path: 'test/tmp/mac-qa-mm-16-local.png' })
+    ok(`⑯ 맥 추가 → «집 미니» 로 바뀜(창 제목 · 전환기) → «이 맥» 으로 다시 페어링 없이`)
+
+    // ⑱ 토큰 — 맥 앱 사본은 맥 id 아래에만 · 옛 token 칸은 비었다 · B 는 그 토큰만 받는다
+    const toks = JSON.parse(readFileSync(tokFile, 'utf8'))
+    if (Object.keys(toks).join() !== B.id) await fail('⑱ 토큰 파일 열쇠가 B id 하나가 아니다 · ' + Object.keys(toks).join())
+    if (readSet().token) await fail('⑱ settings.json 의 옛 token 칸에 값이 있다')
+    const tokB = toks[B.id]
+    if ((await fetch(urlB + '/api/state', { headers: { authorization: 'Bearer nope' } })).status !== 401) await fail('⑱ B 가 다른 토큰을 받았다')
+    if ((await fetch(urlB + '/api/state', { headers: { authorization: `Bearer ${tokB}` } })).status !== 200) await fail('⑱ 저장된 B 토큰이 B 에서 안 통한다')
+    ok('⑱ 토큰 — 맥 id 아래에만 · 옛 칸 비움 · B 는 제 토큰만 받는다')
+
+    // ⑰ 다른 맥 답 대기 — «이 맥» 을 보는 동안 B 세션이 승인을 기다리면 독 배지 · 목록 배지
+    { const H = { 'content-type': 'application/json', authorization: `Bearer ${tokB}` }
+      const bb = await (await fetch(urlB + '/api/bots/start', { method: 'POST', headers: H, body: JSON.stringify({ rel: '3. Area/B사_운영' }) })).json()
+      await fetch(urlB + `/api/bots/${bb.id}/send`, { method: 'POST', headers: H, body: JSON.stringify({ text: '승인이 필요한 일 해 줘' }) })
+      let l = null; for (let i = 0; i < 60; i++) { l = await macsNow(); if (l && l.find((m) => m.id === B.id)?.waiting === 1) break; await wait(250) }
+      if (l?.find((m) => m.id === B.id)?.waiting !== 1) await fail('⑰ B 의 답 대기가 목록에 안 잡혔다 · ' + JSON.stringify(l))
+      const badge = await app.evaluate(({ app }) => (app.dock ? app.dock.getBadge() : ''))
+      if (badge !== '1') await fail('⑰ 독 배지가 «1» 이 아니다 · ' + JSON.stringify(badge))
+      if (!/다른 맥 1/.test(await page.$eval('.sb-foot', (e) => e.textContent).catch(() => ''))) await fail('⑰ 왼쪽 아래에 «· 다른 맥 1» 이 없다')
+      await page.screenshot({ path: 'test/tmp/mac-qa-mm-17.png' })
+      ok('⑰ 다른 맥 답 대기 — 목록 배지 · 독 배지 1 · 왼쪽 아래 «다른 맥 1»') }
+
+    // ㉑ 맥마다 창 하나(설정) — 고르면 그 맥 창이 따로 뜨고 창마다 제목이 맥 이름
+    { const wins = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed() && !w.isAlwaysOnTop()).map((w) => ({ title: w.getTitle(), url: w.webContents.getURL() })))
+      if ((await page.evaluate(() => window.folderbotDesktop.macs.mode())) !== 'same') await fail('㉑ 기본 «맥 바꾸는 방식» 이 «같은 창» 이 아니다')
+      await page.evaluate(() => window.folderbotDesktop.macs.setMode('window'))
+      await page.evaluate((id) => window.folderbotDesktop.macs.switchTo(id), B.id)
+      let ws = []; for (let i = 0; i < 80; i++) { ws = await wins(); if (ws.length === 2 && ws.some((w) => w.url.startsWith(urlB) && w.title === 'Folder Bot — 집 미니')) break; await wait(250) }
+      if (ws.length !== 2) await fail('㉑ 맥마다 창인데 창이 둘이 아니다 · ' + JSON.stringify(ws))
+      if (!ws.some((w) => w.url.startsWith(base) && /^Folder Bot — /.test(w.title) && !/집 미니/.test(w.title))) await fail('㉑ «이 맥» 창 제목이 그 맥 이름이 아니다 · ' + JSON.stringify(ws))
+      if (!page.url().startsWith(base)) await fail('㉑ 맥마다 창인데 원래 창이 다른 맥으로 바뀌었다 · ' + page.url())
+      ok('㉑ 맥마다 창 하나 — B 를 고르면 «Folder Bot — 집 미니» 창이 따로 · 원래 창은 «이 맥» 그대로')
+      // ㉒ 다른 맥 알림 클릭 — 그 맥 창이 앞으로, 그 자리로 · 원래 창의 자리는 그대로
+      const hashA = await page.evaluate(() => location.hash)
+      await page.evaluate(() => window.folderbotDesktop.macs.switchTo('local'))
+      await app.evaluate((_e, id) => global.__fbSwitchTo(id, 'notify=1'), B.id)
+      let front = ''; for (let i = 0; i < 40; i++) { front = await app.evaluate(() => global.__fbFrontMac()); if (front === B.id) break; await wait(250) }
+      if (front !== B.id) await fail('㉒ 다른 맥 알림을 눌렀는데 그 맥 창이 앞으로 안 왔다 · ' + front)
+      let hb = ''; for (let i = 0; i < 40 && !/notify=1/.test(hb); i++) { hb = (await wins()).find((w) => w.url.startsWith(urlB))?.url || ''; await wait(250) }
+      if (!/notify=1/.test(hb)) await fail('㉒ 그 맥 창이 알림의 자리로 안 갔다 · ' + hb)
+      if ((await page.evaluate(() => location.hash)) !== hashA) await fail('㉒ 원래 창의 자리가 바뀌었다')
+      ok('㉒ 다른 맥 알림 — 그 맥 창이 앞으로 · 그 자리로 · 원래 창은 그대로')
+      // ㉓ 같은 창으로 되돌리기 — 앞 창(«이 맥») 하나만 남고 배지는 그대로
+      await page.evaluate(() => window.folderbotDesktop.macs.switchTo('local'))
+      for (let i = 0; i < 20 && (await app.evaluate(() => global.__fbFrontMac())) !== 'local'; i++) await wait(250)
+      const badge0 = await app.evaluate(({ app }) => (app.dock ? app.dock.getBadge() : ''))
+      await page.evaluate(() => window.folderbotDesktop.macs.setMode('same'))
+      for (let i = 0; i < 40 && (await wins()).length !== 1; i++) await wait(250)
+      ws = await wins(); if (ws.length !== 1 || !ws[0].url.startsWith(base)) await fail('㉓ 같은 창으로 돌렸는데 «이 맥» 창 하나만 남지 않았다 · ' + JSON.stringify(ws))
+      if ((await app.evaluate(({ app }) => (app.dock ? app.dock.getBadge() : ''))) !== badge0) await fail('㉓ 모드를 바꿨더니 배지가 바뀌었다')
+      ok('㉓ 같은 창으로 되돌리기 — 앞 창 하나만 · 배지 그대로') }
+
+    // ⑲ 옛 판 — B 가 전환기를 모르는 판이면 창 제목 끝에 안내
+    await stopB(); await startB({ FOLDERBOT_QA_OLD_HEALTH: '1' })
+    await page.evaluate((id) => window.folderbotDesktop.macs.switchTo(id), B.id).catch(() => {})
+    try { await page.waitForURL((u) => String(u).startsWith(urlB), { timeout: 20000 }) } catch { await fail('⑲ 옛 판 B 로 안 갔다 · ' + page.url()) }
+    { let w = null; for (let i = 0; i < 40; i++) { w = await mainWin(); if (/\(옛 판 — 맥 메뉴로 바꾸세요\)$/.test(w?.title || '')) break; await wait(250) }
+      if (!/\(옛 판 — 맥 메뉴로 바꾸세요\)$/.test(w?.title || '')) await fail('⑲ 옛 판인데 창 제목 안내가 없다 · ' + JSON.stringify(w)) }
+    ok('⑲ 옛 판 맥 — 창 제목 끝에 «(옛 판 — 맥 메뉴로 바꾸세요)»')
+
+    // ⑳ 꺼진 맥 — 빈 창이 아니라 연결 화면의 그 맥 줄
+    await page.evaluate(() => window.folderbotDesktop.macs.switchTo('local')).catch(() => {})
+    try { await page.waitForURL((u) => String(u).startsWith(base), { timeout: 20000 }) } catch { await fail('⑳ «이 맥» 으로 안 돌아왔다') }
+    await stopB(); await wait(1500)
+    await page.evaluate((id) => window.folderbotDesktop.macs.switchTo(id), B.id).catch(() => {})
+    try { await page.waitForURL((u) => /connect\.html/.test(String(u)), { timeout: 20000 }) } catch { await fail('⑳ 꺼진 맥을 골랐는데 연결 화면으로 안 갔다 · ' + page.url()) }
+    { let t = ''; for (let i = 0; i < 40 && !/닿지 않음/.test(t); i++) { t = await page.$eval('.row.focus', (e) => e.textContent).catch(() => ''); await wait(250) }
+      if (!/닿지 않음/.test(t)) await fail('⑳ 연결 화면의 그 맥 줄에 «닿지 않음» 이 없다 · ' + t) }
+    await page.screenshot({ path: 'test/tmp/mac-qa-mm-20.png' })
+    ok('⑳ 꺼진 맥 — 연결 화면의 그 맥 줄 «닿지 않음» (빈 창 아님)')
+  } finally { await stopB() }
+}
+
 await cleanup()
 process.exit(0)
