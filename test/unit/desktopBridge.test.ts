@@ -67,3 +67,14 @@ describe('여러 맥 — 맥 메뉴 · 통로 · 연결 화면', () => {
     expect(c).toContain('folderbotDesktop.macs'); expect(c).toContain('id="code"'); expect(c).toContain('새 맥 추가')
   })
 })
+
+/** 여러 맥 — 최종 검토(11/19)에서 고친 것들. 셸 코드는 실 앱 밖에서 못 돌려 글로 못 박는다(실 앱은 qa:mac) */
+describe('여러 맥 — 검토 뒤 고친 것', () => {
+  const code = read('main.js').split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n')
+  it('토큰 사본은 열쇠고리(safeStorage)가 아니라 0600 파일 — 임시 서명이라 판마다 열쇠고리 창이 뜬다', () => { expect(code).not.toMatch(/safeCodec\(/); expect(code).toMatch(/createTokenStore\(.*plainCodec\)/) })
+  it('로그아웃(빈 토큰)은 그 맥 토큰을 지운다 — 첫 로드(#token=)는 빼고', () => { const h = code.split('\n').find((l) => l.includes("ipcMain.on('fb:token'")) || ''; expect(h).toMatch(/tokens\.del\(m\.id\)/); expect(h).toMatch(/token=/) })
+  it('원격 맥은 열기 전에 시한 있는 확인부터 — 꺼진 맥에 75초 매달리지 않게', () => expect(code).toMatch(/AbortSignal\.timeout\(/))
+  it('아무도 안 쓰는 folderbot-connect:// 길이 없다', () => expect(code).not.toMatch(/folderbot-connect:\/\//))
+  it('맥 추가·빼기는 연결 화면(file://)에서 온 요청만', () => { for (const ch of ['fb:macs-add', 'fb:macs-remove']) expect(code.split('\n').find((l) => l.includes(`ipcMain.handle('${ch}'`)) || '').toMatch(/fromConnect\(e\)/) })
+  it('호스트는 SSE 에 심박을 보내고 헬스에 호스트 id 를 싣는다', () => { const g = readFileSync(join(process.cwd(), 'src/host/gateway.ts'), 'utf8'); expect(g).toContain("': ping\\n\\n'"); expect(g).toMatch(/hostId:/) })
+})

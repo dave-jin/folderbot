@@ -13,7 +13,7 @@ const { pickBounds } = require('./winBounds')
 const { clampZoom, stepZoom, zoomPct } = require('./zoom')
 const { externalOk } = require('./extern')
 const macsLib = require('./macs')
-const { createTokenStore, plainCodec, safeCodec } = require('./tokenStore')
+const { createTokenStore, plainCodec } = require('./tokenStore')
 const { createLinks } = require('./macLinks')
 const macWindows = require('./macWindows')
 const LOCAL = macsLib.LOCAL_ID
@@ -50,7 +50,9 @@ const save = () => { try { mkdirSync(app.getPath('userData'), { recursive: true 
 const newMacId = () => require('node:crypto').randomBytes(4).toString('hex')
 let tokenMove = null
 { const r = macsLib.migrate(settings, newMacId); settings.macs = r.macs; settings.activeMac = r.activeMac; tokenMove = r.moveToken || null }
-const tokens = createTokenStore(join(app.getPath('userData'), 'mac-tokens.json'), process.env.FOLDERBOT_QA === '1' ? plainCodec : safeCodec(require('electron').safeStorage))
+// 🔴 열쇠고리(safeStorage)를 쓰지 않는다(11/19 검토) — 이 앱은 임시 서명(ad-hoc)이라 판마다 열쇠고리 접근 허용이 어긋나 업데이트 뒤 첫 실행마다
+//    «login 키체인 암호» 창이 떴다. 같은 토큰이 같은 userData 의 화면 저장소(Local Storage)에 평문으로 있어 얻는 것도 없다 — 0600 파일로 둔다
+const tokens = createTokenStore(join(app.getPath('userData'), 'mac-tokens.json'), plainCodec)
 const macList = () => settings.macs || []
 const activeMac = () => macList().find((m) => m.id === settings.activeMac) || macList()[0] || null
 const macUrl = (m) => (m ? String(m.url).replace(/\/$/, '') : '')
@@ -172,20 +174,34 @@ function loadHome() {
  * 토큰이 없으면 지금처럼 그냥 연다 — 그 맥 화면이 스스로 페어링을 묻고 `fb:token` 으로 알려 준다.
  * ⚠ 열지 못하면 빈 창이 아니라 연결 화면의 그 맥 줄로(`?focus=`) — 다른 맥을 고를 수 있게.
  */
-function openConnect(focusId) { if (!win) return; win.loadFile(join(__dirname, 'connect.html'), focusId ? { query: { focus: focusId } } : undefined) }
-function loadMac(mac, hash) {
+function openConnect(focusId, w = win) { if (!w || w.isDestroyed()) return; w.loadFile(join(__dirname, 'connect.html'), focusId ? { query: { focus: focusId } } : undefined) }
+let loadSeq = 0
+/**
+ * 🔴 원격 맥은 열기 전에 3초 시한으로 `/api/health` 부터 묻는다(11/19 검토) — Tailscale 에서 꺼진 맥은 패킷이 버려져 연결이 75초 걸리고,
+ *    앱을 켤 때는 창이 `ready-to-show` 까지 안 떠서 «앱이 안 켜진다» 로 보였다. 대답이 없으면 바로 연결 화면의 그 맥 줄로.
+ * ⚠ 연달아 바꾸면(⌃⌘숫자 연타) 앞 로딩이 ERR_ABORTED 로 끊긴다 — 그건 실패가 아니다(`macs.loadFallback` · 순번 `loadSeq`).
+ */
+async function loadMac(mac, hash) {
   if (!win) return
+  const w = win, seq = ++loadSeq
   applyTitle()
-  if (!mac) { openConnect(); return }
-  if (mac.id === LOCAL && !hostRun) { openConnect(mac.id); return }
+  if (!mac) { openConnect(undefined, w); return }
+  if (mac.id === LOCAL && !hostRun) { openConnect(mac.id, w); return }
+  if (mac.id !== LOCAL) {
+    let ok = false
+    try { const r = await fetch(`${macUrl(mac)}/api/health`, { cache: 'no-store', signal: AbortSignal.timeout(3000) }); const j = await r.json(); ok = !!j.ok; noteHealth(mac, j) } catch {}
+    if (seq !== loadSeq || w.isDestroyed()) return
+    if (!ok) { openConnect(mac.id, w); return }
+  }
   const t = tokenOf(mac.id)
-  win.loadURL(withHash(t ? `${macUrl(mac)}/#token=${encodeURIComponent(t)}` : macUrl(mac), hash)).catch(() => openConnect(mac.id))
-  if (mac.id !== LOCAL) void checkOld(mac)
+  w.loadURL(withHash(t ? `${macUrl(mac)}/#token=${encodeURIComponent(t)}` : macUrl(mac), hash)).catch((e) => { if (macsLib.loadFallback(e, seq, loadSeq) && !w.isDestroyed()) openConnect(mac.id, w) })
 }
-/** 옛 판 맥 — 전환기를 그리지 못하는 판이면 창 제목에 «맥 메뉴로 바꾸세요» 를 붙인다(`/api/health.macSwitcher`) */
+/** 옛 판 맥 — 전환기를 그리지 못하는 판이면 창 제목에 «맥 메뉴로 바꾸세요» 를 붙인다(`/api/health.macSwitcher`). 호스트 id 도 여기서 적어 둔다 */
 const oldMac = {}
-async function checkOld(mac) {
-  try { const r = await fetch(`${macUrl(mac)}/api/health`); const j = await r.json(); const old = j.macSwitcher !== true; if (oldMac[mac.id] !== old) { oldMac[mac.id] = old; applyTitle(); refreshMacs() } } catch {}
+function noteHealth(mac, j) {
+  const old = j.macSwitcher !== true
+  if (j.hostId && mac.hostId !== j.hostId) putMacs(macsLib.setSeen(macList(), mac.id, { hostId: String(j.hostId) }))
+  if (oldMac[mac.id] !== old) { oldMac[mac.id] = old; applyTitle(); refreshMacs() }
 }
 function applyTitle(w) {
   for (const x of w ? [w] : allWins()) {
@@ -206,7 +222,7 @@ function switchTo(id, hash) {
   if (settings.switchMode === 'window') {
     settings.activeMac = id; save()
     const w = wins.get(id)
-    if (w && !w.isDestroyed()) { win = w; showWin(); if (hash) navigate(`#${hash}`) }
+    if (w && !w.isDestroyed()) { win = w; showWin(); if (macWindows.needsReload(w.webContents.getURL(), macUrl(m))) loadMac(m, hash || m.lastHash); else if (hash) navigate(`#${hash}`) } // 그 창이 연결 화면에 가 있으면 다시 연다
     else { pendingNav = hash || m.lastHash || null; createWin(id); showWin() }
     recount(); void pollUsage(); return
   }
@@ -231,7 +247,7 @@ function macsView() {
 let macsSig = ''
 function refreshMacs() {
   const v = macsView(); const sig = JSON.stringify(v.map((x) => [x.id, x.name, x.state, x.waiting, x.active, x.old]))
-  for (const w of allWins()) { try { w.webContents.send('fb:macs', v) } catch {} }
+  for (const w of allWins()) { try { w.webContents.send('fb:macs', macsLib.viewFor(v, viewIdOf(w))) } catch {} } // 맥마다 창 — 창마다 «지금» 은 그 창의 맥
   pushTrayState()
   if (sig !== macsSig) { macsSig = sig; try { Menu.setApplicationMenu(appMenu()) } catch {} }
 }
@@ -292,7 +308,7 @@ ipcMain.handle('fb:host-available', () => hostAvailable())
 // connect.html 이 주소를 확인하면 folderbot-connect://<url> 로 알려 준다
 app.on('web-contents-created', (_e, wc) => {
   wc.on('will-navigate', (e, url) => {
-    if (url.startsWith('folderbot-connect://')) { e.preventDefault(); const r = macsLib.addMac(macList(), decodeURIComponent(url.slice('folderbot-connect://'.length)), newMacId); putMacs(r.macs); settings.activeMac = r.mac.id; save(); loadHome(); startSse(); return }
+    // ⛔ 옛 `folderbot-connect://<주소>` 길은 지웠다(11/19 검토) — 연결 화면이 더는 안 쓰는데 봇 답 속 링크 하나로 아무 주소나 맥 목록에 영구로 들어갈 수 있었다
     // 🔴 **바깥 링크는 바깥에서 연다.** `setWindowOpenHandler` 는 `target=_blank` 만 받는다 —
     //    답변 속 평범한 `<a href>` 는 **창을 통째로** 그 사이트로 끌고 가서 앱이 그 자리에서 사라진다
     //    (뒤로 갈 길도 없다). 우리 화면(호스트 주소·file://)만 남기고 나머지 http(s) 는 기본 브라우저로.
@@ -446,7 +462,8 @@ ipcMain.handle('fb:update-check', async () => { await updater.check(true); retur
 ipcMain.on('fb:update-apply', () => { updater.apply() })
 ipcMain.handle('fb:update-dawn', (_e, on) => updater.dawn(!!on))
 // ── 여러 맥 — 통로 (preload `folderbotDesktop.macs`) ──
-ipcMain.handle('fb:macs-list', () => macsView())
+const viewIdOf = (w) => (settings.switchMode === 'window' && w ? winMac.get(w) || settings.activeMac : settings.activeMac)
+ipcMain.handle('fb:macs-list', (e) => macsLib.viewFor(macsView(), viewIdOf(BrowserWindow.fromWebContents(e.sender))))
 ipcMain.handle('fb:macs-mode', () => settings.switchMode || 'same')
 ipcMain.handle('fb:macs-set-mode', (_e, m) => setSwitchMode(String(m)))
 /** 설정 › 일반 «맥 바꾸는 방식» — 같은 창으로 되돌리면 앞 창 하나만 남긴다(`macWindows.frontAfterModeChange`) */
@@ -469,8 +486,10 @@ function setSwitchMode(m) {
 ipcMain.on('fb:macs-switch', (_e, id) => switchTo(String(id)))
 ipcMain.on('fb:macs-manage', () => { showWin(); openConnect() })
 ipcMain.handle('fb:macs-tailnet', () => tailnetState())
-ipcMain.handle('fb:macs-add', (_e, url, code) => addMacFlow(String(url || ''), String(code || '')))
-ipcMain.handle('fb:macs-remove', async (_e, id) => {
+/** 맥 목록을 바꾸는 통로는 연결 화면(file://connect.html)에서 온 요청만 받는다 — 원격 맥 화면(남의 웹)이 목록을 고치지 못하게 */
+const fromConnect = (e) => { try { return new URL(e.sender.getURL()).protocol === 'file:' } catch { return false } }
+ipcMain.handle('fb:macs-add', (e, url, code) => (fromConnect(e) ? addMacFlow(String(url || ''), String(code || '')) : { ok: false, error: '연결 화면에서만 맥을 더할 수 있어요' }))
+ipcMain.handle('fb:macs-remove', async (e, id) => { if (!fromConnect(e)) return
   id = String(id); if (id === LOCAL) return
   const m = macList().find((x) => x.id === id); if (!m) return
   putMacs(macsLib.removeMac(macList(), id)); tokens.del(id); delete offline[id]; delete oldMac[id]
@@ -487,8 +506,11 @@ ipcMain.handle('fb:macs-remove', async (_e, id) => {
 async function addMacFlow(rawUrl, code) {
   const url = macsLib.normUrl(rawUrl)
   if (!url) return { ok: false, error: '주소를 넣어 주세요' }
-  try { const r = await fetch(url + '/api/health', { cache: 'no-store' }); const j = await r.json(); if (!j.ok) throw new Error('health') }
+  let hostId = ''
+  try { const r = await fetch(url + '/api/health', { cache: 'no-store', signal: AbortSignal.timeout(5000) }); const j = await r.json(); if (!j.ok) throw new Error('health'); hostId = String(j.hostId || '') }
   catch { return { ok: false, error: '호스트에 닿지 못했어요. 그 맥에서 Folder Bot 이 켜져 있고, 이 맥의 Tailscale 이 켜져 있는지 확인하세요.' } }
+  // 같은 맥을 다른 주소로 또 붙이려는지 — 페어링 **앞에서** 본다(뒤에서 보면 막을 때마다 상대 기기 목록에 빈 줄이 남는다)
+  { const same = macList().find((m) => macsLib.normUrl(m.url) === url); const dup = macsLib.findDuplicate(macList(), same ? same.id : '', hostId); if (dup) return { ok: false, error: `이미 목록에 있는 맥이에요(${macsLib.displayName(macList(), dup)})` } }
   let token = ''
   try {
     const r = await fetch(url + '/api/pair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: code.trim(), device: require('node:os').hostname().replace(/\.local$/, '') }) })
@@ -498,10 +520,8 @@ async function addMacFlow(rawUrl, code) {
   if (!token) return { ok: false, error: '페어링에 실패했어요 — 잠시 뒤 다시 해 보세요' }
   let name = '', version = ''
   try { const r = await fetch(url + '/api/state', { headers: { authorization: `Bearer ${token}` } }); const j = await r.json(); name = String(j.hostName || ''); version = String(j.version || '') } catch {}
-  const { macs, mac, existed } = macsLib.addMac(macList(), url, newMacId)
-  const dup = existed ? null : macsLib.findDuplicate(macs, mac.id, name, version)
-  if (dup) return { ok: false, error: `이미 목록에 있는 맥이에요(${macsLib.displayName(macList(), dup)})` }
-  putMacs(macsLib.setSeen(macs, mac.id, { name, version, lastSeen: Date.now(), auth: 'ok' }))
+  const { macs, mac } = macsLib.addMac(macList(), url, newMacId)
+  putMacs(macsLib.setSeen(macs, mac.id, { name, version, hostId, lastSeen: Date.now(), auth: 'ok' }))
   tokens.set(mac.id, token)
   startSse(); switchTo(mac.id)
   return { ok: true, id: mac.id }
@@ -516,7 +536,9 @@ function tailnetState() {
   }))
 }
 ipcMain.on('fb:change-host', () => { showWin(); openConnect() }) // 여러 맥 — 토큰을 지우지 않는다. 연결 화면(맥 목록)으로
-ipcMain.on('fb:token', (e, token) => { const sw = BrowserWindow.fromWebContents(e.sender); const m = (sw && macList().find((x) => x.id === winMac.get(sw))) || activeMac(); if (!m || m.id === LOCAL || typeof token !== 'string' || !token) return; try { if (new URL(e.sender.getURL()).origin !== new URL(macUrl(m)).origin) return } catch { return } if (token !== tokens.get(m.id)) { tokens.set(m.id, token); startSse(); refreshMacs() } })
+// 빈 토큰 = 그 화면이 로그아웃했거나 401 을 받았다 → 그 맥 토큰을 지운다(11/19 검토 — 종전엔 무시해서 로그아웃이 다음 실행에 되살아났다).
+// ⚠ 첫 로드(주소에 `#token=` 이 실려 있다)의 빈 값은 화면이 아직 토큰을 못 넣은 것이라 빼고 본다
+ipcMain.on('fb:token', (e, token) => { const sw = BrowserWindow.fromWebContents(e.sender); const m = (sw && macList().find((x) => x.id === winMac.get(sw))) || activeMac(); if (!m || m.id === LOCAL || typeof token !== 'string') return; let u; try { u = new URL(e.sender.getURL()); if (u.origin !== new URL(macUrl(m)).origin) return } catch { return } if (!token) { if (!/(^#|&)token=/.test(u.hash) && tokens.get(m.id)) { tokens.del(m.id); startSse(); refreshMacs() } return } if (token !== tokens.get(m.id)) { tokens.set(m.id, token); startSse(); refreshMacs() } })
 
 // ── 트레이 (폴더봇 · 표정 = 합친 상태 · 배지 = 확인 대기 수) ──
 /**

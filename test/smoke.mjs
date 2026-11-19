@@ -8199,6 +8199,8 @@ try {
   {
     const hh = await (await fetch(base + '/api/health')).json()
     if (hh.macSwitcher !== true) fail('MM-0: /api/health 에 macSwitcher 가 없다 — 맥 앱이 모든 맥을 «옛 판» 으로 본다')
+    if (!/^[0-9a-f]{16}$/.test(String(hh.hostId))) fail('MM-0: /api/health 에 호스트 id(16자리)가 없다 — 이름이 같은 두 맥을 못 가른다 · ' + hh.hostId)
+    if (JSON.stringify(hh).includes(String((await api('/state')).hostName))) fail('MM-0: 인증 없는 /api/health 에 맥 이름이 실렸다')
     const { chromium } = await import('playwright-core')
     const br = await chromium.launch({ executablePath: PW_CHROMIUM, args: ['--no-sandbox'] })
     const stub = (macs) => {

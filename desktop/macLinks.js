@@ -11,6 +11,11 @@ const https = require('node:https')
 
 function createLinks(opt) {
   const retryMs = opt.retryMs ?? 5000
+  // 🔴 말없이 끊긴 연결(정전·망 끊김 — FIN 이 안 온다)을 알아챈다(11/19 검토). 호스트는 25초마다 «: ping» 을 보낸다.
+  //    심박을 한 번이라도 받은 연결만 idleMs 동안 조용하면 끊는다 — 심박을 모르는 옛 호스트는 조용해도 정상이다.
+  const idleMs = opt.idleMs ?? 90000
+  // 대답 없는 주소(Tailscale 에서 꺼진 맥은 패킷이 버려져 TCP 가 75초 걸린다) — 머리말이 이 안에 안 오면 «닿지 않음»
+  const connectMs = opt.connectMs ?? 8000
   const links = new Map() // id → { url, token, req, timer, states: Map, reach: bool|null, auth: bool, dead: bool }
   const mod = (url) => (url.startsWith('https') ? https : http)
 
@@ -46,21 +51,27 @@ function createLinks(opt) {
   function open(L, id) {
     if (L.dead) return
     const req = mod(L.url).get(L.url + '/api/events', { headers: { authorization: `Bearer ${L.token}`, accept: 'text/event-stream' } }, (res) => {
+      req.setTimeout(0)
       if (res.statusCode === 401) { res.resume(); lost(L, id); return }
       if (res.statusCode !== 200) { res.resume(); setReach(L, id, false); retry(L, id); return }
       setReach(L, id, true)
-      let buf = ''; res.setEncoding('utf8')
+      let buf = '', pinged = false, idle = null
+      const kick = () => { clearTimeout(idle); if (pinged && !L.dead) idle = setTimeout(() => { try { req.destroy() } catch {} }, idleMs) }
+      res.setEncoding('utf8')
       res.on('data', (d) => {
+        if (!pinged && d.includes(': ping')) pinged = true
+        kick()
         buf += d; let i
         while ((i = buf.indexOf('\n\n')) >= 0) {
           const c = buf.slice(0, i); buf = buf.slice(i + 2)
           for (const l of c.split('\n')) if (l.startsWith('data: ')) { try { onFrame(L, id, JSON.parse(l.slice(6))) } catch {} }
         }
       })
-      const down = () => { if (L.req !== req || L.dead) return; setReach(L, id, false); retry(L, id) }
+      const down = () => { clearTimeout(idle); if (L.req !== req || L.dead) return; setReach(L, id, false); retry(L, id) }
       res.on('end', down); res.on('error', down); res.on('close', down)
       syncState(L, id)
     })
+    req.setTimeout(connectMs, () => { try { req.destroy(new Error('connect timeout')) } catch {} })
     req.on('error', () => { if (L.req !== req || L.dead) return; setReach(L, id, false); retry(L, id) })
     L.req = req
   }

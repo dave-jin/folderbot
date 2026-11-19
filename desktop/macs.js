@@ -40,7 +40,15 @@ function addMac(macs, url, newId) {
 }
 const removeMac = (macs, id) => (id === LOCAL_ID ? macs : macs.filter((m) => m.id !== id))
 const setSeen = (macs, id, patch) => macs.map((m) => (m.id === id ? { ...m, ...patch } : m))
-const findDuplicate = (macs, id, name, version) => macs.find((m) => m.id !== id && !!name && m.name === name && m.version === version) || null
+/**
+ * 같은 맥인가 — 호스트 id(`/api/health.hostId` · 호스트 VAPID 공개 키의 지문)로 가른다. 🔴 이름·판으로 가르면 기본 이름(«Mac mini»)이 같은
+ * 서로 다른 맥 둘 중 하나를 못 붙였다(11/19 최종 검토). id 를 모르는 옛 판 호스트는 가르지 않는다(주소 같음만 `addMac` 이 본다).
+ */
+const findDuplicate = (macs, id, hostId) => (hostId ? macs.find((m) => m.id !== id && m.hostId === hostId) || null : null)
+/** 맥을 열다 실패했을 때 연결 화면으로 보낼까 — 연달아 바꿔 앞 로딩이 끊긴 것(ERR_ABORTED)이나 더 새 로딩이 시작된 옛 실패는 무시한다 */
+const loadFallback = (err, mySeq, curSeq) => mySeq === curSeq && !(err && (err.errno === -3 || err.code === 'ERR_ABORTED'))
+/** 맥마다 창 모드 — 창마다 «지금» 은 그 창의 맥이다 */
+const viewFor = (view, id) => view.map((x) => ({ ...x, active: x.id === id }))
 const ordered = (macs) => [...macs.filter((m) => m.id === LOCAL_ID), ...macs.filter((m) => m.id !== LOCAL_ID)]
 
 /** 이름이 겹치면 주소의 첫 마디(IP 면 IP 전체)를 괄호로 붙인다 */
@@ -63,4 +71,4 @@ function trayMacId(macs, activeId, reachable) {
 }
 const offlineDue = (since, alerted, now) => !alerted && now - since >= OFFLINE_ALERT_MS
 
-module.exports = { LOCAL_ID, OFFLINE_ALERT_MS, normUrl, migrate, addMac, removeMac, setSeen, findDuplicate, ordered, displayName, noteTitle, winTitle, trayMacId, offlineDue }
+module.exports = { LOCAL_ID, OFFLINE_ALERT_MS, normUrl, migrate, addMac, removeMac, setSeen, findDuplicate, loadFallback, viewFor, ordered, displayName, noteTitle, winTitle, trayMacId, offlineDue }

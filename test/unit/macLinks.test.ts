@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net'
 
 type Mac = { id: string; url: string }
 type Links = { sync(macs: Mac[], tokenOf: (id: string) => string): void; waiting(id: string): number; working(id: string): number; busy(id: string): number; reachable(id: string): boolean; stopAll(): void }
-type Opt = { onChange(id: string): void; onNotify(id: string, n: Record<string, unknown>): void; onReach(id: string, ok: boolean): void; onAuthLost(id: string): void; onState(id: string, st: Record<string, unknown>): void; retryMs?: number }
+type Opt = { onChange(id: string): void; onNotify(id: string, n: Record<string, unknown>): void; onReach(id: string, ok: boolean): void; onAuthLost(id: string): void; onState(id: string, st: Record<string, unknown>): void; retryMs?: number; idleMs?: number; connectMs?: number }
 const require_ = createRequire(import.meta.url)
 const { createLinks } = require_('../../desktop/macLinks.js') as { createLinks: (o: Opt) => Links }
 
@@ -83,5 +83,28 @@ describe('macLinks', () => {
     links = createLinks(r.o); links.sync([{ id: 'A', url: A.url }], () => 'TA')
     await until(() => r.states.length > 0)
     expect(r.states[0]).toEqual(['A', { hostName: '집 미니', version: '0.3.9' }])
+  })
+})
+
+describe('macLinks — 말없이 끊긴 연결', () => {
+  it('심박(: ping)을 보내던 맥이 조용해지면 끊고 다시 붙는다', async () => {
+    const A = await fake('TA'); servers.push(A); const r = rec(); r.o.idleMs = 200
+    links = createLinks(r.o); links.sync([{ id: 'A', url: A.url }], () => 'TA')
+    await until(() => A.open.size === 1)
+    for (const x of A.open) x.write(': ping\n\n')
+    await until(() => r.ev.includes('reach:A:false'), 3000)
+    await until(() => A.hits.events >= 2, 3000)
+  })
+  it('심박을 모르는 옛 호스트는 조용해도 끊지 않는다', async () => {
+    const A = await fake('TA'); servers.push(A); const r = rec(); r.o.idleMs = 150
+    links = createLinks(r.o); links.sync([{ id: 'A', url: A.url }], () => 'TA')
+    await until(() => A.open.size === 1); await new Promise((x) => setTimeout(x, 500))
+    expect(A.hits.events).toBe(1); expect(links.reachable('A')).toBe(true)
+  })
+  it('대답 없는 주소(패킷이 버려지는 꺼진 맥)는 시한 안에 «닿지 않음»', async () => {
+    const srv = createServer(() => { /* 머리말을 영영 안 보낸다 */ }); await new Promise<void>((x) => srv.listen(0, '127.0.0.1', () => x()))
+    const url = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`; const r = rec(); r.o.connectMs = 200; r.o.retryMs = 10000
+    links = createLinks(r.o); links.sync([{ id: 'Z', url }], () => 'T')
+    try { await until(() => r.ev.includes('reach:Z:false'), 2000) } finally { links.stopAll(); links = null; srv.closeAllConnections?.(); srv.close() }
   })
 })

@@ -356,7 +356,15 @@ console.log('\n🍎 맥 QA 통과')
     // ⑨ 가 창을 1000px 로 줄여 둬 사이드바가 접혀 있다 — 전환기(사이드바 왼쪽 아래)가 보이는 넓은 폭으로 되돌린다(접힌 폭에서는 «맥» 메뉴·⌃⌘숫자가 길이다)
     await app.evaluate(({ BrowserWindow }) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isAlwaysOnTop()) w.setBounds({ x: 60, y: 60, width: 1320, height: 820 }) }); await wait(800)
     // ⑯ 맥 추가 → B 로 바뀜(창 제목 · 전환기) → «이 맥» 으로 돌아와도 다시 페어링 없음
-    await page.evaluate(([u, c]) => window.folderbotDesktop.macs.add(u, c), [urlB, code]).catch(() => {}) // 성공하면 창이 B 로 바뀌며 이 문맥이 사라진다
+    // 🔴 맥 화면(호스트가 내려준 웹)에서는 맥 목록을 못 고친다 — 연결 화면(file://)에서 온 요청만 받는다(11/19 검토)
+    { const r = await page.evaluate(([u, c]) => window.folderbotDesktop.macs.add(u, c), [urlB, code]).catch((e) => ({ ok: true, error: String(e) }))
+      if (r.ok) await fail('⑯ 맥 화면에서 맥 추가가 받아들여졌다 · ' + JSON.stringify(r)) }
+    // 실제 흐름 — 전환기 «＋ 맥 추가» → 연결 화면 → 주소 + 코드. 연결 화면은 file:// 이라 Playwright page 가 놓칠 수 있어 셸에서 그 창에 직접 부른다
+    await page.evaluate(() => window.folderbotDesktop.macs.manage())
+    { let w = null; for (let i = 0; i < 40; i++) { w = await mainWin(); if (/connect\.html/.test(w?.url || '')) break; await wait(250) }
+      if (!/connect\.html/.test(w?.url || '')) await fail('⑯ «맥 추가» 가 연결 화면을 안 열었다 · ' + JSON.stringify(w)) }
+    await wait(500)
+    await app.evaluate(({ BrowserWindow }, [u, c]) => { const w = BrowserWindow.getAllWindows().find((x) => !x.isAlwaysOnTop()); return w.webContents.executeJavaScript(`window.folderbotDesktop.macs.add(${JSON.stringify(u)}, ${JSON.stringify(c)})`).catch(() => null) }, [urlB, code])
     try { await page.waitForURL((u) => String(u).startsWith(urlB), { timeout: 20000 }) } catch { await fail('⑯ 맥을 추가했는데 창이 B 로 안 갔다 · ' + page.url()) }
     await page.waitForSelector('.app', { timeout: 20000 }).catch(() => fail('⑯ B 화면(.app)이 안 떴다'))
     await page.waitForSelector('button.mac-sw', { timeout: 10000 }).catch(() => fail('⑯ B 화면에 전환기 단추가 없다'))

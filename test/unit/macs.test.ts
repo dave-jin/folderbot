@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { createRequire } from 'node:module'
 
-type Mac = { id: string; url: string; name: string; lastSeen: number; lastHash: string; openMode: '' | 'sync' | 'download'; vaultLocal: string; local?: true; version?: string; auth?: 'ok' | 'lost' }
+type Mac = { id: string; url: string; name: string; hostId?: string; lastSeen: number; lastHash: string; openMode: '' | 'sync' | 'download'; vaultLocal: string; local?: true; version?: string; auth?: 'ok' | 'lost' }
 const require_ = createRequire(import.meta.url)
 const M = require_('../../desktop/macs.js') as {
   LOCAL_ID: string
@@ -10,7 +10,9 @@ const M = require_('../../desktop/macs.js') as {
   addMac: (macs: Mac[], url: string, newId: () => string) => { macs: Mac[]; mac: Mac; existed: boolean }
   removeMac: (macs: Mac[], id: string) => Mac[]
   setSeen: (macs: Mac[], id: string, p: Partial<Mac>) => Mac[]
-  findDuplicate: (macs: Mac[], id: string, name: string, version: string) => Mac | null
+  findDuplicate: (macs: Mac[], id: string, hostId: string) => Mac | null
+  loadFallback: (err: { errno?: number; code?: string } | null, mySeq: number, curSeq: number) => boolean
+  viewFor: <T extends { id: string; active: boolean }>(view: T[], id: string) => T[]
   ordered: (macs: Mac[]) => Mac[]
   displayName: (macs: Mac[], mac: Mac) => string
   noteTitle: (macs: Mac[], mac: Mac, title: string) => string
@@ -65,10 +67,15 @@ describe('macs — 목록', () => {
     const out = M.setSeen(macs, 'a1', { name: '집 미니', version: '0.3.9', lastSeen: 5 })
     expect(out[0]).toMatchObject({ name: '집 미니', version: '0.3.9', lastSeen: 5 }); expect(macs[0].name).toBe('A')
   })
-  it('같은 이름·판의 다른 줄을 찾는다', () => {
-    const macs = [mk('a1', '집 미니', undefined, { version: '0.3.9' }), mk('b2', '', 'http://100.71.156.11:7373')]
-    expect(M.findDuplicate(macs, 'b2', '집 미니', '0.3.9')?.id).toBe('a1')
-    expect(M.findDuplicate(macs, 'a1', '집 미니', '0.3.9')).toBeNull()
+  it('같은 호스트 id 의 다른 줄을 찾는다(주소 모양이 달라도)', () => {
+    const macs = [mk('a1', '집 미니', undefined, { hostId: 'h1' }), mk('b2', '', 'http://100.71.156.11:7373')]
+    expect(M.findDuplicate(macs, 'b2', 'h1')?.id).toBe('a1')
+    expect(M.findDuplicate(macs, 'a1', 'h1')).toBeNull()
+  })
+  it('이름·판이 같아도 호스트 id 가 다르면 다른 맥(기본 이름 «Mac mini» 둘)', () => {
+    const macs = [mk('a1', 'Mac mini', undefined, { hostId: 'h1', version: '0.3.9' })]
+    expect(M.findDuplicate(macs, 'b2', 'h2')).toBeNull()
+    expect(M.findDuplicate(macs, 'b2', '')).toBeNull()
   })
   it('«이 맥» 이 맨 앞', () => {
     const macs = [mk('a1', 'A'), mk('b2', 'B'), mk('local', 'L', 'http://127.0.0.1:7373', { local: true })]
@@ -105,5 +112,18 @@ describe('macs — 트레이 맥 · 끊김 알림', () => {
     expect(M.offlineDue(0, false, 299999)).toBe(false)
     expect(M.offlineDue(0, false, 300000)).toBe(true)
     expect(M.offlineDue(0, true, 999999)).toBe(false)
+  })
+})
+
+describe('macs — 바꾸는 중 실패 · 창마다 지금 맥', () => {
+  it('연달아 바꿔 앞 로딩이 끊긴 것(ERR_ABORTED)은 연결 화면으로 안 보낸다', () => {
+    expect(M.loadFallback({ errno: -3, code: 'ERR_ABORTED' }, 1, 1)).toBe(false)
+    expect(M.loadFallback({ code: 'ERR_ABORTED' }, 1, 1)).toBe(false)
+  })
+  it('더 새 로딩이 시작됐으면 옛 실패는 무시', () => expect(M.loadFallback({ errno: -102, code: 'ERR_CONNECTION_REFUSED' }, 1, 2)).toBe(false))
+  it('마지막 로딩이 진짜로 실패하면 연결 화면', () => expect(M.loadFallback({ errno: -102, code: 'ERR_CONNECTION_REFUSED' }, 2, 2)).toBe(true))
+  it('창마다 «지금» 은 그 창의 맥', () => {
+    const v = [{ id: 'A', active: true }, { id: 'B', active: false }]
+    expect(M.viewFor(v, 'B').map((x) => x.active)).toEqual([false, true]); expect(v[0].active).toBe(true)
   })
 })

@@ -27,4 +27,9 @@ function boundsFor(winByMac, id, displays) {
   return pickBounds(moved, displays)
 }
 
-module.exports = { frontAfterModeChange, trayOpenTarget, boundsFor }
+/** 맥마다 창 — 그 맥 창이 연결 화면(file://)이나 다른 주소에 가 있으면 다시 연다(앞으로 가져오기만 하면 빠져나올 길이 없었다 · 11/19 검토) */
+function needsReload(winUrl, macUrl) {
+  try { return new URL(winUrl).origin !== new URL(macUrl).origin } catch { return true }
+}
+
+module.exports = { frontAfterModeChange, trayOpenTarget, boundsFor, needsReload }

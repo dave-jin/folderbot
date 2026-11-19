@@ -222,7 +222,7 @@ export class Gateway {
     const mAsk = /^\/api\/bridges\/([a-z0-9-]+)\/ask$/.exec(p)
     if (mAsk && req.method === 'POST') return this.bridgeAsk(mAsk[1], req, res, json, body)
     // ③ 승인을 기다리는 연결 채널 세션 수와 가장 오래 선 시간 — 이름은 안 낸다(인증 없는 창구다). 감시기가 이것을 본다
-    if (p === '/api/health') return json(200, { ok: true, name: 'folderbot', version: this.host.version, macSwitcher: process.env.FOLDERBOT_QA_OLD_HEALTH !== '1' /* 여러 맥 — 맥 앱이 «옛 판» 을 가른다. 끄는 변수는 QA 전용 */, stallMs: this.stall.maxMs, channelWaits: this.host.sessions.channelWaits(), pushSubs: this.host.notifier.subsView().length, lastPush: this.host.notifier.lastPush })
+    if (p === '/api/health') return json(200, { ok: true, name: 'folderbot', version: this.host.version, macSwitcher: process.env.FOLDERBOT_QA_OLD_HEALTH !== '1' /* 여러 맥 — 맥 앱이 «옛 판» 을 가른다. 끄는 변수는 QA 전용 */, hostId: this.hostId() /* 같은 맥을 다른 주소로 두 번 붙이지 않게 — VAPID 공개 키 지문(비밀 아님) */, stallMs: this.stall.maxMs, channelWaits: this.host.sessions.channelWaits(), pushSubs: this.host.notifier.subsView().length, lastPush: this.host.notifier.lastPush })
     if (p === '/api/pair' && req.method === 'POST') {
       const b = await body()
       const code = String(b.code ?? ''); const device = String(b.device ?? 'device').slice(0, 40)
@@ -312,7 +312,9 @@ export class Gateway {
       res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no' })
       res.write(`data: ${JSON.stringify({ ev: 'hello', version: h.version, serverTime: Date.now(), build: this.clientBuild() } satisfies Frame)}\n\n`)
       const c: Client = { res, device }; this.clients.add(c)
-      req.on('close', () => this.clients.delete(c))
+      // 여러 맥 (11/19 검토) — 25초 심박. 맥 앱은 심박이 끊기면 말없이 끊긴 연결로 보고 다시 붙는다(`desktop/macLinks.js`). 주석 줄이라 화면 파서는 무시한다
+      const ping = setInterval(() => { try { res.write(': ping\n\n') } catch { /* 닫힌 연결 */ } }, 25_000)
+      req.on('close', () => { clearInterval(ping); this.clients.delete(c) })
       return
     }
     // ── 연결(Bridge) 화면 — 레일 «연결» 절 · 편지 스레드 · 새 연결 마법사 (BQ-9 · BQ-10) ──
@@ -1212,6 +1214,9 @@ export class Gateway {
     if (body && enc) { res.writeHead(200, { ...head, 'content-encoding': enc }); res.end(body); return }
     res.writeHead(200, head); res.end(ent.raw)
   }
+  /** 여러 맥 — 이 호스트의 변하지 않는 지문. 이름·판은 맥마다 겹치므로 같은 맥 판정은 이것으로 한다 */
+  private hostIdMemo = ''
+  private hostId(): string { if (!this.hostIdMemo) { try { this.hostIdMemo = createHash('sha256').update(String(this.host.notifier.vapidPublic())).digest('hex').slice(0, 16) } catch { /* 키가 아직 없다 */ } } return this.hostIdMemo }
   stop(): void { for (const s of this.servers) s.close() }
 }
 
