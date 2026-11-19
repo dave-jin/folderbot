@@ -12,6 +12,10 @@ const { folderIcon } = require('./trayIcon')
 const { pickBounds } = require('./winBounds')
 const { clampZoom, stepZoom, zoomPct } = require('./zoom')
 const { externalOk } = require('./extern')
+const macsLib = require('./macs')
+const { createTokenStore, plainCodec, safeCodec } = require('./tokenStore')
+const { createLinks } = require('./macLinks')
+const LOCAL = macsLib.LOCAL_ID
 
 /**
  * 🔴 **AO · 두 손가락 쓸기로 앞뒤 페이지에 가지 않는다** (2026-09-24 Dave: *«왼쪽 혹은 오른쪽으로 쓸기에서
@@ -36,8 +40,24 @@ const SETTINGS = () => join(app.getPath('userData'), 'settings.json')
 let settings = { mode: '', hostUrl: '', token: '', loginItem: false, root: '', port: 7373, openMode: '', vaultLocal: '' }
 try { settings = { ...settings, ...JSON.parse(readFileSync(SETTINGS(), 'utf8')) } } catch {}
 const save = () => { try { mkdirSync(app.getPath('userData'), { recursive: true }); writeFileSync(SETTINGS(), JSON.stringify(settings, null, 2)) } catch {} }
+/**
+ * 🔴 여러 맥 (2026-11-19 · 첫 외부 고객: «늘 켜 둔 맥 여러 대를 오가고 싶다») — 셸은 이제 «호스트 하나» 가 아니라
+ *    맥 목록(`settings.macs`)과 지금 맥(`settings.activeMac`)을 본다. 옛 `hostUrl`·`token` 은 처음 한 번 옮겨 담고(`macs.migrate`)
+ *    다시 읽지 않는다 — 파일에는 되돌리기용으로 남는다. 토큰은 맥별로 `mac-tokens.json`(safeStorage 암호화)에 둔다.
+ *    «이 맥»(호스트 모드)의 토큰은 저장하지 않고 늘 `hostRun.gateway.localToken()` 에서 꺼낸다.
+ */
+const newMacId = () => require('node:crypto').randomBytes(4).toString('hex')
+let tokenMove = null
+{ const r = macsLib.migrate(settings, newMacId); settings.macs = r.macs; settings.activeMac = r.activeMac; tokenMove = r.moveToken || null }
+const tokens = createTokenStore(join(app.getPath('userData'), 'mac-tokens.json'), process.env.FOLDERBOT_QA === '1' ? plainCodec : safeCodec(require('electron').safeStorage))
+const macList = () => settings.macs || []
+const activeMac = () => macList().find((m) => m.id === settings.activeMac) || macList()[0] || null
+const macUrl = (m) => (m ? String(m.url).replace(/\/$/, '') : '')
+function tokenOf(id) { if (id === LOCAL) return hostRun ? hostRun.gateway.localToken() : ''; return tokens.get(id) }
+function putMacs(next) { settings.macs = next; save() }
+function patchActive(p) { const m = activeMac(); if (m) putMacs(macsLib.setSeen(macList(), m.id, p)) }
 
-let win = null, tray = null, sse = null, waiting = 0, mood = 'idle', pendingNav = null
+let win = null, tray = null, waiting = 0, mood = 'idle', pendingNav = null
 let hostRun = null, pairing = null
 const moodTitle = { idle: '', work: '', wait: '', done: '', error: '', sleep: '' }
 
@@ -101,7 +121,9 @@ function createWin() {
   win.on('resize', later); win.on('move', later)
   win.on('close', () => { clearTimeout(bt); remember() })
   win.on('closed', () => { win = null })
-  win.on('focus', () => { try { win.webContents.send('fb:perms', perms.list({ host: settings.mode === 'host', openMode: settings.openMode })) } catch {} })
+  // 여러 맥 — 맥이 2대 이상이면 창 제목에 맥 이름(⌘Tab·Mission Control 에서도 어느 맥인지). 1대면 화면 제목 그대로
+  win.on('page-title-updated', (e) => { if (macList().length > 1) { e.preventDefault(); applyTitle() } })
+  win.on('focus', () => { try { win.webContents.send('fb:perms', perms.list({ host: settings.mode === 'host', openMode: (activeMac() || {}).openMode })) } catch {} })
   // 🔴 새 창 요청은 웹·메일·전화 주소만 바깥으로 넘긴다(`extern.js`) — 문서 창 html 보기(격리 틀) 안의 글도 이 문을 지난다
   win.webContents.setWindowOpenHandler(({ url }) => { if (externalOk(url)) shell.openExternal(url); return { action: 'deny' } })
   win.webContents.on('did-finish-load', applyZoom)   // BP · 새로 읽을 때마다 저장된 배율을 다시 건다
@@ -121,9 +143,64 @@ function zoomBy(dir) {
 function loadHome() {
   // 알림으로 창을 새로 띄웠으면 목적지를 첫 URL 에 함께 싣는다 — 토큰 리로드와 경합하지 않는다(`nav.js`)
   const nav = pendingNav; pendingNav = null
-  if (settings.mode === 'host' && hostRun) { win.loadURL(withHash(`${settings.hostUrl}/#token=${encodeURIComponent(hostRun.gateway.localToken())}`, nav)).catch(() => {}); return }
-  if (!settings.hostUrl) { win.loadFile(join(__dirname, 'connect.html')); return }
-  win.loadURL(withHash(settings.hostUrl, nav)).catch(() => win.loadFile(join(__dirname, 'connect.html')))
+  loadMac(activeMac(), nav)
+}
+/**
+ * 여러 맥 — 그 맥의 화면을 연다. 토큰이 있으면 `#token=` 으로 함께 싣는다(화면이 떼고 한 번 다시 읽는다 · 주소별 localStorage 와 맞춘다).
+ * 토큰이 없으면 지금처럼 그냥 연다 — 그 맥 화면이 스스로 페어링을 묻고 `fb:token` 으로 알려 준다.
+ * ⚠ 열지 못하면 빈 창이 아니라 연결 화면의 그 맥 줄로(`?focus=`) — 다른 맥을 고를 수 있게.
+ */
+function openConnect(focusId) { if (!win) return; win.loadFile(join(__dirname, 'connect.html'), focusId ? { query: { focus: focusId } } : undefined) }
+function loadMac(mac, hash) {
+  if (!win) return
+  applyTitle()
+  if (!mac) { openConnect(); return }
+  if (mac.id === LOCAL && !hostRun) { openConnect(mac.id); return }
+  const t = tokenOf(mac.id)
+  win.loadURL(withHash(t ? `${macUrl(mac)}/#token=${encodeURIComponent(t)}` : macUrl(mac), hash)).catch(() => openConnect(mac.id))
+  if (mac.id !== LOCAL) void checkOld(mac)
+}
+/** 옛 판 맥 — 전환기를 그리지 못하는 판이면 창 제목에 «맥 메뉴로 바꾸세요» 를 붙인다(`/api/health.macSwitcher`) */
+const oldMac = {}
+async function checkOld(mac) {
+  try { const r = await fetch(`${macUrl(mac)}/api/health`); const j = await r.json(); const old = j.macSwitcher !== true; if (oldMac[mac.id] !== old) { oldMac[mac.id] = old; applyTitle(); refreshMacs() } } catch {}
+}
+function applyTitle() {
+  const m = activeMac()
+  if (!win || win.isDestroyed() || !m || macList().length < 2) return
+  win.setTitle(macsLib.winTitle(macList(), m, !!oldMac[m.id]))
+}
+/**
+ * 여러 맥 — 맥 바꾸기. 지금 맥에서 보던 자리(hash)를 그 줄에 남기고, 창 제목을 먼저 바꾸고, 화면에 «옮기는 중» 을 알린 뒤 연다.
+ * `hash` 를 주면(알림 클릭) 그곳으로, 아니면 그 맥에서 마지막으로 보던 자리로.
+ */
+function switchTo(id, hash) {
+  const m = macList().find((x) => x.id === id)
+  if (!m) return
+  const cur = activeMac()
+  if (cur && win && !win.isDestroyed()) { try { const h = new URL(win.webContents.getURL()).hash.replace(/^#/, ''); if (h && !/(^|&)token=/.test(h)) putMacs(macsLib.setSeen(macList(), cur.id, { lastHash: h })) } catch {} }
+  settings.activeMac = id; save()
+  const target = hash !== undefined ? hash : (macList().find((x) => x.id === id) || {}).lastHash
+  if (!win) { pendingNav = target || null; showWin() }
+  else { showWin(); applyTitle(); try { win.webContents.send('fb:cmd', `moving:${macsLib.displayName(macList(), m)}`) } catch {} loadMac(m, target) }
+  recount(); void pollUsage()
+}
+/** preload·트레이·메뉴가 같이 쓰는 맥 목록 한 장 */
+function macsView() {
+  const all = macList()
+  return macsLib.ordered(all).map((m, i) => ({
+    id: m.id, name: macsLib.displayName(all, m), url: m.url, local: !!m.local,
+    state: links.authLost(m.id) ? 'auth' : links.reachable(m.id) ? 'on' : 'off',
+    waiting: links.waiting(m.id), working: links.working(m.id), lastSeen: m.lastSeen || 0,
+    active: m.id === settings.activeMac, shortcut: i < 9 ? i + 1 : 0, old: !!oldMac[m.id]
+  }))
+}
+let macsSig = ''
+function refreshMacs() {
+  const v = macsView(); const sig = JSON.stringify(v.map((x) => [x.id, x.name, x.state, x.waiting, x.active, x.old]))
+  try { win?.webContents.send('fb:macs', v) } catch {}
+  pushTrayState()
+  if (sig !== macsSig) { macsSig = sig; try { Menu.setApplicationMenu(appMenu()) } catch {} }
 }
 
 // ── 호스트 모드: 이 맥(미니)에서 호스트를 앱 안에서 띄운다 — GUI 앱이라 claude 가 키체인을 읽는다 ──
@@ -142,7 +219,10 @@ async function startHostMode(root) {
   const mod = await import(pathToFileURL(HOST_BUNDLE).href)
   // BX · 업데이트 손잡이를 호스트에 넘긴다 — 원격 화면(폰·맥북)이 이 맥의 «새벽 4시에 적용» 을 걸고 풀 수 있게(`/api/update/dawn`)
   hostRun = await mod.startHost({ root, port: settings.port || 7373, webRoot: HOST_CLIENT, log: (m) => console.log('[host]', m), onRoot: (r) => switchRoot(r), update: { state: () => updater.state(), dawn: (on) => updater.dawn(!!on) } })
-  settings.mode = 'host'; settings.root = root; settings.hostUrl = `http://127.0.0.1:${settings.port || 7373}`; settings.token = hostRun.gateway.localToken(); save()
+  settings.mode = 'host'; settings.root = root
+  { const url = `http://127.0.0.1:${settings.port || 7373}`
+    putMacs(macList().some((m) => m.id === LOCAL) ? macsLib.setSeen(macList(), LOCAL, { url, local: true }) : [{ id: LOCAL, url, name: '', lastSeen: 0, lastHash: '', openMode: '', vaultLocal: '', local: true }, ...macList()])
+    if (!settings.activeMac) { settings.activeMac = LOCAL; save() } }
   pairing = hostRun.gateway.openPairing()
   startSse(); refreshTray(); startUsagePoll()
   return hostRun
@@ -160,7 +240,7 @@ async function switchRoot(root) {
   if (!root) return
   try { hostRun?.stop() } catch { /* 이미 내려갔으면 그만 */ }
   hostRun = null
-  try { await startHostMode(root); if (!settings.loginItem) { settings.loginItem = true; save(); app.setLoginItemSettings({ openAtLogin: true, openAsHidden: true }) } showWin(); loadHome() }
+  try { await startHostMode(root); settings.activeMac = LOCAL; save(); if (!settings.loginItem) { settings.loginItem = true; save(); app.setLoginItemSettings({ openAtLogin: true, openAsHidden: true }) } showWin(); loadHome() }
   catch (e) { dialog.showErrorBox('메인을 못 띄웠어요', String(e && e.message || e)) }
 }
 /**
@@ -179,7 +259,7 @@ ipcMain.handle('fb:host-available', () => hostAvailable())
 // connect.html 이 주소를 확인하면 folderbot-connect://<url> 로 알려 준다
 app.on('web-contents-created', (_e, wc) => {
   wc.on('will-navigate', (e, url) => {
-    if (url.startsWith('folderbot-connect://')) { e.preventDefault(); settings.hostUrl = decodeURIComponent(url.slice('folderbot-connect://'.length)); settings.token = ''; save(); loadHome(); startSse(); return }
+    if (url.startsWith('folderbot-connect://')) { e.preventDefault(); const r = macsLib.addMac(macList(), decodeURIComponent(url.slice('folderbot-connect://'.length)), newMacId); putMacs(r.macs); settings.activeMac = r.mac.id; save(); loadHome(); startSse(); return }
     // 🔴 **바깥 링크는 바깥에서 연다.** `setWindowOpenHandler` 는 `target=_blank` 만 받는다 —
     //    답변 속 평범한 `<a href>` 는 **창을 통째로** 그 사이트로 끌고 가서 앱이 그 자리에서 사라진다
     //    (뒤로 갈 길도 없다). 우리 화면(호스트 주소·file://)만 남기고 나머지 http(s) 는 기본 브라우저로.
@@ -193,10 +273,10 @@ app.on('web-contents-created', (_e, wc) => {
   })
 })
 // 권한 — 목록 · 설정 창 · 사용자 대답 · 테스트 알림 · 다시 시작
-ipcMain.handle('fb:perm-list', () => perms.list({ host: settings.mode === 'host', openMode: settings.openMode }))
+ipcMain.handle('fb:perm-list', () => perms.list({ host: settings.mode === 'host', openMode: (activeMac() || {}).openMode }))
 ipcMain.handle('fb:perm-open', (_e, id) => perms.openPane(id))
-ipcMain.handle('fb:perm-ack', (_e, id, ok) => { perms.setAck(id, !!ok); return perms.list({ host: settings.mode === 'host', openMode: settings.openMode }) })
-ipcMain.handle('fb:perm-reset', () => { perms.resetAcks(); return perms.list({ host: settings.mode === 'host', openMode: settings.openMode }) })
+ipcMain.handle('fb:perm-ack', (_e, id, ok) => { perms.setAck(id, !!ok); return perms.list({ host: settings.mode === 'host', openMode: (activeMac() || {}).openMode }) })
+ipcMain.handle('fb:perm-reset', () => { perms.resetAcks(); return perms.list({ host: settings.mode === 'host', openMode: (activeMac() || {}).openMode }) })
 ipcMain.handle('fb:perm-test', () => perms.sendTest())
 ipcMain.on('fb:perm-relaunch', () => perms.relaunch())
 /**
@@ -216,20 +296,21 @@ ipcMain.handle('fb:pdf', async (_e, name) => {
  * 이 기기의 파일 (E · 2026-09-19) — 원격 화면의 «Finder 에서 보기 · 열기» 가 **이 기기에서** 되게 한다.
  * 판정은 desktop/localfs.js, 화면은 결과만. 여는 것은 shell 뿐이고 경로는 화면이 준 그대로다(볼트 안으로 좁히는 것은 화면 쪽 계약).
  */
-const localSettings = () => ({ openMode: settings.openMode || '', vaultLocal: settings.vaultLocal || '' })
+const localSettings = () => { const m = activeMac() || {}; return { openMode: m.openMode || '', vaultLocal: m.vaultLocal || '' } } // 여러 맥 — 맥마다 볼트가 다르니 맥마다
 ipcMain.handle('fb:local-settings', () => localSettings())
-ipcMain.handle('fb:local-set', (_e, p) => { if (p && typeof p.openMode === 'string') settings.openMode = p.openMode; if (p && typeof p.vaultLocal === 'string') settings.vaultLocal = p.vaultLocal; save(); try { win?.webContents.send('fb:perms', perms.list({ host: settings.mode === 'host', openMode: settings.openMode })) } catch {} return localSettings() })
+ipcMain.handle('fb:local-set', (_e, p) => { if (p && typeof p.openMode === 'string') patchActive({ openMode: p.openMode }); if (p && typeof p.vaultLocal === 'string') patchActive({ vaultLocal: p.vaultLocal }); try { win?.webContents.send('fb:perms', perms.list({ host: settings.mode === 'host', openMode: (activeMac() || {}).openMode })) } catch {} return localSettings() })
 ipcMain.handle('fb:local-detect', (_e, hostRoot) => { try { return localfs.detect(String(hostRoot || '')) } catch { return [] } })
 ipcMain.handle('fb:local-stat', (_e, p) => localfs.stat(String(p)))
 ipcMain.handle('fb:local-open', (_e, p) => shell.openPath(String(p)))
 ipcMain.handle('fb:local-reveal', (_e, p) => { shell.showItemInFolder(String(p)); return '' })
 ipcMain.handle('fb:local-wait', (_e, p, want, ms) => localfs.waitFor(String(p), want || {}, Number(ms) || 60000))
-ipcMain.handle('fb:local-download', (_e, url, hostName, rel) => localfs.download(String(url), { authorization: `Bearer ${settings.token}` }, localfs.cachePath(app.getPath('userData'), String(hostName || 'host'), String(rel))))
+ipcMain.handle('fb:local-download', (_e, url, hostName, rel) => localfs.download(String(url), { authorization: `Bearer ${curToken()}` }, localfs.cachePath(app.getPath('userData'), (activeMac() || {}).id || 'host', String(rel))))
 ipcMain.handle('fb:local-icloud', (_e, p) => localfs.icloudDownload(String(p)))
 /* ── M · 복사 · 진행 있는 받기 · 캐시 ────────────────────────────────────────
  * 이미지는 nativeImage 로 클립보드에(메모·슬랙에 ⌘V). 파일은 macOS 파일 클립보드(NSFilenamesPboardType plist) — Finder ⌘V 로 복사되고
  * 카톡 입력창에 붙이면 첨부가 된다. 원격이면 먼저 캐시에 받은 사본의 경로를 넣는다. */
 const CACHE_DIR = () => join(app.getPath('userData'), 'remote-cache')
+const curToken = () => { const m = activeMac(); return m ? tokenOf(m.id) : '' }
 const CACHE_LIMIT = 2 * 1024 * 1024 * 1024
 /**
  * 🔴 **복사는 «썼다» 가 아니라 «읽힌다» 로 판정한다** (2026-09-21 Dave 실기기 보고: *«다 안되는거 같아»*).
@@ -261,7 +342,7 @@ ipcMain.handle('fb:local-copy-image', async (_e, a) => {
     let img = null, from = ''
     if (a && a.path && existsSync(String(a.path))) { img = nativeImage.createFromPath(String(a.path)); from = 'path' }
     if ((!img || img.isEmpty()) && a && a.url) {
-      const r = await fetch(String(a.url), { headers: { authorization: `Bearer ${settings.token}` } })
+      const r = await fetch(String(a.url), { headers: { authorization: `Bearer ${curToken()}` } })
       if (!r.ok) return { ok: false, why: `메인에서 그림을 못 받았어요 (HTTP ${r.status})` }
       img = nativeImage.createFromBuffer(Buffer.from(await r.arrayBuffer())); from = 'url'
     }
@@ -316,14 +397,14 @@ ipcMain.handle('fb:copy-diag', async (_e, p) => {
 })
 const fetches = new Map()
 ipcMain.handle('fb:local-fetch', async (e, id, url, hostName, rel) => {
-  const dest = localfs.cachePath(app.getPath('userData'), String(hostName || 'host'), String(rel))
+  const dest = localfs.cachePath(app.getPath('userData'), (activeMac() || {}).id || 'host', String(rel)) // 여러 맥 — 맥 이름이 아니라 맥 id 로 나눈다(이름은 바뀌고 겹친다)
   const ac = new AbortController(); fetches.set(String(id), ac)
   const send = (o) => { try { e.sender.send('fb:local-progress', { id: String(id), ...o }) } catch {} }
-  try { const p = await localfs.downloadStream(String(url), { authorization: `Bearer ${settings.token}` }, dest, (pr) => send(pr), ac.signal); localfs.cacheEvict(CACHE_DIR(), CACHE_LIMIT); return p }
+  try { const p = await localfs.downloadStream(String(url), { authorization: `Bearer ${curToken()}` }, dest, (pr) => send(pr), ac.signal); localfs.cacheEvict(CACHE_DIR(), CACHE_LIMIT); return p }
   finally { fetches.delete(String(id)) }
 })
 ipcMain.handle('fb:local-cancel', (_e, id) => { const ac = fetches.get(String(id)); if (ac) ac.abort(); return !!ac })
-ipcMain.handle('fb:local-cache-path', (_e, hostName, rel) => localfs.cachePath(app.getPath('userData'), String(hostName || 'host'), String(rel)))
+ipcMain.handle('fb:local-cache-path', (_e, _hostName, rel) => localfs.cachePath(app.getPath('userData'), (activeMac() || {}).id || 'host', String(rel)))
 ipcMain.handle('fb:local-cache-info', () => ({ ...localfs.cacheInfo(CACHE_DIR()), limit: CACHE_LIMIT }))
 ipcMain.handle('fb:local-cache-clear', () => ({ ...localfs.cacheClear(CACHE_DIR()), limit: CACHE_LIMIT }))
 ipcMain.handle('fb:local-pick', async () => { if (!win) return ''; const r = await dialog.showOpenDialog(win, { title: '이 기기의 볼트 폴더', properties: ['openDirectory'] }); return r.canceled ? '' : (r.filePaths[0] || '') })
@@ -331,8 +412,8 @@ ipcMain.handle('fb:update-state', () => updater.state())
 ipcMain.handle('fb:update-check', async () => { await updater.check(true); return updater.state() })
 ipcMain.on('fb:update-apply', () => { updater.apply() })
 ipcMain.handle('fb:update-dawn', (_e, on) => updater.dawn(!!on))
-ipcMain.on('fb:change-host', () => { settings.mode = ''; settings.hostUrl = ''; settings.token = ''; save(); stopSse(); if (win) loadHome() })
-ipcMain.on('fb:token', (_e, token) => { if (typeof token === 'string' && token !== settings.token) { settings.token = token; save(); startSse() } })
+ipcMain.on('fb:change-host', () => { showWin(); openConnect() }) // 여러 맥 — 토큰을 지우지 않는다. 연결 화면(맥 목록)으로
+ipcMain.on('fb:token', (e, token) => { const m = activeMac(); if (!m || m.id === LOCAL || typeof token !== 'string' || !token) return; try { if (new URL(e.sender.getURL()).origin !== new URL(macUrl(m)).origin) return } catch { return } if (token !== tokens.get(m.id)) { tokens.set(m.id, token); startSse(); refreshMacs() } })
 
 // ── 트레이 (폴더봇 · 표정 = 합친 상태 · 배지 = 확인 대기 수) ──
 /**
@@ -421,10 +502,12 @@ function appMenu() {
  */
 const TRAY_W = 320
 let panel = null
+/** 여러 맥 — 사용량·트레이 패널은 지금 맥 기준. 닿지 않으면 «이 맥» → 닿는 첫 맥(`macs.trayMacId`) */
+function trayMac() { const r = {}; for (const m of macList()) r[m.id] = links.reachable(m.id); const id = macsLib.trayMacId(macList(), settings.activeMac, r); return macList().find((m) => m.id === id) || null }
 function trayPanelUrl() {
-  if (!settings.hostUrl) return null
-  const t = settings.mode === 'host' && hostRun ? hostRun.gateway.localToken() : settings.token
-  return `${settings.hostUrl.replace(/\/$/, '')}/tray.html${t ? `#token=${encodeURIComponent(t)}` : ''}`
+  const m = trayMac(); if (!m) return null
+  const t = tokenOf(m.id)
+  return `${macUrl(m)}/tray.html${t ? `#token=${encodeURIComponent(t)}` : ''}`
 }
 function trayPanel() {
   if (panel && !panel.isDestroyed()) return panel
@@ -445,7 +528,8 @@ function trayState() {
   const u = updater.state()
   return {
     waiting, mood, mode: settings.mode, root: settings.root,
-    hostLabel: settings.hostUrl ? settings.hostUrl.replace(/^https?:\/\//, '') : '',
+    hostLabel: (() => { const m = trayMac(); return m ? macsLib.displayName(macList(), m) : '' })(),
+    macs: macsView(),
     pairing: pairing && Date.now() < pairing.expiresAt ? { code: pairing.code, expiresAt: pairing.expiresAt } : null,
     update: { current: u.current, downloading: u.downloading, staged: u.staged ?? null },
     loginItem: settings.loginItem
@@ -479,9 +563,10 @@ ipcMain.on('fb:tray-act', (_e, id) => {
   if (id === 'notify') { hide(); showWin(); try { win.webContents.send('fb:cmd', 'notify') } catch { navigate('#notify=1') } return }
   if (id === 'pairing') { copyPair(pairing && Date.now() < pairing.expiresAt ? pairing : newPairing()); hide(); return }
   if (id === 'pairing-new') { copyPair(newPairing()); hide(); return }
-  if (id === 'copy-addr') { const urls = hostRun ? hostRun.urls.filter((u) => !u.includes('127.0.0.1')) : []; clipboard.writeText(urls[0] || settings.hostUrl); new Notification({ title: 'Folder Bot', body: urls[0] ? `${urls[0]} 복사됨 (같은 Tailscale)` : 'Tailscale 주소가 아직 없어요 — Tailscale 을 켜세요' }).show(); hide(); return }
+  if (id === 'copy-addr') { const urls = hostRun ? hostRun.urls.filter((u) => !u.includes('127.0.0.1')) : []; clipboard.writeText(urls[0] || macUrl(activeMac())); new Notification({ title: 'Folder Bot', body: urls[0] ? `${urls[0]} 복사됨 (같은 Tailscale)` : 'Tailscale 주소가 아직 없어요 — Tailscale 을 켜세요' }).show(); hide(); return }
   if (id === 'change-root') { hide(); void chooseRootAndStart(); return }
-  if (id === 'change-host') { hide(); settings.mode = ''; settings.hostUrl = ''; settings.token = ''; save(); stopSse(); showWin(); loadHome(); return }
+  if (id === 'change-host' || id === 'mac-add') { hide(); showWin(); openConnect(); return }
+  if (typeof id === 'string' && id.startsWith('mac:')) { hide(); switchTo(id.slice(4)); return }
   if (id === 'update-check') { void updater.check(true); pushTrayState(); return }
   if (id === 'update-apply') { hide(); updater.apply(); return }
   if (id === 'login-toggle') { settings.loginItem = !settings.loginItem; save(); app.setLoginItemSettings({ openAtLogin: settings.loginItem, openAsHidden: true }); pushTrayState(); return }
@@ -499,11 +584,11 @@ function trayMenu() {
       { label: `이 맥이 메인 · ${settings.root}`, enabled: false },
       { label: pairing && Date.now() < pairing.expiresAt ? `페어링 코드 ${pairing.code} (클릭해 복사)` : '페어링 코드 만들기', click: () => { const p = pairing && Date.now() < pairing.expiresAt ? pairing : newPairing(); if (p) { clipboard.writeText(p.code); new Notification({ title: 'Folder Bot 페어링 코드', body: `${p.code} · 2분 안에 폰·맥북에서 입력` }).show() } } },
       { label: '새 페어링 코드', click: () => { const p = newPairing(); if (p) { clipboard.writeText(p.code); new Notification({ title: 'Folder Bot 페어링 코드', body: `${p.code} · 복사됨` }).show() } } },
-      { label: '폰에서 열 주소 복사', click: () => { const urls = hostRun ? hostRun.urls.filter((u) => !u.includes('127.0.0.1')) : []; clipboard.writeText(urls[0] || settings.hostUrl); new Notification({ title: 'Folder Bot', body: urls[0] ? `${urls[0]} 복사됨 (같은 Tailscale)` : 'Tailscale 주소가 아직 없어요 — Tailscale 을 켜세요' }).show() } },
+      { label: '폰에서 열 주소 복사', click: () => { const urls = hostRun ? hostRun.urls.filter((u) => !u.includes('127.0.0.1')) : []; clipboard.writeText(urls[0] || macUrl(activeMac())); new Notification({ title: 'Folder Bot', body: urls[0] ? `${urls[0]} 복사됨 (같은 Tailscale)` : 'Tailscale 주소가 아직 없어요 — Tailscale 을 켜세요' }).show() } },
       { label: '루트 폴더 바꾸기…', click: () => { void chooseRootAndStart() } }
     ] : [
-      { label: settings.hostUrl ? `메인 · ${settings.hostUrl.replace(/^https?:\/\//, '')}` : '메인 없음', enabled: false },
-      { label: '메인 바꾸기…', click: () => { settings.mode = ''; settings.hostUrl = ''; settings.token = ''; save(); stopSse(); showWin(); loadHome() } }
+      { label: activeMac() ? `메인 · ${macUrl(activeMac()).replace(/^https?:\/\//, '')}` : '메인 없음', enabled: false },
+      { label: '메인 바꾸기…', click: () => { showWin(); openConnect() } }
     ]),
     { type: 'separator' },
     ...(() => { const u = updater.state(); return u.staged?.ready ? [{ label: `v${u.staged.version} 업데이트 적용 (재시작)`, click: () => updater.apply() }] : u.downloading ? [{ label: `업데이트 받는 중 ${Math.round((u.staged?.progress || 0) * 100)}%`, enabled: false }] : [{ label: `업데이트 확인 (v${u.current})`, click: () => void updater.check(true) }] })(),
@@ -519,9 +604,10 @@ function trayMenu() {
 let usage = null
 async function pollUsage() {
   try {
-    const base = settings.mode === 'host' ? (hostRun ? hostRun.urls[0] : null) : settings.hostUrl
-    if (!base) return
-    const r = await fetch(base.replace(/\/$/, '') + '/api/usage', { headers: settings.token ? { authorization: `Bearer ${settings.token}` } : {} })
+    const m = trayMac(); if (!m) return
+    const base = m.id === LOCAL && hostRun ? hostRun.urls[0] : macUrl(m)
+    const t = tokenOf(m.id)
+    const r = await fetch(base.replace(/\/$/, '') + '/api/usage', { headers: t ? { authorization: `Bearer ${t}` } : {} })
     if (!r.ok) return
     const j = await r.json()
     usage = j && Array.isArray(j.tools) && j.tools.length ? j : null
@@ -568,46 +654,37 @@ function refreshTray() {
   pushTrayState() // ⚠ 패널이 떠 있으면 «한가함 → 일하는 중» 이 그 자리에서 바뀌어야 한다
 }
 
-// ── 호스트 SSE — 알림·배지의 단일 소스 ──
-function stopSse() { try { sse?.destroy() } catch {} sse = null }
-function startSse() {
-  stopSse()
-  if (!settings.hostUrl || !settings.token) return
-  const mod = settings.hostUrl.startsWith('https') ? https : http
-  const req = mod.get(settings.hostUrl + '/api/events', { headers: { authorization: `Bearer ${settings.token}`, accept: 'text/event-stream' } }, (res) => {
-    if (res.statusCode !== 200) { res.resume(); setTimeout(startSse, 5000); return }
-    let buf = ''
-    res.setEncoding('utf8')
-    res.on('data', (d) => { buf += d; let i; while ((i = buf.indexOf('\n\n')) >= 0) { const c = buf.slice(0, i); buf = buf.slice(i + 2); for (const l of c.split('\n')) if (l.startsWith('data: ')) { try { onFrame(JSON.parse(l.slice(6))) } catch {} } } })
-    res.on('end', () => setTimeout(startSse, 3000)); res.on('error', () => setTimeout(startSse, 5000))
-    void syncState()
-  })
-  req.on('error', () => setTimeout(startSse, 8000))
-  sse = req
+// ── 맥마다 연결(SSE) — 알림·배지의 단일 소스 (여러 맥 2026-11-19 · `macLinks.js`) ──
+// 메뉴 막대 숫자·독 배지 = 모든 맥의 답 대기 합. 보고 있지 않은 맥도 연결을 열어 둔다 — 다른 맥 봇이 승인을 기다리면 놓치지 않게.
+const macAuth = {}
+const offline = {} // id → { since, alerted } — 5분 넘게 끊기면 한 번만 알린다(`macs.offlineDue`)
+const links = createLinks({
+  onChange: () => recount(),
+  onNotify: (id, n) => { const m = macList().find((x) => x.id === id); notify(m ? { ...n, title: macsLib.noteTitle(macList(), m, n.title) } : n, id) },
+  onReach: (id, ok) => { if (ok) delete offline[id]; else if (!offline[id]) offline[id] = { since: Date.now(), alerted: false }; refreshMacs() },
+  onAuthLost: () => refreshMacs(),
+  onState: (id, st) => { macAuth[id] = st.auth || ''; if (macList().some((m) => m.id === id)) putMacs(macsLib.setSeen(macList(), id, { name: st.hostName || '', version: st.version || '', lastSeen: Date.now(), auth: 'ok' })); applyTitle(); recount() }
+})
+function startSse() { links.sync(macList(), tokenOf); refreshMacs() }
+function recount() {
+  let w = 0, work = 0
+  for (const m of macList()) { w += links.waiting(m.id); work += links.working(m.id) }
+  const a = activeMac(); const bad = a && (macAuth[a.id] === 'unreadable' || macAuth[a.id] === 'loggedout')
+  waiting = w; mood = w ? 'wait' : work ? 'work' : bad ? 'error' : 'idle'
+  refreshTray(); refreshMacs()
 }
-async function syncState() {
-  try {
-    const mod = settings.hostUrl.startsWith('https') ? https : http
-    const body = await new Promise((resolve, reject) => { mod.get(settings.hostUrl + '/api/state', { headers: { authorization: `Bearer ${settings.token}` } }, (r) => { let s = ''; r.setEncoding('utf8'); r.on('data', (d) => (s += d)); r.on('end', () => resolve(s)); r.on('error', reject) }).on('error', reject) })
-    const st = JSON.parse(body)
-    let w = 0, work = 0
-    for (const list of Object.values(st.sessionsByBot || {})) for (const x of list) { if (x.state === 'awaiting_input') w++; if (x.state === 'running') work++ }
-    waiting = w; mood = w ? 'wait' : work ? 'work' : st.auth?.verdict === 'unreadable' || st.auth?.verdict === 'loggedout' ? 'error' : 'idle'
-    refreshTray()
-  } catch {}
+function checkOffline() {
+  const now = Date.now()
+  for (const [id, o] of Object.entries(offline)) {
+    const m = macList().find((x) => x.id === id); if (!m) { delete offline[id]; continue }
+    if (macsLib.offlineDue(o.since, o.alerted, now)) { o.alerted = true; if (Notification.isSupported()) new Notification({ title: 'Folder Bot', body: `${macsLib.displayName(macList(), m)}에 닿지 않아요` }).show() }
+  }
 }
-const states = new Map()
-function onFrame(f) {
-  if (f.ev === 'state') { states.set(f.sessionId, f.state); recount() }
-  if (f.ev === 'sessions') { for (const x of f.sessions) states.set(x.id, x.bg ? 'running' : x.state); recount() } // 백그라운드 에이전트가 돌면 바쁜 것 — 업데이트 적용이 세션을 죽이지 않게
-  if (f.ev === 'notify') notify(f.n)
-  if (f.ev === 'hello') void syncState()
-}
-function recount() { let w = 0, work = 0; for (const s of states.values()) { if (s === 'awaiting_input') w++; if (s === 'running') work++ } waiting = w; mood = w ? 'wait' : work ? 'work' : 'idle'; refreshTray() }
-function notify(n) {
+function notify(n, macId) {
   if (!Notification.isSupported()) return
   const no = new Notification({ title: n.title, body: n.body, silent: false })
-  no.on('click', () => { notes.release(no); const h = navHash(n); if (h) navigate(`#${h}`); else showWin() })
+  // 여러 맥 — 다른 맥의 알림이면 그 맥으로 바꾸고 그 세션을 연다
+  no.on('click', () => { notes.release(no); const h = navHash(n); if (macId && macId !== settings.activeMac) { switchTo(macId, h); return } if (h) navigate(`#${h}`); else showWin() })
   /* ⚠ 'close' 에서 놓지 않는다 — macOS 는 배너가 화면에서 걷혀 **알림 센터로 들어갈 때도** close 를 쏜다(실측). 그 배너는
      알림 센터에서 여전히 누를 수 있으니, 여기서 놓으면 GC 가 처리기를 가져가 원래 버그로 돌아간다. 놓는 때는 클릭·하루·개수·종료뿐 */
   if (QA) { no.on('close', () => { global.__fbNoteEv = (global.__fbNoteEv || []).concat('close') }); no.on('failed', (_e, err) => { global.__fbNoteEv = (global.__fbNoteEv || []).concat('failed:' + err) }) }
@@ -622,14 +699,17 @@ app.whenReady().then(async () => {
   process.env.FOLDERBOT_DESKTOP_VERSION = app.getVersion()
   session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => cb(perm === 'notifications' || perm === 'clipboard-read' || perm === 'clipboard-sanitized-write'))
   createTray()
+  if (tokenMove) { tokens.set(tokenMove.id, tokenMove.token); settings.token = ''; save(); tokenMove = null } // 옛 토큰을 맥별 저장으로 한 번 옮긴다
   if (settings.mode === 'host' && settings.root) {
     try { await startHostMode(settings.root) } catch (e) { console.error(e); settings.mode = ''; save() }
   }
   createWin(); startSse(); startUsagePoll()
+  setInterval(checkOffline, 60_000)
   if (!QA) app.setLoginItemSettings({ openAtLogin: !!settings.loginItem, openAsHidden: true })
   app.on('activate', showWin)
   // 자기 업데이트 — 호스트 모드에선 세션이 전부 유휴일 때만 적용한다
-  const busyCount = () => { let b = 0; for (const st of states.values()) if (st === 'running' || st === 'awaiting_input') b++; return b }
+  // 여러 맥 — 앱 업데이트로 죽는 것은 이 맥 호스트의 세션뿐이다. 다른 맥 세션은 세지 않는다
+  const busyCount = () => links.busy('local')
   // BX · 새벽 적용은 30분 안에 도는 루틴이 있으면 미룬다 — 루틴 시각은 이 앱 안 호스트에게 묻는다(원격 화면 모드면 루틴이 없다)
   const routineSoon = () => { try { return !!hostRun?.host?.routineSoon?.() } catch { return false } }
   if (!QA) updater.start({ isHost: () => settings.mode === 'host', port: () => settings.port || 7373, isBusy: () => busyCount() > 0, busyCount, routineSoon, onChange: () => { pushTrayState(); try { win?.webContents.send('fb:update', updater.state()) } catch {} } })
@@ -638,5 +718,6 @@ app.on('window-all-closed', () => { /* 메뉴바에 남는다 */ })
 app.on('before-quit', () => {
   // 붙잡은 배너는 알림 센터에서 걷는다 — 다음 프로세스(업데이트 재시작 포함)는 옛 배너의 클릭을 못 받는다. 누를 곳 없는 배너를 남기지 않는다
   for (const n of notes.all()) { try { n.close() } catch {} }
+  try { links.stopAll() } catch {}
   try { hostRun?.stop() } catch {}
 })

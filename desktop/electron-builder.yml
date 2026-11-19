@@ -18,6 +18,9 @@ files:
   - perm-core.js
   - trayIcon.js
   - winBounds.js
+  - macs.js
+  - tokenStore.js
+  - macLinks.js
   - zoom.js
   - extern.js
   - nav.js

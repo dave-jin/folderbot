@@ -28,7 +28,7 @@ function createLinks(opt) {
         try {
           const st = JSON.parse(s); L.states.clear()
           for (const list of Object.values(st.sessionsByBot || {})) for (const x of list) L.states.set(x.id, x.state)
-          opt.onState(id, { hostName: st.hostName, version: st.version })
+          opt.onState(id, { hostName: st.hostName, version: st.version, auth: st.auth && st.auth.verdict })
           opt.onChange(id)
         } catch {}
       })

@@ -37,3 +37,18 @@ describe('셸 통로 — preload ↔ main 이름이 같다', () => {
     expect(code).not.toMatch(/set the clipboard to \{/)                 // ⛔ {목록} 은 'list' 형식만 올라가 Finder 가 못 읽는다
   })
 })
+
+/**
+ * 여러 맥 (2026-11-19) — 셸이 «호스트 하나» 를 가정하던 자리를 «지금 맥 + 맥 목록» 으로 옮겼는지.
+ * 옛 `settings.hostUrl`·`settings.token` 을 다시 읽기 시작하면 맥을 바꿔도 옛 맥의 토큰·주소가 새어 들어간다.
+ */
+describe('여러 맥 — 셸이 지금 맥을 쓴다', () => {
+  const code = read('main.js').split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n')
+  it('옛 hostUrl 을 읽지 않는다(옮겨 담기 한 곳만)', () => expect((code.match(/settings\.hostUrl(?!\s*=[^=])/g) || []).length).toBeLessThanOrEqual(1))
+  it('옛 token 을 읽지 않는다', () => expect((code.match(/settings\.token(?!\s*=[^=])/g) || []).length).toBe(0))
+  it('원격 사본 폴더는 맥 id 로 나눈다', () => {
+    const calls = [...code.matchAll(/cachePath\(([^,]+),\s*([^,]+),/g)].map((m) => m[2].trim())
+    expect(calls.length).toBeGreaterThan(0); for (const a of calls) expect(a).toMatch(/\.id\b/)
+  })
+  it('업데이트의 «바쁜가» 는 이 맥 호스트만 센다', () => expect(code).toMatch(/const busyCount = \(\) => links\.busy\('local'\)/))
+})
