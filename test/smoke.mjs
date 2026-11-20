@@ -8416,5 +8416,50 @@ try {
     } finally { h.kill() }
   }
 
+  /**
+   * MV · 폴더를 옮기면 봇이 따라간다 (2026-11-20 · 오케스트레이터 제보 두 건 · Dave 승인). 켜진 봇의 폴더를 folder_move 로 옮긴 뒤
+   *   같은 id 로 목록에 남는가 · 세션이 그대로인가 · 그 세션에 다시 말하면 새 경로에서 지난 대화를 기억하는가(스텁은 실 CLI 처럼 «cwd 이름»
+   *   자리의 기록만 읽는다 — 호스트가 기록을 새 자리로 안 옮기면 빈 기억이다) · 되돌리면 봇도 돌아오는가 · 칸 없이 부른 folder_create 는
+   *   거절하고 맨 위에 안 만드는가 · role:"active" 는 첫 칸으로 받아 주는가.
+   */
+  {
+    for (let i = 0; i < 40 && !(await portFree(PORT)); i++) await wait(250)
+    await needPort(PORT, 'MV 호스트')
+    const h = spawn('node', ['bin/folderbot.mjs', 'start', '--port', String(PORT)], { env })
+    h.stdout.on('data', (d) => (hostLog += d)); h.stderr.on('data', (d) => (hostLog += d))
+    for (let i = 0; i < 60; i++) { try { await api('/state'); break } catch { await wait(250) } }
+    try {
+      const made = await api('/folders', { section: '2. Projects', name: '2026-12_이동검사', start: true })
+      const bot = made.bot
+      const s1 = await api(`/bots/${bot.id}/sessions`, { name: 'MV 세션' })
+      await api(`/sessions/${s1.id}/send`, { text: '옮기기 전 말 MV' })
+      let done = false
+      for (let i = 0; i < 80 && !done; i++) { await wait(100); done = (await api(`/sessions/${s1.id}/chat`)).info.state === 'done' }
+      if (!done) fail('MV: 옮기기 전 턴이 안 끝났다')
+      const to = '2. Projects/2026-12-05_이동검사'
+      const mv = await mcp('tools/call', { name: 'folder_move', arguments: { from: made.rel, to } })
+      const text = mv.result?.content?.[0]?.text ?? ''
+      if (!/봇 1개가 같은 id·세션째 따라 옮겨졌어요\(세션 1개\)/.test(text)) fail('🔴 MV: folder_move 답에 «따라 옮겨졌어요» 가 없다 · ' + text)
+      const after = (await api('/bots')).find((x) => x.id === bot.id)
+      if (!after || after.rel !== to) fail('🔴 MV: 옮긴 봇이 같은 id 로 목록에 없다 · ' + JSON.stringify(after))
+      if (!(await api(`/bots/${bot.id}/sessions`)).some((x) => x.id === s1.id)) fail('🔴 MV: 옮긴 뒤 그 봇의 세션이 사라졌다')
+      await api(`/sessions/${s1.id}/send`, { text: '기억확인 MV' })
+      let mem = ''
+      for (let i = 0; i < 80 && !mem; i++) { await wait(100); mem = (await api(`/sessions/${s1.id}/chat`)).items.filter((it) => it.kind === 'assistant').map((it) => it.text).find((t) => t.startsWith('기억:')) ?? '' }
+      if (!mem.includes('옮기기 전 말 MV')) fail('🔴 MV: 옮긴 뒤 이어 간 세션이 지난 대화를 모른다(CLI 기록이 새 자리로 안 왔다) · ' + mem)
+      // 되돌리기 — 봇도 원래 자리로
+      const u = (await api('/undo')).find((x) => x.to === to)
+      if (!u) fail('MV: 옮기기의 되돌리기 기록이 없다')
+      await api('/undo', { t: u.t })
+      if ((await api('/bots')).find((x) => x.id === bot.id)?.rel !== made.rel) fail('🔴 MV: 되돌렸는데 봇이 원래 자리로 안 왔다')
+      // folder_create — 칸 없이 부르면 거절 · 맨 위에 안 만든다 · role:"active" 는 첫 칸으로
+      const bad = await mcp('tools/call', { name: 'folder_create', arguments: { name: '2026-12-14_칸없음' } })
+      if (!bad.result?.isError || existsSync(join(root, '2026-12-14_칸없음'))) fail('🔴 MV: 칸 없는 folder_create 가 볼트 맨 위에 만들었다 · ' + JSON.stringify(bad.result))
+      const role = await mcp('tools/call', { name: 'folder_create', arguments: { name: '2026-12-14_칸역할', role: 'active' } })
+      if (!existsSync(join(root, '2. Projects/2026-12-14_칸역할'))) fail('MV: role:"active" 가 첫 활성 칸으로 안 갔다 · ' + JSON.stringify(role.result))
+      ok('MV 폴더를 옮기면 봇이 따라간다 — 같은 id · 세션 그대로 · 새 경로에서 지난 대화를 기억 · 되돌리면 같이 돌아옴 · 칸 없는 folder_create 거절 · role:"active" 는 첫 칸')
+    } finally { h.kill() }
+  }
+
   console.log('\nSMOKE OK')
 } catch (e) { fail(e.stack) } finally { host.kill(); rmSync(root, { recursive: true, force: true }); rmSync(data, { recursive: true, force: true }); rmSync(claudeCfg, { recursive: true, force: true }); rmSync(fbHome, { recursive: true, force: true }) }

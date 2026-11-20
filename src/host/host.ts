@@ -31,7 +31,7 @@ import type { QueuedMsg } from '../core/types'
 import type { BgTask } from '../core/bgTasks'
 /** BX · 셸이 주는 업데이트 상태(`desktop/updater.js state()`) · 새벽 적용 걸기/풀기 */
 export interface ShellUpdate { state: () => unknown; dawn: (on: boolean) => unknown }
-import { ORCH_ID, Registry, canon, ORCH_REQUEST_RULES_MD, DAVE_SAID_RULES_MD, ORCH_ASK_HINT, ORCH_REPORT_HINT, LETTER_RULES_MD } from './registry'
+import { type BotMoved, ORCH_ID, Registry, canon, ORCH_REQUEST_RULES_MD, DAVE_SAID_RULES_MD, ORCH_ASK_HINT, ORCH_REPORT_HINT, LETTER_RULES_MD } from './registry'
 import { CATCHUP_WINDOW_MS, Routines, routineRun, RETRY_DELAY_MS, StartQueue } from './routines'
 import { rerunnable, retryOn } from '../core/routineRetry'
 import { boardSummary, latestStarts, pairRuns } from '../core/routineBoard'
@@ -124,6 +124,11 @@ export class Host {
     this.sessions.mcpUrl = (sid, botId) => this.mcpAuth.configFile(botId, sid, cfg.port)
     this.sessions.systemPromptFor = (bot) => this.systemPrompt(bot)
     this.sessions.botOf = (id) => this.registry.bot(id)
+    // 🔴 폴더를 옮기면 봇 줄은 레지스트리가, 세션 cwd·봇 id 는 여기서 같은 신호로 고친다(2026-11-20) — 도구 답 글이 쓸 수를 채운다
+    this.registry.on('moved', (list: BotMoved[]) => {
+      for (const m of list) { const r = this.sessions.rebase(m.id, m.fromAbs, m.toAbs, m.into); m.sessions = r.sessions; m.running = r.running }
+      this.log(`폴더를 옮겨 봇이 따라갔어요 · ${list.map((m) => `${m.id}${m.into ? ` → ${m.into}` : ''} 세션 ${m.sessions}개`).join(' · ')}`)
+    })
     this.routines = new Routines({ run: (b, r, why) => { if (why?.catchup) this.queueRun(why.catchup, b, r, why); else this.runRoutine(b, r, why ?? {}) }, log: this.log })   // RB-2 · 보충은 시작 줄(동시 2개)로
     this.routines.owner = () => this.ownsRoutines()
     this.routineNotes = new RoutineNotes({ root: this.registry.root, log: (m) => this.log(m), owner: () => this.ownsRoutines() })

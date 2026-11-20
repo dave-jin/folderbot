@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { Registry } from './registry'
+import type { BotMoved, Registry } from './registry'
 import { ORCH_ID } from './registry'
 import type { Host } from './host'
 import { isAbsolute, join, relative, resolve } from 'node:path'
@@ -94,10 +94,11 @@ const ORCH: Tool[] = [
   { name: 'bot_stop', description: '봇을 정지(휴면)한다. 기록은 남는다.', inputSchema: obj({ bot: { type: 'string' } }, ['bot']) },
   { name: 'bots_reorder', description: '레일(폴더 목록)의 봇 순서를 정한다. order 는 위에서부터 놓을 rel 목록 — 안 준 봇은 기존 차례로 뒤에 붙는다. 모르는 rel 이 하나라도 있으면 실패하고 순서는 그대로다. 사람이 끌어 놓은 봇(bots_list 의 orderedBy=user)은 자리를 지킨다. restore:true 는 처음 순서로 되돌린다.', inputSchema: obj({ order: { type: 'array', items: { type: 'string' }, description: '루트 기준 상대 경로(rel) 목록, 위에서부터' }, restore: { type: 'boolean', description: '처음 순서로 되돌리기' } }) },
   { name: 'bot_retire', description: '봇 폴더를 archive 로 옮기고 은퇴시킨다. ⚠ 사람이 시킨 턴, 또는 «Dave 가 직접 한 말» 이 붙은 요청(그 원문이 이 일을 시켰을 때)에서만.', inputSchema: obj({ bot: { type: 'string' } }, ['bot']) },
-  { name: 'folder_create', description: '활성 범주(section)에 새 폴더를 만들고 하네스를 깐다. naming 규칙 적용(이름이 이미 날짜로 시작하면 그대로). ⚠ 사람이 시킨 턴, 또는 «Dave 가 직접 한 말» 이 붙은 요청(그 원문이 이 일을 시켰을 때)에서만.', inputSchema: obj({ section: { type: 'string', description: '예: "2. Projects"' }, name: { type: 'string' }, start: { type: 'boolean', description: '만든 뒤 봇도 시작' } }, ['section', 'name']) },
+  { name: 'folder_create', description: '활성 범주(section)에 새 폴더를 만들고 하네스를 깐다. naming 규칙 적용(이름이 이미 날짜로 시작하면 그대로). ⚠ 사람이 시킨 턴, 또는 «Dave 가 직접 한 말» 이 붙은 요청(그 원문이 이 일을 시켰을 때)에서만.', inputSchema: obj({ section: { type: 'string', description: '만들 칸 — 볼트 규칙(rules_get)의 active 칸 이름 그대로(예: PARA 볼트면 "1. Projects"). 꼭 준다 — 비우면 만들지 않는다(볼트 맨 위에는 안 만든다)' }, name: { type: 'string' }, start: { type: 'boolean', description: '만든 뒤 봇도 시작' } }, ['section', 'name']) },
   { name: 'bot_send', description: '봇에게 지시를 보낸다. session 을 생략하면 그 봇의 «🤝 소통» 세션(봇마다 하나)으로 간다 — 그 세션이 일하는 중이면 큐에서 기다렸다가 차례로 나간다. orch_ask 에 답할 때는 요청 줄 머리의 세션 id 를 session 에 넣어 물어본 세션으로 돌려준다. name 을 주면 그 이름으로 새 세션을 연다(드물게). 결과는 bot_sessions 로 본다.', inputSchema: obj({ bot: { type: 'string' }, text: { type: 'string' }, session: { type: 'string' }, name: { type: 'string', description: '따로 새 세션을 열 때만 — 보통은 비운다' } }, ['bot', 'text']) },
   { name: 'inbox_list', description: 'inbox 역할 폴더의 항목(폴더·파일)을 나열한다.', inputSchema: obj({}) },
-  { name: 'folder_move', description: '루트 안에서 폴더·파일을 옮긴다(되돌리기 스냅샷 남김). ⚠ 사람이 시킨 턴, 또는 «Dave 가 직접 한 말» 이 붙은 요청(그 원문이 이 일을 시켰을 때)에서만.', inputSchema: obj({ from: { type: 'string' }, to: { type: 'string' } }, ['from', 'to']) }
+  { name: 'folder_move', description: '루트 안에서 폴더·파일을 옮긴다(되돌리기 스냅샷 남김). 그 폴더(또는 그 안)의 봇은 같은 id·세션째 새 경로로 따라간다 — 다시 bot_start 하지 않는다. ⚠ 사람이 시킨 턴, 또는 «Dave 가 직접 한 말» 이 붙은 요청(그 원문이 이 일을 시켰을 때)에서만.', inputSchema: obj({ from: { type: 'string' }, to: { type: 'string' } }, ['from', 'to']) },
+  { name: 'bot_reattach', description: '폴더를 옮겨 목록에서 빠진 옛 봇(이 기능 전에 옮긴 것)을 되붙인다. bot 없이 부르면 미리보기만 — 빠진 봇마다 옛 경로·새 경로·합칠 봇. bot(옛 봇 id)을 주면 그 하나만: 새 경로에 봇이 없으면 옛 봇이 id·세션째 새 경로로 서고, 이미 새 봇이 있으면 옛 세션을 그 새 봇으로 합치고 옛 줄을 뺀다(세션은 지우지 않는다). 사람이 고른 봇만 붙인다.', inputSchema: obj({ bot: { type: 'string', description: '옛 봇 id — 비우면 미리보기' } }) }
 ]
 
 /**
@@ -182,6 +183,13 @@ function noteChange(host: Host, callerId: string, botId: string, foreign: boolea
   host.routineNotes?.sync(host.registry.bots())
 }
 
+/** 폴더를 옮긴 뒤 답 글 꼬리 — 따라간 봇과 세션, 도는 턴이 있었는지(오케스트레이터가 다시 시킬지 정한다) */
+function followNote(moved: BotMoved[]): string {
+  if (!moved.length) return ''
+  const n = moved.reduce((a, m) => a + (m.sessions ?? 0), 0), run = moved.reduce((a, m) => a + (m.running ?? 0), 0)
+  return ` · 봇 ${moved.length}개가 같은 id·세션째 따라 옮겨졌어요(세션 ${n}개)${run ? ` · 일하던 세션 ${run}개는 이 턴이 끝나면 새 경로에서 다시 떠요(그 턴 동안은 옛 경로를 못 찾을 수 있어요)` : ''}`
+}
+
 async function callTool(host: Host, botId: string, name: string, a: Record<string, unknown>, sid = ''): Promise<unknown> {
   const reg: Registry = host.registry
   const s = (k: string) => (typeof a[k] === 'string' ? (a[k] as string) : '')
@@ -201,8 +209,11 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       return `${restore ? '처음 순서로 되돌림' : '순서 바꿈'}: ${now.map((b, i) => `${i + 1}. ${b.rel}${b.orderedBy === 'user' ? ' (사람이 정한 자리)' : ''}`).join(' · ')}`
     }
     case 'bot_stop': { const b = findBot(s('bot')); if (!b || b.orchestrator) throw new Error('정지할 수 없는 봇'); reg.stop(b.id); host.afterBotsChanged(); return `정지: ${b.name}` }
-    case 'bot_retire': { const b = findBot(s('bot')); if (!b) throw new Error('그런 봇이 없어요'); const to = reg.retire(b.id); host.afterBotsChanged(); return `은퇴 · ${to} 로 옮겼어요` }
-    case 'folder_create': { const rel = reg.createFolder(s('section'), s('name')); let msg = `만들었어요: ${rel} (하네스 설치됨)`; if (a.start) { const b = reg.start(rel); host.afterBotsChanged(); msg += ` · 봇 시작: ${b.name}` } return msg }
+    case 'bot_retire': { const b = findBot(s('bot')); if (!b) throw new Error('그런 봇이 없어요'); const to = reg.retire(b.id); host.afterBotsChanged(); return to === b.rel ? `은퇴 · 이미 보관 칸(${to})이라 옮기지 않고 봇만 껐어요` : `은퇴 · ${to} 로 옮겼어요` }
+    case 'folder_create': {
+      // 🔴 칸을 빼고 role:"active" 로 부르는 일이 실제로 있었다(11/20) — 규칙의 첫 active 칸으로 받아 준다. 둘 다 없으면 registry 가 거절한다
+      const section = s('section') || (s('role') === 'active' ? reg.firstActiveSection() ?? '' : '')
+      const rel = reg.createFolder(section, s('name')); let msg = `만들었어요: ${rel} (하네스 설치됨)`; if (a.start) { const b = reg.start(rel); host.afterBotsChanged(); msg += ` · 봇 시작: ${b.name}` } return msg }
     case 'orch_ask': {
       if (botId === ORCH_ID) throw new Error('오케스트레이터는 orch_ask 를 쓸 수 없어요 — 다른 봇에 나눠 줄 때는 bot_send 를 쓰세요')
       const me = reg.bot(botId); if (!me) throw new Error('봇을 못 찾았어요')
@@ -250,7 +261,17 @@ async function callTool(host: Host, botId: string, name: string, a: Record<strin
       const sid2 = host.sendToBot(b, s('text'), s('session') || undefined, s('name') || undefined, botId); const q = host.sessions.get(sid2)?.queue?.length ?? 0; return q ? `큐에 넣었어요 — 그 세션이 하던 일을 끝내면 차례로 보내요(대기 ${q}개) · 세션 ${sid2}` : `보냈어요 · 세션 ${sid2}`
     }
     case 'inbox_list': return reg.inboxItems().map((i) => ({ rel: i.rel, dir: i.dir, modified: new Date(i.mtime).toISOString() }))
-    case 'folder_move': { reg.move(s('from'), s('to')); host.afterBotsChanged(); return `옮겼어요: ${s('from')} → ${s('to')} (되돌리기 가능)` }
+    case 'folder_move': { const moved = reg.move(s('from'), s('to')); host.afterBotsChanged(); return `옮겼어요: ${s('from')} → ${s('to')} (되돌리기 가능)${followNote(moved)}` }
+    case 'bot_reattach': {
+      if (!s('bot')) {
+        const list = reg.orphans()
+        if (!list.length) return '목록에서 빠진 봇이 없어요'
+        return list.map((o) => ({ bot: o.id, was: o.rel, to: o.to ?? '(되돌리기 기록에서 못 찾음)', ...(o.into ? { mergeInto: `${o.into} (${reg.bot(o.into)?.name ?? ''})` } : o.to ? { act: '옛 봇이 새 경로로 선다' } : {}), sessions: host.sessions.list(o.id).length }))
+      }
+      const m = reg.reattach(s('bot')); host.afterBotsChanged()
+      return m.into ? `되붙였어요: 옛 봇 ${m.id} 의 세션 ${m.sessions ?? 0}개를 ${reg.bot(m.into)?.name ?? m.into}(${m.into}) 로 합쳤어요 · 옛 줄은 뺐어요${m.running ? ` · 일하던 세션 ${m.running}개는 이 턴이 끝나면 새 경로에서 다시 떠요` : ''}`
+        : `되붙였어요: ${m.id} 가 ${relative(reg.root, m.toAbs)} 로 섰어요 · 세션 ${m.sessions ?? 0}개${m.running ? ` · 일하던 세션 ${m.running}개는 이 턴이 끝나면 새 경로에서 다시 떠요` : ''}`
+    }
     case 'vault_tree': return host.tree(s('dir'), Number(a.depth) || 2)
     case 'vault_search': return host.search(s('query'), Number(a.limit) || 40)
     case 'rules_get': return reg.rules

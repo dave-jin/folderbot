@@ -4,8 +4,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync } from 'node:fs'
+import { dirname, join, sep } from 'node:path'
 import { homedir } from 'node:os'
 import { transition, shouldNotify } from '../core/stateMachine'
 import { assistantText, closeOpenItems, contextOf, itemId, modelOf, toolSummary, touchedPath, type StreamLine } from '../core/chat'
@@ -103,6 +103,28 @@ export function transcriptPath(cwd: string, sid: string): string | null {
     } catch { /* skip */ }
   }
   return null
+}
+
+/**
+ * 🔴 폴더를 옮긴 세션의 CLI 기록을 새 경로 자리에도 둔다 (2026-11-20). CLI 는 기록을 «cwd 를 바꾼 이름» 폴더에 두는데,
+ *    폴더를 옮기면 새 cwd 의 자리에는 기록이 없다. 다른 자리의 기록으로 `--resume` 하는지는 CLI 판마다 다를 수 있어,
+ *    워커를 띄우기 직전에 새 자리에 없으면 찾은 기록(서브에이전트 폴더 포함)을 복사한다. 옛 파일은 지우지 않는다.
+ * ⚠ 띄우기 직전에만 한다 — 옮길 때 복사하면 그때 돌던 턴이 옛 자리에 마저 쓴 내용이 빠진다.
+ * @returns 복사했으면 true
+ */
+export function carryTranscript(cwd: string, sid: string): boolean {
+  const base = process.env.CLAUDE_CONFIG_DIR ? join(process.env.CLAUDE_CONFIG_DIR, 'projects') : join(homedir(), '.claude', 'projects')
+  const slugs = [cwd.normalize('NFC'), cwd, cwd.normalize('NFD')].map((c) => c.replace(/[^a-zA-Z0-9]/g, '-'))
+  if (slugs.some((sl) => existsSync(join(base, sl, `${sid}.jsonl`)))) return false
+  const src = transcriptPath(cwd, sid); if (!src) return false
+  const dest = join(base, slugs[0])
+  try {
+    mkdirSync(dest, { recursive: true })
+    copyFileSync(src, join(dest, `${sid}.jsonl`))
+    const sub = join(dirname(src), sid)
+    if (existsSync(sub)) cpSync(sub, join(dest, sid), { recursive: true })
+    return true
+  } catch { return false }
 }
 
 export interface SpawnSpec {
@@ -619,6 +641,47 @@ export class SessionManager extends EventEmitter {
     if (r) this.emit('sessions', r.botId)
   }
   /**
+   * 🔴 폴더를 옮겼다 — 그 봇 세션들의 cwd 를 새 경로로 고친다(2026-11-20 · `Registry.follow`/`reattach` 의 `moved`).
+   *    `into` 가 있으면(끊긴 봇 되붙이기 · 새 경로에 이미 봇이 있었다) 세션을 그 봇으로 옮긴다 — 지우지 않는다.
+   *    쉬는 워커는 재운다(다음 말에 새 경로에서 `--resume`). 도는 턴은 끊지 않고 끝나면 내려가게 표시한다(`restartPending`).
+   *    지운 표시만 남은 세션 파일도 같이 고친다 — 되살렸을 때 옛 경로·옛 봇으로 돌아오지 않게.
+   * @returns 고친 세션 수 · 도는 중이라 턴 끝에 다시 뜰 세션 수
+   */
+  rebase(fromBot: string, fromAbs: string, toAbs: string, intoBot?: string): { sessions: number; running: number } {
+    let sessions = 0, running = 0
+    const fix = (r: { botId: string; cwd: string }): boolean => {
+      if (r.botId !== fromBot) return false
+      const under = r.cwd === fromAbs || r.cwd.startsWith(fromAbs + sep)
+      if (!under && !intoBot) return false
+      if (under) r.cwd = toAbs + r.cwd.slice(fromAbs.length)
+      if (intoBot) r.botId = intoBot
+      return true
+    }
+    for (const r of this.recs.values()) {
+      if (!fix(r)) continue
+      sessions++
+      const w = this.workers.get(r.id)
+      if (w) {
+        if (r.state === 'running' || r.state === 'awaiting_input' || w.pending.size) { r.restartPending = true; running++ }
+        else { w.kill(); this.workers.delete(r.id); this.clearApprovals(r.id) }
+      }
+      this.persist(r)
+    }
+    try {
+      for (const f of readdirSync(this.dir).filter((n) => n.endsWith('.json'))) {
+        if (this.recs.has(f.slice(0, -5))) continue
+        const p = join(this.dir, f), raw = readFileSync(p, 'utf8')
+        if (!raw.includes(fromBot)) continue   // 큰 파일을 다 파싱하지 않는다
+        const j = JSON.parse(raw) as SessionRec & { deleted?: boolean }
+        if (j.deleted && fix(j)) atomicWrite(p, JSON.stringify(j))
+      }
+    } catch { /* 못 읽은 파일은 그대로 — 되살릴 때 옛 경로다 */ }
+    // 합쳤으면 소통 세션이 둘일 수 있다 — 가장 최근 것만 남기고 나머지는 «옛 소통» 으로(지우지 않는다)
+    if (intoBot) for (const id of extraComms([...this.recs.values()])) { const r = this.recs.get(id)!; r.comm = undefined; r.exComm = true; this.persist(r) }
+    this.emit('sessions', fromBot); if (intoBot) this.emit('sessions', intoBot)
+    return { sessions, running }
+  }
+  /**
    * BW · 지운 지 7일 지난 세션 파일을 휴지통으로 (2026-10-09 · 맥미니 실측 317개 중 154개가 지운 표시만 남아 있었다).
    * 볼트의 `.folderbot/trash` 가 아니라 **앱 데이터의** `trash/sessions/` 로 옮긴다 — 대화 기록을 Dropbox 로 보내지 않는다.
    * 지우지 않고 옮기므로 되돌릴 수 있다(파일을 sessions/ 로 되돌려 놓고 «되살리기»). 지운 시각이 없는 옛 파일은 수정 시각으로 본다.
@@ -1121,6 +1184,7 @@ export class SessionManager extends EventEmitter {
     const existing = this.workers.get(r.id)
     if (existing?.alive) return existing
     this.makeRoom(r.id)   // BE · 상한(15)이 차 있으면 가장 오래 안 쓴 쉬는 워커를 먼저 재운다 — 새로 만들든 깨우든 같은 길
+    if ((r.vendor ?? bot.vendor) !== 'codex' && r.cliSessionId) carryTranscript(r.cwd, r.cliSessionId)   // 폴더를 옮긴 세션 — 새 자리에도 기록을
     // 🔴 **세션이 벤더를 정한다** — 봇의 값은 «안 고른 세션» 의 폴백일 뿐이다(한 폴더에 둘이 섞인다)
     const w: Worker = (r.vendor ?? bot.vendor) === 'codex'
       // ⚠ 모델 이름은 CLI 마다 다르다 — Claude 이름(claude-opus-5)을 Codex 에 넘기면 그 자리에서 죽는다.

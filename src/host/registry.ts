@@ -20,6 +20,19 @@ export function migrateStateDir(root: string): void {
   try { const oldDir = join(root, LEGACY_STATE_DIR), newDir = join(root, STATE_DIR); if (existsSync(oldDir) && !existsSync(newDir)) renameSync(oldDir, newDir) } catch { /* 다음 부팅에 다시 */ }
 }
 
+/**
+ * 🔴 폴더를 옮기면 그 안의 봇이 따라간다 (2026-11-20 · 오케스트레이터 제보 두 건 · Dave 승인).
+ *    종전 `move()` 는 폴더만 옮기고 봇 줄의 `rel` 을 그대로 둬서, `toBot()` 이 «폴더가 없다» 며 봇을 목록에서 뺐다 —
+ *    새로 켜면 새 id 에 세션 0개였고 옛 세션은 옛 id 에 숨었다. 레지스트리는 봇 줄을 고치고 `moved` 를 쏜다.
+ *    세션 cwd·대화 기록은 맥마다 따로 있어서 호스트(`SessionManager.rebase`)가 같은 신호로 고친다.
+ * `into` 는 되붙이기에서 새 경로에 이미 다른 봇이 서 있을 때 — 옛 세션을 그 봇으로 합친다.
+ * `sessions`·`running` 은 호스트가 채운다(도구 답 글에 쓴다).
+ */
+export interface BotMoved { id: string; fromAbs: string; toAbs: string; into?: string; sessions?: number; running?: number }
+/** 목록에서 빠진 봇 줄 하나와 되붙일 자리 — `to` 가 없으면 되돌리기 기록에서 못 찾았다 */
+export interface Orphan { id: string; rel: string; to: string | null; into?: string }
+const cleanRel = (r: string): string => String(r ?? '').replace(/^\/+|\/+$/g, '').normalize('NFC')
+
 interface ActiveRec { id: string; rel: string; color: string; startedAt: number; vendor?: 'claude' | 'codex'; pinned?: boolean; orderedBy?: 'user' | 'orchestrator' }
 /** 활성 목록 파일(`.folderbot/bots.yml`) — 줄 순서가 곧 레일 순서다 */
 interface ActiveFile { bots?: ActiveRec[]; orderBackup?: string[] }
@@ -469,11 +482,14 @@ export class Registry extends EventEmitter {
     if (!b || b.orchestrator) throw new Error('은퇴시킬 수 없는 봇')
     const archive = this.rules.roles.archive[0]
     if (!archive) throw new Error('규칙에 archive 폴더가 없어요')
+    // 🔴 이미 보관 칸 안의 폴더면 옮기지 않고 봇만 끈다 — 종전에는 «자기 자신» 을 같은 이름으로 보고 실패했다(2026-11-05)
+    if (b.rel === archive || b.rel.startsWith(archive + '/')) { this.stop(id); return b.rel }
     const dest = join(this.root, archive, basename(b.rel))
-    if (existsSync(dest)) throw new Error(`Archive 에 같은 이름이 있어요: ${basename(b.rel)}`)
+    if (existsSync(dest)) throw new Error(`Archive 에 같은 이름의 다른 폴더가 있어요: ${basename(b.rel)}`)
     mkdirSync(dirname(dest), { recursive: true })
     this.snapshot({ op: 'move', from: b.rel, to: relative(this.root, dest) })
     renameSync(b.abs, dest)
+    this.follow(b.rel, relative(this.root, dest))   // 세션 cwd 도 보관 자리로 — 그 안에 다른 봇이 있었다면 그 봇도 따라간다
     this.stop(id)
     return relative(this.root, dest)
   }
@@ -503,23 +519,26 @@ export class Registry extends EventEmitter {
    * 볼트 안에서 경로 하나를 옮긴다 — 되돌리기 기록(`snapshot`)을 함께 남긴다.
    * ⚠ 경계(봇 폴더 안인지)는 **부르는 쪽**이 본다(`gateway.inBot`). 여기서는 볼트 밖만 막는다.
    */
-  movePath(fromRel: string, toRel: string): void {
+  movePath(fromRel: string, toRel: string): BotMoved[] {
     const from = join(this.root, fromRel); const to = join(this.root, toRel)
     if (!from.startsWith(this.root + sep) || !to.startsWith(this.root + sep)) throw new Error('루트 밖으로는 못 옮겨요')
     mkdirSync(dirname(to), { recursive: true })
     this.snapshot({ op: 'move', from: fromRel, to: toRel })
     renameSync(from, to)
+    return this.follow(fromRel, toRel)
   }
   /** 새 폴더 만들기 — 규칙 naming 적용 + 하네스 스캐폴드. 반환: rel */
   createFolder(section: string, name: string): string {
     const parents = globParents(this.rules.roles.active)
-    section = section.replace(/^\/+|\/+$/g, '').normalize('NFC')
-    const parentAbs = section ? join(this.root, section) : this.root
-    if (!parentAbs.startsWith(this.root) || !existsSync(parentAbs) || !statSync(parentAbs).isDirectory()) throw new Error(`폴더가 없어요: ${section}`)
+    section = cleanRel(section)
+    // 🔴 칸 없이 부르면 만들지 않는다 — 종전에는 볼트 맨 위에 만들었다(2026-11-20 «이사-힐링수» · section 을 빼고 role 을 넣어 불렀다)
+    if (!section) throw new Error(`칸(section)을 정해 주세요 — ${parents.join(' · ') || '규칙의 active 칸'} 중 하나. 볼트 맨 위에는 만들지 않아요`)
+    const parentAbs = join(this.root, section)
+    if (!parentAbs.startsWith(this.root + sep) || !existsSync(parentAbs) || !statSync(parentAbs).isDirectory()) throw new Error(`폴더가 없어요: ${section}`)
     const clean = name.replace(/[\/\\:\u0000-\u001f]/g, '_').trim()
     if (!clean) throw new Error('이름이 비었어요')
     const folderName = section === parents[0] ? applyNaming(this.rules.naming.project, clean) : clean
-    const rel = (section ? `${section}/${folderName}` : folderName).normalize('NFC')
+    const rel = `${section}/${folderName}`.normalize('NFC')
     const abs = join(this.root, rel)
     if (existsSync(abs)) throw new Error(`이미 있어요: ${rel}`)
     mkdirSync(abs, { recursive: true })
@@ -560,8 +579,14 @@ export class Registry extends EventEmitter {
     }
     return out.sort((a, b) => b.mtime - a.mtime)
   }
-  /** 루트 안 이동 (되돌리기 스냅샷 동반) */
-  move(fromRel: string, toRel: string): void {
+  /** 첫 active 칸 — `folder_create` 가 `role:"active"` 로 불렸을 때 받아 줄 자리 */
+  firstActiveSection(): string | undefined { return globParents(this.rules.roles.active)[0] }
+  /**
+   * 루트 안 이동 (되돌리기 스냅샷 동반) — 그 폴더(또는 그 안)의 봇이 따라간다. @returns 따라 옮긴 봇
+   * ⚠ 볼트 안에서만 쓰는 상대 경로라 앞뒤 `/` 를 떼고 NFC 로 맞춘다 — 봇 줄의 rel 이 NFC 다.
+   */
+  move(fromRel: string, toRel: string): BotMoved[] {
+    fromRel = cleanRel(fromRel); toRel = cleanRel(toRel)
     const from = join(this.root, fromRel), to = join(this.root, toRel)
     if (!from.startsWith(this.root + sep) || !to.startsWith(this.root + sep)) throw new Error('루트 밖으로는 옮길 수 없어요')
     if (!existsSync(from)) throw new Error(`없어요: ${fromRel}`)
@@ -569,7 +594,77 @@ export class Registry extends EventEmitter {
     mkdirSync(dirname(to), { recursive: true })
     this.snapshot({ op: 'move', from: fromRel, to: toRel })
     renameSync(from, to)
-    this.emit('bots', this.bots())
+    const moved = this.follow(fromRel, toRel)
+    if (!moved.length) this.emit('bots', this.bots())
+    return moved
+  }
+  /**
+   * 옮긴 폴더 안의 봇 줄을 새 경로로 고친다 — 그 폴더 자체이거나 그 안(상위 폴더째 옮긴 경우)인 봇 모두.
+   * id·색·고정·순서는 그대로다. 고친 게 있으면 저장하고 `moved` 를 쏜다(호스트가 세션을 같은 길로 옮긴다).
+   */
+  private follow(fromRel: string, toRel: string): BotMoved[] {
+    fromRel = cleanRel(fromRel); toRel = cleanRel(toRel)
+    if (!fromRel || !toRel || fromRel === toRel) return []
+    const out: BotMoved[] = []
+    for (const a of this.active) {
+      if (a.rel !== fromRel && !a.rel.startsWith(fromRel + '/')) continue
+      const next = toRel + a.rel.slice(fromRel.length)
+      if (this.active.some((x) => x !== a && x.rel === next)) continue   // 그 자리에 다른 봇이 이미 있다 — 겹쳐 세우지 않는다(되붙이기가 합친다)
+      out.push({ id: a.id, fromAbs: join(this.root, a.rel), toAbs: join(this.root, next) })
+      a.rel = next
+    }
+    if (!out.length) return out
+    this.emit('moved', out)
+    this.saveActive()
+    return out
+  }
+  /** 되돌리기 기록(`.folderbot/undo/*.json`) 중 옮기기 — 되돌린 것(`.undone`)은 뺀다 */
+  private moveSnapshots(): { t: number; from: string; to: string }[] {
+    const dir = join(this.root, STATE_DIR, 'undo')
+    let files: string[] = []; try { files = readdirSync(dir).filter((f) => f.endsWith('.json')) } catch { return [] }
+    const out: { t: number; from: string; to: string }[] = []
+    for (const f of files) { try { const e = JSON.parse(readFileSync(join(dir, f), 'utf8')); if (e?.op === 'move' && typeof e.from === 'string' && typeof e.to === 'string') out.push({ t: Number(e.t) || 0, from: cleanRel(e.from), to: cleanRel(e.to) }) } catch { /* 깨진 기록은 건너뛴다 */ } }
+    return out.sort((x, y) => x.t - y.t)
+  }
+  /**
+   * 목록에서 빠진 봇 줄(폴더가 없는 줄)과 되붙일 자리 — 이 판 전에 옮겨져 끊긴 봇을 찾는다.
+   * 그 봇이 켜진 **뒤의** 옮기기만 따라간다(여러 번 옮겼으면 이어서). 휴지통으로 간 것은 따라가지 않는다.
+   * 새 경로에 이미 다른 봇이 서 있으면 `into` 가 그 봇이다.
+   */
+  orphans(): Orphan[] {
+    const snaps = this.moveSnapshots()
+    const isDir = (rel: string) => { try { return statSync(join(this.root, rel)).isDirectory() } catch { return false } }
+    const out: Orphan[] = []
+    for (const a of this.active) {
+      if (isDir(a.rel)) continue
+      let cur = a.rel, since = a.startedAt ?? 0, to: string | null = null
+      for (let hop = 0; hop < 20; hop++) {
+        const s = snaps.find((x) => x.t > since && (cur === x.from || cur.startsWith(x.from + '/')))
+        if (!s) break
+        cur = s.to + cur.slice(s.from.length); since = s.t
+        if (cur.startsWith(STATE_DIR + '/')) break   // 휴지통 — 봇을 거기로 세우지 않는다
+        if (isDir(cur)) { to = cur; break }
+      }
+      const into = to ? this.active.find((x) => x !== a && x.rel === to) : undefined
+      out.push({ id: a.id, rel: a.rel, to, ...(into ? { into: into.id } : {}) })
+    }
+    return out
+  }
+  /**
+   * 끊긴 봇 하나를 되붙인다 — 새 경로에 봇이 없으면 옛 봇이 새 경로로 옮겨 서고(id·색 그대로),
+   * 이미 새 봇이 서 있으면 옛 봇 줄을 빼고 옛 세션을 새 봇으로 합친다(세션은 지우지 않는다 · 호스트가 `moved` 로 한다).
+   */
+  reattach(id: string): BotMoved {
+    const o = this.orphans().find((x) => x.id === id)
+    if (!o) throw new Error(`목록에서 빠진 봇이 아니에요: ${id}`)
+    if (!o.to) throw new Error(`${o.rel} 를 어디로 옮겼는지 되돌리기 기록에서 못 찾았어요`)
+    const a = this.active.find((x) => x.id === id)!
+    const m: BotMoved = { id, fromAbs: join(this.root, a.rel), toAbs: join(this.root, o.to), ...(o.into ? { into: o.into } : {}) }
+    if (o.into) this.active = this.active.filter((x) => x !== a)
+    else a.rel = o.to
+    this.emit('moved', [m])
+    this.saveActive()
+    return m
   }
   private snapshot(entry: Record<string, unknown>): void {
     const dir = join(this.root, STATE_DIR, 'undo')
@@ -596,6 +691,9 @@ export class Registry extends EventEmitter {
       if (!existsSync(from)) throw new Error('되돌릴 대상이 이미 없어요')
       mkdirSync(dirname(to), { recursive: true })
       renameSync(from, to)
+      renameSync(f, `${f}.undone`)
+      if (!this.follow(e.to, e.from).length) this.emit('bots', this.bots())   // 되돌리기도 같은 길 — 봇이 원래 자리로 따라온다
+      return
     }
     renameSync(f, `${f}.undone`)
     this.emit('bots', this.bots())
