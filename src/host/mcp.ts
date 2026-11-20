@@ -184,8 +184,8 @@ function noteChange(host: Host, callerId: string, botId: string, foreign: boolea
 }
 
 /** 폴더를 옮긴 뒤 답 글 꼬리 — 따라간 봇과 세션, 도는 턴이 있었는지(오케스트레이터가 다시 시킬지 정한다) */
-function followNote(moved: BotMoved[]): string {
-  if (!moved.length) return ''
+function followNote(moved: BotMoved[] | undefined): string {
+  if (!Array.isArray(moved) || !moved.length) return ''
   const n = moved.reduce((a, m) => a + (m.sessions ?? 0), 0), run = moved.reduce((a, m) => a + (m.running ?? 0), 0)
   return ` · 봇 ${moved.length}개가 같은 id·세션째 따라 옮겨졌어요(세션 ${n}개)${run ? ` · 일하던 세션 ${run}개는 이 턴이 끝나면 새 경로에서 다시 떠요(그 턴 동안은 옛 경로를 못 찾을 수 있어요)` : ''}`
 }
