@@ -136,10 +136,11 @@ describe('SessionManager.rebase · carryTranscript — 세션이 따라간다', 
   it('🔴 cwd 가 새 경로로 · into 면 새 봇으로 옮겨 가고 지우지 않는다 · 소통은 가장 최근 것만 남는다 · 지운 표시 파일도 고친다', () => {
     const sm = new SessionManager()
     const oldBot = botAt('b_old', '/v/1. P/2026-11-17_x'), newBot = botAt('b_new', '/v/1. P/2026-11-25_x')
+    const nc = sm.commOf(newBot, 'orch')
+    const t0 = Date.now(); while (Date.now() - t0 < 3) { /* 옛 소통이 «더 최근» 이어도 새 봇 소통이 남는지 — 시각 비교에 맡기지 않는다 */ }
     const a = sm.create(oldBot, '옛 일'), oc = sm.commOf(oldBot, 'orch')
     const gone = sm.create(oldBot, '지운 일'); sm.remove(gone.id)
     const sub = sm.create({ ...oldBot, abs: '/elsewhere/repo' } as Bot, '코드 자리')   // 볼트 밖 cwd(참조 리포)는 그대로
-    const nc = sm.commOf(newBot, 'orch')
     const r = sm.rebase('b_old', oldBot.abs, newBot.abs, 'b_new')
     expect(r).toEqual({ sessions: 3, running: 0 })
     expect(sm.get(a.id)).toMatchObject({ botId: 'b_new', cwd: newBot.abs })

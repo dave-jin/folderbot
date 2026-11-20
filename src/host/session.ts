@@ -649,12 +649,15 @@ export class SessionManager extends EventEmitter {
    */
   rebase(fromBot: string, fromAbs: string, toAbs: string, intoBot?: string): { sessions: number; running: number } {
     let sessions = 0, running = 0
-    const fix = (r: { botId: string; cwd: string }): boolean => {
+    // 합칠 봇에 이미 소통 세션이 있으면 그것을 남긴다 — 옮겨 온 옛 소통은 «옛 소통»(지우지 않음). 시각 비교에 맡기면 같은 ms·옛 것이 더 최근일 때 새 봇 소통이 밀린다
+    const intoHasComm = !!intoBot && [...this.recs.values()].some((r) => r.botId === intoBot && r.comm)
+    const fix = (r: { botId: string; cwd: string; comm?: boolean; exComm?: boolean }): boolean => {
       if (r.botId !== fromBot) return false
       const under = r.cwd === fromAbs || r.cwd.startsWith(fromAbs + sep)
       if (!under && !intoBot) return false
       if (under) r.cwd = toAbs + r.cwd.slice(fromAbs.length)
       if (intoBot) r.botId = intoBot
+      if (intoHasComm && r.comm) { r.comm = undefined; r.exComm = true }
       return true
     }
     for (const r of this.recs.values()) {
