@@ -69,6 +69,8 @@ b,strong { color:var(--w); font-weight:600 }
 /* ── 앱 뼈대 ── */
 .app { height:100%; display:flex; flex-direction:column; overflow:hidden }
 .app.dragx { user-select:none; cursor:col-resize }
+/* 열을 끄는 동안 iframe(PDF·html 미리보기·캔버스)이 마우스 움직임을 삼키면 선이 그 자리에서 멈춘다 — 끄는 동안만 iframe 을 마우스에서 뺀다 (2026-11-22 Dave: «PDF 미리보기가 뜰 때 가운데 줄이 빠르게 안 된다» · test/repro-divider.mjs) */
+.app.dragx iframe, .app.dragx embed, .app.dragx object { pointer-events:none }
 .banner { display:flex; align-items:center; gap:10px; padding:8px 16px; border-bottom:1px solid var(--line); color:var(--t2); font-size:13px; background:var(--sb) }
 .cols { flex:1; display:flex; min-height:0; position:relative }
 /* ── H · 반응형 3단계 (2026-09-19 Dave 시안 확정) — 중간·좁음의 양쪽 패널은 채팅을 **밀지 않고 덮는다**. 채팅 폭은 안 변하고 어두워질 뿐 ── */
