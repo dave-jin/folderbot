@@ -28,6 +28,26 @@ import { openOnThisDevice, useLocalSettings, vaultRelOf } from './localOpen'
 import { cacheWriter, dropDoc, readDoc, writeDoc, type DocRec } from './cache'
 import { openTab, replaceTab, type DocTab } from '../core/docTabs'
 import { errText } from './errText'
+import { readPos, writePos } from './docPos'
+
+/**
+ * DW · 원문(textarea)·읽기 전용 글의 읽던 자리 — 픽셀로 남긴다(`docPos.ts` 머리말).
+ *    봇+파일 하나에 한 번 만든다(`useMemo`) — 그래야 React 가 떠날 때만 null 로 부르고, 그때 못 낸 마지막 자리를 낸다.
+ *    떠나는 순간엔 칸이 이미 떨어져 다시 잴 수 없으니 스크롤할 때 잰 값을 쓴다.
+ */
+const pxMem = (k: string) => {
+  let el: HTMLElement | null = null; let y = -1; let t = 0
+  const flush = () => { window.clearTimeout(t); t = 0; if (y >= 0) { writePos(k, { y }); y = -1 } }
+  const onScroll = () => { if (!el) return; y = el.scrollTop; if (!t) t = window.setTimeout(flush, 250) }
+  return (node: HTMLElement | null) => {
+    if (node === el) return
+    if (el) { el.removeEventListener('scroll', onScroll); flush() }
+    el = node; if (!node) return
+    const p = readPos(k); const put = () => { if (p && 'y' in p && node.scrollTop === 0) node.scrollTop = p.y }
+    put(); requestAnimationFrame(put)
+    node.addEventListener('scroll', onScroll, { passive: true })
+  }
+}
 
 /** DA · 이번 실행에 받은 문서 — 봇·탭을 오가도 남는다(디스크 사본은 `cache.ts`) */
 const docMem = new Map<string, DocRec>()
@@ -322,6 +342,10 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
   useEffect(() => { localStorage.setItem('fb:docw', wideText ? '1' : '0') }, [wideText])
   const heads = useMemo(() => (/\.(md|markdown)$/i.test(rel ?? '') ? normalizeDepth(outline(draft)) : []), [draft, rel])
   const edApi = useRef<{ goToLine: (n: number) => void } | null>(null)
+  /** DW · 이 문서(봇+파일)의 읽던 자리 — 편집기는 줄, 원문은 픽셀 */
+  const posKey = doc ? keyOf(doc) : ''
+  const linePos = useMemo(() => { if (!posKey) return undefined; const p = readPos(posKey); return p && 'l' in p ? p : undefined }, [posKey])
+  const pxRef = useMemo(() => pxMem(posKey), [posKey])
   const idx = rel ? sibs.indexOf(rel) : -1
   const ovw = isOverviewRel(rel); const name = ovw ? '개요' : rel?.split('/').pop() ?? ''; const dir = rel && rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : (bot.orchestrator ? '볼트' : bot.name)
   const isMd = /\.(md|markdown|txt)$/i.test(rel ?? '')
@@ -400,12 +424,12 @@ export function DocPane({ bot, docs, filesTick, onTalk, onHide, wide, onWide, on
                   (되돌리기 기록이 문서를 넘나드는 것도 함께 막는다). BF · 종전 `key={rel}` 은 봇만 바꾸면(같은 state.md)
                   편집기가 그대로 남아 옛 봇의 글을 새 봇의 파일에 냈다. 저장 주소도 화면이 아니라 이 문서(`doc`)에서 온다. */}
               <MdEditor key={keyOf(doc)} value={doc.text ?? ''} onChange={(v) => { setDraft(v); dirtyRef.current = true }} onCommit={(t) => void saveTo({ botId: doc.botId, rel: doc.rel }, t)} onOpen={(target) => docs.open(target.endsWith('.md') ? target : `${target}.md`)} rawUrl={(p) => (/^(https?:|data:)/.test(p) ? p : raw(p.replace(/^\.\//, '')))}
-                files={wikiFiles} onPasteImage={pasteImage} onReady={(a) => { edApi.current = a }} />
+                files={wikiFiles} onPasteImage={pasteImage} onReady={(a) => { edApi.current = a }} pos={linePos} onPos={(p) => writePos(keyOf(doc), p)} />
             </Suspense>
           </div>
         : doc.truncated || outside
-          ? <div className="dbody">{isMd ? <Md text={doc.text ?? ''} /> : <pre className="raw">{doc.text}</pre>}{doc.truncated ? <div style={{ color: 'var(--t3)', fontSize: 12, marginTop: 12 }}>큰 파일이라 앞부분만 보여요 — 그래서 여기서는 못 고쳐요</div> : null}</div>
-          : <div className="dbody edit"><textarea key={keyOf(doc)} value={draft} onChange={(e) => typeRaw({ botId: doc.botId, rel: doc.rel }, e.target.value)} spellCheck={false} /></div>)
+          ? <div className="dbody" key={keyOf(doc)} ref={pxRef}>{isMd ? <Md text={doc.text ?? ''} /> : <pre className="raw">{doc.text}</pre>}{doc.truncated ? <div style={{ color: 'var(--t3)', fontSize: 12, marginTop: 12 }}>큰 파일이라 앞부분만 보여요 — 그래서 여기서는 못 고쳐요</div> : null}</div>
+          : <div className="dbody edit"><textarea key={keyOf(doc)} ref={pxRef} value={draft} onChange={(e) => typeRaw({ botId: doc.botId, rel: doc.rel }, e.target.value)} spellCheck={false} /></div>)
       : doc.kind === 'canvas' ? <div className="dbody cvswrap">
           {/* Obsidian 의 `.canvas` — 보기만이 아니라 **고치기까지** (2026-09-13 Dave 확정) */}
           <Suspense fallback={<div className="dbody"><div className="skel" style={{ width: '70%' }} /></div>}>

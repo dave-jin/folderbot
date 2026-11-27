@@ -971,6 +971,31 @@ export interface MdEditorProps {
   onOpen?: (target: string) => void
   /** 이미지 경로 → 실제로 받을 수 있는 주소 */
   rawUrl?: (rel: string) => string
+  /** DW · 열 때 맨 위에 둘 자리(줄 번호 · 그 줄 안 글자) — 지난번에 읽던 곳 (`docPos.ts`) */
+  pos?: { l: number; c?: number }
+  /** DW · 읽던 자리가 바뀌면 — 스크롤이 멈춘 뒤와 떠날 때 부른다 */
+  onPos?: (p: { l: number; c: number }) => void
+}
+
+/**
+ * DW · **지금 맨 위에 보이는 글의 자리** — 줄 번호 + 그 줄 안 글자.
+ *    줄바꿈된 긴 문단이면 그 문단 안 어느 줄까지 내려갔는지도 남긴다(글자 위치).
+ *    맨 위면 `{ l: 1, c: 0 }`.
+ */
+export function topOf(v: EditorView): { l: number; c: number } {
+  if (v.scrollDOM.scrollTop < 4) return { l: 1, c: 0 }
+  const sr = v.scrollDOM.getBoundingClientRect()
+  const y = Math.max(sr.top + 1, v.documentTop)
+  const block = v.lineBlockAtHeight(Math.max(0, y - v.documentTop))
+  let at = v.posAtCoords({ x: v.contentDOM.getBoundingClientRect().left + 2, y }, false)
+  if (at < block.from || at > block.to) at = block.from
+  const line = v.state.doc.lineAt(at)
+  return { l: line.number, c: at - line.from }
+}
+/** DW · 그 자리를 맨 위로 — 문서가 그새 짧아졌으면 끝에 둔다 */
+function scrollToPos(v: EditorView, p: { l: number; c?: number }): void {
+  const line = v.state.doc.line(Math.max(1, Math.min(p.l, v.state.doc.lines)))
+  v.dispatch({ effects: EditorView.scrollIntoView(Math.min(line.from + (p.c ?? 0), line.to), { y: 'start', yMargin: 0 }) })
 }
 
 /**
@@ -980,7 +1005,7 @@ export interface MdEditorProps {
  */
 function eolOf(s: string): '\r\n' | '\n' { return /\r\n/.test(s) && !/(^|[^\r])\n/.test(s) ? '\r\n' : '\n' }
 
-export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, rawUrl, files, onPasteImage, onReady }: MdEditorProps) {
+export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, rawUrl, files, onPasteImage, onReady, pos, onPos }: MdEditorProps) {
   setEditorOpts({ onOpen, rawUrl })
   // ⚠ 자동완성·붙여넣기는 CodeMirror 확장 안에서 돈다 — React 클로저가 아니라 **모듈 한 곳**을 본다
   //    (편집기는 한 번만 만들어지므로, 여기서 최신 것을 계속 갈아 끼워야 한다)
@@ -990,6 +1015,10 @@ export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, 
   const viewRef = useRef<EditorView | null>(null)
   const commitRef = useRef(onCommit); commitRef.current = onCommit
   const changeRef = useRef(onChange); changeRef.current = onChange
+  const posRef = useRef(onPos); posRef.current = onPos
+  const pos0 = useRef(pos)
+  /** DW · 기억한 자리로 옮기기를 끝냈나 — 끝나기 전의 «맨 위» 를 자리로 남기면 기억이 지워진다 */
+  const placed = useRef(false)
   const initial = useRef(value)
   const eol = useRef<'\r\n' | '\n'>(eolOf(value))
 
@@ -1075,6 +1104,28 @@ export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, 
       }
     })
     /**
+     * 🔴 DW · **지난번에 읽던 자리로 연다** (2026-11-27 Dave: «보고 있는 문서의 줄 위치까지 기억해서 다시 돌아왔을때 같은 영역이 보여졌으면»).
+     *    줄 번호로 옮긴다 — 픽셀이면 창 폭·글자 크기가 바뀐 뒤 엉뚱한 곳이 보인다.
+     * ⚠ 편집기 칸 높이가 0 이면(숨은 칸 · 아직 안 그려짐) 보일 때까지 미룬다 — 0 높이에서 옮기면 아무 일도 안 일어나고 기억만 «맨 위» 로 덮인다.
+     * ⚠ 읽던 자리는 스크롤이 멈추면 남긴다(프레임마다 재고 0.25초 모아 쓴다). 떠날 때는 마지막으로 잰 값을 낸다 —
+     *    떠나는 순간엔 DOM 이 이미 떨어져 있어 다시 잴 수 없다.
+     */
+    let last: { l: number; c: number } | null = null; let sent = ''; let raf = 0; let posT = 0
+    const send = () => { window.clearTimeout(posT); if (!last) return; const k = `${last.l}:${last.c}`; if (k === sent) return; sent = k; posRef.current?.(last) }
+    const onScroll = () => {
+      if (!placed.current || raf) return
+      raf = requestAnimationFrame(() => { raf = 0; if (!view.dom.isConnected) return; last = topOf(view); window.clearTimeout(posT); posT = window.setTimeout(send, 250) })
+    }
+    view.scrollDOM.addEventListener('scroll', onScroll, { passive: true })
+    const place = () => {
+      if (placed.current || view.scrollDOM.clientHeight < 10) return
+      placed.current = true
+      const p = pos0.current
+      if (p && (p.l > 1 || p.c)) scrollToPos(view, p)
+    }
+    place()
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place); ro?.observe(view.scrollDOM)
+    /**
      * 🔴 BJ · **열릴 때 포커스를 가져가지 않는다** (2026-09-27 Dave: «문서 저장 뒤바뀜 — 진지하게 다시 리서치해서 원인 해결»).
      *    종전엔 편집기가 뜨자마자 `view.focus()` 했다. 편집기는 사람이 모르는 새에도 뜬다 — 봇이 `rondo_open` 으로 문서를 띄울 때,
      *    봇을 바꿀 때(BF 뒤로는 봇+파일마다 새로 뜬다), 탭이 바뀔 때. 그 순간 채팅 입력칸에서 치던 글자가 **문서 맨 앞**으로 들어가 저장됐다.
@@ -1089,6 +1140,7 @@ export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, 
       window.clearTimeout(timer)
       const text = view.state.doc.toString()
       if (pending) commitRef.current(eol.current === '\r\n' ? text.replace(/\n/g, '\r\n') : text)
+      cancelAnimationFrame(raf); ro?.disconnect(); view.scrollDOM.removeEventListener('scroll', onScroll); send()
       view.destroy(); viewRef.current = null
     }
   }, [readOnly])
@@ -1101,7 +1153,21 @@ export default function MdEditor({ value, onCommit, onChange, readOnly, onOpen, 
     initial.current = value; eol.current = eolOf(value)
     // BF · 밖에서 온 글이다 — `userEvent` 없이(저장 안 함) · 되돌리기 기록에도 안 남긴다(⌘Z 가 봇의 새 글을 옛 글로 되돌려 저장하지 않게)
     // 커서는 제자리 근처에 둔다 — 봇의 새 글을 받을 때 읽던 자리가 맨 앞으로 튀지 않게
-    v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: next }, selection: { anchor: Math.min(v.state.selection.main.head, next.length) }, annotations: Transaction.addToHistory.of(false) })
+    /**
+     * DW · **바뀐 곳만 갈아 끼운다** — 통째로 갈면 편집기가 읽던 자리를 잃고 맨 위로 튈 수 있다
+     *    (예: 디스크 사본으로 먼저 열고 자리를 옮긴 뒤 새 글이 도착할 때). 앞뒤 같은 부분은 그대로 두고,
+     *    맨 위에 보이던 글은 바뀐 만큼 옮겨 다시 맨 위에 둔다.
+     */
+    const cur = v.state.doc.toString()
+    let a = 0; const max = Math.min(cur.length, next.length)
+    while (a < max && cur.charCodeAt(a) === next.charCodeAt(a)) a++
+    let z = 0
+    while (z < max - a && cur.charCodeAt(cur.length - 1 - z) === next.charCodeAt(next.length - 1 - z)) z++
+    const scrolled = placed.current && v.scrollDOM.scrollTop >= 4 && v.dom.isConnected
+    const top = scrolled ? (() => { const t = topOf(v); return v.state.doc.line(t.l).from + t.c })() : -1
+    const tr = v.state.update({ changes: { from: a, to: cur.length - z, insert: next.slice(a, next.length - z) }, selection: { anchor: Math.min(v.state.selection.main.head, next.length) }, annotations: Transaction.addToHistory.of(false) })
+    v.dispatch(tr)
+    if (top >= 0) v.dispatch({ effects: EditorView.scrollIntoView(tr.changes.mapPos(top, -1), { y: 'start', yMargin: 0 }) })
   }, [value])
 
   return <div className="mded" ref={box} />
